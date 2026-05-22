@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 
@@ -16,8 +17,6 @@ namespace ov {
 namespace genai {
 
 using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
-
-using RawSpeechInput = std::vector<float>;
 
 struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */

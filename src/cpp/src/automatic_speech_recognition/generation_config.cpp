@@ -47,23 +47,26 @@ ASRGenerationConfig::ASRGenerationConfig(const std::filesystem::path& json_path)
 void ASRGenerationConfig::update_generation_config(const ov::AnyMap& config_map) {
     using ov::genai::utils::read_anymap_param;
 
-    read_anymap_param(config_map, "begin_suppress_tokens", begin_suppress_tokens);
-    read_anymap_param(config_map, "suppress_tokens", suppress_tokens);
+    read_anymap_param(config_map, "language", language);
+    read_anymap_param(config_map, "return_timestamps", return_timestamps);
+
     read_anymap_param(config_map, "decoder_start_token_id", decoder_start_token_id);
     read_anymap_param(config_map, "pad_token_id", pad_token_id);
-    read_anymap_param(config_map, "transcribe_token_id", transcribe_token_id);
     read_anymap_param(config_map, "translate_token_id", translate_token_id);
+    read_anymap_param(config_map, "transcribe_token_id", transcribe_token_id);
+    read_anymap_param(config_map, "prev_sot_token_id", prev_sot_token_id);
     read_anymap_param(config_map, "no_timestamps_token_id", no_timestamps_token_id);
-    read_anymap_param(config_map, "max_initial_timestamp_index", max_initial_timestamp_index);
-    read_anymap_param(config_map, "is_multilingual", is_multilingual);
-    read_anymap_param(config_map, "language", language);
-    read_anymap_param(config_map, "lang_to_id", lang_to_id);
+    read_anymap_param(config_map, "begin_suppress_tokens", begin_suppress_tokens);
+    read_anymap_param(config_map, "suppress_tokens", suppress_tokens);
+
     read_anymap_param(config_map, "task", task);
-    read_anymap_param(config_map, "return_timestamps", return_timestamps);
-    read_anymap_param(config_map, "initial_prompt", initial_prompt);
-    read_anymap_param(config_map, "hotwords", hotwords);
+    read_anymap_param(config_map, "lang_to_id", lang_to_id);
+    read_anymap_param(config_map, "is_multilingual", is_multilingual);
+    read_anymap_param(config_map, "max_initial_timestamp_index", max_initial_timestamp_index);
     read_anymap_param(config_map, "word_timestamps", word_timestamps);
     read_anymap_param(config_map, "alignment_heads", alignment_heads);
+    read_anymap_param(config_map, "initial_prompt", initial_prompt);
+    read_anymap_param(config_map, "hotwords", hotwords);
 
     GenerationConfig::update_generation_config(config_map);
 }

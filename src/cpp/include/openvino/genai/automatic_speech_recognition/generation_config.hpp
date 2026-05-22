@@ -110,6 +110,8 @@ static constexpr ov::Property<std::vector<int64_t>> begin_suppress_tokens{"begin
 static constexpr ov::Property<std::vector<int64_t>> suppress_tokens{"suppress_tokens"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};
+static constexpr ov::Property<bool> is_multilingual{"is_multilingual"};
+static constexpr ov::Property<size_t> max_initial_timestamp_index{"max_initial_timestamp_index"};
 static constexpr ov::Property<bool> word_timestamps{"word_timestamps"};
 static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
