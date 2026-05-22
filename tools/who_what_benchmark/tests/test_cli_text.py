@@ -94,7 +94,6 @@ def test_text_gt_data(tmp_path):
             "2",
             "--device",
             "CPU",
-            "--short-prompt",
         ]
     )
     data = pd.read_csv(temp_file_name)
@@ -169,6 +168,7 @@ def test_text_language(tmp_path):
         "CPU",
         "--language",
         "cn",
+        "--short-prompt",
     ])
     data = pd.read_csv(temp_file_name)
     assert "马克" in data["prompts"].values[0]
@@ -189,6 +189,7 @@ def test_text_hf_model(model_id, tmp_path):
         "1",
         "--device",
         "CPU",
+        "--short-prompt",
         "--hf",
     ])
     data = pd.read_csv(temp_file_name)
