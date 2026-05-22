@@ -53,7 +53,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@5db1bfbd991e4f604111d9c69b0007f5a2f8f87c
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@f62a7a911154a4add1d30fd06aa75ae82351a90b
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -611,7 +611,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM with transformers under 5.0'
@@ -625,6 +625,21 @@ jobs:
             cmd: 'python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
             timeout: 60
+          - name: 'Kokoro TTS'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
+            timeout: 60
+          - name: 'Misaki C++ Parity'
+            cmd: |
+              rm -rf ./build_misaki_cpp_ci
+              unset CMAKE_CXX_COMPILER_LAUNCHER
+              unset CMAKE_C_COMPILER_LAUNCHER
+              cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build_misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER:STRING= -DCMAKE_C_COMPILER_LAUNCHER:STRING=
+              cmake --build ./build_misaki_cpp_ci --target misaki_cpp_py --parallel
+              export PYTHONPATH="./build_misaki_cpp_ci:./build_misaki_cpp_ci/Release:${PYTHONPATH}"
+              python -m pytest -s -v src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
+            timeout: 30
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}

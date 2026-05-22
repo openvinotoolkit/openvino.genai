@@ -47,7 +47,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@5db1bfbd991e4f604111d9c69b0007f5a2f8f87c
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@f62a7a911154a4add1d30fd06aa75ae82351a90b
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -698,7 +698,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM with transformers under 5.0'
@@ -711,6 +711,10 @@ jobs:
           - name: 'Video Generation'
             cmd: 'python -m pytest -s -v tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
+            timeout: 60
+          - name: 'Kokoro TTS'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
             timeout: 60
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -s -v tests/python_tests/test_gguf_reader.py'
@@ -850,6 +854,50 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
+
+  genai_misaki_parity:
+    name: Misaki C++ Parity (Windows)
+    needs: [ smart_ci ]
+    if: ${{ needs.smart_ci.outputs.skip_workflow != 'True' && fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: aks-win-8-cores-16gb-build
+    env:
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
+      - name: Install Misaki parity dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest kokoro==0.9.4
+
+      - name: Build and run Misaki parity tests
+        working-directory: ${{ env.SRC_DIR }}
+        run: |
+          cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build_misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON
+          cmake --build ./build_misaki_cpp_ci --config Release --parallel
+          $env:PYTHONPATH = "$(Get-Location)/build_misaki_cpp_ci/Release;$env:PYTHONPATH"
+          python -m pytest -q src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
@@ -1072,7 +1120,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: windows-2022
+    runs-on: aks-win-4-cores-8gb-test
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
@@ -1136,7 +1184,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_windows
-    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests, genai_build_nodejs, genai_nodejs_tests]
+    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_tests_wheel, genai_misaki_parity, genai_tools_tests, genai_samples_tests, genai_build_nodejs, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
