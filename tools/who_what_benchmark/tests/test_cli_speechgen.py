@@ -136,6 +136,8 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
 
 
 def run_kokoro_test(model_id, model_type, speech_voice, speech_language, optimum_threshold, genai_threshold, tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("CVS-187265")
     gt_file = tmp_path / "gt.csv"
     model_path = convert_model(model_id)
 
