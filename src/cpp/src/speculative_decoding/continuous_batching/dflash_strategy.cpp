@@ -4,11 +4,12 @@
 #include "dflash_strategy.hpp"
 
 #include <algorithm>
+#include <cstring>
+#include <numeric>
 
 #include <openvino/pass/sdpa_to_paged_attention.hpp>
 
 #include "continuous_batching/paged_attention_transformations.hpp"
-#include "logger.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
@@ -22,6 +23,25 @@ struct DraftCandidateToken {
     float log_prob;
 };
 
+void copy_bytes(const ov::Tensor& src, ov::Tensor& dst) {
+    OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
+                    "DFlash hidden state copy requires matching tensor element types.");
+    OPENVINO_ASSERT(src.get_byte_size() == dst.get_byte_size(),
+                    "DFlash hidden state copy requires matching tensor byte sizes.");
+    std::memcpy(dst.data(), src.data(), src.get_byte_size());
+}
+
+size_t dflash_hidden_seq_len_dim(const ov::Shape& shape) {
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1,
+                    "DFlash hidden_states delta must have shape [1, seq_len, hidden].");
+    return 1;
+}
+
+size_t dflash_hidden_seq_len(const ov::Tensor& hidden_state) {
+    const auto shape = hidden_state.get_shape();
+    return shape[dflash_hidden_seq_len_dim(shape)];
+}
+
 ov::Tensor truncate_hidden_state_from_end_for_dflash(const ov::Tensor& hidden_state, size_t tokens_to_remove) {
     if (!hidden_state || hidden_state.get_size() == 0 || tokens_to_remove == 0) {
         return hidden_state;
@@ -32,7 +52,7 @@ ov::Tensor truncate_hidden_state_from_end_for_dflash(const ov::Tensor& hidden_st
         return hidden_state;
     }
 
-    const size_t seq_len_dim = shape.size() == 3 && shape[0] == 1 ? 1 : 0;
+    const size_t seq_len_dim = dflash_hidden_seq_len_dim(shape);
     const size_t current_seq_len = shape[seq_len_dim];
     if (tokens_to_remove >= current_seq_len) {
         shape[seq_len_dim] = 0;
@@ -126,6 +146,10 @@ public:
         return m_raw_perf_metrics;
     }
 
+    size_t get_consumed_hidden_states() const {
+        return m_committed_context_length;
+    }
+
 private:
     static ov::InferRequest create_draft_infer_request(const ov::genai::ModelDesc& model_desc) {
         OPENVINO_ASSERT(model_desc.model, "DFlash draft model cannot be null.");
@@ -159,15 +183,10 @@ private:
     ov::Tensor reshape_hidden_delta_for_draft(const ov::Tensor& hidden_delta) const {
         auto reshaped = hidden_delta;
         const auto shape = reshaped.get_shape();
-        OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3, "DFlash hidden_states delta must have rank 2 or 3.");
+        const size_t seq_len_dim = dflash_hidden_seq_len_dim(shape);
         if (shape.size() == 2) {
-            reshaped.set_shape({BATCH_SIZE, shape[0], shape[1]});
-        } else if (shape[0] != BATCH_SIZE && shape[1] == BATCH_SIZE) {
-            reshaped.set_shape({BATCH_SIZE, shape[0], shape[2]});
+            reshaped.set_shape({BATCH_SIZE, shape[seq_len_dim], shape.back()});
         }
-        const auto reshaped_shape = reshaped.get_shape();
-        OPENVINO_ASSERT(reshaped_shape.size() == 3 && reshaped_shape[0] == BATCH_SIZE,
-                        "DFlash hidden_states delta must reshape to [1, seq_len, hidden].");
         return reshaped;
     }
 
@@ -275,6 +294,67 @@ GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_gene
     return draft_config;
 }
 
+void ContinuousBatchingPipeline::DFlashDecodingImpl::append_pending_hidden_delta(RequestState& state,
+                                                                                const ov::Tensor& hidden_delta) {
+    if (!hidden_delta || hidden_delta.get_size() == 0) {
+        return;
+    }
+    const size_t token_count = dflash_hidden_seq_len(hidden_delta);
+    if (token_count == 0) {
+        return;
+    }
+    auto& pending = state.pending_hidden_deltas;
+
+    pending.chunks.push_back(hidden_delta);
+    pending.token_count += token_count;
+}
+
+bool ContinuousBatchingPipeline::DFlashDecodingImpl::has_pending_hidden_delta(const RequestState& state) {
+    return state.pending_hidden_deltas.token_count > 0;
+}
+
+ov::Tensor ContinuousBatchingPipeline::DFlashDecodingImpl::materialize_pending_hidden_delta(
+    const RequestState& state) {
+    const auto& pending = state.pending_hidden_deltas;
+    OPENVINO_ASSERT(pending.token_count > 0, "Cannot materialize empty DFlash hidden deltas.");
+    OPENVINO_ASSERT(!pending.chunks.empty(), "DFlash hidden delta chunks are empty.");
+
+    if (pending.chunks.size() == 1) {
+        OPENVINO_ASSERT(pending.chunks.front() && pending.chunks.front().get_size() > 0,
+                        "DFlash single hidden delta chunk is empty.");
+        return pending.chunks.front();
+    }
+
+    auto merged_shape = pending.chunks.front().get_shape();
+    merged_shape[1] = pending.token_count;
+    ov::Tensor merged(pending.chunks.front().get_element_type(), merged_shape);
+    size_t offset = 0;
+    for (const auto& chunk : pending.chunks) {
+        const size_t chunk_tokens = dflash_hidden_seq_len(chunk);
+        ov::Tensor dst(merged,
+                       ov::Coordinate{0, offset, 0},
+                       ov::Coordinate{1, offset + chunk_tokens, merged_shape[2]});
+        copy_bytes(chunk, dst);
+        offset += chunk_tokens;
+    }
+    OPENVINO_ASSERT(offset == pending.token_count, "DFlash hidden delta token count mismatch.");
+    return merged;
+}
+
+void ContinuousBatchingPipeline::DFlashDecodingImpl::clear_pending_hidden_delta(RequestState& state) {
+    auto& pending = state.pending_hidden_deltas;
+    pending.chunks.clear();
+    pending.token_count = 0;
+}
+
+void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_hidden_prefix_length(const RequestState& state) const {
+    OPENVINO_ASSERT(!state.generated_tokens.empty(),
+                    "DFlash hidden prefix can only be validated after target generated a seed token.");
+    const size_t expected = state.prompt_len + state.generated_tokens.size() - 1;
+    const size_t actual = m_draft->get_consumed_hidden_states() + state.pending_hidden_deltas.token_count;
+    OPENVINO_ASSERT(actual == expected, "DFlash hidden prefix length mismatch before draft inference.");
+}
+
 GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
@@ -289,8 +369,12 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     OPENVINO_ASSERT(m_request_states.empty() && !m_main_pipeline->has_non_finished_requests(),
                     "DFlash CB/PA POC supports only one active request. Wait for the current request to finish before adding another.");
 
+    const auto input_shape = input_ids.get_shape();
+    OPENVINO_ASSERT(input_shape.size() == 2 && input_shape[0] == 1 && input_shape[1] > 0,
+                    "Expected DFlash input_ids shape [1, seq_len].");
     RequestState state;
     state.generation_config = sampling_params;
+    state.prompt_len = input_shape[1];
     m_draft->initialize_sequence(input_ids, make_draft_generation_config(sampling_params));
     m_request_states[request_id] = std::move(state);
 
@@ -327,7 +411,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     const auto draft_start = std::chrono::steady_clock::now();
     for (auto& [request_id, state] : m_request_states) {
         if (state.finished ||
-            !state.pending_hidden_delta || state.pending_hidden_delta.get_size() == 0 ||
+            !has_pending_hidden_delta(state) ||
             state.generated_tokens.empty()) {
             state.draft_generated = 0;
             continue;
@@ -347,7 +431,10 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         }
 
         const int64_t seed_token = state.generated_tokens.back();
-        auto draft_logits = m_draft->infer(seed_token, state.pending_hidden_delta);
+        validate_hidden_prefix_length(state);
+        auto hidden_delta = materialize_pending_hidden_delta(state);
+        auto draft_logits = m_draft->infer(seed_token, hidden_delta);
+        clear_pending_hidden_delta(state);
         auto candidates = m_draft->sample_candidates(draft_logits, candidate_count);
 
         state.generated_before_draft = state.generated_tokens.size();
@@ -437,8 +524,8 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
             rejected = draft_generated - accepted;
         }
 
-        state.pending_hidden_delta =
-            truncate_hidden_state_from_end_for_dflash(generated_sequence.hidden_states, rejected);
+        auto hidden_delta = truncate_hidden_state_from_end_for_dflash(generated_sequence.hidden_states, rejected);
+        append_pending_hidden_delta(state, hidden_delta);
         state.generated_tokens = generated_sequence.token_ids;
         m_draft->sync_generated_tokens(state.generated_tokens);
         state.draft_generated = 0;

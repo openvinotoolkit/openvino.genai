@@ -40,9 +40,21 @@ public:
 private:
     class DFlashCBDraftRunner;
 
+    struct PendingHiddenDeltas {
+        static constexpr size_t INITIAL_CHUNK_CAPACITY = 10;
+
+        PendingHiddenDeltas() {
+            chunks.reserve(INITIAL_CHUNK_CAPACITY);
+        }
+
+        std::vector<ov::Tensor> chunks;
+        size_t token_count = 0;
+    };
+
     struct RequestState {
-        ov::Tensor pending_hidden_delta;
+        PendingHiddenDeltas pending_hidden_deltas;
         std::vector<int64_t> generated_tokens;
+        size_t prompt_len = 0;
         size_t generated_before_draft = 0;
         size_t draft_generated = 0;
         bool finished = false;
@@ -50,6 +62,11 @@ private:
     };
 
     GenerationConfig make_draft_generation_config(const GenerationConfig& config) const;
+    static void append_pending_hidden_delta(RequestState& state, const ov::Tensor& hidden_delta);
+    static bool has_pending_hidden_delta(const RequestState& state);
+    static ov::Tensor materialize_pending_hidden_delta(const RequestState& state);
+    static void clear_pending_hidden_delta(RequestState& state);
+    void validate_hidden_prefix_length(const RequestState& state) const;
     void update_draft_states_from_main(const GeneratedRequests& main_generated_requests);
     void drop_requests();
     ov::genai::RawPerfMetrics collect_draft_raw_metrics();
