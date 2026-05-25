@@ -4,6 +4,7 @@
 #pragma once
 
 #include "fast_draft_strategy.hpp"
+#include "speculative_decoding/continuous_batching/dflash_strategy_utils.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 
 namespace ov::genai {
@@ -40,19 +41,8 @@ public:
 private:
     class DFlashCBDraftRunner;
 
-    struct PendingHiddenDeltas {
-        static constexpr size_t INITIAL_CHUNK_CAPACITY = 10;
-
-        PendingHiddenDeltas() {
-            chunks.reserve(INITIAL_CHUNK_CAPACITY);
-        }
-
-        std::vector<ov::Tensor> chunks;
-        size_t token_count = 0;
-    };
-
     struct RequestState {
-        PendingHiddenDeltas pending_hidden_deltas;
+        dflash_cb::HiddenDeltaBuffer pending_hidden_deltas;
         std::vector<int64_t> generated_tokens;
         size_t prompt_len = 0;
         size_t generated_before_draft = 0;
