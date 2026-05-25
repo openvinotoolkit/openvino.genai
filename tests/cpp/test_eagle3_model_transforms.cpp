@@ -9,6 +9,7 @@
 #include "openvino/op/constant.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
+#include "openvino/op/reshape.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "speculative_decoding/stateful/dflash_strategy.hpp"
 
@@ -36,6 +37,28 @@ std::shared_ptr<ov::Model> make_annotated_hidden_state_model() {
         std::string(R"({"version":1,"layers":{"0":"ov.hidden_states.decoder_layer_0","1":"ov.hidden_states.decoder_layer_1","2":"ov.hidden_states.decoder_layer_2","3":"ov.hidden_states.decoder_layer_3","4":"ov.hidden_states.decoder_layer_4"}})"),
         "hidden_states_decoder_layers");
     return model;
+}
+
+std::shared_ptr<ov::Model> make_dflash_draft_hidden_states_model(const ov::PartialShape& hidden_states_shape) {
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, hidden_states_shape);
+    hidden_states->set_friendly_name("hidden_states");
+    hidden_states->output(0).set_names({"hidden_states"});
+
+    const auto hidden_size = static_cast<size_t>(hidden_states_shape[2].get_length());
+    auto bias = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 1, hidden_size}, {1.0f});
+    auto consumer = std::make_shared<ov::op::v1::Add>(hidden_states, bias);
+    consumer->set_friendly_name("draft_hidden_states_consumer");
+    auto result = std::make_shared<ov::op::v0::Result>(consumer);
+    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{hidden_states});
+}
+
+std::shared_ptr<ov::op::v1::Add> find_dflash_draft_hidden_states_consumer(const std::shared_ptr<ov::Model>& model) {
+    for (const auto& node : model->get_ordered_ops()) {
+        if (node->get_friendly_name() == "draft_hidden_states_consumer") {
+            return ov::as_type_ptr<ov::op::v1::Add>(node);
+        }
+    }
+    return nullptr;
 }
 
 size_t count_outputs_with_name(const std::shared_ptr<ov::Model>& model, const std::string& name) {
@@ -115,6 +138,66 @@ TEST(DFlashModelTransforms, ThrowsForMissingAnnotatedHiddenStateLayer) {
     auto model = make_annotated_hidden_state_model();
 
     EXPECT_THROW(ov::genai::utils::dflash::expose_target_hidden_states(model, {0, 99}), ov::Exception);
+}
+
+TEST(DFlashModelTransforms, ReshapesStaticDraftHiddenStatesInputForCB) {
+    auto model = make_dflash_draft_hidden_states_model(ov::PartialShape({1, 2, 4}));
+
+    ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model);
+
+    ASSERT_EQ(model->input("hidden_states").get_partial_shape(), ov::PartialShape({2, 1, 4}));
+    auto consumer = find_dflash_draft_hidden_states_consumer(model);
+    ASSERT_TRUE(consumer);
+    auto reshape = ov::as_type_ptr<ov::op::v1::Reshape>(consumer->input_value(0).get_node_shared_ptr());
+    ASSERT_TRUE(reshape);
+    ASSERT_EQ(reshape->get_output_partial_shape(0), ov::PartialShape({1, 2, 4}));
+}
+
+TEST(DFlashModelTransforms, ReshapesDynamicDraftHiddenStatesInputForCB) {
+    auto model = make_dflash_draft_hidden_states_model(
+        ov::PartialShape({ov::Dimension(1), ov::Dimension::dynamic(), ov::Dimension(4)}));
+
+    ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model);
+
+    ASSERT_EQ(model->input("hidden_states").get_partial_shape(),
+              ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension(1), ov::Dimension(4)}));
+    auto consumer = find_dflash_draft_hidden_states_consumer(model);
+    ASSERT_TRUE(consumer);
+    auto reshape = ov::as_type_ptr<ov::op::v1::Reshape>(consumer->input_value(0).get_node_shared_ptr());
+    ASSERT_TRUE(reshape);
+    ASSERT_EQ(reshape->get_output_partial_shape(0),
+              ov::PartialShape({ov::Dimension(1), ov::Dimension::dynamic(), ov::Dimension(4)}));
+}
+
+TEST(DFlashModelTransforms, ReshapesFullyDynamicDraftHiddenStatesInputForCB) {
+    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32,
+        ov::PartialShape::dynamic(3));
+    hidden_states->set_friendly_name("hidden_states");
+    hidden_states->output(0).set_names({"hidden_states"});
+    auto result = std::make_shared<ov::op::v0::Result>(hidden_states);
+    auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{hidden_states});
+
+    ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model);
+
+    ASSERT_EQ(model->input("hidden_states").get_partial_shape(),
+              ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension(1), ov::Dimension::dynamic()}));
+    auto reshape = ov::as_type_ptr<ov::op::v1::Reshape>(model->get_results().front()->input_value(0).get_node_shared_ptr());
+    ASSERT_TRUE(reshape);
+    ASSERT_EQ(reshape->get_output_partial_shape(0),
+              ov::PartialShape({ov::Dimension(1), ov::Dimension::dynamic(), ov::Dimension::dynamic()}));
+}
+
+TEST(DFlashModelTransforms, ThrowsForMissingDraftHiddenStatesInput) {
+    auto model = make_annotated_hidden_state_model();
+
+    EXPECT_THROW(ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model), ov::Exception);
+}
+
+TEST(DFlashModelTransforms, ThrowsForIncompatibleDraftHiddenStatesInput) {
+    auto model = make_dflash_draft_hidden_states_model(ov::PartialShape({2, 2, 4}));
+
+    EXPECT_THROW(ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model), ov::Exception);
 }
 
 TEST(DFlashHiddenStateProvider, AppendsAndTruncatesFullContext) {
