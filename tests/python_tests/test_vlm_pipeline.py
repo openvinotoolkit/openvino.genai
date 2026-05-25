@@ -2742,6 +2742,7 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_rejects_image_input(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
 ):
@@ -2750,6 +2751,7 @@ def test_videochatflash_qwen_rejects_image_input(
         ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 @pytest.mark.parametrize(
     "config",
     [

@@ -3,11 +3,43 @@
 #
 
 file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
+list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/speech_generation/misaki_cpp/.*\\.(cpp|c)$")
 list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 # Dependencies
 
 include(FetchContent)
+
+option(ENABLE_MISAKI_CPP "Enable first-party misaki_cpp integration for Kokoro TTS" ON)
+
+set(OPENVINO_GENAI_HAS_MISAKI_CPP OFF)
+if(ENABLE_MISAKI_CPP)
+    set(MISAKI_CPP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src/speech_generation/misaki_cpp")
+    if(EXISTS "${MISAKI_CPP_ROOT}/include/misaki/g2p.hpp")
+        add_library(openvino_genai_misaki_cpp STATIC
+            "${MISAKI_CPP_ROOT}/src/en_g2p.cpp"
+            "${MISAKI_CPP_ROOT}/src/espeak_fallback.cpp"
+            "${MISAKI_CPP_ROOT}/src/espeak_g2p.cpp"
+            "${MISAKI_CPP_ROOT}/src/english_lexicon.cpp"
+            "${MISAKI_CPP_ROOT}/src/factory_stub.cpp")
+
+        target_include_directories(openvino_genai_misaki_cpp
+            PUBLIC "${MISAKI_CPP_ROOT}/include")
+
+        target_compile_definitions(openvino_genai_misaki_cpp PRIVATE
+            MISAKI_SOURCE_DIR="${MISAKI_CPP_ROOT}")
+
+        target_compile_features(openvino_genai_misaki_cpp PRIVATE cxx_std_17)
+        set_target_properties(openvino_genai_misaki_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        if(MSVC)
+            target_compile_options(openvino_genai_misaki_cpp PRIVATE /utf-8)
+        endif()
+        target_link_libraries(openvino_genai_misaki_cpp PRIVATE nlohmann_json::nlohmann_json)
+        set(OPENVINO_GENAI_HAS_MISAKI_CPP ON)
+    else()
+        message(STATUS "First-party misaki_cpp sources were not found under src/cpp/src/speech_generation/misaki_cpp, Kokoro G2P backend will be disabled.")
+    endif()
+endif()
 
 # OpenCL support for CDPruner DPP acceleration - reuse OpenVINO's ENABLE_SYSTEM_OPENCL
 if(ENABLE_SYSTEM_OPENCL)
@@ -204,6 +236,11 @@ target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SO
 
 target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja)
 
+if(OPENVINO_GENAI_HAS_MISAKI_CPP)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino_genai_misaki_cpp)
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE OPENVINO_GENAI_HAS_MISAKI_CPP=1)
+endif()
+
 # Add OpenCL support if enabled via OpenVINO configuration
 if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL AND (DEFINED OpenCL_HPP_INCLUDE_DIR OR DEFINED CL2_HPP_INCLUDE_DIR))
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_OPENCL_DPP)
@@ -239,6 +276,10 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json minja ${CMAKE_DL_LIBS})
+
+if(OPENVINO_GENAI_HAS_MISAKI_CPP)
+    target_link_libraries(${TARGET_NAME} PRIVATE openvino_genai_misaki_cpp)
+endif()
 
 # Add OpenCL support if enabled via OpenVINO configuration
 if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL)
