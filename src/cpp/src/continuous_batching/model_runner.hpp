@@ -576,7 +576,7 @@ public:
                         //   - tokens[3-6] are grandchildren at tree layer 2 (branching from layer 1 nodes)
                         // These IDs compute relative position offsets for parallel evaluation in tree-based speculative decoding (e.g., EAGLE).
                         const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
-                        if (!tree_pos_ids.empty()) {
+                        if (_is_hs_export_only() && !tree_pos_ids.empty()) {
                             OPENVINO_ASSERT(position_ids_idx < tree_pos_ids.size(),
                                            "position_ids_idx (", position_ids_idx,
                                            ") is out of bounds for tree_position_ids.size() (", tree_pos_ids.size(), ")");
