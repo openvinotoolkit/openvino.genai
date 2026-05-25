@@ -574,14 +574,10 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-               "Please, use generate() with ChatHistory argument.");
     m_impl->finish_chat();
     m_impl->start_chat(system_message);
 }
 
 void ContinuousBatchingPipeline::finish_chat() {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-               "Please, use generate() with ChatHistory argument.");
     m_impl->finish_chat();
 }
