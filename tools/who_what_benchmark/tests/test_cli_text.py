@@ -157,19 +157,21 @@ def test_text_verbose():
 
 def test_text_language(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    run_wwb([
-        "--base-model",
-        "Qwen/Qwen2-0.5B",
-        "--gt-data",
-        temp_file_name,
-        "--num-samples",
-        "2",
-        "--device",
-        "CPU",
-        "--language",
-        "cn",
-        "--short-prompt",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            "Qwen/Qwen2-0.5B",
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--language",
+            "cn",
+            "--short-prompt",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     assert "马克" in data["prompts"].values[0]
 
@@ -180,18 +182,20 @@ def test_text_language(tmp_path):
 )
 def test_text_hf_model(model_id, tmp_path):
     temp_file_name = tmp_path / "gt.csv"
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--gt-data",
-        temp_file_name,
-        "--num-samples",
-        "1",
-        "--device",
-        "CPU",
-        "--short-prompt",
-        "--hf",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--gt-data",
+            temp_file_name,
+            "--num-samples",
+            "1",
+            "--device",
+            "CPU",
+            "--short-prompt",
+            "--hf",
+        ]
+    )
     data = pd.read_csv(temp_file_name)
     assert len(data["prompts"].values) == 1
 
