@@ -25,6 +25,13 @@ std::vector<float> zero_log_probs(size_t count) {
     return std::vector<float>(count, 0.0f);
 }
 
+bool has_compiled_input(const ov::CompiledModel& model, const std::string& name) {
+    const auto inputs = model.inputs();
+    return std::find_if(inputs.begin(), inputs.end(), [&](const ov::Output<const ov::Node>& port) {
+        return port.get_names().count(name) != 0;
+    }) != inputs.end();
+}
+
 }  // namespace
 
 class ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashCBDraftRunner {
@@ -39,6 +46,11 @@ public:
           m_block_size(rt_info.block_size),
           m_mask_token_id(rt_info.mask_token_id) {
         OPENVINO_ASSERT(m_block_size > 1, "DFlash block_size must be greater than 1.");
+        m_has_beam_idx = has_compiled_input(m_request.get_compiled_model(), "beam_idx");
+        if (m_has_beam_idx) {
+            m_beam_idx = ov::Tensor(ov::element::i32, {BATCH_SIZE});
+            std::fill_n(m_beam_idx.data<int32_t>(), m_beam_idx.get_size(), 0);
+        }
         m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
         m_raw_perf_metrics.tokenization_durations = {MicroSeconds(0.0f)};
         m_raw_perf_metrics.detokenization_durations = {MicroSeconds(0.0f)};
@@ -53,6 +65,9 @@ public:
         m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config, 0);
         m_committed_context_length = 0;
         m_request.reset_state();
+        if (m_has_beam_idx) {
+            m_request.set_tensor("beam_idx", m_beam_idx);
+        }
         m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
         m_raw_perf_metrics.m_durations.clear();
         m_raw_perf_metrics.m_batch_sizes.clear();
@@ -173,6 +188,8 @@ private:
     SequenceGroup::Ptr m_sequence_group;
     Sampler m_sampler;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
+    bool m_has_beam_idx = false;
+    ov::Tensor m_beam_idx;
     size_t m_committed_context_length = 0;
     size_t m_block_size = 0;
     int64_t m_mask_token_id = -1;
@@ -190,8 +207,6 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     auto main_model = main_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model_desc.model, "DFlash requires both target and draft models.");
 
-    utils::dflash::expose_target_hidden_states(main_model, m_rt_info.target_layer_ids);
-
     bool allow_score_aggregation = true;
     bool allow_xattention = false;
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
@@ -200,6 +215,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                                    allow_xattention)
         .run_on_model(main_model);
     utils::apply_gather_before_matmul_transformation(main_model);
+    utils::dflash::expose_target_hidden_states(main_model, m_rt_info.target_layer_ids);
 
     m_tokenizer = main_model_desc.tokenizer;
     m_generation_config = main_model_desc.generation_config;
