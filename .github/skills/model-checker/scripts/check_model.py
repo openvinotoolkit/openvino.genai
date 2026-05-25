@@ -147,7 +147,7 @@ class OptimumExportTool(ToolWrapper):
 
 
 class LlmBenchTool(ToolWrapper):
-    def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path):
+    def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path, optimum: bool = False):
         llm_bench_script_path = Path("tools/llm_bench/benchmark.py")
 
         if not llm_bench_script_path.is_file():
@@ -163,8 +163,11 @@ class LlmBenchTool(ToolWrapper):
             "1",
             "--task",
             task,
+            "--optimum" if optimum else "",
         ]
-        super().__init__(name="llm_bench", commands_list=cmd, work_dir=work_dir)
+        super().__init__(
+            name="llm_bench_genai" if not optimum else "llm_bench_optimum", commands_list=cmd, work_dir=work_dir
+        )
 
     def _post_run_hook(self, result):
         if result.returncode != 0:
@@ -434,13 +437,20 @@ def main():
         result = OptimumExportTool(args.model_id, args.task, model_dir, optimum_export_work_dir).run()
         result.raise_if_failed()
 
+    tools_results = []
+
     # Step 2: Inference test
     if args.skip_llm_bench:
         logger.info("Skipping llm_bench test")
     else:
         llm_bench_work_dir = work_dir / "llm_bench"
-        result = LlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
-        result.raise_if_failed()
+        genai_llm_bench_result = LlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        tools_results.append(genai_llm_bench_result)
+
+        optimum_llm_bench_result = LlmBenchTool(
+            model_dir, bench_task, args.device, llm_bench_work_dir, optimum=True
+        ).run()
+        tools_results.append(optimum_llm_bench_result)
 
     # Step 3: WWB accuracy
     if args.skip_wwb or wwb_task is None:
@@ -451,14 +461,20 @@ def main():
             hf_gt_result = HFWWBGroundTruthTool(
                 args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device
             ).run()
+            tools_results.append(hf_gt_result)
 
         optimum_result = OptimumWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
+        tools_results.append(optimum_result)
 
         genai_result = GenAIWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
+        tools_results.append(genai_result)
+
+    for result in tools_results:
+        result.raise_if_failed()
 
 
 if __name__ == "__main__":

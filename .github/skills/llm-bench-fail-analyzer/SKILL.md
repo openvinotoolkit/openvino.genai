@@ -1,7 +1,7 @@
 ---
 name: llm-bench-fail-analyzer
 description: "Analyze failed llm_bench execution results for a model. Use when: checking llm_bench log, troubleshooting model inference or performance issues."
-argument-hint: "model_id and log_dir (e.g. tencent/HY-MT1.5-1.8B /path/to/llm_bench_optimum_intel.log)"
+argument-hint: "model_id and log_dir (e.g. tencent/HY-MT1.5-1.8B /path/to/logs/for/llm_bench)"
 ---
 
 # LLM Bench Fail Analyzer
@@ -72,7 +72,7 @@ When analyzing failures and implementing fixes, refer to the following key locat
 ## Procedure
 
 
-### Step 1: Analyze the log
+### Step 1: Analyze the logs
 
 If the log file for llm_bench doesn't contains failure (exit code == 0 and no error in the output), proceed to Step 2. Otherwise, follow the next steps:
   - Read the corresponding log for the full traceback and context.

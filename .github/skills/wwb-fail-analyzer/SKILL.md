@@ -36,8 +36,8 @@ When analyzing failures and implementing fixes, refer to the following key locat
 - `tools/who_what_benchmark/whowhatbench/chat_visualtext_evaluator.py` - vlm models evaluation in chat mode, evaluator for --model-type visual-text-chat
 - `tools/who_what_benchmark/whowhatbench/embeddings_evaluator.py` - embedding models evaluation, evaluator for --model-type text-embedding
 - `tools/who_what_benchmark/whowhatbench/im2im_evaluator.py` - image-to-image evaluation, evaluator for --model-type image-to-image
-- `tools/who_what_benchmark/whowhatbench/inapaint_evaluator.py` - inpainting evaluation, evaluator for --model-type image-inpainting
-- `tools/who_what_benchmark/whowhatbench/rerenking_evaluator.py` - reranking evaluation, evaluator for --model-type text-reranking
+- `tools/who_what_benchmark/whowhatbench/inpaint_evaluator.py` - inpainting evaluation, evaluator for --model-type image-inpainting
+- `tools/who_what_benchmark/whowhatbench/reranking_evaluator.py` - reranking evaluation, evaluator for --model-type text-reranking
 - `tools/who_what_benchmark/whowhatbench/speech_generation_evaluator.py` - speech generation evaluation, evaluator for --model-type speech-generation
 - `tools/who_what_benchmark/whowhatbench/text2image_evaluator.py` - text-to-image evaluation, evaluator for --model-type text-to-image
 - `tools/who_what_benchmark/whowhatbench/text2video_evaluator.py` - text-to-video evaluation, evaluator for --model-type text-to-video
@@ -61,7 +61,7 @@ If the log file log for ground truth generation with hf backend doesn't contains
   - Read the corresponding log for the full traceback and context.
   - Analyze the failure root cause base on the log and Code Structure Reference.
   - Determine whether the error is related to the WWB or to the environment/backend limitations.
-  - If it's a WWB bug/limitation, implement nessesary fixes to WWB. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running model-checker with `--skip-export` and `--skip-wwb` flags.
+  - If it's a WWB bug/limitation, implement nessesary fixes to WWB. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running model-checker with `--skip-export` and `--skip-llm_bench` flags.
   - If it's a model issue or backend limitation, provide description in the report.
 
 **Most common failure points**:
@@ -76,7 +76,7 @@ If the log file for GenAI backend doesn't contains failure (exit code == 0 and n
   - Read the corresponding log for the full traceback and context.
   - Analyze the failure root cause from the log. Don't analyze GenAI source code.
   - Determine whether the error is related to the WWB or to the environment/backend limitations.
-  - If it's a WWB bug/limitation, implement nessesary fixes to WWB. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running model-checker with `--skip-export`, `--skip-wwb-gt-data-gen` and `--skip-wwb` flags.
+  - If it's a WWB bug/limitation, implement nessesary fixes to WWB. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running model-checker with `--skip-export`, `--skip-wwb-gt-data-gen` and `--skip-llm-bench` flags.
   - If it's a GenAI limitation or model issue, provide description in the report.
 
 **Most common failure points**:
@@ -88,7 +88,7 @@ If the log file for optimum-intel backend doesn't contains failure (exit code ==
   - Read the corresponding log for the full traceback and context.
   - Analyze the failure root cause from the log.
   - Determine whether the error is related to the WWB or to the environment/backend limitations.
-  - If it's a WWB bug/limitation, implement nessesary fixes to WWB. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running model-checker with `--skip-export`, `--skip-wwb-gt-data-gen` and `--skip-wwb` flags.
+  - If it's a WWB bug/limitation, implement nessesary fixes to WWB. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running model-checker with `--skip-export`, `--skip-wwb-gt-data-gen` and `--skip-llm-bench` flags.
   - If it's a model issue or backend limitation, provide description in the report.
 
 **Most common failure points**:
