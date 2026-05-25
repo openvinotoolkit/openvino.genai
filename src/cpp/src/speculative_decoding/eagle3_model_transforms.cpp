@@ -15,7 +15,9 @@
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
+#include "openvino/op/reshape.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -462,6 +464,16 @@ std::vector<int32_t> parse_layer_ids(const std::string& raw) {
     return result;
 }
 
+std::shared_ptr<ov::op::v0::Parameter> find_hidden_states_parameter(const std::shared_ptr<ov::Model>& model) {
+    for (const auto& parameter : model->get_parameters()) {
+        if (parameter->get_friendly_name() == "hidden_states" ||
+            parameter->output(0).get_names().count("hidden_states") != 0) {
+            return parameter;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
@@ -517,6 +529,33 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model, const std::v
                     "DFlash requires hidden-state annotations in the target model. "
                     "Export the target model with Optimum hidden-state annotations.");
     add_dflash_hidden_state_result(model, annotated_outputs);
+}
+
+void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model) {
+    OPENVINO_ASSERT(model, "DFlash draft model cannot be null.");
+
+    auto hidden_states = find_hidden_states_parameter(model);
+    OPENVINO_ASSERT(hidden_states, "DFlash draft model must have 'hidden_states' input.");
+
+    const auto draft_shape = hidden_states->get_partial_shape();
+    OPENVINO_ASSERT(draft_shape.rank().is_static() && draft_shape.rank().get_length() == 3,
+                    "DFlash draft hidden_states input must have rank 3.");
+    OPENVINO_ASSERT(draft_shape[0].is_dynamic() || draft_shape[0].get_length() == 1,
+                    "DFlash draft hidden_states input must use exported shape [1, seq_len, hidden].");
+
+    auto original_consumers = hidden_states->output(0).get_target_inputs();
+    hidden_states->set_partial_shape(ov::PartialShape({draft_shape[1], ov::Dimension(1), draft_shape[2]}));
+
+    auto reshape_shape = ov::op::v0::Constant::create(ov::element::i64,
+                                                     ov::Shape{3},
+                                                     std::vector<int64_t>{1, -1, 0});
+    auto reshape = std::make_shared<ov::op::v1::Reshape>(hidden_states, reshape_shape, true);
+    reshape->set_friendly_name("dflash_hidden_states_cb_to_draft_layout");
+
+    for (auto consumer : original_consumers) {
+        consumer.replace_source_output(reshape->output(0));
+    }
+    model->validate_nodes_and_infer_types();
 }
 
 }  // namespace dflash

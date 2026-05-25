@@ -72,9 +72,9 @@ public:
     ov::Tensor infer(int64_t seed_token, const ov::Tensor& hidden_delta) {
         OPENVINO_ASSERT(hidden_delta && hidden_delta.get_size() > 0, "DFlash hidden delta must be provided.");
         const auto hidden_delta_shape = hidden_delta.get_shape();
-        OPENVINO_ASSERT(hidden_delta_shape.size() == 3 && hidden_delta_shape[0] == BATCH_SIZE,
-                        "DFlash draft hidden_states input must have shape [1, seq_len, hidden].");
-        const size_t hidden_delta_length = hidden_delta_shape[1];
+        OPENVINO_ASSERT(hidden_delta_shape.size() == 3 && hidden_delta_shape[1] == BATCH_SIZE,
+                        "DFlash draft hidden_states input must have shape [seq_len, 1, hidden].");
+        const size_t hidden_delta_length = hidden_delta_shape[0];
 
         m_request.set_tensor("input_ids", build_input_ids(seed_token));
         m_request.set_tensor("hidden_states", hidden_delta);
@@ -207,6 +207,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     if (draft_model_desc_for_runner.device.empty()) {
         draft_model_desc_for_runner.device = main_model_desc.device;
     }
+    utils::dflash::reshape_draft_hidden_states_input_for_cb(draft_model_desc_for_runner.model);
     m_draft = std::make_shared<DFlashCBDraftRunner>(draft_model_desc_for_runner,
                                                     m_tokenizer,
                                                     m_rt_info);
@@ -432,8 +433,8 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
                                              state.generated_before_draft,
                                              generated_sequence.token_ids.size());
 
-        auto hidden_delta = dflash_cb::cb_hidden_delta_to_draft_input(generated_sequence.hidden_states);
-        hidden_delta = dflash_cb::truncate_normalized_hidden_state_from_end(hidden_delta, accounting.rejected);
+        auto hidden_delta = dflash_cb::truncate_normalized_hidden_state_from_end(generated_sequence.hidden_states,
+                                                                                 accounting.rejected);
         append_pending_hidden_delta(state, hidden_delta);
         state.generated_tokens = generated_sequence.token_ids;
         m_draft->sync_generated_tokens(state.generated_tokens);

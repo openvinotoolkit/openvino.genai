@@ -13,16 +13,6 @@
 
 namespace ov::genai::dflash_cb {
 
-inline ov::Tensor cb_hidden_delta_to_draft_input(const ov::Tensor& hidden_delta) {
-    OPENVINO_ASSERT(hidden_delta && hidden_delta.get_size() > 0, "DFlash hidden delta must be provided.");
-    const auto shape = hidden_delta.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3 && shape[1] == 1,
-                    "DFlash CB target hidden_states delta must have shape [seq_len, 1, hidden].");
-    auto reshaped = hidden_delta;
-    reshaped.set_shape({1, shape[0], shape[2]});
-    return reshaped;
-}
-
 inline void copy_tensor_bytes(const ov::Tensor& src, ov::Tensor& dst) {
     OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
                     "DFlash hidden state copy requires matching tensor element types.");
@@ -37,17 +27,17 @@ inline ov::Tensor truncate_normalized_hidden_state_from_end(const ov::Tensor& hi
     }
 
     auto shape = hidden_state.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1,
-                    "DFlash hidden_states delta must have shape [1, seq_len, hidden].");
-    const size_t current_seq_len = shape[1];
+    OPENVINO_ASSERT(shape.size() == 3 && shape[1] == 1,
+                    "DFlash hidden_states delta must have shape [seq_len, 1, hidden].");
+    const size_t current_seq_len = shape[0];
     if (tokens_to_remove >= current_seq_len) {
-        shape[1] = 0;
+        shape[0] = 0;
         return ov::Tensor(hidden_state.get_element_type(), shape);
     }
 
     ov::Coordinate start_coord(shape.size(), 0);
     ov::Coordinate end_coord(shape.begin(), shape.end());
-    end_coord[1] = current_seq_len - tokens_to_remove;
+    end_coord[0] = current_seq_len - tokens_to_remove;
     return ov::Tensor(hidden_state, start_coord, end_coord);
 }
 
@@ -64,9 +54,9 @@ public:
             return;
         }
         const auto shape = hidden_delta.get_shape();
-        OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1,
-                        "DFlash hidden delta buffer expects [1, seq_len, hidden] chunks.");
-        const size_t token_count = shape[1];
+        OPENVINO_ASSERT(shape.size() == 3 && shape[1] == 1,
+                        "DFlash hidden delta buffer expects [seq_len, 1, hidden] chunks.");
+        const size_t token_count = shape[0];
         if (token_count == 0) {
             return;
         }
@@ -94,19 +84,19 @@ public:
         }
 
         auto merged_shape = m_chunks.front().get_shape();
-        OPENVINO_ASSERT(merged_shape.size() == 3 && merged_shape[0] == 1,
-                        "DFlash hidden delta buffer expects [1, seq_len, hidden] chunks.");
-        merged_shape[1] = m_token_count;
+        OPENVINO_ASSERT(merged_shape.size() == 3 && merged_shape[1] == 1,
+                        "DFlash hidden delta buffer expects [seq_len, 1, hidden] chunks.");
+        merged_shape[0] = m_token_count;
         ov::Tensor merged(m_chunks.front().get_element_type(), merged_shape);
         size_t offset = 0;
         for (const auto& chunk : m_chunks) {
             const auto chunk_shape = chunk.get_shape();
-            OPENVINO_ASSERT(chunk_shape.size() == 3 && chunk_shape[0] == 1 && chunk_shape[2] == merged_shape[2],
+            OPENVINO_ASSERT(chunk_shape.size() == 3 && chunk_shape[1] == 1 && chunk_shape[2] == merged_shape[2],
                             "Cannot merge DFlash hidden deltas with incompatible shape.");
-            const size_t chunk_tokens = chunk_shape[1];
+            const size_t chunk_tokens = chunk_shape[0];
             ov::Tensor dst(merged,
-                           ov::Coordinate{0, offset, 0},
-                           ov::Coordinate{1, offset + chunk_tokens, merged_shape[2]});
+                           ov::Coordinate{offset, 0, 0},
+                           ov::Coordinate{offset + chunk_tokens, 1, merged_shape[2]});
             copy_tensor_bytes(chunk, dst);
             offset += chunk_tokens;
         }
