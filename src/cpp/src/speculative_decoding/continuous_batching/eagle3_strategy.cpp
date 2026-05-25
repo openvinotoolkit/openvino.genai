@@ -160,9 +160,24 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     draft_sampling_params.stop_strings = {};
     // remove first token from input_ids to create draft_input_ids
     ov::Tensor draft_input_ids = create_draft_input(input_ids);
+    ov::Tensor main_position_ids;
+    std::optional<int64_t> main_rope_delta;
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder) {
+        std::tie(main_position_ids, main_rope_delta) = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
+        ov::Tensor draft_position_ids = trim_first_token_position_ids(main_position_ids);
+        validate_trimmed_position_ids(main_position_ids, draft_position_ids);
+        m_inputs_embedder->set_position_ids(draft_position_ids);
+        m_inputs_embedder->set_rope_delta(compute_rope_delta(draft_position_ids));
+    }
     // Draft Eagle3 inference only uses the language model path. Multimodal auxiliary inputs such as
     // deepstack visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params, token_type_ids, prompt_ids)});
+    if (main_position_ids.get_size() > 0) {
+        m_inputs_embedder->set_position_ids(main_position_ids);
+        if (main_rope_delta.has_value()) {
+            m_inputs_embedder->set_rope_delta(*main_rope_delta);
+        }
+    }
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
@@ -226,5 +241,96 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     };
 
     return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
+}
+
+int64_t ContinuousBatchingPipeline::Eagle3DecodingImpl::compute_rope_delta(const ov::Tensor& position_ids) {
+    const ov::Shape shape = position_ids.get_shape();
+    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
+                    "Expected position_ids rank 2 or 3 when computing rope_delta.");
+
+    const size_t seq_axis = shape.size() == 3 ? 2 : 1;
+    OPENVINO_ASSERT(shape[seq_axis] > 0, "position_ids sequence length must be greater than 0.");
+
+    const int64_t* data = position_ids.data<const int64_t>();
+    const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
+    return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_trimmed_position_ids(const ov::Tensor& main_position_ids, const ov::Tensor& draft_position_ids) {
+    const ov::Shape main_shape = main_position_ids.get_shape();
+    const ov::Shape draft_shape = draft_position_ids.get_shape();
+
+    OPENVINO_ASSERT(main_shape.size() == draft_shape.size(),
+                    "main and draft position_ids rank mismatch.");
+
+    const size_t seq_axis = main_shape.size() == 3 ? 2 : 1;
+    OPENVINO_ASSERT(main_shape.size() == 2 || main_shape.size() == 3,
+                    "Expected position_ids rank 2 or 3 for Eagle3 validation.");
+    OPENVINO_ASSERT(main_shape[seq_axis] == draft_shape[seq_axis] + 1,
+                    "Draft position_ids sequence length must equal main sequence length minus one.");
+
+    if (main_shape.size() == 2) {
+        OPENVINO_ASSERT(main_shape[0] == draft_shape[0],
+                        "main and draft position_ids batch mismatch.");
+    } else {
+        OPENVINO_ASSERT(main_shape[0] == draft_shape[0] && main_shape[1] == draft_shape[1],
+                        "main and draft position_ids leading dimensions mismatch.");
+    }
+
+    const int64_t* main_data = main_position_ids.data<const int64_t>();
+    const int64_t* draft_data = draft_position_ids.data<const int64_t>();
+
+    if (main_shape.size() == 2) {
+        for (size_t idx = 0; idx < draft_shape[1]; ++idx) {
+            OPENVINO_ASSERT(draft_data[idx] == main_data[idx + 1],
+                            "Draft prompt position_ids must equal main position_ids without the first token.");
+        }
+        return;
+    }
+
+    const size_t planes = main_shape[0] * main_shape[1];
+    const size_t main_seq_len = main_shape[2];
+    const size_t draft_seq_len = draft_shape[2];
+    for (size_t plane = 0; plane < planes; ++plane) {
+        const size_t main_offset = plane * main_seq_len;
+        const size_t draft_offset = plane * draft_seq_len;
+        for (size_t idx = 0; idx < draft_seq_len; ++idx) {
+            OPENVINO_ASSERT(draft_data[draft_offset + idx] == main_data[main_offset + idx + 1],
+                            "Draft prompt position_ids must equal main position_ids without the first token.");
+        }
+    }
+}
+
+ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_position_ids(const ov::Tensor& position_ids) {
+    const ov::Shape shape = position_ids.get_shape();
+    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
+                    "Expected position_ids rank 2 or 3 for Eagle3 draft path.");
+
+    const size_t seq_axis = shape.size() == 3 ? 2 : 1;
+    OPENVINO_ASSERT(shape[seq_axis] > 1, "position_ids sequence length must be greater than 1 for Eagle3 draft path.");
+
+    ov::Shape draft_shape = shape;
+    draft_shape[seq_axis] -= 1;
+    ov::Tensor draft_position_ids(position_ids.get_element_type(), draft_shape);
+
+    const int64_t* src = position_ids.data<const int64_t>();
+    int64_t* dst = draft_position_ids.data<int64_t>();
+
+    if (shape.size() == 2) {
+        const size_t draft_seq_len = draft_shape[1];
+        std::copy_n(src + 1, draft_seq_len, dst);
+        return draft_position_ids;
+    }
+
+    const size_t planes = shape[0] * shape[1];
+    const size_t src_seq_len = shape[2];
+    const size_t draft_seq_len = draft_shape[2];
+    for (size_t plane = 0; plane < planes; ++plane) {
+        const size_t src_offset = plane * src_seq_len;
+        const size_t dst_offset = plane * draft_seq_len;
+        std::copy_n(src + src_offset + 1, draft_seq_len, dst + dst_offset);
+    }
+
+    return draft_position_ids;
 }
 }  // namespace ov::genai
