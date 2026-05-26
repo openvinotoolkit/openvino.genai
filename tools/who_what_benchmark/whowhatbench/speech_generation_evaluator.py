@@ -113,17 +113,14 @@ class KokoroModelWrapper:
 
     def __init__(self, model_id, ov_model=None):
         from kokoro import KPipeline
+        from kokoro.model import KModel
 
         self.model_type = "speech-generation"
         self._model_id = str(model_id)
         self._lang_code = "a"
-        # For voice loading resources, always use the HF repo ID
-        self._hf_repo_id = "hexgrad/Kokoro-82M" if ov_model is not None else self._model_id
 
         if ov_model is not None:
             # Optimum path: wrap OV model in KModel adapter for KPipeline inference
-            from kokoro.model import KModel
-
             class OVKokoroAdapter(KModel):
                 """Adapts Optimum OV Kokoro model to KModel interface for KPipeline."""
 
@@ -155,12 +152,19 @@ class KokoroModelWrapper:
                     waveform_tensor = torch.from_numpy(output) if not isinstance(output, torch.Tensor) else output
                     return waveform_tensor, torch.tensor([])
 
-            self._ov_adapter = OVKokoroAdapter(ov_model)
-            self._pipeline = KPipeline(lang_code=self._lang_code, repo_id=self._hf_repo_id, model=self._ov_adapter)
+            self._kmodel = OVKokoroAdapter(ov_model)
         else:
-            # HF path: use default KPipeline with HF model from repo_id
-            self._ov_adapter = None
-            self._pipeline = KPipeline(lang_code=self._lang_code, repo_id=self._hf_repo_id)
+            model_dir = Path(self._model_id)
+            if model_dir.is_dir():
+                config_path = model_dir / "config.json"
+                if not config_path.exists():
+                    raise ValueError(f"Kokoro local model directory is missing config.json: {config_path}")
+                self._kmodel = KModel(config=str(config_path))
+            else:
+                # if model_id is not a local directory, KModel will fetch config using repo_id.
+                self._kmodel = KModel(repo_id=self._model_id)
+
+        self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
 
     @staticmethod
     def _normalize_kokoro_lang_code(language: str) -> str:
@@ -196,11 +200,8 @@ class KokoroModelWrapper:
             self._lang_code = requested_lang_code
             from kokoro import KPipeline
 
-            # Recreate pipeline with new language (reuse adapter if present)
-            if self._ov_adapter is not None:
-                self._pipeline = KPipeline(lang_code=self._lang_code, repo_id=self._hf_repo_id, model=self._ov_adapter)
-            else:
-                self._pipeline = KPipeline(lang_code=self._lang_code, repo_id=self._hf_repo_id)
+            # Recreate pipeline with new language using the same underlying KModel.
+            self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
 
         selected_voice = voice.strip() if isinstance(voice, str) else ""
         if not selected_voice:
