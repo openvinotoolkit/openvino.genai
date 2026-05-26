@@ -82,9 +82,9 @@
 - 'tests/python_tests/samples/test_react_sample.py'
 - 'tests/python_tests/samples/test_speculative_decoding_lm.py'
 
-'category: ASR samples':
-- 'samples/automatic_speech_recognition/**/*'
-- 'samples/python/whisper_speech_recognition/**/*'
+'category: automatic speech recognition samples':
+- 'samples/cpp/automatic_speech_recognition/**/*'
+- 'samples/python/automatic_speech_recognition/**/*'
 
 'category: Image generation samples':
 - 'samples/cpp/image_generation/**/*'

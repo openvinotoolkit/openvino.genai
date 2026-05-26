@@ -433,7 +433,7 @@ jobs:
           - name: 'Whisper'
             # TODO: skip some tests temporary until https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5" -k "not test_smoke and not test_asr_constructors and not test_max_new_tokens and not test_language_mode and not test_task_mode and not test_language_autodetect and not test_asr_config_constructor and not test_initial_prompt_hotwords and not test_random_sampling"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 120
           # Only supported on X64 or ARM with SVE support
           # - name: 'Cacheopt E2E (Part 1)'
@@ -488,7 +488,7 @@ jobs:
             cmd: |
               python -m pip install transformers==4.57.6
               python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "transformers_lower_v5" -k "not test_smoke and not test_asr_constructors and not test_max_new_tokens and not test_language_mode and not test_task_mode and not test_language_autodetect and not test_asr_config_constructor and not test_initial_prompt_hotwords and not test_random_sampling"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 120
     defaults:
       run:
@@ -553,10 +553,10 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
-          - name: 'Whisper'
-            marker: 'whisper'
+          - name: 'Automatic Speech Recognition'
+            marker: 'automatic_speech_recognition_samples'
             cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition_samples.test }}
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'

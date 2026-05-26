@@ -14,7 +14,7 @@ struct ASRRawPerfMetrics {
 
 struct OPENVINO_GENAI_EXPORTS ASRPerfMetrics : public PerfMetrics {
     ASRPerfMetrics() = default;
-    ASRPerfMetrics(PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics){};
+    ASRPerfMetrics(const PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics) {}
 
     MeanStdPair features_extraction_duration;
     MeanStdPair word_level_timestamps_processing_duration;

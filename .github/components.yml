@@ -140,7 +140,7 @@ prompt_lookup:
 LLM_samples:
   revalidate: []
 
-ASR_samples:
+automatic_speech_recognition_samples:
   revalidate: []
 
 Image_generation_samples:
