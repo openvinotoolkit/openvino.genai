@@ -43,7 +43,7 @@ class ASRDecodedResults:
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
     """
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         ...
     @property
     def chunks(self) -> list[ASRDecodedResultChunk] | None:
