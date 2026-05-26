@@ -37,6 +37,7 @@ install(DIRECTORY
 install(DIRECTORY
             python/text_generation
             python/image_generation
+            python/video_generation
             python/speech_generation
             python/visual_language_chat
             python/automatic_speech_recognition

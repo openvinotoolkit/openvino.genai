@@ -90,6 +90,7 @@
 - 'samples/cpp/image_generation/**/*'
 - 'samples/python/image_generation/**/*'
 - 'tests/python_tests/samples/test_benchmark_image_gen.py'
+- 'tests/python_tests/samples/test_denoising_process.py'
 - 'tests/python_tests/samples/test_heterogeneous_stable_diffusion.py'
 - 'tests/python_tests/samples/test_text2image.py'
 - 'tests/python_tests/samples/test_image2image.py'
@@ -144,6 +145,7 @@
 - 'src/include/openvino/genai/speech_generation/**/*'
 - 'src/cpp/src/speech_generation/**/*'
 - 'src/python/py_speech_generation.cpp'
+- 'tests/python_tests/test_kokoro_pipeline.py'
 
 'category: Speech generation samples':
 - 'samples/cpp/speech_generation/**/*'
