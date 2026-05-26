@@ -82,8 +82,8 @@
 - 'tests/python_tests/samples/test_react_sample.py'
 - 'tests/python_tests/samples/test_speculative_decoding_lm.py'
 
-'category: Whisper samples':
-- 'samples/cpp/whisper_speech_recognition/**/*'
+'category: ASR samples':
+- 'samples/automatic_speech_recognition/**/*'
 - 'samples/python/whisper_speech_recognition/**/*'
 
 'category: Image generation samples':
@@ -110,10 +110,13 @@
 'category: structured output generation':
 - 'src/cpp/src/sampling/structured_output/*'
 
-'category: whisper':
+'category: automatic speech recognition':
+- 'src/cpp/include/openvino/genai/automatic_speech_recognition/**/*'
 - 'src/cpp/include/openvino/genai/whisper_generation_config.hpp'
 - 'src/cpp/include/openvino/genai/whisper_pipeline.hpp'
+- 'src/cpp/src/automatic_speech_recognition/**/*'
 - 'src/cpp/src/whisper/**/*'
+- 'src/python/py_asr_pipeline.cpp'
 - 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_pipeline.py'
 - 'tests/python_tests/test_whisper_pipeline_static.py'
