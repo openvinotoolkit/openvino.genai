@@ -23,6 +23,8 @@ PROMPTS_FILE = "speech_generation_prompts.yaml"
 DEFAULT_SPEAKER_EMBEDDING_REPO_ID = "Xenova/cmu-arctic-xvectors-extracted"
 DEFAULT_SPEAKER_EMBEDDING_FILENAME = "cmu_us_slt_arctic-wav-arctic_a0508.bin"
 SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
+KOKORO_SPEAKER_EMB_SHAPE = (510, 1, 256)
+KOKORO_SAMPLE_RATE = 24000
 LOGGER = logging.getLogger(__name__)
 
 SPEAKER_SCORE_COL = "speaker score"
@@ -108,7 +110,8 @@ class SpeechT5Wrapper:
 class KokoroModelWrapper:
     """Unified wrapper for Kokoro (HF or Optimum) via KPipeline.
 
-    Supports both HF models and Optimum OV models by wrapping OV models in a lightweight KModel adapter.
+    HF path uses KModel + KPipeline.
+    Optimum path uses OVModelForTextToSpeechSeq2Seq preprocess_input() + generate().
     """
 
     def __init__(self, model_id, ov_model=None):
@@ -118,41 +121,11 @@ class KokoroModelWrapper:
         self.model_type = "speech-generation"
         self._model_id = str(model_id)
         self._lang_code = "a"
+        self._ov_model = ov_model
 
         if ov_model is not None:
-            # Optimum path: wrap OV model in KModel adapter for KPipeline inference
-            class OVKokoroAdapter(KModel):
-                """Adapts Optimum OV Kokoro model to KModel interface for KPipeline."""
-
-                def __init__(self, optimum_model):
-                    import torch
-
-                    torch.nn.Module.__init__(self)
-                    self.ov_model = optimum_model
-
-                    # Extract config from Optimum model
-                    config = optimum_model.config
-                    self.vocab = getattr(config, "vocab", {})
-                    self.context_length = getattr(config, "context_length", 510)
-
-                @property
-                def device(self):
-                    import torch
-
-                    return torch.device("cpu")
-
-                def forward_with_tokens(self, input_ids, ref_s, speed=1.0):
-                    import torch
-
-                    # Call Optimum model to generate audio
-                    output = self.ov_model.generate(input_ids=input_ids, ref_s=ref_s)
-                    # Return (waveform_tensor, tokens_tensor) as KModel expects
-                    if isinstance(output, tuple):
-                        output = output[0]
-                    waveform_tensor = torch.from_numpy(output) if not isinstance(output, torch.Tensor) else output
-                    return waveform_tensor, torch.tensor([])
-
-            self._kmodel = OVKokoroAdapter(ov_model)
+            self._kmodel = None
+            self._pipeline = None
         else:
             model_dir = Path(self._model_id)
             if model_dir.is_dir():
@@ -164,7 +137,7 @@ class KokoroModelWrapper:
                 # if model_id is not a local directory, KModel will fetch config using repo_id.
                 self._kmodel = KModel(repo_id=self._model_id)
 
-        self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
+            self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
 
     @staticmethod
     def _normalize_kokoro_lang_code(language: str) -> str:
@@ -192,27 +165,14 @@ class KokoroModelWrapper:
             f"Unsupported Kokoro language '{language}'. Use one of: en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, zh."
         )
 
+    def get_speaker_embedding_shape(self):
+        return KOKORO_SPEAKER_EMB_SHAPE
+
     def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
-        del speaker_embedding  # Kokoro uses voice names, not embedding tensors.
-
         requested_lang_code = self._normalize_kokoro_lang_code(language)
-        if requested_lang_code != self._lang_code:
-            self._lang_code = requested_lang_code
-            from kokoro import KPipeline
-
-            # Recreate pipeline with new language using the same underlying KModel.
-            self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
-
         selected_voice = voice.strip() if isinstance(voice, str) else ""
         if not selected_voice:
             selected_voice = "af_heart"
-
-        generator = self._pipeline(prompt, voice=selected_voice)
-        result = next(iter(generator), None)
-        if result is None:
-            raise ValueError("Kokoro pipeline returned no audio output.")
-
-        audio = result.audio
 
         class _Speech:
             def __init__(self, data):
@@ -221,7 +181,49 @@ class KokoroModelWrapper:
         class _SpeechResult:
             def __init__(self, data):
                 self.speeches = [_Speech(data)]
-                self.output_sample_rate = 24000
+                self.output_sample_rate = KOKORO_SAMPLE_RATE
+
+        # if optimum path
+        if self._ov_model is not None:
+            preprocess_kwargs = {
+                "text": prompt,
+                "lang_code": requested_lang_code,
+            }
+            if speaker_embedding is not None:
+                preprocess_kwargs["speaker_embedding"] = (
+                    speaker_embedding.data if hasattr(speaker_embedding, "data") else speaker_embedding
+                )
+            else:
+                preprocess_kwargs["voice"] = selected_voice
+
+            preprocessed = self._ov_model.preprocess_input(**preprocess_kwargs)
+            output = self._ov_model.generate(**preprocessed)
+
+            try:
+                import torch
+
+                if isinstance(output, torch.Tensor):
+                    audio = output.detach().cpu().reshape(-1).numpy()
+                else:
+                    audio = torch.as_tensor(output).cpu().reshape(-1).numpy()
+            except ImportError:
+                audio = np.asarray(output, dtype=np.float32).reshape(-1)
+
+            return _SpeechResult(audio)
+
+        if requested_lang_code != self._lang_code:
+            self._lang_code = requested_lang_code
+            from kokoro import KPipeline
+
+            # Recreate pipeline with new language using the same underlying KModel.
+            self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
+
+        generator = self._pipeline(prompt, voice=selected_voice)
+        result = next(iter(generator), None)
+        if result is None:
+            raise ValueError("Kokoro pipeline returned no audio output.")
+
+        audio = result.audio
 
         return _SpeechResult(audio)
 
@@ -440,11 +442,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         audios = []
         prompt_values = data["prompts"].values
-
-        if model is not None and hasattr(model, "get_speaker_embedding_shape"):
-            expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
-        else:
-            expected_shape = SPEECHT5_SPEAKER_EMB_SHAPE
+        expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
 
         for idx, prompt in tqdm(enumerate(prompt_values), total=len(prompt_values), desc="Evaluate pipeline"):
             speaker_embedding_file_path = self.speaker_embedding_file_path
