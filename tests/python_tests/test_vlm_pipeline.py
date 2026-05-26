@@ -316,10 +316,7 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
     _maybe_skip_unsupported_model_export(VLM_EAGLE3_MAIN_MODEL_ID)
     _maybe_skip_unsupported_model_export(VLM_EAGLE3_DRAFT_MODEL_ID)
-    draft_model_path = download_and_convert_model(
-        VLM_EAGLE3_DRAFT_MODEL_ID,
-        model_kwargs={"task": "image-text-to-text"},
-    ).models_path
+    draft_model_path = download_and_convert_model(VLM_EAGLE3_DRAFT_MODEL_ID).models_path
     return Path(_get_ov_model(VLM_EAGLE3_MAIN_MODEL_ID)), draft_model_path
 
 

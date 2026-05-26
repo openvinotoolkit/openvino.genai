@@ -118,6 +118,8 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_em
 
     OPENVINO_ASSERT(shape.size() == 3u, "Input embedding tensor shape size should be 3.");
     OPENVINO_ASSERT(shape[0] == 1u, "Input embedding tensor only support batch == 1.");
+    OPENVINO_ASSERT(element_type == ov::element::f32,
+                    "Eagle3 continuous batching embeddings path only supports f32 input embeddings.");
 
     size_t original_length = shape[1];
 
@@ -127,7 +129,7 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_em
 
     ov::Tensor draft_input_embeddings(element_type, {1, new_length, shape[2]});
 
-    // Copy data using byte-wise copy to handle any element type
+    // Copy the f32 embedding rows after dropping the first token.
     size_t embedding_row_bytes = shape[2] * element_type.size() ;
     const uint8_t* src_data = static_cast<const uint8_t*>(original_input_embeddings.data());
     uint8_t* dst_data = static_cast<uint8_t*>(draft_input_embeddings.data());
@@ -158,8 +160,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
-    // remove first token from input_ids to create draft_input_ids
-    ov::Tensor draft_input_ids = create_draft_input(input_ids);
+    // remove first token from input_ids to create the draft model input
+    ov::Tensor draft_input = create_draft_input(input_ids);
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder) {
@@ -169,9 +171,9 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         m_inputs_embedder->set_position_ids(draft_position_ids);
         m_inputs_embedder->set_rope_delta(compute_rope_delta(draft_position_ids));
     }
-    // Draft Eagle3 inference only uses the language model path. Multimodal auxiliary inputs such as
-    // deepstack visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params, token_type_ids, prompt_ids)});
+    // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
+    // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, token_type_ids, prompt_ids)});
     if (main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
         if (main_rope_delta.has_value()) {
