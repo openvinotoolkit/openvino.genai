@@ -63,9 +63,9 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     }
 };
 
+class ASRPipelineImplBase;
+
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
-    class ASRPipelineImplBase;
-    class WhisperASRPipelineAdapter;
     std::unique_ptr<ASRPipelineImplBase> m_impl;
 
 public:

@@ -83,7 +83,7 @@ ov::genai::ASRDecodedResults to_asr_results(ov::genai::WhisperDecodedResults&& w
 
 namespace ov::genai {
 
-class ASRPipeline::WhisperASRPipelineAdapter : public ASRPipeline::ASRPipelineImplBase {
+class WhisperASRPipelineAdapter : public ASRPipelineImplBase {
     WhisperPipeline m_whisper_pipeline;
 
 public:

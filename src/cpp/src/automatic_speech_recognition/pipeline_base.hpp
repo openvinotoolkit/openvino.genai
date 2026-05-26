@@ -8,7 +8,7 @@
 
 namespace ov::genai {
 
-class ASRPipeline::ASRPipelineImplBase {
+class ASRPipelineImplBase {
 public:
     ASRGenerationConfig m_generation_config;
     Tokenizer m_tokenizer;
