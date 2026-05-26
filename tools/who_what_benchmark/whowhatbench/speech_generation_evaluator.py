@@ -22,6 +22,7 @@ from .tts_similarity import TTSSimilarityEvaluator
 PROMPTS_FILE = "speech_generation_prompts.yaml"
 DEFAULT_SPEAKER_EMBEDDING_REPO_ID = "Xenova/cmu-arctic-xvectors-extracted"
 DEFAULT_SPEAKER_EMBEDDING_FILENAME = "cmu_us_slt_arctic-wav-arctic_a0508.bin"
+SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
 LOGGER = logging.getLogger(__name__)
 
 SPEAKER_SCORE_COL = "speaker score"
@@ -47,7 +48,7 @@ class SpeechT5Wrapper:
 
     def get_speaker_embedding_shape(self):
         # SpeechT5 expects a single xvector with 512 values.
-        return (1, 512)
+        return SPEECHT5_SPEAKER_EMB_SHAPE
 
     def generate(self, prompt, speaker_embedding=None, **_kwargs):
         if speaker_embedding is None:
@@ -370,7 +371,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             raise ValueError(f"Speaker embedding file is empty: {speaker_embedding_file_path}")
 
         if expected_shape is None:
-            expected_shape = (1, 512)
+            expected_shape = SPEECHT5_SPEAKER_EMB_SHAPE
 
         expected_dims = tuple(int(dim) for dim in expected_shape)
         expected_flat_size = int(np.prod(expected_dims))
@@ -442,7 +443,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         if model is not None and hasattr(model, "get_speaker_embedding_shape"):
             expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
         else:
-            expected_shape = (1, 512)
+            expected_shape = SPEECHT5_SPEAKER_EMB_SHAPE
 
         for idx, prompt in tqdm(enumerate(prompt_values), total=len(prompt_values), desc="Evaluate pipeline"):
             speaker_embedding_file_path = self.speaker_embedding_file_path
