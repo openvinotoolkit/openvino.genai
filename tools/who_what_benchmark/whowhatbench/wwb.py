@@ -348,7 +348,7 @@ def parse_args():
         "--speech-voice",
         type=str,
         default="",
-        help="Speech-generation voice name (for example, af_heart for Kokoro HF).",
+        help="Speech-generation voice name (for example, af_heart for Kokoro). If omitted, Kokoro defaults to af_heart.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
@@ -403,12 +403,6 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
-
-    if args.model_type == "speech-generation" and args.hf:
-        model_id = args.base_model if args.base_model is not None else args.target_model
-        if isinstance(model_id, str) and "kokoro" in model_id.lower() and not args.speech_voice:
-            raise ValueError("Kokoro HF mode requires --speech-voice, for example --speech-voice af_heart")
-
 
 def load_prompts(args):
     if args.dataset is None:
@@ -688,6 +682,14 @@ def genai_gen_text2video(
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
+def _is_kokoro_optimum_export(model):
+    if not hasattr(model, "model_dir"):
+        return False
+
+    voices_dir = Path(model.model_dir) / "voices"
+    return voices_dir.is_dir()
+
+
 def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
@@ -698,17 +700,13 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
 
     selected_voice = voice.strip() if isinstance(voice, str) else ""
 
-    if speaker_embedding is None and selected_voice:
-        if not hasattr(model, "model_dir"):
-            raise ValueError("--speech-voice requires a GenAI model with a local model_dir and voice-pack files.")
-
-        voices_dir = Path(model.model_dir) / "voices"
-        if not voices_dir.is_dir():
-            raise ValueError(
-                f"--speech-voice requires a voices directory with voice-pack .bin files. Missing: {voices_dir}"
-            )
+    # Only Kokoro voice-pack exports use named voice bins under <model_dir>/voices.
+    if _is_kokoro_optimum_export(model) and speaker_embedding is None:
+        if not selected_voice:
+            selected_voice = "af_heart"
 
         # Voice selection loads <model_dir>/voices/<voice>.bin.
+        voices_dir = Path(model.model_dir) / "voices"
         voice_path = voices_dir / f"{selected_voice}.bin"
         if voice_path.exists():
             speaker_data = np.fromfile(voice_path, dtype=np.float32)
