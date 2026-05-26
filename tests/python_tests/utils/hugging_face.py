@@ -291,7 +291,6 @@ FORCE_OPTIMUM_CLI_EXPORT_MODELS = {
     "optimum-intel-internal-testing/tiny-random-flux": "text-to-image",
     "optimum-intel-internal-testing/tiny-random-lfm2": "text-generation-with-past",
     "optimum-intel-internal-testing/tiny-random-qwen3-next": "text-generation-with-past",
-    "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3": "text-generation-with-past",
 }
 
 

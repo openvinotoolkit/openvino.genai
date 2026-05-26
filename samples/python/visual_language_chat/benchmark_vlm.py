@@ -50,7 +50,7 @@ def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
     parser.add_argument("-dm", "--draft_model", type=str, help="Path to draft model and tokenizers base directory")
-    parser.add_argument("-na", "--num_assistant_tokens", type=int, default=5, help="Number of assistant tokens")
+    parser.add_argument("-nat", "--num_assistant_tokens", type=int, default=5, help="Number of assistant tokens")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")

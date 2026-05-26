@@ -20,6 +20,7 @@ int main(int argc, char* argv[]) try {
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
     ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
+    ("nat,num_assistant_tokens", "Number of assistant tokens", cxxopts::value<size_t>()->default_value(std::to_string(5)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
     ("pr,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
@@ -83,6 +84,7 @@ int main(int argc, char* argv[]) try {
     ov::AnyMap properties;
     if (!draft_models_path.empty()) {
         properties.insert(ov::genai::draft_model(draft_models_path, device));
+        config.num_assistant_tokens = result["num_assistant_tokens"].as<size_t>();
     }
 
     std::cout << ov::get_openvino_version() << std::endl;
