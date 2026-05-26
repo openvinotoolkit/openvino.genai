@@ -11,7 +11,11 @@
 #include <openvino/core/except.hpp>
 #include <openvino/runtime/tensor.hpp>
 
+#include "openvino/genai/generation_config.hpp"
+
 namespace ov::genai::dflash_cb {
+
+inline constexpr size_t DEFAULT_NUM_ASSISTANT_TOKENS = 7;
 
 inline void copy_tensor_bytes(const ov::Tensor& src, ov::Tensor& dst) {
     OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
@@ -114,27 +118,45 @@ private:
     size_t m_token_count = 0;
 };
 
-inline ov::Tensor build_draft_input_ids(int64_t seed_token, int64_t mask_token_id, size_t block_size) {
-    OPENVINO_ASSERT(block_size > 1, "DFlash block_size must be greater than 1.");
-    ov::Tensor input_ids(ov::element::i64, {1, block_size});
+inline void ensure_num_assistant_tokens_is_set(GenerationConfig& config) {
+    OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
+                    "DFlash CB/PA only supports num_assistant_tokens; assistant_confidence_threshold must be 0.f.");
+    OPENVINO_ASSERT(config.max_ngram_size == 0,
+                    "DFlash CB/PA does not support prompt lookup decoding; max_ngram_size must be 0.");
+    if (config.num_assistant_tokens == 0) {
+        config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
+    }
+}
+
+inline ov::Tensor build_draft_input_ids(int64_t seed_token, int64_t mask_token_id, size_t candidate_count) {
+    OPENVINO_ASSERT(candidate_count > 0, "DFlash candidate_count must be greater than 0.");
+    const size_t draft_input_length = candidate_count + 1;
+    ov::Tensor input_ids(ov::element::i64, {1, draft_input_length});
     auto* data = input_ids.data<int64_t>();
     data[0] = seed_token;
-    std::fill(data + 1, data + block_size, mask_token_id);
+    std::fill(data + 1, data + draft_input_length, mask_token_id);
     return input_ids;
 }
 
 inline ov::Tensor build_draft_position_ids(size_t committed_context_length,
                                            size_t hidden_delta_length,
-                                           size_t block_size) {
-    OPENVINO_ASSERT(block_size > 1, "DFlash block_size must be greater than 1.");
-    ov::Tensor position_ids(ov::element::i64, {1, hidden_delta_length + block_size});
+                                           size_t candidate_count) {
+    OPENVINO_ASSERT(candidate_count > 0, "DFlash candidate_count must be greater than 0.");
+    ov::Tensor position_ids(ov::element::i64, {1, hidden_delta_length + candidate_count + 1});
     auto* data = position_ids.data<int64_t>();
     std::iota(data, data + position_ids.get_size(), static_cast<int64_t>(committed_context_length));
     return position_ids;
 }
 
-inline size_t candidate_count(size_t block_size, size_t generated_len, size_t max_new_tokens) {
-    OPENVINO_ASSERT(block_size > 1, "DFlash block_size must be greater than 1.");
+inline size_t draft_candidate_count(size_t num_assistant_tokens, size_t generated_len, size_t max_new_tokens) {
+    OPENVINO_ASSERT(num_assistant_tokens > 0, "DFlash num_assistant_tokens must be greater than 0.");
+    if (generated_len >= max_new_tokens) {
+        return 0;
+    }
+    return num_assistant_tokens;
+}
+
+inline size_t validation_candidate_count(size_t draft_count, size_t generated_len, size_t max_new_tokens) {
     if (generated_len >= max_new_tokens) {
         return 0;
     }
@@ -142,7 +164,7 @@ inline size_t candidate_count(size_t block_size, size_t generated_len, size_t ma
     if (remaining <= 1) {
         return 0;
     }
-    return std::min(block_size - 1, remaining - 1);
+    return std::min(draft_count, remaining - 1);
 }
 
 struct ValidationAccounting {

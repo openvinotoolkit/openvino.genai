@@ -72,24 +72,56 @@ TEST(DFlashCBHiddenState, TruncatesRejectedTail) {
 }
 
 TEST(DFlashCBDraftInputs, BuildsSeedMaskBlock) {
-    auto input_ids = ov::genai::dflash_cb::build_draft_input_ids(42, 99, 4);
+    auto input_ids = ov::genai::dflash_cb::build_draft_input_ids(42, 99, 3);
 
     ASSERT_EQ(input_ids.get_shape(), ov::Shape({1, 4}));
     ASSERT_EQ(int64_tensor_values(input_ids), (std::vector<int64_t>{42, 99, 99, 99}));
 }
 
 TEST(DFlashCBDraftInputs, BuildsPositionIdsFromCommittedLength) {
-    auto position_ids = ov::genai::dflash_cb::build_draft_position_ids(5, 2, 4);
+    auto position_ids = ov::genai::dflash_cb::build_draft_position_ids(5, 2, 3);
 
     ASSERT_EQ(position_ids.get_shape(), ov::Shape({1, 6}));
     ASSERT_EQ(int64_tensor_values(position_ids), (std::vector<int64_t>{5, 6, 7, 8, 9, 10}));
 }
 
-TEST(DFlashCBCandidatePlanning, RespectsFinalToken) {
-    ASSERT_EQ(ov::genai::dflash_cb::candidate_count(4, 0, 10), 3);
-    ASSERT_EQ(ov::genai::dflash_cb::candidate_count(4, 8, 10), 1);
-    ASSERT_EQ(ov::genai::dflash_cb::candidate_count(4, 9, 10), 0);
-    ASSERT_EQ(ov::genai::dflash_cb::candidate_count(4, 10, 10), 0);
+TEST(DFlashCBGenerationConfig, DefaultsAssistantTokensToSeven) {
+    ov::genai::GenerationConfig config;
+
+    ov::genai::dflash_cb::ensure_num_assistant_tokens_is_set(config);
+
+    ASSERT_EQ(config.num_assistant_tokens, ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS);
+}
+
+TEST(DFlashCBGenerationConfig, PreservesExplicitAssistantTokens) {
+    ov::genai::GenerationConfig config;
+    config.num_assistant_tokens = 2;
+
+    ov::genai::dflash_cb::ensure_num_assistant_tokens_is_set(config);
+
+    ASSERT_EQ(config.num_assistant_tokens, 2);
+}
+
+TEST(DFlashCBCandidatePlanning, KeepsDraftWindowStableUntilGenerationEnds) {
+    ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(3, 0, 10), 3);
+    ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(3, 8, 10), 3);
+    ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(3, 9, 10), 3);
+    ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(3, 10, 10), 0);
+}
+
+TEST(DFlashCBCandidatePlanning, ClampsValidationWindowToTargetLength) {
+    ASSERT_EQ(ov::genai::dflash_cb::validation_candidate_count(3, 0, 10), 3);
+    ASSERT_EQ(ov::genai::dflash_cb::validation_candidate_count(3, 8, 10), 1);
+    ASSERT_EQ(ov::genai::dflash_cb::validation_candidate_count(3, 9, 10), 0);
+    ASSERT_EQ(ov::genai::dflash_cb::validation_candidate_count(3, 10, 10), 0);
+}
+
+TEST(DFlashCBCandidatePlanning, SupportsSingleAssistantToken) {
+    ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(1, 0, 10), 1);
+    ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(1, 8, 10), 1);
+    ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(1, 9, 10), 1);
+    ASSERT_EQ(ov::genai::dflash_cb::validation_candidate_count(1, 8, 10), 1);
+    ASSERT_EQ(ov::genai::dflash_cb::validation_candidate_count(1, 9, 10), 0);
 }
 
 TEST(DFlashCBValidationAccounting, ComputesAcceptedAndRejected) {

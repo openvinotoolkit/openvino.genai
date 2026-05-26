@@ -20,7 +20,7 @@ def _local_dflash_cb_models():
 
     repo_root = Path(__file__).resolve().parents[3]
     target_model_path = repo_root / "models" / "qwen3-coder-30b-a3b-instruct-int4-annotated-ov"
-    draft_model_path = repo_root / "models" / "qwen3-coder-30b-a3b-dflash-stateful-woq-int8-ov"
+    draft_model_path = repo_root / "models" / "qwen3-coder-30b-a3b-dflash-stateful-bsfix-woq-int8-ov"
     if not target_model_path.exists() or not draft_model_path.exists():
         pytest.skip("Local DFlash target/draft artifacts are not available")
 
@@ -203,6 +203,35 @@ def test_dflash_local_perf_metrics_are_populated():
     del pipe
     del draft
     gc.collect()
+
+
+@pytest.mark.parametrize(
+    ("num_assistant_tokens", "expected_max_draft_batch"),
+    [
+        (1, 1),
+        (2, 2),
+        (0, 7),
+    ],
+)
+def test_dflash_local_num_assistant_tokens_controls_draft_window(
+    num_assistant_tokens,
+    expected_max_draft_batch,
+):
+    ov_genai = pytest.importorskip("openvino_genai")
+    prompt = "Write a short Python loop that sums a list."
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=12, ignore_eos=True)
+    generation_config.num_assistant_tokens = num_assistant_tokens
+
+    target_snapshots, dflash_results = _generate_target_then_dflash_cb("CPU", [prompt], generation_config)
+    dflash_result = dflash_results[0]
+    _assert_same_generation(prompt, target_snapshots[0], dflash_result)
+
+    metrics = dflash_result["extended_perf_metrics"]
+    assert metrics is not None
+    draft_batch_sizes = metrics.draft_model_metrics.raw_metrics.m_batch_sizes
+    assert draft_batch_sizes
+    assert max(draft_batch_sizes) == expected_max_draft_batch
+    assert all(batch_size <= expected_max_draft_batch for batch_size in draft_batch_sizes)
 
 
 def test_dflash_local_rejects_sampling():

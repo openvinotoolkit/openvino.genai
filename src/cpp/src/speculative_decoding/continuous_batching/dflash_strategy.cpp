@@ -42,10 +42,7 @@ public:
         : m_tokenizer(tokenizer),
           m_request(create_draft_infer_request(model_desc)),
           m_sampler(tokenizer),
-          // TODO: we need to make block size configurable at load time instead at export time.
-          m_block_size(rt_info.block_size),
           m_mask_token_id(rt_info.mask_token_id) {
-        OPENVINO_ASSERT(m_block_size > 1, "DFlash block_size must be greater than 1.");
         m_has_beam_idx = has_compiled_input(m_request.get_compiled_model(), "beam_idx");
         if (m_has_beam_idx) {
             m_beam_idx = ov::Tensor(ov::element::i32, {BATCH_SIZE});
@@ -84,27 +81,25 @@ public:
         seq->set_status(SequenceStatus::RUNNING);
     }
 
-    ov::Tensor infer(int64_t seed_token, const ov::Tensor& hidden_delta) {
+    ov::Tensor infer(int64_t seed_token, const ov::Tensor& hidden_delta, size_t candidate_count) {
         OPENVINO_ASSERT(hidden_delta && hidden_delta.get_size() > 0, "DFlash hidden delta must be provided.");
         const auto hidden_delta_shape = hidden_delta.get_shape();
         OPENVINO_ASSERT(hidden_delta_shape.size() == 3 && hidden_delta_shape[1] == BATCH_SIZE,
                         "DFlash draft hidden_states input must have shape [seq_len, 1, hidden].");
         const size_t hidden_delta_length = hidden_delta_shape[0];
 
-        m_request.set_tensor("input_ids", build_input_ids(seed_token));
+        m_request.set_tensor("input_ids", build_input_ids(seed_token, candidate_count));
         m_request.set_tensor("hidden_states", hidden_delta);
-        m_request.set_tensor("position_ids", build_position_ids(hidden_delta_length));
+        m_request.set_tensor("position_ids", build_position_ids(hidden_delta_length, candidate_count));
         update_inference_time(execute_inference());
         m_committed_context_length += hidden_delta_length;
         return m_request.get_tensor("logits");
     }
 
     std::vector<DraftCandidateToken> sample_candidates(const ov::Tensor& logits, size_t candidate_count) {
-        candidate_count = std::min(candidate_count, m_block_size - 1);
         std::vector<DraftCandidateToken> candidates;
         candidates.reserve(candidate_count);
         const auto shape = logits.get_shape();
-        OPENVINO_ASSERT(shape.size() == 3 && shape[1] >= candidate_count, "Invalid DFlash draft logits shape.");
         for (size_t idx = 0; idx < candidate_count; ++idx) {
             ov::Tensor one_position(logits,
                                     ov::Coordinate{0, idx, 0},
@@ -139,12 +134,12 @@ private:
             .create_infer_request();
     }
 
-    ov::Tensor build_input_ids(int64_t seed_token) const {
-        return dflash_cb::build_draft_input_ids(seed_token, m_mask_token_id, m_block_size);
+    ov::Tensor build_input_ids(int64_t seed_token, size_t candidate_count) const {
+        return dflash_cb::build_draft_input_ids(seed_token, m_mask_token_id, candidate_count);
     }
 
-    ov::Tensor build_position_ids(size_t hidden_delta_length) const {
-        return dflash_cb::build_draft_position_ids(m_committed_context_length, hidden_delta_length, m_block_size);
+    ov::Tensor build_position_ids(size_t hidden_delta_length, size_t candidate_count) const {
+        return dflash_cb::build_draft_position_ids(m_committed_context_length, hidden_delta_length, candidate_count);
     }
 
     std::vector<DraftCandidateToken> sample_one_candidate(const ov::Tensor& logits) {
@@ -191,7 +186,6 @@ private:
     bool m_has_beam_idx = false;
     ov::Tensor m_beam_idx;
     size_t m_committed_context_length = 0;
-    size_t m_block_size = 0;
     int64_t m_mask_token_id = -1;
 };
 
@@ -201,7 +195,6 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     const ov::genai::utils::dflash::DFlashRTInfo& rt_info)
     : m_rt_info(rt_info) {
     OPENVINO_ASSERT(m_rt_info.dflash_mode, "DFlash continuous batching requires dflash_mode=true.");
-    OPENVINO_ASSERT(m_rt_info.block_size > 1, "DFlash block_size must be greater than 1.");
     OPENVINO_ASSERT(!m_rt_info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
 
     auto main_model = main_model_desc.model;
@@ -218,7 +211,9 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     utils::dflash::expose_target_hidden_states(main_model, m_rt_info.target_layer_ids);
 
     m_tokenizer = main_model_desc.tokenizer;
-    m_generation_config = main_model_desc.generation_config;
+    auto main_generation_config = main_model_desc.generation_config;
+    dflash_cb::ensure_num_assistant_tokens_is_set(main_generation_config);
+    m_generation_config = main_generation_config;
     auto draft_model_desc_for_runner = draft_model_desc;
     if (draft_model_desc_for_runner.device.empty()) {
         draft_model_desc_for_runner.device = main_model_desc.device;
@@ -231,7 +226,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         main_model,
         main_model_desc.tokenizer,
-        main_model_desc.generation_config,
+        main_generation_config,
         main_model_desc.scheduler_config,
         main_model_desc.device,
         main_model_desc.properties,
@@ -249,7 +244,8 @@ GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_gene
     auto draft_config = config;
     draft_config.ignore_eos = true;
     draft_config.stop_strings = {};
-    draft_config.max_new_tokens = config.max_new_tokens + m_rt_info.block_size;
+    draft_config.max_new_tokens = config.max_new_tokens + config.num_assistant_tokens;
+    draft_config.num_assistant_tokens = 0;
     return draft_config;
 }
 
@@ -296,15 +292,17 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     const auto input_shape = input_ids.get_shape();
     OPENVINO_ASSERT(input_shape.size() == 2 && input_shape[0] == 1 && input_shape[1] > 0,
                     "Expected DFlash input_ids shape [1, seq_len].");
+    auto sampling_params_copy = sampling_params;
+    dflash_cb::ensure_num_assistant_tokens_is_set(sampling_params_copy);
     RequestState state;
-    state.generation_config = sampling_params;
+    state.generation_config = sampling_params_copy;
     state.prompt_len = input_shape[1];
-    m_draft->initialize_sequence(input_ids, make_draft_generation_config(sampling_params));
+    m_draft->initialize_sequence(input_ids, make_draft_generation_config(sampling_params_copy));
     m_request_states[request_id] = std::move(state);
 
     return m_main_pipeline->add_request(request_id,
                                         input_ids,
-                                        sampling_params,
+                                        sampling_params_copy,
                                         token_type_ids,
                                         prompt_ids,
                                         lm_extra_inputs);
@@ -347,9 +345,13 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
             continue;
         }
 
-        const size_t candidate_count =
-            dflash_cb::candidate_count(m_rt_info.block_size, generated_len, state.generation_config.max_new_tokens);
-        if (candidate_count == 0) {
+        const size_t draft_count =
+            dflash_cb::draft_candidate_count(state.generation_config.num_assistant_tokens,
+                                            generated_len,
+                                            state.generation_config.max_new_tokens);
+        const size_t validation_count =
+            dflash_cb::validation_candidate_count(draft_count, generated_len, state.generation_config.max_new_tokens);
+        if (validation_count == 0) {
             state.draft_generated = 0;
             continue;
         }
@@ -357,9 +359,9 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         const int64_t seed_token = state.generated_tokens.back();
         validate_hidden_prefix_length(state);
         auto hidden_delta = materialize_pending_hidden_delta(state);
-        auto draft_logits = m_draft->infer(seed_token, hidden_delta);
+        auto draft_logits = m_draft->infer(seed_token, hidden_delta, draft_count);
         clear_pending_hidden_delta(state);
-        auto candidates = m_draft->sample_candidates(draft_logits, candidate_count);
+        auto candidates = m_draft->sample_candidates(draft_logits, validation_count);
 
         state.generated_before_draft = state.generated_tokens.size();
         state.draft_generated = candidates.size();
