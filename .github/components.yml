@@ -22,7 +22,7 @@ tests_dependencies:
 samples_dependencies:
   revalidate:
     - LLM_samples
-    - ASR_samples
+    - automatic_speech_recognition_samples
     - Image_generation_samples
     - Video_generation_samples
     - VLM_samples
@@ -44,7 +44,7 @@ text_streamer:
     - prompt_lookup
     - continuous_batching
     - LLM_samples
-    - ASR_samples
+    - automatic_speech_recognition_samples
     - VLM_samples
 
 sampling:
@@ -56,7 +56,7 @@ sampling:
     - speculative_decoding
     - prompt_lookup
     - LLM_samples
-    - ASR_samples
+    - automatic_speech_recognition_samples
     - VLM_samples
     - llm_bench
     - WWB
@@ -87,7 +87,7 @@ visual_language:
 
 automatic_speech_recognition:
   revalidate:
-    - ASR_samples
+    - automatic_speech_recognition_samples
     - llm_bench
     - WWB
 
