@@ -30,7 +30,7 @@ public:
     // Probability threshold for stopping decoding; when output probability exceeds above this, generation will stop
     float threshold = 0.5;
 
-    void update_generation_config(const ov::AnyMap& config_map = {});
+    void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
@@ -39,7 +39,7 @@ public:
 
     /// @brief checks that are no conflicting parameters.
     /// @throws Exception if config is invalid.
-    void validate() const;
+    void validate() const override;
 };
 
 static constexpr ov::Property<float> minlenratio{"minlenratio"};

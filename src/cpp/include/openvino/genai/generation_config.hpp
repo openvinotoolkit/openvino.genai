@@ -630,6 +630,7 @@ class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
     GenerationConfig() = default;
     explicit GenerationConfig(const std::filesystem::path& json_path);
+    virtual ~GenerationConfig() = default;
 
     // Generic
     size_t max_new_tokens = SIZE_MAX;
@@ -701,7 +702,7 @@ public:
 
     std::vector<std::shared_ptr<Parser>> parsers;
 
-    void update_generation_config(const ov::AnyMap& properties);
+    virtual void update_generation_config(const ov::AnyMap& properties);
 
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
@@ -710,7 +711,7 @@ public:
 
     /// @brief checks that are no conflicting parameters, e.g. do_sample=true and num_beams > 1.
     /// @throws Exception if config is invalid.
-    void validate() const;
+    virtual void validate() const;
 };
 
 /*

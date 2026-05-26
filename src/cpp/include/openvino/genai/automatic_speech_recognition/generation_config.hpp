@@ -80,14 +80,10 @@ public:
      */
     std::optional<std::string> hotwords = std::nullopt;
 
-    void update_generation_config(const ov::AnyMap& config_map = {});
+    using GenerationConfig::update_generation_config;
+    void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
-    template <typename... Properties>
-    util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
-        return update_generation_config(ov::AnyMap{std::forward<Properties>(properties)...});
-    }
-
-    void validate() const;
+    void validate() const override;
 };
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> generation_config(const ASRGenerationConfig& config);
