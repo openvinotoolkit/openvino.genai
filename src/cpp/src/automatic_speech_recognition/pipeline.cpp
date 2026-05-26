@@ -13,7 +13,7 @@
 
 namespace {
 
-enum class ASRModelType { WHISPER };
+enum class ASRModelType { whisper };
 
 ASRModelType read_model_type(const std::filesystem::path& models_path) {
     auto config_path = models_path / "config.json";
@@ -25,7 +25,7 @@ ASRModelType read_model_type(const std::filesystem::path& models_path) {
     std::string value = parsed.at("model_type").get<std::string>();
 
     static const std::unordered_map<std::string, ASRModelType> model_types_map = {
-        {"whisper", ASRModelType::WHISPER},
+        {"whisper", ASRModelType::whisper},
     };
 
     auto it = model_types_map.find(value);
@@ -49,12 +49,11 @@ namespace ov::genai {
 ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
                          const std::string& device,
                          const ov::AnyMap& properties) {
-    const ASRModelType model_type = read_model_type(models_path);
-
-    if (model_type == ASRModelType::WHISPER) {
+    switch (read_model_type(models_path)) {
+    case ASRModelType::whisper: {
         m_impl = std::make_unique<WhisperASRPipelineAdapter>(models_path, device, properties);
-    } else {
-        OPENVINO_THROW("Unsupported ASR model type");
+        break;
+    }
     }
 }
 
