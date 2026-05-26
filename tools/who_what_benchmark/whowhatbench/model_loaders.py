@@ -826,7 +826,7 @@ def _is_kokoro_model_id(model_id):
 
 
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
-    from .speech_generation_evaluator import KokoroModelWrapper, TextToSpeechModelWrapper
+    from .speech_generation_evaluator import KokoroModelWrapper, SpeechT5Wrapper
 
     vocoder_path = kwargs.get("vocoder_path")
 
@@ -849,7 +849,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         # for HF, we need to explicitly load the vocoder.
         # Assume it's microsoft/speecht5_hifigan for now.
         vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
-        return TextToSpeechModelWrapper(model, processor, vocoder)
+        return SpeechT5Wrapper(model, processor, vocoder)
 
     if use_genai:
         logger.info("Using OpenVINO GenAI API")
@@ -888,7 +888,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
     # For Optimum, we don't need to load vocoder as it should pick up openvino_vocoder IR by default.
     # And this currently matches GenAI behavior, which will also pick up the same openvino_vocoder IR.
-    return TextToSpeechModelWrapper(model, processor, None)
+    return SpeechT5Wrapper(model, processor, None)
 
 
 def load_model(

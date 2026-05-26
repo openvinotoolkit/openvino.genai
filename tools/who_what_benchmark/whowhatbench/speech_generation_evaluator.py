@@ -31,8 +31,8 @@ ACOUSTIC_SCORE_COL = "acoustic score"
 OVERALL_SCORE_COL = "overall similarity"
 
 
-class TextToSpeechModelWrapper:
-    """Wrapper for non-GenAI speech generation models (HF/Optimum) to provide evaluator-compatible interface."""
+class SpeechT5Wrapper:
+    """Wrapper for SpeechT5 models (HF/Optimum)."""
 
     def __init__(self, model, processor, vocoder):
         self.model = model
@@ -412,7 +412,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         if (
             self.speaker_embedding is None
             and self.speaker_embedding_file_path is None
-            and isinstance(model, TextToSpeechModelWrapper)
+            and isinstance(model, SpeechT5Wrapper)
         ):
             self.speaker_embedding_file_path = self._resolve_default_speaker_embedding_file()
             self.speaker_embedding = self._load_speaker_embedding(self.speaker_embedding_file_path)
