@@ -289,7 +289,7 @@ void init_asr_pipeline(py::module_& m) {
         .def_readonly("chunks", &ASRDecodedResults::chunks)
         .def_readonly("words", &ASRDecodedResults::words)
         .def_readonly("perf_metrics", &ASRDecodedResults::perf_metrics)
-        .def("__str__", [](const ASRDecodedResults& dr) -> py::str {
+        .def("__repr__", [](const ASRDecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);
             if (valid_utf8_strings.size() == 1)
                 return valid_utf8_strings[0];
