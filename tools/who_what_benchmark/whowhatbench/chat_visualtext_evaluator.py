@@ -15,12 +15,160 @@ from .text_evaluator import TextEvaluator
 from .whowhat_metrics import TextSimilarity
 from .utils import get_ignore_parameters_flag, load_image, fix_phi3_v_eos_token_id
 from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
+from .chat_text_evaluator import _find_common_prefix_length, _get_kv_cache_seq_len, _trim_kv_cache
+
+# Keys in the preprocess_inputs dict that carry visual (image / video) tensors.
+# These are stripped when reusing the KV cache for text-only turns because the
+# corresponding visual tokens are already encoded in past_key_values.
+_VISUAL_KEYS: frozenset = frozenset(
+    {
+        "pixel_values",
+        "images",
+        "image_sizes",
+        "image_grid_thw",
+        "video_grid_thw",
+        "pixel_values_videos",
+        "image_features",
+    }
+)
 
 
 class VisualTextChatInput(TypedDict):
     prompt: str
     images: Optional[List[np.ndarray | Image.Image]]
     videos: Optional[List[np.ndarray | Image.Image]]
+
+
+def vlm_gen_answer_with_kv_cache(
+    model,
+    inputs,
+    processor,
+    tokenizer,
+    max_new_tokens,
+    pruning_ratio,
+    relevance_weight,
+):
+    """Generate answers for a multi-turn VLM conversation reusing the KV cache.
+
+    On text-only turns the full tokenised history is compared token-by-token with
+    cached_tokens (mirroring align_cache_and_history in lm_encoding.cpp) and only
+    the new tokens are forwarded to model.generate() with all visual keys removed,
+    because the corresponding image tokens are already encoded in past_key_values.
+
+    For turns that introduce new images or videos the full preprocess_inputs are
+    used without a cached past_key_values, because splitting pixel_values to match
+    only the new image tokens in the suffix is model-specific.  The resulting KV
+    cache is still saved so that subsequent text-only turns can benefit from it.
+
+    Falls back silently to full re-encoding when the backend does not expose
+    past_key_values (e.g. stateful OVModelForCausalLM).
+    """
+    if model.config.model_type not in MODEL_TYPE_TO_CLS_MAPPING:
+        raise ValueError(
+            f"WWB doesn't support models with type '{model.config.model_type}' to evaluation in chat mode."
+        )
+
+    inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type](chat_mode=True)
+    answers = []
+
+    past_key_values = None  # KV cache accumulated across turns
+    cached_tokens: list = []  # flat token-id list matching what is in past_key_values
+
+    for input_case in inputs:
+        preprocess_inputs = inputs_processor.preprocess_inputs(
+            input_case["prompt"],
+            input_case["images"],
+            processor,
+            tokenizer,
+            config=model.config,
+            video=input_case["videos"],
+        )
+
+        has_new_visuals = input_case["images"] is not None or input_case["videos"] is not None
+        has_input_ids = "input_ids" in preprocess_inputs
+
+        # KV cache is reused only for text-only turns (no new visual tokens injected)
+        # when the model exposes input_ids for token-level comparison.
+        use_kv_cache = past_key_values is not None and has_input_ids and not has_new_visuals
+
+        if use_kv_cache:
+            full_input_ids = preprocess_inputs["input_ids"]
+            full_token_list = full_input_ids[0].tolist()
+            full_seq_len = full_input_ids.shape[1]
+
+            # --- align cache with new tokenised history (align_cache_and_history) ---
+            prefix_len = _find_common_prefix_length(full_token_list, cached_tokens)
+            if prefix_len < len(cached_tokens):
+                past_key_values = _trim_kv_cache(past_key_values, prefix_len)
+            cached_tokens = cached_tokens[:prefix_len]
+
+            # Strip visual keys: image/video tokens are already in the KV cache.
+            generate_kwargs = {k: v for k, v in preprocess_inputs.items() if k not in _VISUAL_KEYS}
+            generate_kwargs["input_ids"] = full_input_ids[:, prefix_len:]
+            generate_kwargs["attention_mask"] = full_input_ids.new_ones(1, full_seq_len)
+            generate_kwargs["past_key_values"] = past_key_values
+        else:
+            generate_kwargs = dict(preprocess_inputs)
+            # New visual turn: the accumulated pixel_values span all previous images
+            # but new_input_ids would only cover the new image tokens; splitting
+            # pixel_values correctly is model-specific, so reset the cache.
+            if has_new_visuals:
+                past_key_values = None
+                cached_tokens = []
+
+        generate_kwargs.update(fix_phi3_v_eos_token_id(model.config.model_type, tokenizer))
+        generate_kwargs["do_sample"] = False
+        generate_kwargs["max_new_tokens"] = max_new_tokens
+        generate_kwargs["return_dict_in_generate"] = True
+        generate_kwargs["tokenizer"] = tokenizer
+        generate_kwargs.update(get_ignore_parameters_flag())
+
+        output = model.generate(**generate_kwargs)
+
+        gen_input_len = generate_kwargs["input_ids"].shape[1]
+
+        # --- parse output (models may return different types) ---
+        if isinstance(output, tuple) and isinstance(output[0], list) and isinstance(output[0][0], str):
+            # MiniCPM-o: (decoded_answers, GenerateDecoderOnlyOutput)
+            answer_text = output[0][0]
+            raw_output = output[1] if len(output) > 1 else None
+        elif hasattr(output, "sequences"):
+            generated_ids = output.sequences[:, gen_input_len:]
+            answer_text = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+            raw_output = output
+        else:
+            # Plain tensor fallback.
+            tokens = output
+            gen_input_ids = generate_kwargs["input_ids"]
+            if tokens.shape[-1] > gen_input_len and torch.equal(tokens[:, :gen_input_len], gen_input_ids):
+                generated_ids = tokens[:, gen_input_len:]
+            else:
+                generated_ids = tokens
+            answer_text = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+            raw_output = None
+
+        # --- update KV cache state for the next turn ---
+        new_past = getattr(raw_output, "past_key_values", None) if raw_output is not None else None
+        if new_past is not None and has_input_ids:
+            past_key_values = new_past
+            full_ids_list = preprocess_inputs["input_ids"][0].tolist()
+            if hasattr(raw_output, "sequences"):
+                generated_ids_list = raw_output.sequences[0, gen_input_len:].tolist()
+            else:
+                generated_ids_list = tokenizer.encode(answer_text, add_special_tokens=False)
+            # The cache holds: all full-history tokens + generated tokens.
+            cached_tokens = full_ids_list + generated_ids_list
+            actual_cache_len = _get_kv_cache_seq_len(past_key_values)
+            if actual_cache_len > 0 and len(cached_tokens) != actual_cache_len:
+                cached_tokens = cached_tokens[:actual_cache_len]
+        else:
+            past_key_values = None
+            cached_tokens = []
+
+        inputs_processor.update_chat_history_with_answer(answer_text)
+        answers.append(answer_text)
+
+    return answers
 
 
 @register_evaluator("visual-text-chat")
@@ -203,7 +351,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
 
             return answers
 
-        gen_answer_fn = gen_answer_fn or default_gen_answer
+        gen_answer_fn = gen_answer_fn or vlm_gen_answer_with_kv_cache
 
         if self.test_data:
             if isinstance(self.test_data, str):

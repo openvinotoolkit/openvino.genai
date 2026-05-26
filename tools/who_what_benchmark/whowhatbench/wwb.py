@@ -596,8 +596,11 @@ def genai_gen_chat_text(
 
     answers = []
     chat_history = openvino_genai.ChatHistory()
+    tok = model.get_tokenizer()
     for prompt in prompts:
         chat_history.append({"role": "user", "content": prompt})
+        a = tok.apply_chat_template(chat_history, add_generation_prompt=True)
+        print(tok.encode(a).input_ids.data)
         decode_res = model.generate(
             chat_history,
             do_sample=False,
@@ -606,6 +609,7 @@ def genai_gen_chat_text(
             assistant_confidence_threshold=assistant_confidence_threshold,
             **kwargs,
         )
+        # print(decode_res.texts[0])
         answers.append(decode_res.texts[0])
         chat_history.append({"role": "assistant", "content": decode_res.texts[0]})
 
