@@ -12,7 +12,7 @@ public:
     
     ChatHistoryWrap(const Napi::CallbackInfo& info);
     
-    ov::genai::ChatHistory& get_value();
+    ov::genai::ChatHistory get_value();
 
 private:
     Napi::Value push_back(const Napi::CallbackInfo& info);

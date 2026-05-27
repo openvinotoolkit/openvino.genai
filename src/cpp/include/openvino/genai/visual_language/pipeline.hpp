@@ -11,6 +11,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 
 namespace ov::genai {
 
@@ -262,9 +263,19 @@ public:
     /// @param system_message Some chat_templates contain system role
     /// in addition to user and assistant roles. Set a message for that
     /// role.
+    /// @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
+    /// Please, use generate() with ChatHistory argument.
+    OPENVINO_DEPRECATED(
+        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+        "Please, use generate() with ChatHistory argument.")
     void start_chat(const std::string& system_message="");
 
     /// @brief Deactivate chat mode.
+    /// @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
+    /// Please, use generate() with ChatHistory argument.
+    OPENVINO_DEPRECATED(
+        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+        "Please, use generate() with ChatHistory argument.")
     void finish_chat();
 
     /// @brief Set a custom chat template. Can be used to deactivate
@@ -303,4 +314,5 @@ private:
 static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
+static constexpr ov::Property<std::vector<VideoMetadata>> videos_metadata{"videos_metadata"};
 }

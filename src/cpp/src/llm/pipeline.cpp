@@ -21,6 +21,12 @@
 
 namespace {
 
+void log_paged_attention_fallback(const ov::Exception& exception) {
+    GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend. "
+                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
+    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+}
+
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
@@ -78,7 +84,9 @@ namespace ov {
 namespace genai {
 
 std::pair<std::string, Any> streamer(StreamerVariant func) {
-    if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
+    if (std::holds_alternative<std::monostate>(func)) {
+        return {utils::STREAMER_ARG_NAME, Any()};
+    } else if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
     } else {
         auto status_streamer_obj = std::get<std::function<StreamingStatus(std::string)>>(func);
@@ -217,18 +225,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
 
-    const auto model = utils::read_model(models_path, properties);
-
-    // PA backend does not support linear attention states (conv/SSM caches).
-    if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            attention_backend = SDPA_BACKEND;
-        }
-    }
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
@@ -236,17 +233,17 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, scheduler_config, device, device_properties);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
-        // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } catch (const ov::Exception& exception) {
+            log_paged_attention_fallback(exception);
+            model = utils::read_model(models_path, properties);
         }
     }
 
@@ -271,19 +268,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     utils::extract_extensions_to_core(properties);
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
-    const auto model = utils::read_model(models_path, properties);
+    std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
     const Tokenizer tokenizer(models_path, properties);
-
-    // PA backend does not support linear attention states (conv/SSM caches).
-    if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            attention_backend = SDPA_BACKEND;
-        }
-    }
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
     if (is_npu_requested) {
@@ -291,17 +277,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, utils::get_latency_oriented_scheduler_config(), device, properties);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } catch (const ov::Exception& exception) {
+            log_paged_attention_fallback(exception);
+            model = utils::read_model(models_path, properties);
         }
     }
 
@@ -328,17 +315,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
 
-    // PA backend does not support linear attention states (conv/SSM caches).
-    const auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    if (attention_backend == PA_BACKEND && !is_npu_requested
-        && utils::has_linear_attention_states(model)) {
-        if (utils::explicitly_requires_paged_attention(user_properties)
-            || user_properties.find("ATTENTION_BACKEND") != user_properties.end()) {
-            GENAI_WARN("PA backend does not support models with linear attention states. The model may work incorrectly.");
-        } else {
-            attention_backend = SDPA_BACKEND;
-        }
-    }
+    std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
@@ -350,19 +327,18 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor,
-                                                              tokenizer, scheduler_config, device, device_properties, generation_config);
+        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model_str, weights_tensor, tokenizer,
-                                                                  utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
-        } catch (ov::Exception&) {
-            // ignore exceptions from PA
+        } catch (const ov::Exception& exception) {
+            log_paged_attention_fallback(exception);
+            model = utils::singleton_core().read_model(model_str, weights_tensor);
         }
     }
 
@@ -445,14 +421,10 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
 }
 
 void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-               "Please, use generate() with ChatHistory argument.");
     m_pimpl->start_chat(system_message);
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-               "Please, use generate() with ChatHistory argument.");
     m_pimpl->finish_chat();
 }
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+#include <memory>
 #include <napi.h>
 
 #include <filesystem>
@@ -9,6 +10,8 @@
 
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -26,7 +29,6 @@ template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
 using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
-/** VLM generate first argument: prompt string or ChatHistory */
 using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
 
 #define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
@@ -137,6 +139,9 @@ template <>
 ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(const Napi::Env& env,
                                                                                const Napi::Value& value);
 template <>
+ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
+                                                                              const Napi::Value& value);
+template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value);
 /**
  * @brief  Unwraps a C++ object from a JavaScript wrapper.
@@ -162,7 +167,10 @@ ov::genai::SpeechGenerationPerfMetrics& unwrap<ov::genai::SpeechGenerationPerfMe
                                                                                         const Napi::Value& value);
 
 template <>
-ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
+ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetrics>(const Napi::Env& env,
+                                                                                       const Napi::Value& value);
+
+ov::genai::ChatHistory unwrap_chat_history(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
@@ -278,6 +286,21 @@ template <>
 Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
     const Napi::Env& env,
     const ov::genai::SpeechGenerationConfig& config);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::ImageGenerationConfig, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::ImageGenerationConfig& config);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::RawImageGenerationPerfMetrics, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::RawImageGenerationPerfMetrics& metrics);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::ImageGenerationPerfMetrics, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::ImageGenerationPerfMetrics& metrics);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::StopCriteria */
 template <>

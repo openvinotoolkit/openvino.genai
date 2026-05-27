@@ -189,18 +189,26 @@ def load_text_llamacpp_pipeline(model_dir):
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {**PYTORCH_MODEL_DTYPE_KWARG}
+    trust_remote_code = False
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
+    else:
+        try:
+            config = AutoConfig.from_pretrained(model_id)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            trust_remote_code = True
+        # MoE weights of gpt_oss models post-trained with MXFP4 quantization
+        # they are dequantized with torch.bfloat16 https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/integrations/mxfp4.py#L104
+        # forcing the model to any other type will cause a type mismatch error
+        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L117
+        if getattr(config, "model_type", None) == "gpt_oss":
+            model_kwargs["torch_dtype"] = "auto"
+
     if not torch.cuda.is_available or device.lower() == "cpu":
-        trust_remote_code = False
         is_gptq = False
         is_awq = False
         if not kwargs.get('gguf_file'):
-            try:
-                config = AutoConfig.from_pretrained(model_id)
-            except Exception:
-                config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-                trust_remote_code = True
 
             if getattr(config, "quantization_config", None):
                 is_gptq = config.quantization_config["quant_method"] == "gptq"

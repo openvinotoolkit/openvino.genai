@@ -1,6 +1,6 @@
 # C++ visual language chat
 
-This example showcases inference of Visual language models (VLMs). The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::VLMPipeline` and runs the simplest deterministic greedy sampling algorithm. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/minicpm-v-multimodal-chatbot) which provides an example of Visual-language assistant.
+This example showcases inference of Visual language models (VLMs). The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::VLMPipeline` and runs the simplest deterministic greedy sampling algorithm. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/latest/notebooks/qwen3-vl/qwen3-vl.ipynb) which provides an example of Visual-language assistant.
 
 
 The following are sample files:
@@ -18,7 +18,7 @@ It's not required to install [../../export-requirements.txt](../../export-requir
 
 ```sh
 pip install --upgrade-strategy eager -r ../../requirements.txt
-optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code MiniCPM-V-2_6
+optimum-cli export openvino --model Qwen/Qwen3-VL-2B-Instruct --trust-remote-code Qwen3-VL-2B-Instruct
 ```
 
 Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run samples.
@@ -27,7 +27,7 @@ Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/lear
 
 [This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.
 
-`visual_language_chat miniCPM-V-2_6 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
+`visual_language_chat Qwen3-VL-2B-Instruct 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model `llava-hf/llava-v1.6-mistral-7b-hf` can benefit from being run on a dGPU. Modify the source code to change the device for inference to the `GPU`.
 
@@ -37,7 +37,7 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 
 This sample runs generation twice for the same prompt and image: first with LoRA adapter applied, then without any adapters (base model).
 
-Export `Qwen/Qwen2.5-VL-7B-Instruct` to OpenVINO as [described above for MiniCPM-V](#download-and-convert-the-model-and-tokenizers), then download LoRA `Mouad2004/qwen2.5-vl-lora-diagrams`:
+Export `Qwen/Qwen2.5-VL-7B-Instruct` to OpenVINO as [described above](#download-and-convert-the-model-and-tokenizers), then download LoRA `Mouad2004/qwen2.5-vl-lora-diagrams`:
 
 ```sh
 wget -O adapter_model.safetensors \
@@ -97,7 +97,7 @@ benchmark_vlm [OPTIONS]
 ### Output:
 
 ```
-benchmark_vlm -m miniCPM-V-2_6 -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3
+benchmark_vlm -m Qwen3-VL-2B-Instruct -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3
 ```
 
 ```

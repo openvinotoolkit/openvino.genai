@@ -6,7 +6,7 @@ import sys
 from setuptools import find_packages, setup
 
 with open("requirements.txt") as f:
-    required = f.read().splitlines()
+    required = [line.strip() for line in f.read().splitlines() if line.strip() and not line.lstrip().startswith("#")]
 
 
 is_installing_editable = "develop" in sys.argv

@@ -19,8 +19,7 @@ protected:
             sampling_params.num_assistant_tokens = 1;
 
             ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(request_id, input_ids,
-                                                                                sampling_params, 
-                                                                                32);
+                                                                                sampling_params);
 
             {
                 std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
