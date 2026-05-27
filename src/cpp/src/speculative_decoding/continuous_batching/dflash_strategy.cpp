@@ -59,7 +59,7 @@ public:
                         "Expected DFlash input_ids shape [1, seq_len].");
         const int64_t* ids_data = input_ids.data<const int64_t>();
         TokenIds prompt_ids(ids_data, ids_data + shape[1]);
-        m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config, 0);
+        m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config);
         m_committed_context_length = 0;
         m_request.reset_state();
         if (m_has_beam_idx) {

@@ -163,7 +163,7 @@ void DFlashTargetWrapper::initialize_sequence(const ov::Tensor& input_ids, const
     OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1 && shape[1] > 0, "Expected input_ids shape [1, seq_len]");
     const int64_t* ids_data = input_ids.data<const int64_t>();
     TokenIds prompt_ids(ids_data, ids_data + shape[1]);
-    m_sequence_group = std::make_shared<SequenceGroup>(0, prompt_ids, config, 0);
+    m_sequence_group = std::make_shared<SequenceGroup>(0, prompt_ids, config);
 }
 
 Sequence::Ptr DFlashTargetWrapper::get_current_sequence() const {
@@ -344,7 +344,7 @@ void DFlashDraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const 
     const int64_t* ids_data = input_ids.data<const int64_t>();
     m_prompt_length = shape[1];
     TokenIds prompt_ids(ids_data, ids_data + shape[1]);
-    m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config, 0);
+    m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config);
 }
 
 void DFlashDraftWrapper::append_tokens(const std::vector<int64_t>& tokens) {
