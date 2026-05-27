@@ -167,7 +167,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder) {
         std::tie(main_position_ids, main_rope_delta) = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
         ov::Tensor draft_position_ids = trim_first_token_position_ids(main_position_ids);
-        validate_trimmed_position_ids(main_position_ids, draft_position_ids);
         m_inputs_embedder->set_position_ids(draft_position_ids);
         m_inputs_embedder->set_rope_delta(compute_rope_delta(draft_position_ids));
     }
@@ -256,51 +255,6 @@ int64_t ContinuousBatchingPipeline::Eagle3DecodingImpl::compute_rope_delta(const
     const int64_t* data = position_ids.data<const int64_t>();
     const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
     return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
-}
-
-void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_trimmed_position_ids(const ov::Tensor& main_position_ids, const ov::Tensor& draft_position_ids) {
-    const ov::Shape main_shape = main_position_ids.get_shape();
-    const ov::Shape draft_shape = draft_position_ids.get_shape();
-
-    OPENVINO_ASSERT(main_shape.size() == draft_shape.size(),
-                    "main and draft position_ids rank mismatch.");
-
-    const size_t seq_axis = main_shape.size() == 3 ? 2 : 1;
-    OPENVINO_ASSERT(main_shape.size() == 2 || main_shape.size() == 3,
-                    "Expected position_ids rank 2 or 3 for Eagle3 validation.");
-    OPENVINO_ASSERT(main_shape[seq_axis] == draft_shape[seq_axis] + 1,
-                    "Draft position_ids sequence length must equal main sequence length minus one.");
-
-    if (main_shape.size() == 2) {
-        OPENVINO_ASSERT(main_shape[0] == draft_shape[0],
-                        "main and draft position_ids batch mismatch.");
-    } else {
-        OPENVINO_ASSERT(main_shape[0] == draft_shape[0] && main_shape[1] == draft_shape[1],
-                        "main and draft position_ids leading dimensions mismatch.");
-    }
-
-    const int64_t* main_data = main_position_ids.data<const int64_t>();
-    const int64_t* draft_data = draft_position_ids.data<const int64_t>();
-
-    if (main_shape.size() == 2) {
-        for (size_t idx = 0; idx < draft_shape[1]; ++idx) {
-            OPENVINO_ASSERT(draft_data[idx] == main_data[idx + 1],
-                            "Draft prompt position_ids must equal main position_ids without the first token.");
-        }
-        return;
-    }
-
-    const size_t planes = main_shape[0] * main_shape[1];
-    const size_t main_seq_len = main_shape[2];
-    const size_t draft_seq_len = draft_shape[2];
-    for (size_t plane = 0; plane < planes; ++plane) {
-        const size_t main_offset = plane * main_seq_len;
-        const size_t draft_offset = plane * draft_seq_len;
-        for (size_t idx = 0; idx < draft_seq_len; ++idx) {
-            OPENVINO_ASSERT(draft_data[draft_offset + idx] == main_data[main_offset + idx + 1],
-                            "Draft prompt position_ids must equal main position_ids without the first token.");
-        }
-    }
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_position_ids(const ov::Tensor& position_ids) {
