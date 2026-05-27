@@ -254,7 +254,7 @@ def parse_args():
         "--long-prompt",
         action='store_true',
         help="LLMPipeline specific parameter that defines the use of a long context prompt. "
-        "Deprecated. Kept for backward compatibility, long prompt is not used by default.",
+        "Deprecated. Kept for backward compatibility, long prompts are used by default.",
     )
     text_def_dataset_group.add_argument(
         "--short-prompt",
