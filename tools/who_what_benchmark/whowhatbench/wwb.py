@@ -404,6 +404,7 @@ def check_args(args):
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
 
+
 def load_prompts(args):
     if args.dataset is None:
         return None
