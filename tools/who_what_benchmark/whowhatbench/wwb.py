@@ -336,7 +336,7 @@ def parse_args():
         help="Optional path to .bin or .npy float32 speaker embedding file for text-to-speech generation. "
         "If using SpeechT5 TTS model with HF/Optimum, WWB downloads "
         "Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin automatically. "
-        "For GenAI, this is the default speaker embedding that is compiled into the runtime."
+        "For GenAI, this is the default speaker embedding that is compiled into the runtime. "
         "For Kokoro, when using optimum or genai modes, this parameter is supported for specifying path "
         "to a <voice>.bin file, but it is recommended to instead use --speech-voice parameter.",
     )
@@ -344,7 +344,7 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="Speech-generation language code. This is currently used only for Kokoro."
+        help="Speech-generation language code. This is currently used only for Kokoro. "
         "If omitted, the default language used is 'en-us'.",
     )
     parser.add_argument(
@@ -352,7 +352,7 @@ def parse_args():
         type=str,
         default="",
         help="Speech-generation voice name (for example, af_heart for Kokoro). This is currently used only for Kokoro. "
-        "For other TTS models (such as SpeechT5), please use --speaker_embeddings parameter to specify the voice."
+        "For other TTS models (such as SpeechT5), please use --speaker_embeddings parameter to specify the voice. "
         "If omitted for Kokoro, the default voice used is 'af_heart'",
     )
     parser.add_argument(
