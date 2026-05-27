@@ -183,6 +183,9 @@ def test_tts_kokoro(model_id, model_type, speech_voice, speech_language, optimum
     reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
 )
 def test_tts_speecht5_default_speaker_embeddings(tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("CVS-187265")
+
     model_id = "microsoft/speecht5_tts"
     model_type = "speech-generation"
     run_test(
