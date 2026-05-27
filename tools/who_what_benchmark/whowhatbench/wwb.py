@@ -344,7 +344,8 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="Optional speech-generation language code (for example, en-us for Kokoro).",
+        help="Speech-generation language code. This is currently used only for Kokoro."
+        "If omitted, the default language used is 'en-us'.",
     )
     parser.add_argument(
         "--speech-voice",
