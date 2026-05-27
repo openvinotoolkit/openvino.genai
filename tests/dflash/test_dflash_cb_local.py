@@ -20,7 +20,7 @@ def _local_dflash_cb_models():
 
     repo_root = Path(__file__).resolve().parents[3]
     target_model_path = repo_root / "models" / "qwen3-coder-30b-a3b-instruct-int4-annotated-ov"
-    draft_model_path = repo_root / "models" / "qwen3-coder-30b-a3b-dflash-stateful-bsfix-woq-int8-ov"
+    draft_model_path = repo_root / "models" / "qwen3-coder-30b-a3b-dflash-stateful-woq-int8-ov"
     if not target_model_path.exists() or not draft_model_path.exists():
         pytest.skip("Local DFlash target/draft artifacts are not available")
 
