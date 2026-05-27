@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/perf_metrics.h"
@@ -161,6 +161,21 @@ ov_status_e ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_per
         auto detokenization_duration = metrics->object->get_detokenization_duration();
         *mean = detokenization_duration.mean;
         *std = detokenization_duration.std;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+ov_status_e ov_genai_perf_metrics_get_chat_template_duration(const ov_genai_perf_metrics* metrics,
+                                                             float* mean,
+                                                             float* std) {
+    if (!metrics || !(metrics->object) || !mean || !std) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        auto chat_template_duration = metrics->object->get_chat_template_duration();
+        *mean = chat_template_duration.mean;
+        *std = chat_template_duration.std;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }

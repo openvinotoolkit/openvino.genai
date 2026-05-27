@@ -27,7 +27,7 @@ optimum-cli export openvino --task text-classification --model cross-encoder/ms-
 
 ## Run
 
-Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
+Follow [Get Started with Samples](https://docs.openvino.ai/2026/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run the sample.
 
 ### 1. Text Embedding Sample (`text_embeddings.cpp`)
 - **Description:**

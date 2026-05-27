@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from typing import Union, Optional
 from packaging.version import Version
 
@@ -16,7 +19,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from pathlib import Path
-from transformers import set_seed
+from transformers import set_seed, PreTrainedTokenizer
 from contextlib import contextmanager
 from datasets.utils.file_utils import xopen
 from transformers.image_utils import load_image
@@ -25,24 +28,36 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def fix_phi3_v_eos_token_id(model_type: str, tokenizer: PreTrainedTokenizer) -> dict:
+    """
+    phi3_v configs aren't consistent. Override the default
+    eos_token_id with the one from a tokenizer similar to
+    an example in
+    https://huggingface.co/microsoft/Phi-3.5-vision-instruct
+    """
+    if "phi3_v" == model_type:
+        return {"eos_token_id": tokenizer.eos_token_id}
+    else:
+        return dict()
+
+
 def new_randn_tensor(
     shape: Union[tuple, list],
-    generator: Optional[Union[list["torch.Generator"],
-                              "torch.Generator"]] = None,
+    generator: Optional[Union[list["torch.Generator"], "torch.Generator"]] = None,
     device: Optional["torch.device"] = None,
     dtype: Optional["torch.dtype"] = None,
     layout: Optional["torch.layout"] = None,
 ):
     latents = torch.zeros(shape).view(-1)
     for i in range(latents.shape[0]):
-        latents[i] = torch.randn(
-            1, generator=generator, dtype=torch.float32).item()
+        latents[i] = torch.randn(1, generator=generator, dtype=torch.float32).item()
 
     return latents.view(shape)
 
 
 def patch_diffusers():
     from diffusers.utils import torch_utils
+
     torch_utils.randn_tensor = new_randn_tensor
 
 
@@ -50,7 +65,9 @@ def patch_diffusers():
 def mock_AwqQuantizer_validate_environment(to_patch):
     original_fun = transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment
     if to_patch:
-        transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment = lambda self, device_map, **kwargs: None
+        transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment = (
+            lambda self, device_map, **kwargs: None
+        )
     try:
         yield
     finally:
@@ -122,7 +139,7 @@ def get_ignore_parameters_flag():
 
     transformers_version = Version(__version__)
 
-    if transformers_version >= Version("4.51.0"):
+    if transformers_version >= Version("4.51.0") and transformers_version < Version("5.0.0"):
         return {"use_model_defaults": False}
     return {}
 
@@ -132,18 +149,63 @@ def get_json_config(config):
         raise ValueError("Config must be a non-empty string or path to a JSON file.")
     json_config = {}
     if Path(config).is_file():
-        with open(config, 'r') as f:
+        with open(config, "r") as f:
             try:
                 json_config = json.load(f)
             except json.JSONDecodeError:
-                raise RuntimeError(f'Failed to parse JSON from file: {config}')
+                raise RuntimeError(f"Failed to parse JSON from file: {config}")
     else:
         try:
             json_config = json.loads(config)
         except json.JSONDecodeError:
-            raise RuntimeError(f'Failed to parse JSON config: {config}')
+            raise RuntimeError(f"Failed to parse JSON config: {config}")
 
     return json_config
+
+
+def normalize_lora_adapters_and_alphas(adapters, alphas):
+    if adapters is None:
+        return None, None
+
+    if isinstance(adapters, (str, Path, os.PathLike)):
+        adapters = [adapters]
+    elif not isinstance(adapters, (list, tuple)):
+        raise ValueError("`adapters` must be a non-empty list/tuple, or a single adapter path")
+
+    if len(adapters) == 0:
+        raise ValueError("`adapters` must be a non-empty list/tuple")
+
+    if alphas is None:
+        raise ValueError("`alphas` must be provided and match the number of adapters")
+
+    if isinstance(alphas, (int, float)):
+        alphas = [alphas]
+    elif not isinstance(alphas, (list, tuple)):
+        raise ValueError("`alphas` must be a list/tuple with one value per adapter, or a single float")
+
+    if len(alphas) != len(adapters):
+        raise ValueError("`alphas` must be the same length as `adapters`")
+
+    return list(adapters), list(alphas)
+
+
+def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lora"):
+    adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+    from peft import PeftModel
+
+    adapter_names = ["adapter_0"]
+    model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
+
+    for idx, adapter in enumerate(adapters[1:], start=1):
+        adapter_name = f"adapter_{idx}"
+        model.load_adapter(adapter, adapter_name=adapter_name)
+        adapter_names.append(adapter_name)
+
+    model.add_weighted_adapter(adapter_names, alphas, merged_adapter_name)
+    model.set_adapter(merged_adapter_name)
+
+    return model
 
 
 # preapre default dataset for visualtext(VLM) evalutor
@@ -159,12 +221,8 @@ def prepare_default_data_image(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
-    )
+    default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
+    return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
 def prepare_default_data_video(num_samples=None, num_frames=10):
@@ -175,30 +233,40 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
     SUBSET = "30_60_s_academic_v0_1"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
 
-    questions_per_video_set = datasets.load_dataset(DATASET_NAME, SUBSET,
-                                                    split="open_ended",
-                                                    data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"})
-    questions_per_video = {val['video']: val for val in questions_per_video_set}
+    questions_per_video_set = datasets.load_dataset(
+        DATASET_NAME,
+        SUBSET,
+        split="open_ended",
+        data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"},
+    )
+    questions_per_video = {val["video"]: val for val in questions_per_video_set}
 
     # 30_60_s_academic_v0_1_videos_10.tar.gz - just the most lightweight chunk among subset
     # https://huggingface.co/datasets/lmms-lab/LLaVA-Video-178K/tree/main/30_60_s_academic_v0_1
     # the archive contains 56 videos
-    videos_arc_path = hf_hub_download(repo_id="lmms-lab/LLaVA-Video-178K",
-                                      filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz",
-                                      repo_type="dataset")
+    videos_arc_path = hf_hub_download(
+        repo_id="lmms-lab/LLaVA-Video-178K", filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz", repo_type="dataset"
+    )
 
+    # max resolution 1280x720, max size 6MB
+    max_video_size_bytes = 6 * 1024 * 1024
     video_samples = []
     extract_dir = "./videos"
     os.makedirs(extract_dir, exist_ok=True)
     with tarfile.open(videos_arc_path, "r:gz") as tar:
-        all_videos = tar.getnames()
+        all_videos = []
+        for member in tar.getmembers():
+            if member.size < max_video_size_bytes:
+                all_videos.append(member.name)
 
         if len(all_videos) < NUM_SAMPLES:
-            logger.warning(f"The required number of samples {NUM_SAMPLES} exceeds the available amount of data {len(all_videos)}."
-                           f"num-samples will be updated to max available: {len(all_videos)}.")
+            logger.warning(
+                f"The required number of samples {NUM_SAMPLES} exceeds the available amount of data {len(all_videos)}."
+                f"num-samples will be updated to max available: {len(all_videos)}."
+            )
             NUM_SAMPLES = len(all_videos)
 
-        video_samples = random.Random(42).sample(all_videos, NUM_SAMPLES)  # nosec
+        video_samples = random.Random(43).sample(all_videos, NUM_SAMPLES)  # nosec
         for sample in video_samples:
             tar.extract(sample, path=extract_dir)
 
@@ -211,9 +279,11 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
 
     data = []
     for video_rel_path in video_samples:
-        video_tensor = load_video(os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn)
-        prompt = questions_per_video[video_rel_path]['conversations'][0]['value'].replace("<image>\n", "")
-        data.append({'prompts': prompt, "images": None, 'videos': video_tensor[0]})
+        video_tensor = load_video(
+            os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn
+        )
+        prompt = questions_per_video[video_rel_path]["conversations"][0]["value"].replace("<image>\n", "")
+        data.append({"prompts": prompt, "images": None, "videos": video_tensor[0]})
 
     return data
 

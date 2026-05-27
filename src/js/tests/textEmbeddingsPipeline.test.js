@@ -1,4 +1,8 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, it, before } from "node:test";
+import os from "node:os";
 import { TextEmbeddingPipeline, PoolingType } from "../dist/index.js";
 import { isFloat32Array } from "util/types";
 import assert from "node:assert/strict";
@@ -24,7 +28,8 @@ describe("TextEmbeddingPipeline initialization", () => {
   });
 });
 
-describe("TextEmbeddingPipeline functions", () => {
+// Skip due to CVS-179949
+describe("TextEmbeddingPipeline functions", { skip: os.platform() === "darwin" }, () => {
   let pipeline = null;
 
   before(async () => {

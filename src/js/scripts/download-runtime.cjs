@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 const { join } = require("node:path");
 const BinaryManager = require("openvino-node/scripts/lib/binary-manager");
 

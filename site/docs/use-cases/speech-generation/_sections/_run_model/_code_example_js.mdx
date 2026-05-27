@@ -1,0 +1,15 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { writeFile } from 'node:fs/promises';
+import { Text2SpeechPipeline } from 'openvino-genai-node';
+import { encode } from 'node-wav';
+
+const pipeline = await Text2SpeechPipeline(modelPath, "${props.device || 'CPU'}");
+
+const result = await pipeline.generate("Hello OpenVINO GenAI");
+
+const wavData = encode([result.speeches[0].data], { sampleRate: 16000 });
+await writeFile("output_audio.wav", wavData);
+`}
+</CodeBlock>

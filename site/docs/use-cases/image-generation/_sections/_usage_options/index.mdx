@@ -3,7 +3,7 @@ import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_gener
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/image_generation) image generation samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/image_generation), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/image_generation), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/image_generation) image generation samples.
 :::
 
 ### Use Different Generation Parameters
@@ -60,6 +60,22 @@ You can adjust several parameters to control the image generation process, inclu
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        import { Text2ImagePipeline } from 'openvino-genai-node';
+
+        const pipeline = await Text2ImagePipeline(modelPath, 'CPU');
+        const result = await pipeline.generate(prompt, {
+            // highlight-start
+            width: 512,
+            height: 512,
+            num_images_per_prompt: 1,
+            num_inference_steps: 30,
+            guidance_scale: 7.5,
+            // highlight-end
+        });
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 :::info Understanding Image Generation Parameters
@@ -71,7 +87,7 @@ You can adjust several parameters to control the image generation process, inclu
 - `guidance_scale`: Balances prompt adherence vs. creativity. Higher values follow prompt more strictly, lower values allow more creative freedom.
 - `rng_seed`: Controls randomness for reproducible results. Same seed produces identical images across runs.
 
-For the full list of generation parameters, refer to the [Image Generation Config API](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.ImageGenerationConfig.html).
+For the full list of generation parameters, refer to the [Image Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.ImageGenerationConfig.html).
 
 :::
 

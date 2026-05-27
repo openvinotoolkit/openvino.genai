@@ -37,6 +37,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         gen_video_fn=None,
         seed=42,
         is_genai=False,
+        empty_adapters=False,
     ) -> None:
         assert base_model is not None or gt_data is not None, (
             "Video generation pipeline for evaluation or ground truth data must be defined"
@@ -53,6 +54,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         self.gt_dir = os.path.dirname(gt_data)
         self.generation_fn = gen_video_fn
         self.is_genai = is_genai
+        self.empty_adapters = empty_adapters
         self.num_frames = num_frames or self.DEF_NUM_FRAMES
         self.frame_rate = self.DEF_FRAME_RATE
 
@@ -84,10 +86,11 @@ class Text2VideoEvaluator(BaseEvaluator):
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_frame)
 
+        n = min(len(self.gt_data), len(predictions))
         self.last_cmp = all_metrics_per_prompt
-        self.last_cmp["prompts"] = predictions["prompt"].values
-        self.last_cmp["source_model"] = self.gt_data["videos"].values
-        self.last_cmp["optimized_model"] = predictions["videos"].values
+        self.last_cmp["prompts"] = predictions["prompt"].values[:n]
+        self.last_cmp["source_model"] = self.gt_data["videos"].values[:n]
+        self.last_cmp["optimized_model"] = predictions["videos"].values[:n]
         self.last_cmp = pd.DataFrame(self.last_cmp)
 
         return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
@@ -124,6 +127,7 @@ class Text2VideoEvaluator(BaseEvaluator):
             guidance_scale=self.DEF_GUIDANCE_SCALE,
             guidance_rescale=self.DEF_GUIDANCE_RESCALE,
             generator=None,
+            empty_adapters=False,
         ):
             kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
             with torch.no_grad():
@@ -183,6 +187,7 @@ class Text2VideoEvaluator(BaseEvaluator):
                 guidance_scale=input[4],
                 guidance_rescale=guidance_rescale,
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
+                empty_adapters=self.empty_adapters,
             )
             video_path = os.path.join(videos_dir, f"video_{i}.mp4")
             export_to_video(frames, video_path, self.frame_rate)

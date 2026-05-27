@@ -17,11 +17,26 @@ import {
 } from "./parsers.js";
 import {
   GenerationConfig,
+  GenerationFinishReason,
   StreamingStatus,
   VLMPipelineProperties,
   LLMPipelineProperties,
+  WhisperGenerationConfig,
+  WhisperPipelineProperties,
+  SpeechGenerationConfig,
+  ImageGenerationConfig,
+  Text2ImageCallback,
+  Text2ImagePipelineProperties,
+  Text2SpeechPipelineProperties,
 } from "./utils.js";
-import { VLMPerfMetrics, PerfMetrics } from "./perfMetrics.js";
+import {
+  VLMPerfMetrics,
+  PerfMetrics,
+  WhisperPerfMetrics,
+  Text2ImagePerfMetrics,
+  Text2SpeechPerfMetrics,
+} from "./perfMetrics.js";
+import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -130,6 +145,7 @@ export interface LLMPipeline {
         scores: number[];
         perfMetrics: PerfMetrics;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;
@@ -138,6 +154,34 @@ export interface LLMPipeline {
   getTokenizer(): ITokenizer;
   getGenerationConfig(): GenerationConfig;
   setGenerationConfig(config: GenerationConfig): void;
+}
+
+export interface WhisperPipeline {
+  new (): WhisperPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: WhisperPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    rawSpeech: Float32Array | number[],
+    generationConfig: WhisperGenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: WhisperPerfMetrics;
+        chunks?: WhisperDecodedResultChunk[];
+        words?: WhisperWordTiming[];
+      },
+    ) => void,
+  ): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): Partial<WhisperGenerationConfig>;
+  setGenerationConfig(config: WhisperGenerationConfig): void;
 }
 
 export interface VLMPipeline {
@@ -149,7 +193,7 @@ export interface VLMPipeline {
     callback: (err: Error | null) => void,
   ): void;
   generate(
-    prompt: string,
+    inputs: string | IChatHistory,
     images: Tensor[] | undefined,
     videos: Tensor[] | undefined,
     streamer: ((chunk: string) => StreamingStatus) | undefined,
@@ -161,6 +205,7 @@ export interface VLMPipeline {
         scores: number[];
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;
@@ -172,11 +217,57 @@ export interface VLMPipeline {
   getGenerationConfig(): GenerationConfig;
 }
 
+export interface Text2ImagePipeline {
+  new (): Text2ImagePipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Text2ImagePipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    properties: ImageGenerationConfig,
+    streamer: Text2ImageCallback | undefined,
+    callback: (err: Error | null, result: Tensor) => void,
+  ): void;
+  getPerformanceMetrics(): Text2ImagePerfMetrics;
+  getGenerationConfig(): ImageGenerationConfig;
+  setGenerationConfig(config: ImageGenerationConfig): void;
+}
+
+export interface Text2SpeechPipeline {
+  new (): Text2SpeechPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Text2SpeechPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    inputs: string | string[],
+    speakerEmbedding: Tensor | undefined,
+    properties: SpeechGenerationConfig,
+    callback: (
+      err: Error | null,
+      result: {
+        speeches: Tensor[];
+        perfMetrics: Text2SpeechPerfMetrics;
+      },
+    ) => void,
+  ): void;
+  getGenerationConfig(): SpeechGenerationConfig;
+  setGenerationConfig(config: SpeechGenerationConfig): void;
+}
+
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  WhisperPipeline: WhisperPipeline;
+  Text2ImagePipeline: Text2ImagePipeline;
+  Text2SpeechPipeline: Text2SpeechPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -210,6 +301,9 @@ export const {
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
+  WhisperPipeline,
+  Text2ImagePipeline,
+  Text2SpeechPipeline,
   ChatHistory,
   Tokenizer,
   ReasoningParser,

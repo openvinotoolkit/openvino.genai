@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -243,6 +243,17 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_top_p(ov_gen
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_top_k(ov_genai_generation_config* config,
                                                                           const size_t value);
+
+/**
+ * @brief Set the min_p value. Minimum probability threshold relative to the most likely token.
+ * Tokens with probability < min_p * p_max are removed from the candidate set.
+ * Set to 0.0 (default) to disable. Typical values: 0.05–0.1.
+ * @param handle A pointer to the ov_genai_generation_config instance.
+ * @param value The value of min_p.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_generation_config_set_min_p(ov_genai_generation_config* config,
+                                                                          const float value);
 
 /**
  * @brief Set whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.

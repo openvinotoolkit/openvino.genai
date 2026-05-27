@@ -1,7 +1,8 @@
-# Copyright (C) 2024 Intel Corporation
+# Copyright (C) 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
+from optimum.intel.utils.import_utils import is_transformers_version
 
 
 def get_models_list() -> tuple[str, ...]:
@@ -14,9 +15,19 @@ def get_models_list() -> tuple[str, ...]:
     return tuple(model_ids)
 
 
-CHAT_MODELS_LIST = (
-    "Qwen/Qwen2-0.5B-Instruct",
-)
+CHAT_MODELS_LIST = ("Qwen/Qwen2-0.5B-Instruct",)
+
+LINEAR_ATTENTION_MODELS_LIST = ()
+if is_transformers_version(">=", "5.0"):
+    LINEAR_ATTENTION_MODELS_LIST = (
+        # "optimum-intel-internal-testing/tiny-mamba",  # beam_idx is not connected
+        # "optimum-intel-internal-testing/tiny-random-zamba2",  # no chat template
+        "optimum-intel-internal-testing/tiny-random-granitemoehybrid",
+        "optimum-intel-internal-testing/tiny-random-lfm2",
+    )
+elif is_transformers_version(">=", "4.57"):
+    # Restore after fix https://github.com/huggingface/optimum-intel/pull/1589
+    LINEAR_ATTENTION_MODELS_LIST = ("optimum-intel-internal-testing/tiny-random-qwen3-next",)
 
 
 GGUF_MODEL_LIST = (

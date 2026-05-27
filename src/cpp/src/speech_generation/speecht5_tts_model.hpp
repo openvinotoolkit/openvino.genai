@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include <algorithm>
 #include <filesystem>
 #include <openvino/openvino.hpp>
@@ -26,6 +28,8 @@ public:
                                        const SpeechGenerationConfig& generation_config) override;
 
     SpeechGenerationPerfMetrics get_performance_metrics() override;
+
+    ov::Shape get_speaker_embedding_shape() const override;
 
 private:
     void init_model_config_params(const std::filesystem::path& root_dir);

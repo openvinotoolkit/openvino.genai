@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include <napi.h>
@@ -9,7 +12,7 @@ public:
     
     ChatHistoryWrap(const Napi::CallbackInfo& info);
     
-    ov::genai::ChatHistory& get_value();
+    ov::genai::ChatHistory get_value();
 
 private:
     Napi::Value push_back(const Napi::CallbackInfo& info);

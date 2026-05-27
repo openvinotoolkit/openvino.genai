@@ -170,13 +170,28 @@ public:
             if (e.matches(PyExc_ModuleNotFoundError)) {
                 throw std::runtime_error("The 'torch' package is not installed. Please, call 'pip install torch' or use 'rng_seed' parameter.");
             } else {
-                // Re-throw other exceptions
                 throw;
             }
         }
 
         m_float32 = m_torch.attr("float32");
         create_torch_generator(seed);
+    }
+
+    ~TorchGenerator() override {
+        if (Py_IsInitialized()) {
+            try {
+                py::gil_scoped_acquire acquire;
+                m_torch_generator = py::object();
+                m_float32 = py::object();
+                m_torch = py::module_();
+                return;
+            } catch (...) {
+            }
+        }
+        m_torch_generator.release();
+        m_float32.release();
+        m_torch.release();
     }
 
     float next() override {
@@ -260,16 +275,6 @@ public:
     }
 };
 
-bool params_have_torch_generator(ov::AnyMap params) {
-    std::shared_ptr<ov::genai::Generator> generator = nullptr;
-    ov::genai::utils::read_anymap_param(params, "generator", generator);
-    if (std::dynamic_pointer_cast<::TorchGenerator>(generator)) {
-        return true;
-    }
-    return false;
-}
-
-
 } // namespace
 
 void init_clip_text_model(py::module_& m);
@@ -327,6 +332,25 @@ void init_image_generation_pipelines(py::module_& m) {
         py::arg("scheduler_config_path"),
         py::arg_v("scheduler_type", ov::genai::Scheduler::Type::AUTO, "Scheduler.Type.AUTO"));
 
+    py::class_<ov::genai::TaylorSeerCacheConfig>(
+        m, "TaylorSeerCacheConfig",
+        "Configuration for TaylorSeer cache mechanism in diffusion transformers.\n\n"
+        "See paper: https://arxiv.org/pdf/2503.06923\n\n"
+        "Attributes:\n"
+        "  cache_interval: Interval between full computation steps (default: 3, must be >= 2)\n"
+        "  disable_cache_before_step: Step before which caching is disabled for warmup (default: 6)\n"
+        "  disable_cache_after_step: Step after which caching is disabled. If negative, "
+        "calculated as num_inference_steps + disable_cache_after_step (default: -2)")
+        .def(py::init<>())
+        .def_readwrite("cache_interval", &ov::genai::TaylorSeerCacheConfig::cache_interval,
+                      "Interval between full computation steps (must be >= 2)")
+        .def_readwrite("disable_cache_before_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_before_step,
+                      "Step before which caching is disabled for warmup")
+        .def_readwrite("disable_cache_after_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_after_step,
+                      "Step after which caching is disabled (negative values are relative to num_inference_steps)")
+        .def("to_string", &ov::genai::TaylorSeerCacheConfig::to_string)
+        .def("__repr__", &ov::genai::TaylorSeerCacheConfig::to_string);
+
     py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for image generation pipeline.")
         .def(py::init<>())
         .def_readwrite("prompt_2", &ov::genai::ImageGenerationConfig::prompt_2)
@@ -344,6 +368,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("adapters", &ov::genai::ImageGenerationConfig::adapters)
         .def_readwrite("strength", &ov::genai::ImageGenerationConfig::strength)
         .def_readwrite("max_sequence_length", &ov::genai::ImageGenerationConfig::max_sequence_length)
+        .def_readwrite("taylorseer_config", &ov::genai::ImageGenerationConfig::taylorseer_config)
         .def("validate", &ov::genai::ImageGenerationConfig::validate)
         .def("update_generation_config", [](
             ov::genai::ImageGenerationConfig& config,

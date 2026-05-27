@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "openvino/genai/parsers.hpp"
 #include <regex>
 #include <string>
@@ -7,6 +10,9 @@
 #include <stdexcept>
 
 namespace ov::genai {
+
+IncrementalParser::IncrementalParser() = default;
+IncrementalParser::~IncrementalParser() = default;
 
 class ReasoningIncrementalParser::ReasoningParserImpl {
 private:

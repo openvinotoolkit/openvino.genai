@@ -1,4 +1,4 @@
-# Copyright (C) 2024 Intel Corporation
+# Copyright (C) 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """openvino genai module namespace, exposing pipelines and configs to create these pipelines."""
@@ -42,6 +42,7 @@ __version__ = get_version()
 
 from .py_openvino_genai import (
     VLMPipeline,
+    VideoMetadata,
 )
 
 # LLM pipeline
@@ -96,6 +97,7 @@ from .py_openvino_genai import (
     TorchGenerator,
     ImageGenerationPerfMetrics,
     RawImageGenerationPerfMetrics,
+    TaylorSeerCacheConfig,
 )
 
 # Video generation

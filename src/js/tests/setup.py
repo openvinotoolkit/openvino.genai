@@ -12,9 +12,12 @@ import sys
 from pathlib import Path
 from optimum.intel import (
     OVModelForCausalLM,
+    OVFluxPipeline,
     OVModelForVisualCausalLM,
     OVModelForFeatureExtraction,
     OVModelForSequenceClassification,
+    OVModelForSpeechSeq2Seq,
+    OVModelForTextToSpeechSeq2Seq,
 )
 
 # Add the Python tests utils directory to the path
@@ -31,7 +34,6 @@ TEST_MODELS = {
     "VLM": {
         "model_id": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "model_class": OVModelForVisualCausalLM,
-        "trust_remote_code": True,
     },
     "EMBEDDING_MODEL": {
         "model_id": "BAAI/bge-small-en-v1.5",
@@ -40,6 +42,22 @@ TEST_MODELS = {
     "RERANK_MODEL": {
         "model_id": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "model_class": OVModelForSequenceClassification,
+    },
+    "WHISPER_MODEL": {
+        "model_id": "openai/whisper-tiny",
+        "model_class": OVModelForSpeechSeq2Seq,
+    },
+    "TTS_MODEL": {
+        "model_id": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
+        "model_class": OVModelForTextToSpeechSeq2Seq,
+        "model_kwargs": {
+            "vocoder": "fxmarty/speecht5-hifigan-tiny",
+        },
+    },
+    "IMAGE_GENERATION_MODEL": {
+        "model_id": "optimum-intel-internal-testing/tiny-random-flux",
+        "model_class": OVFluxPipeline,
+        "model_kwargs": {"has_tokenizer": False},
     },
 }
 

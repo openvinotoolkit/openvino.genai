@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <stdio.h>
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
         CHECK_STATUS(status);
     }
 
-    CHECK_STATUS(ov_genai_whisper_generation_config_create(&config));
+    CHECK_STATUS(ov_genai_whisper_pipeline_get_generation_config(pipeline, &config));
     CHECK_STATUS(ov_genai_whisper_generation_config_set_task(config, "transcribe"));
     CHECK_STATUS(ov_genai_whisper_generation_config_set_return_timestamps(config, true));
     CHECK_STATUS(ov_genai_whisper_pipeline_generate(pipeline, audio_data, audio_length, config, &results));

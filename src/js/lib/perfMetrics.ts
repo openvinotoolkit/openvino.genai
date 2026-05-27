@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2026 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 /** Structure holding mean and standard deviation values. */
@@ -41,6 +41,14 @@ export type RawMetrics = {
 export type VLMRawMetrics = {
   /** Durations for embedding preparation in milliseconds. */
   prepareEmbeddingsDurations: number[];
+};
+
+/** Structure with raw performance metrics for Whisper generation. */
+export type WhisperRawMetrics = {
+  /** Durations for features extraction in milliseconds. */
+  featuresExtractionDurations: number[];
+  /** Durations for word-level timestamps processing in milliseconds. */
+  wordLevelTimestampsProcessingDurations: number[];
 };
 
 /**
@@ -115,4 +123,77 @@ export interface VLMPerfMetrics extends PerfMetrics {
    * @returns The current VLMPerfMetrics instance.
    */
   add(other: VLMPerfMetrics): this;
+}
+
+/**
+ * Holds performance metrics for each Whisper generate call.
+ *
+ * WhisperPerfMetrics extends PerfMetrics with Whisper-specific metrics:
+ *  - Features extraction duration, ms
+ *  - Word-level timestamps processing duration, ms
+ */
+export interface WhisperPerfMetrics extends PerfMetrics {
+  /** Returns the mean and standard deviation of features extraction duration in milliseconds. */
+  getFeaturesExtractionDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of word-level timestamps processing duration in milliseconds. */
+  getWordLevelTimestampsProcessingDuration(): MeanStdPair;
+  /** Whisper-specific raw metrics */
+  whisperRawMetrics: WhisperRawMetrics;
+
+  /** Adds the metrics from another WhisperPerfMetrics object to this one.
+   * @returns The current WhisperPerfMetrics instance.
+   */
+  add(other: WhisperPerfMetrics): this;
+}
+
+/**
+ * Holds performance metrics for each Text2Speech generate call.
+ *
+ * Text2SpeechPerfMetrics extends PerfMetrics with speech-generation-specific metrics:
+ *  - Number of generated audio samples
+ */
+export interface Text2SpeechPerfMetrics extends PerfMetrics {
+  /** Returns the total number of generated audio samples. */
+  getNumGeneratedSamples(): number;
+
+  /** Adds the metrics from another Text2SpeechPerfMetrics object to this one.
+   * @returns The current Text2SpeechPerfMetrics instance.
+   */
+  add(other: Text2SpeechPerfMetrics): this;
+}
+
+/** Raw performance metrics for image generation pipelines. */
+export type RawImageGenerationPerfMetrics = {
+  /** UNet inference duration for each denoising step, milliseconds. */
+  unetInferenceDurations: number[];
+  /** Transformer inference duration for each denoising step, milliseconds. */
+  transformerInferenceDurations: number[];
+  /** Total iteration duration for each denoising step, milliseconds. */
+  iterationDurations: number[];
+};
+
+/**
+ * Holds performance metrics for each Text2Image generate call.
+ */
+export interface Text2ImagePerfMetrics {
+  /** Returns model load time in milliseconds. */
+  getLoadTime(): number;
+  /** Returns total generate call duration in milliseconds. */
+  getGenerateDuration(): number;
+  /** Returns mean/std duration of one denoising iteration in milliseconds. */
+  getIterationDuration(): MeanStdPair;
+  /** Returns mean/std duration of UNet inference in milliseconds. */
+  getUnetInferDuration(): MeanStdPair;
+  /** Returns mean/std duration of transformer inference in milliseconds. */
+  getTransformerInferDuration(): MeanStdPair;
+  /** Returns VAE encoder inference duration in milliseconds. */
+  getVaeEncoderInferDuration(): number;
+  /** Returns VAE decoder inference duration in milliseconds. */
+  getVaeDecoderInferDuration(): number;
+  /** Returns text encoder durations keyed by encoder name, milliseconds. */
+  getTextEncoderInferDuration(): { [key: string]: number };
+  /** Returns total model inference duration in milliseconds. */
+  getInferenceDuration(): number;
+  /** Raw image-generation-specific metrics. */
+  rawMetrics: RawImageGenerationPerfMetrics;
 }

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -19,6 +20,8 @@
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/threaded_callback.hpp"
+#include "diffusion_caching/taylorseer_lite.hpp"
+#include "lora/helper.hpp"
 #include "logger.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 #include "generation_config_utils.hpp"
@@ -30,17 +33,18 @@ using namespace ov::genai;
 namespace {
 
 const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
-    std::nullopt,  // negative_prompt
-    1,             // num_videos_per_prompt
-    nullptr,       // generator
-    7.5f,          // guidance_scale
-    512,           // height
-    704,           // width
-    50,            // num_inference_steps
-    128,           // max_sequence_length
-    0.0,           // guidance_rescale
-    161,           // num_frames
-    25.0f          // frame_rate
+    std::nullopt,            // negative_prompt
+    1,                       // num_videos_per_prompt
+    nullptr,                 // generator
+    7.5f,                    // guidance_scale
+    512,                     // height
+    704,                     // width
+    50,                      // num_inference_steps
+    128,                     // max_sequence_length
+    0.0,                     // guidance_rescale
+    161,                     // num_frames
+    25.0f,                   // frame_rate
+    TaylorSeerCacheConfig{}  // taylorseer_config
 };
 
 // Some defaults aren't special values so it's not possible to distinguish
@@ -92,6 +96,54 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
                         (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
                     "Both 'width' and 'height' must be divisible by ",
                     vae_scale_factor);
+}
+
+// Rescales the CFG noise prediction to fix overexposure when using zero terminal SNR
+// noise_cfg and noise_pred_text each contain batch_size * elements_per_sample consecutive floats.
+void rescale_noise_cfg(float* noise_cfg,
+                       const float* noise_pred_text,
+                       size_t batch_size,
+                       size_t elements_per_sample,
+                       float guidance_rescale) {
+    if (elements_per_sample == 0) {
+        return;
+    }
+    for (size_t b = 0; b < batch_size; ++b) {
+        float* cfg_sample = noise_cfg + b * elements_per_sample;
+        const float* text_sample = noise_pred_text + b * elements_per_sample;
+
+        double text_mean = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            text_mean += text_sample[i];
+        }
+        text_mean /= static_cast<double>(elements_per_sample);
+
+        double text_var = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            const double diff = text_sample[i] - text_mean;
+            text_var += diff * diff;
+        }
+        const float std_text = static_cast<float>(std::sqrt(text_var / static_cast<double>(elements_per_sample)));
+
+        double cfg_mean = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            cfg_mean += cfg_sample[i];
+        }
+        cfg_mean /= static_cast<double>(elements_per_sample);
+
+        double cfg_var = 0.0;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            const double diff = cfg_sample[i] - cfg_mean;
+            cfg_var += diff * diff;
+        }
+        const float std_cfg = static_cast<float>(std::sqrt(cfg_var / static_cast<double>(elements_per_sample)));
+
+        const float scale = std_cfg > 0.0f ? std_text / std_cfg : 1.0f;
+        for (size_t i = 0; i < elements_per_sample; ++i) {
+            const float rescaled = cfg_sample[i] * scale;
+            cfg_sample[i] = guidance_rescale * rescaled + (1.0f - guidance_rescale) * cfg_sample[i];
+        }
+    }
 }
 
 // Unpacked latents of shape [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p,
@@ -410,6 +462,7 @@ public:
         m_vae_device = device;
         m_compile_properties = properties;
         m_is_compiled = true;
+        update_adapters_from_properties(properties, m_generation_config.adapters);
         const std::filesystem::path model_index_path = models_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -499,6 +552,8 @@ public:
         const auto& transformer_config = m_transformer->get_config();
         check_inputs(merged_generation_config, vae_scale_factor);
 
+        m_transformer->set_adapters(merged_generation_config.adapters);
+
         // use callback if defined
         std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
@@ -562,6 +617,9 @@ public:
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
+        // Initialize TaylorSeer if configured
+        TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
+
         // Denoising loop
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
@@ -589,10 +647,19 @@ public:
 
             timestep_data[0] = timesteps[inference_step];
 
-            auto infer_start = std::chrono::steady_clock::now();
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
-            auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
+            ov::Tensor noise_pred_tensor;
+            // Use TaylorSeer if enabled and caching is appropriate
+            if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
+                noise_pred_tensor = ts_state.predict(inference_step);
+            } else {
+                auto infer_start = std::chrono::steady_clock::now();
+                noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+                auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+                m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
+                if (ts_state.is_active()) {
+                    ts_state.update(inference_step, noise_pred_tensor);
+                }
+            }
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
@@ -613,9 +680,15 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            // TODO: support guidance_rescale
-            OPENVINO_ASSERT(merged_generation_config.guidance_rescale <= 0,
-                            "Parameter 'guidance_rescale' is not currently supported by LTX Pipeline. Please, contact OpenVINO GenAI developers.");
+            if (batch_size_multiplier > 1 && *merged_generation_config.guidance_rescale > 0.0f) {
+                OPENVINO_ASSERT(noise_pred_shape[0] > 0,
+                                "Expected positive batch dimension in noise_pred_shape[0] before rescaling noise.");
+                rescale_noise_cfg(noisy_residual_tensor.data<float>(),
+                                  noise_pred_tensor.data<const float>() + noisy_residual_tensor.get_size(),
+                                  noise_pred_shape[0],
+                                  noisy_residual_tensor.get_size() / noise_pred_shape[0],
+                                  *merged_generation_config.guidance_rescale);
+            }
 
             auto scheduler_step_result =
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
@@ -697,6 +770,7 @@ public:
                  const std::string& denoise_device,
                  const std::string& vae_device,
                  const ov::AnyMap& properties) {
+        update_adapters_from_properties(properties, m_generation_config.adapters);
         m_t5_text_encoder->compile(text_encode_device, properties);
         m_vae->compile(vae_device, properties);
         m_transformer->compile(denoise_device, properties);

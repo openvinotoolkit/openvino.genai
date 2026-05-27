@@ -8,6 +8,7 @@
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/threaded_callback.hpp"
+#include "diffusion_caching/taylorseer_lite.hpp"
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
@@ -508,12 +509,26 @@ public:
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
 
+        // Initialize TaylorSeer if configured
+        TaylorSeerState ts_state(m_custom_generation_config.taylorseer_config, timesteps.size());
+
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
             timestep_data[0] = timesteps[inference_step] / 1000.0f;
 
             auto infer_start = std::chrono::steady_clock::now();
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
+
+            ov::Tensor noise_pred_tensor;
+            // Use TaylorSeer if enabled and caching is appropriate
+            if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
+                noise_pred_tensor = ts_state.predict(inference_step);
+            } else {
+                noise_pred_tensor = m_transformer->infer(latents, timestep);
+                if (ts_state.is_active()) {
+                    ts_state.update(inference_step, noise_pred_tensor);
+                }
+            }
+
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
@@ -597,6 +612,7 @@ protected:
                 m_generation_config.guidance_scale = 3.5f;
                 m_generation_config.num_inference_steps = 28;
                 m_generation_config.strength = 1.0f;
+                m_generation_config.taylorseer_config = TaylorSeerCacheConfig{};
             } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
                 m_generation_config.guidance_scale = 7.0f;
                 m_generation_config.num_inference_steps = 28;

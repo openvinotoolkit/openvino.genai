@@ -1,10 +1,11 @@
 import CodeExampleCPP from './_code_example_cpp.mdx';
 import CodeExamplePython from './_code_example_python.mdx';
+import CodeExampleJS from './_code_example_js.mdx';
 
 
 ## Run Model Using OpenVINO GenAI
 
-The [`Text2SpeechPipeline`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.
+The [`Text2SpeechPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.
 It automatically loads the TTS model and vocoder from the converted model directory.
 
 <LanguageTabs>
@@ -28,6 +29,16 @@ It automatically loads the TTS model and vocoder from the converted model direct
             </TabItem>
         </Tabs>
     </TabItemCpp>
+    <TabItemJS>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleJS device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleJS device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemJS>
 </LanguageTabs>
 
 :::tip
@@ -37,7 +48,7 @@ Use CPU or GPU as devices without any other code change.
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/text2speech.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/text2speech.cpp) speech generation samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/text2speech.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/speech_generation/text2speech.cpp), and [Node.js](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/speech_generation/text2speech.js) speech generation samples.
 :::
 
 ### Use Speaker Embedding File
@@ -93,4 +104,23 @@ python create_speaker_embedding.py
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        import { writeFile } from 'node:fs/promises';
+        import { Text2SpeechPipeline } from 'openvino-genai-node';
+        import { encode } from 'node-wav';
+        import { readSpeakerEmbedding } from './embedding_utils.js';
+
+        const pipeline = await Text2SpeechPipeline(modelPath, "CPU");
+
+        const speakerEmbedding = await readSpeakerEmbedding(embeddingPath);
+        const result = await pipeline.generate(
+            "Hello OpenVINO GenAI",
+            { speakerEmbedding },
+        );
+
+        const wavData = encode([result.speeches[0].data], { sampleRate: 16000 });
+        await writeFile("output_audio.wav", wavData);
+        ```
+    </TabItemJS>
 </LanguageTabs>

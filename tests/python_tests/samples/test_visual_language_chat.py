@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -6,10 +6,8 @@ import pytest
 import subprocess # nosec B404
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, convert_model
-from test_utils import run_sample
-
-convert_draft_model = convert_model
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR
+from test_utils import run_sample, run_js_chat
 
 class TestVisualLanguageChat:
     @pytest.mark.vlm
@@ -17,11 +15,13 @@ class TestVisualLanguageChat:
     @pytest.mark.parametrize(
         "convert_model, download_test_content, questions",
         [
-            pytest.param("llava-1.5-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("llava-v1.6-mistral-7b-hf", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("InternVL2-1B", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
-            pytest.param("tiny-random-minicpmv-2_6", "images/image.png", 'What is unusual on this image?\nGo on.')
+            pytest.param("llava-1.5-7b-hf", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
+            pytest.param(
+                "llava-v1.6-mistral-7b-hf", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"
+            ),
+            pytest.param("InternVL2-1B", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
+            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
+            pytest.param("tiny-random-phi3-vision", "images/image.png", "What is unusual on this image?\nGo on."),
         ],
         indirect=["convert_model", "download_test_content"],
     )
@@ -41,16 +41,24 @@ class TestVisualLanguageChat:
         py_command = [sys.executable, py_script, convert_model, download_test_content]
         py_result = run_sample(py_command, questions)
 
+        # Test JavaScript sample
+        js_script = SAMPLES_JS_DIR / "visual_language_chat/visual_language_chat.js"
+        js_command = ["node", js_script, convert_model, download_test_content]
+        js_stdout = run_js_chat(js_command, questions)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
         assert cpp_result.stdout == c_result.stdout, f"Results should match"
+        # Unskip testcase for Qwen2-VL-2B-Instruct once the difference in image conversion between Python and JavaScript is fixed. CVS-187058
+        if "Qwen2-VL-2B-Instruct" not in convert_model:
+            assert py_result.stdout == js_stdout, f"JS results should match"
 
     @pytest.mark.vlm
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model, questions",
         [
-            pytest.param("tiny-random-minicpmv-2_6", 'Describe the images?'),
+            pytest.param("tiny-random-phi3-vision", "Describe the images?"),
         ],
         indirect=["convert_model"],
     )
@@ -67,27 +75,42 @@ class TestVisualLanguageChat:
         cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content)]
         cpp_result = run_sample(cpp_command, questions)
 
+        # Test JavaScript sample
+        js_script = SAMPLES_JS_DIR / "visual_language_chat/visual_language_chat.js"
+        js_command = ["node", js_script, convert_model, os.path.dirname(generate_test_content)]
+        js_stdout = run_js_chat(js_command, questions)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert py_result.stdout == js_stdout, f"JS results should match"
 
     @pytest.mark.vlm
-    @pytest.mark.eagle3_vlm_decoding
+    @pytest.mark.samples
     @pytest.mark.parametrize(
-        "convert_model, convert_draft_model, download_test_content, questions",
+        "convert_model, download_test_content, questions",
         [
-            pytest.param("Qwen2.5-VL-7B-Instruct", "qwen2.5-vl-7b-eagle3-ov-int4", "monalisa.jpg", 'Who drew this painting?'),
+            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
         ],
-        indirect=["convert_model", "convert_draft_model", "download_test_content"],
+        indirect=["convert_model", "download_test_content"],
     )
-    def test_eagle3_visual_language_chat(self, convert_model, convert_draft_model, download_test_content, questions):
-        # Test eagle3
+    def test_sample_visual_language_chat_prompt_lookup(self, convert_model, download_test_content, questions):
+        # Test visual_language_chat with prompt lookup decoding
         py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
-        py_command = [sys.executable, py_script, convert_model, download_test_content, convert_draft_model]
+        py_command = [sys.executable, py_script, convert_model, download_test_content, "CPU", "true"]
+        py_result_lookup = run_sample(py_command, questions)
+
+        # Test visual_language_chat without prompt lookup decoding
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
+        py_command = [sys.executable, py_script, convert_model, download_test_content]
         py_result = run_sample(py_command, questions)
 
-        # Test vlm without eagle3
-        cpp_command = [sys.executable, py_script, convert_model, download_test_content]
-        cpp_result = run_sample(cpp_command, questions)
+        # Test JavaScript sample
+        js_script = SAMPLES_JS_DIR / "visual_language_chat/visual_language_chat.js"
+        js_command = ["node", js_script, convert_model, download_test_content, "CPU", "true"]
+        js_stdout_lookup = run_js_chat(js_command, questions)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert py_result.stdout == py_result_lookup.stdout, f"Results should match"
+        # Unskip testcase for Qwen2-VL-2B-Instruct once the difference in image conversion between Python and JavaScript is fixed. CVS-187058
+        if "Qwen2-VL-2B-Instruct" not in convert_model:
+            assert py_result_lookup.stdout == js_stdout_lookup, f"JS results should match"

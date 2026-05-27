@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -14,7 +14,7 @@ class TestSchedulerConfig:
     @pytest.mark.parametrize(
         "convert_model, download_test_content",
         [
-            pytest.param("tiny-random-minicpmv-2_6", "images/image.png"),
+            pytest.param("tiny-random-phi3-vision", "images/image.png"),
         ],
         indirect=["convert_model", "download_test_content"],
     )

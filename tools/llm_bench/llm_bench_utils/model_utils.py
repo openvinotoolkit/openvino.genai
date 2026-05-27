@@ -176,13 +176,14 @@ def analyze_args(args):
     model_args['lora'] = args.lora
     model_args['lora_alphas'] = args.lora_alphas
     model_args['lora_mode'] = args.lora_mode
-    model_args['empty_lora'] = args.empty_lora
-    model_args['devices'] = args.device
-    model_args['prompt_index'] = [] if args.prompt_index is not None else None
-    if model_args['prompt_index'] is not None:
+    model_args["empty_lora"] = args.empty_lora
+    model_args["taylorseer_config"] = get_config(args.taylorseer_config) if args.taylorseer_config else None
+    model_args["devices"] = args.device
+    model_args["prompt_index"] = [] if args.prompt_index is not None else None
+    if model_args["prompt_index"] is not None:
         # Deduplication
-        [model_args['prompt_index'].append(i) for i in args.prompt_index if i not in model_args['prompt_index']]
-    model_args['end_token_stopping'] = args.end_token_stopping
+        [model_args["prompt_index"].append(i) for i in args.prompt_index if i not in model_args["prompt_index"]]
+    model_args["end_token_stopping"] = args.end_token_stopping
 
     model_framework = args.framework
     model_path = Path(args.model)
@@ -331,3 +332,12 @@ def get_speaker_embeddings(speaker_embeddings_file, expected_shape=(1, 512)):
         raise RuntimeError(f'==Failure FOUND==: Incorrect speaker embeddings file path:{speaker_embeddings_file}')
 
     return speaker_embeddings
+
+
+def setup_gen_config_use_custom_args():
+    from optimum.intel.utils.import_utils import is_transformers_version
+
+    additional_args = {}
+    if is_transformers_version(">=", "4.51") and is_transformers_version("<", "5.0"):
+        additional_args["use_model_defaults"] = False
+    return additional_args

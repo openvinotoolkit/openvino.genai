@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import whowhatbench
 from optimum.intel.openvino import OVModelForCausalLM
 from transformers import AutoTokenizer

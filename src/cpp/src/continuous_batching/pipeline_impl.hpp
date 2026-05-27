@@ -6,10 +6,13 @@
 #include "continuous_batching/pipeline_base.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
-#include "continuous_batching/cache_eviction.hpp"
+#include "continuous_batching/cache/cache_eviction.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
+
+void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
+                                       const SchedulerConfig& scheduler_config);
 
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
@@ -38,7 +41,6 @@ protected:
     bool m_is_validation_mode_enabled = false;
 
     size_t m_num_decoder_layers = 0;
-    size_t m_block_size = 0;
 
     // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
     std::vector<ov::Tensor> m_rotation_deltas_stores;
@@ -123,7 +125,9 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt) override;
+                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                 std::optional<ov::Tensor> prompt_ids = std::nullopt,
+                                 std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) override;
 
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -131,14 +135,23 @@ public:
 
     bool has_non_finished_requests() override;
 
+    virtual void generate_candidates_for_prompt_lookup();
+
     void step() override;
 
+    /**
+     * input_ids is a batch of input ids for generation, which can be either raw prompts or already encoded token ids,
+     * depending on the pipeline configuration. prompt_ids is an optional batch of prompt ids, which represents the
+     * token IDs of the prompt portion for each sequence in the batch.
+     */
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt) override;
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt,
+             const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list = std::nullopt) override;
 
     /**
      * Updates LoRA adapters for current generation call

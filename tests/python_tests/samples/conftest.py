@@ -1,3 +1,6 @@
+# Copyright (C) 2025-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import subprocess # nosec B404
 import os
 import json
@@ -5,6 +8,7 @@ import pytest
 import shutil
 import logging
 import requests
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -95,6 +99,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-minicpmv-2_6": {
         "name": "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-phi3-vision": {
+        "name": "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
     },
     "InternVL2-1B": {
@@ -143,7 +151,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "Qwen3-Embedding-0.6B": {
         "name": "Qwen/Qwen3-Embedding-0.6B",
-        "convert_args": ["--trust-remote-code"]
+        "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
     },
     "Qwen3-Reranker-0.6B": {
         "name": "Qwen/Qwen3-Reranker-0.6B",
@@ -159,7 +167,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "qwen3_1.7b_eagle3": {
         "name": "AngelSlim/Qwen3-1.7B_eagle3",
-        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"],
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
     "Qwen2.5-VL-7B-Instruct": {
         "name": "Qwen/Qwen2.5-VL-7B-Instruct",
@@ -177,6 +185,18 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
         "convert_args": ["--trust-remote-code"],
     },
+    "tiny-random-flux": {
+        "name": "optimum-intel-internal-testing/tiny-random-flux",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
+    },
+    "stable-diffusion-3-tiny-random": {
+        "name": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
+        "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
+    },
+    "tiny-random-qwen3-vl": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
 }
 
 TEST_FILES = {
@@ -193,7 +213,9 @@ TEST_FILES = {
     "cat": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11",
     "3283_1447_000.tar.gz": "https://huggingface.co/datasets/facebook/multilingual_librispeech/resolve/main/data/mls_polish/train/audio/3283_1447_000.tar.gz",
     "cmu_us_awb_arctic-wav-arctic_a0001.bin": "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin",
-    "video0.mp4": "https://storage.openvinotoolkit.org/repositories/openvino_notebooks/data/data/video/Coco%20Walking%20in%20Berkeley.mp4"
+    "video0.mp4": "https://storage.openvinotoolkit.org/repositories/openvino_notebooks/data/data/video/Coco%20Walking%20in%20Berkeley.mp4",
+    "qwen2b_lora_100_adapter_model.safetensors": "https://huggingface.co/saim1212/qwen2b-lora-100/resolve/main/adapter_model.safetensors",
+    "ltx_tiny_dummy_lora.safetensors": "https://huggingface.co/goyaladitya05/openvino-genai-test-files/resolve/main/ltx_tiny_dummy_lora.safetensors",
 }
 
 SAMPLES_PY_DIR = Path(
@@ -237,17 +259,29 @@ def setup_and_teardown(request, tmp_path_factory):
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
 
 
+def get_hf_cli_command() -> str:
+    # huggingface_hub < 1.0 supports huggingface-cli
+    # huggingface_hub >= 0.34 supports huggingface-cli and hf
+    # huggingface_hub >= 1.0 huggingface-cli is deprecated, need to use hf
+    version = metadata.version("huggingface_hub")
+    major = int(version.split(".", 1)[0])
+    if major >= 1:
+        return "hf"
+    return "huggingface-cli"
+
+
 def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
-    """Download the GGUF model using huggingface-cli."""
+    """Download the GGUF model using huggingface-cli/hf."""
     sub_env = os.environ.copy()
     model_name = model["name"]
     model_gguf_filename = model["gguf_filename"]
     dest_dir = Path(model_path)
+    hf_cli_command = get_hf_cli_command()
 
     manager = AtomicDownloadManager(dest_dir)
 
     def download_to_temp(temp_path: Path) -> None:
-        command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", str(temp_path)]
+        command = [hf_cli_command, "download", model_name, model_gguf_filename, "--local-dir", str(temp_path)]
         logger.info(f"Downloading command: {' '.join(command)}")
         result = retry_request(
             lambda: subprocess.run(
@@ -255,6 +289,7 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
                 check=True,
                 text=True,
                 env=sub_env,
+                encoding="utf-8",
                 stderr=subprocess.STDOUT,
                 stdout=subprocess.PIPE,
             )
@@ -264,7 +299,7 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
     try:
         manager.execute(download_to_temp)
     except subprocess.CalledProcessError as error:
-        logger.error(f"huggingface-cli returned {error.returncode}. Output:\n{error.output}")
+        logger.error(f"{hf_cli_command} returned {error.returncode}. Output:\n{error.output}")
         raise
 
 
@@ -286,8 +321,18 @@ def optimum_cli_convert(model, model_path):
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
-    
+        retry_request(
+            lambda: subprocess.run(
+                command,
+                check=True,
+                text=True,
+                encoding="utf-8",
+                env=sub_env,
+                stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE,
+            )
+        )
+
     try:
         manager.execute(convert_to_temp)
     except subprocess.CalledProcessError as error:
@@ -318,10 +363,14 @@ def convert_model(request):
         
         def download_to_temp(temp_path: Path) -> None:
             sub_env = os.environ.copy()
-            command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
+            command = [get_hf_cli_command(), "download", model_name, "--local-dir", str(temp_path)]
             logger.info(f"Downloading command: {' '.join(command)}")
-            retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
-        
+            retry_request(
+                lambda: subprocess.run(
+                    command, check=True, encoding="utf-8", capture_output=True, text=True, env=sub_env
+                )
+            )
+
         manager.execute(download_to_temp)
         yield str(model_path)
     else:
@@ -349,12 +398,14 @@ def download_model(request):
     logger.info(f"Preparing model: {model_name}")
     
     manager = AtomicDownloadManager(model_path)
-    
+
     def download_to_temp(temp_path: Path) -> None:
         sub_env = os.environ.copy()
-        command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
+        command = [get_hf_cli_command(), "download", model_name, "--local-dir", str(temp_path)]
         logger.info(f"Downloading command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
+        retry_request(
+            lambda: subprocess.run(command, check=True, encoding="utf-8", capture_output=True, text=True, env=sub_env)
+        )
 
     manager.execute(download_to_temp)
 
@@ -372,44 +423,56 @@ def download_test_content(request):
 
     test_data = request.config.cache.get("TEST_DATA", None)
 
-    file_name = request.param
-    file_url = TEST_FILES[file_name]
-    file_path = os.path.join(test_data, file_name)
+    def download_one(file_name: str):
+        file_url = TEST_FILES[file_name]
+        file_path = os.path.join(test_data, file_name)
 
-    if not os.path.exists(file_path):
-        logger.info(f"Downloading test content from {file_url} to {file_path}...")
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        response = requests.get(file_url, stream=True)
-        response.raise_for_status()
-        with open(file_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        logger.info(f"Downloaded test content to {file_path}")
-    else:
-        logger.info(f"Test content already exists at {file_path}")
-
-    # If the file is a tarball, extract it
-    extracted_dir = None
-    if file_name.endswith(".tar.gz"):
-        extracted_dir = os.path.join(test_data, os.path.splitext(file_name)[0])
-        if not os.path.exists(extracted_dir):
-            os.makedirs(extracted_dir, exist_ok=True)
-            shutil.unpack_archive(file_path, extracted_dir)
-            logger.info(f"Extracted tarball to {extracted_dir}")
+        if not os.path.exists(file_path):
+            logger.info(f"Downloading test content from {file_url} to {file_path}...")
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            response = requests.get(file_url, stream=True)
+            response.raise_for_status()
+            with open(file_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            logger.info(f"Downloaded test content to {file_path}")
         else:
-            logger.info(f"Extracted folder already exists at {extracted_dir}")
-        yield extracted_dir
-    else:
-        yield file_path
+            logger.info(f"Test content already exists at {file_path}")
 
-    # Cleanup the test content after tests
+        extracted_dir = None
+        if file_name.endswith(".tar.gz"):
+            extracted_dir = os.path.join(test_data, os.path.splitext(file_name)[0])
+            if not os.path.exists(extracted_dir):
+                os.makedirs(extracted_dir, exist_ok=True)
+                shutil.unpack_archive(file_path, extracted_dir)
+                logger.info(f"Extracted tarball to {extracted_dir}")
+            else:
+                logger.info(f"Extracted folder already exists at {extracted_dir}")
+            return extracted_dir, file_path, extracted_dir
+
+        return file_path, file_path, extracted_dir
+
+    request_param = request.param
+    is_multi = isinstance(request_param, (list, tuple))
+    file_names = request_param if is_multi else [request_param]
+
+    downloaded_paths = []
+    cleanup_items = []
+    for file_name in file_names:
+        downloaded_path, file_path, extracted_dir = download_one(file_name)
+        downloaded_paths.append(downloaded_path)
+        cleanup_items.append((file_path, extracted_dir))
+
+    yield downloaded_paths if is_multi else downloaded_paths[0]
+
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
-        if extracted_dir and os.path.exists(extracted_dir):
-            logger.info(f"Removing extracted folder: {extracted_dir}")
-            shutil.rmtree(extracted_dir)
-        if os.path.exists(file_path):
-            logger.info(f"Removing test content: {file_path}")
-            os.remove(file_path)
+        for file_path, extracted_dir in cleanup_items:
+            if extracted_dir and os.path.exists(extracted_dir):
+                logger.info(f"Removing extracted folder: {extracted_dir}")
+                shutil.rmtree(extracted_dir)
+            if os.path.exists(file_path):
+                logger.info(f"Removing test content: {file_path}")
+                os.remove(file_path)
 
 
 @pytest.fixture(scope="session")

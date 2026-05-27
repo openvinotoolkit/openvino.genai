@@ -269,12 +269,17 @@ std::vector<std::pair<size_t, size_t>> dtw_and_backtrace(const std::vector<std::
         path.push_back({path_i, path_j});
         int t = trace[i][j];
         if (t == 0) {
-            i--;
-            j--;
+            OPENVINO_ASSERT(i > 0 && j > 0, "Invalid DTW trace: diagonal move at matrix boundary");
+            --i;
+            --j;
         } else if (t == 1) {
-            i--;
+            OPENVINO_ASSERT(i > 0, "Invalid DTW trace: up move at top boundary");
+            --i;
         } else if (t == 2) {
-            j--;
+            OPENVINO_ASSERT(j > 0, "Invalid DTW trace: left move at left boundary");
+            --j;
+        } else {
+            OPENVINO_THROW("Invalid DTW trace value: ", t);
         }
     }
 

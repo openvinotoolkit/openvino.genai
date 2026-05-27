@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/generation_config.h"
@@ -262,6 +262,17 @@ ov_status_e ov_genai_generation_config_set_top_k(ov_genai_generation_config* con
     }
     try {
         config->object->top_k = value;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+ov_status_e ov_genai_generation_config_set_min_p(ov_genai_generation_config* config, const float value) {
+    if (!config || !(config->object)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        config->object->min_p = value;
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }

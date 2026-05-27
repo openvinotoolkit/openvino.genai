@@ -47,6 +47,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'nanoLLaVA',
         links: ['https://huggingface.co/qnguyen3/nanoLLaVA'],
+        notesLink: '#nanollava-notes',
       },
       {
         name: 'nanoLLaVA-1.5',
@@ -75,6 +76,18 @@ export const VLM_MODELS: VLMModelType[] = [
         links: [
           'https://huggingface.co/llava-hf/LLaVA-NeXT-Video-7B-hf',
         ],
+      },
+    ],
+  },
+  {
+    architecture: 'VideoChat-Flash',
+    models: [
+      {
+        name: 'videochat_flash_qwen',
+        links: [
+          'https://modelscope.cn/OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B',
+        ],
+        notesLink: '#videochat-flash-notes',
       },
     ],
   },
@@ -146,6 +159,56 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct',
         ],
       },
+      {
+        name: 'Fara-7B',
+        links: [
+          'https://huggingface.co/microsoft/Fara-7B',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Qwen3-VL',
+    models: [
+      {
+        name: 'Qwen3-VL',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-2B-Thinking',
+          'https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking',
+          'https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-8B-Thinking',
+          'https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-VL-32B-Thinking',
+        ],
+        notesLink: '#qwen3_vl-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'Qwen3.5',
+    models: [
+      {
+        name: 'Qwen3.5',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3.5-0.8B',
+          'https://huggingface.co/Qwen/Qwen3.5-2B',
+          'https://huggingface.co/Qwen/Qwen3.5-4B',
+          'https://huggingface.co/Qwen/Qwen3.5-9B',
+          'https://huggingface.co/Qwen/Qwen3.5-27B',
+          'https://huggingface.co/Qwen/Qwen3.5-35B-A3B',
+        ],
+        notesLink: '#qwen3_5-notes',
+      },
+      {
+        name: 'Qwen3.6',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3.6-27B',
+          'https://huggingface.co/Qwen/Qwen3.6-35B-A3B',
+        ],
+        notesLink: '#qwen3_5-notes',
+      },
     ],
   },
   {
@@ -157,6 +220,20 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/google/gemma-3-4b-it',
           'https://huggingface.co/google/gemma-3-12b-it',
           'https://huggingface.co/google/gemma-3-27b-it',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Gemma4ForConditionalGeneration',
+    models: [
+      {
+        name: 'gemma4',
+        links: [
+          'https://huggingface.co/google/gemma-4-E2B-it',
+          'https://huggingface.co/google/gemma-4-E4B-it',
+          'https://huggingface.co/google/gemma-4-26B-A4B-it',
+          'https://huggingface.co/google/gemma-4-31B-it',
         ],
       },
     ],

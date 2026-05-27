@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { LLMPipeline, ChatHistory, Tokenizer } from "../dist/index.js";
 
 import assert from "node:assert/strict";
@@ -351,7 +354,7 @@ describe("tokenizer functions", async () => {
 });
 
 // Add model with paired input support CVS-176639
-describe.skip("tokenizer with paired input", () => {
+describe("tokenizer with paired input", { skip: true }, () => {
   let tokenizer = null;
 
   before(async () => {

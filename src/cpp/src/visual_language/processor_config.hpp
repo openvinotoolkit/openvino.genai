@@ -3,10 +3,14 @@
 
 #pragma once
 
-#include "openvino/genai/visibility.hpp"
-#include <openvino/runtime/properties.hpp>
 #include <array>
 #include <filesystem>
+#include <nlohmann/json_fwd.hpp>
+
+#include <openvino/core/any.hpp>
+#include <openvino/runtime/properties.hpp>
+
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 /// @brief A Configuration class passed to VisionEncoder and used to
@@ -50,6 +54,10 @@ public:
     size_t size_height = 896;
     size_t size_width = 896;
 
+    // gemma4 specific config params
+    size_t pooling_kernel_size = 3;
+    size_t max_soft_tokens = 280;
+
     struct {
         size_t num_crops = 4;
         size_t num_img_tokens = 144;
@@ -62,9 +70,17 @@ public:
 
     /// @brief Default constructor
     ProcessorConfig() = default;
+
+    explicit ProcessorConfig(const nlohmann::json& parsed);
+
     /// @brief Construct ProcessorConfig from values in json_path.
     /// Keys in the file must match the ProcessorConfig's members.
     /// @param json_path A path to a file to extract the values from.
     explicit ProcessorConfig(const std::filesystem::path& json_path);
+
+    static ProcessorConfig from_any_map(
+        const ov::AnyMap& config_map,
+        const ProcessorConfig& initial
+    );
 };
 }  // namespace ov::genai

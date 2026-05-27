@@ -12,6 +12,7 @@
 
 #include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/taylorseer_config.hpp"
 
 namespace ov {
 namespace genai {
@@ -121,6 +122,11 @@ struct OPENVINO_GENAI_EXPORTS ImageGenerationConfig {
      * Holds LoRA adapters
      */
     std::optional<AdapterConfig> adapters;
+
+    /**
+     * TaylorSeer configuration for models
+     */
+    std::optional<TaylorSeerCacheConfig> taylorseer_config;
 
     /**
      * Checks whether image generation config is valid, otherwise throws an exception.

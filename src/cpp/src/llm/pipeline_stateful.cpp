@@ -48,7 +48,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::string& device,
     const ov::AnyMap& properties,
     const ov::genai::GenerationConfig& generation_config)
-    : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer) {
+    : LLMPipelineImplBase(tokenizer, generation_config), m_sampler(m_tokenizer), m_cache_state(model) {
     if (device.find("NPU") != std::string::npos) {
         m_is_npu = true;
         m_use_full_chat_history = true;
@@ -63,7 +63,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
     if (!m_use_full_chat_history)
-        m_kv_cache_state.seq_length_axis = kv_pos.seq_len;
+        m_cache_state.seq_length_axis = kv_pos.seq_len;
 
     auto [filtered_properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
     auto filtered_properties = extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
@@ -112,13 +112,18 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     TokenizedInputs encoded_input,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer,
-    std::chrono::steady_clock::time_point start_time
+    std::chrono::steady_clock::time_point start_time,
+    std::chrono::steady_clock::time_point tokenization_start_time,
+    std::optional<float> chat_template_duration_us
 ) {
     auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(encoded_input, generation_config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     // generate_durations
@@ -128,7 +133,10 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    if (chat_template_duration_us.has_value()) {
+        raw_counters.chat_template_durations.emplace_back(*chat_template_duration_us);
+    }
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
 
     // Added tokenization/detokenization times, and updated generate duration, need to reevaluate statistics.
@@ -153,31 +161,41 @@ DecodedResults StatefulLLMPipeline::generate(
     GenerationConfig config = resolve_generation_config(generation_config);
 
     TokenizedInputs encoded_input;
+    auto tokenization_start_time = start_time;
+    std::optional<float> chat_template_duration_us;
 
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
         if (is_chat_conversation) {
             OPENVINO_ASSERT(input_vector->size() == 1, "Can't chat with multiple prompts");
             m_history.push_back({{"role", "user"}, {"content", (*input_vector)[0]}});
             constexpr bool add_generation_prompt = true;
+            const auto template_start_time = std::chrono::steady_clock::now();
             auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+            tokenization_start_time = std::chrono::steady_clock::now();
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
             if (m_use_full_chat_history) {
                 encoded_input = new_chat_tokens;
             } else {
-                ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
-                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
+                ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
         } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             std::vector<std::string> templated_input_vector;
             for (auto& input : *input_vector) {
                 ChatHistory history({{{"role", "user"}, {"content", input}}});
                 constexpr bool add_generation_prompt = true;
+                const auto template_start_time = std::chrono::steady_clock::now();
                 auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                chat_template_duration_us = chat_template_duration_us.value_or(0.0f) +
+                                            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
                 templated_input_vector.push_back(templated_prompt);
             }
+            tokenization_start_time = std::chrono::steady_clock::now();
             encoded_input = m_tokenizer.encode(templated_input_vector, ov::genai::add_special_tokens(false));
         } else {
+            tokenization_start_time = std::chrono::steady_clock::now();
             encoded_input = m_tokenizer.encode(*input_vector, ov::genai::add_special_tokens(true));
         }
     } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
@@ -186,31 +204,45 @@ DecodedResults StatefulLLMPipeline::generate(
         if (is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
+            const auto template_start_time = std::chrono::steady_clock::now();
             auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+            tokenization_start_time = std::chrono::steady_clock::now();
             // Do not add special tokens in chat scenario to be aligned with HF.
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
             if (m_use_full_chat_history) {
                 encoded_input = new_chat_tokens;
             } else {
-                ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
-                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
+                ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
             }
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
         } else {
             if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
+                const auto template_start_time = std::chrono::steady_clock::now();
                 auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+                tokenization_start_time = std::chrono::steady_clock::now();
                 encoded_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
             } else {
                 // in case when chat_template was not found in tokenizer_config.json or set
+                tokenization_start_time = std::chrono::steady_clock::now();
                 encoded_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
             }
         }
     }
 
-    DecodedResults decoded_results = get_decoded_results(encoded_input, config, streamer, start_time);
+    DecodedResults decoded_results = get_decoded_results(
+        encoded_input,
+        config,
+        streamer,
+        start_time,
+        tokenization_start_time,
+        chat_template_duration_us
+    );
 
     if (is_chat_conversation) {
         if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
@@ -260,25 +292,34 @@ DecodedResults StatefulLLMPipeline::generate(
     }
 
     if (!is_history_continuation) {
-        reset_kv_state();
+        reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
-        m_kv_cache_state.reset_state();
+        m_cache_state.reset_state();
     }
 
     m_history = history;
 
     constexpr bool add_generation_prompt = true;
+    const auto template_start_time = std::chrono::steady_clock::now();
     auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+    const auto tokenization_start_time = std::chrono::steady_clock::now();
     auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
     TokenizedInputs encoded_input;
     if (m_use_full_chat_history) {
         encoded_input = new_chat_tokens;
     } else {
-        ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
-        encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
+        ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
+        encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
     }
-    return get_decoded_results(encoded_input, config, streamer, start_time);
+    return get_decoded_results(
+        encoded_input,
+        config,
+        streamer,
+        start_time,
+        tokenization_start_time,
+        PerfMetrics::get_microsec(tokenization_start_time - template_start_time)
+    );
 }
 
 EncodedResults StatefulLLMPipeline::generate(
@@ -294,9 +335,9 @@ EncodedResults StatefulLLMPipeline::generate(
                         "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
 
     if (!is_chat_conversation) {
-        reset_kv_state();
+        reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
-        m_kv_cache_state.reset_state();
+        m_cache_state.reset_state();
     }
 
     auto start_time = std::chrono::steady_clock::now();
@@ -338,14 +379,14 @@ EncodedResults StatefulLLMPipeline::generate(
     size_t real_input_ids_size = input_ids.get_shape().at(1);
 
     if (is_chat_conversation && m_use_full_chat_history)
-        m_kv_cache_state.reset_state();
+        m_cache_state.reset_state();
 
     // Tail of previous output in chat mode is missing in KV cache.
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
-        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
+        ov::genai::align_cache_and_history(new_chat_tokens, m_cache_state);
 
-        auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state);
+        auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_cache_state);
         input_ids = encoded_input.input_ids;
         attention_mask = encoded_input.attention_mask;
     }
@@ -379,29 +420,29 @@ EncodedResults StatefulLLMPipeline::generate(
 
     if (is_chat_conversation) {
         if (m_use_full_chat_history)
-            reset_kv_state();
+            reset_state();
         else
-            ov::genai::utils::trim_kv_cache(m_model_runner, m_kv_cache_state, m_adapter_controller);
+            ov::genai::utils::trim_kv_cache(m_model_runner, m_cache_state, m_adapter_controller);
     }
 
-    size_t kv_cache_len = 0;
+    size_t cache_len = 0;
     ov::Tensor concatenated_attention_mask;
-    if (is_chat_conversation && !m_kv_cache_state.get_state().empty() && !m_use_full_chat_history) {
+    if (is_chat_conversation && !m_cache_state.get_state().empty() && !m_use_full_chat_history) {
         OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
         // If history is saved in KV cache, concatenate new attention_mask with the already existing.
         // Between subsequent runs attention_mask should not be modified.
         auto atten_mask_history = m_model_runner.get_tensor("attention_mask");
         auto prompt_len = attention_mask.get_shape()[1];
 
-        kv_cache_len = m_kv_cache_state.get_state().size();
+        cache_len = m_cache_state.get_state().size();
 
-        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, kv_cache_len + prompt_len}};
+        ov::Tensor new_atten_mask = ov::Tensor{ov::element::i64, {batch_size, cache_len + prompt_len}};
         auto start_atten_hst = atten_mask_history.data<int64_t>();
 
-        std::copy(start_atten_hst, start_atten_hst + kv_cache_len,
+        std::copy(start_atten_hst, start_atten_hst + cache_len,
                 new_atten_mask.data<int64_t>());
         std::copy(attention_mask.data<int64_t>(), attention_mask.data<int64_t>() + prompt_len,
-                new_atten_mask.data<int64_t>() + kv_cache_len);
+                new_atten_mask.data<int64_t>() + cache_len);
         concatenated_attention_mask = new_atten_mask;
     } else {
         concatenated_attention_mask = attention_mask;
@@ -413,7 +454,7 @@ EncodedResults StatefulLLMPipeline::generate(
     std::optional<ov::Tensor> position_ids = std::nullopt;
     if (position_ids_available) {
         position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
-        utils::initialize_position_ids(*position_ids, attention_mask, kv_cache_len);
+        utils::initialize_position_ids(*position_ids, attention_mask, cache_len);
     }
 
     if(m_adapter_controller) {
@@ -421,24 +462,23 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     std::vector<SequenceGroup::Ptr> requests;
-    size_t block_size = 1;
 
     for (size_t request_id = 0; request_id < batch_size; request_id++) {
         SequenceGroup::Ptr sequence_group;
         if (is_chat_conversation) {
-            std::vector<int64_t>& state = m_kv_cache_state.get_state();
+            std::vector<int64_t>& state = m_cache_state.get_state();
             std::vector<int64_t> tokenized_chat_hist;
             tokenized_chat_hist.reserve(state.size() + input_ids.get_size());
             std::copy(state.begin(), state.end(), std::back_inserter(tokenized_chat_hist));
             std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(tokenized_chat_hist));
-            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config, block_size);
+            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config);
         } else {
             size_t seq_len = input_ids.get_shape().at(1);
             size_t batch_offset = request_id * seq_len;
             const int64_t* prompt_start = input_ids.data<const int64_t>() + batch_offset;
             std::vector<int64_t> tokenized_prompt(prompt_start, prompt_start + seq_len);
 
-            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size);
+            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config);
         }
 
         requests.push_back(sequence_group);
@@ -449,12 +489,12 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, std::nullopt, m_kv_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+                                                                                requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
     if (is_chat_conversation) {
-        m_kv_cache_state.num_tokens_to_trim = 0;
+        m_cache_state.num_tokens_to_trim = 0;
 
         if (m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
             if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
@@ -464,7 +504,7 @@ EncodedResults StatefulLLMPipeline::generate(
             }
         }
         if (config.is_beam_search()) {
-            m_kv_cache_state.num_tokens_to_trim = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
+            m_cache_state.num_tokens_to_trim = m_model_runner.get_tensor("attention_mask").get_shape()[1] - prev_attn_mask_size;
         }
     }
 
@@ -489,7 +529,7 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
     m_history.push_back({{"role", "system"}, {"content", system_message}});
 }
 
-void StatefulLLMPipeline::reset_kv_state() {
+void StatefulLLMPipeline::reset_state() {
     if(m_adapter_controller) {
         for(auto& state: m_model_runner.query_state()) {
             if(!m_adapter_controller->has_state_name(state.get_name())) {
@@ -505,12 +545,12 @@ void StatefulLLMPipeline::finish_chat() {
     is_chat_conversation = false;
     m_chat_input_type = ov::genai::utils::GenerationChatInputsType::UNDEF;
     bool have_state = 0 != m_model_runner.get_tensor("attention_mask").get_size();
-    if (!m_kv_cache_state.get_state().empty() || have_state) {
-        reset_kv_state();
+    if (!m_cache_state.get_state().empty() || have_state) {
+        reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_history.clear();
         m_tokenized_chat_history.clear();
-        m_kv_cache_state.reset_state();
+        m_cache_state.reset_state();
     }
 }
 

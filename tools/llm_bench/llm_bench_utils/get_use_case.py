@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import json
 import logging as log
@@ -110,14 +113,31 @@ def get_use_case_by_model_id(model_id, task=None):
             possible_use_cases = USE_CASES["image_gen"]
         else:
             possible_use_cases = USE_CASES[task]
+    model_use_case, model_type = None, None
     for use_case in possible_use_cases:
         for m_type in normalize_model_ids(use_case.model_types):
             # TODO go to equality and raise error if use_cases is already found, as it will mean that
             # model with that task can be applicable to execute with different pipelines and user doesn't specify one
-            if model_id.startswith(m_type):
-                return use_case, m_type
+            if not model_id.startswith(m_type):
+                continue
 
-    return None, None
+            if model_use_case is not None and model_use_case.task != use_case.task:
+                log.warning(
+                    f"Model id `{model_id}` matches multiple use cases: "
+                    f"`{model_use_case.task}` and `{use_case.task}`. "
+                    f"Use case `{model_use_case.task}` will be used. "
+                    f"To select a specific task, set `-t`/`--task`."
+                )
+            else:
+                model_use_case = use_case
+                model_type = m_type
+
+    if model_use_case is None and task:
+        # first use case is the default/most common, the following ones reflect specific cases
+        model_use_case = possible_use_cases[0]
+        model_type = model_id
+
+    return model_use_case, model_type
 
 
 def get_use_case(model_path: Path, task: Optional[str] = None):

@@ -16,6 +16,7 @@ from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 from kv_cache_eviction_utils import get_scheduler_config
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from optimum.intel.utils.import_utils import is_transformers_version
 
 
 def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
@@ -48,34 +49,54 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
         "segfault on mac"
     ),
 )
-@pytest.mark.parametrize("test_struct", [
-    # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
-    CacheOptTestStruct(test_id="prompts_longer_than_eviction_arena",
-                       prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.8,
-                       max_cache_usage_optimization_ratio=2.0,
-                       avg_cache_usage_optimization_ratio=1.7),
-
-    # prompts + generation length are shorter than the eviction arena, no eviction expected
-    CacheOptTestStruct(test_id="prompts_and_gen_shorter_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.98,
-                       max_cache_usage_optimization_ratio=0.95,  # no improvement expected
-                       avg_cache_usage_optimization_ratio=0.95),
-
-    # short prompts, long generation - eviction expected
-    CacheOptTestStruct(test_id="gen_longer_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=160, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.94,
-                       max_cache_usage_optimization_ratio=1.4,
-                       avg_cache_usage_optimization_ratio=1.1),
-
-    ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
-@pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
+@pytest.mark.parametrize(
+    "test_struct",
+    [
+        # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
+        CacheOptTestStruct(
+            test_id="prompts_longer_than_eviction_arena",
+            prompt_file="long_prompts.txt",
+            max_new_tokens=128,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.8,
+            max_cache_usage_optimization_ratio=2.0,
+            avg_cache_usage_optimization_ratio=1.7,
+        ),
+        # prompts + generation length are shorter than the eviction arena, no eviction expected
+        CacheOptTestStruct(
+            test_id="prompts_and_gen_shorter_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=32,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.98,
+            max_cache_usage_optimization_ratio=0.95,  # no improvement expected
+            avg_cache_usage_optimization_ratio=0.95,
+        ),
+        # short prompts, long generation - eviction expected
+        CacheOptTestStruct(
+            test_id="gen_longer_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=160,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.94,
+            max_cache_usage_optimization_ratio=1.4,
+            avg_cache_usage_optimization_ratio=1.1,
+        ),
+    ],
+    ids=lambda x: x.test_id,
+)
+@pytest.mark.parametrize(
+    "apply_rotation", [True, False], ids=["with_rotation", "no_rotation"]
+)  # rotation should improve similarity
+@pytest.mark.parametrize(
+    "use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]
+)  # sparse attn should not degrade similarity too much
 def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 
@@ -138,7 +159,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
     assert similarity_metric > test_struct.similarity_threshold
     assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
-
+    assert pipeline_opt_metrics.cache_size_in_bytes > 0
+    assert pipeline_noopt_metrics.cache_size_in_bytes > 0
 
 
 def get_greedy_seq_len_300() -> GenerationConfig:
@@ -157,13 +179,55 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     return generation_config
 
 
-scheduler_params_list = [
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300()),
-]
+if is_transformers_version("<", "5.0"):
+    # error: group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790
+    scheduler_params_list = [
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "enable_prefix_caching": True,
+            },
+            get_beam_search_seq_len_300(),
+        ),
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "enable_prefix_caching": False,
+            },
+            get_beam_search_seq_len_300(),
+        ),
+    ]
+else:
+    scheduler_params_list = [
+        (
+            {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True},
+            get_greedy_seq_len_300(),
+        ),
+        (
+            {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False},
+            get_greedy_seq_len_300(),
+        ),
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "use_cache_eviction": True,
+                "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG,
+            },
+            get_greedy_seq_len_300(),
+        ),
+    ]
+
+
+@pytest.mark.transformers_dependent
 @pytest.mark.parametrize("params", scheduler_params_list)
 def test_dynamic_memory_allocation(params):
     prompts, _ = get_test_dataset()
@@ -183,16 +247,19 @@ class LongBenchTestData:
     max_cache_usage_optimization_ratio: float
     avg_cache_usage_optimization_ratio: float
 
-
-@pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 4, 1.6, 2.5),
-    LongBenchTestData("trec", 3.2, 2.0, 3.3),
-], ids=["samsum", "trec"])
+@pytest.mark.parametrize(
+    "test_struct",
+    [
+        LongBenchTestData("samsum", 1.0, 1.5, 2.5),
+        LongBenchTestData("trec", 1.0, 2.0, 2.8),
+    ],
+    ids=["samsum", "trec"],
+)
 def test_optimized_generation_longbench(test_struct):
-    seqs_per_request = 32
+    seqs_per_request = 16
     device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
-    model_id = "Qwen/Qwen2-0.5B-Instruct"
+    model_id = "HuggingFaceTB/SmolLM2-135M-Instruct"
     models_path = download_and_convert_model(model_id).models_path
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
@@ -213,7 +280,7 @@ def test_optimized_generation_longbench(test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:32]", revision="8cbd1")
+    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:16]", revision="8cbd1")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []

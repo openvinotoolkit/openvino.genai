@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
@@ -8,15 +8,24 @@ import {
   TextRerankPipeline as TextRerank,
   TextRerankPipelineOptions,
 } from "./pipelines/textRerankPipeline.js";
-import { LLMPipelineProperties, VLMPipelineProperties } from "./utils.js";
+import { WhisperPipeline as Whisper } from "./pipelines/whisperPipeline.js";
+import { Text2ImagePipeline as Text2Image } from "./pipelines/text2ImagePipeline.js";
+import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipeline.js";
+import {
+  LLMPipelineProperties,
+  VLMPipelineProperties,
+  WhisperPipelineProperties,
+  Text2ImagePipelineProperties,
+  Text2SpeechPipelineProperties,
+} from "./utils.js";
 
 class PipelineFactory {
-  static async LLMPipeline(modelPath: string, device?: string): Promise<any>;
+  static async LLMPipeline(modelPath: string, device?: string): Promise<LLM>;
   static async LLMPipeline(
     modelPath: string,
     device: string,
     properties?: LLMPipelineProperties,
-  ): Promise<any>;
+  ): Promise<LLM>;
   static async LLMPipeline(
     modelPath: string,
     device?: string,
@@ -58,12 +67,64 @@ class PipelineFactory {
 
     return pipeline;
   }
+
+  static async WhisperPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: WhisperPipelineProperties = {},
+  ) {
+    const pipeline = new Whisper(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  static async Text2ImagePipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Text2ImagePipelineProperties = {},
+  ) {
+    const pipeline = new Text2Image(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  static async Text2SpeechPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Text2SpeechPipelineProperties = {},
+  ) {
+    const pipeline = new Text2Speech(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
 }
 
-export const { LLMPipeline, VLMPipeline, TextEmbeddingPipeline, TextRerankPipeline } =
-  PipelineFactory;
-export { DecodedResults, VLMDecodedResults } from "./decodedResults.js";
-export { PerfMetrics, VLMPerfMetrics } from "./perfMetrics.js";
+export const {
+  LLMPipeline,
+  VLMPipeline,
+  TextEmbeddingPipeline,
+  TextRerankPipeline,
+  WhisperPipeline,
+  Text2ImagePipeline,
+  Text2SpeechPipeline,
+} = PipelineFactory;
+export {
+  DecodedResults,
+  VLMDecodedResults,
+  WhisperDecodedResults,
+  Text2SpeechDecodedResults,
+} from "./decodedResults.js";
+export type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
+export {
+  PerfMetrics,
+  VLMPerfMetrics,
+  WhisperPerfMetrics,
+  Text2ImagePerfMetrics,
+  Text2SpeechPerfMetrics,
+} from "./perfMetrics.js";
 export * from "./utils.js";
 export * from "./addon.js";
 export type { TokenizedInputs, EncodeOptions, DecodeOptions } from "./tokenizer.js";

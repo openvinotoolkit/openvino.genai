@@ -8,7 +8,9 @@
 #include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
+#include "visual_language/video_processor_config.hpp"
 #include "circular_buffer_queue.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 
 
 namespace ov::genai {
@@ -57,7 +59,7 @@ struct EncodedImage {
     /// @brief Original size of the image
     ImageSize original_image_size;
 
-    /// @brief Images features projection, used only by Phi3 and phi4mm.
+    /// @brief Images features projection, used only by Phi3, phi4mm and videochat-flash-qwen.
     ov::Tensor images_features_projection;
   
     /// @brief Resampled image, used only by MiniCPM.
@@ -81,6 +83,9 @@ struct EncodedVideo {
 
     /// @brief A number of encoded frames.
     size_t frame_num;
+
+    /// @brief Video metadata, used for video input processing and prompt normalization.
+    VideoMetadata metadata;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -127,7 +132,7 @@ public:
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
     /// @brief Compute embeddings of a or multiple video given
-    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) {
         OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
     }
 
@@ -135,12 +140,24 @@ public:
     /// @return Processor config
     ProcessorConfig get_processor_config() const;
 
+    /// @brief Gets video processor config
+    /// @return Video processor config
+    VideoProcessorConfig get_video_processor_config() const;
+
 protected:
     /// @brief  Infer requests queue for image encoding model.
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_encoder;
 
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
+    
+    /// @brief A config for video input processing.
+    /// Used by models with separate video processor (e.g. Qwen3-VL).
+    VideoProcessorConfig m_video_processor_config;
+
+    void resolve_processor_configs(const std::filesystem::path& config_dir_path);
+    
+    VisionEncoder() = default;
 
 public:
     VisionEncoder(

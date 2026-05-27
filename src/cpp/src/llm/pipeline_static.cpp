@@ -26,14 +26,6 @@ void copy_with_offset(const ov::Tensor& orig, const std::size_t offset, ov::Tens
     std::copy(orig_data, orig_data + orig.get_size(), padded_data + offset);
 }
 
-ov::Tensor make_tensor_slice(ov::Tensor tensor, size_t dim, size_t start_pos, size_t end_pos) {
-    ov::Shape start_shape(std::vector<size_t>(tensor.get_shape().size(), 0u));
-    start_shape[dim] = start_pos;
-    ov::Shape end_shape = tensor.get_shape();
-    end_shape[dim] = end_pos;
-    return ov::Tensor(tensor, start_shape, end_shape);
-}
-
 void copy_columns_by_row_chunks(const ov::Tensor& src, ov::Tensor& dst) {
     const auto src_shape = src.get_shape();
 
@@ -69,8 +61,12 @@ void stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_p
     if (streamer_ptr && handle->can_read()) {
         std::unordered_map<uint64_t, ov::genai::GenerationOutput> token = handle->read();
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
-        if (streaming_status != ov::genai::StreamingStatus::RUNNING) {
-            streaming_status == ov::genai::StreamingStatus::CANCEL ? handle->cancel() : handle->stop();
+        if (streaming_status == ov::genai::StreamingStatus::TOOL_CALL_STOP) {
+            handle->stop(ov::genai::GenerationFinishReason::TOOL_CALL);
+        } else if (streaming_status == ov::genai::StreamingStatus::CANCEL) {
+            handle->cancel();
+        } else if (streaming_status == ov::genai::StreamingStatus::STOP) {
+            handle->stop();
         }
     }
 }
@@ -136,20 +132,29 @@ DecodedResults StatefulLLMPipeline::generate(
     }
 
     ov::genai::TokenizedInputs tokenized_input;
+    auto tokenization_start_time = start_time;
+    std::optional<float> chat_template_duration_us;
     if (m_is_chat_conversation) {
         m_history.push_back({{"role", "user"}, {"content", prompt}});
         constexpr bool add_generation_prompt = true;
+        const auto template_start_time = std::chrono::steady_clock::now();
         prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+        tokenization_start_time = std::chrono::steady_clock::now();
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
         if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
+            const auto template_start_time = std::chrono::steady_clock::now();
             auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+            tokenization_start_time = std::chrono::steady_clock::now();
             tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
         } else {
             // in case when chat_template was not found in tokenizer_config.json or set
+            tokenization_start_time = std::chrono::steady_clock::now();
             tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
         }
     }
@@ -158,7 +163,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto encoded_results = generate(tokenized_input, config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
 
     if (m_is_chat_conversation) {
@@ -176,7 +184,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    if (chat_template_duration_us.has_value()) {
+        raw_counters.chat_template_durations.emplace_back(*chat_template_duration_us);
+    }
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
@@ -197,7 +208,9 @@ DecodedResults StatefulLLMPipeline::generate(
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
     
     constexpr bool add_generation_prompt = true;
+    const auto template_start_time = std::chrono::steady_clock::now();
     auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+    const auto tokenization_start_time = std::chrono::steady_clock::now();
     // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
     auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
 
@@ -205,7 +218,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto encoded_results = generate(tokenized_inputs, config, streamer);
 
     auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results;
+    decoded_results.texts = m_tokenizer.decode(encoded_results.tokens);
+    decoded_results.scores = encoded_results.scores;
+    decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
     
     // Update perf metrics
@@ -214,7 +230,8 @@ DecodedResults StatefulLLMPipeline::generate(
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(tokenization_start_time - template_start_time));
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
@@ -266,6 +283,7 @@ EncodedResults StatefulLLMPipeline::generate(
     results.scores.resize(1u);
     results.scores[0] = 0u;
     results.tokens.resize(1u);
+    results.finish_reasons.resize(1u, GenerationFinishReason::NONE);
 
     // NB: Check if there is enough space in KV-cache to process input prompt
     auto prompt_len = input_ids.get_size();
@@ -297,12 +315,12 @@ EncodedResults StatefulLLMPipeline::generate(
     auto padded_sequence_len = padded_logits.get_shape()[1];
     if (padded_sequence_len > 1) {
         // If SliceOut is not applied:
-        logits = make_tensor_slice(padded_logits, 1, padded_sequence_len - prompt_len, padded_sequence_len);
+        logits = ov::genai::utils::make_tensor_slice(padded_logits, 1, padded_sequence_len - prompt_len, padded_sequence_len);
     }
     int64_t output_sequence_len = logits.get_shape().at(1);
 
     auto sequence_group = std::make_shared<SequenceGroup>(
-        0 /* request_id */, input_ids, config, 1 /* block_size */);
+        0 /* request_id */, input_ids, config);
     sequence_group->schedule_tokens(sequence_group->get_prompt_len());
     sequence_group->set_output_seq_len(output_sequence_len);
 
@@ -355,6 +373,10 @@ EncodedResults StatefulLLMPipeline::generate(
     auto sequence = sequence_group->get_finished_sequences().front();
     results.tokens[0] = sequence->get_generated_ids();
     results.scores[0] = sequence->get_cumulative_log_prob();
+    results.finish_reasons[0] = sequence->get_finish_reason();
+    if (results.finish_reasons[0] == GenerationFinishReason::NONE && sequence_group->handle_stopped()) {
+        results.finish_reasons[0] = sequence_group->get_generation_stream()->get_finish_reason();
+    }
     m_chat_generation_finish_status = sequence_group->get_generation_stream()->get_status();
     m_sampler.clear_request_info(sequence_group->get_request_id());
 

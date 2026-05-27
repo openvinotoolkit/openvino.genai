@@ -13,7 +13,7 @@ Download and extract [OpenVINO GenAI Archive](https://www.intel.com/content/www/
 
 
 ## Build Samples
-Set up the environment and build the samples Linux and macOS
+Set up the environment and build the samples for Linux and macOS
 ```sh
 source <INSTALL_DIR>/setupvars.sh
 ./<INSTALL_DIR>/samples/c/build_samples.sh
@@ -36,10 +36,10 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model <model> <output_folder>
 ```
-If a converted model in OpenVINO IR format is available in the [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) collection on Hugging Face, you can download it directly via huggingface-cli.
+If a converted model in OpenVINO IR format is available in the [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) collection on Hugging Face, you can download it directly via hf.
 ```sh
 pip install huggingface-hub
-huggingface-cli download <model> --local-dir <output_folder>
+hf download <model> --local-dir <output_folder>
 ```
 
 ### Using GGUF models
@@ -62,7 +62,7 @@ Multi-turn conversations with an interactive chat interface powered by OpenVINO.
 The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language.
 - **Run Command:**
 ```sh
-./benchmark_gena_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+./benchmark_genai_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
 ```
 - **Options:**
 - `-m, --model`: Path to the model and tokenizers base directory.

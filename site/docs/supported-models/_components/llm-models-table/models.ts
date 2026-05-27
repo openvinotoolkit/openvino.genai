@@ -204,6 +204,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Exaone4ForCausalLM',
+    models: [
+      {
+        name: 'Exaone 4.0',
+        links: [
+          'https://huggingface.co/LGAI-EXAONE/EXAONE-4.0-1.2B',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'FalconForCausalLM',
     models: [
       {
@@ -424,6 +435,17 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/ibm-granite/granite-3.1-3b-a800m-instruct',
           'https://huggingface.co/ibm-granite/granite-3.0-1b-a400m-instruct',
           'https://huggingface.co/ibm-granite/granite-3.0-3b-a800m-instruct',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'HunYuanDenseV1ForCausalLM',
+    models: [
+      {
+        name: 'HunYuan',
+        links: [
+          'https://huggingface.co/tencent/HY-MT1.5-1.8B',
         ],
       },
     ],

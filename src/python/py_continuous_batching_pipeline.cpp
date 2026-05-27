@@ -35,6 +35,7 @@ using ov::genai::KVCrushAnchorPointMode;
 using ov::genai::KVCrushConfig;
 using ov::genai::ChatHistory;
 using ov::genai::AdaptiveRKVConfig;
+using ov::genai::VideoMetadata;
 
 namespace {
 
@@ -110,8 +111,14 @@ auto scheduler_config_docstring = R"(
     max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
         independent sequences, we consider total amount of tokens in a batch).
     num_kv_blocks:              total number of KV blocks available to scheduler logic.
-    cache_size:                 total size of KV cache in GB.
-    block_size:                 block size for KV cache.
+    cache_size:                 total size of cache in GB.
+    num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
+                                Only applicable for models with linear attention cache inputs.
+    cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
+                                The internal interval is KV cache block size * cache_interval_multiplier.
+                                When unset, the default value 8 is used for hybrid models with prefix caching.
+                                Explicit values are supported only for models with linear attention cache inputs.
+                                0 is valid only when prefix caching is disabled.
     dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
 
     vLLM-like settings:
@@ -157,15 +164,19 @@ auto pipeline_metrics_docstring = R"(
     :param scheduled_requests:  Number of requests that were scheduled for processing at the previous step of the pipeline.
     :type scheduled_requests: int
 
-    :param cache_usage: Percentage of KV cache usage in the last generation step.
+    :param cache_usage: Maximum cache usage percentage across registered cache types in the last generation step.
     :type cache_usage: float
 
-    :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
+    :param max_cache_usage: Maximum cache usage percentage observed during the lifetime of the pipeline.
     :type max_cache_usage: float
 
-
-    :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
+    :param avg_cache_usage: Running average of cache usage percentage during the lifetime of the pipeline, with max window size of 1000 steps.
     :type avg_cache_usage: float
+
+    :param cache_size_in_bytes: Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
+      This value represents reserved/allocated memory for the cache and does not
+      distinguish between used and unused portions in dynamic cache configurations.
+    :type cache_size_in_bytes: int
 )";
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
@@ -180,15 +191,17 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
     return stream << std::endl;
 }
 
-py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
-                              const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
-                              const std::vector<ov::genai::GenerationConfig>& sampling_params,
-                              const pyutils::PyBindStreamerVariant& py_streamer) {
+py::object _call_cb_generate(
+    ContinuousBatchingPipeline& pipe,
+    const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
+    const pyutils::PyBindStreamerVariant& py_streamer
+) {
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     py::object results;
 
     std::visit(pyutils::overloaded {
-    [&](std::vector<ov::Tensor> input_ids) {
+    [&](const std::vector<ov::Tensor>& input_ids) {
         std::vector<ov::genai::EncodedGenerationResult> encoded_results;
         {
             py::gil_scoped_release rel;
@@ -196,7 +209,7 @@ py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
         }  
         results = py::cast(encoded_results);
     },
-    [&](std::vector<std::string> prompts) {
+    [&](const std::vector<std::string>& prompts) {
         std::vector<ov::genai::GenerationResult> generated_results;
         {
             py::gil_scoped_release rel;
@@ -207,6 +220,60 @@ py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
     inputs);
 
     return results;
+}
+
+py::object _call_cb_vlm_generate(
+    ContinuousBatchingPipeline& pipe,
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_batches,
+    const std::vector<std::vector<ov::Tensor>>& videos_batches,
+    const std::vector<ov::genai::GenerationConfig>& generation_configs,
+    const pyutils::PyBindStreamerVariant& py_streamer,
+    const py::kwargs& kwargs = {}
+) {
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    const auto videos_metadata_batches = pyutils::get_videos_metadata_batches_from_kwargs(kwargs);
+
+    std::vector<ov::genai::VLMDecodedResults> generated_results;
+    {
+        py::gil_scoped_release rel;
+        generated_results = pipe.generate(
+            prompts,
+            ov::genai::images_batches(images_batches),
+            ov::genai::videos_batches(videos_batches),
+            ov::genai::videos_metadata_batches(videos_metadata_batches),
+            ov::genai::generation_config_batches(generation_configs),
+            ov::genai::streamer(streamer)
+        );
+    }
+    return py::cast(generated_results);
+}
+
+py::object _call_cb_vlm_generate_chat_history(
+    ContinuousBatchingPipeline& pipe,
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_batches,
+    const std::vector<std::vector<ov::Tensor>>& videos_batches,
+    const std::vector<ov::genai::GenerationConfig>& generation_configs,
+    const pyutils::PyBindStreamerVariant& py_streamer,
+    const py::kwargs& kwargs = {}
+) {
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    const auto videos_metadata_batches = pyutils::get_videos_metadata_batches_from_kwargs(kwargs);
+
+    std::vector<ov::genai::VLMDecodedResults> generated_results;
+    {
+        py::gil_scoped_release rel;
+        generated_results = pipe.generate(
+            histories,
+            ov::genai::images_batches(images_batches),
+            ov::genai::videos_batches(videos_batches),
+            ov::genai::videos_metadata_batches(videos_metadata_batches),
+            ov::genai::generation_config_batches(generation_configs),
+            ov::genai::streamer(streamer)
+        );
+    }
+    return py::cast(generated_results);
 }
 
 } // namespace
@@ -250,13 +317,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readonly("m_request_id", &EncodedGenerationResult::m_request_id)
         .def_readwrite("m_generation_ids", &EncodedGenerationResult::m_generation_ids)
         .def_readwrite("m_scores", &EncodedGenerationResult::m_scores)
+        .def_readonly("finish_reasons", &EncodedGenerationResult::m_finish_reasons)
         .def_readonly("perf_metrics", &EncodedGenerationResult::perf_metrics)
         .def_readonly("extended_perf_metrics", &EncodedGenerationResult::extended_perf_metrics);
-
-    py::enum_<ov::genai::GenerationFinishReason>(m, "GenerationFinishReason")
-        .value("NONE", ov::genai::GenerationFinishReason::NONE)
-        .value("STOP", ov::genai::GenerationFinishReason::STOP)
-        .value("LENGTH", ov::genai::GenerationFinishReason::LENGTH);
 
     py::class_<GenerationOutput, std::shared_ptr<GenerationOutput>>(m, "GenerationOutput")
         .def_readwrite("generated_ids", &GenerationOutput::generated_ids)
@@ -267,7 +330,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
     auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
         .def("get_status", &GenerationHandleImpl::get_status)
         .def("can_read", &GenerationHandleImpl::can_read)
-        .def("stop", &GenerationHandleImpl::stop)
+        .def("stop", &GenerationHandleImpl::stop, py::arg_v("finish_reason", GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
@@ -376,6 +439,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
         .def_readwrite("num_kv_blocks", &SchedulerConfig::num_kv_blocks)
         .def_readwrite("cache_size", &SchedulerConfig::cache_size)
+        .def_readwrite("num_linear_attention_blocks", &SchedulerConfig::num_linear_attention_blocks)
+        .def_readwrite("cache_interval_multiplier", &SchedulerConfig::cache_interval_multiplier)
         .def_readwrite("dynamic_split_fuse", &SchedulerConfig::dynamic_split_fuse)
         .def_readwrite("max_num_seqs", &SchedulerConfig::max_num_seqs)
         .def_readwrite("enable_prefix_caching", &SchedulerConfig::enable_prefix_caching)
@@ -391,14 +456,20 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
+            .def_readonly("cache_size_in_bytes", &PipelineMetrics::cache_size_in_bytes)
+            .def_property_readonly("kv_cache_size_in_bytes", [](const PipelineMetrics& self) { return self.kv_cache_size_in_bytes; })
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
     py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
         .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config,
                          const std::map<std::string, py::object>& tokenizer_plugin_config, const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config),
-                     pyutils::properties_to_any_map(tokenizer_plugin_config), pyutils::properties_to_any_map(inputs_embedder_plugin_config));
+                 ov::AnyMap llm_properties = pyutils::properties_to_any_map(llm_plugin_config);
+                 ov::AnyMap tokenizer_properties = pyutils::properties_to_any_map(tokenizer_plugin_config);
+                 ov::AnyMap inputs_embedder_properties = pyutils::properties_to_any_map(inputs_embedder_plugin_config);
+                 py::gil_scoped_release rel;
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, llm_properties,
+                     tokenizer_properties, inputs_embedder_properties);
              }),
              py::arg("models_path"),
              py::arg("scheduler_config"),
@@ -409,7 +480,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
 
         .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 py::gil_scoped_release rel;
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, properties);
              }),
              py::arg("models_path"),
              py::arg("tokenizer"),
@@ -419,15 +492,92 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("get_tokenizer", &ContinuousBatchingPipeline::get_tokenizer)
         .def("get_config", &ContinuousBatchingPipeline::get_config)
         .def("get_metrics", &ContinuousBatchingPipeline::get_metrics)
-        .def("add_request", py::overload_cast<uint64_t, const ov::Tensor&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("input_ids"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("videos"), py::arg("generation_config"))
-        .def("add_request", py::overload_cast<uint64_t, const std::string&, const std::vector<ov::Tensor>&, const ov::genai::GenerationConfig&>(&ContinuousBatchingPipeline::add_request), py::arg("request_id"), py::arg("prompt"), py::arg("images"), py::arg("generation_config"))
+
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const ov::Tensor& input_ids,
+               const ov::genai::GenerationConfig& generation_config
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                return pipe.add_request(request_id, input_ids, generation_config);
+            },
+            py::arg("request_id"),
+            py::arg("input_ids"),
+            py::arg("generation_config")
+        )
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& prompt,
+               const ov::genai::GenerationConfig& generation_config
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                return pipe.add_request(request_id, prompt, generation_config);
+            },
+            py::arg("request_id"),
+            py::arg("prompt"),
+            py::arg("generation_config")
+        )
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& prompt,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const ov::genai::GenerationConfig& generation_config,
+               const py::kwargs& kwargs
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
+                return pipe.add_request(
+                    request_id,
+                    prompt,
+                    ov::genai::images(images),
+                    ov::genai::videos(videos),
+                    ov::genai::videos_metadata(videos_metadata),
+                    ov::genai::generation_config(generation_config)
+                );
+            },
+            py::arg("request_id"),
+            py::arg("prompt"),
+            py::arg("images"),
+            py::arg("videos"),
+            py::arg("generation_config")
+        )
+        .def(
+            "add_request",
+            [](ContinuousBatchingPipeline& pipe,
+               uint64_t request_id,
+               const std::string& prompt,
+               const std::vector<ov::Tensor>& images,
+               const ov::genai::GenerationConfig& generation_config
+            ) -> std::shared_ptr<GenerationHandleImpl> {
+                return pipe.add_request(request_id, prompt, images, generation_config);
+            },
+            py::arg("request_id"),
+            py::arg("prompt"),
+            py::arg("images"),
+            py::arg("generation_config")
+        )
+        
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
-        .def("start_chat", &ContinuousBatchingPipeline::start_chat, py::arg("system_message") = "")
-        .def("finish_chat", &ContinuousBatchingPipeline::finish_chat)
+        .def("start_chat", [](ContinuousBatchingPipeline& pipe, const std::string& system_message) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.start_chat(system_message);
+        }, py::arg("system_message") = "")
+        .def("finish_chat", [](ContinuousBatchingPipeline& pipe) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.finish_chat();
+        })
 
         .def(
             "generate",
@@ -435,8 +585,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<ov::Tensor>& input_ids,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& streamer
-            ) -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>> {
-                return __call_cb_generate(pipe, input_ids, generation_config, streamer);
+            ) -> py::typing::List<ov::genai::EncodedGenerationResult> {
+                return _call_cb_generate(pipe, input_ids, generation_config, streamer);
             },
             py::arg("input_ids"),
             py::arg("generation_config"),
@@ -449,8 +599,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::string>& prompts,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& streamer
-            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
-                return __call_cb_generate(pipe, prompts, generation_config, streamer);
+            ) -> py::typing::List<ov::genai::GenerationResult> {
+                return _call_cb_generate(pipe, prompts, generation_config, streamer);
             },
             py::arg("prompts"),
             py::arg("generation_config"),
@@ -463,10 +613,10 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::string& prompt,
                const ov::genai::GenerationConfig& generation_config,
                const pyutils::PyBindStreamerVariant& streamer
-            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+            ) -> py::typing::List<ov::genai::GenerationResult> {
                 std::vector<std::string> prompts = { prompt };
                 std::vector<ov::genai::GenerationConfig> generation_configs = { generation_config };
-                return __call_cb_generate(pipe, prompts, generation_configs, streamer);
+                return _call_cb_generate(pipe, prompts, generation_configs, streamer);
             },
             py::arg("prompt"),
             py::arg("generation_config"),
@@ -480,15 +630,10 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::vector<ov::Tensor>>& images,
                const std::vector<std::vector<ov::Tensor>>& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer
-            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
-                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                std::vector<ov::genai::VLMDecodedResults> generated_results;
-                {
-                    py::gil_scoped_release rel;
-                    generated_results = pipe.generate(prompts, images, videos, generation_config, streamer);
-                }  
-                return py::cast(generated_results);
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const py::kwargs& kwargs
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                return _call_cb_vlm_generate(pipe, prompts, images, videos, generation_config, py_streamer, kwargs);
             },
             py::arg("prompts"),
             py::arg("images"),
@@ -503,14 +648,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::vector<ov::Tensor>>& images,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer
-            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
-                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                std::vector<ov::genai::VLMDecodedResults> generated_results;
-                {
-                    py::gil_scoped_release rel;
-                    generated_results = pipe.generate(prompts, images, generation_config, streamer);
-                }  
-                return py::cast(generated_results);
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                return _call_cb_vlm_generate(pipe, prompts, images, {}, generation_config, py_streamer);
             },
             py::arg("prompts"),
             py::arg("images"),
@@ -523,15 +662,10 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::string>& prompts,
                const std::vector<std::vector<ov::Tensor>>& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer)
-                -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
-                ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                std::vector<ov::genai::VLMDecodedResults> generated_results;
-                {
-                    py::gil_scoped_release rel;
-                    generated_results = pipe.generate(prompts, {}, videos, generation_config, streamer);
-                }  
-                return py::cast(generated_results);
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const py::kwargs& kwargs
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
+                return _call_cb_vlm_generate(pipe, prompts, {}, videos, generation_config, py_streamer, kwargs);
             },
             py::arg("prompts"),
             py::arg("videos"),
@@ -545,7 +679,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                py::list py_histories,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer
-            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+            ) -> py::typing::List<ov::genai::GenerationResult> {
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
@@ -554,7 +688,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                         {
                             py::gil_scoped_release rel;
                             generated_results = pipe.generate(histories, generation_config, streamer);
-                        }
+                        }  
                         return py::cast(generated_results);
                     });
             },
@@ -570,18 +704,13 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::vector<ov::Tensor>>& images,
                const std::vector<std::vector<ov::Tensor>>& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer
-            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const py::kwargs& kwargs
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                        std::vector<ov::genai::VLMDecodedResults> generated_results;
-                        {
-                            py::gil_scoped_release rel;
-                            generated_results = pipe.generate(histories, images, videos, generation_config, streamer);
-                        }  
-                        return py::cast(generated_results);
+                        return _call_cb_vlm_generate_chat_history(pipe, histories, images, videos, generation_config, py_streamer, kwargs);
                     });
             },
             py::arg("histories"),
@@ -597,17 +726,11 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::vector<ov::Tensor>>& images,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& py_streamer
-            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                        std::vector<ov::genai::VLMDecodedResults> generated_results;
-                        {
-                            py::gil_scoped_release rel;
-                            generated_results = pipe.generate(histories, images, generation_config, streamer);
-                        }  
-                        return py::cast(generated_results);
+                        return _call_cb_vlm_generate_chat_history(pipe, histories, images, {}, generation_config, py_streamer);
                     }
                 );
             },
@@ -622,22 +745,18 @@ void init_continuous_batching_pipeline(py::module_& m) {
                py::list py_histories,
                const std::vector<std::vector<ov::Tensor>>& videos,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer)
-                -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+               const pyutils::PyBindStreamerVariant& py_streamer,
+               const py::kwargs& kwargs
+            ) -> py::typing::List<ov::genai::VLMDecodedResults> {
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
                     [&](std::vector<ov::genai::ChatHistory>& histories) {
-                        ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
-                        std::vector<ov::genai::VLMDecodedResults> generated_results;
-                        {
-                            py::gil_scoped_release rel;
-                            generated_results = pipe.generate(histories, {}, videos, generation_config, streamer);
-                        }  
-                        return py::cast(generated_results);
+                        return _call_cb_vlm_generate_chat_history(pipe, histories, {}, videos, generation_config, py_streamer, kwargs);
                     });
             },
             py::arg("histories"),
             py::arg("videos"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{});
+            py::arg("streamer") = std::monostate{}
+        );
 }

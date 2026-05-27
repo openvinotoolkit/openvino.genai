@@ -1,6 +1,8 @@
 # Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import sys
+import platform
 from enum import Enum
 from pathlib import Path
 from typing import Callable
@@ -15,6 +17,7 @@ from openvino_genai import (
     StreamerBase, 
     DecodedResults,
 )
+from optimum.intel.utils.import_utils import is_transformers_version
 
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
@@ -61,6 +64,15 @@ MAIN_PIPELINE_TYPES = (
     PipelineType.SPECULATIVE_DECODING, 
     PipelineType.PROMPT_LOOKUP_DECODING,
 )
+
+
+if is_transformers_version("<", "4.57") or is_transformers_version(">=", "5.0"):
+    LINEAR_ATTENTION_PIPELINE_TYPES = (PipelineType.STATEFUL,)
+else:  # transformers==4.57.*
+    LINEAR_ATTENTION_PIPELINE_TYPES = (
+        PipelineType.STATEFUL,
+        PipelineType.PAGED_ATTENTION,
+    )
 
 ALL_PIPELINE_TYPES = (
     *MAIN_PIPELINE_TYPES,
@@ -342,6 +354,16 @@ def generate_and_compare(
             )
         else:
             compare_generation_results_vs_ref(ov_prompts[i], ref[i], ov_results)
+
+
+def should_skip_npuw_tests():
+    """
+    Don't query OpenVINO available devices directly in order to detect OpenVINO build without NPU.
+    """
+    return dict(
+        condition=sys.platform == "darwin" or platform.machine() in {"aarch64", "arm64", "ARM64"},
+        reason="NPU plugin is only available on Linux and Windows x86_64",
+    )
 
 
 class GenerationChatInputsType(Enum):

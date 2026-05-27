@@ -27,7 +27,7 @@ Napi::Value TextRerankPipelineWrapper::init(const Napi::CallbackInfo& info) {
         *this->is_initializing = true;
 
         VALIDATE_ARGS_COUNT(info, 5, "init()");
-        auto model_path = js_to_cpp<std::string>(env, info[0]);
+        auto model_path = js_to_cpp<std::filesystem::path>(env, info[0]);
         auto device = js_to_cpp<std::string>(env, info[1]);
         auto config = js_to_cpp<ov::AnyMap>(env, info[2]);
         auto properties = js_to_cpp<ov::AnyMap>(env, info[3]);

@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -13,6 +13,9 @@ from test_utils import run_sample
 class TestVisualLanguageChat:
     @pytest.mark.vlm
     @pytest.mark.samples
+    @pytest.mark.transformers_lower_v5(
+        reason="llava-next-video hasn't supported by optimum-intel 423b423 with transformers>=5.0 yet"
+    )
     @pytest.mark.parametrize(
         "convert_model, download_test_content, questions",
         [pytest.param("tiny-random-llava-next-video", "video0.mp4", "What is unusual on this video?\nGo on.")],

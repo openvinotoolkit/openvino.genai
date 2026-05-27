@@ -1,17 +1,9 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
 import sys
+import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
-# win32 fails on ffmpeg DLLs load
-# import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
-# wa is to create mock 'av' module to prevent DLLs loading errors
-# ticket: 179943
-if sys.platform == "win32":
-    from types import ModuleType
-
-    sys.modules["av"] = ModuleType("av")
-    sys.modules["av"].__version__ = "0.0.0"
+patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import openvino_genai as ov_genai
 import functools
@@ -34,8 +26,10 @@ from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kw
 
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
-from typing import Any
+from typing import Any, Literal
 from difflib import SequenceMatcher
+
+from utils.dataset_utils import load_dataset_via_snapshot
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -205,11 +199,11 @@ MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
 def get_whisper_dataset(language: str, long_form: bool) -> list:
-    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
+    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0"
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
     if False:
-        ds = datasets.load_dataset(
+        ds = load_dataset_via_snapshot(
             "mozilla-foundation/common_voice_11_0",
             language,
             split="test",
@@ -217,7 +211,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             trust_remote_code=True,
         )
     else:
-        ds = datasets.load_dataset(
+        ds = load_dataset_via_snapshot(
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
@@ -227,6 +221,26 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
     ds = ds.take(MAX_DATASET_LENGTH)
 
     return [x["audio"]["array"] for x in ds]
+
+
+@functools.lru_cache(16)
+def get_multilingual_dataset(language: Literal["de", "fr", "es"]) -> list:
+    mls_config = {"de": "german", "fr": "french", "es": "spanish"}
+    # dataset is too big (450gb) for snapshot download
+    ds = retry_request(
+        lambda: datasets.load_dataset(
+            "facebook/multilingual_librispeech",
+            mls_config[language],
+            split="test",
+            streaming=True,
+        )
+    )
+    ds = typing.cast(datasets.IterableDataset, ds)
+    ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
+    ds = ds.take(1)
+
+    return [x["audio"]["array"] for x in ds]
+
 
 @pytest.fixture
 def sample_from_dataset(request):
@@ -242,6 +256,13 @@ def sample_from_dataset(request):
 
 def get_fixture_params_for_n_whisper_dataset_samples(n: int, language: str = "en", long_form : bool = False) -> list[dict[str, Any]]:
     return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
+
+
+@pytest.fixture
+def sample_from_multilingual_dataset(request):
+    language = request.param
+    samples = get_multilingual_dataset(language)
+    return samples[0]
 
 
 def run_pipeline_with_ref(
@@ -298,6 +319,36 @@ def test_smoke(model_descr, sample_from_dataset):
         tmp_path=model_descr[1],
         sample=sample_from_dataset,
     )
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "sample_from_multilingual_dataset,language",
+    [
+        ("de", "de"),
+        ("fr", "fr"),
+        ("es", "es"),
+    ],
+    indirect=["sample_from_multilingual_dataset"],
+)
+def test_language_detection(model_descr, sample_from_multilingual_dataset, language):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    result = genai_pipe.generate(sample_from_multilingual_dataset)
+    assert result.language == language
+
+    # explicit language should also be reflected in the result
+    result = genai_pipe.generate(sample_from_multilingual_dataset, language=f"<|{language}|>")
+    assert result.language == language
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+def test_language_detection_en(model_descr, sample_from_dataset):
+    _, _, _, genai_pipe = read_whisper_model(model_descr)
+
+    result = genai_pipe.generate(sample_from_dataset)
+    assert result.language == "en"
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -477,6 +528,7 @@ def test_return_timestamps_short_form(model_descr, sample_from_dataset):
     )
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 1}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
@@ -504,6 +556,7 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
     )
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
@@ -530,13 +583,14 @@ def test_longform_audio(model_descr, sample_from_dataset):
     assert "".join(streamer_result) == hf_result["text"]
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
+    if model_descr[0] == "openai/whisper-tiny":
+        pytest.xfail("Accuracy issue. Ticket CVS-185132")
     samples = []
-    ds = datasets.load_dataset(
-        "hf-internal-testing/librispeech_asr_dummy", "clean", split="validation"
-    )
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
 
     for ds_row in ds:
         samples.append(ds_row["audio"]["array"])
@@ -575,7 +629,9 @@ def align_words_by_text(ref_words, test_words):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
-    ds = datasets.load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
+    if model_descr[0] == "openai/whisper-tiny":
+        pytest.xfail("Accuracy issue. Ticket CVS-185132")
+    ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 
     pipe = read_whisper_model(model_descr, word_timestamps=True)[3]
@@ -647,6 +703,7 @@ def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_data
     assert len(genai_result.words) > 0
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
@@ -831,6 +888,7 @@ def streamer_for_test(request):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
+@pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
 def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
     _, _, _, genai_pipe = read_whisper_model(model_descr)
 

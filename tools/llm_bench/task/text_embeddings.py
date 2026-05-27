@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import time
 import datetime
@@ -41,21 +44,14 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
+    mem_consumption.start(num)
     start = time.perf_counter()
     model(**input_data)
     end = time.perf_counter()
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
-
     embed_time = end - start
     embed_time_full = end - tok_encode_start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
     tm_list = []
     tm_infer_list = []
     if bench_hook is not None:
@@ -71,12 +67,9 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
         infer_count=len(tm_infer_list),
         total_time=embed_time_full,
         latency=embed_time,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
-        tokenization_time=(tok_encode_time, )
+        tokenization_time=(tok_encode_time,),
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -122,21 +115,15 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.start()
+    mem_consumption.start(num)
     start = time.perf_counter()
     model.embed_documents(input_text_list)
     end = time.perf_counter()
-    if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+    embed_time = end - start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
     tm_list = []
     tm_infer_list = []
-    embed_time = end - start
     tm_list.append(embed_time)
     tm_infer_list.append(embed_time)
     iter_data = gen_output_data.embed_iterate_data(
@@ -145,12 +132,9 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
         infer_count=len(tm_list),
         total_time=embed_time,
         latency=embed_time,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
-        tokenization_time=(tok_encode_time, )
+        tokenization_time=(tok_encode_time,),
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -168,6 +152,7 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
 
 
 def run_text_embddings_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+    mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_embeddings_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
     input_text_list = get_text_prompt(args)
@@ -190,11 +175,13 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
         text_emb_fn = run_text_embeddings_genai
 
     proc_id = os.getpid()
+    mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
+                mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
@@ -207,6 +194,7 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
+                mem_consumption.update_marker(f"step-{num}-{p_idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
