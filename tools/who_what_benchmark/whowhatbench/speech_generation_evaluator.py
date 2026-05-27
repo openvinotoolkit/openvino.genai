@@ -52,6 +52,23 @@ class SpeechT5Wrapper:
         # SpeechT5 expects a single xvector with 512 values.
         return SPEECHT5_SPEAKER_EMB_SHAPE
 
+    @staticmethod
+    def resolve_default_speaker_embedding_file() -> str:
+        from huggingface_hub import hf_hub_download
+
+        embedding_file = hf_hub_download(
+            repo_id=DEFAULT_SPEAKER_EMBEDDING_REPO_ID,
+            filename=DEFAULT_SPEAKER_EMBEDDING_FILENAME,
+            repo_type="dataset",
+        )
+        LOGGER.info(
+            "Using default speaker embeddings for SpeechT5: %s/%s -> %s",
+            DEFAULT_SPEAKER_EMBEDDING_REPO_ID,
+            DEFAULT_SPEAKER_EMBEDDING_FILENAME,
+            embedding_file,
+        )
+        return embedding_file
+
     def generate(self, prompt, speaker_embedding=None, **_kwargs):
         if speaker_embedding is None:
             raise ValueError(
@@ -385,21 +402,19 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             )
         return ov.Tensor(speaker_embedding.reshape(expected_dims))
 
-    def _resolve_default_speaker_embedding_file(self) -> str:
-        from huggingface_hub import hf_hub_download
+    def _ensure_default_speaker_embedding_if_needed(self, model) -> None:
+        """Lazily load default speaker embedding for backends that require one.
 
-        embedding_file = hf_hub_download(
-            repo_id=DEFAULT_SPEAKER_EMBEDDING_REPO_ID,
-            filename=DEFAULT_SPEAKER_EMBEDDING_FILENAME,
-            repo_type="dataset",
-        )
-        LOGGER.info(
-            "Using default speaker embeddings for SpeechT5: %s/%s -> %s",
-            DEFAULT_SPEAKER_EMBEDDING_REPO_ID,
-            DEFAULT_SPEAKER_EMBEDDING_FILENAME,
-            embedding_file,
-        )
-        return embedding_file
+        SpeechT5 requires explicit speaker embeddings. Kokoro handles voice/style
+        selection in its own wrapper, so no default embedding is prepared here.
+        """
+        if self.speaker_embedding is not None or self.speaker_embedding_file_path is not None:
+            return
+
+        if hasattr(model, "resolve_default_speaker_embedding_file"):
+            self.speaker_embedding_file_path = model.resolve_default_speaker_embedding_file()
+            expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
+            self.speaker_embedding = self._load_speaker_embedding(self.speaker_embedding_file_path, expected_shape)
 
     def _generate_data(self, model, gen_speech_fn=None, audio_dir="reference"):
         def default_gen_speech_fn(model, prompt, speaker_embedding=None, language="", voice=""):
@@ -413,13 +428,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         generation_fn = gen_speech_fn or default_gen_speech_fn
 
-        if (
-            self.speaker_embedding is None
-            and self.speaker_embedding_file_path is None
-            and isinstance(model, SpeechT5Wrapper)
-        ):
-            self.speaker_embedding_file_path = self._resolve_default_speaker_embedding_file()
-            self.speaker_embedding = self._load_speaker_embedding(self.speaker_embedding_file_path)
+        self._ensure_default_speaker_embedding_if_needed(model)
 
         if self.test_data:
             if isinstance(self.test_data, str):
