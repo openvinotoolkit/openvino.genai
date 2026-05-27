@@ -688,7 +688,7 @@ def genai_gen_text2video(
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
-def _is_kokoro_optimum_export(model):
+def _is_voice_pack_enabled_model(model):
     if not hasattr(model, "model_dir"):
         return False
 
@@ -707,7 +707,7 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
     selected_voice = voice.strip() if isinstance(voice, str) else ""
 
     # Only Kokoro voice-pack exports use named voice bins under <model_dir>/voices.
-    if _is_kokoro_optimum_export(model) and speaker_embedding is None:
+    if _is_voice_pack_enabled_model(model) and speaker_embedding is None:
         if not selected_voice:
             selected_voice = "af_heart"
 
