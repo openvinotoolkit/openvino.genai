@@ -47,8 +47,9 @@ def get_overall_score(output: str) -> float:
     return float(matches[-1])
 
 
-def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path, execution_args=None):
-
+def run_test(
+    model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path, execution_args=None
+):
     execution_args = execution_args or []
 
     GT_FILE = tmp_path / "gt.csv"
