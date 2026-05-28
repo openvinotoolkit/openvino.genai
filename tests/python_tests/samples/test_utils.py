@@ -4,6 +4,10 @@ from conftest import logger
 import os
 import subprocess # nosec B404
 import time
+from pathlib import Path
+
+import cv2
+import numpy as np
 
 PA_FALLBACK_WARNING = (
     "[WARNING] Paged Attention backend initialization failed. Falling back to SDPA backend. "
@@ -15,6 +19,33 @@ def normalize_sample_output(output: str) -> str:
     if PA_FALLBACK_WARNING not in output:
         return output
     return output.replace(PA_FALLBACK_WARNING, "").strip()
+
+
+def compare_videos(video_path1: Path, video_path2: Path) -> bool:
+    """Compare two videos frame by frame for exact match."""
+    cap1 = cv2.VideoCapture(str(video_path1))
+    cap2 = cv2.VideoCapture(str(video_path2))
+
+    try:
+        if not cap1.isOpened() or not cap2.isOpened():
+            return False
+
+        while True:
+            ret1, frame1 = cap1.read()
+            ret2, frame2 = cap2.read()
+
+            if not ret1 and not ret2:
+                return True
+
+            if ret1 != ret2:
+                return False
+
+            if frame1.shape != frame2.shape or not np.array_equal(frame1, frame2):
+                return False
+    finally:
+        cap1.release()
+        cap2.release()
+
 
 def run_sample(
     command: list[str],
