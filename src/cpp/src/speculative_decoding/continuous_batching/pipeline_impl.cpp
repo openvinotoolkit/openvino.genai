@@ -351,6 +351,41 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl:
     return m_batch_size;
 }
 
+uint64_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
+reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t checkpoint_count) {
+    if (!m_scheduler || !m_scheduler->has_linear_attention_cache()) {
+        return std::numeric_limits<uint64_t>::max();
+    }
+    for (const auto& request : m_requests) {
+        if (request->get_request_id() != request_id) {
+            continue;
+        }
+        const auto running_sequences = request->get_running_sequences();
+        OPENVINO_ASSERT(running_sequences.size() == 1,
+                        "Linear attention checkpointing supports one running sequence per DFlash request.");
+        const uint64_t seq_id = running_sequences.front()->get_id();
+        m_scheduler->reserve_linear_attention_checkpoints_for_next_schedule(seq_id, checkpoint_count);
+        return seq_id;
+    }
+    OPENVINO_THROW("Cannot reserve linear attention checkpoints: request ", request_id, " was not found.");
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
+promote_linear_attention_checkpoint_for_sequence(uint64_t seq_id, size_t checkpoint_slot) {
+    if (!m_scheduler || seq_id == std::numeric_limits<uint64_t>::max()) {
+        return;
+    }
+    m_scheduler->promote_linear_attention_checkpoint(seq_id, checkpoint_slot);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
+release_linear_attention_checkpoints_for_sequence(uint64_t seq_id) {
+    if (!m_scheduler || seq_id == std::numeric_limits<uint64_t>::max()) {
+        return;
+    }
+    m_scheduler->release_linear_attention_checkpoints(seq_id);
+}
+
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_awaiting_requests(bool is_pause_request) {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};

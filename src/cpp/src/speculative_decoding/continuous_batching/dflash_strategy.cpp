@@ -4,6 +4,9 @@
 #include "dflash_strategy.hpp"
 
 #include <algorithm>
+#include <limits>
+#include <string>
+#include <vector>
 
 #include <openvino/pass/sdpa_to_paged_attention.hpp>
 
@@ -30,6 +33,21 @@ bool has_compiled_input(const ov::CompiledModel& model, const std::string& name)
     return std::find_if(inputs.begin(), inputs.end(), [&](const ov::Output<const ov::Node>& port) {
         return port.get_names().count(name) != 0;
     }) != inputs.end();
+}
+
+void validate_target_has_no_unmanaged_state(const std::shared_ptr<ov::Model>& model) {
+    OPENVINO_ASSERT(model, "DFlash target model cannot be null.");
+    std::vector<std::string> unmanaged_state_ops;
+    for (const auto& op : model->get_ordered_ops()) {
+        const std::string type_name = op->get_type_name();
+        if (type_name == "ReadValue" || type_name == "Assign") {
+            unmanaged_state_ops.push_back(op->get_friendly_name());
+        }
+    }
+    OPENVINO_ASSERT(unmanaged_state_ops.empty(),
+                    "DFlash CB/PA target model contains unmanaged state op(s) after paging conversion. ",
+                    "First unmanaged op: ", unmanaged_state_ops.empty() ? std::string{} : unmanaged_state_ops.front(),
+                    ". Convert KV, conv, and GatedDeltaNet state to managed paging before enabling DFlash.");
 }
 
 }  // namespace
@@ -209,6 +227,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
         .run_on_model(main_model);
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::dflash::expose_target_hidden_states(main_model, m_rt_info.target_layer_ids);
+    validate_target_has_no_unmanaged_state(main_model);
 
     m_tokenizer = main_model_desc.tokenizer;
     auto main_generation_config = main_model_desc.generation_config;
@@ -378,12 +397,22 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         GeneratedSequences candidate_sequences;
         candidate_sequences.emplace(0, GeneratedSequence(candidate_tokens, candidate_log_probs));
         m_main_pipeline->update_request(request_id, candidate_sequences, false);
+        state.target_la_checkpoint_sequence_id =
+            m_main_pipeline->reserve_linear_attention_checkpoints_for_next_step(request_id, candidates.size() + 1);
     }
     const auto draft_end = std::chrono::steady_clock::now();
     m_sd_metrics.draft_duration += PerfMetrics::get_microsec(draft_end - draft_start) / 1e6;
 
     const auto main_start = std::chrono::steady_clock::now();
-    m_main_pipeline->step();
+    try {
+        m_main_pipeline->step();
+    } catch (...) {
+        for (auto& [_, state] : m_request_states) {
+            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
+            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+        }
+        throw;
+    }
     const auto main_end = std::chrono::steady_clock::now();
     const auto main_duration = PerfMetrics::get_microsec(main_end - main_start);
     m_sd_metrics.main_duration += main_duration / 1e6;
@@ -393,6 +422,8 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     update_draft_states_from_main(main_generated_requests);
     for (auto& [request_id, state] : m_request_states) {
         if (main_generated_requests.find(request_id) == main_generated_requests.end()) {
+            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
+            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
             state.finished = true;
         }
     }
@@ -402,15 +433,26 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         if (state_it == m_request_states.end()) {
             continue;
         }
-        const auto& state = state_it->second;
+        auto& state = state_it->second;
         if (draft_generated == 0 || state.generated_tokens.size() <= state.generated_before_draft) {
+            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
+            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
             continue;
         }
         const auto accounting =
             dflash_cb::validation_accounting(draft_generated, state.generated_before_draft, state.generated_tokens.size());
         if (!accounting.target_extended) {
+            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
+            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
             continue;
         }
+        const size_t checkpoint_slot =
+            dflash_cb::linear_attention_checkpoint_slot_for_validation(
+                accounting,
+                /*validation_input_includes_seed_token=*/true);
+        m_main_pipeline->promote_linear_attention_checkpoint_for_sequence(state.target_la_checkpoint_sequence_id,
+                                                                         checkpoint_slot);
+        state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
         const float acceptance_rate =
             draft_generated > 0 ? static_cast<float>(accounting.accepted) / draft_generated * 100.0f : 0.0f;
         m_sd_metrics.update_draft_generated_len(request_id, draft_generated);
@@ -461,6 +503,12 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::drop_requests() {
+    for (auto& [_, state] : m_request_states) {
+        if (m_main_pipeline) {
+            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
+            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+        }
+    }
     if (m_main_pipeline) {
         m_main_pipeline->finish_request();
     }

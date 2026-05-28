@@ -185,4 +185,11 @@ inline ValidationAccounting validation_accounting(size_t draft_generated,
     return {accepted, draft_generated - accepted, true};
 }
 
+inline size_t linear_attention_checkpoint_slot_for_validation(const ValidationAccounting& accounting,
+                                                              bool validation_input_includes_seed_token) {
+    OPENVINO_ASSERT(accounting.target_extended,
+                    "Cannot select a linear attention checkpoint when target did not extend the sequence.");
+    return accounting.accepted + (validation_input_includes_seed_token ? 1 : 0);
+}
+
 }  // namespace ov::genai::dflash_cb

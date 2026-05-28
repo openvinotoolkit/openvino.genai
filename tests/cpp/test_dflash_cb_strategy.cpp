@@ -145,3 +145,23 @@ TEST(DFlashCBValidationAccounting, ComputesAcceptedAndRejected) {
     ASSERT_EQ(no_target_extension.accepted, 0);
     ASSERT_EQ(no_target_extension.rejected, 0);
 }
+
+TEST(DFlashCBLinearAttentionCheckpointing, UsesSeedAwarePromotionSlot) {
+    const auto full_accept = ov::genai::dflash_cb::validation_accounting(3, 1, 5);
+    ASSERT_EQ(ov::genai::dflash_cb::linear_attention_checkpoint_slot_for_validation(
+                  full_accept,
+                  /*validation_input_includes_seed_token=*/true),
+              4);
+
+    const auto partial_accept = ov::genai::dflash_cb::validation_accounting(3, 1, 3);
+    ASSERT_EQ(ov::genai::dflash_cb::linear_attention_checkpoint_slot_for_validation(
+                  partial_accept,
+                  /*validation_input_includes_seed_token=*/true),
+              2);
+
+    const auto full_reject = ov::genai::dflash_cb::validation_accounting(3, 1, 2);
+    ASSERT_EQ(ov::genai::dflash_cb::linear_attention_checkpoint_slot_for_validation(
+                  full_reject,
+                  /*validation_input_includes_seed_token=*/true),
+              1);
+}

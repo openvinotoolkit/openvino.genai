@@ -222,7 +222,7 @@ TEST(DFlashSamplerAdapter, GreedySamplesTargetSeedToken) {
     config.max_new_tokens = 4;
     config.do_sample = false;
     ov::genai::DFlashSamplerAdapter adapter{ov::genai::Tokenizer()};
-    auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(0, ov::genai::TokenIds{0}, config, 0);
+    auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(0, ov::genai::TokenIds{0}, config);
 
     auto sampled = adapter.sample(sequence_group, make_logits({{0.0f, 1.0f, 5.0f, 2.0f}}), 1, 1);
 
@@ -235,7 +235,7 @@ TEST(DFlashSamplerAdapter, GreedyValidationReturnsAcceptedPrefixAndFallback) {
     config.max_new_tokens = 4;
     config.do_sample = false;
     ov::genai::DFlashSamplerAdapter adapter{ov::genai::Tokenizer()};
-    auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(0, ov::genai::TokenIds{0}, config, 0);
+    auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(0, ov::genai::TokenIds{0}, config);
     (*sequence_group)[0]->append_token(2, 0.0f);
 
     auto logits = make_logits({
