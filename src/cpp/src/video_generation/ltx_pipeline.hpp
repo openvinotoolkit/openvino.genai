@@ -45,6 +45,7 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     0.0,                     // guidance_rescale
     161,                     // num_frames
     25.0f,                   // frame_rate
+    std::nullopt,            // strength
     TaylorSeerCacheConfig{}  // taylorseer_config
 };
 

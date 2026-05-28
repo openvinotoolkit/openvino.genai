@@ -97,8 +97,6 @@ static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
 
-/// Denoising strength for image-to-video generation (Image2VideoPipeline only).
-static constexpr ov::Property<float> strength{"strength"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.
