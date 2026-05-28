@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <numeric>
 
@@ -379,22 +380,49 @@ class LTXPipeline {
                         "Image2VideoPipeline requires a VAE encoder. "
                         "Ensure 'vae_encoder' exists in the model directory.");
 
+        const ov::Shape& raw_shape = image.get_shape();
+        std::cerr << "[DEBUG I2V] preprocess_and_encode_image: input shape=[";
+        for (size_t i = 0; i < raw_shape.size(); ++i) std::cerr << (i?",":"") << raw_shape[i];
+        std::cerr << "] dtype=" << image.get_element_type()
+                  << " target=" << config.height << "x" << config.width
+                  << " generator=" << (config.generator ? "set" : "null") << "\n" << std::flush;
+
         ov::Tensor img = image;
         if (img.get_shape().size() == 3) {
             auto s = img.get_shape();
             img.set_shape({1, s[0], s[1], s[2]});
+            std::cerr << "[DEBUG I2V] added batch dim -> [1," << s[0] << "," << s[1] << "," << s[2] << "]\n" << std::flush;
         }
-        ov::Tensor resized    = m_image_resizer->execute(img, config.height, config.width);
-        ov::Tensor processed  = m_image_processor->execute(resized);
+
+        std::cerr << "[DEBUG I2V] calling ImageResizer::execute -> target " << config.height << "x" << config.width << "\n" << std::flush;
+        ov::Tensor resized = m_image_resizer->execute(img, config.height, config.width);
+        std::cerr << "[DEBUG I2V] ImageResizer done, shape=[";
+        for (size_t i = 0; i < resized.get_shape().size(); ++i) std::cerr << (i?",":"") << resized.get_shape()[i];
+        std::cerr << "] dtype=" << resized.get_element_type() << "\n" << std::flush;
+
+        std::cerr << "[DEBUG I2V] calling ImageProcessor::execute (u8 NHWC -> f32 NCHW, scale/normalize)\n" << std::flush;
+        ov::Tensor processed = m_image_processor->execute(resized);
+        std::cerr << "[DEBUG I2V] ImageProcessor done, shape=[";
+        for (size_t i = 0; i < processed.get_shape().size(); ++i) std::cerr << (i?",":"") << processed.get_shape()[i];
+        std::cerr << "] dtype=" << processed.get_element_type() << "\n" << std::flush;
 
         auto shape = processed.get_shape();
         processed.set_shape({shape[0], shape[1], 1, shape[2], shape[3]});
+        std::cerr << "[DEBUG I2V] added temporal dim -> [" << shape[0] << "," << shape[1] << ",1," << shape[2] << "," << shape[3] << "]\n" << std::flush;
 
+        std::cerr << "[DEBUG I2V] calling m_vae->encode()...\n" << std::flush;
         ov::Tensor latent = m_vae->encode(processed, config.generator);
+        std::cerr << "[DEBUG I2V] m_vae->encode() done, latent shape=[";
+        for (size_t i = 0; i < latent.get_shape().size(); ++i) std::cerr << (i?",":"") << latent.get_shape()[i];
+        std::cerr << "]\n" << std::flush;
 
         const size_t ps   = m_transformer->get_config().patch_size;
         const size_t ps_t = m_transformer->get_config().patch_size_t;
+        std::cerr << "[DEBUG I2V] packing latent (ps=" << ps << " ps_t=" << ps_t << ")...\n" << std::flush;
         ov::Tensor packed = pack_latents(latent, ps, ps_t);
+        std::cerr << "[DEBUG I2V] packed shape=[";
+        for (size_t i = 0; i < packed.get_shape().size(); ++i) std::cerr << (i?",":"") << packed.get_shape()[i];
+        std::cerr << "]\n" << std::flush;
 
         if (config.num_videos_per_prompt > 1)
             packed = numpy_utils::repeat(packed, config.num_videos_per_prompt);
@@ -618,6 +646,16 @@ public:
         OPENVINO_ASSERT(strength >= 0.0f && strength <= 1.0f,
                         "'strength' must be in [0.0, 1.0], got ", strength);
 
+        std::cerr << "[DEBUG I2V] generate(image) entered: height=" << merged_generation_config.height
+                  << " width=" << merged_generation_config.width
+                  << " num_frames=" << merged_generation_config.num_frames
+                  << " num_steps=" << merged_generation_config.num_inference_steps
+                  << " guidance=" << merged_generation_config.guidance_scale
+                  << " strength=" << strength
+                  << " m_is_compiled=" << m_is_compiled
+                  << " m_pipeline_type=" << static_cast<int>(m_pipeline_type)
+                  << "\n" << std::flush;
+
         size_t requested_batch_size_multiplier =
             do_classifier_free_guidance(merged_generation_config.guidance_scale) ? 2 : 1;
         if (m_is_compiled) {
@@ -684,18 +722,30 @@ public:
         m_latent_height = merged_generation_config.height / spatial_compression_ratio;
         m_latent_width  = merged_generation_config.width  / spatial_compression_ratio;
 
+        std::cerr << "[DEBUG I2V] latent dims: num_frames=" << m_latent_num_frames
+                  << " height=" << m_latent_height << " width=" << m_latent_width
+                  << " batch_mult=" << batch_size_multiplier << "\n" << std::flush;
+
+        std::cerr << "[DEBUG I2V] calling compute_hidden_states (T5 text encode)...\n" << std::flush;
         compute_hidden_states(positive_prompt,
                               merged_generation_config.negative_prompt.value_or(""),
                               merged_generation_config,
                               use_classifier_free_guidance);
+        std::cerr << "[DEBUG I2V] compute_hidden_states done\n" << std::flush;
 
+        std::cerr << "[DEBUG I2V] calling preprocess_and_encode_image...\n" << std::flush;
         ov::Tensor image_latent_packed = preprocess_and_encode_image(image, merged_generation_config);
+        std::cerr << "[DEBUG I2V] preprocess_and_encode_image done\n" << std::flush;
 
+        std::cerr << "[DEBUG I2V] calling prepare_latents (Mechanism A)...\n" << std::flush;
         ov::Tensor latent = prepare_latents(image_latent_packed,
                                             merged_generation_config,
                                             num_channels_latents,
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size);
+        std::cerr << "[DEBUG I2V] prepare_latents done, latent shape=[";
+        for (size_t i = 0; i < latent.get_shape().size(); ++i) std::cerr << (i?",":"") << latent.get_shape()[i];
+        std::cerr << "]\n" << std::flush;
 
         if (strength == 0.0f) {
             latent = postprocess_latents(latent);
@@ -731,8 +781,14 @@ public:
 
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
 
+        std::cerr << "[DEBUG I2V] entering denoising loop: " << timesteps.size() << " steps"
+                  << " first_t=" << (timesteps.empty() ? 0.f : timesteps.front())
+                  << " last_t=" << (timesteps.empty() ? 0.f : timesteps.back()) << "\n" << std::flush;
+
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
+            std::cerr << "[DEBUG I2V] step " << inference_step + 1 << "/" << timesteps.size()
+                      << " t=" << timesteps[inference_step] << "\n" << std::flush;
             auto step_start = std::chrono::steady_clock::now();
             if (batch_size_multiplier > 1) {
                 numpy_utils::batch_copy(latent, latent_cfg, 0, 0, merged_generation_config.num_videos_per_prompt);
