@@ -406,12 +406,17 @@ class LTXPipeline {
         for (size_t i = 0; i < processed.get_shape().size(); ++i) std::cerr << (i?",":"") << processed.get_shape()[i];
         std::cerr << "] dtype=" << processed.get_element_type() << "\n" << std::flush;
 
-        auto shape = processed.get_shape();
-        processed.set_shape({shape[0], shape[1], 1, shape[2], shape[3]});
-        std::cerr << "[DEBUG I2V] added temporal dim -> [" << shape[0] << "," << shape[1] << ",1," << shape[2] << "," << shape[3] << "]\n" << std::flush;
+        // Copy to an owned tensor (with temporal dim added) before passing to the encoder.
+        // get_output_tensor() aliases the ImageProcessor's internal buffer; passing that aliased
+        // tensor directly to a second set_input_tensor() / infer() call causes a hang in OpenVINO.
+        const auto& ps = processed.get_shape();
+        ov::Tensor encoder_input(ov::element::f32, {ps[0], ps[1], 1, ps[2], ps[3]});
+        std::memcpy(encoder_input.data<float>(), processed.data<const float>(),
+                    ps[0] * ps[1] * ps[2] * ps[3] * sizeof(float));
+        std::cerr << "[DEBUG I2V] copied to owned tensor [" << ps[0] << "," << ps[1] << ",1," << ps[2] << "," << ps[3] << "]\n" << std::flush;
 
         std::cerr << "[DEBUG I2V] calling m_vae->encode()...\n" << std::flush;
-        ov::Tensor latent = m_vae->encode(processed, config.generator);
+        ov::Tensor latent = m_vae->encode(encoder_input, config.generator);
         std::cerr << "[DEBUG I2V] m_vae->encode() done, latent shape=[";
         for (size_t i = 0; i < latent.get_shape().size(); ++i) std::cerr << (i?",":"") << latent.get_shape()[i];
         std::cerr << "]\n" << std::flush;
