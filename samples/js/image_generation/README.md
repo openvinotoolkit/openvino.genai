@@ -1,9 +1,10 @@
-# Text to Image JavaScript Generation Pipeline
+# Image Generation JavaScript Samples
 
-This example showcases inference of text-to-image diffusion models like Stable Diffusion, FLUX, and LCM. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `Text2ImagePipeline` from `openvino-genai-node` and uses a text prompt as input source.
+This directory hosts JavaScript samples that showcase inference of image generation diffusion models like Stable Diffusion, FLUX, and LCM via the `openvino-genai-node` package. The samples don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
 
 Sample files:
- - [`text2image.js`](./text2image.js) demonstrates basic usage of the text-to-image pipeline with a step callback and saves the result as a BMP file using `bmp-js`
+ - [`text2image.js`](./text2image.js) demonstrates basic usage of the `Text2ImagePipeline` (text-to-image) with a step callback and saves the result as a BMP file using `bmp-js`.
+ - [`image2image.js`](./image2image.js) demonstrates basic usage of the `Image2ImagePipeline` (image-to-image): reads an input image (JPEG, PNG or BMP), runs the pipeline with a `strength` parameter and step callback, and saves the result as a BMP file using `bmp-js`.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -40,7 +41,7 @@ npm install
 
 If you use the master branch, you may need to [build openvino-genai-node from source](../../../src/js/README.md#build-bindings) first.
 
-Run the sample:
+Run the text-to-image sample:
 
 ```bash
 node image_generation/text2image.js dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
@@ -48,9 +49,17 @@ node image_generation/text2image.js dreamlike_anime_1_0_ov/FP16 "cyberpunk citys
 
 The result is saved as `image.bmp` in the current directory.
 
+Run the image-to-image sample (JPEG, PNG and BMP inputs are supported):
+
+```bash
+node image_generation/image2image.js dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" input.bmp
+```
+
+The result is saved as `image.bmp` in the current directory.
+
 ### Optional: change device
 
-The device is hardcoded to `CPU` in the sample. To use `GPU`, edit `text2image.js` and change:
+The device is hardcoded to `CPU` in the samples. To use `GPU`, edit `text2image.js` / `image2image.js` and change:
 
 ```js
 const device = "CPU"; // GPU can be used as well

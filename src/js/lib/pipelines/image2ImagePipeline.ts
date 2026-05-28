@@ -3,15 +3,15 @@
 
 import util from "node:util";
 import { Tensor } from "openvino-node";
-import { Text2ImagePipeline as Text2ImagePipelineWrapper } from "../addon.js";
+import { Image2ImagePipeline as Image2ImagePipelineWrapper } from "../addon.js";
 import { ImageGenerationPerfMetrics } from "../perfMetrics.js";
 import {
   ImageGenerationConfig,
   ImageGenerationCallback,
-  Text2ImagePipelineProperties,
+  Image2ImagePipelineProperties,
 } from "../utils.js";
 
-export type Text2ImageGenerateOptions = ImageGenerationConfig & {
+export type Image2ImageGenerateOptions = ImageGenerationConfig & {
   /**
    * Callback invoked after each denoising step.
    * Return `true` to stop early, `false` to continue.
@@ -20,19 +20,19 @@ export type Text2ImageGenerateOptions = ImageGenerationConfig & {
 };
 
 /**
- * Pipeline for text-to-image generation.
+ * Pipeline for image-to-image generation.
  *
- * Generates image tensor(s) for a single prompt.
- * Use the factory method Text2ImagePipeline() to create and
+ * Generates image tensor(s) for a single prompt conditioned on an input image.
+ * Use the factory method Image2ImagePipeline() to create and
  * initialize an instance.
  */
-export class Text2ImagePipeline {
+export class Image2ImagePipeline {
   protected readonly modelPath: string;
   protected readonly device: string;
-  protected pipeline: Text2ImagePipelineWrapper | null = null;
-  protected readonly properties: Text2ImagePipelineProperties;
+  protected pipeline: Image2ImagePipelineWrapper | null = null;
+  protected readonly properties: Image2ImagePipelineProperties;
 
-  constructor(modelPath: string, device: string, properties: Text2ImagePipelineProperties = {}) {
+  constructor(modelPath: string, device: string, properties: Image2ImagePipelineProperties = {}) {
     this.modelPath = modelPath;
     this.device = device;
     this.properties = properties;
@@ -42,31 +42,39 @@ export class Text2ImagePipeline {
    * Load the pipeline. Must be called once before generate().
    */
   async init(): Promise<void> {
-    const pipeline = new Text2ImagePipelineWrapper();
+    const pipeline = new Image2ImagePipelineWrapper();
     const initPromise = util.promisify(pipeline.init.bind(pipeline));
     await initPromise(this.modelPath, this.device, this.properties);
     this.pipeline = pipeline;
   }
 
   /**
-   * Generate image tensor(s) for a single prompt.
+   * Generate image tensor(s) for a single prompt conditioned on the input image.
+   *
+   * The input `image` must be a `u8` Tensor with batched NHWC shape `[1, H, W, 3]`
+   * (single image, RGB channels-last). Unbatched `[H, W, 3]` tensors are rejected.
+   *
    * Batch image generation is supported through `generationConfig.num_images_per_prompt`.
    * Returned tensor shape is `[N, H, W, 3]` for batched generation and `[1, H, W, 3]` for single image.
    */
-  async generate(prompt: string, options: Text2ImageGenerateOptions = {}): Promise<Tensor> {
-    if (!this.pipeline) throw new Error("Text2ImagePipeline is not initialized");
+  async generate(
+    prompt: string,
+    image: Tensor,
+    options: Image2ImageGenerateOptions = {},
+  ): Promise<Tensor> {
+    if (!this.pipeline) throw new Error("Image2ImagePipeline is not initialized");
 
     const { callback, ...generationConfig } = options;
 
     const generatePromise = util.promisify(this.pipeline.generate.bind(this.pipeline));
-    return await generatePromise(prompt, generationConfig, callback);
+    return await generatePromise(prompt, image, generationConfig, callback);
   }
 
   /**
    * Get performance metrics from the latest generate() call.
    */
   getPerformanceMetrics(): ImageGenerationPerfMetrics {
-    if (!this.pipeline) throw new Error("Text2ImagePipeline is not initialized");
+    if (!this.pipeline) throw new Error("Image2ImagePipeline is not initialized");
     return this.pipeline.getPerformanceMetrics();
   }
 
@@ -74,7 +82,7 @@ export class Text2ImagePipeline {
    * Get current image generation config.
    */
   getGenerationConfig(): ImageGenerationConfig {
-    if (!this.pipeline) throw new Error("Text2ImagePipeline is not initialized");
+    if (!this.pipeline) throw new Error("Image2ImagePipeline is not initialized");
     return this.pipeline.getGenerationConfig();
   }
 
@@ -82,7 +90,7 @@ export class Text2ImagePipeline {
    * Update image generation config.
    */
   setGenerationConfig(config: ImageGenerationConfig): void {
-    if (!this.pipeline) throw new Error("Text2ImagePipeline is not initialized");
+    if (!this.pipeline) throw new Error("Image2ImagePipeline is not initialized");
     this.pipeline.setGenerationConfig(config);
   }
 }

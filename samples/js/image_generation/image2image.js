@@ -6,15 +6,15 @@ import { basename } from "node:path";
 import bmp from "bmp-js";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
-import { Text2ImagePipeline } from "openvino-genai-node";
-import { saveAsBMP } from "../image_utils.js";
+import { Image2ImagePipeline } from "openvino-genai-node";
+import { readImage, saveAsBMP } from "../image_utils.js";
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
     .scriptName(basename(process.argv[1]))
     .command(
-      "$0 <model_dir> <prompt>",
-      "Run Text2Image pipeline and save generated image as BMP file",
+      "$0 <model_dir> <prompt> <image>",
+      "Run Image2Image pipeline and save generated image as BMP file",
       (yargsBuilder) =>
         yargsBuilder
           .positional("model_dir", {
@@ -24,7 +24,12 @@ async function main() {
           })
           .positional("prompt", {
             type: "string",
-            describe: "Prompt to generate images from",
+            describe: "Prompt that guides image transformation",
+            demandOption: true,
+          })
+          .positional("image", {
+            type: "string",
+            describe: "Path to the input image (JPEG, PNG or BMP)",
             demandOption: true,
           })
     )
@@ -33,25 +38,25 @@ async function main() {
     .parse();
 
   const device = "CPU"; // GPU can be used as well
-  const pipeline = await Text2ImagePipeline(argv.model_dir, device);
+  const pipeline = await Image2ImagePipeline(argv.model_dir, device);
+
+  const imageTensor = await readImage(argv.image, { batched: true });
 
   function callback(step, numSteps) {
     process.stdout.write(`Step ${step + 1}/${numSteps}\r`);
     return false;
   }
 
-  const imageTensor = await pipeline.generate(
+  const resultTensor = await pipeline.generate(
     argv.prompt,
+    imageTensor,
     {
-      width: 512,
-      height: 512,
-      num_inference_steps: 20,
-      num_images_per_prompt: 1,
+      strength: 0.8,
       callback,
     },
   );
 
-  await saveAsBMP("image.bmp", imageTensor);
+  await saveAsBMP("image.bmp", resultTensor);
 }
 
 main().catch((error) => {
