@@ -589,17 +589,10 @@ public:
                                generation_config.height,
                                generation_config.width,
                                generation_config.max_sequence_length);
-        if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO)
-            m_vae->reshape(generation_config.num_videos_per_prompt,
-                           1,
-                           generation_config.num_frames,
-                           generation_config.height,
-                           generation_config.width);
-        else
-            m_vae->reshape(generation_config.num_videos_per_prompt,
-                           generation_config.num_frames,
-                           generation_config.height,
-                           generation_config.width);
+        m_vae->reshape(generation_config.num_videos_per_prompt,
+                       generation_config.num_frames,
+                       generation_config.height,
+                       generation_config.width);
     }
 
     void reconfigure_for_guidance_scale(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) {
