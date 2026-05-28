@@ -210,7 +210,8 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def("reshape",
-             &ov::genai::AutoencoderKLLTXVideo::reshape,
+             static_cast<ov::genai::AutoencoderKLLTXVideo& (ov::genai::AutoencoderKLLTXVideo::*)(int64_t, int64_t, int64_t, int64_t)>(
+                 &ov::genai::AutoencoderKLLTXVideo::reshape),
              py::arg("batch_size"),
              py::arg("num_frames"),
              py::arg("height"),
