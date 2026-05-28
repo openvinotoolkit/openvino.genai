@@ -102,6 +102,32 @@ TEST(DFlashCBGenerationConfig, PreservesExplicitAssistantTokens) {
     ASSERT_EQ(config.num_assistant_tokens, 2);
 }
 
+TEST(DFlashCBLinearAttentionCheckpointing, ComputesRequiredBlockCount) {
+    ASSERT_EQ(ov::genai::dflash_cb::linear_attention_checkpoint_block_count(5), 7);
+    ASSERT_EQ(
+        ov::genai::dflash_cb::linear_attention_checkpoint_block_count(
+            ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS),
+        ov::genai::dflash_cb::DEFAULT_NUM_ASSISTANT_TOKENS + 2);
+}
+
+TEST(DFlashCBLinearAttentionCheckpointing, AdjustsBlockCountOnlyForLinearAttentionTargets) {
+    ASSERT_EQ(ov::genai::dflash_cb::adjusted_linear_attention_block_count(
+                  /*current_block_count=*/0,
+                  /*num_assistant_tokens=*/5,
+                  /*target_has_linear_attention=*/false),
+              0);
+    ASSERT_EQ(ov::genai::dflash_cb::adjusted_linear_attention_block_count(
+                  /*current_block_count=*/0,
+                  /*num_assistant_tokens=*/5,
+                  /*target_has_linear_attention=*/true),
+              7);
+    ASSERT_EQ(ov::genai::dflash_cb::adjusted_linear_attention_block_count(
+                  /*current_block_count=*/9,
+                  /*num_assistant_tokens=*/5,
+                  /*target_has_linear_attention=*/true),
+              9);
+}
+
 TEST(DFlashCBCandidatePlanning, KeepsDraftWindowStableUntilGenerationEnds) {
     ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(3, 0, 10), 3);
     ASSERT_EQ(ov::genai::dflash_cb::draft_candidate_count(3, 8, 10), 3);

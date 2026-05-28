@@ -223,6 +223,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     auto main_model = main_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model_desc.model, "DFlash requires both target and draft models.");
+    const bool target_has_linear_attention = utils::get_cache_types(*main_model).has_linear();
 
     bool allow_score_aggregation = true;
     bool allow_xattention = false;
@@ -239,6 +240,11 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     auto main_generation_config = main_model_desc.generation_config;
     dflash_cb::ensure_num_assistant_tokens_is_set(main_generation_config);
     m_generation_config = main_generation_config;
+    auto target_scheduler_config = main_model_desc.scheduler_config;
+    target_scheduler_config.num_linear_attention_blocks =
+        dflash_cb::adjusted_linear_attention_block_count(target_scheduler_config.num_linear_attention_blocks,
+                                                         main_generation_config.num_assistant_tokens,
+                                                         target_has_linear_attention);
     auto draft_model_desc_for_runner = draft_model_desc;
     if (draft_model_desc_for_runner.device.empty()) {
         draft_model_desc_for_runner.device = main_model_desc.device;
@@ -252,7 +258,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
         main_model,
         main_model_desc.tokenizer,
         main_generation_config,
-        main_model_desc.scheduler_config,
+        target_scheduler_config,
         main_model_desc.device,
         main_model_desc.properties,
         true);

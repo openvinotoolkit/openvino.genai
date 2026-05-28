@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -126,6 +127,21 @@ inline void ensure_num_assistant_tokens_is_set(GenerationConfig& config) {
     if (config.num_assistant_tokens == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
+}
+
+inline size_t linear_attention_checkpoint_block_count(size_t num_assistant_tokens) {
+    OPENVINO_ASSERT(num_assistant_tokens <= std::numeric_limits<size_t>::max() - 2,
+                    "DFlash num_assistant_tokens is too large for linear attention checkpoint block count.");
+    return num_assistant_tokens + 2;
+}
+
+inline size_t adjusted_linear_attention_block_count(size_t current_block_count,
+                                                    size_t num_assistant_tokens,
+                                                    bool target_has_linear_attention) {
+    if (!target_has_linear_attention) {
+        return current_block_count;
+    }
+    return std::max(current_block_count, linear_attention_checkpoint_block_count(num_assistant_tokens));
 }
 
 inline ov::Tensor build_draft_input_ids(int64_t seed_token, int64_t mask_token_id, size_t candidate_count) {
