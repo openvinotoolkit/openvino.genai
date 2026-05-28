@@ -577,10 +577,12 @@ public:
                         // These IDs compute relative position offsets for parallel evaluation in tree-based speculative decoding (e.g., EAGLE).
                         const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
                         if (_is_hs_export_only() && !tree_pos_ids.empty()) {
-                            OPENVINO_ASSERT(position_ids_idx < tree_pos_ids.size(),
-                                           "position_ids_idx (", position_ids_idx,
-                                           ") is out of bounds for tree_position_ids.size() (", tree_pos_ids.size(), ")");
-                            size_t tree_pos_id = tree_pos_ids[position_ids_idx];
+                            OPENVINO_ASSERT(num_scheduled_tokens <= tree_pos_ids.size(),
+                                           "num_scheduled_tokens (", num_scheduled_tokens,
+                                           ") exceeds tree_position_ids.size() (", tree_pos_ids.size(),
+                                           "); position_ids_idx=", position_ids_idx,
+                                           ", seq_id=", sequence->get_id());
+                            size_t tree_pos_id = tree_pos_ids[token_id];
                             position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
                         } else {
                             position_ids_data[position_ids_idx] = position_id;

@@ -69,10 +69,15 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     } else {
         GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
     }
-    auto kv_cache_precision = m_main_pipeline->get_model_properties().at(ov::hint::kv_cache_precision.name());
-    // transformatin for kv update model
-    std::cout << kv_cache_precision.as<ov::element::Type>() << std::endl;
-    ov::pass::PaKVReorderFusion(kv_cache_precision.as<ov::element::Type>()).run_on_model(kv_model);
+    auto kv_cache_precision = m_main_pipeline->get_model_properties().at(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
+    // transformation for kv update model: u4 KV cache is stored as u8 internally,
+    // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
+    kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
+    if (kv_cache_precision == ov::element::u4) {
+        kv_cache_precision = ov::element::u8;
+    }
+    ov::pass::PaKVReorderFusion(kv_cache_precision).run_on_model(kv_model);
+    // add rt_info for real kv precision into kv_model
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
