@@ -667,17 +667,8 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
     const std::string& device,
     const ov::AnyMap& properties) {
     initialize_positional_embedding();
-    // Reshape vision encoder: fix spatial dimensions H=W=image_size (always true after
-    // preprocessing) so the plugin can specialise convolution kernels. Keep temporal
-    // dimension T dynamic to serve both image (T=1) and video (T=mm_local_num_frames).
-    // rotary_pos_emb token count is also dynamic for the same reason.
-    const size_t image_size = m_processor_config.image_size;
+    // Reshape rotary_pos_emb with dynamic token dimension (no hidden_states reshape).
     std::map<std::string, ov::PartialShape> input_shapes;
-    input_shapes["hidden_states"] = ov::PartialShape{1,
-                                                     3,
-                                                     ov::Dimension::dynamic(),
-                                                     static_cast<int64_t>(image_size),
-                                                     static_cast<int64_t>(image_size)};
     input_shapes["rotary_pos_emb"] = ov::PartialShape{1,
                                                       ov::Dimension::dynamic(),
                                                       static_cast<int64_t>(m_mm_hidden_size)};
