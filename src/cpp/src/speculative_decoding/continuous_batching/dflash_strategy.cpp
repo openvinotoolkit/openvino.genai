@@ -77,7 +77,9 @@ public:
                         "Expected DFlash input_ids shape [1, seq_len].");
         const int64_t* ids_data = input_ids.data<const int64_t>();
         TokenIds prompt_ids(ids_data, ids_data + shape[1]);
+        m_prompt_length = shape[1];
         m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config);
+        m_sequence_group->update_processed_tokens_num(m_prompt_length);
         m_committed_context_length = 0;
         m_request.reset_state();
         if (m_has_beam_idx) {
@@ -96,6 +98,7 @@ public:
         for (auto token : target_generated_tokens) {
             seq->append_token(token, 0.0f);
         }
+        m_sequence_group->update_processed_tokens_num(m_prompt_length + target_generated_tokens.size());
         seq->set_status(SequenceStatus::RUNNING);
     }
 
@@ -106,9 +109,11 @@ public:
                         "DFlash draft hidden_states input must have shape [seq_len, 1, hidden].");
         const size_t hidden_delta_length = hidden_delta_shape[0];
 
-        m_request.set_tensor("input_ids", build_input_ids(seed_token, candidate_count));
+        auto input_ids = build_input_ids(seed_token, candidate_count);
+        auto position_ids = build_position_ids(hidden_delta_length, candidate_count);
+        m_request.set_tensor("input_ids", input_ids);
         m_request.set_tensor("hidden_states", hidden_delta);
-        m_request.set_tensor("position_ids", build_position_ids(hidden_delta_length, candidate_count));
+        m_request.set_tensor("position_ids", position_ids);
         update_inference_time(execute_inference());
         m_committed_context_length += hidden_delta_length;
         return m_request.get_tensor("logits");
@@ -203,6 +208,7 @@ private:
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
     bool m_has_beam_idx = false;
     ov::Tensor m_beam_idx;
+    size_t m_prompt_length = 0;
     size_t m_committed_context_length = 0;
     int64_t m_mask_token_id = -1;
 };
@@ -384,6 +390,12 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
 
         state.generated_before_draft = state.generated_tokens.size();
         state.draft_generated = candidates.size();
+        OPENVINO_ASSERT(!candidates.empty(),
+                        "DFlash draft sampler produced no candidates despite requested validation candidates. ",
+                        "request_id=", request_id,
+                        ", generated_before_draft=", state.generated_before_draft,
+                        ", draft_count=", draft_count,
+                        ", validation_count=", validation_count);
         draft_generated_by_request[request_id] = candidates.size();
 
         auto candidate_tokens = state.generated_tokens;
