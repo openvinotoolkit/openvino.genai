@@ -140,7 +140,7 @@ function toABGR(tensor) {
 
 /**
  * Saves an RGB image tensor as a BMP file.
- * 
+ *
  * @param {string} filePath - Path to the output BMP file.
  * @param {ov.Tensor} tensor - Tensor with shape `[1, H, W, 3]` and RGB pixels.
  */
