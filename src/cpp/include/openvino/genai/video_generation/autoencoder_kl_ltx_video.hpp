@@ -59,6 +59,7 @@ public:
     size_t get_vae_scale_factor() const;
 
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
+    AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t encoder_num_frames, int64_t decoder_num_frames, int64_t height, int64_t width);
 
 private:
     void merge_vae_video_post_processing() const;

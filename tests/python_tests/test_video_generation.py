@@ -533,3 +533,81 @@ class TestLoRAVideoGeneration:
         assert hasattr(model, "set_adapters")
 
         model.set_adapters(None)
+
+
+class TestImage2VideoPipeline:
+    GENERATE_KWARGS = dict(height=32, width=32, num_frames=9, num_inference_steps=2)
+
+    @pytest.fixture(autouse=True)
+    def require_encoder(self, video_generation_model):
+        if not Path(video_generation_model, "vae_encoder").exists():
+            pytest.skip("vae_encoder not present in test model")
+
+    def _make_image(self, height=32, width=32):
+        return ov.Tensor(np.zeros([1, height, width, 3], dtype=np.uint8))
+
+    def test_constructor_without_encoder_raises(self, video_generation_model, tmp_path):
+        no_encoder_dir = tmp_path / "no_encoder_model"
+        no_encoder_dir.mkdir()
+        import shutil
+
+        for subdir in ["text_encoder", "transformer", "vae_decoder", "scheduler"]:
+            src = Path(video_generation_model) / subdir
+            if src.exists():
+                shutil.copytree(src, no_encoder_dir / subdir)
+        model_index = Path(video_generation_model) / "model_index.json"
+        if model_index.exists():
+            shutil.copy(model_index, no_encoder_dir / "model_index.json")
+        with pytest.raises(RuntimeError, match="vae_encoder"):
+            ov_genai.Image2VideoPipeline(str(no_encoder_dir))
+
+    def test_generate_runs(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS)
+        assert result is not None
+        assert result.video is not None
+        video = np.array(result.video)
+        assert video.shape == (1, 9, 32, 32, 3)
+
+    def test_strength_1_0(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, strength=1.0)
+        assert result.video is not None
+
+    def test_strength_0_5(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, strength=0.5)
+        assert result.video is not None
+
+    def test_strength_0_0_skips_loop(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, strength=0.0)
+        assert result.video is not None
+        assert np.array(result.video).shape == (1, 9, 32, 32, 3)
+
+    def test_determinism(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        kwargs = dict(**self.GENERATE_KWARGS, strength=1.0)
+        result1 = pipe.generate(image, "test prompt", **kwargs, generator=ov_genai.CppStdGenerator(42))
+        result2 = pipe.generate(image, "test prompt", **kwargs, generator=ov_genai.CppStdGenerator(42))
+        np.testing.assert_array_equal(np.array(result1.video), np.array(result2.video))
+
+    def test_lora_passthrough(self, video_generation_model):
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, adapters=adapter_config)
+        assert result.video is not None
+
+    def test_config_strength_field(self):
+        config = ov_genai.VideoGenerationConfig()
+        assert config.strength is None
+        config.strength = 0.75
+        assert config.strength == pytest.approx(0.75)
+        config.strength = None
+        assert config.strength is None

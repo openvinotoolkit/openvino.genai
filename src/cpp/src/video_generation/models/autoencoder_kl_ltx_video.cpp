@@ -214,6 +214,14 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
                                                       int64_t num_frames,
                                                       int64_t height,
                                                       int64_t width) {
+    return reshape(batch_size, num_frames, num_frames, height, width);
+}
+
+AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
+                                                      int64_t encoder_num_frames,
+                                                      int64_t decoder_num_frames,
+                                                      int64_t height,
+                                                      int64_t width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
     OPENVINO_ASSERT(height > 0, "Height must be positive");
     OPENVINO_ASSERT(height % 32 == 0, "Height must be divisible by 32 but got ", height);
@@ -225,7 +233,7 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
         OPENVINO_ASSERT(input_shape.rank().is_static() && input_shape.rank().get_length() == 5,
             "AutoencoderKLLTXVideo encoder input must be rank 5 [B, C, F, H, W], got rank ",
             input_shape.rank());
-        std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], num_frames, height, width}}};
+        std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], encoder_num_frames, height, width}}};
         m_encoder_model->reshape(idx_to_shape);
     }
 
@@ -240,12 +248,12 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
             2,
             std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
 
-    num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
-    height /= (spatial_compression_ratio * m_transformer_patch_size);
-    width /= (spatial_compression_ratio * m_transformer_patch_size);
+    int64_t latent_num_frames = ((decoder_num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
+    int64_t latent_height = height / (spatial_compression_ratio * m_transformer_patch_size);
+    int64_t latent_width  = width  / (spatial_compression_ratio * m_transformer_patch_size);
 
     ov::PartialShape input_shape = m_decoder_model->input(0).get_partial_shape();
-    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], num_frames, height, width}}};
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], latent_num_frames, latent_height, latent_width}}};
     m_decoder_model->reshape(idx_to_shape);
 
     return *this;

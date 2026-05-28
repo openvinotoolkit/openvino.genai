@@ -57,6 +57,11 @@ struct VideoGenerationConfig {
     /// non-infinity makes the most sense. NaN corresponds to model default which is 25.0f for LTX-Video.
     std::optional<float> frame_rate = std::nullopt;
 
+    /// Denoising strength in [0.0, 1.0]. Only meaningful for Image2VideoPipeline.
+    /// 1.0 = full denoising (default). 0.0 = skip denoising, return frame-0-anchored latent.
+    /// std::nullopt defers to 1.0f inside the pipeline (T2V always uses 1.0f).
+    std::optional<float> strength = std::nullopt;
+
     /**
      * TaylorSeer configuration for caching transformer outputs.
      * When set, enables TaylorSeer Lite acceleration which skips some transformer inferences
@@ -91,6 +96,9 @@ static constexpr ov::Property<float> guidance_rescale{"guidance_rescale"};
 static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
+
+/// Denoising strength for image-to-video generation (Image2VideoPipeline only).
+static constexpr ov::Property<float> strength{"strength"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.

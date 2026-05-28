@@ -12,6 +12,8 @@
 
 namespace ov::genai {
 
+class LTXPipeline;
+
 struct VideoGenerationPerfMetrics : public ImageGenerationPerfMetrics {};
 
 struct VideoGenerationResult {
@@ -178,7 +180,6 @@ public:
     ~Text2VideoPipeline();
 
 private:
-    class LTXPipeline;
     std::unique_ptr<LTXPipeline> m_impl;
 };
 
