@@ -213,7 +213,11 @@ def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold,
 
 if Version(transformers_version) < Version("5.0.0"):
     # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
-    VISUAL_VIDEO_TEXT_MODELS = (("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),)
+    # videochat_flash_qwen is incompatible with transformers >= 5.0.0
+    VISUAL_VIDEO_TEXT_MODELS = [
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),
+        ("optimum-intel-internal-testing/tiny-videochat-flash-qwen", "visual-video-text"),
+    ]
 else:
     VISUAL_VIDEO_TEXT_MODELS = [
         ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-video-text"),

@@ -4,6 +4,7 @@
 #include "decoder.hpp"
 
 #include <filesystem>
+#include <limits>
 
 #include "statefull_decoder.hpp"
 #include "whisper/whisper_utils.hpp"
@@ -22,9 +23,9 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
 }
 
 std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
-                                                          const int64_t decoder_start_token_id) {
+                                                          const WhisperGenerationConfig& config) {
     Tensor input_ids_tensor = create_host_tensor(ov::element::i64, {1, 1});
-    input_ids_tensor.data<int64_t>()[0] = decoder_start_token_id;
+    input_ids_tensor.data<int64_t>()[0] = config.decoder_start_token_id;
 
     Tensor beam_idx_tensor = create_host_tensor(ov::element::i32, {1});
     beam_idx_tensor.data<int32_t>()[0] = 0;
@@ -35,7 +36,18 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
     auto output_tensor = wait();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
-    int64_t output_token = ov::genai::utils::argmax(output_tensor, 0);
+    auto logits_data = output_tensor.data<float>();
+
+    int64_t output_token = -1;
+    float max_prob = -std::numeric_limits<float>::infinity();
+
+    for (auto [_, lang_token] : config.lang_to_id) {
+        auto prob = logits_data[lang_token];
+        if (prob > max_prob) {
+            max_prob = prob;
+            output_token = lang_token;
+        }
+    }
 
     reset_state();
 

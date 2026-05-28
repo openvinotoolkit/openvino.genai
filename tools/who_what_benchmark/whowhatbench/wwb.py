@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
 
@@ -146,8 +146,8 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=str,
-        default=None,
-        help="Directory name for saving the per sample comparison and metrics in CSV files.",
+        default="wwb_output",
+        help="Directory name for saving the per sample comparison and metrics in CSV files. Defaults to 'wwb_output'.",
     )
     parser.add_argument(
         "--num-samples",
@@ -390,6 +390,10 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
+    if args.gt_data is not None and os.path.isdir(args.gt_data):
+        raise ValueError(f"--gt-data must be a file path, not a directory: '{args.gt_data}'")
+    if args.output is not None and os.path.isfile(args.output):
+        raise ValueError(f"--output must be a directory path, not a file: '{args.output}'")
 
 
 def load_prompts(args):
@@ -495,6 +499,8 @@ def load_processor(args):
                 trust_remote_code=True)
             preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
             config = model.config
+        elif config.model_type == "videochat_flash_qwen":
+            preprocessor = None
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
@@ -767,7 +773,11 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 
 
 def is_model_with_automatic_crop(config):
-    return "internvl" in config.model_type or "minicpmv" in config.model_type
+    return (
+        "internvl" in config.model_type
+        or "minicpmv" in config.model_type
+        or "videochat_flash_qwen" in config.model_type
+    )
 
 
 def create_evaluator(base_model, args):
@@ -953,7 +963,13 @@ def create_evaluator(base_model, args):
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
-            if processor is not None and processor.chat_template is None:
+            # If base_model/target_model is provided, wwb will generate data and the chat_template should be defined.
+            # If test_data only is provided, wwb will not generate data and the chat_template is not necessary.
+            if (
+                (args.base_model is not None or args.target_model is not None)
+                and getattr(processor, "chat_template", None) is None
+                and getattr(tokenizer, "chat_template", None) is None
+            ):
                 raise ValueError(
                     "Model has no 'chat_template' defined, but was run with model-type 'visual-text-chat'. "
                     "WWB can't start an evaluation in visual-text-chat mode, "
@@ -1228,8 +1244,7 @@ def main():
             logger.info(all_metrics)
 
         if args.output:
-            if not os.path.exists(args.output):
-                os.mkdir(args.output)
+            os.makedirs(args.output, exist_ok=True)
             df = pd.DataFrame(all_metrics_per_question)
             df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)

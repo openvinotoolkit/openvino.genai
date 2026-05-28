@@ -16,7 +16,9 @@ def save_video(filename: str, video_tensor, fps: int = 25):
             output_path = f"{base}_b{b}.{ext}"
 
         fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-        writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        writer = cv2.VideoWriter(output_path, cv2.CAP_OPENCV_MJPEG, fourcc, fps, (width, height))
+        if not writer.isOpened():
+            raise RuntimeError(f"VideoWriter failed to open: {output_path}")
 
         for f in range(num_frames):
             frame_bgr = cv2.cvtColor(video_data[b, f], cv2.COLOR_RGB2BGR)

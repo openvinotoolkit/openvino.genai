@@ -233,7 +233,6 @@ def test_chat_scenario_vs_stateful(
             assert generated == reference
 
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize(
     "generation_config_kwargs",
@@ -279,7 +278,6 @@ def test_continuous_batching_add_request_health_check(
         for output in outputs:
             assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
     [
