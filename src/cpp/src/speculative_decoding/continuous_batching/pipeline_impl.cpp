@@ -364,6 +364,37 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
     return result;
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::sync_generated_embeddings() {
+    if (m_model_input_type != ModelInputType::EMBEDDINGS || m_requests.empty()) {
+        return;
+    }
+
+    Scheduler::Output scheduler_output;
+    scheduler_output.m_scheduled_sequence_groups_ids.reserve(m_requests.size());
+
+    for (size_t request_idx = 0; request_idx < m_requests.size(); ++request_idx) {
+        const auto& request = m_requests[request_idx];
+        if (request->get_sequence_group_type() != SequenceGroupType::EMBEDDINGS) {
+            continue;
+        }
+
+        bool has_missing_embeddings = false;
+        for (const auto& sequence : request->get_running_sequences()) {
+            OPENVINO_ASSERT(sequence->get_generated_len() >= sequence->get_generated_ids_embeds().size(),
+                            "Generated embeddings count exceeds generated ids count.");
+            has_missing_embeddings |= sequence->get_generated_len() != sequence->get_generated_ids_embeds().size();
+        }
+
+        if (has_missing_embeddings) {
+            scheduler_output.m_scheduled_sequence_groups_ids.push_back(request_idx);
+        }
+    }
+
+    if (!scheduler_output.m_scheduled_sequence_groups_ids.empty()) {
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
+}
+
 bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::is_requests_empty() {
     return m_requests.empty();
 }

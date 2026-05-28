@@ -191,6 +191,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
         update_sequence_info.insert({{candidate.first, update_result}});
     }
+    m_main_pipeline->sync_generated_embeddings();
 
     const auto main_start = std::chrono::steady_clock::now();
     m_main_pipeline->step();
@@ -204,6 +205,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
+    m_draft_pipeline->sync_generated_embeddings();
 
     // finish draft request if the generation was completed
     for (const auto& draft_request : draft_generated_requests) {
