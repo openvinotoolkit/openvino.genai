@@ -13,8 +13,13 @@ public:
     WhisperASRPipelineAdapter(const std::filesystem::path& models_path,
                               const std::string& device,
                               const ov::AnyMap& properties)
-        : ASRPipelineImplBase(models_path),
+        : ASRPipelineImplBase(models_path, properties),
           m_whisper_pipeline(models_path, device, properties) {}
+
+    void set_generation_config(const ASRGenerationConfig& config) override {
+        ASRPipelineImplBase::set_generation_config(config);
+        m_whisper_pipeline.set_generation_config(to_whisper_config(config));
+    }
 
     ASRDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                std::optional<ASRGenerationConfig> generation_config,

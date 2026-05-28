@@ -84,8 +84,7 @@ ASRGenerationConfig ASRPipeline::get_generation_config() const {
 }
 
 void ASRPipeline::set_generation_config(const ASRGenerationConfig& config) {
-    m_impl->m_generation_config = config;
-    m_impl->m_generation_config.validate();
+    m_impl->set_generation_config(config);
 }
 
 ASRPipeline::~ASRPipeline() = default;

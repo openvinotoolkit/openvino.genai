@@ -13,13 +13,20 @@ public:
     ASRGenerationConfig m_generation_config;
     Tokenizer m_tokenizer;
 
-    ASRPipelineImplBase(const std::filesystem::path& models_path)
+    ASRPipelineImplBase(const std::filesystem::path& models_path, const ov::AnyMap& properties)
         : m_generation_config(utils::from_config_json_if_exists<ASRGenerationConfig>(models_path)),
-          m_tokenizer{models_path} {}
+          m_tokenizer{models_path} {
+        m_generation_config.update_generation_config(properties);
+    }
 
     virtual ASRDecodedResults generate(const RawSpeechInput& raw_speech_input,
                                        std::optional<ASRGenerationConfig> generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
+
+    virtual void set_generation_config(const ASRGenerationConfig& config) {
+        m_generation_config = config;
+        m_generation_config.validate();
+    }
 
     virtual ~ASRPipelineImplBase() = default;
 };
