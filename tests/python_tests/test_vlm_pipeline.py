@@ -323,12 +323,6 @@ def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
     return Path(_get_ov_model(VLM_EAGLE3_MAIN_MODEL_ID)), draft_model_path
 
 
-def _get_vlm_eagle3_scheduler_config() -> SchedulerConfig:
-    scheduler_config = SchedulerConfig()
-    scheduler_config.enable_prefix_caching = False
-    return scheduler_config
-
-
 def _setup_generation_config(
     pipeline: VLMPipeline,
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
@@ -2838,9 +2832,8 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
 
 def test_vlm_eagle3(cat_tensor):
     model_path, draft_model_path = _get_vlm_eagle3_model_paths()
-    scheduler_config = _get_vlm_eagle3_scheduler_config()
 
-    ov_pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler_config)
+    ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     result_without_draft = ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
 
@@ -2849,7 +2842,6 @@ def test_vlm_eagle3(cat_tensor):
         model_path,
         "CPU",
         draft_model=ov_draft,
-        scheduler_config=_get_vlm_eagle3_scheduler_config(),
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
     result_with_draft = ov_pipe_with_draft.generate(
@@ -2866,57 +2858,49 @@ def test_vlm_eagle3_chat_with_videos(
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
     model_path, draft_model_path = _get_vlm_eagle3_model_paths()
-    scheduler_config = _get_vlm_eagle3_scheduler_config()
 
-    first_prompt = "Describe the image and the video together."
-    second_prompt = "What did you see across both inputs?"
+    prompts = [
+        "Describe the image and the video together.",
+        "What did you see across both inputs?",
+    ]
 
-    ov_pipe = VLMPipeline(model_path, "CPU", scheduler_config=scheduler_config)
+    def run_two_round_chat(pipe: VLMPipeline, generation_config: GenerationConfig) -> list[str]:
+        history = ChatHistory()
+        results = []
+
+        for round_idx, prompt in enumerate(prompts):
+            history.append({"role": "user", "content": prompt})
+            generate_kwargs = {"generation_config": generation_config}
+            if round_idx == 0:
+                generate_kwargs["images"] = [cat_tensor]
+                generate_kwargs["videos"] = [synthetic_video_32x32_tensor]
+
+            result = pipe.generate(
+                history,
+                **generate_kwargs,
+            )
+            results.append(result.texts[0].strip())
+            history.append({"role": "assistant", "content": result.texts[0]})
+
+        return results
+
+    ov_pipe = VLMPipeline(model_path, "CPU")
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-
-    history_without_draft = ChatHistory()
-    history_without_draft.append({"role": "user", "content": first_prompt})
-    first_result_without_draft = ov_pipe.generate(
-        history_without_draft,
-        images=[cat_tensor],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config,
-    )
-    history_without_draft.append({"role": "assistant", "content": first_result_without_draft.texts[0]})
-    history_without_draft.append({"role": "user", "content": second_prompt})
-    second_result_without_draft = ov_pipe.generate(
-        history_without_draft,
-        generation_config=generation_config,
-    )
+    results_without_draft = run_two_round_chat(ov_pipe, generation_config)
 
     ov_draft = draft_model(draft_model_path, "CPU")
     ov_pipe_with_draft = VLMPipeline(
         model_path,
         "CPU",
         draft_model=ov_draft,
-        scheduler_config=_get_vlm_eagle3_scheduler_config(),
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
 
-    history_with_draft = ChatHistory()
-    history_with_draft.append({"role": "user", "content": first_prompt})
-    first_result_with_draft = ov_pipe_with_draft.generate(
-        history_with_draft,
-        images=[cat_tensor],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config_with_draft,
-    )
-    history_with_draft.append({"role": "assistant", "content": first_result_with_draft.texts[0]})
-    history_with_draft.append({"role": "user", "content": second_prompt})
-    second_result_with_draft = ov_pipe_with_draft.generate(
-        history_with_draft,
-        generation_config=generation_config_with_draft,
-    )
-
-    assert first_result_without_draft.texts[0].strip() == first_result_with_draft.texts[0].strip(), (
+    assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
     )
-    assert second_result_without_draft.texts[0].strip() == second_result_with_draft.texts[0].strip(), (
+    assert results_without_draft[1] == results_with_draft[1], (
         "Second mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
     )
 

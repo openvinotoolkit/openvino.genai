@@ -31,11 +31,6 @@ int main(int argc, char* argv[]) try {
     if (!draft_model_dir.empty()) {
         properties.insert(ov::genai::draft_model(draft_model_dir, device));
     }
-    if (device != "NPU" && (prompt_lookup || !draft_model_dir.empty())) {
-        ov::genai::SchedulerConfig scheduler_config;
-        scheduler_config.enable_prefix_caching = false;
-        properties.insert(ov::genai::scheduler_config(scheduler_config));
-    }
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
