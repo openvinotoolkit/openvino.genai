@@ -32,30 +32,20 @@ Read and follow the **model-checker** skill.
 
 Read **model-checker** step results. Depending on the results:
 
-- If all steps passed, proceed to Step 5.
-- If optimum-intel export failed, proceed to Step 5.
-- If llm_bench execution failed(exit code != 0 or llm_bench log contains error) or wwb execution failed(exit code != 0 or wwb log for optimum, genai, hf contains error) or results for GenAI below threshold or results for optimum-intel below threshold, proceed to Step 2.
+- If all steps passed, proceed to Step 4.
+- If optimum-intel export failed, proceed to Step 4.
+- If wwb execution failed or results for GenAI/optimum-intel below threshold, read and follow the **wwb-fail-analyzer** skill.
+- If llm_bench execution failed, read and follow the **llm-bench-fail-analyzer** skill.
 
-### Step 2: Tools Fail Analysis
-
-If **llm_bench** execution failed, read and follow the **llm-bench-fail-analyzer** skill. Pass the log path to the folder with llm_bench logs.
-If **wwb** execution failed or results for optimum-intel/GenAI below threshold, read and follow the **wwb-fail-analyzer** skill. Pass the log path to the folder with wwb logs.
-
-Read **llm-bench-fail-analyzer** and **wwb-fail-analyzer** step results.
-
-- If fixes were implemented and **After fix status** is passed, proceed to Step 5.
-- If backend limitation or model issue identified, no modification were made and **After fix status** is failed → proceed to Step 3
-
-
-### Step 3: Model Enablement
+### Step 2: Model Enablement
 
 Proceed with model enablement.
 
-### Step 4: Documentation Update
+### Step 3: Documentation Update
 
 Read and follow the **update-docs** skill.
 
-### Step 5: Final Report
+### Step 4: Final Report
 
 Report a structured summary:
 
