@@ -960,6 +960,22 @@ public:
             callback_ptr->end();
         }
 
+        // ── final packed latent stats (before postprocess+decode) ──────────────────
+        {
+            const float* lp = latent.data<const float>();
+            const size_t D2 = latent.get_shape()[2];
+            float s0=0.f, mn0=lp[0], mx0=lp[0];
+            for (size_t i = 0; i < tokens_per_frame*D2; ++i) { s0+=lp[i]; mn0=std::min(mn0,lp[i]); mx0=std::max(mx0,lp[i]); }
+            const float* lp1 = lp + tokens_per_frame*D2;
+            const size_t rest = (video_sequence_length-tokens_per_frame)*D2;
+            float s1=0.f, mn1=lp1[0], mx1=lp1[0];
+            for (size_t i = 0; i < rest; ++i) { s1+=lp1[i]; mn1=std::min(mn1,lp1[i]); mx1=std::max(mx1,lp1[i]); }
+            std::cerr << "[DEBUG STATS] FINAL latent (pre-decode) frame0: mean=" << s0/(tokens_per_frame*D2)
+                      << " min=" << mn0 << " max=" << mx0
+                      << "  |  frames1+: mean=" << s1/rest
+                      << " min=" << mn1 << " max=" << mx1 << "\n" << std::flush;
+        }
+
         latent = postprocess_latents(latent);
 
         OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
