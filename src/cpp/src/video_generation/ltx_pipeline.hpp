@@ -742,6 +742,16 @@ public:
         ov::Tensor image_latent_packed = preprocess_and_encode_image(image, merged_generation_config);
         std::cerr << "[DEBUG I2V] preprocess_and_encode_image done\n" << std::flush;
 
+        // ── stats: image_latent_packed ──────────────────────────────────────────────────
+        {
+            const float* p = image_latent_packed.data<const float>();
+            const size_t n = image_latent_packed.get_size();
+            float mn = p[0], mx = p[0], sum = 0.f;
+            for (size_t i = 0; i < n; ++i) { mn = std::min(mn, p[i]); mx = std::max(mx, p[i]); sum += p[i]; }
+            std::cerr << "[DEBUG STATS] image_latent_packed: size=" << n
+                      << " mean=" << sum/n << " min=" << mn << " max=" << mx << "\n" << std::flush;
+        }
+
         std::cerr << "[DEBUG I2V] calling prepare_latents (Mechanism A)...\n" << std::flush;
         ov::Tensor latent = prepare_latents(image_latent_packed,
                                             merged_generation_config,
@@ -866,6 +876,30 @@ public:
                                   *merged_generation_config.guidance_rescale);
             }
 
+            // ── stats: noisy_residual (final guidance-applied noise pred) ──────────────
+            const bool log_step = (inference_step <= 1 || inference_step + 1 == timesteps.size());
+            if (log_step) {
+                const float* nr = noisy_residual_tensor.data<const float>();
+                const size_t D_nr = noisy_residual_tensor.get_shape()[2];
+                // frame-0 tokens: positions [0, tokens_per_frame)
+                float sum0 = 0.f, mn0 = nr[0], mx0 = nr[0];
+                for (size_t i = 0; i < tokens_per_frame * D_nr; ++i) {
+                    sum0 += nr[i]; mn0 = std::min(mn0, nr[i]); mx0 = std::max(mx0, nr[i]);
+                }
+                // frames 1+ tokens: positions [tokens_per_frame, video_sequence_length)
+                const size_t rest = (video_sequence_length - tokens_per_frame) * D_nr;
+                const float* nr1 = nr + tokens_per_frame * D_nr;
+                float sum1 = 0.f, mn1 = nr1[0], mx1 = nr1[0];
+                for (size_t i = 0; i < rest; ++i) {
+                    sum1 += nr1[i]; mn1 = std::min(mn1, nr1[i]); mx1 = std::max(mx1, nr1[i]);
+                }
+                std::cerr << "[DEBUG STATS] step " << inference_step
+                          << " noise_pred frame0: mean=" << sum0/(tokens_per_frame*D_nr)
+                          << " min=" << mn0 << " max=" << mx0
+                          << "  |  frames1+: mean=" << sum1/rest
+                          << " min=" << mn1 << " max=" << mx1 << "\n" << std::flush;
+            }
+
             auto scheduler_step_result =
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
@@ -877,6 +911,26 @@ public:
                     float* dst       = latent.data<float>()             + b * m_latent_num_frames * tokens_per_frame * D;
                     const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
                     std::memcpy(dst, src, tokens_per_frame * D * sizeof(float));
+                }
+                // ── stats: latent after MechanismC ─────────────────────────────────────
+                if (log_step) {
+                    const float* lp = latent.data<const float>();
+                    const size_t D2 = latent.get_shape()[2];
+                    float s0=0.f, mn0_=lp[0], mx0_=lp[0];
+                    for (size_t i = 0; i < tokens_per_frame*D2; ++i) {
+                        s0+=lp[i]; mn0_=std::min(mn0_,lp[i]); mx0_=std::max(mx0_,lp[i]);
+                    }
+                    const float* lp1 = lp + tokens_per_frame*D2;
+                    const size_t rest2 = (video_sequence_length-tokens_per_frame)*D2;
+                    float s1=0.f, mn1_=lp1[0], mx1_=lp1[0];
+                    for (size_t i = 0; i < rest2; ++i) {
+                        s1+=lp1[i]; mn1_=std::min(mn1_,lp1[i]); mx1_=std::max(mx1_,lp1[i]);
+                    }
+                    std::cerr << "[DEBUG STATS] step " << inference_step
+                              << " latent(post-MechC) frame0: mean=" << s0/(tokens_per_frame*D2)
+                              << " min=" << mn0_ << " max=" << mx0_
+                              << "  |  frames1+: mean=" << s1/rest2
+                              << " min=" << mn1_ << " max=" << mx1_ << "\n" << std::flush;
                 }
             }
 
