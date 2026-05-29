@@ -58,11 +58,11 @@ int main(int argc, char* argv[]) try {
     } 
 
     const std::string models_path = result["model"].as<std::string>();
-    const std::string draft_models_path = result["draft_model"].as<std::string>();
+    const std::string draft_model_path = result["draft_model"].as<std::string>();
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();
 
-    if (device == "NPU" && !draft_models_path.empty()) {
+    if (device == "NPU" && !draft_model_path.empty()) {
         std::cout << "--draft_model is not supported when --device is NPU" << std::endl;
         return EXIT_FAILURE;
     }
@@ -82,8 +82,8 @@ int main(int argc, char* argv[]) try {
     config.ignore_eos = true;
 
     ov::AnyMap properties;
-    if (!draft_models_path.empty()) {
-        properties.insert(ov::genai::draft_model(draft_models_path, device));
+    if (!draft_model_path.empty()) {
+        properties.insert(ov::genai::draft_model(draft_model_path, device));
         config.num_assistant_tokens = result["num_assistant_tokens"].as<size_t>();
     }
 
