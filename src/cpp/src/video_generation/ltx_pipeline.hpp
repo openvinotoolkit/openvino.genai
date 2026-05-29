@@ -777,8 +777,9 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        ov::Tensor timestep(ov::element::f32, {1});
-        float* timestep_data = timestep.data<float>();
+        // tokens_per_frame: number of spatial tokens belonging to frame-0 of the latent.
+        // For I2V, frame-0 tokens are locked to t=0 (the image-conditioning frame).
+        const size_t tokens_per_frame = m_latent_height * m_latent_width;
 
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
@@ -812,7 +813,19 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            timestep_data[0] = timesteps[inference_step];
+            // 2D per-token timestep: frame-0 tokens get t=0 (locked image frame),
+            // remaining tokens get t=current_step_t. Shape: [B, video_sequence_length].
+            const float t = timesteps[inference_step];
+            const size_t B_ts = latent_cfg.get_shape()[0];
+            ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
+            float* timestep_data = timestep.data<float>();
+            for (size_t b = 0; b < B_ts; ++b) {
+                std::fill_n(timestep_data + b * video_sequence_length, tokens_per_frame, 0.0f);
+                std::fill_n(timestep_data + b * video_sequence_length + tokens_per_frame,
+                            video_sequence_length - tokens_per_frame, t);
+            }
+            std::cerr << "[DEBUG I2V] timestep tensor: shape=[" << B_ts << "," << video_sequence_length
+                      << "] frame0_t=0.0 rest_t=" << t << "\n" << std::flush;
 
             ov::Tensor noise_pred_tensor;
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
@@ -859,7 +872,6 @@ public:
 
             // Mechanism C: re-lock frame-0 tokens after every scheduler step
             {
-                const size_t tokens_per_frame = m_latent_height * m_latent_width;
                 const size_t D = latent.get_shape()[2];
                 for (size_t b = 0; b < merged_generation_config.num_videos_per_prompt; ++b) {
                     float* dst       = latent.data<float>()             + b * m_latent_num_frames * tokens_per_frame * D;
