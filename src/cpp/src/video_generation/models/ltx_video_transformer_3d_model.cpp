@@ -151,11 +151,19 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
 
     std::map<std::string, ov::PartialShape> name_to_shape;
 
+    const int64_t video_sequence_length = num_frames * height * width;
+
     for (auto&& input : m_model->inputs()) {
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            name_to_shape[input_name][0] = 1;
+            // For the I2V optimum-intel export, timestep has rank 2 [batch_size, video_sequence_length]
+            // (per-token conditioning). For the T2V default export it is rank 1 [batch_size].
+            // Pin batch to match hidden_states' batch (CFG-aware) and pin sequence length when present.
+            name_to_shape[input_name][0] = batch_size;
+            if (name_to_shape[input_name].size() >= 2) {
+                name_to_shape[input_name][1] = video_sequence_length;
+            }
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
         } else if (input_name == "hidden_states") {
