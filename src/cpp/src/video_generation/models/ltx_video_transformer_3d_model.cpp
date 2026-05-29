@@ -130,6 +130,26 @@ size_t LTXVideoTransformer3DModel::get_request_input_batch() {
     return shape[0];
 }
 
+ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
+    // Pre-compile: ask the model. Post-compile: ask the infer request.
+    if (m_model) {
+        for (auto&& input : m_model->inputs()) {
+            if (input.get_any_name() == "timestep") {
+                return input.get_partial_shape();
+            }
+        }
+    }
+    if (m_request) {
+        ov::CompiledModel compiled = m_request.get_compiled_model();
+        for (const auto& input : compiled.inputs()) {
+            if (input.get_any_name() == "timestep") {
+                return input.get_partial_shape();
+            }
+        }
+    }
+    return ov::PartialShape{};
+}
+
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
                                                             int64_t num_frames,
                                                             int64_t height,

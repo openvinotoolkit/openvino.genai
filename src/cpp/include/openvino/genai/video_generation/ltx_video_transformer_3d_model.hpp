@@ -55,6 +55,7 @@ public:
 
     size_t get_expected_batch_size() const;
     size_t get_request_input_batch();
+    ov::PartialShape get_timestep_partial_shape();
 
 private:
     class Inference;

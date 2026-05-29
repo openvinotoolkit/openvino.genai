@@ -999,9 +999,18 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        // // Prepare timesteps
-        // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
-        ov::Tensor timestep(ov::element::f32, {1});
+        // Timestep tensor. The exported optimum-intel ltx-i2v-support transformer has rank-2
+        // timestep [B, S]; the default (main) export has rank-1 [B]. We allocate based on the
+        // compiled model's expected rank so this path works for both exports.
+        ov::Shape timestep_shape;
+        const auto& timestep_partial = m_transformer->get_timestep_partial_shape();
+        if (timestep_partial.size() == 2) {
+            timestep_shape = {batch_size_multiplier * merged_generation_config.num_videos_per_prompt,
+                              video_sequence_length};
+        } else {
+            timestep_shape = {batch_size_multiplier * merged_generation_config.num_videos_per_prompt};
+        }
+        ov::Tensor timestep(ov::element::f32, timestep_shape);
         float* timestep_data = timestep.data<float>();
 
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -1036,7 +1045,7 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            timestep_data[0] = timesteps[inference_step];
+            std::fill_n(timestep_data, timestep.get_size(), timesteps[inference_step]);
 
             ov::Tensor noise_pred_tensor;
             // Use TaylorSeer if enabled and caching is appropriate
