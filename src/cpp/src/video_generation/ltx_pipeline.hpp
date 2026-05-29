@@ -824,15 +824,36 @@ public:
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            // Re-pin frame-0 tokens to the image latent after each scheduler step.
-            // Equivalent to the diffusers approach of slicing off frame-0 before stepping and
-            // concatenating it back, since FlowMatchEulerDiscrete is per-element / stateless.
+            // Re-pin frame-0 tokens to the (noised) image latent after each scheduler step.
+            // Matches upstream LTX-Video's `add_noise_to_image_conditioning_latents`:
+            //     noised = init_latents + image_cond_noise_scale * randn * t^2
+            // where t is the normalized sigma in [0, 1]. The diffusers I2V pipeline omits this
+            // and instead pins frame-0 to the clean image latent every step, but the LTX-Video
+            // transformer was trained with this noise injection (default 0.15) and feeding it a
+            // perfectly clean conditioning frame is out-of-distribution -> grey/blurred outputs.
+            // See D:/codes/open-source/LTX-Video/ltx_video/pipelines/pipeline_ltx_video.py:597-619,1151-1159
+            // and inference.py:365 (default 0.15).
             {
+                constexpr float image_cond_noise_scale = 0.15f;
+                // LTX-Video's FlowMatchEulerDiscreteScheduler always uses num_train_timesteps=1000;
+                // our `timesteps[i]` are in [0, 1000] (sigma * num_train_timesteps), upstream's t
+                // is in [0, 1] (sigma directly), so normalize.
+                const float t_norm = timesteps[inference_step] / 1000.0f;
+                const float noise_coeff = image_cond_noise_scale * t_norm * t_norm;
+
                 const size_t D = latent.get_shape()[2];
+                const ov::Shape frame0_shape{merged_generation_config.num_videos_per_prompt,
+                                              tokens_per_frame, D};
+                ov::Tensor noise = merged_generation_config.generator->randn_tensor(frame0_shape);
+                const float* noise_data = noise.data<const float>();
+
                 for (size_t b = 0; b < merged_generation_config.num_videos_per_prompt; ++b) {
                     float* dst       = latent.data<float>()             + b * m_latent_num_frames * tokens_per_frame * D;
                     const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
-                    std::memcpy(dst, src, tokens_per_frame * D * sizeof(float));
+                    const float* n   = noise_data                        + b * tokens_per_frame * D;
+                    for (size_t i = 0; i < tokens_per_frame * D; ++i) {
+                        dst[i] = src[i] + noise_coeff * n[i];
+                    }
                 }
             }
 
