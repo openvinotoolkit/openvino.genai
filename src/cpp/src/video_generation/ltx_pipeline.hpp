@@ -380,31 +380,14 @@ class LTXPipeline {
                         "Image2VideoPipeline requires a VAE encoder. "
                         "Ensure 'vae_encoder' exists in the model directory.");
 
-        const ov::Shape& raw_shape = image.get_shape();
-        std::cerr << "[DEBUG I2V] preprocess_and_encode_image: input shape=[";
-        for (size_t i = 0; i < raw_shape.size(); ++i) std::cerr << (i?",":"") << raw_shape[i];
-        std::cerr << "] dtype=" << image.get_element_type()
-                  << " target=" << config.height << "x" << config.width
-                  << " generator=" << (config.generator ? "set" : "null") << "\n" << std::flush;
-
         ov::Tensor img = image;
         if (img.get_shape().size() == 3) {
             auto s = img.get_shape();
             img.set_shape({1, s[0], s[1], s[2]});
-            std::cerr << "[DEBUG I2V] added batch dim -> [1," << s[0] << "," << s[1] << "," << s[2] << "]\n" << std::flush;
         }
 
-        std::cerr << "[DEBUG I2V] calling ImageResizer::execute -> target " << config.height << "x" << config.width << "\n" << std::flush;
         ov::Tensor resized = m_image_resizer->execute(img, config.height, config.width);
-        std::cerr << "[DEBUG I2V] ImageResizer done, shape=[";
-        for (size_t i = 0; i < resized.get_shape().size(); ++i) std::cerr << (i?",":"") << resized.get_shape()[i];
-        std::cerr << "] dtype=" << resized.get_element_type() << "\n" << std::flush;
-
-        std::cerr << "[DEBUG I2V] calling ImageProcessor::execute (u8 NHWC -> f32 NCHW, scale/normalize)\n" << std::flush;
         ov::Tensor processed = m_image_processor->execute(resized);
-        std::cerr << "[DEBUG I2V] ImageProcessor done, shape=[";
-        for (size_t i = 0; i < processed.get_shape().size(); ++i) std::cerr << (i?",":"") << processed.get_shape()[i];
-        std::cerr << "] dtype=" << processed.get_element_type() << "\n" << std::flush;
 
         // Copy to an owned tensor (with temporal dim added) before passing to the encoder.
         // get_output_tensor() aliases the ImageProcessor's internal buffer; passing that aliased
@@ -413,21 +396,12 @@ class LTXPipeline {
         ov::Tensor encoder_input(ov::element::f32, {proc_shape[0], proc_shape[1], 1, proc_shape[2], proc_shape[3]});
         std::memcpy(encoder_input.data<float>(), processed.data<const float>(),
                     proc_shape[0] * proc_shape[1] * proc_shape[2] * proc_shape[3] * sizeof(float));
-        std::cerr << "[DEBUG I2V] copied to owned tensor [" << proc_shape[0] << "," << proc_shape[1] << ",1," << proc_shape[2] << "," << proc_shape[3] << "]\n" << std::flush;
 
-        std::cerr << "[DEBUG I2V] calling m_vae->encode()...\n" << std::flush;
         ov::Tensor latent = m_vae->encode(encoder_input, config.generator);
-        std::cerr << "[DEBUG I2V] m_vae->encode() done, latent shape=[";
-        for (size_t i = 0; i < latent.get_shape().size(); ++i) std::cerr << (i?",":"") << latent.get_shape()[i];
-        std::cerr << "]\n" << std::flush;
 
         const size_t ps   = m_transformer->get_config().patch_size;
         const size_t ps_t = m_transformer->get_config().patch_size_t;
-        std::cerr << "[DEBUG I2V] packing latent (ps=" << ps << " ps_t=" << ps_t << ")...\n" << std::flush;
         ov::Tensor packed = pack_latents(latent, ps, ps_t);
-        std::cerr << "[DEBUG I2V] packed shape=[";
-        for (size_t i = 0; i < packed.get_shape().size(); ++i) std::cerr << (i?",":"") << packed.get_shape()[i];
-        std::cerr << "]\n" << std::flush;
 
         if (config.num_videos_per_prompt > 1)
             packed = numpy_utils::repeat(packed, config.num_videos_per_prompt);
@@ -651,16 +625,6 @@ public:
         OPENVINO_ASSERT(strength >= 0.0f && strength <= 1.0f,
                         "'strength' must be in [0.0, 1.0], got ", strength);
 
-        std::cerr << "[DEBUG I2V] generate(image) entered: height=" << merged_generation_config.height
-                  << " width=" << merged_generation_config.width
-                  << " num_frames=" << merged_generation_config.num_frames
-                  << " num_steps=" << merged_generation_config.num_inference_steps
-                  << " guidance=" << merged_generation_config.guidance_scale
-                  << " strength=" << strength
-                  << " m_is_compiled=" << m_is_compiled
-                  << " m_pipeline_type=" << static_cast<int>(m_pipeline_type)
-                  << "\n" << std::flush;
-
         size_t requested_batch_size_multiplier =
             do_classifier_free_guidance(merged_generation_config.guidance_scale) ? 2 : 1;
         if (m_is_compiled) {
@@ -727,40 +691,18 @@ public:
         m_latent_height = merged_generation_config.height / spatial_compression_ratio;
         m_latent_width  = merged_generation_config.width  / spatial_compression_ratio;
 
-        std::cerr << "[DEBUG I2V] latent dims: num_frames=" << m_latent_num_frames
-                  << " height=" << m_latent_height << " width=" << m_latent_width
-                  << " batch_mult=" << batch_size_multiplier << "\n" << std::flush;
-
-        std::cerr << "[DEBUG I2V] calling compute_hidden_states (T5 text encode)...\n" << std::flush;
         compute_hidden_states(positive_prompt,
                               merged_generation_config.negative_prompt.value_or(""),
                               merged_generation_config,
                               use_classifier_free_guidance);
-        std::cerr << "[DEBUG I2V] compute_hidden_states done\n" << std::flush;
 
-        std::cerr << "[DEBUG I2V] calling preprocess_and_encode_image...\n" << std::flush;
         ov::Tensor image_latent_packed = preprocess_and_encode_image(image, merged_generation_config);
-        std::cerr << "[DEBUG I2V] preprocess_and_encode_image done\n" << std::flush;
 
-        // ── stats: image_latent_packed ──────────────────────────────────────────────────
-        {
-            const float* p = image_latent_packed.data<const float>();
-            const size_t n = image_latent_packed.get_size();
-            float mn = p[0], mx = p[0], sum = 0.f;
-            for (size_t i = 0; i < n; ++i) { mn = std::min(mn, p[i]); mx = std::max(mx, p[i]); sum += p[i]; }
-            std::cerr << "[DEBUG STATS] image_latent_packed: size=" << n
-                      << " mean=" << sum/n << " min=" << mn << " max=" << mx << "\n" << std::flush;
-        }
-
-        std::cerr << "[DEBUG I2V] calling prepare_latents (Mechanism A)...\n" << std::flush;
         ov::Tensor latent = prepare_latents(image_latent_packed,
                                             merged_generation_config,
                                             num_channels_latents,
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size);
-        std::cerr << "[DEBUG I2V] prepare_latents done, latent shape=[";
-        for (size_t i = 0; i < latent.get_shape().size(); ++i) std::cerr << (i?",":"") << latent.get_shape()[i];
-        std::cerr << "]\n" << std::flush;
 
         if (strength == 0.0f) {
             latent = postprocess_latents(latent);
@@ -787,9 +729,15 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        // tokens_per_frame: number of spatial tokens belonging to frame-0 of the latent.
-        // For I2V, frame-0 tokens are locked to t=0 (the image-conditioning frame).
-        const size_t tokens_per_frame = m_latent_height * m_latent_width;
+        // Per-token conditioning mask (matches diffusers): 1.0 at frame-0 tokens, 0.0 elsewhere.
+        // Frame-0 occupies the first `tokens_per_frame` positions in the packed [B, S, D] layout
+        // (pack_latents permutes (F, H, W) outermost-to-innermost). With patch_size>1 the frame-0
+        // span is post-patch H*W; here patch_size=patch_size_t=1 for LTX-Video so it's lH*lW.
+        const size_t tokens_per_frame =
+            (m_latent_height / transformer_spatial_patch_size) *
+            (m_latent_width  / transformer_spatial_patch_size);
+        std::vector<float> conditioning_mask(video_sequence_length, 0.0f);
+        std::fill_n(conditioning_mask.begin(), tokens_per_frame, 1.0f);
 
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
@@ -797,14 +745,8 @@ public:
 
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
 
-        std::cerr << "[DEBUG I2V] entering denoising loop: " << timesteps.size() << " steps"
-                  << " first_t=" << (timesteps.empty() ? 0.f : timesteps.front())
-                  << " last_t=" << (timesteps.empty() ? 0.f : timesteps.back()) << "\n" << std::flush;
-
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
-            std::cerr << "[DEBUG I2V] step " << inference_step + 1 << "/" << timesteps.size()
-                      << " t=" << timesteps[inference_step] << "\n" << std::flush;
             auto step_start = std::chrono::steady_clock::now();
             if (batch_size_multiplier > 1) {
                 numpy_utils::batch_copy(latent, latent_cfg, 0, 0, merged_generation_config.num_videos_per_prompt);
@@ -823,26 +765,21 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            // 2D per-token timestep: frame-0 tokens get t=0 (locked image frame),
-            // remaining tokens get t=current_step_t. Shape: [B, video_sequence_length].
+            // Per-token timestep: timestep = t * (1 - conditioning_mask)
+            //   frame-0 tokens (mask=1)  -> t=0 (clean image-conditioning frame)
+            //   other tokens   (mask=0)  -> t=current
+            // Matches diffusers LTXImageToVideoPipeline.__call__:
+            //   timestep = t.expand(B).unsqueeze(-1) * (1 - conditioning_mask)
             const float t = timesteps[inference_step];
             const size_t B_ts = latent_cfg.get_shape()[0];
             ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
             float* timestep_data = timestep.data<float>();
-            // EXPERIMENT: try uniform timestep (all tokens = t) vs per-token (frame0=0, rest=t)
-            // Set I2V_UNIFORM_TIMESTEP=1 to use uniform; default = per-token conditioning
-            const bool uniform_t = (std::getenv("I2V_UNIFORM_TIMESTEP") != nullptr);
             for (size_t b = 0; b < B_ts; ++b) {
-                if (uniform_t) {
-                    std::fill_n(timestep_data + b * video_sequence_length, video_sequence_length, t);
-                } else {
-                    std::fill_n(timestep_data + b * video_sequence_length, tokens_per_frame, 0.0f);
-                    std::fill_n(timestep_data + b * video_sequence_length + tokens_per_frame,
-                                video_sequence_length - tokens_per_frame, t);
+                float* row = timestep_data + b * video_sequence_length;
+                for (size_t i = 0; i < video_sequence_length; ++i) {
+                    row[i] = t * (1.0f - conditioning_mask[i]);
                 }
             }
-            std::cerr << "[DEBUG I2V] timestep tensor: shape=[" << B_ts << "," << video_sequence_length
-                      << (uniform_t ? " UNIFORM t=" : " frame0_t=0.0 rest_t=") << t << "\n" << std::flush;
 
             ov::Tensor noise_pred_tensor;
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
@@ -883,61 +820,19 @@ public:
                                   *merged_generation_config.guidance_rescale);
             }
 
-            // ── stats: noisy_residual (final guidance-applied noise pred) ──────────────
-            const bool log_step = (inference_step <= 1 || inference_step + 1 == timesteps.size());
-            if (log_step) {
-                const float* nr = noisy_residual_tensor.data<const float>();
-                const size_t D_nr = noisy_residual_tensor.get_shape()[2];
-                // frame-0 tokens: positions [0, tokens_per_frame)
-                float sum0 = 0.f, mn0 = nr[0], mx0 = nr[0];
-                for (size_t i = 0; i < tokens_per_frame * D_nr; ++i) {
-                    sum0 += nr[i]; mn0 = std::min(mn0, nr[i]); mx0 = std::max(mx0, nr[i]);
-                }
-                // frames 1+ tokens: positions [tokens_per_frame, video_sequence_length)
-                const size_t rest = (video_sequence_length - tokens_per_frame) * D_nr;
-                const float* nr1 = nr + tokens_per_frame * D_nr;
-                float sum1 = 0.f, mn1 = nr1[0], mx1 = nr1[0];
-                for (size_t i = 0; i < rest; ++i) {
-                    sum1 += nr1[i]; mn1 = std::min(mn1, nr1[i]); mx1 = std::max(mx1, nr1[i]);
-                }
-                std::cerr << "[DEBUG STATS] step " << inference_step
-                          << " noise_pred frame0: mean=" << sum0/(tokens_per_frame*D_nr)
-                          << " min=" << mn0 << " max=" << mx0
-                          << "  |  frames1+: mean=" << sum1/rest
-                          << " min=" << mn1 << " max=" << mx1 << "\n" << std::flush;
-            }
-
             auto scheduler_step_result =
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            // Mechanism C: re-lock frame-0 tokens after every scheduler step
+            // Re-pin frame-0 tokens to the image latent after each scheduler step.
+            // Equivalent to the diffusers approach of slicing off frame-0 before stepping and
+            // concatenating it back, since FlowMatchEulerDiscrete is per-element / stateless.
             {
                 const size_t D = latent.get_shape()[2];
                 for (size_t b = 0; b < merged_generation_config.num_videos_per_prompt; ++b) {
                     float* dst       = latent.data<float>()             + b * m_latent_num_frames * tokens_per_frame * D;
                     const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
                     std::memcpy(dst, src, tokens_per_frame * D * sizeof(float));
-                }
-                // ── stats: latent after MechanismC ─────────────────────────────────────
-                if (log_step) {
-                    const float* lp = latent.data<const float>();
-                    const size_t D2 = latent.get_shape()[2];
-                    float s0=0.f, mn0_=lp[0], mx0_=lp[0];
-                    for (size_t i = 0; i < tokens_per_frame*D2; ++i) {
-                        s0+=lp[i]; mn0_=std::min(mn0_,lp[i]); mx0_=std::max(mx0_,lp[i]);
-                    }
-                    const float* lp1 = lp + tokens_per_frame*D2;
-                    const size_t rest2 = (video_sequence_length-tokens_per_frame)*D2;
-                    float s1=0.f, mn1_=lp1[0], mx1_=lp1[0];
-                    for (size_t i = 0; i < rest2; ++i) {
-                        s1+=lp1[i]; mn1_=std::min(mn1_,lp1[i]); mx1_=std::max(mx1_,lp1[i]);
-                    }
-                    std::cerr << "[DEBUG STATS] step " << inference_step
-                              << " latent(post-MechC) frame0: mean=" << s0/(tokens_per_frame*D2)
-                              << " min=" << mn0_ << " max=" << mx0_
-                              << "  |  frames1+: mean=" << s1/rest2
-                              << " min=" << mn1_ << " max=" << mx1_ << "\n" << std::flush;
                 }
             }
 
@@ -958,22 +853,6 @@ public:
 
         if (callback_ptr != nullptr) {
             callback_ptr->end();
-        }
-
-        // ── final packed latent stats (before postprocess+decode) ──────────────────
-        {
-            const float* lp = latent.data<const float>();
-            const size_t D2 = latent.get_shape()[2];
-            float s0=0.f, mn0=lp[0], mx0=lp[0];
-            for (size_t i = 0; i < tokens_per_frame*D2; ++i) { s0+=lp[i]; mn0=std::min(mn0,lp[i]); mx0=std::max(mx0,lp[i]); }
-            const float* lp1 = lp + tokens_per_frame*D2;
-            const size_t rest = (video_sequence_length-tokens_per_frame)*D2;
-            float s1=0.f, mn1=lp1[0], mx1=lp1[0];
-            for (size_t i = 0; i < rest; ++i) { s1+=lp1[i]; mn1=std::min(mn1,lp1[i]); mx1=std::max(mx1,lp1[i]); }
-            std::cerr << "[DEBUG STATS] FINAL latent (pre-decode) frame0: mean=" << s0/(tokens_per_frame*D2)
-                      << " min=" << mn0 << " max=" << mx0
-                      << "  |  frames1+: mean=" << s1/rest
-                      << " min=" << mn1 << " max=" << mx1 << "\n" << std::flush;
         }
 
         latent = postprocess_latents(latent);

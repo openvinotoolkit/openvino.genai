@@ -268,39 +268,23 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
     OPENVINO_ASSERT(m_encoder_request,
         "VAE encoder model must be compiled first. Cannot infer non-compiled model");
 
-    const ov::Shape& in_shape = video.get_shape();
-    std::cerr << "[DEBUG VAE-ENC] encode() called: input shape=[";
-    for (size_t i = 0; i < in_shape.size(); ++i) std::cerr << (i?",":"") << in_shape[i];
-    std::cerr << "] dtype=" << video.get_element_type()
-              << " generator=" << (generator ? "set" : "null") << "\n" << std::flush;
-
-    std::cerr << "[DEBUG VAE-ENC] set_input_tensor...\n" << std::flush;
     m_encoder_request.set_input_tensor(video);
-    std::cerr << "[DEBUG VAE-ENC] calling m_encoder_request.infer()...\n" << std::flush;
     m_encoder_request.infer();
-    std::cerr << "[DEBUG VAE-ENC] m_encoder_request.infer() returned\n" << std::flush;
 
     ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
-
     const std::string output_name = m_encoder_request.get_compiled_model().outputs()[0].get_any_name();
-    std::cerr << "[DEBUG VAE-ENC] output name='" << output_name << "' shape=[";
-    for (size_t i = 0; i < output.get_shape().size(); ++i) std::cerr << (i?",":"") << output.get_shape()[i];
-    std::cerr << "] dtype=" << output.get_element_type() << "\n" << std::flush;
 
     if (output_name == "latent_sample") {
         // Copy to an owned tensor — get_output_tensor() aliases the infer request's
         // internal buffer, which would be overwritten on the next encode() call.
         latent = ov::Tensor(output.get_element_type(), output.get_shape());
         output.copy_to(latent);
-        std::cerr << "[DEBUG VAE-ENC] latent_sample: copied to owned tensor\n" << std::flush;
     } else if (output_name == "latent_parameters") {
         OPENVINO_ASSERT(generator,
             "AutoencoderKLLTXVideo::encode requires a non-null generator when encoder output is "
             "'latent_parameters', because latent sampling is performed from distribution parameters. "
             "A generator is not required when encoder output is 'latent_sample'.");
-        std::cerr << "[DEBUG VAE-ENC] latent_parameters: sampling from DiagonalGaussianDistribution...\n" << std::flush;
         latent = DiagonalGaussianDistribution(output).sample(generator);
-        std::cerr << "[DEBUG VAE-ENC] sampling done\n" << std::flush;
     } else {
         OPENVINO_ASSERT(false, "Unexpected output name for AutoencoderKLLTXVideo encoder '", output_name, "'");
     }
@@ -320,8 +304,6 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
     float* latent_data = latent.data<float>();
     const float scale = m_config.scaling_factor;
 
-    std::cerr << "[DEBUG VAE-ENC] normalizing latent: B=" << B << " C=" << C
-              << " spatial=" << spatial << " scale=" << scale << "\n" << std::flush;
     for (size_t b = 0; b < B; ++b) {
         for (size_t c = 0; c < C; ++c) {
             float* ptr = latent_data + (b * C + c) * spatial;
@@ -331,7 +313,6 @@ ov::Tensor AutoencoderKLLTXVideo::encode(const ov::Tensor& video, std::shared_pt
             }
         }
     }
-    std::cerr << "[DEBUG VAE-ENC] encode() complete\n" << std::flush;
 
     return latent;
 }
