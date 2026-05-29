@@ -263,9 +263,19 @@ public:
     /// @param system_message Some chat_templates contain system role
     /// in addition to user and assistant roles. Set a message for that
     /// role.
+    /// @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
+    /// Please, use generate() with ChatHistory argument.
+    OPENVINO_DEPRECATED(
+        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+        "Please, use generate() with ChatHistory argument.")
     void start_chat(const std::string& system_message="");
 
     /// @brief Deactivate chat mode.
+    /// @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
+    /// Please, use generate() with ChatHistory argument.
+    OPENVINO_DEPRECATED(
+        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+        "Please, use generate() with ChatHistory argument.")
     void finish_chat();
 
     /// @brief Set a custom chat template. Can be used to deactivate

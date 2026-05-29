@@ -43,7 +43,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@7f61dc3cf40c03638386397c6f8f98bf23f25a00
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@51b2fef55c075a40ad3a5e84dea1ffbf68f88b5f
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -435,13 +435,7 @@ jobs:
             cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 120
-          - name: 'Whisper Transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
-              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
-            timeout: 120
+
           # Only supported on X64 or ARM with SVE support
           # - name: 'Cacheopt E2E (Part 1)'
           #   cmd: 'python -m pytest -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
@@ -455,7 +449,7 @@ jobs:
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 360
+            timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -487,13 +481,16 @@ jobs:
             timeout: 90
           - name: 'WWB tests (videochat)'
             cmd: |
-              # Temporary pin: depends on upstream PR #1637 (not merged yet).
-              # TODO: replace with official release once available.
               python -m pip install transformers==4.57.6
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@0d632c6afbb4d885625d5cb3f7c41ffa5f7bd3f0
               python -m pytest -v ./tools/who_what_benchmark/tests -k "videochat"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
+          - name: 'Whisper Transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.57.6
+              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            timeout: 120
     defaults:
       run:
         shell: bash
@@ -638,7 +635,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install NPM dependencies for samples
@@ -646,7 +643,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* ${{ env.SRC_DIR }}/src/js --ignore-scripts
-          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Test Samples (Python and C++)
@@ -740,10 +737,7 @@ jobs:
   genai_nodejs_tests:
     name: Node.js bindings tests
     needs: [ smart_ci, openvino_download, genai_build_wheel, genai_build_nodejs ]
-    # if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
-    # nodejs tests fails on mac with: "mutex lock failed: Invalid argument"
-    # ticket: 179949
-    if: false
+    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
     defaults:
       run:
@@ -795,7 +789,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin && ln -sfn ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install OpenVINO GenAI Python packages (from wheels)

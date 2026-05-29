@@ -56,7 +56,9 @@ InputsEmbedderGemma3::InputsEmbedderGemma3(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+    IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+        patch_chat_template();
+    }
 
 InputsEmbedderGemma3::InputsEmbedderGemma3(
     const VLMConfig& vlm_config,
@@ -65,7 +67,9 @@ InputsEmbedderGemma3::InputsEmbedderGemma3(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) { }
+    IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+        patch_chat_template();
+    }
 
 bool InputsEmbedderGemma3::has_token_type_ids() const {
     return true;
@@ -113,6 +117,17 @@ NormalizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& promp
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
+void InputsEmbedderGemma3::patch_chat_template() {
+    std::string patched_chat_template = m_tokenizer.get_chat_template();
+    const std::string trim_filter = "| trim";
+    size_t pos = patched_chat_template.find(trim_filter);
+    while (pos != std::string::npos) {
+        patched_chat_template.erase(pos, trim_filter.length());
+        pos = patched_chat_template.find(trim_filter, pos);
+    }
+    m_tokenizer.set_chat_template(patched_chat_template);
+}
+
 ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     OPENVINO_THROW(
         "[InputsEmbedderGemma3] The method get_inputs_embeds is not supported for Gemma3 models because token type IDs are required to distinguish between text and image tokens in the input sequence. "
@@ -129,18 +144,6 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_t
         image_embeds.push_back(images.at(new_image_id).resized_source);
     }
 
-    // HF/optimum-intel first apply chat template to messages/text prompt:
-    //      <bos><start_of_turn>user\n<start_of_image>text prompt example<end_of_turn>\n<start_of_turn>model
-    // Then templated prompt string is modified - they replace image start token with image pad + end tokens and pad double newlines from both sides:
-    //      <start_of_image> -> \n\n<start_of_image><image_soft_token>...<image_soft_token><end_of_image>\n\n
-    // In GenAI we first prepare unified prompt that already includes all image tokens (start, pad, end) and new lines, 
-    //  and only then apply chat template.
-    // As Gemma3 original chat template has trim filter for message content (`{{ message['content'] | trim }}`),
-    //  unified prompt in GenAI is affected:
-    //  - left padded double newline is removed
-    //  - right padded double newline transformed to single newline (Jinja2Cpp behaviour)
-    // Removing trim filter in chat template fallback resolves this issue.
-    // TODO Check trim filter behaviour and chat template rendering with minja.
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
