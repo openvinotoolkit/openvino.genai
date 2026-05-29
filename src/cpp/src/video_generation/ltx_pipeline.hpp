@@ -829,13 +829,20 @@ public:
             const size_t B_ts = latent_cfg.get_shape()[0];
             ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
             float* timestep_data = timestep.data<float>();
+            // EXPERIMENT: try uniform timestep (all tokens = t) vs per-token (frame0=0, rest=t)
+            // Set I2V_UNIFORM_TIMESTEP=1 to use uniform; default = per-token conditioning
+            const bool uniform_t = (std::getenv("I2V_UNIFORM_TIMESTEP") != nullptr);
             for (size_t b = 0; b < B_ts; ++b) {
-                std::fill_n(timestep_data + b * video_sequence_length, tokens_per_frame, 0.0f);
-                std::fill_n(timestep_data + b * video_sequence_length + tokens_per_frame,
-                            video_sequence_length - tokens_per_frame, t);
+                if (uniform_t) {
+                    std::fill_n(timestep_data + b * video_sequence_length, video_sequence_length, t);
+                } else {
+                    std::fill_n(timestep_data + b * video_sequence_length, tokens_per_frame, 0.0f);
+                    std::fill_n(timestep_data + b * video_sequence_length + tokens_per_frame,
+                                video_sequence_length - tokens_per_frame, t);
+                }
             }
             std::cerr << "[DEBUG I2V] timestep tensor: shape=[" << B_ts << "," << video_sequence_length
-                      << "] frame0_t=0.0 rest_t=" << t << "\n" << std::flush;
+                      << (uniform_t ? " UNIFORM t=" : " frame0_t=0.0 rest_t=") << t << "\n" << std::flush;
 
             ov::Tensor noise_pred_tensor;
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
