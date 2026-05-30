@@ -76,7 +76,18 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
         adapters->set_tensor_name_prefix(m_lora_prefix);
         m_adapter_controller = AdapterController(m_model, *adapters, device);
     }
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
+
+    // Default to fp32 inference precision on CPU. OpenVINO's CPU plugin uses inference_precision=dynamic
+    // by default, which on modern CPUs with bf16/AMX-BF16 silently runs matmul/attention in bf16 even
+    // when weights are fp32. For LTX-Video this accumulates noticeable quality loss in long-sequence
+    // attention and 3D RoPE. Users can override via INFERENCE_PRECISION_HINT in properties.
+    ov::AnyMap effective_properties = *filtered_properties;
+    if (device.find("CPU") != std::string::npos &&
+        effective_properties.find(ov::hint::inference_precision.name()) == effective_properties.end()) {
+        effective_properties[ov::hint::inference_precision.name()] = ov::element::f32;
+    }
+
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, effective_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input(0).get_partial_shape();

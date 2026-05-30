@@ -114,6 +114,13 @@ ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::stri
         properties[ov::hint::inference_precision.name()] = wa_inference_precision;
     }
 
+    // Default to fp32 inference precision on CPU. OV CPU plugin's default 'dynamic' silently runs
+    // matmul in bf16 on modern CPUs (bf16/AMX), which loses VAE-decode quality for LTX-Video.
+    if (device.find("CPU") != std::string::npos &&
+        properties.find(ov::hint::inference_precision.name()) == properties.end()) {
+        properties[ov::hint::inference_precision.name()] = ov::element::f32;
+    }
+
     return properties;
 }
 
