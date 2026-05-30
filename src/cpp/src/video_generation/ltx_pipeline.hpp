@@ -276,21 +276,6 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
-// Default inference precision to fp32 on CPU. OV CPU plugin's `dynamic` default silently runs
-// matmul in bf16 on modern CPUs (bf16/AMX), which degrades LTX-Video output quality through
-// T5 conditioning + transformer attention. T5 is shared with Flux/SD3, so we only apply this
-// in the LTX pipeline context; the transformer/VAE compile paths apply the same default for
-// the LTX-specific models. Users can override via INFERENCE_PRECISION_HINT in properties.
-inline ov::AnyMap with_cpu_fp32_default(const std::string& device, const ov::AnyMap& properties) {
-    if (device.find("CPU") == std::string::npos ||
-        properties.find(ov::hint::inference_precision.name()) != properties.end()) {
-        return properties;
-    }
-    ov::AnyMap augmented = properties;
-    augmented[ov::hint::inference_precision.name()] = ov::element::f32;
-    return augmented;
-}
-
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
@@ -562,7 +547,7 @@ public:
                 VideoPipelineType pipeline_type = VideoPipelineType::TEXT_2_VIDEO,
                 std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now())
         : m_scheduler{cast_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"))},
-          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, with_cpu_fp32_default(device, properties))},
+          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
           m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, properties)},
           m_generation_config{LTX_VIDEO_DEFAULT_CONFIG},
           m_pipeline_type{pipeline_type} {
