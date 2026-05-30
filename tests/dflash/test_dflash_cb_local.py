@@ -54,9 +54,7 @@ def _assert_target_kv_states_are_fp32(target_model_path):
     ov = pytest.importorskip("openvino")
     model = ov.Core().read_model(target_model_path / "openvino_model.xml")
     state_types = {
-        str(op.get_output_element_type(0))
-        for op in model.get_ordered_ops()
-        if op.get_type_name() == "ReadValue"
+        str(op.get_output_element_type(0)) for op in model.get_ordered_ops() if op.get_type_name() == "ReadValue"
     }
     assert state_types == {"<Type: 'float32'>"}
 
@@ -112,7 +110,9 @@ def _generate_target_then_dflash_cb(device, prompts, generation_config, properti
     pipeline_properties = properties.copy() if properties is not None else _TARGET_PIPELINE_PROPERTIES.copy()
 
     target_pipe = ov_genai.LLMPipeline(target_model_path, device, pipeline_properties.copy())
-    target_results = [target_pipe.generate(tokenized_prompt, generation_config) for tokenized_prompt in tokenized_prompts]
+    target_results = [
+        target_pipe.generate(tokenized_prompt, generation_config) for tokenized_prompt in tokenized_prompts
+    ]
     target_snapshots = [_snapshot_encoded_result(tokenizer, result) for result in target_results]
 
     # Release the baseline target before compiling the target+draft pair.
@@ -127,7 +127,9 @@ def _generate_target_then_dflash_cb(device, prompts, generation_config, properti
         pipeline_properties.copy(),
         draft_model=draft,
     )
-    dflash_results = [dflash_pipe.generate(tokenized_prompt, generation_config) for tokenized_prompt in tokenized_prompts]
+    dflash_results = [
+        dflash_pipe.generate(tokenized_prompt, generation_config) for tokenized_prompt in tokenized_prompts
+    ]
     dflash_snapshots = [_snapshot_encoded_result(tokenizer, result) for result in dflash_results]
     del dflash_pipe
     del draft
