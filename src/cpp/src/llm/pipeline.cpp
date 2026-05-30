@@ -12,8 +12,8 @@
 
 #include "llm/pipeline_stateful.hpp"
 #include "llm/pipeline_continuous_batching_adapter.hpp"
+#include "speculative_decoding/dflash_model_transforms.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
-#include "speculative_decoding/stateful/dflash_strategy.hpp"
 #include "speculative_decoding/stateful/eagle3_strategy.hpp"
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "utils.hpp"
@@ -106,12 +106,10 @@ std::pair<std::string, Any> draft_model(
 
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
-    utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     utils::dflash::apply_dflash_rt_info(model, plugin_config);
+    utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
-    const bool is_dflash_mode = plugin_config.find("dflash_mode") != plugin_config.end() &&
-                                plugin_config.at("dflash_mode").as<bool>();
-    auto tokenizer = is_dflash_mode ? ov::genai::Tokenizer() : ov::genai::Tokenizer(models_path);
+    auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
@@ -125,8 +123,8 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     utils::dflash::apply_dflash_rt_info(model, plugin_config);
+    utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
@@ -167,10 +165,8 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
 
     if (draft_model_descr.model) {
-        bool is_dflash_mode = draft_model_descr.properties.find("dflash_mode") != draft_model_descr.properties.end() &&
-                              draft_model_descr.properties.at("dflash_mode").as<bool>();
         // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
-        OPENVINO_ASSERT(is_dflash_mode || device == "NPU" || draft_model_descr.device == "NPU",
+        OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
                         "Stateful FastDraft and Stateful Eagle3 Speculative Decoding require NPU to be "
                         "the execution device for at least one model.");
 
@@ -178,10 +174,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
         bool is_eagle3_mode = draft_model_descr.properties.find("eagle3_mode") != draft_model_descr.properties.end() &&
                               draft_model_descr.properties.at("eagle3_mode").as<bool>();
 
-        if (is_dflash_mode) {
-            auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
-            return std::make_unique<StatefulDFlashLLMPipeline>(main_model_descr, draft_model_descr, dflash_rt_info);
-        } else if (is_eagle3_mode) {
+        if (is_eagle3_mode) {
             // Eagle3 Speculative Decoding mode
             auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
             if (!eagle_rt_info.hidden_layers_list.empty()) {

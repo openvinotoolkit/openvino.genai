@@ -17,6 +17,7 @@
 #include "speculative_decoding/continuous_batching/eagle3_strategy.hpp"
 #include "speculative_decoding/continuous_batching/fast_draft_strategy.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
+#include "speculative_decoding/dflash_model_transforms.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/vision_properties.hpp"

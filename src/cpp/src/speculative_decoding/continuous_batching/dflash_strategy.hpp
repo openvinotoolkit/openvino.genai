@@ -8,7 +8,7 @@
 
 #include "fast_draft_strategy.hpp"
 #include "speculative_decoding/continuous_batching/dflash_strategy_utils.hpp"
-#include "speculative_decoding/eagle3_model_transforms.hpp"
+#include "speculative_decoding/dflash_model_transforms.hpp"
 
 namespace ov::genai {
 
