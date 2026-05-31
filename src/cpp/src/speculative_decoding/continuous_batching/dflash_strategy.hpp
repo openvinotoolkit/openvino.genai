@@ -61,6 +61,8 @@ private:
     static ov::Tensor materialize_pending_hidden_delta(const RequestState& state);
     static void clear_pending_hidden_delta(RequestState& state);
     void validate_hidden_prefix_length(const RequestState& state) const;
+    bool has_active_request_state() const;
+    void drop_finished_request_states();
     void update_draft_states_from_main(const GeneratedRequests& main_generated_requests);
     void drop_requests();
     ov::genai::RawPerfMetrics collect_draft_raw_metrics();

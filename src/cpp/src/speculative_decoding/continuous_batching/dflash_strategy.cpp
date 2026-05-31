@@ -306,6 +306,25 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::validate_hidden_prefix_leng
     OPENVINO_ASSERT(actual == expected, "DFlash hidden prefix length mismatch before draft inference.");
 }
 
+bool ContinuousBatchingPipeline::DFlashDecodingImpl::has_active_request_state() const {
+    for (const auto& [_, state] : m_request_states) {
+        if (!state.finished) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ContinuousBatchingPipeline::DFlashDecodingImpl::drop_finished_request_states() {
+    for (auto state_it = m_request_states.begin(); state_it != m_request_states.end();) {
+        if (state_it->second.finished) {
+            state_it = m_request_states.erase(state_it);
+        } else {
+            ++state_it;
+        }
+    }
+}
+
 GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
@@ -317,7 +336,8 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     OPENVINO_ASSERT(sampling_params.is_greedy_decoding(), "DFlash CB/PA currently supports greedy decoding only.");
     OPENVINO_ASSERT(sampling_params.num_beams == 1, "DFlash CB/PA does not support beam search.");
     OPENVINO_ASSERT(sampling_params.num_return_sequences == 1, "DFlash CB/PA supports one sequence per request.");
-    OPENVINO_ASSERT(m_request_states.empty() && !m_main_pipeline->has_non_finished_requests(),
+    drop_finished_request_states();
+    OPENVINO_ASSERT(!has_active_request_state() && !m_main_pipeline->has_non_finished_requests(),
                     "DFlash CB/PA POC supports only one active request. Wait for the current request to finish before adding another.");
 
     const auto input_shape = input_ids.get_shape();
