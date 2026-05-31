@@ -748,6 +748,41 @@ public:
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
+
+            // Upstream LTX-Video `add_noise_to_image_conditioning_latents`
+            // (pipeline_ltx_video.py): before each transformer call, replace frame-0 tokens
+            // with `init_latent + scale * randn * (t/1000)^2`. The model sees a slightly noised
+            // anchor each step, which breaks the static-attractor collapse that pure clean-pin
+            // produces in our setup. Default 0.15 (upstream default); override via
+            // I2V_NOISE_SCALE env var (0 disables).
+            {
+                float image_cond_noise_scale = 0.15f;
+                if (const char* env = std::getenv("I2V_NOISE_SCALE")) {
+                    image_cond_noise_scale = std::atof(env);
+                }
+                if (image_cond_noise_scale > 0.0f) {
+                    const float t_norm = timesteps[inference_step] / 1000.0f;
+                    const float noise_coeff = image_cond_noise_scale * t_norm * t_norm;
+                    const size_t D_pre = latent.get_shape()[2];
+                    const ov::Shape f0_shape{merged_generation_config.num_videos_per_prompt,
+                                              tokens_per_frame, D_pre};
+                    ov::Tensor n = merged_generation_config.generator->randn_tensor(f0_shape);
+                    const float* nd = n.data<const float>();
+                    for (size_t b = 0; b < merged_generation_config.num_videos_per_prompt; ++b) {
+                        float* dst       = latent.data<float>()             + b * video_sequence_length * D_pre;
+                        const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D_pre;
+                        const float* nn  = nd                                + b * tokens_per_frame * D_pre;
+                        for (size_t i = 0; i < tokens_per_frame * D_pre; ++i) {
+                            dst[i] = src[i] + noise_coeff * nn[i];
+                        }
+                    }
+                    if (inference_step == 0) {
+                        std::cerr << "[I2V] image_cond_noise_scale=" << image_cond_noise_scale
+                                  << " (override via I2V_NOISE_SCALE)\n" << std::flush;
+                    }
+                }
+            }
+
             if (batch_size_multiplier > 1) {
                 numpy_utils::batch_copy(latent, latent_cfg, 0, 0, merged_generation_config.num_videos_per_prompt);
                 numpy_utils::batch_copy(latent,
