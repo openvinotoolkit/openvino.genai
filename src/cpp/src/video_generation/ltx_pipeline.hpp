@@ -547,19 +547,19 @@ public:
                 VideoPipelineType pipeline_type = VideoPipelineType::TEXT_2_VIDEO,
                 std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now())
         : m_scheduler{cast_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"))},
-          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
+          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, with_cpu_fp32_default(device, properties))},
           m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, properties)},
           m_generation_config{LTX_VIDEO_DEFAULT_CONFIG},
           m_pipeline_type{pipeline_type} {
         if (pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
             m_vae = std::make_shared<AutoencoderKLLTXVideo>(
-                models_dir / "vae_encoder", models_dir / "vae_decoder", device, properties);
+                models_dir / "vae_encoder", models_dir / "vae_decoder", device, with_cpu_fp32_default(device, properties));
             m_image_resizer = std::make_shared<ImageResizer>(
                 "CPU", ov::element::u8, "NHWC",
                 ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
             m_image_processor = std::make_shared<ImageProcessor>("CPU", true);
         } else {
-            m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties);
+            m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, with_cpu_fp32_default(device, properties));
         }
         m_models_dir = models_dir;
         m_text_encode_device = device;
