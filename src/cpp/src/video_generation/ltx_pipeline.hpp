@@ -831,9 +831,21 @@ public:
             // on the clean conditioning frame and produces a static video (every frame ≈ frame 0).
             // Upstream defaults to 0.15. See pipeline_ltx_video.py:597-619, inference.py:365.
             {
-                constexpr float image_cond_noise_scale = 0.15f;
+                // Override via env var to A/B different scales without rebuild:
+                //   I2V_NOISE_SCALE=0      -> clean conditioning (diffusers default)
+                //   I2V_NOISE_SCALE=0.15   -> upstream LTX-Video default (currently set)
+                //   I2V_NOISE_SCALE=0.5    -> stronger perturbation to break static lock
+                float image_cond_noise_scale = 0.15f;
+                if (const char* env = std::getenv("I2V_NOISE_SCALE")) {
+                    image_cond_noise_scale = std::atof(env);
+                }
                 const float t_norm = timesteps[inference_step] / 1000.0f;
                 const float noise_coeff = image_cond_noise_scale * t_norm * t_norm;
+                if (inference_step == 0) {
+                    std::cerr << "[I2V] image_cond_noise_scale=" << image_cond_noise_scale
+                              << "  step-0 noise_coeff=" << noise_coeff
+                              << "  (env I2V_NOISE_SCALE overrides)\n" << std::flush;
+                }
 
                 const size_t D = latent.get_shape()[2];
                 const ov::Shape frame0_shape{merged_generation_config.num_videos_per_prompt,
