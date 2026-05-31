@@ -568,13 +568,13 @@ public:
           m_pipeline_type{pipeline_type} {
         if (pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
             m_vae = std::make_shared<AutoencoderKLLTXVideo>(
-                models_dir / "vae_encoder", models_dir / "vae_decoder", device, with_cpu_fp32_default(device, properties));
+                models_dir / "vae_encoder", models_dir / "vae_decoder", device, properties);
             m_image_resizer = std::make_shared<ImageResizer>(
                 "CPU", ov::element::u8, "NHWC",
                 ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
             m_image_processor = std::make_shared<ImageProcessor>("CPU", true);
         } else {
-            m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, with_cpu_fp32_default(device, properties));
+            m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties);
         }
         m_models_dir = models_dir;
         m_text_encode_device = device;
