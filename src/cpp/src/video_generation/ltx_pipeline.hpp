@@ -276,6 +276,21 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
+// Default inference precision to fp32 on CPU for LTX-Video sub-models. OV's CPU plugin
+// 'dynamic' default silently runs matmul/attention in bf16 on bf16/AMX CPUs, which
+// degrades the precision-sensitive LTX-Video pipeline. The transformer compile path
+// applies this internally; here we apply it at the LTX pipeline level for T5 and VAE
+// (which are shared classes - we don't want to change their defaults globally).
+inline ov::AnyMap with_cpu_fp32_default(const std::string& device, const ov::AnyMap& properties) {
+    if (device.find("CPU") == std::string::npos ||
+        properties.find(ov::hint::inference_precision.name()) != properties.end()) {
+        return properties;
+    }
+    ov::AnyMap augmented = properties;
+    augmented[ov::hint::inference_precision.name()] = ov::element::f32;
+    return augmented;
+}
+
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
