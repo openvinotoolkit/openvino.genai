@@ -763,6 +763,42 @@ public:
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
+
+            // Upstream LTX-Video `add_noise_to_image_conditioning_latents` — must run BEFORE
+            // the transformer call using the CURRENT step's sigma. At step 0 prepare_latents
+            // wrote the clean image latent into frame-0; without this perturbation the model
+            // sees a clean anchor at σ≈1 (mismatched with its training distribution) and
+            // over-anchors, collapsing every output frame to frame 0 (static video).
+            //   noised = init_latent + image_cond_noise_scale * randn * (t/1000)^2
+            // Default 0.15 (upstream); override via I2V_NOISE_SCALE env var (0 disables).
+            {
+                float image_cond_noise_scale = 0.15f;
+                if (const char* env = std::getenv("I2V_NOISE_SCALE")) {
+                    image_cond_noise_scale = std::atof(env);
+                }
+                if (image_cond_noise_scale > 0.0f) {
+                    const float t_norm = timesteps[inference_step] / 1000.0f;
+                    const float noise_coeff = image_cond_noise_scale * t_norm * t_norm;
+                    if (inference_step == 0) {
+                        std::cerr << "[I2V] image_cond_noise_scale=" << image_cond_noise_scale
+                                  << " (override via I2V_NOISE_SCALE)\n" << std::flush;
+                    }
+                    const size_t D_pre = latent.get_shape()[2];
+                    const ov::Shape f0_shape{merged_generation_config.num_videos_per_prompt,
+                                              tokens_per_frame, D_pre};
+                    ov::Tensor n = merged_generation_config.generator->randn_tensor(f0_shape);
+                    const float* nd = n.data<const float>();
+                    for (size_t b = 0; b < merged_generation_config.num_videos_per_prompt; ++b) {
+                        float* dst       = latent.data<float>()             + b * video_sequence_length * D_pre;
+                        const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D_pre;
+                        const float* nn  = nd                                + b * tokens_per_frame * D_pre;
+                        for (size_t i = 0; i < tokens_per_frame * D_pre; ++i) {
+                            dst[i] = src[i] + noise_coeff * nn[i];
+                        }
+                    }
+                }
+            }
+
             if (batch_size_multiplier > 1) {
                 numpy_utils::batch_copy(latent, latent_cfg, 0, 0, merged_generation_config.num_videos_per_prompt);
                 numpy_utils::batch_copy(latent,
@@ -838,45 +874,8 @@ public:
             auto scheduler_step_result =
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
-
-            // Re-pin frame-0 tokens to the (noised) image latent after each scheduler step.
-            // Matches upstream LTX-Video's `add_noise_to_image_conditioning_latents`:
-            //     noised = init_latents + image_cond_noise_scale * randn * t^2
-            // where t is the normalized sigma in [0, 1]. Without this, the model over-anchors
-            // on the clean conditioning frame and produces a static video (every frame ≈ frame 0).
-            // Upstream defaults to 0.15. See pipeline_ltx_video.py:597-619, inference.py:365.
-            {
-                // Override via env var to A/B different scales without rebuild:
-                //   I2V_NOISE_SCALE=0      -> clean conditioning (diffusers default)
-                //   I2V_NOISE_SCALE=0.15   -> upstream LTX-Video default (currently set)
-                //   I2V_NOISE_SCALE=0.5    -> stronger perturbation to break static lock
-                float image_cond_noise_scale = 0.15f;
-                if (const char* env = std::getenv("I2V_NOISE_SCALE")) {
-                    image_cond_noise_scale = std::atof(env);
-                }
-                const float t_norm = timesteps[inference_step] / 1000.0f;
-                const float noise_coeff = image_cond_noise_scale * t_norm * t_norm;
-                if (inference_step == 0) {
-                    std::cerr << "[I2V] image_cond_noise_scale=" << image_cond_noise_scale
-                              << "  step-0 noise_coeff=" << noise_coeff
-                              << "  (env I2V_NOISE_SCALE overrides)\n" << std::flush;
-                }
-
-                const size_t D = latent.get_shape()[2];
-                const ov::Shape frame0_shape{merged_generation_config.num_videos_per_prompt,
-                                              tokens_per_frame, D};
-                ov::Tensor noise = merged_generation_config.generator->randn_tensor(frame0_shape);
-                const float* noise_data = noise.data<const float>();
-
-                for (size_t b = 0; b < merged_generation_config.num_videos_per_prompt; ++b) {
-                    float* dst       = latent.data<float>()             + b * m_latent_num_frames * tokens_per_frame * D;
-                    const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
-                    const float* n   = noise_data                        + b * tokens_per_frame * D;
-                    for (size_t i = 0; i < tokens_per_frame * D; ++i) {
-                        dst[i] = src[i] + noise_coeff * n[i];
-                    }
-                }
-            }
+            // Frame-0 noising is done at the TOP of the next iteration using the next step's
+            // sigma, matching upstream LTX `add_noise_to_image_conditioning_latents` timing.
 
             if (callback_ptr && callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latent) == CallbackStatus::STOP) {
                 callback_ptr->end();
