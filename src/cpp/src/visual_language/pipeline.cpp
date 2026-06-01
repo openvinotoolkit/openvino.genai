@@ -687,7 +687,7 @@ private:
         } else {
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, recalculate_merged_embeddings, image_sequence, video_sequence);
         }
-        auto embeddings_end_time = std::chrono::steady_clock::now();
+        const auto embeddings_end_time = std::chrono::steady_clock::now();
         perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(embeddings_end_time - embeddings_start_time));
 
         if (m_is_npu) {
