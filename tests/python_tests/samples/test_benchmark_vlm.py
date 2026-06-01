@@ -46,7 +46,7 @@ class TestBenchmarkVLM:
         num_iter = "3"
         num_assistant_tokens = "5"
 
-        benchmark_sample = SAMPLES_CPP_DIR / 'benchmark_vlm'
+        benchmark_sample = SAMPLES_CPP_DIR / "benchmark_vlm"
         benchmark_cpp_command = [
             benchmark_sample,
             "-m",
@@ -62,7 +62,7 @@ class TestBenchmarkVLM:
         ]
         run_sample(benchmark_cpp_command)
 
-        benchmark_script = SAMPLES_PY_DIR / 'visual_language_chat/benchmark_vlm.py'
+        benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
