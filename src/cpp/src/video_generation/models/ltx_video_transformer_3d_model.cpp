@@ -76,21 +76,7 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
         adapters->set_tensor_name_prefix(m_lora_prefix);
         m_adapter_controller = AdapterController(m_model, *adapters, device);
     }
-    // LTX-Video's transformer is unusually precision-sensitive: OpenVINO's CPU plugin default
-    // (inference_precision=dynamic -> bf16 on AMX-BF16 CPUs) introduces ~4% mean error per
-    // forward pass, which compounds across the 50-step denoising loop into significant T2V
-    // quality loss and complete I2V collapse to grey frames. Diagnostic comparison against
-    // diffusers torch fp32 on identical inputs: bf16 cos-sim 0.998 / max-diff 0.28 ;
-    // fp32  cos-sim 1.000 / max-diff 1.5e-4. T5 and VAE are unaffected (their errors don't
-    // compound through scheduler integration). Only the transformer needs fp32 on CPU.
-    // Users can override by passing INFERENCE_PRECISION_HINT explicitly in properties.
-    ov::AnyMap effective_properties = *filtered_properties;
-    if (device.find("CPU") != std::string::npos &&
-        effective_properties.find(ov::hint::inference_precision.name()) == effective_properties.end()) {
-        effective_properties[ov::hint::inference_precision.name()] = ov::element::f32;
-    }
-
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, effective_properties);
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input(0).get_partial_shape();
