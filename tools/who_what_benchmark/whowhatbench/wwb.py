@@ -25,6 +25,14 @@ from whowhatbench.utils import get_json_config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+MODEL_TYPE_ALIASES = {
+    "reranking": "text-reranking",
+}
+
+
+def normalize_model_type(model_type: str) -> str:
+    return MODEL_TYPE_ALIASES.get(model_type, model_type)
+
 
 def pruning_ratio_type(value: str) -> int:
     ivalue = int(value)
@@ -104,6 +112,7 @@ def parse_args():
             "image-inpainting",
             "text-embedding",
             "text-reranking",
+            "reranking",
         ],
         default="text",
         help="Indicates the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
@@ -373,7 +382,9 @@ def parse_args():
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.model_type = normalize_model_type(args.model_type)
+    return args
 
 
 def check_args(args):
@@ -780,7 +791,7 @@ def create_evaluator(base_model, args):
     # config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
     # task = TasksManager.infer_task_from_model(config._name_or_path)
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
-    task = args.model_type
+    task = normalize_model_type(args.model_type)
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
@@ -916,9 +927,13 @@ def create_evaluator(base_model, args):
                 batch_size=args.embeds_batch_size,
             )
         elif task == "text-reranking":
+            reranking_tokenizer = load_tokenizer(args)
+            reranking_processor, reranking_config = load_processor(args)
+            if reranking_config is not None and reranking_config.model_type == "qwen3_vl":
+                reranking_tokenizer = reranking_processor
             return EvaluatorCLS(
                 base_model=base_model,
-                tokenizer=load_tokenizer(args),
+                tokenizer=reranking_tokenizer,
                 gt_data=args.gt_data,
                 test_data=prompts,
                 num_samples=args.num_samples,
