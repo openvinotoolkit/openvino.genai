@@ -276,6 +276,21 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
+// Default inference precision to fp32 on CPU for LTX-Video sub-models. OV's CPU plugin
+// 'dynamic' default silently runs matmul/attention in bf16 on bf16/AMX CPUs, which
+// degrades the precision-sensitive LTX-Video pipeline. The transformer compile path
+// applies this internally; here we apply it at the LTX pipeline level for T5 and VAE
+// (which are shared classes - we don't want to change their defaults globally).
+inline ov::AnyMap with_cpu_fp32_default(const std::string& device, const ov::AnyMap& properties) {
+    if (device.find("CPU") == std::string::npos ||
+        properties.find(ov::hint::inference_precision.name()) != properties.end()) {
+        return properties;
+    }
+    ov::AnyMap augmented = properties;
+    augmented[ov::hint::inference_precision.name()] = ov::element::f32;
+    return augmented;
+}
+
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
@@ -547,7 +562,7 @@ public:
                 VideoPipelineType pipeline_type = VideoPipelineType::TEXT_2_VIDEO,
                 std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now())
         : m_scheduler{cast_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"))},
-          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
+          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, with_cpu_fp32_default(device, properties))},
           m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, properties)},
           m_generation_config{LTX_VIDEO_DEFAULT_CONFIG},
           m_pipeline_type{pipeline_type} {
@@ -820,64 +835,47 @@ public:
                                   *merged_generation_config.guidance_rescale);
             }
 
-            // Diffusers I2V step ordering (pipeline_ltx_image2video.py:864-889):
-            //   noise_pred = noise_pred[:, :, 1:]          # drop frame-0 from prediction
-            //   noise_latents = latents[:, :, 1:]          # drop frame-0 from current latent
-            //   pred_latents = scheduler.step(noise_pred, t, noise_latents)
-            //   latents = cat([latents[:, :, :1], pred_latents], dim=2)
-            // Run scheduler.step on frames 1+ only; preserve frame-0 verbatim from prior step
-            // (which itself was pinned to clean image_latent_packed).
-            const size_t B_l = latent.get_shape()[0];
-            const size_t D = latent.get_shape()[2];
-            const size_t tail_tokens = video_sequence_length - tokens_per_frame;
-            ov::Tensor tail_latent(ov::element::f32, {B_l, tail_tokens, D});
-            ov::Tensor tail_pred(ov::element::f32, {noisy_residual_tensor.get_shape()[0], tail_tokens, D});
-            for (size_t b = 0; b < B_l; ++b) {
-                std::memcpy(tail_latent.data<float>() + b * tail_tokens * D,
-                            latent.data<float>() + b * video_sequence_length * D + tokens_per_frame * D,
-                            tail_tokens * D * sizeof(float));
-            }
-            for (size_t b = 0; b < noisy_residual_tensor.get_shape()[0]; ++b) {
-                std::memcpy(tail_pred.data<float>() + b * tail_tokens * D,
-                            noisy_residual_tensor.data<float>() + b * video_sequence_length * D + tokens_per_frame * D,
-                            tail_tokens * D * sizeof(float));
-            }
-
-            // Per-step noise_pred stats (full prediction, before slicing) — flag model collapse.
-            if (inference_step % 10 == 0 || inference_step == timesteps.size() - 1) {
-                const float* p = noisy_residual_tensor.data<const float>();
-                const size_t per_b = video_sequence_length * D;
-                auto stats = [&](size_t tok_idx) {
-                    const float* row = p + tok_idx * D;
-                    float amax = 0.0f, asum = 0.0f;
-                    for (size_t i = 0; i < D; ++i) { float v = std::abs(row[i]); amax = std::max(amax, v); asum += v; }
-                    return std::make_pair(amax, asum / D);
-                };
-                auto [f0_max, f0_mean] = stats(0);
-                auto [f1_max, f1_mean] = stats(tokens_per_frame);
-                auto [fL_max, fL_mean] = stats(video_sequence_length - 1);
-                std::cerr << "[I2V step " << inference_step << " t=" << timesteps[inference_step]
-                          << "] pred f0(amax=" << f0_max << ",amean=" << f0_mean << ")"
-                          << " f1(amax=" << f1_max << ",amean=" << f1_mean << ")"
-                          << " fLast(amax=" << fL_max << ",amean=" << fL_mean << ")\n" << std::flush;
-                (void)per_b;
-            }
-
             auto scheduler_step_result =
-                m_scheduler->step(tail_pred, tail_latent, inference_step, merged_generation_config.generator);
-            ov::Tensor tail_out = scheduler_step_result["latent"];
-            OPENVINO_ASSERT(tail_out.get_shape() == ov::Shape({B_l, tail_tokens, D}),
-                            "I2V scheduler.step returned unexpected shape");
+                m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
+            latent = scheduler_step_result["latent"];
 
-            // Reassemble: frame-0 = clean image_latent_packed, frames 1+ = scheduler output.
-            for (size_t b = 0; b < B_l; ++b) {
-                float* dst       = latent.data<float>() + b * video_sequence_length * D;
-                const float* src0 = image_latent_packed.data<float>() +
-                                    (b % merged_generation_config.num_videos_per_prompt) * tokens_per_frame * D;
-                std::memcpy(dst, src0, tokens_per_frame * D * sizeof(float));
-                std::memcpy(dst + tokens_per_frame * D,
-                            tail_out.data<float>() + b * tail_tokens * D,
-                            tail_tokens * D * sizeof(float));
+            // Re-pin frame-0 tokens to the (noised) image latent after each scheduler step.
+            // Matches upstream LTX-Video's `add_noise_to_image_conditioning_latents`:
+            //     noised = init_latents + image_cond_noise_scale * randn * t^2
+            // where t is the normalized sigma in [0, 1]. Without this, the model over-anchors
+            // on the clean conditioning frame and produces a static video (every frame ≈ frame 0).
+            // Upstream defaults to 0.15. See pipeline_ltx_video.py:597-619, inference.py:365.
+            {
+                // Override via env var to A/B different scales without rebuild:
+                //   I2V_NOISE_SCALE=0      -> clean conditioning (diffusers default)
+                //   I2V_NOISE_SCALE=0.15   -> upstream LTX-Video default (currently set)
+                //   I2V_NOISE_SCALE=0.5    -> stronger perturbation to break static lock
+                float image_cond_noise_scale = 0.15f;
+                if (const char* env = std::getenv("I2V_NOISE_SCALE")) {
+                    image_cond_noise_scale = std::atof(env);
+                }
+                const float t_norm = timesteps[inference_step] / 1000.0f;
+                const float noise_coeff = image_cond_noise_scale * t_norm * t_norm;
+                if (inference_step == 0) {
+                    std::cerr << "[I2V] image_cond_noise_scale=" << image_cond_noise_scale
+                              << "  step-0 noise_coeff=" << noise_coeff
+                              << "  (env I2V_NOISE_SCALE overrides)\n" << std::flush;
+                }
+
+                const size_t D = latent.get_shape()[2];
+                const ov::Shape frame0_shape{merged_generation_config.num_videos_per_prompt,
+                                              tokens_per_frame, D};
+                ov::Tensor noise = merged_generation_config.generator->randn_tensor(frame0_shape);
+                const float* noise_data = noise.data<const float>();
+
+                for (size_t b = 0; b < merged_generation_config.num_videos_per_prompt; ++b) {
+                    float* dst       = latent.data<float>()             + b * m_latent_num_frames * tokens_per_frame * D;
+                    const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
+                    const float* n   = noise_data                        + b * tokens_per_frame * D;
+                    for (size_t i = 0; i < tokens_per_frame * D; ++i) {
+                        dst[i] = src[i] + noise_coeff * n[i];
+                    }
+                }
             }
 
             if (callback_ptr && callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latent) == CallbackStatus::STOP) {
