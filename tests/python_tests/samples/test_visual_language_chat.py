@@ -123,12 +123,19 @@ class TestVisualLanguageChat:
     @pytest.mark.parametrize(
         "convert_model, convert_draft_model, download_test_content, questions",
         [
-            pytest.param("tiny-random-qwen3-vl-layer10", "tiny-random-qwen3-vl-eagle3", "images/image.png", "What is unusual on this image?\nGo on."),
+            pytest.param(
+                "tiny-random-qwen3-vl-layer10",
+                "tiny-random-qwen3-vl-eagle3",
+                "images/image.png",
+                "What is unusual on this image?\nGo on.",
+            ),
         ],
         indirect=["convert_model", "convert_draft_model", "download_test_content"],
     )
-    def test_sample_visual_language_chat_eagle3(self, convert_model, convert_draft_model, download_test_content, questions):
-        cpp_sample = SAMPLES_CPP_DIR / 'visual_language_chat'
+    def test_sample_visual_language_chat_eagle3(
+        self, convert_model, convert_draft_model, download_test_content, questions
+    ):
+        cpp_sample = SAMPLES_CPP_DIR / "visual_language_chat"
         cpp_command = [cpp_sample, convert_model, download_test_content, "CPU", "false", convert_draft_model]
         cpp_result = run_sample(cpp_command, questions)
 
