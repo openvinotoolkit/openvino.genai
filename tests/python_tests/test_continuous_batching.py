@@ -760,7 +760,7 @@ def test_dynamic_split_fuse_for_eagle3():
     compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
 
 
-EAGLE3_FIXED_PROMPT_129 = (
+EAGLE3_FIXED_PROMPT_BASE = (
     "During speculative decoding, the draft path proposes several tokens and the main path validates them in order. "
     "Prefix caching reduces recomputation by reusing KV blocks that correspond to the unchanged prompt prefix. "
     "A robust scheduler tracks block ownership, eviction pressure, and per-request progress across decoding steps. "
@@ -782,7 +782,7 @@ def _build_input_ids_with_exact_token_count(ov_tokenizer, target_tokens: int) ->
     if target_tokens not in (127, 128, 129):
         raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
 
-    fixed_prompt = EAGLE3_FIXED_PROMPT_129
+    fixed_prompt = EAGLE3_FIXED_PROMPT_BASE
     encoded = ov_tokenizer.encode(fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist()
 
     while len(encoded) < target_tokens:
