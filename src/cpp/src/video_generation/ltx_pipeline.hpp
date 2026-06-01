@@ -817,6 +817,24 @@ public:
                 float* noisy_residual = noisy_residual_tensor.data<float>();
                 const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
                 const float* noise_pred_text = noise_pred_uncond + noisy_residual_tensor.get_size();
+
+                // CFG-deadness diagnostic: if ||text - uncond|| is near zero, the prompt
+                // isn't moving the prediction (negative prompt / attention mask broken).
+                if (inference_step == 0 || inference_step == timesteps.size() / 2) {
+                    double n2 = 0.0;
+                    double u2 = 0.0;
+                    for (size_t i = 0; i < noisy_residual_tensor.get_size(); ++i) {
+                        const double d = static_cast<double>(noise_pred_text[i]) - noise_pred_uncond[i];
+                        n2 += d * d;
+                        u2 += static_cast<double>(noise_pred_uncond[i]) * noise_pred_uncond[i];
+                    }
+                    std::cerr << "[I2V step " << inference_step
+                              << "] ||text-uncond||=" << std::sqrt(n2)
+                              << "  ||uncond||=" << std::sqrt(u2)
+                              << "  ratio=" << (u2 > 0 ? std::sqrt(n2 / u2) : 0.0)
+                              << "\n" << std::flush;
+                }
+
                 for (size_t i = 0; i < noisy_residual_tensor.get_size(); ++i) {
                     noisy_residual[i] = noise_pred_uncond[i] + merged_generation_config.guidance_scale *
                                                                    (noise_pred_text[i] - noise_pred_uncond[i]);
