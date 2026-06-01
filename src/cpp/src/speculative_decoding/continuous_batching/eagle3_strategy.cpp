@@ -175,9 +175,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, token_type_ids, prompt_ids)});
     if (main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
-        if (main_rope_delta.has_value()) {
-            m_inputs_embedder->set_rope_delta(*main_rope_delta);
-        }
+        m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
     }
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
