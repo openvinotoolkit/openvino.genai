@@ -5,6 +5,7 @@ import os
 import pytest
 import math
 import sys
+import numpy as np
 
 from pathlib import Path
 from shutil import rmtree
@@ -777,7 +778,7 @@ def eagle3_model_paths() -> tuple[Path, Path]:
     return main_model_path, draft_model_path
 
 
-def _build_prompt_with_exact_token_count(ov_tokenizer, target_tokens: int):
+def _build_input_ids_with_exact_token_count(ov_tokenizer, target_tokens: int) -> ov.Tensor:
     if target_tokens not in (127, 128, 129):
         raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
 
@@ -787,7 +788,7 @@ def _build_prompt_with_exact_token_count(ov_tokenizer, target_tokens: int):
     while len(encoded) < target_tokens:
         encoded.extend(ov_tokenizer.encode(" " + fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist())
 
-    return ov_tokenizer.decode(encoded[:target_tokens])
+    return ov.Tensor(np.array([encoded[:target_tokens]], dtype=np.int64))
 
 
 @pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
@@ -805,22 +806,22 @@ def test_eagle3_prefix_caching_no_crash(target_prompt_tokens: int, eagle3_model_
     )
 
     ov_tokenizer = ov_pipe.get_tokenizer()
-    prompt = _build_prompt_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+    input_ids = _build_input_ids_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
 
     pipeline_generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
-    first_results = ov_pipe.generate([prompt], pipeline_generation_config)
+    first_results = ov_pipe.generate(input_ids, pipeline_generation_config)
     try:
-        second_results = ov_pipe.generate([prompt], pipeline_generation_config)
+        second_results = ov_pipe.generate(input_ids, pipeline_generation_config)
     except RuntimeError as exc:
         pytest.fail(
             "Second Eagle3 generate with prefix cache reuse must not raise RuntimeError. "
             f"prompt_tokens={target_prompt_tokens}, error={exc}"
         )
 
-    assert len(first_results.texts) == 1
-    assert len(second_results.texts) == 1
-    assert len(first_results.texts[0]) > 0
-    assert len(second_results.texts[0]) > 0
+    assert len(first_results.tokens) == 1
+    assert len(second_results.tokens) == 1
+    assert len(first_results.tokens[0]) > 0
+    assert len(second_results.tokens[0]) > 0
 
 
 @pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
@@ -838,17 +839,17 @@ def test_eagle3_prefix_caching_add_request_no_crash(target_prompt_tokens: int, e
     )
 
     ov_tokenizer = cb_pipe.get_tokenizer()
-    prompt = _build_prompt_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+    input_ids = _build_input_ids_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
 
     generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
 
-    first_handle = cb_pipe.add_request(0, prompt, generation_config=generation_config)
+    first_handle = cb_pipe.add_request(0, input_ids, generation_config=generation_config)
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
     first_outputs = first_handle.read_all()
 
     try:
-        second_handle = cb_pipe.add_request(1, prompt, generation_config=generation_config)
+        second_handle = cb_pipe.add_request(1, input_ids, generation_config=generation_config)
         while cb_pipe.has_non_finished_requests():
             cb_pipe.step()
         second_outputs = second_handle.read_all()
