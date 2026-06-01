@@ -16,14 +16,14 @@
 
 namespace ov::genai::dflash_cb {
 
-inline constexpr size_t DEFAULT_NUM_ASSISTANT_TOKENS = 7;
+inline constexpr size_t DEFAULT_NUM_ASSISTANT_TOKENS = 5;
 
 inline void copy_tensor_bytes(const ov::Tensor& src, ov::Tensor& dst) {
     OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
                     "DFlash hidden state copy requires matching tensor element types.");
     OPENVINO_ASSERT(src.get_byte_size() == dst.get_byte_size(),
                     "DFlash hidden state copy requires matching tensor byte sizes.");
-    std::memcpy(dst.data(), src.data(), src.get_byte_size());
+    src.copy_to(dst);
 }
 
 inline ov::Tensor truncate_normalized_hidden_state_from_end(const ov::Tensor& hidden_state, size_t tokens_to_remove) {
@@ -66,7 +66,9 @@ public:
             return;
         }
 
-        m_chunks.push_back(hidden_delta);
+        ov::Tensor copied(hidden_delta.get_element_type(), shape);
+        copy_tensor_bytes(hidden_delta, copied);
+        m_chunks.push_back(std::move(copied));
         m_token_count += token_count;
     }
 
@@ -83,9 +85,10 @@ public:
         OPENVINO_ASSERT(!m_chunks.empty(), "DFlash hidden delta chunks are empty.");
 
         if (m_chunks.size() == 1) {
-            OPENVINO_ASSERT(m_chunks.front() && m_chunks.front().get_size() > 0,
+            const auto& chunk = m_chunks.front();
+            OPENVINO_ASSERT(chunk && chunk.get_size() > 0,
                             "DFlash single hidden delta chunk is empty.");
-            return m_chunks.front();
+            return chunk;
         }
 
         auto merged_shape = m_chunks.front().get_shape();

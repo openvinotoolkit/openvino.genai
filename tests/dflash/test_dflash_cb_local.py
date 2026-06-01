@@ -27,6 +27,28 @@ def _local_dflash_cb_models():
     return target_model_path, draft_model_path
 
 
+def _local_dflash_cb_models_for_sequential_requests():
+    if os.environ.get(_DFLASH_CB_E2E_ENV) != "1":
+        pytest.skip(f"Set {_DFLASH_CB_E2E_ENV}=1 to run local DFlash CB/PA artifact tests")
+
+    repo_root = Path(__file__).resolve().parents[3]
+    candidate_model_paths = [
+        (
+            repo_root / "models" / "qwen3.6-text-35b-a3b-annotated-int4-ov",
+            repo_root / "models" / "qwen3.6-35b-a3b-dflash-stateful-woq-int8-ov",
+        ),
+        (
+            repo_root / "models" / "qwen3-coder-30b-a3b-instruct-int4-annotated-ov",
+            repo_root / "models" / "qwen3-coder-30b-a3b-dflash-stateful-woq-int8-ov",
+        ),
+    ]
+    for target_model_path, draft_model_path in candidate_model_paths:
+        if target_model_path.exists() and draft_model_path.exists():
+            return target_model_path, draft_model_path
+
+    pytest.skip("Local DFlash target/draft artifacts are not available")
+
+
 def _local_llama_dflash_cb_models():
     if os.environ.get(_LLAMA_DFLASH_E2E_ENV) != "1":
         pytest.skip(f"Set {_LLAMA_DFLASH_E2E_ENV}=1 to run local Llama DFlash CB/PA artifact tests")
@@ -202,6 +224,40 @@ def test_dflash_local_perf_metrics_are_populated():
     assert result.extended_perf_metrics is not None
     assert result.extended_perf_metrics.main_model_metrics.raw_metrics.m_durations
     assert result.extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations
+    del pipe
+    del draft
+    gc.collect()
+
+
+def test_dflash_local_cb_api_accepts_sequential_requests_on_one_pipeline():
+    target_model_path, draft_model_path = _local_dflash_cb_models_for_sequential_requests()
+    ov_genai = pytest.importorskip("openvino_genai")
+    device = "GPU" if target_model_path.name.startswith("qwen3.6") else "CPU"
+    if device == "GPU":
+        _require_gpu_device()
+    draft = ov_genai.draft_model(draft_model_path, device)
+    properties = {"draft_model": draft}
+    pipe = ov_genai.ContinuousBatchingPipeline(
+        target_model_path,
+        ov_genai.SchedulerConfig(),
+        device,
+        properties,
+    )
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=8, ignore_eos=True)
+
+    for request_id, prompt in enumerate(
+        [
+            "Write one sentence about OpenVINO.",
+            "Write one sentence about speculative decoding.",
+        ]
+    ):
+        handle = pipe.add_request(request_id, prompt, generation_config)
+        while pipe.has_non_finished_requests():
+            pipe.step()
+        outputs = handle.read_all()
+        assert outputs
+        assert outputs[0].generated_ids
+
     del pipe
     del draft
     gc.collect()
