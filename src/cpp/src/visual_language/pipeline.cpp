@@ -474,7 +474,7 @@ public:
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
-        auto embeddings_start_time = std::chrono::steady_clock::now();
+        const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
         auto processed_chat_data = chat_context.process(images, videos);
