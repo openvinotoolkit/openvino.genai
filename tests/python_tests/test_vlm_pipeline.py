@@ -2446,8 +2446,6 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
     # deepseek-ocr-2 text-only cases
     "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
-    # mistral3 cases
-    "*tiny-random-mistral3/*": "CVS-180070",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
