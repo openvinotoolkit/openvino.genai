@@ -2080,8 +2080,6 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
     # videochat_flash_qwen text-only cases
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
-    # mistral3 cases
-    "*tiny-random-mistral3/*": "CVS-180070",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
