@@ -76,14 +76,8 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
         adapters->set_tensor_name_prefix(m_lora_prefix);
         m_adapter_controller = AdapterController(m_model, *adapters, device);
     }
-    // LTX-Video's transformer is unusually precision-sensitive: OpenVINO's CPU plugin default
-    // (inference_precision=dynamic -> bf16 on AMX-BF16 CPUs) introduces ~4% mean error per
-    // forward pass, which compounds across the 50-step denoising loop into significant T2V
-    // quality loss and complete I2V collapse to grey frames. Diagnostic comparison against
-    // diffusers torch fp32 on identical inputs: bf16 cos-sim 0.998 / max-diff 0.28 ;
-    // fp32  cos-sim 1.000 / max-diff 1.5e-4. T5 and VAE are unaffected (their errors don't
-    // compound through scheduler integration). Only the transformer needs fp32 on CPU.
-    // Users can override by passing INFERENCE_PRECISION_HINT explicitly in properties.
+    // LTX-Video transformer is precision-sensitive: bf16 (CPU 'dynamic' default on
+    // AMX-BF16) compounds ~4% per-step error into grey/static output over 50 steps.
     ov::AnyMap effective_properties = *filtered_properties;
     if (device.find("CPU") != std::string::npos &&
         effective_properties.find(ov::hint::inference_precision.name()) == effective_properties.end()) {
@@ -145,7 +139,6 @@ size_t LTXVideoTransformer3DModel::get_request_input_batch() {
 }
 
 ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
-    // Pre-compile: ask the model. Post-compile: ask the infer request.
     if (m_model) {
         for (auto&& input : m_model->inputs()) {
             if (input.get_any_name() == "timestep") {
@@ -171,11 +164,6 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
                                                             int64_t tokenizer_model_max_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
-    // hidden_states=latent_model_input,
-    // timestep=timestep,
-    // encoder_hidden_states=prompt_embeds,
-    // pooled_projections=pooled_prompt_embeds,
-
     size_t patch_size = get_config().patch_size;
     size_t patch_size_t = get_config().patch_size_t;
 
@@ -191,9 +179,7 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            // For the I2V optimum-intel export, timestep has rank 2 [batch_size, video_sequence_length]
-            // (per-token conditioning). For the T2V default export it is rank 1 [batch_size].
-            // Pin batch to match hidden_states' batch (CFG-aware) and pin sequence length when present.
+            // Rank-1 [B] (default T2V export) or rank-2 [B, S] (I2V export with per-token conditioning).
             name_to_shape[input_name][0] = batch_size;
             if (name_to_shape[input_name].size() >= 2) {
                 name_to_shape[input_name][1] = video_sequence_length;

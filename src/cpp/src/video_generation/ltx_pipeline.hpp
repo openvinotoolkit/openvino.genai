@@ -276,11 +276,8 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
-// Default inference precision to fp32 on CPU for LTX-Video sub-models. OV's CPU plugin
-// 'dynamic' default silently runs matmul/attention in bf16 on bf16/AMX CPUs, which
-// degrades the precision-sensitive LTX-Video pipeline. The transformer compile path
-// applies this internally; here we apply it at the LTX pipeline level for T5 and VAE
-// (which are shared classes - we don't want to change their defaults globally).
+// LTX-Video is precision-sensitive: bf16 (CPU 'dynamic' default on AMX-BF16) compounds
+// ~4% per-step error into grey/static output over 50 denoising steps.
 inline ov::AnyMap with_cpu_fp32_default(const std::string& device, const ov::AnyMap& properties) {
     if (device.find("CPU") == std::string::npos ||
         properties.find(ov::hint::inference_precision.name()) != properties.end()) {
@@ -404,9 +401,8 @@ class LTXPipeline {
         ov::Tensor resized = m_image_resizer->execute(img, config.height, config.width);
         ov::Tensor processed = m_image_processor->execute(resized);
 
-        // Copy to an owned tensor (with temporal dim added) before passing to the encoder.
-        // get_output_tensor() aliases the ImageProcessor's internal buffer; passing that aliased
-        // tensor directly to a second set_input_tensor() / infer() call causes a hang in OpenVINO.
+        // Own the tensor before re-input: ImageProcessor returns an aliased buffer; reusing it
+        // as a set_input_tensor() target for another infer() causes a hang.
         const auto& proc_shape = processed.get_shape();
         ov::Tensor encoder_input(ov::element::f32, {proc_shape[0], proc_shape[1], 1, proc_shape[2], proc_shape[3]});
         std::memcpy(encoder_input.data<float>(), processed.data<const float>(),
@@ -744,10 +740,8 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        // Per-token conditioning mask (matches diffusers): 1.0 at frame-0 tokens, 0.0 elsewhere.
-        // Frame-0 occupies the first `tokens_per_frame` positions in the packed [B, S, D] layout
-        // (pack_latents permutes (F, H, W) outermost-to-innermost). With patch_size>1 the frame-0
-        // span is post-patch H*W; here patch_size=patch_size_t=1 for LTX-Video so it's lH*lW.
+        // Frame-0 occupies the first `tokens_per_frame` tokens in the packed [B, S, D] layout
+        // (pack permutes F-outermost). Mask is 1 at frame-0, 0 elsewhere.
         const size_t tokens_per_frame =
             (m_latent_height / transformer_spatial_patch_size) *
             (m_latent_width  / transformer_spatial_patch_size);
@@ -780,11 +774,8 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            // Per-token timestep: timestep = t * (1 - conditioning_mask)
-            //   frame-0 tokens (mask=1)  -> t=0 (clean image-conditioning frame)
-            //   other tokens   (mask=0)  -> t=current
-            // Matches diffusers LTXImageToVideoPipeline.__call__:
-            //   timestep = t.expand(B).unsqueeze(-1) * (1 - conditioning_mask)
+            // timestep = t * (1 - conditioning_mask): frame-0 tokens see t=0 (clean anchor),
+            // others see t=current. Required by the rank-2 timestep export.
             const float t = timesteps[inference_step];
             const size_t B_ts = latent_cfg.get_shape()[0];
             ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
@@ -818,23 +809,6 @@ public:
                 const float* noise_pred_uncond = noise_pred_tensor.data<const float>();
                 const float* noise_pred_text = noise_pred_uncond + noisy_residual_tensor.get_size();
 
-                // CFG-deadness diagnostic: if ||text - uncond|| is near zero, the prompt
-                // isn't moving the prediction (negative prompt / attention mask broken).
-                if (inference_step == 0 || inference_step == timesteps.size() / 2) {
-                    double n2 = 0.0;
-                    double u2 = 0.0;
-                    for (size_t i = 0; i < noisy_residual_tensor.get_size(); ++i) {
-                        const double d = static_cast<double>(noise_pred_text[i]) - noise_pred_uncond[i];
-                        n2 += d * d;
-                        u2 += static_cast<double>(noise_pred_uncond[i]) * noise_pred_uncond[i];
-                    }
-                    std::cerr << "[I2V step " << inference_step
-                              << "] ||text-uncond||=" << std::sqrt(n2)
-                              << "  ||uncond||=" << std::sqrt(u2)
-                              << "  ratio=" << (u2 > 0 ? std::sqrt(n2 / u2) : 0.0)
-                              << "\n" << std::flush;
-                }
-
                 for (size_t i = 0; i < noisy_residual_tensor.get_size(); ++i) {
                     noisy_residual[i] = noise_pred_uncond[i] + merged_generation_config.guidance_scale *
                                                                    (noise_pred_text[i] - noise_pred_uncond[i]);
@@ -857,11 +831,8 @@ public:
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            // Restore frame-0 to the clean encoded image. Matches diffusers
-            // LTXImageToVideoPipeline (simple convention): frame-0 stays exactly
-            // init_latents throughout the denoising loop. The scheduler step's update
-            // to frame-0 tokens is discarded; only frames 1+ accumulate change.
-            // CFG-expanded batches all share the same per-prompt image_latent_packed.
+            // Frame-0 stays exactly init_latents throughout the loop (matches diffusers
+            // LTXImageToVideoPipeline); discard the scheduler's update to those tokens.
             {
                 const size_t D = latent.get_shape()[2];
                 const size_t B_l = latent.get_shape()[0];
@@ -1015,9 +986,7 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        // Timestep tensor. The exported optimum-intel ltx-i2v-support transformer has rank-2
-        // timestep [B, S]; the default (main) export has rank-1 [B]. We allocate based on the
-        // compiled model's expected rank so this path works for both exports.
+        // The I2V export uses rank-2 timestep [B, S]; T2V default export is rank-1 [B].
         ov::Shape timestep_shape;
         const auto& timestep_partial = m_transformer->get_timestep_partial_shape();
         if (timestep_partial.size() == 2) {
@@ -1049,11 +1018,9 @@ public:
                                         merged_generation_config.num_videos_per_prompt,
                                         merged_generation_config.num_videos_per_prompt);
             } else {
-                // just assign to save memory copy
                 latent_cfg = latent;
             }
-            // Match compiled model's expected batch size by repeating latent if needed
-            // (e.g., when model was compiled with CFG but current config doesn't require it)
+            // Repeat latent if model was compiled for CFG but current call has guidance_scale<=1.
             const size_t request_input_batch = m_transformer->get_request_input_batch();
             if (request_input_batch > latent_cfg.get_shape()[0]) {
                 OPENVINO_ASSERT(request_input_batch % latent_cfg.get_shape()[0] == 0,
@@ -1064,7 +1031,6 @@ public:
             std::fill_n(timestep_data, timestep.get_size(), timesteps[inference_step]);
 
             ov::Tensor noise_pred_tensor;
-            // Use TaylorSeer if enabled and caching is appropriate
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
                 noise_pred_tensor = ts_state.predict(inference_step);
             } else {
