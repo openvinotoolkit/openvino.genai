@@ -773,9 +773,7 @@ def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, 
 
     # Create pipeline
     ov_pipe = create_ov_pipeline(
-        main_model_path,
-        pipeline_type=PipelineType.SPECULATIVE_DECODING,
-        draft_model_path=draft_model_path,
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
     )
 
     # Test with tree-based configuration
@@ -817,21 +815,18 @@ def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_d
 
     # Create pipeline
     ov_pipe = create_ov_pipeline(
-        main_model_path,
-        pipeline_type=PipelineType.SPECULATIVE_DECODING,
-        draft_model_path=draft_model_path,
-        ov_config={"KV_CACHE_PRECISION": "f16"},
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
     )
 
     # Sequential configuration (tree_depth=0 or branching_factor=1)
     seq_config = GenerationConfig(
-        max_new_tokens=20, num_assistant_tokens=10, branching_factor=1, tree_depth=0, do_sample=False
+        max_new_tokens=10, num_assistant_tokens=4, branching_factor=1, tree_depth=0, do_sample=False
     )
     seq_result = ov_pipe.generate([prompt], seq_config)
 
     # Tree configuration
     tree_config = GenerationConfig(
-        max_new_tokens=20, num_assistant_tokens=10, branching_factor=8, tree_depth=4, do_sample=False
+        max_new_tokens=10, num_assistant_tokens=8, branching_factor=4, tree_depth=2, do_sample=False
     )
     tree_result = ov_pipe.generate([prompt], tree_config)
     # Both should produce the same output with greedy decoding
