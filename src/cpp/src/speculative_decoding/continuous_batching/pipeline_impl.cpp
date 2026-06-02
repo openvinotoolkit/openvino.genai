@@ -4,6 +4,8 @@
 #include "pipeline_impl.hpp"
 #include <numeric>
 
+#include "sequence_group.hpp"
+
 namespace ov::genai {
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
     const std::shared_ptr<ov::Model>& model,

@@ -48,7 +48,8 @@ public:
                     return input.get_element_type();
             }
         }
-        OPENVINO_THROW("Compiled model has no 'key_cache.*' input; cannot determine KV cache precision");
+        OPENVINO_ASSERT(false, "Compiled model has no 'key_cache.*' input; cannot determine KV cache precision");
+        return {};
     }
 
 protected:

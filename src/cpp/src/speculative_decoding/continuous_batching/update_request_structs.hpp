@@ -3,11 +3,15 @@
 
 #pragma once
 
+#include <map>
 #include <memory>
 #include <vector>
-#include <map>
-#include "sequence_group.hpp"
+
+#include "openvino/runtime/tensor.hpp"
+
 namespace ov::genai {
+struct TreeMetaData;
+
 struct GeneratedSequence {
     std::vector<int64_t> token_ids;
     std::vector<float> log_probs;
@@ -40,4 +44,4 @@ using GeneratedSequences = std::map<uint64_t, GeneratedSequence>;
 
 // { request_id : generated_sequence }
 using GeneratedRequests = std::map<uint64_t, GeneratedSequences>;
-}
+}  // namespace ov::genai
