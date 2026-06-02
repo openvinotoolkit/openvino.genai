@@ -433,7 +433,7 @@ jobs:
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -460,7 +460,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run CPU C++ coverage tests
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: run-suite
           suite: cpp
@@ -469,7 +469,7 @@ jobs:
           model-path: tests/cpp/data/cache_types_models.csv
 
       - name: Generate CPU native C/C++ coverage report
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-native
           profile: cpu
@@ -477,7 +477,7 @@ jobs:
       - name: Collect C++ CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-results
           suite: cpp
@@ -592,7 +592,7 @@ jobs:
           self-hosted-runner: 'true'
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -607,7 +607,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run iGPU C++ coverage tests
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: run-suite
           suite: cpp
@@ -617,7 +617,7 @@ jobs:
           model-path: tests/cpp/data/cache_types_models.csv
 
       - name: Generate iGPU native C/C++ coverage report
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-native
           profile: gpu
@@ -625,7 +625,7 @@ jobs:
       - name: Collect C++ iGPU results
         id: igpu_artifact
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-results
           suite: cpp
@@ -784,7 +784,7 @@ jobs:
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -800,7 +800,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run CPU Python coverage tests
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: run-suite
           suite: python
@@ -821,7 +821,7 @@ jobs:
             *.pb.h
 
       - name: Generate CPU native C/C++ coverage report
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-native
           profile: cpu
@@ -829,7 +829,7 @@ jobs:
       - name: Collect Python CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-results
           suite: python
@@ -978,7 +978,7 @@ jobs:
           npm install --verbose
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -994,7 +994,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run CPU Python sample coverage tests
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: run-suite
           suite: python
@@ -1015,7 +1015,7 @@ jobs:
             *.pb.h
 
       - name: Generate CPU native C/C++ coverage report
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-native
           profile: cpu
@@ -1023,7 +1023,7 @@ jobs:
       - name: Collect Python sample CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-results
           suite: python
@@ -1151,7 +1151,7 @@ jobs:
           done < "${BIN_DIR}/data/cache_types_models.csv"
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -1167,7 +1167,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run CPU Python tools coverage tests
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: run-suite
           suite: python
@@ -1188,7 +1188,7 @@ jobs:
             *.pb.h
 
       - name: Generate CPU native C/C++ coverage report
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-native
           profile: cpu
@@ -1196,7 +1196,7 @@ jobs:
       - name: Collect Python tools CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-results
           suite: python
@@ -1316,7 +1316,7 @@ jobs:
           local_wheel_dir: ${{ env.OV_INSTALL_DIR }}/wheels
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -1332,7 +1332,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run CPU Python xgrammar-off coverage tests
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: run-suite
           suite: python
@@ -1353,7 +1353,7 @@ jobs:
             *.pb.h
 
       - name: Generate CPU native C/C++ coverage report
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-native
           profile: cpu
@@ -1362,7 +1362,7 @@ jobs:
       - name: Collect Python xgrammar-off CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-results
           suite: python
@@ -1483,7 +1483,7 @@ jobs:
           npm install --no-save c8
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -1499,7 +1499,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Run CPU Node.js coverage tests
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: run-suite
           suite: js
@@ -1508,7 +1508,7 @@ jobs:
           js-dir: src/js
 
       - name: Generate CPU native C/C++ coverage report
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-native
           profile: cpu
@@ -1516,7 +1516,7 @@ jobs:
       - name: Collect Node.js CPU results
         id: cpu_artifact
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: collect-results
           suite: js
@@ -1548,7 +1548,7 @@ jobs:
           submodules: 'false'
 
       - name: Install coverage Python dependencies
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: install-requirements
 
@@ -1572,7 +1572,7 @@ jobs:
 
       - name: Generate final summary
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: render-summary
           selection: cpu,gpu
@@ -1580,7 +1580,7 @@ jobs:
 
       - name: Merge duration reports
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: merge-durations
           duration-output: ${{ github.workspace }}/coverage-test-durations-all.csv
@@ -1599,7 +1599,7 @@ jobs:
       - name: Resolve Codecov upload files
         id: coverage_files
         if: ${{ always() }}
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: resolve-uploads
 
@@ -1627,7 +1627,7 @@ jobs:
 
       - name: Resolve Codecov upload files
         id: upload_files
-        uses: mkruszyx/openvino/.github/actions/coverage_toolkit@composite-coverage
+        uses: openvinotoolkit/openvino/.github/actions/coverage_toolkit@master
         with:
           command: resolve-upload-files
           artifact-group: ${{ matrix.upload.artifact_group }}
