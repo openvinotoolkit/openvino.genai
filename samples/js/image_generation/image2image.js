@@ -1,9 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
-import bmp from "bmp-js";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
 import { Image2ImagePipeline } from "openvino-genai-node";

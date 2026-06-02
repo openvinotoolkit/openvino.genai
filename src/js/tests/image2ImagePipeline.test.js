@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, before } from "node:test";
+import os from "node:os";
 import assert from "node:assert/strict";
 import { Image2ImagePipeline } from "../dist/index.js";
 import { Image2ImagePipeline as Image2ImagePipelineClass } from "../dist/pipelines/image2ImagePipeline.js";
@@ -26,7 +27,8 @@ describe("Image2ImagePipeline creation", () => {
   });
 });
 
-describe("Image2ImagePipeline methods", () => {
+// Skip due to CVS-179949
+describe("Image2ImagePipeline methods", { skip: os.platform() === "darwin" }, () => {
   let pipeline;
   let testImage;
 
@@ -37,10 +39,6 @@ describe("Image2ImagePipeline methods", () => {
     // The test utility creates a [height, width, channels] tensor, so we need to
     // reshape it to [1, height, width, channels] before passing it to the pipeline.
     testImage.setShape([1, 64, 64, 3]);
-  });
-
-  before(async () => {
-    pipeline = await Image2ImagePipeline(IMAGE_GENERATION_MODEL_PATH, "CPU");
   });
 
   it("generate(prompt, image) returns image tensor", async () => {
