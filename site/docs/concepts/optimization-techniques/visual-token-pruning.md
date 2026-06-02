@@ -19,10 +19,10 @@ The visual tokens are conceptually divided into:
 * Pruned Tokens: Tokens excluded from further processing because they contribute redundant or low-relevance information.
 
 High-level flow:
-1. Encode image producing N visual tokens (embeddings).
+1. Encode visual input (image frames and/or video frames) producing N visual tokens (embeddings). For mixed image+video inputs, tokens from all vision regions are combined into a unified sequence.
 2. Compute pairwise token similarity and per-token relevance scores.
 3. Relevance and similarity are combined into a conditional kernel. A greedy DPP-based MAP algorithm identifies the least important tokens to discard according to `pruning_ratio`, adjusting scores using `relevance_weight` to control the trade-off between diversity and relevance.
-4. Build reduced token set; subsequent generation attends only to retained tokens.
+4. Build reduced token set, regenerate pruned input_ids and position encodings; subsequent generation attends only to retained tokens.
 
 Improvement beyond the paper's approach:
 1. In step 3, when applying the DPP-based token selection algorithm, this implementation provides a splitting strategy option in addition to the original CDPruner approach. While the original approach processes the entire kernel matrix at once, the splitting strategy divides the kernel matrix into two separate blocks for parallel processing when the visual token count exceeds a threshold (default : 1, can be set via environment variable `CDPRUNER_SPLIT_THRESHOLD`).
