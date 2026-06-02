@@ -202,7 +202,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::step() {
     // general step for speculative decoding
     ContinuousBatchingPipeline::SpeculativeDecodingImpl::step();
-    auto main_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
+    auto main_pipeline = std::static_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
     // specific step for eagle3 to update main model kv cache after validation
     {
         // Launch KV update asynchronously
@@ -212,6 +212,10 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::step() {
             main_pipeline->collect_block_update_info(main_generated_requests,
                                                      block_update_indices,
                                                      block_update_begins);
+
+            if (block_update_indices.empty()) {
+                return;
+            }
 
             ov::Tensor block_indices_tensor = main_pipeline->get_tensor_by_name("block_indices");
             ov::Tensor block_indices_begins_tensor = main_pipeline->get_tensor_by_name("block_indices_begins");

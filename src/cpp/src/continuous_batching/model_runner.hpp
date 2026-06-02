@@ -936,6 +936,9 @@ private:
         }
 
         if (cumulative_mask_length == 0) {
+            // Keep qq_bias consistent with qq_bias_begins to avoid stale data from previous iterations.
+            ov::Tensor qq_bias_tensor = m_request.get_tensor(k_qq_bias_name);
+            qq_bias_tensor.set_shape({0});
             return;
         }
 
