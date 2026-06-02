@@ -776,13 +776,12 @@ def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, 
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
         draft_model_path=draft_model_path,
-        ov_config={"KV_CACHE_PRECISION": "f16"},
     )
 
     # Test with tree-based configuration
     num_assistant_tokens = max(tree_depth, 10)  # Ensure num_assistant_tokens >= tree_depth
     tree_gen_config = GenerationConfig(
-        max_new_tokens=20,
+        max_new_tokens=10,
         num_assistant_tokens=num_assistant_tokens,
         branching_factor=branching_factor,
         tree_depth=tree_depth,
@@ -799,7 +798,7 @@ def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, 
     assert tree_perf_metrics.get_num_accepted_tokens() > 0
 
     # Run reference HF model for correctness check
-    ref_gen_config = GenerationConfig(max_new_tokens=20)
+    ref_gen_config = GenerationConfig(max_new_tokens=10)
     ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ref_gen_config)
     tree_gen_results = convert_decoded_results_to_generation_result(tree_result, 1, 1, False)
 

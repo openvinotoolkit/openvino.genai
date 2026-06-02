@@ -369,6 +369,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                         indices.resize(keep_len);
                         std::iota(indices.begin(), indices.end(), 0);
                     } else {
+                        result.inserted_tokens_cnt = 1; // reset to 1
                         OPENVINO_ASSERT(candidate_sequence.tree_metadata,
                                         "tree_search candidate is missing tree_metadata snapshot");
                         indices = candidate_sequence.tree_metadata->validated_indices;
@@ -388,13 +389,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // Safe cast: we know indices is not empty (asserted above)
                     num_tokens_needs_kv_update = static_cast<int>(indices.size()) - 1;
                 }
-                // update hidden states for main model in validation mode
-                if (eagle_mode_enabled && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
-                    // Transfer tree_mask / retrieve_indices / tree_position_ids from the draft side
-                    // (carried by candidate_sequence.tree_metadata) onto the main-side running
-                    // sequence, while preserving validated_indices that the main side already set.
-                    OPENVINO_ASSERT(candidate_sequence.tree_metadata,
-                                    "tree_search candidate is missing tree_metadata snapshot");
+                if (candidate_sequence.tree_metadata && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
                     TreeMetaData merged = *candidate_sequence.tree_metadata;
                     merged.validated_indices = running_sequence->get_tree_metadata().validated_indices;
                     running_sequence->set_tree_metadata(std::move(merged));
@@ -442,7 +437,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         if (!m_is_validation_mode_enabled) {
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
-            generated_len +=  eagle_mode_enabled ? 1 : result.inserted_tokens_cnt;
+            generated_len += result.inserted_tokens_cnt;
             if (generated_len >= max_new_tokens - 1 || generated_len != 0 && result.inserted_tokens_cnt == 0) {
                 pause_gen_status = true;
             }
