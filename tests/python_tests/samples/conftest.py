@@ -189,7 +189,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
-    "tiny-random-qwen3-vl-layer10":{
+    "tiny-random-qwen3-vl-layer10": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-layer10",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
