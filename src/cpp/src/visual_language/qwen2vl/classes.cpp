@@ -1176,7 +1176,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                        /*video_pad_token_id=*/-1,
                                        vision_start_token_id,
                                        vision_end_token_id,
-                                       std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size)};
+                                       m_vision_encoder->get_processor_config().merge_size};
 
         if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
             merged_image_embeddings_tensor = std::move(pruning_result->pruned_image_embeddings);

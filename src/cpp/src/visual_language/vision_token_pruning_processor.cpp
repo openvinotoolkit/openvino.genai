@@ -939,7 +939,9 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                     i_region, " vs ", context.image_grids.size(), ")");
 
     const size_t total_regions = combined_grid_thw.size();
-    const size_t spatial_merge_size = std::max<size_t>(1, context.spatial_merge_size);
+    OPENVINO_ASSERT(context.spatial_merge_size > 0,
+                    "spatial_merge_size must be positive, got: ", context.spatial_merge_size);
+    const size_t spatial_merge_size = context.spatial_merge_size;
     const size_t merge_length = spatial_merge_size * spatial_merge_size;
 
     std::vector<size_t> tokens_per_vision;
