@@ -830,7 +830,7 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         OPENVINO_ASSERT(
             std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
             "Unknown sub-model role '", role, "' in MODEL_PROPERTIES. Known roles: ",
-            [&known_roles]() {
+            []() {
                 std::string s;
                 for (const auto& r : known_roles) { s += (s.empty() ? "" : ", "); s += r; }
                 return s;
