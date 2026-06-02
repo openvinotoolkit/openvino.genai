@@ -173,7 +173,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, token_type_ids, prompt_ids)});
-    if (main_position_ids.get_size() > 0) {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
         m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
     }
