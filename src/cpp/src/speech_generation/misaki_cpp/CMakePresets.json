@@ -1,0 +1,106 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-vs-debug",
+      "displayName": "Windows VS2022 Debug",
+      "description": "Configure the main project using Visual Studio 2022.",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "description": "Configure the main project using Ninja (single-config).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build-ninja/install"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-vs-debug",
+      "displayName": "Build (Windows VS Debug)",
+      "configurePreset": "windows-vs-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "Build (Ninja Debug)",
+      "configurePreset": "ninja-debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-vs-debug",
+      "displayName": "Test (Windows VS Debug)",
+      "configurePreset": "windows-vs-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "Test (Ninja Debug)",
+      "configurePreset": "ninja-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "windows-vs-debug-all",
+      "displayName": "Windows Debug: Configure + Build + Test",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "windows-vs-debug"
+        },
+        {
+          "type": "build",
+          "name": "windows-vs-debug"
+        },
+        {
+          "type": "test",
+          "name": "windows-vs-debug"
+        }
+      ]
+    },
+    {
+      "name": "ninja-debug-all",
+      "displayName": "Ninja Debug: Configure + Build + Test",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "ninja-debug"
+        },
+        {
+          "type": "build",
+          "name": "ninja-debug"
+        },
+        {
+          "type": "test",
+          "name": "ninja-debug"
+        }
+      ]
+    }
+  ]
+}
