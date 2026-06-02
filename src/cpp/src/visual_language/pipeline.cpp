@@ -134,7 +134,7 @@ private:
     ) {
         m_is_npu = device.find("NPU") != std::string::npos;
 
-        utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+        utils::validate_vlm_model_properties(properties);
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
@@ -210,7 +210,7 @@ private:
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
-        utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+        utils::validate_vlm_model_properties(properties);
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
         auto& properties_copy = filtered_properties.fork();
@@ -789,7 +789,7 @@ VLMPipeline::VLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
-    utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+    utils::validate_vlm_model_properties(properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
@@ -842,7 +842,7 @@ VLMPipeline::VLMPipeline(
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
-    utils::validate_vlm_model_properties(properties, utils::get_known_vlm_model_roles());
+    utils::validate_vlm_model_properties(properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");

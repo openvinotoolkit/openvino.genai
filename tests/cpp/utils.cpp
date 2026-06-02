@@ -225,7 +225,7 @@ TEST(TestGetModelProperties, input_map_not_modified) {
 
 TEST(TestValidateVlmModelProperties, no_op_when_key_absent) {
     ov::AnyMap props = {{"CACHE_DIR", std::string("/tmp")}};
-    EXPECT_NO_THROW(validate_vlm_model_properties(props, get_known_vlm_model_roles()));
+    EXPECT_NO_THROW(validate_vlm_model_properties(props));
 }
 
 TEST(TestValidateVlmModelProperties, accepts_known_roles) {
@@ -235,7 +235,7 @@ TEST(TestValidateVlmModelProperties, accepts_known_roles) {
             {"language_model", ov::AnyMap{{"CACHE_DIR", std::string("/tmp")}}},
         }},
     };
-    EXPECT_NO_THROW(validate_vlm_model_properties(props, get_known_vlm_model_roles()));
+    EXPECT_NO_THROW(validate_vlm_model_properties(props));
 }
 
 TEST(TestValidateVlmModelProperties, throws_on_unknown_role) {
@@ -244,7 +244,7 @@ TEST(TestValidateVlmModelProperties, throws_on_unknown_role) {
             {"nonexistent_model", ov::AnyMap{{"NUM_STREAMS", std::string("4")}}},
         }},
     };
-    EXPECT_THROW(validate_vlm_model_properties(props, get_known_vlm_model_roles()), ov::Exception);
+    EXPECT_THROW(validate_vlm_model_properties(props), ov::Exception);
 }
 
 TEST(TestValidateVlmModelProperties, throws_with_role_name_in_message) {
@@ -254,54 +254,11 @@ TEST(TestValidateVlmModelProperties, throws_with_role_name_in_message) {
         }},
     };
     try {
-        validate_vlm_model_properties(props, get_known_vlm_model_roles());
+        validate_vlm_model_properties(props);
         FAIL() << "Expected exception not thrown";
     } catch (const ov::Exception& e) {
         EXPECT_NE(std::string(e.what()).find("bogus_role"), std::string::npos);
     }
 }
 
-TEST(TestValidateVlmModelProperties, accepts_custom_known_roles) {
-    const std::vector<std::string> custom_roles = {"my_encoder", "my_decoder"};
-    ov::AnyMap props = {
-        {PER_MODEL_PROPERTIES, ov::AnyMap{
-            {"my_encoder", ov::AnyMap{{"NUM_STREAMS", std::string("4")}}},
-        }},
-    };
-    EXPECT_NO_THROW(validate_vlm_model_properties(props, custom_roles));
-}
 
-TEST(TestValidateVlmModelProperties, throws_on_unknown_with_custom_roles) {
-    const std::vector<std::string> custom_roles = {"my_encoder", "my_decoder"};
-    ov::AnyMap props = {
-        {PER_MODEL_PROPERTIES, ov::AnyMap{
-            {"vision_embeddings", ov::AnyMap{{"NUM_STREAMS", std::string("4")}}},
-        }},
-    };
-    EXPECT_THROW(validate_vlm_model_properties(props, custom_roles), ov::Exception);
-}
-
-// --- get_known_vlm_model_roles tests ---
-
-TEST(TestGetKnownVlmModelRoles, returns_nonempty_list) {
-    const auto& roles = get_known_vlm_model_roles();
-    EXPECT_FALSE(roles.empty());
-}
-
-TEST(TestGetKnownVlmModelRoles, contains_expected_roles) {
-    const auto& roles = get_known_vlm_model_roles();
-    auto has = [&](const std::string& r) {
-        return std::find(roles.begin(), roles.end(), r) != roles.end();
-    };
-    EXPECT_TRUE(has("vision_embeddings"));
-    EXPECT_TRUE(has("text_embeddings"));
-    EXPECT_TRUE(has("language_model"));
-    EXPECT_TRUE(has("resampler"));
-}
-
-TEST(TestGetKnownVlmModelRoles, returns_same_instance) {
-    // The function returns a static reference, so address must be stable
-    const auto& first = get_known_vlm_model_roles();
-    const auto& second = get_known_vlm_model_roles();
-    EXPECT_EQ(&first, &second);
-}

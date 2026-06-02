@@ -347,14 +347,9 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
-/// @brief Returns the full set of sub-model role names recognised by
-/// VLMPipeline for `MODEL_PROPERTIES` entries.
-const std::vector<std::string>& get_known_vlm_model_roles();
-
 /// @brief Throws if `properties[MODEL_PROPERTIES]` contains a role name
-/// not in `known_roles`. No-op if the key is absent.
-void validate_vlm_model_properties(const ov::AnyMap& properties,
-                                   const std::vector<std::string>& known_roles);
+/// not in the known VLM roles. No-op if the key is absent.
+void validate_vlm_model_properties(const ov::AnyMap& properties);
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 

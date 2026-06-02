@@ -824,8 +824,8 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
-const std::vector<std::string>& get_known_vlm_model_roles() {
-    static const std::vector<std::string> roles{
+void validate_vlm_model_properties(const ov::AnyMap& properties) {
+    static const std::vector<std::string> known_roles{
         "vision_embeddings",
         "text_embeddings",
         "resampler",
@@ -835,11 +835,6 @@ const std::vector<std::string>& get_known_vlm_model_roles() {
         "multi_modal_projector",
         "language_model",
     };
-    return roles;
-}
-
-void validate_vlm_model_properties(const ov::AnyMap& properties,
-                                   const std::vector<std::string>& known_roles) {
     const auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {
         return;
