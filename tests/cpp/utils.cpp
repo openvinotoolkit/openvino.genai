@@ -260,5 +260,3 @@ TEST(TestValidateVlmModelProperties, throws_with_role_name_in_message) {
         EXPECT_NE(std::string(e.what()).find("bogus_role"), std::string::npos);
     }
 }
-
-
