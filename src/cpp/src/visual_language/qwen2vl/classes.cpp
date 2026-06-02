@@ -1156,10 +1156,11 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     merged_video_embeddings_tensor = m_merged_video_embeddings;
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
-    // [CDPruner] Apply pruning to images. Video pruning for Qwen2-VL is not yet
-    // supported; once enabled, build a parallel block that fills `video_embeddings`
-    // and `video_grids` instead of the image fields.
-    if (!images.empty() && videos.empty() && is_cdpruner_active()) {
+    // [CDPruner] Apply pruning to images. Video pruning for Qwen2-VL is not yet supported.
+    OPENVINO_ASSERT(videos.empty() || !is_cdpruner_active(),
+                    "CDPruner video pruning is not yet supported for Qwen2-VL. "
+                    "Disable pruning (pruning_ratio=0) or remove video inputs.");
+    if (!images.empty() && is_cdpruner_active()) {
         std::vector<std::array<size_t, 3>> image_region_grids;
         image_region_grids.reserve(images_sequence.size());
         for (size_t idx : images_sequence) {
