@@ -117,25 +117,29 @@ export async function readImages(path, options) {
  * Converts an RGB image tensor to ABGR buffer expected by `bmp-js` encoder.
  *
  * @param {ov.Tensor} tensor - Tensor with shape `[1, H, W, 3]` and RGB pixels.
- * @returns {{ height: number, width: number, rgba: Buffer }} ABGR bytes for BMP encoding.
+ * @returns {{ height: number, width: number, abgr: Buffer }} ABGR bytes for BMP encoding.
  */
 function toABGR(tensor) {
-  const [_, height, width, channels] = tensor.getShape();
+  const shape = tensor.getShape();
+  if (shape.length !== 4 || shape[0] !== 1) {
+    throw new Error(`Expected tensor with shape [1, H, W, 3], got [${shape.join(", ")}]`);
+  }
+  const [_, height, width, channels] = shape;
   if (channels !== 3) {
     throw new Error(`Expected RGB image tensor, got ${channels} channels.`);
   }
 
   const rgb = tensor.data instanceof Uint8Array ? tensor.data : Uint8Array.from(tensor.data);
-  const rgba = Buffer.allocUnsafe(width * height * 4);
+  const abgr = Buffer.allocUnsafe(width * height * 4);
 
   for (let src = 0, dst = 0; src < rgb.length; src += 3, dst += 4) {
-    rgba[dst] = 255;              // A
-    rgba[dst + 1] = rgb[src + 2]; // B
-    rgba[dst + 2] = rgb[src + 1]; // G
-    rgba[dst + 3] = rgb[src];     // R
+    abgr[dst] = 255;              // A
+    abgr[dst + 1] = rgb[src + 2]; // B
+    abgr[dst + 2] = rgb[src + 1]; // G
+    abgr[dst + 3] = rgb[src];     // R
   }
 
-  return { height, width, rgba };
+  return { height, width, abgr };
 }
 
 /**
@@ -145,7 +149,7 @@ function toABGR(tensor) {
  * @param {ov.Tensor} tensor - Tensor with shape `[1, H, W, 3]` and RGB pixels.
  */
 export async function saveAsBMP(filePath, tensor) {
-  const { width, height, rgba } = toABGR(tensor);
-  const bmpBuffer = bmp.encode({ data: rgba, width, height }).data;
+  const { width, height, abgr } = toABGR(tensor);
+  const bmpBuffer = bmp.encode({ data: abgr, width, height }).data;
   await writeFile(filePath, bmpBuffer);
 }
