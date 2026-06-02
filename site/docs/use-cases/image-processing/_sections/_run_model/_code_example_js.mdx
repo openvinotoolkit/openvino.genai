@@ -18,7 +18,7 @@ async function readImage(filePath) {
     } else if (ext === ".png") {
         ({ width, height, data: rgbaData } = PNG.sync.read(buffer));
     } else {
-        throw new Error("Unsupported image format: " + ext);
+        throw new Error(\`Unsupported image format: \${ext}\`);
     }
 
     const pixelCount = width * height;

@@ -917,6 +917,9 @@ class ExtendedPerfMetrics:
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
     
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -941,6 +944,8 @@ class ExtendedPerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_sampling_duration(self) -> MeanStdPair:
         ...
     def get_throughput(self) -> MeanStdPair:
         ...
@@ -1077,6 +1082,12 @@ class GenerationConfig:
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
+    
+        Tree search parameters:
+        branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+        tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+        num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                            verification. Total tree nodes = num_assistant_tokens + 1 (including root).
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
@@ -1104,6 +1115,8 @@ class GenerationConfig:
         ...
     def is_prompt_lookup(self) -> bool:
         ...
+    def is_tree_search(self) -> bool:
+        ...
     def set_eos_token_id(self, tokenizer_eos_token_id: typing.SupportsInt) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
@@ -1115,6 +1128,14 @@ class GenerationConfig:
         ...
     @assistant_confidence_threshold.setter
     def assistant_confidence_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def branching_factor(self) -> int:
+        """
+        Number of branches (top-k) at each level of the candidate tree
+        """
+    @branching_factor.setter
+    def branching_factor(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def diversity_penalty(self) -> float:
@@ -1271,6 +1292,14 @@ class GenerationConfig:
         ...
     @top_p.setter
     def top_p(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def tree_depth(self) -> int:
+        """
+        Lookahead depth of the candidate tree
+        """
+    @tree_depth.setter
+    def tree_depth(self, arg0: typing.SupportsInt) -> None:
         ...
 class GenerationFinishReason:
     """
@@ -1972,6 +2001,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Tree search parameters:
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
@@ -2069,6 +2104,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Tree search parameters:
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -2246,6 +2287,9 @@ class PerfMetrics:
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
     
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -2274,6 +2318,8 @@ class PerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_sampling_duration(self) -> MeanStdPair:
         ...
     def get_throughput(self) -> MeanStdPair:
         ...
@@ -2403,6 +2449,9 @@ class RawPerfMetrics:
     
         :param grammar_compile_times: Time to compile the grammar in microseconds.
         :type grammar_compile_times: list[float]
+    
+        :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call.
+        :type sampling_durations: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -2432,6 +2481,9 @@ class RawPerfMetrics:
         ...
     @property
     def m_times_to_first_token(self) -> list[float]:
+        ...
+    @property
+    def sampling_durations(self) -> list[float]:
         ...
     @property
     def token_infer_durations(self) -> list[float]:
@@ -2855,17 +2907,39 @@ class SpeechGenerationConfig(GenerationConfig):
     """
     
         SpeechGenerationConfig
-        
+    
         Speech-generation specific parameters:
         :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
         :type minlenratio: float
     
         :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-        :type minlenratio: float
+        :type maxlenratio: float
     
         :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
         :type threshold: float
+    
+        Kokoro-specific parameters:
+        :param speed: speech speed multiplier.
+        :type speed: float
+    
+        :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+        :type language: str
+    
+        :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+        :type max_phoneme_length: int
+    
+        :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                             This applies only to fallback during phonemize / G2P
+                                             (graphemes to phonemes), before acoustic model inference.
+                                             If set, this OpenVINO G2P fallback is used.
+                                             If unset (None), espeak-ng G2P fallback is used.
+                                             For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                             `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                             omit this key instead of passing None because kwargs-to-AnyMap
+                                             conversion rejects None values.
+        :type phonemize_fallback_model_dir: str | None
     """
+    language: str
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -2875,6 +2949,12 @@ class SpeechGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def max_phoneme_length(self) -> int:
+        ...
+    @max_phoneme_length.setter
+    def max_phoneme_length(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def maxlenratio(self) -> float:
@@ -2887,6 +2967,18 @@ class SpeechGenerationConfig(GenerationConfig):
         ...
     @minlenratio.setter
     def minlenratio(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def phonemize_fallback_model_dir(self) -> pathlib.Path | None:
+        ...
+    @phonemize_fallback_model_dir.setter
+    def phonemize_fallback_model_dir(self, arg0: os.PathLike | str | bytes | None) -> None:
+        ...
+    @property
+    def speed(self) -> float:
+        ...
+    @speed.setter
+    def speed(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def threshold(self) -> float:
@@ -3622,15 +3714,21 @@ class Text2SpeechDecodedResults:
     """
     
         Structure that stores the result from the generate method, including a list of waveform tensors
-        sampled at 16 kHz, along with performance metrics
+        along with output sample rate and performance metrics
     
-        :param speeches: a list of waveform tensors sampled at 16 kHz
+        :param speeches: a list of generated waveform tensors
         :type speeches: list
+    
+        :param output_sample_rate: sample rate of generated waveform tensors
+        :type output_sample_rate: int
     
         :param perf_metrics: performance metrics
         :type perf_metrics: SpeechGenerationPerfMetrics
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def output_sample_rate(self) -> int:
         ...
     @property
     def perf_metrics(self) -> SpeechGenerationPerfMetrics:
@@ -3653,67 +3751,117 @@ class Text2SpeechPipeline:
         """
             Generates speeches based on input texts
         
-            :param text(s): input text(s) for which to generate speech
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) for which to generate speech
+            :type text_or_texts: str or list[str]
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                                     to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
             :type properties: dict
         
-            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :returns: raw audios of the input texts spoken in the specified speaker's voice;
+                      sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
             :rtype: Text2SpeechDecodedResults
          
          
             SpeechGenerationConfig
-            
+        
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+        
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
+            :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
     def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
-            :param text(s): input text(s) for which to generate speech
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) for which to generate speech
+            :type text_or_texts: str or list[str]
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                                     to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
             :type properties: dict
         
-            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :returns: raw audios of the input texts spoken in the specified speaker's voice;
+                      sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
             :rtype: Text2SpeechDecodedResults
          
          
             SpeechGenerationConfig
-            
+        
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+        
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
+            :type phonemize_fallback_model_dir: str | None
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
+    def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
+        """
+        Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
+        """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
 class Text2VideoPipeline:
@@ -4903,10 +5051,20 @@ class WhisperPerfMetrics(PerfMetrics):
         :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
         :type get_word_level_timestamps_processing_duration: MeanStdPair
     
+        :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds.
+        :type get_encode_inference_duration: MeanStdPair
+    
+        :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration per token in milliseconds.
+        :type get_decode_inference_duration: MeanStdPair
+    
         :param whisper_raw_metrics: Whisper specific raw metrics
         :type WhisperRawPerfMetrics:
     """
     def __init__(self) -> None:
+        ...
+    def get_decode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_encode_inference_duration(self) -> MeanStdPair:
         ...
     def get_features_extraction_duration(self) -> MeanStdPair:
         ...
@@ -5082,8 +5240,20 @@ class WhisperRawPerfMetrics:
     
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
+    
+        :param encode_inference_durations: Duration for each encoder inference call in microseconds.
+        :type encode_inference_durations: list[float]
+    
+        :param decode_inference_durations: Duration for each decoder inference call during token generation in microseconds.
+        :type decode_inference_durations: list[float]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
         ...
     @property
     def features_extraction_durations(self) -> list[float]:
