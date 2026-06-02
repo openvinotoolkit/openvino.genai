@@ -270,6 +270,11 @@ void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float times
 }
 
 void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) {
+    const double mu = calculate_shift(image_seq_len);
+    set_timesteps_with_mu(mu, num_inference_steps, strength);
+}
+
+void FlowMatchEulerDiscreteScheduler::set_timesteps_with_mu(double mu, size_t num_inference_steps, float strength) {
     m_timesteps.clear();
     m_sigmas.clear();
 
@@ -288,8 +293,6 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t
 
     const float shift = m_config.shift;
 
-    // fill sigma
-    const double mu = calculate_shift(image_seq_len);
     if (m_config.use_dynamic_shifting) {
         const float exp_mu = static_cast<float>(std::exp(mu));
         for (float& s : sigmas) {
