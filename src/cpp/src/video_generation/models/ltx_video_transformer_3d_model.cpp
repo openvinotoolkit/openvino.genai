@@ -63,6 +63,21 @@ LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::pa
 
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const LTXVideoTransformer3DModel&) = default;
 
+LTXVideoTransformer3DModel LTXVideoTransformer3DModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request),
+                    "LTXVideoTransformer3DModel must have exactly one of m_model or m_request initialized");
+
+    LTXVideoTransformer3DModel cloned = *this;
+
+    if (m_model) {
+        cloned.m_model = m_model->clone();
+    } else {
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
+    return cloned;
+}
+
 const LTXVideoTransformer3DModel::Config& LTXVideoTransformer3DModel::get_config() const {
     return m_config;
 }

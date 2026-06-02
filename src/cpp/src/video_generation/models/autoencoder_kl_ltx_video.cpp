@@ -220,6 +220,27 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
     return *this;
 }
 
+AutoencoderKLLTXVideo AutoencoderKLLTXVideo::clone() {
+    OPENVINO_ASSERT((m_decoder_model != nullptr) ^ static_cast<bool>(m_decoder_request),
+                    "AutoencoderKLLTXVideo must have exactly one of m_decoder_model or m_decoder_request initialized");
+
+    AutoencoderKLLTXVideo cloned = *this;
+
+    if (m_decoder_model) {
+        cloned.m_decoder_model = m_decoder_model->clone();
+    } else {
+        cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
+    }
+
+    if (m_encoder_model) {
+        cloned.m_encoder_model = m_encoder_model->clone();
+    } else if (m_encoder_request) {
+        cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
+    }
+
+    return cloned;
+}
+
 AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
                                                       int64_t num_frames,
                                                       int64_t height,

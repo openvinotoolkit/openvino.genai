@@ -84,7 +84,7 @@ VideoGenerationPerfMetrics Image2VideoPipeline::get_performance_metrics() {
 }
 
 Image2VideoPipeline Image2VideoPipeline::clone() {
-    return Image2VideoPipeline(std::make_shared<LTXPipeline>(*m_impl));
+    return Image2VideoPipeline(m_impl->clone());
 }
 
 Image2VideoPipeline::~Image2VideoPipeline() = default;

@@ -376,10 +376,11 @@ class LTXPipeline {
         ov::Tensor noise = config.generator->randn_tensor(shape);
         ov::Tensor latents = pack_latents(noise, ps, ps_t);
 
-        const size_t tokens_per_frame = m_latent_height * m_latent_width;
+        const size_t tokens_per_frame = (m_latent_height / ps) * (m_latent_width / ps);
+        const size_t S = latents.get_shape()[1];
         const size_t D = latents.get_shape()[2];
         for (size_t b = 0; b < config.num_videos_per_prompt; ++b) {
-            float* dst       = latents.data<float>()             + b * m_latent_num_frames * tokens_per_frame * D;
+            float* dst       = latents.data<float>()             + b * S * D;
             const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
             std::memcpy(dst, src, tokens_per_frame * D * sizeof(float));
         }
@@ -583,6 +584,15 @@ public:
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
         OPENVINO_ASSERT("LTXPipeline" == nlohmann::json::parse(file)["_class_name"].get<std::string>());
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
+    }
+
+    std::shared_ptr<LTXPipeline> clone() {
+        OPENVINO_ASSERT(m_is_compiled, "Cannot clone an uncompiled LTXPipeline");
+        auto cloned = std::make_shared<LTXPipeline>(*this);
+        cloned->m_t5_text_encoder = m_t5_text_encoder->clone();
+        cloned->m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_transformer->clone());
+        cloned->m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_vae->clone());
+        return cloned;
     }
 
     bool do_classifier_free_guidance(float guidance_scale) const {
