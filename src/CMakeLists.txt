@@ -61,10 +61,6 @@ else()
     set(RUNTIME_DESTINATION runtime/bin/${ARCH_DIR})
 endif()
 
-if(NOT DEFINED ENABLE_LTO)
-    set(ENABLE_LTO OFF)
-endif()
-
 #
 # Include source dirs
 #

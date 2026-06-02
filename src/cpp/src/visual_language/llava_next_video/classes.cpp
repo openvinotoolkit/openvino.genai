@@ -325,7 +325,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
     ov::InferRequest& encoder = infer_request_guard.get();
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_mm_projector(this->m_ireq_queue_multi_modal_projector.get());
     ov::InferRequest& mm_projector = infer_request_guard_mm_projector.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     ov::Shape pixel_values_shape;
     if (use_ov_vision_preprocess) {
@@ -532,13 +532,26 @@ ov::Tensor VisionEncoderLLaVANextVideo::preprocess_frames_cpp(const std::vector<
     return concatenated_frames;
 }
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
     auto vision_encoder = std::static_pointer_cast<VisionEncoderLLaVANextVideo>(m_vision_encoder);
     auto config = vision_encoder->get_processor_config();
 
     std::vector<ov::genai::EncodedVideo> encoded_videos;
-    for (const auto video: videos) {
-        std::vector<ov::Tensor> frames = to_single_image_tensors({video});
+    encoded_videos.reserve(videos.size());
+
+    VideoMetadata default_metadata{};
+
+    for (size_t i = 0; i < videos.size(); ++i) {
+        const VideoMetadata& video_metadata = i < videos_metadata.size() ? videos_metadata[i] : default_metadata;
+        const auto sampled_video = sample_video_if_needed(videos[i], video_metadata);
+        std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
+
         size_t num_frames = frames.size();
 
         // Calculate num_video_tokens (same for both OV and CPU preprocessing)
@@ -556,7 +569,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
             size_t orig_width = frame_shape[2];
 
             // Set inputs for integrated model
-            set_preprocess_parameters(encoder, video, {orig_height, orig_width}, config);
+            set_preprocess_parameters(encoder, sampled_video, {orig_height, orig_width}, config);
         } else {
             // Use CPU preprocessing - preprocess and concatenate frames
             ov::Tensor concatenated_frames = vision_encoder->preprocess_frames_cpp(frames);
@@ -585,6 +598,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
         video_features.set_shape(new_shape);
         encoded_video.video_features = std::move(video_features);
         encoded_video.num_video_tokens = num_video_tokens;
+        encoded_video.metadata = video_metadata;
         encoded_videos.push_back(encoded_video);
     }
     return encoded_videos;

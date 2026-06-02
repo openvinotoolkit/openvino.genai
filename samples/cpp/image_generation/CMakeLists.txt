@@ -12,6 +12,7 @@ file(DOWNLOAD https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef
      EXPECTED_HASH MD5=27932e6fb3a2f26aee2fc33f2cb4e696)
 
 include(FetchContent)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
 
 if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
@@ -34,6 +35,42 @@ set_target_properties(text2image PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS text2image
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+# create denoising_process sample executable
+
+add_executable(denoising_process denoising_process.cpp ../video_generation/imwrite_video.cpp)
+
+target_include_directories(denoising_process PRIVATE
+    ${CMAKE_BINARY_DIR}
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../video_generation")
+ov_genai_link_opencv(denoising_process core imgproc videoio imgcodecs)
+target_link_libraries(denoising_process PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(denoising_process PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+# Windows: when OpenCV was built from source via FetchContent, deploy the
+# component DLLs next to denoising_process.exe in samples_bin/. The Windows
+# loader has no rpath, and install/samples_bin/ is not on PATH at runtime
+# unless the user puts it there. Skipped when find_package found a system
+# OpenCV, since those installs ship their own runtime path.
+get_property(_ov_genai_opencv_fetched GLOBAL PROPERTY OV_GENAI_FETCHED_OPENCV)
+if(WIN32 AND _ov_genai_opencv_fetched)
+    install(FILES "$<TARGET_FILE:opencv_core>"
+                  "$<TARGET_FILE:opencv_imgproc>"
+                  "$<TARGET_FILE:opencv_imgcodecs>"
+                  "$<TARGET_FILE:opencv_videoio>"
+            DESTINATION samples_bin/
+            COMPONENT samples_bin
+            EXCLUDE_FROM_ALL)
+endif()
+
+install(TARGETS denoising_process
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
@@ -148,6 +185,22 @@ set_target_properties(stable_diffusion_export_import PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS stable_diffusion_export_import
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+# create encrypted_stable_diffusion sample executable
+
+add_executable(encrypted_stable_diffusion encrypted_stable_diffusion.cpp imwrite.cpp)
+
+target_include_directories(encrypted_stable_diffusion PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(encrypted_stable_diffusion PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(encrypted_stable_diffusion PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS encrypted_stable_diffusion
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

@@ -1,6 +1,8 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
+
 #include "openvino/genai/video_generation/generation_config.hpp"
 
 namespace ov::genai::utils {

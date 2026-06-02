@@ -1,10 +1,11 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <iostream>
 #include "openvino/genai/llm_pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (3 != argc) {
+    if (argc != 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> '<PROMPT>'");
     }
 
@@ -19,6 +20,7 @@ int main(int argc, char* argv[]) try {
     config.do_sample = true;
     config.top_p = 0.9;
     config.top_k = 30;
+
     auto streamer = [](std::string subword) {
         std::cout << subword << std::flush;
         return ov::genai::StreamingStatus::RUNNING;

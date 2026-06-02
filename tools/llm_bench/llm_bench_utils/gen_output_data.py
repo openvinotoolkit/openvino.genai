@@ -55,8 +55,10 @@ def embed_iterate_data(
     available_mem="",
     max_rss_mem="",
     max_rss_mem_increase="",
+    max_rss_mem_share="",
     max_sys_mem="",
     max_sys_mem_increase="",
+    max_sys_mem_share="",
     prompt_idx="",
     tokenization_time=[],
 ):
@@ -73,8 +75,10 @@ def embed_iterate_data(
     iter_data["available_mem"] = available_mem
     iter_data["max_rss_mem_consumption"] = max_rss_mem
     iter_data["max_rss_mem_increase"] = max_rss_mem_increase
+    iter_data["max_rss_mem_share"] = max_rss_mem_share
     iter_data["max_sys_mem_consumption"] = max_sys_mem
     iter_data["max_sys_mem_increase"] = max_sys_mem_increase
+    iter_data["max_sys_mem_share"] = max_sys_mem_share
     iter_data["prompt_idx"] = prompt_idx
     iter_data["tokenization_time"] = tokenization_time[0] if len(tokenization_time) > 0 else ""
     iter_data["detokenization_time"] = ""

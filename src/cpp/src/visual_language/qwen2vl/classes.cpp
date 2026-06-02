@@ -261,9 +261,6 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(const std::shared_ptr<ov:
 namespace qwen2_vl_utils {
 
 ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
-    if (height < factor || width < factor) {
-        OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
-    }
     if (std::max(height, width) / std::min(height, width) > 200) {
         OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
     }
@@ -615,6 +612,15 @@ ov::Tensor merge_text_and_video_image_embeddings(
             }
         }
     }
+
+    OPENVINO_ASSERT(image_embed_idx == processed_image_embeds.get_shape().at(0),
+        "Image embeddings count (", processed_image_embeds.get_shape().at(0), 
+        ") does not match image pad tokens in prompt (", image_embed_idx, ")");
+
+    OPENVINO_ASSERT(video_embed_idx == processed_video_embeds.get_shape().at(0),
+        "Video embeddings count (", processed_video_embeds.get_shape().at(0), 
+        ") does not match video pad tokens in prompt (", video_embed_idx, ")");
+
     return merged_embeds;
 }
     
@@ -891,7 +897,7 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     return encoded_img;
 }
 
-EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
+EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& frames) {
     EncodedVideo encoded_video;
     encode_frames_with_config(encoded_video, frames, m_processor_config);
     return encoded_video;
@@ -1125,10 +1131,17 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     int64_t image_pad_token_id = m_vision_token_ids["image_pad"];
     int64_t video_pad_token_id = m_vision_token_ids["video_pad"];
 
-    m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, video_grid_thw, videos_sequence, 0, vision_start_token_id, history_vision_count);
-
-    int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
-    m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
+    std::tie(m_position_ids, m_rope_delta) = create_position_ids(
+        input_ids,
+        images_grid_thw,
+        images_sequence,
+        0,
+        video_grid_thw,
+        videos_sequence,
+        0,
+        vision_start_token_id,
+        history_vision_count
+    );
 
     if (images.empty() && videos.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
@@ -1200,14 +1213,25 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                                  video_pad_token_id);
 }
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen2VL::encode_videos(const std::vector<ov::Tensor>& videos) {
-    std::vector<EncodedVideo> embeds;
-    for (const ov::Tensor& single_video : videos) {
-        std::vector<ov::Tensor> single_frames = to_single_image_tensors({single_video});
-        auto encoded_video = m_vision_encoder->encode_frames(single_frames);
-        embeds.emplace_back(encoded_video);
+std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen2VL::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
+    std::vector<EncodedVideo> encoded_videos;
+    VideoMetadata default_metadata{};
+    for (size_t i = 0; i < videos.size(); ++i) {
+        const ov::Tensor& video = videos[i];
+        const VideoMetadata& video_metadata = i < videos_metadata.size() ? videos_metadata[i] : default_metadata;
+        const auto sampled_video = sample_video_if_needed(video, video_metadata);
+        std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
+        auto encoded_video = m_vision_encoder->encode_frames(frames);
+        encoded_video.metadata = video_metadata;
+        encoded_videos.emplace_back(encoded_video);
     }
-    return embeds;
+    return encoded_videos;
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderQwen2VL::encode_images(const std::vector<ov::Tensor>& images) {
@@ -1466,7 +1490,7 @@ std::vector<std::array<size_t, 3>> InputsEmbedderQwen2VL::get_vision_grid_thw_fo
     return reordered_vision_grid_thw;
 }
 
-ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
+std::pair<ov::Tensor, int64_t> InputsEmbedderQwen2VL::create_position_ids(
     const ov::Tensor& input_ids_tensor,
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
     const std::vector<size_t>& images_sequence,
@@ -1572,7 +1596,14 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
         }
     }
 
-    return position_ids;
+    // Calculate rope delta
+    const int64_t position_ids_max_element = *std::max_element(
+        position_ids.data<int64_t>(),
+        position_ids.data<int64_t>() + position_ids.get_size()
+    );
+    const int64_t rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids_tensor.get_shape().at(1));
+
+    return {position_ids, rope_delta};
 }
 
 } // namespace ov::genai

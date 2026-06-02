@@ -67,7 +67,52 @@ void init_clip_text_model(py::module_& m) {
         .def_readwrite("max_position_embeddings", &ov::genai::CLIPTextModel::Config::max_position_embeddings)
         .def_readwrite("num_hidden_layers", &ov::genai::CLIPTextModel::Config::num_hidden_layers);
 
-    clip_text_model.def("get_config", &ov::genai::CLIPTextModel::get_config)
+    clip_text_model.def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::CLIPTextModel::Config& config,
+            const ov::genai::Tokenizer& clip_tokenizer
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModel>(model, weights, config, clip_tokenizer);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "CLIPTextModel config",
+        py::arg("clip_tokenizer"), "Tokenizer for text encoding",
+        R"(
+            CLIPTextModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (CLIPTextModel.Config): CLIPTextModel configuration.
+            clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::CLIPTextModel::Config& config,
+            const ov::genai::Tokenizer& clip_tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModel>(model, weights, config, clip_tokenizer, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "CLIPTextModel config",
+        py::arg("clip_tokenizer"), "Tokenizer for text encoding",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            CLIPTextModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (CLIPTextModel.Config): CLIPTextModel configuration.
+            clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def("get_config", &ov::genai::CLIPTextModel::get_config)
         .def("reshape", &ov::genai::CLIPTextModel::reshape, py::arg("batch_size"))
         .def("set_adapters", &ov::genai::CLIPTextModel::set_adapters, py::arg("adapters"))
         .def("infer", 
@@ -141,6 +186,51 @@ void init_clip_text_model_with_projection(py::module_& m) {
         R"(
             CLIPTextModelWithProjection class
             model (CLIPTextModelWithProjection): CLIPText model with projection
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::CLIPTextModelWithProjection::Config& config,
+            const ov::genai::Tokenizer& clip_tokenizer
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(model, weights, config, clip_tokenizer);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "CLIPTextModelWithProjection config",
+        py::arg("clip_tokenizer"), "Tokenizer for text encoding",
+        R"(
+            CLIPTextModelWithProjection class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
+            clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::CLIPTextModelWithProjection::Config& config,
+            const ov::genai::Tokenizer& clip_tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(model, weights, config, clip_tokenizer, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "CLIPTextModelWithProjection config",
+        py::arg("clip_tokenizer"), "Tokenizer for text encoding",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            CLIPTextModelWithProjection class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
+            clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
         )");
 }
 
@@ -178,6 +268,45 @@ void init_t5_encoder_model(py::module_& m) {
         R"(
             T5EncoderModel class
             model (T5EncoderModel): T5EncoderModel model
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::Tokenizer& tokenizer
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::T5EncoderModel>(model, weights, tokenizer);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("tokenizer"), "Tokenizer for text encoding",
+        R"(
+            T5EncoderModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            tokenizer (Tokenizer): Tokenizer for text encoding.
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::Tokenizer& tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::T5EncoderModel>(model, weights, tokenizer, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("tokenizer"), "Tokenizer for text encoding",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            T5EncoderModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            tokenizer (Tokenizer): Tokenizer for text encoding.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
         )")
         .def("reshape", &ov::genai::T5EncoderModel::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
         .def("infer",
@@ -267,7 +396,50 @@ void init_unet2d_condition_model(py::module_& m) {
         .def_readwrite("sample_size", &ov::genai::UNet2DConditionModel::Config::sample_size)
         .def_readwrite("time_cond_proj_dim", &ov::genai::UNet2DConditionModel::Config::time_cond_proj_dim);
 
-    unet2d_condition_model.def("get_config", &ov::genai::UNet2DConditionModel::get_config)
+    unet2d_condition_model.def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::UNet2DConditionModel::Config& config,
+            const size_t vae_scale_factor
+        ) {
+            return std::make_unique<ov::genai::UNet2DConditionModel>(model, weights, config, vae_scale_factor);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "UNet2DConditionModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        R"(
+            UNet2DConditionModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::UNet2DConditionModel::Config& config,
+            const size_t vae_scale_factor,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::UNet2DConditionModel>(model, weights, config, vae_scale_factor, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "UNet2DConditionModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            UNet2DConditionModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def("get_config", &ov::genai::UNet2DConditionModel::get_config)
         .def("reshape", &ov::genai::UNet2DConditionModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
         .def("set_adapters", &ov::genai::UNet2DConditionModel::set_adapters, py::arg("adapters"))
         .def("infer", 
@@ -347,7 +519,50 @@ void init_sd3_transformer_2d_model(py::module_& m) {
         .def_readwrite("patch_size", &ov::genai::SD3Transformer2DModel::Config::patch_size)
         .def_readwrite("joint_attention_dim", &ov::genai::SD3Transformer2DModel::Config::joint_attention_dim);
 
-    sd3_transformer_2d_model.def("get_config", &ov::genai::SD3Transformer2DModel::get_config)
+    sd3_transformer_2d_model.def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::SD3Transformer2DModel::Config& config,
+            const size_t vae_scale_factor
+        ) {
+            return std::make_unique<ov::genai::SD3Transformer2DModel>(model, weights, config, vae_scale_factor);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "SD3Transformer2DModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        R"(
+            SD3Transformer2DModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (SD3Transformer2DModel.Config): SD3Transformer2DModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::SD3Transformer2DModel::Config& config,
+            const size_t vae_scale_factor,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::SD3Transformer2DModel>(model, weights, config, vae_scale_factor, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "SD3Transformer2DModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            SD3Transformer2DModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (SD3Transformer2DModel.Config): SD3Transformer2DModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def("get_config", &ov::genai::SD3Transformer2DModel::get_config)
         .def("reshape", &ov::genai::SD3Transformer2DModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
         .def("infer", 
             &ov::genai::SD3Transformer2DModel::infer, 
@@ -395,7 +610,7 @@ void init_flux_transformer_2d_model(py::module_& m) {
         py::arg("root_dir"), "Model root directory",
         py::arg("device"), "Device on which inference will be done",
         R"(
-            UNet2DConditionModel class
+            FluxTransformer2DModel class
             root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
@@ -417,7 +632,50 @@ void init_flux_transformer_2d_model(py::module_& m) {
         .def_readwrite("in_channels", &ov::genai::FluxTransformer2DModel::Config::in_channels)
         .def_readwrite("default_sample_size", &ov::genai::FluxTransformer2DModel::Config::m_default_sample_size);
 
-    flux_transformer_2d_model.def("get_config", &ov::genai::FluxTransformer2DModel::get_config)
+    flux_transformer_2d_model.def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::FluxTransformer2DModel::Config& config,
+            const size_t vae_scale_factor
+        ) {
+            return std::make_unique<ov::genai::FluxTransformer2DModel>(model, weights, config, vae_scale_factor);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "FluxTransformer2DModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        R"(
+            FluxTransformer2DModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (FluxTransformer2DModel.Config): FluxTransformer2DModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::FluxTransformer2DModel::Config& config,
+            const size_t vae_scale_factor,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::FluxTransformer2DModel>(model, weights, config, vae_scale_factor, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "FluxTransformer2DModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            FluxTransformer2DModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (FluxTransformer2DModel.Config): FluxTransformer2DModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def("get_config", &ov::genai::FluxTransformer2DModel::get_config)
         .def("reshape", &ov::genai::FluxTransformer2DModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
         .def("infer", 
             &ov::genai::FluxTransformer2DModel::infer, 
@@ -495,7 +753,7 @@ void init_autoencoder_kl(py::module_& m) {
         py::arg("vae_decoder_path"), "VAE decoder directory",
         py::arg("device"), "Device on which inference will be done",
         R"(
-            AutoencoderKL class initialized only with both encoder and decoder models.
+            AutoencoderKL class initialized with both encoder and decoder models.
             vae_encoder_path (os.PathLike): VAE encoder directory.
             vae_decoder_path (os.PathLike): VAE decoder directory.
             device (str): Device on which inference will be done.
@@ -521,7 +779,93 @@ void init_autoencoder_kl(py::module_& m) {
         .def_readwrite("scaling_factor", &ov::genai::AutoencoderKL::Config::scaling_factor)
         .def_readwrite("block_out_channels", &ov::genai::AutoencoderKL::Config::block_out_channels);
 
-    autoencoder_kl.def("reshape", &ov::genai::AutoencoderKL::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"))
+    autoencoder_kl.def(py::init([](
+            const std::string& vae_decoder_model,
+            const ov::Tensor& vae_decoder_weights,
+            const ov::genai::AutoencoderKL::Config& vae_decoder_config
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_decoder_model, vae_decoder_weights, vae_decoder_config);
+        }),
+        py::arg("vae_decoder_model"), "Serialized VAE decoder model in OpenVINO IR format",
+        py::arg("vae_decoder_weights"), "VAE decoder weights tensor",
+        py::arg("vae_decoder_config"), "VAE decoder config",
+        R"(
+            AutoencoderKL class initialized only with decoder model from string and weights tensor.
+            vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
+            vae_decoder_weights (ov.Tensor): VAE decoder weights tensor.
+            vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+        )")
+        .def(py::init([](
+            const std::string& vae_encoder_model,
+            const ov::Tensor& vae_encoder_weights,
+            const std::string& vae_decoder_model,
+            const ov::Tensor& vae_decoder_weights,
+            const ov::genai::AutoencoderKL::Config& vae_decoder_config
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_encoder_model, vae_encoder_weights, vae_decoder_model, vae_decoder_weights, vae_decoder_config);
+        }),
+        py::arg("vae_encoder_model"), "Serialized VAE encoder model in OpenVINO IR format",
+        py::arg("vae_encoder_weights"), "VAE encoder weights tensor",
+        py::arg("vae_decoder_model"), "Serialized VAE decoder model in OpenVINO IR format",
+        py::arg("vae_decoder_weights"), "VAE decoder weights tensor",
+        py::arg("vae_decoder_config"), "VAE decoder config",
+        R"(
+            AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors.
+            vae_encoder_model (str): Serialized VAE encoder model in OpenVINO IR format.
+            vae_encoder_weights (ov.Tensor): VAE encoder weights tensor.
+            vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
+            vae_decoder_weights (ov.Tensor): VAE decoder weights tensor.
+            vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+        )")
+        .def(py::init([](
+            const std::string& vae_decoder_model,
+            const ov::Tensor& vae_decoder_weights,
+            const ov::genai::AutoencoderKL::Config& vae_decoder_config,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_decoder_model, vae_decoder_weights, vae_decoder_config, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("vae_decoder_model"), "Serialized VAE decoder model in OpenVINO IR format",
+        py::arg("vae_decoder_weights"), "VAE decoder weights tensor",
+        py::arg("vae_decoder_config"), "VAE decoder config",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            AutoencoderKL class initialized only with decoder model from string and weights tensor with device and properties.
+            vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
+            vae_decoder_weights (ov.Tensor): VAE decoder weights tensor.
+            vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](
+            const std::string& vae_encoder_model,
+            const ov::Tensor& vae_encoder_weights,
+            const std::string& vae_decoder_model,
+            const ov::Tensor& vae_decoder_weights,
+            const ov::genai::AutoencoderKL::Config& vae_decoder_config,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_encoder_model, vae_encoder_weights, vae_decoder_model, vae_decoder_weights, vae_decoder_config, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("vae_encoder_model"), "Serialized VAE encoder model in OpenVINO IR format",
+        py::arg("vae_encoder_weights"), "VAE encoder weights tensor",
+        py::arg("vae_decoder_model"), "Serialized VAE decoder model in OpenVINO IR format",
+        py::arg("vae_decoder_weights"), "VAE decoder weights tensor",
+        py::arg("vae_decoder_config"), "VAE decoder config",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            AutoencoderKL class initialized with both encoder and decoder models from string and weights tensors with device and properties.
+            vae_encoder_model (str): Serialized VAE encoder model in OpenVINO IR format.
+            vae_encoder_weights (ov.Tensor): VAE encoder weights tensor.
+            vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
+            vae_decoder_weights (ov.Tensor): VAE decoder weights tensor.
+            vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def("reshape", &ov::genai::AutoencoderKL::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"))
         .def(
             "compile",
             [](ov::genai::AutoencoderKL& self,
@@ -534,7 +878,7 @@ void init_autoencoder_kl(py::module_& m) {
                     self.compile(device,  map);
                 }
             },
-            py::arg("device"), "device on which inference will be done"
+            py::arg("device"), "device on which inference will be done",
             R"(
                 Compiles the model.
                 device (str): Device to run the model on (e.g., CPU, GPU).
