@@ -46,7 +46,6 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     0.0,                     // guidance_rescale
     161,                     // num_frames
     25.0f,                   // frame_rate
-    std::nullopt,            // strength
     TaylorSeerCacheConfig{}  // taylorseer_config
 };
 
@@ -632,10 +631,6 @@ public:
         replace_defaults(merged_generation_config);
         const float requested_guidance_scale = merged_generation_config.guidance_scale;
 
-        const float strength = merged_generation_config.strength.value_or(1.0f);
-        OPENVINO_ASSERT(strength >= 0.0f && strength <= 1.0f,
-                        "'strength' must be in [0.0, 1.0], got ", strength);
-
         size_t requested_batch_size_multiplier =
             do_classifier_free_guidance(merged_generation_config.guidance_scale) ? 2 : 1;
         if (m_is_compiled) {
@@ -715,20 +710,10 @@ public:
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size);
 
-        if (strength == 0.0f) {
-            latent = postprocess_latents(latent);
-            OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
-            ov::Tensor video = m_vae->decode(latent);
-            m_perf_metrics.generate_duration =
-                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
-            return VideoGenerationResult{video, m_perf_metrics};
-        }
-
         const size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
         m_scheduler->set_timesteps(video_sequence_length,
                                    merged_generation_config.num_inference_steps,
-                                   strength);
+                                   1.0f);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         ov::Tensor rope_interpolation_scale(ov::element::f32, {3});

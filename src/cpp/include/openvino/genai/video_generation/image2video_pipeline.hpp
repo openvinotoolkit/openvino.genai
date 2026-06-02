@@ -96,7 +96,7 @@ public:
      * @param image Conditioning image as a uint8 tensor of shape [H, W, 3] or [1, H, W, 3] in NHWC layout.
      *              Resized internally to (height, width) if not already that size.
      * @param positive_prompt Prompt to guide video generation
-     * @param properties Generation parameters. 'strength' controls denoising: 1.0 = full, 0.0 = none.
+     * @param properties Generation parameters (see VideoGenerationConfig).
      * @returns VideoGenerationResult with video tensor shaped as [num_videos_per_prompt, num_frames, height, width, 3]
      */
     VideoGenerationResult generate(const ov::Tensor& image,

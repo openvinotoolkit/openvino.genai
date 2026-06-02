@@ -34,8 +34,7 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("num_inference_steps", &ov::genai::VideoGenerationConfig::num_inference_steps)
         .def_readwrite("max_sequence_length", &ov::genai::VideoGenerationConfig::max_sequence_length)
         .def_readwrite("taylorseer_config", &ov::genai::VideoGenerationConfig::taylorseer_config)
-        .def_readwrite("adapters", &ov::genai::VideoGenerationConfig::adapters)
-        .def_readwrite("strength", &ov::genai::VideoGenerationConfig::strength);
+        .def_readwrite("adapters", &ov::genai::VideoGenerationConfig::adapters);
 
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)
