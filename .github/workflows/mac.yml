@@ -293,10 +293,16 @@ jobs:
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
+      - name: Show ccache stats
+        run: ccache --show-stats
+
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
-
+      
+      - name: Show ccache dir
+        run: ls -laR ${{ env.CCACHE_DIR }}
+      
       - name: Save ccache
         # if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         if: always()
