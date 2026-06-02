@@ -62,6 +62,11 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
+     * Duration of the sampling step in the last generation step in microseconds.
+     */
+    float sampling_duration = 0.0;
+
+    /**
     * Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
      * This value represents reserved/allocated memory for the cache and does not
      * distinguish between used and unused portions in dynamic cache configurations.
