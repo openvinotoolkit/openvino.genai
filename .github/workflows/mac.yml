@@ -262,7 +262,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel
-          path: ${{ env.CCACHE_DIR }}\
+          path: ${{ env.CCACHE_DIR }}
 
       - name: Set CI environment
         id: create_manifest
@@ -297,10 +297,11 @@ jobs:
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        # if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        if: always()
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel-${{ github.sha }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload Wheels
