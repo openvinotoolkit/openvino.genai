@@ -804,10 +804,6 @@ public:
     }
 
     bool is_waiting() const {
-        // when in tree search advance step, depends on pause status only
-        if (m_sampling_params.is_tree_search() && m_num_validation_tokens == 0) {
-            return m_is_gen_paused;
-        }
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
             if (m_sequences[seq_id]->is_waiting()) {
                 return true;

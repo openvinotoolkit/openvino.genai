@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <algorithm>
+
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "update_request_structs.hpp"
@@ -36,17 +38,15 @@ public:
 
     RawPerfMetrics raw_perf_metrics;
 
-    ov::AnyMap get_model_properties() {
-        ov::AnyMap props;
-        if (m_model_runner) {
-            auto compiled_model = m_model_runner->get_infer_request().get_compiled_model();
-            for (const auto& name : compiled_model.get_property(ov::supported_properties)) {
-                try {
-                    props[name] = compiled_model.get_property(name);
-                } catch (...) {}
-            }
-        }
-        return props;
+    ov::Any get_model_property(const std::string& name) {
+        OPENVINO_ASSERT(m_model_runner, "get_model_property('", name, "') called before model runner is initialized");
+        auto compiled_model = m_model_runner->get_infer_request().get_compiled_model();
+        const auto supported = compiled_model.get_property(ov::supported_properties);
+        OPENVINO_ASSERT(std::find(supported.begin(), supported.end(), name) != supported.end(),
+                        "Compiled model does not support property '",
+                        name,
+                        "'");
+        return compiled_model.get_property(name);
     }
 
 protected:
