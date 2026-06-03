@@ -189,9 +189,17 @@ public:
 
         utils::print_compiled_model_properties(compiled_model, "text rerank model");
         m_request = compiled_model.create_infer_request();
+
+        // NPU compiles the model with a static batch dimension of 1 (NPUW only supports batch
+        // size 1). Reranking N documents in a single batched infer would therefore fail, so on
+        // such devices score the documents one at a time and aggregate the results.
+        m_per_document = device == "NPU";
     };
 
     std::vector<std::pair<size_t, float>> rerank(const std::string& query, const std::vector<std::string>& texts) {
+        if (m_per_document) {
+            return rerank_per_document(query, texts);
+        }
         start_rerank_async(query, texts);
         return wait_rerank();
     }
@@ -239,6 +247,38 @@ public:
             results.emplace_back(batch, scores_data[batch]);
         }
 
+        if (m_has_beam_idx) {
+            m_request.reset_state();
+        }
+
+        return sort_and_trim(std::move(results));
+    }
+
+private:
+    // Score documents one at a time. Used on devices that only support a batch size of 1 (NPU):
+    // each document is run through its own infer, then all scores are aggregated and ranked the
+    // same way as the batched path.
+    std::vector<std::pair<size_t, float>> rerank_per_document(const std::string& query,
+                                                              const std::vector<std::string>& texts) {
+        std::vector<std::pair<size_t, float>> results;
+        results.reserve(texts.size());
+
+        for (size_t doc = 0; doc < texts.size(); ++doc) {
+            start_rerank_async(query, {texts[doc]});
+            m_request.wait();
+
+            auto scores_tensor = m_request.get_tensor("logits");
+            results.emplace_back(doc, scores_tensor.data<float>()[0]);
+
+            if (m_has_beam_idx) {
+                m_request.reset_state();
+            }
+        }
+
+        return sort_and_trim(std::move(results));
+    }
+
+    std::vector<std::pair<size_t, float>> sort_and_trim(std::vector<std::pair<size_t, float>> results) {
         const size_t top_n = m_config.top_n;
 
         // partial sort to get top_n results
@@ -253,20 +293,16 @@ public:
             results.resize(top_n);
         }
 
-        if (m_has_beam_idx) {
-            m_request.reset_state();
-        }
-
         return results;
     }
 
-private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
     Config m_config;
     AnyMap m_tokenization_params;
     bool m_has_position_ids = false;
     bool m_has_beam_idx = false;
+    bool m_per_document = false;
 
     TokenizedInputs tokenize(const std::string& query, const std::vector<std::string>& texts) {
         if (m_tokenizer.supports_paired_input()) {
