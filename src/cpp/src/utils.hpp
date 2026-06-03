@@ -143,7 +143,7 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
 extern const std::string PER_MODEL_PROPERTIES;
 
-/// @brief Resolve properties for @p model_role by merging two layers (priority low to high):
+/// @brief Resolve properties for @p model_role by merging three layers (priority low to high):
 ///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
 ///           and DEVICE_PROPERTIES if device is specified)
 ///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)

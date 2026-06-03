@@ -183,11 +183,13 @@ private:
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
-        auto embedder_properties = device_properties.empty()
-            ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
+        // Reinsert device_properties so InputsEmbedder sub-models can resolve
+        // per-role and per-device overrides via utils::get_model_properties(...).
+        if (!device_properties.empty()) {
+            properties_copy[ov::device::properties.name()] = device_properties;
+        }
 
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, properties_copy);
 
         finalize_initialization(language_model, kv_pos);
     }
