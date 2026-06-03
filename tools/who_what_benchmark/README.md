@@ -203,7 +203,7 @@ optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code ov_Ko
 
 # Note that above export command will populate a ov_Kokoro-82M directory with:
 # * data folder, containing phonemizer lexicon files
-# * voices folder, containing .bin files. One fore each of the voices listed here: https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
+# * voices folder, containing .bin files. One for each of the voices listed here: https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
 
 # Collect reference audio with Kokoro HF baseline.
 # For Kokoro, use --speech-voice to specify which voice names from the model card to use (for example, af_heart).
