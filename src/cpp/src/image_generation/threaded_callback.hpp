@@ -21,6 +21,10 @@ public:
     ThreadedCallbackWrapper(std::function<bool(size_t, size_t, ov::Tensor&)> callback)
         : m_callback{callback} {}
 
+    ~ThreadedCallbackWrapper() {
+        end();
+    }
+
     void start() {
         if (!m_callback) {
             return;
