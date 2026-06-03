@@ -57,7 +57,7 @@ public:
 protected:
     TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);
 
-    bool should_sync_embeddings_after_candidate_generation() const override {
+    bool sync_embeddings_after_candidates() const override {
         return true;
     }
 };

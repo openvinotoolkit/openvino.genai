@@ -271,10 +271,9 @@ public:
     void truncate_generated_ids_embeds(size_t num_tokens) {
         OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
         OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
-        auto current_embeds_size = m_generated_ids_embeds.size();
         // remove the last num_tokens embeddings
         if (num_tokens > 0)
-            m_generated_ids_embeds.erase(m_generated_ids_embeds.begin() + (current_embeds_size - num_tokens), m_generated_ids_embeds.end());
+            m_generated_ids_embeds.resize(m_generated_ids_embeds.size() - num_tokens);
     }
 
     void truncate_position_ids(size_t num_tokens) {

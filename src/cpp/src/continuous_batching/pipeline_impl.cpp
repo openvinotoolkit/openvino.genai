@@ -463,10 +463,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // candidate tokens instead of committing them here. prompt_lookup is the exception:
     // it appends validation candidates after sampling and must keep embeddings in sync
     // before the next scheduling/hash step.
-    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        if (!m_is_validation_mode_enabled || should_sync_embeddings_after_candidate_generation()) {
-            m_model_runner->append_embeddings(m_requests, scheduler_output);
-        }
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
     }
 
     // notify requests dropped by handle

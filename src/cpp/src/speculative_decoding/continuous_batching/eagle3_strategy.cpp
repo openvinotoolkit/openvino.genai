@@ -114,29 +114,16 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
     auto shape = original_input_embeddings.get_shape();
-    auto element_type = original_input_embeddings.get_element_type();
 
     OPENVINO_ASSERT(shape.size() == 3u, "Input embedding tensor shape size should be 3.");
-    OPENVINO_ASSERT(shape[0] == 1u, "Input embedding tensor only support batch == 1.");
-    OPENVINO_ASSERT(element_type == ov::element::f32,
-                    "Eagle3 continuous batching embeddings path only supports f32 input embeddings.");
-
-    size_t original_length = shape[1];
-
-    OPENVINO_ASSERT(original_length > 1u,
+    OPENVINO_ASSERT(shape[0] == 1u, "Input embedding tensor only supports batch == 1.");
+    OPENVINO_ASSERT(shape[1] > 1u,
                     "Input embedding tensor sequence length must be greater than 1 for creating eagle3 draft input embeddings.");
-    size_t new_length = original_length - 1;
 
-    ov::Tensor draft_input_embeddings(element_type, {1, new_length, shape[2]});
-
-    // Copy the f32 embedding rows after dropping the first token.
-    size_t embedding_row_bytes = shape[2] * element_type.size() ;
-    const uint8_t* src_data = static_cast<const uint8_t*>(original_input_embeddings.data());
-    uint8_t* dst_data = static_cast<uint8_t*>(draft_input_embeddings.data());
-
-    std::copy(src_data + embedding_row_bytes, src_data + (original_length * embedding_row_bytes), dst_data);
-
-    return draft_input_embeddings;
+    // Return a ROI tensor that skips the first token row, i.e. embeddings[1:, :].
+    return ov::Tensor(original_input_embeddings,
+                      ov::Coordinate{0, 1, 0},
+                      ov::Coordinate{1, shape[1], shape[2]});
 }
 
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
@@ -161,9 +148,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
     // remove first token from input_ids to create the draft model input
+    // refer to: https://github.com/SafeAILab/EAGLE/blob/main/eagle/model/cnets.py#L617
     ov::Tensor draft_input = create_draft_input(input_ids);
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
+    // Temporarily set draft position_ids/rope_delta (first token trimmed) for the draft pipeline.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder) {
         std::tie(main_position_ids, main_rope_delta) = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
         ov::Tensor draft_position_ids = trim_first_token_position_ids(main_position_ids);
@@ -173,6 +162,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, token_type_ids, prompt_ids)});
+    // Restore main position_ids/rope_delta before adding to the main pipeline.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
         m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
@@ -263,28 +253,11 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_posi
     const size_t seq_axis = shape.size() == 3 ? 2 : 1;
     OPENVINO_ASSERT(shape[seq_axis] > 1, "position_ids sequence length must be greater than 1 for Eagle3 draft path.");
 
-    ov::Shape draft_shape = shape;
-    draft_shape[seq_axis] -= 1;
-    ov::Tensor draft_position_ids(position_ids.get_element_type(), draft_shape);
+    ov::Coordinate begin(shape.size(), 0);
+    ov::Coordinate end(shape.begin(), shape.end());
+    begin[seq_axis] = 1;
 
-    const int64_t* src = position_ids.data<const int64_t>();
-    int64_t* dst = draft_position_ids.data<int64_t>();
-
-    if (shape.size() == 2) {
-        const size_t draft_seq_len = draft_shape[1];
-        std::copy_n(src + 1, draft_seq_len, dst);
-        return draft_position_ids;
-    }
-
-    const size_t planes = shape[0] * shape[1];
-    const size_t src_seq_len = shape[2];
-    const size_t draft_seq_len = draft_shape[2];
-    for (size_t plane = 0; plane < planes; ++plane) {
-        const size_t src_offset = plane * src_seq_len;
-        const size_t dst_offset = plane * draft_seq_len;
-        std::copy_n(src + src_offset + 1, draft_seq_len, dst + dst_offset);
-    }
-
-    return draft_position_ids;
+    // Return a ROI tensor skipping the first token along the sequence axis.
+    return ov::Tensor(position_ids, begin, end);
 }
 }  // namespace ov::genai
