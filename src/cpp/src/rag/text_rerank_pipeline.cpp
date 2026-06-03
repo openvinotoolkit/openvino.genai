@@ -185,7 +185,16 @@ public:
             model = apply_postprocessing(model);
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        // The reranker is an autoregressive decoder, so on NPU it must run through NPUW. Enable
+        // it by default (without requiring the caller to pass an NPU config), letting any
+        // explicitly provided properties take precedence.
+        ov::AnyMap device_properties = properties;
+        if (device == "NPU") {
+            device_properties.insert({"NPU_USE_NPUW", "YES"});
+            device_properties.insert({"NPUW_LLM", "YES"});
+        }
+
+        ov::CompiledModel compiled_model = core.compile_model(model, device, device_properties);
 
         utils::print_compiled_model_properties(compiled_model, "text rerank model");
         m_request = compiled_model.create_infer_request();
