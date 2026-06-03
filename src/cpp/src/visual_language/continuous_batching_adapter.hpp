@@ -22,7 +22,9 @@ public:
         models_dir, 
         scheduler_config, 
         device, 
-        properties} { }
+        properties} {
+        set_attention_backend(PA_BACKEND);
+    }
 
     VLMContinuousBatchingAdapter(
         const std::shared_ptr<ov::Model>& language_model,
@@ -35,7 +37,9 @@ public:
         models_dir,
         scheduler_config,
         device,
-        properties} { }
+        properties} {
+        set_attention_backend(PA_BACKEND);
+    }
 
     VLMContinuousBatchingAdapter(
         const ModelsMap& models_map,
@@ -52,7 +56,9 @@ public:
         device,
         config_dir_path,
         properties,
-        generation_config} { }
+        generation_config} {
+        set_attention_backend(PA_BACKEND);
+    }
 
     VLMContinuousBatchingAdapter(
         const std::shared_ptr<ov::Model>& language_model,
@@ -72,6 +78,7 @@ public:
         config_dir_path,
         properties,
         generation_config} {
+        set_attention_backend(PA_BACKEND);
     }
 
     VLMDecodedResults generate(

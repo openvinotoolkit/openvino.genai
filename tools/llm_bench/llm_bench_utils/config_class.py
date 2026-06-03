@@ -168,6 +168,7 @@ USE_CASES = {
                 "qwen2-5-vl",
                 "smolvlm",
                 "qwen3-vl",
+                "videochat-flash-qwen",
                 "gemma4",
             ]
         )
@@ -234,6 +235,7 @@ USE_CASES = {
                 "gptj",
                 "hunyuan",
                 "yi-",
+                "lfm2",
                 "lfm2-moe",
                 "afmoe",
             ]

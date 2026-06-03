@@ -3,6 +3,7 @@
 
 #include "visual_language/nanollava/classes.hpp"
 #include "visual_language/clip.hpp"
+#include "continuous_batching/timer.hpp"
 
 namespace ov::genai {
 
@@ -214,30 +215,43 @@ ov::Tensor InputsEmbedderNanoLLaVA::tokenize_without_image_tag(const std::string
 }
 
 ov::Tensor InputsEmbedderNanoLLaVA::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
-    if (m_is_chat_conversation) {
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
-        ov::Tensor new_chat_tokens = tokenize_without_image_tag(prompt, false);
+    ManualTimer encode_timer("Encode");
+    encode_timer.start();
 
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+    if (m_is_chat_conversation) {
+        ov::Tensor new_chat_tokens = tokenize_without_image_tag(prompt, false);
+        encode_timer.end();
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
         if (m_image_features_size > 0)
             new_chat_tokens = insert_image_placeholders(new_chat_tokens, m_image_features_size);
         return new_chat_tokens;
     } else {
         ov::Tensor encoded_input_ids;
-        auto start_tokenizer_time = std::chrono::steady_clock::now();
+        bool apply_template = false;
+        TimePoint template_end_time;
         if (m_apply_chat_template) {
             std::string templated_prompt;
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
 
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            template_end_time = std::chrono::steady_clock::now();
+            apply_template = true;
             encoded_input_ids = tokenize_without_image_tag(templated_prompt, false);
         } else {
             encoded_input_ids = tokenize_without_image_tag(prompt, true);
         }
-        auto end_tokenizer_time = std::chrono::steady_clock::now();
-        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        encode_timer.end();
+        if (apply_template) {
+            metrics.raw_metrics.chat_template_durations.emplace_back(
+                PerfMetrics::get_microsec(template_end_time - encode_timer.get_start_time())
+            );
+            metrics.raw_metrics.tokenization_durations.emplace_back(
+                PerfMetrics::get_microsec(encode_timer.get_end_time() - template_end_time)
+            );
+        } else {
+            metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+        }
         if (m_image_features_size > 0)
             encoded_input_ids = insert_image_placeholders(encoded_input_ids, m_image_features_size);
         return encoded_input_ids;

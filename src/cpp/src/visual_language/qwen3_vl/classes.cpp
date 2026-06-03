@@ -5,6 +5,19 @@
 #include "utils.hpp"
 #include "logger.hpp"
 
+#include <cstdlib>
+#include <cstring>
+
+#include "openvino/op/add.hpp"
+#include "openvino/op/multiply.hpp"
+#include "openvino/op/split.hpp"
+#include "openvino/op/squeeze.hpp"
+#include "openvino/op/unsqueeze.hpp"
+
+#include "openvino/op/constant.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/op/result.hpp"
+
 namespace ov::genai {
 
 namespace {
@@ -104,99 +117,102 @@ std::pair<ov::Tensor, ov::Tensor> get_position_interpolation_indices_and_weights
     const std::vector<std::array<size_t, 3>>& grids_thw,
     size_t num_grid_per_side
 ) {
-    std::vector<std::vector<int64_t>> indices_list(4);
-    std::vector<std::vector<float>> weights_list(4);
-    
+    // Pre-compute total positions to allocate tensors directly
+    size_t total_positions = 0;
+    for (const auto& grid_thw : grids_thw) {
+        total_positions += grid_thw[0] * grid_thw[1] * grid_thw[2];
+    }
+
+    ov::Tensor indices{ov::element::i64, {4, total_positions}};
+    ov::Tensor weights{ov::element::f32, {4, total_positions}};
+    int64_t* indices_data = indices.data<int64_t>();
+    float* weights_data = weights.data<float>();
+    size_t pos_offset = 0;
+
     for (const auto& grid_thw : grids_thw) {
         const auto [t, h, w] = grid_thw;
-        
+
         // Create linearly spaced indices for h and w
         std::vector<float> h_idxs(h), w_idxs(w);
         const float h_scale = h > 1 ? static_cast<float>(num_grid_per_side - 1) / (h - 1) : 0.0f;
         const float w_scale = w > 1 ? static_cast<float>(num_grid_per_side - 1) / (w - 1) : 0.0f;
-        
+
         for (size_t i = 0; i < h; ++i) {
             h_idxs[i] = static_cast<float>(i) * h_scale;
         }
         for (size_t i = 0; i < w; ++i) {
             w_idxs[i] = static_cast<float>(i) * w_scale;
         }
-        
+
         // Compute floor/ceil indices and interpolation weights
+        const int64_t grid_max = static_cast<int64_t>(num_grid_per_side - 1);
         for (size_t ti = 0; ti < t; ++ti) {
             for (size_t hi = 0; hi < h; ++hi) {
                 const int64_t h_floor = static_cast<int64_t>(h_idxs[hi]);
-                const int64_t h_ceil = std::min(h_floor + 1, static_cast<int64_t>(num_grid_per_side - 1));
+                const int64_t h_ceil = std::min(h_floor + 1, grid_max);
                 const float dh = h_idxs[hi] - static_cast<float>(h_floor);
-                
+                const int64_t h_floor_row = h_floor * static_cast<int64_t>(num_grid_per_side);
+                const int64_t h_ceil_row = h_ceil * static_cast<int64_t>(num_grid_per_side);
+
                 for (size_t wi = 0; wi < w; ++wi) {
                     const int64_t w_floor = static_cast<int64_t>(w_idxs[wi]);
-                    const int64_t w_ceil = std::min(w_floor + 1, static_cast<int64_t>(num_grid_per_side - 1));
+                    const int64_t w_ceil = std::min(w_floor + 1, grid_max);
                     const float dw = w_idxs[wi] - static_cast<float>(w_floor);
-                    
+
                     // 4 corners: (floor,floor), (floor,ceil), (ceil,floor), (ceil,ceil)
-                    indices_list[0].push_back(h_floor * num_grid_per_side + w_floor);
-                    indices_list[1].push_back(h_floor * num_grid_per_side + w_ceil);
-                    indices_list[2].push_back(h_ceil * num_grid_per_side + w_floor);
-                    indices_list[3].push_back(h_ceil * num_grid_per_side + w_ceil);
-                    
+                    indices_data[0 * total_positions + pos_offset] = h_floor_row + w_floor;
+                    indices_data[1 * total_positions + pos_offset] = h_floor_row + w_ceil;
+                    indices_data[2 * total_positions + pos_offset] = h_ceil_row + w_floor;
+                    indices_data[3 * total_positions + pos_offset] = h_ceil_row + w_ceil;
+
                     // Bilinear weights
-                    weights_list[0].push_back((1.0f - dh) * (1.0f - dw));
-                    weights_list[1].push_back((1.0f - dh) * dw);
-                    weights_list[2].push_back(dh * (1.0f - dw));
-                    weights_list[3].push_back(dh * dw);
+                    weights_data[0 * total_positions + pos_offset] = (1.0f - dh) * (1.0f - dw);
+                    weights_data[1 * total_positions + pos_offset] = (1.0f - dh) * dw;
+                    weights_data[2 * total_positions + pos_offset] = dh * (1.0f - dw);
+                    weights_data[3 * total_positions + pos_offset] = dh * dw;
+                    ++pos_offset;
                 }
             }
         }
     }
-    
-    const size_t total_positions = indices_list[0].size();
-    ov::Tensor indices{ov::element::i64, {4, total_positions}};
-    ov::Tensor weights{ov::element::f32, {4, total_positions}};
-    
-    int64_t* indices_data = indices.data<int64_t>();
-    float* weights_data = weights.data<float>();
-    
-    for (size_t corner = 0; corner < 4; ++corner) {
-        std::memcpy(indices_data + corner * total_positions,
-                    indices_list[corner].data(),
-                    total_positions * sizeof(int64_t));
-        std::memcpy(weights_data + corner * total_positions,
-                    weights_list[corner].data(),
-                    total_positions * sizeof(float));
-    }
-    
+    OPENVINO_ASSERT(pos_offset == total_positions,
+        "Position offset mismatch: expected ", total_positions, ", got ", pos_offset);
+
     return {indices, weights};
 }
 
 /**
- * @brief Reorders position embeddings according to spatial merge pattern in vision encoder.
- * 
- * @param pos_embeds Interpolated position embeddings [num_positions, embed_dim]
- * @param grids_thw Grid dimensions for permutation
- * @param spatial_merge_size Spatial merge size from processor config
- * @return Permuted position embeddings [num_merged_positions, embed_dim]
+ * @brief Fused permute + in-place addition: permutes position embeddings according to
+ *        spatial merge pattern and adds them directly into the destination tensor.
+ *
+ * Reorders [num_positions, embed_dim] position embeddings by the spatial merge pattern
+ * and adds each row into the corresponding dst row, avoiding an intermediate tensor.
  */
-ov::Tensor permute_with_spatial_merge(
+void permute_with_spatial_merge_and_add(
     const ov::Tensor& pos_embeds,
+    float* dst_data,
     const std::vector<std::array<size_t, 3>>& grids_thw,
     size_t spatial_merge_size
 ) {
     const size_t num_positions = pos_embeds.get_shape()[0];
     const size_t embed_dim = pos_embeds.get_shape()[1];
     const float* pos_embeds_data = pos_embeds.data<const float>();
-    
-    std::vector<float> permuted_data;
-    permuted_data.reserve(num_positions * embed_dim);
-    
-    size_t offset = 0;
+
+    OPENVINO_ASSERT(spatial_merge_size > 0, "spatial_merge_size must be positive, got ", spatial_merge_size);
+
+    size_t dst_offset = 0;
+    size_t src_offset = 0;
+
     for (const auto& grid_thw : grids_thw) {
         const auto [t, h, w] = grid_thw;
         const size_t hw = h * w;
-        
         const size_t merge_h = h / spatial_merge_size;
         const size_t merge_w = w / spatial_merge_size;
-        
+        OPENVINO_ASSERT(
+            h % spatial_merge_size == 0 && w % spatial_merge_size == 0,
+            "permute_with_spatial_merge_and_add expects h and w divisible by spatial_merge_size. "
+            "Got h=", h, ", w=", w, ", spatial_merge_size=", spatial_merge_size);
+
         for (size_t ti = 0; ti < t; ++ti) {
             for (size_t mhi = 0; mhi < merge_h; ++mhi) {
                 for (size_t mwi = 0; mwi < merge_w; ++mwi) {
@@ -204,23 +220,25 @@ ov::Tensor permute_with_spatial_merge(
                         for (size_t swi = 0; swi < spatial_merge_size; ++swi) {
                             const size_t src_h = mhi * spatial_merge_size + shi;
                             const size_t src_w = mwi * spatial_merge_size + swi;
-                            const size_t src_idx = offset + ti * hw + src_h * w + src_w;
-                            
+                            const size_t src_idx = src_offset + ti * hw + src_h * w + src_w;
+
                             const float* src = pos_embeds_data + src_idx * embed_dim;
-                            permuted_data.insert(permuted_data.end(), src, src + embed_dim);
+                            float* dst = dst_data + dst_offset * embed_dim;
+                            for (size_t d = 0; d < embed_dim; ++d) {
+                                dst[d] += src[d];
+                            }
+                            ++dst_offset;
                         }
                     }
                 }
             }
         }
-        offset += t * hw;
+        src_offset += t * hw;
     }
-    
-    const size_t permuted_len = permuted_data.size() / embed_dim;
-    ov::Tensor result{ov::element::f32, {permuted_len, embed_dim}};
-    std::memcpy(result.data<float>(), permuted_data.data(), permuted_data.size() * sizeof(float));
-    
-    return result;
+    OPENVINO_ASSERT(
+        dst_offset == num_positions,
+        "permute_with_spatial_merge_and_add wrote ", dst_offset,
+        " positions, but num_positions is ", num_positions);
 }
 
 /**
@@ -242,6 +260,66 @@ ov::Tensor create_visual_pos_masks(
     return result;
 }
 
+// Returns true when the user requested the C++ fallback path via the
+// VISION_POS_EMBEDS=CPP environment variable. Otherwise the default (patched model) is used.
+bool is_cpp_pos_embeds_fallback_requested() {
+    const char* env = std::getenv("VISION_POS_EMBEDS");
+    return env && std::strcmp(env, "CPP") == 0;
+}
+
+/**
+ * @brief Patches vision_embeddings_pos model to perform weighted sum on device.
+ *
+ * Original: input [4, N] → model → [4, N, D] (then CPU weighted sum)
+ * Patched:  input [4, N] + weights [4, N] → model → [4, N, D]
+ *           → per-corner Multiply [N,D]×[N,1] → sequential Add → [N, D]
+ */
+std::shared_ptr<ov::Model> patch_weighted_sum_into_pos_model(
+    const std::shared_ptr<ov::Model>& model_org
+) {
+    auto results = model_org->get_results();
+    OPENVINO_ASSERT(results.size() == 1u, "Expected single output from vision_embeddings_pos model");
+    auto orig_output = results[0]->input_value(0); // [4, N, D]
+
+    const ov::PartialShape& out_pshape = orig_output.get_partial_shape();
+    OPENVINO_ASSERT(out_pshape.rank().is_static() && out_pshape.rank().get_length() == 3,
+        "vision_embeddings_pos output must be rank-3 [4, N, D], got rank ", out_pshape.rank());
+    OPENVINO_ASSERT(!out_pshape[0].is_static() || out_pshape[0].get_length() == 4,
+        "vision_embeddings_pos output dim 0 must be 4, got ", out_pshape[0]);
+
+    auto weights_param = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32, ov::PartialShape{4, -1});
+    weights_param->set_friendly_name("weights");
+    weights_param->output(0).get_tensor().set_names({"weights"});
+
+    constexpr size_t num_corners = 4;
+    auto axis0 = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {0});
+    auto sq_axis0 = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {0});
+    auto unsq_axis1 = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1});
+
+    // Split pos_embeds [4,N,D] → 4×[N,D] and weights [4,N] → 4×[N,1]
+    auto split_e = std::make_shared<ov::op::v1::Split>(orig_output, axis0, num_corners);
+    auto split_w = std::make_shared<ov::op::v1::Split>(weights_param, axis0, num_corners);
+
+    // Per-corner: Squeeze → Multiply → sequential Add
+    ov::Output<ov::Node> summed;
+    for (size_t i = 0; i < num_corners; ++i) {
+        auto embed = std::make_shared<ov::op::v0::Squeeze>(split_e->output(i), sq_axis0);     // [N, D]
+        auto weight = std::make_shared<ov::op::v0::Unsqueeze>(
+            std::make_shared<ov::op::v0::Squeeze>(split_w->output(i), sq_axis0), unsq_axis1); // [N, 1]
+        auto weighted = std::make_shared<ov::op::v1::Multiply>(embed, weight);                // [N, D]
+
+        summed = (i == 0) ? weighted->output(0)
+                          : std::make_shared<ov::op::v1::Add>(summed, weighted)->output(0);
+    }
+
+    auto params = model_org->get_parameters();
+    params.push_back(weights_param);
+
+    return std::make_shared<ov::Model>(
+        ov::ResultVector{std::make_shared<ov::op::v0::Result>(summed)}, params);
+}
+
 } // namespace
 
 EncodedVideo VisionEncoderQwen3VL::encode_frames(const std::vector<ov::Tensor>& frames) {
@@ -255,9 +333,13 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config) {
+) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config),
+    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     auto pos_model = utils::singleton_core().read_model(
         model_dir / "openvino_vision_embeddings_pos_model.xml");
+    if (m_use_patched_pos_model) {
+        pos_model = patch_weighted_sum_into_pos_model(pos_model);
+    }
     auto pos_compiled = utils::singleton_core().compile_model(pos_model, device, device_config);
     
     m_ireq_queue_vision_embeddings_pos = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -275,10 +357,14 @@ InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+) : InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config),
+    m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     const auto& [pos_model_str, pos_weights] = 
         utils::get_model_weights_pair(models_map, "vision_embeddings_pos");
     auto pos_model = utils::singleton_core().read_model(pos_model_str, pos_weights);
+    if (m_use_patched_pos_model) {
+        pos_model = patch_weighted_sum_into_pos_model(pos_model);
+    }
     auto pos_compiled = utils::singleton_core().compile_model(pos_model, device, device_config);
     
     m_ireq_queue_vision_embeddings_pos = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -355,46 +441,64 @@ void InputsEmbedderQwen3VL::expand_video_tags_in_prompt(
     }
 }
 
-ov::Tensor InputsEmbedderQwen3VL::get_interpolated_pos_embeds(
-    const std::vector<std::array<size_t, 3>>& grids_thw
+void InputsEmbedderQwen3VL::add_interpolated_pos_embeds(
+    const std::vector<std::array<size_t, 3>>& grids_thw,
+    ov::Tensor& concatenated_embeds
 ) {
     const size_t num_grid_per_side = static_cast<size_t>(
         std::sqrt(static_cast<double>(m_vlm_config.vision_config_num_position_embeddings)));
-    
+
     auto [indices, weights] = get_position_interpolation_indices_and_weights(grids_thw, num_grid_per_side);
-    
+
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_vision_embeddings_pos.get());
     ov::InferRequest& vision_embeddings_pos = infer_request_guard.get();
 
     vision_embeddings_pos.set_tensor("input", indices);
-    vision_embeddings_pos.infer();
-    ov::Tensor pos_embeds = vision_embeddings_pos.get_output_tensor();
 
-    size_t num_positions = pos_embeds.get_shape()[1];
-    size_t embed_dim = pos_embeds.get_shape()[2];
+    ov::Tensor weighted_sum;
+    if (m_use_patched_pos_model) {
+        // Patched model: pass weights, get [N, D] directly on device
+        vision_embeddings_pos.set_tensor("weights", weights);
+        vision_embeddings_pos.infer();
+        weighted_sum = vision_embeddings_pos.get_output_tensor();
+    } else {
+        // Original model: get [4, N, D], do CPU weighted sum
+        vision_embeddings_pos.infer();
+        ov::Tensor pos_embeds = vision_embeddings_pos.get_output_tensor();
 
-    // Weighted sum over 4 corners
-    ov::Tensor weighted_sum{ov::element::f32, {num_positions, embed_dim}};
-    float* weighted_sum_data = weighted_sum.data<float>();
-    std::fill_n(weighted_sum_data, num_positions * embed_dim, 0.0f);
+        size_t num_positions = pos_embeds.get_shape()[1];
+        size_t embed_dim = pos_embeds.get_shape()[2];
 
-    const float* pos_embeds_data = pos_embeds.data<const float>();
-    const float* weights_data = weights.data<const float>();
-    
-    // Apply weights and sum: pos_embeds * weights[:, :, None], then sum over dim 0
-    for (size_t corner = 0; corner < 4; ++corner) {
-        for (size_t pos = 0; pos < num_positions; ++pos) {
-            float w = weights_data[corner * num_positions + pos];
-            const float* src = pos_embeds_data + (corner * num_positions + pos) * embed_dim;
-            float* dst = weighted_sum_data + pos * embed_dim;
-            for (size_t d = 0; d < embed_dim; ++d) {
-                dst[d] += w * src[d];
+        // Weighted sum over 4 corners
+        weighted_sum = ov::Tensor{ov::element::f32, {num_positions, embed_dim}};
+        float* weighted_sum_data = weighted_sum.data<float>();
+        std::fill_n(weighted_sum_data, num_positions * embed_dim, 0.0f);
+
+        const float* pos_embeds_data = pos_embeds.data<const float>();
+        const float* weights_data = weights.data<const float>();
+
+        // Apply weights and sum: pos_embeds * weights[:, :, None], then sum over dim 0
+        for (size_t corner = 0; corner < 4; ++corner) {
+            for (size_t pos = 0; pos < num_positions; ++pos) {
+                float w = weights_data[corner * num_positions + pos];
+                const float* src = pos_embeds_data + (corner * num_positions + pos) * embed_dim;
+                float* dst = weighted_sum_data + pos * embed_dim;
+                for (size_t d = 0; d < embed_dim; ++d) {
+                    dst[d] += w * src[d];
+                }
             }
         }
     }
-    
+
     size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-    return permute_with_spatial_merge(weighted_sum, grids_thw, spatial_merge_size);
+
+    OPENVINO_ASSERT(concatenated_embeds.get_element_type() == ov::element::f32,
+        "concatenated_embeds must be f32, got ", concatenated_embeds.get_element_type());
+    OPENVINO_ASSERT(concatenated_embeds.get_shape() == weighted_sum.get_shape(),
+        "concatenated_embeds shape ", concatenated_embeds.get_shape(),
+        " does not match weighted_sum shape ", weighted_sum.get_shape());
+
+    permute_with_spatial_merge_and_add(weighted_sum, concatenated_embeds.data<float>(), grids_thw, spatial_merge_size);
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddings_merger(
@@ -419,13 +523,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3VL::run_video_image_embeddi
         reordered_images_grid_thw.begin(), reordered_images_grid_thw.end());
     
     if (!combined_grid_thw.empty()) {
-        ov::Tensor pos_embeds = get_interpolated_pos_embeds(combined_grid_thw);
-        
-        float* concatenated_embeds_data = concatenated_embeds.data<float>();
-        const float* pos_embeds_data = pos_embeds.data<const float>();
-        for (size_t i = 0; i < concatenated_embeds.get_size(); ++i) {
-            concatenated_embeds_data[i] += pos_embeds_data[i];
-        }
+        add_interpolated_pos_embeds(combined_grid_thw, concatenated_embeds);
     }
     
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(combined_grid_thw);

@@ -59,3 +59,4 @@ When performing a code review on a Pull Request, additionally follow this protoc
 7. Test Coverage: ensure that new features or changes have corresponding tests.
 8. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
 9. Helper scripts shouldn't be committed.
+10. ABI stability isn't required.
