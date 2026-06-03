@@ -13,9 +13,9 @@ Because validation is parallel over the candidate length, each accepted draft to
 
 | Strategy | Drafter | Strength | Configured by |
 |---|---|---|---|
-| Speculative Decoding (Fast Draft) | Smaller LLM | General-purpose, robust speedup | `draft_model(...)` |
-| Prompt Lookup Decoding | n-gram match against prompt | Best when output copies large spans of input (RAG, summarization, code edit) | `prompt_lookup=True` + `max_ngram_size` |
-| EAGLE3 | Custom 1-layer draft head trained on the target's hidden states; supports tree drafting | Highest acceptance rate, tightest target/draft alignment | `draft_model(...)` with an EAGLE3 head + `branching_factor`/`tree_depth` |
+| Speculative Decoding (Fast Draft) | Smaller LLM | General-purpose, robust speedup | `draft_model(...)` + `num_assistant_tokens` or `assistant_confidence_threshold` (CB only) |
+| Prompt Lookup Decoding | n-gram match against prompt | Best when output copies large spans of input (RAG, summarization, code edit) | `prompt_lookup=True` + `num_assistant_tokens` + `max_ngram_size` |
+| EAGLE3 | Custom 1-layer draft head trained on the target's hidden states; supports tree drafting | Highest acceptance rate, tightest target/draft alignment | `draft_model(...)` with an EAGLE3 head + `num_assistant_tokens` + `branching_factor`/`tree_depth` |
 
 All three are usable with the `LLMPipeline` Python and C++ APIs and are supported on the Continuous Batching backend; speculative decoding and prompt lookup are also supported on the Stateful backend.
 
