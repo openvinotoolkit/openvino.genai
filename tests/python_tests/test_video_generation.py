@@ -131,20 +131,39 @@ class TestText2VideoPipelineGenerate:
         assert result.video is not None
 
     def test_guidance_rescale_differs_from_no_rescale(self, video_generation_model):
+        import numpy as np
+
+        generator_seed = 42
+        common_kwargs = dict(
+            **self.GENERATE_KWARGS,
+            negative_prompt="bad quality",
+            guidance_scale=3.0,
+        )
+
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        common_kwargs = dict(**self.GENERATE_KWARGS, negative_prompt="bad quality", guidance_scale=3.0)
+
         result_no_rescale = pipe.generate(
-            "test prompt", **common_kwargs, guidance_rescale=0.0, generator=ov_genai.CppStdGenerator(42)
+            "test prompt",
+            **common_kwargs,
+            guidance_rescale=0.0,
+            generator=ov_genai.CppStdGenerator(generator_seed),
         )
         result_rescaled = pipe.generate(
-            "test prompt", **common_kwargs, guidance_rescale=0.7, generator=ov_genai.CppStdGenerator(42)
+            "test prompt",
+            **common_kwargs,
+            guidance_rescale=0.7,
+            generator=ov_genai.CppStdGenerator(generator_seed),
         )
-        assert not np.array_equal(np.array(result_no_rescale.video), np.array(result_rescaled.video)), (
+
+        frames_no_rescale = np.array(result_no_rescale.video)
+        frames_rescaled = np.array(result_rescaled.video)
+        assert not np.array_equal(frames_no_rescale, frames_rescaled), (
             "guidance_rescale=0.7 should produce different output than guidance_rescale=0.0"
         )
 
     def test_generate_with_callback(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+
         callback_calls = []
 
         def callback(step, num_steps, latent):
