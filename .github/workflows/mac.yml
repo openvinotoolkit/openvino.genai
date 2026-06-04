@@ -101,7 +101,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       CMAKE_GENERATOR: Ninja
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -221,7 +221,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14-xlarge
+    runs-on: macos-15-xlarge
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -330,7 +330,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -387,7 +387,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
@@ -502,7 +502,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -580,7 +580,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -678,7 +678,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -750,7 +750,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-14
+    runs-on: macos-15
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
