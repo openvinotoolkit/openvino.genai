@@ -2674,6 +2674,7 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_chat_history_with_video(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     synthetic_video_32x32_tensor: openvino.Tensor,
@@ -2728,6 +2729,7 @@ def test_videochatflash_qwen_chat_history_with_video(
     )
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_chat_history_mixed_turns(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
@@ -2759,6 +2761,7 @@ def test_videochatflash_qwen_chat_history_mixed_turns(
         ov_videochatflash_qwen_pipe_raw.finish_chat()
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_chat_history_mixed_modalities(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
@@ -2815,6 +2818,7 @@ def test_videochatflash_qwen_chat_history_mixed_modalities(
     )
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_universal_tags_mixed(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
@@ -2840,6 +2844,7 @@ def test_videochatflash_qwen_universal_tags_mixed(
     assert len(res.texts[0]) > 0
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_universal_tags_multiturn(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
@@ -2875,6 +2880,7 @@ def test_videochatflash_qwen_universal_tags_multiturn(
         ov_videochatflash_qwen_pipe_raw.finish_chat()
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_universal_tags_out_of_range(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
@@ -2908,6 +2914,7 @@ def test_videochatflash_qwen_universal_tags_out_of_range(
         )
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_chat_history_multi_media_per_turn(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
@@ -2977,6 +2984,7 @@ def test_videochatflash_qwen_chat_history_multi_media_per_turn(
     )
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_universal_tags_multi_media(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline,
     cat_tensor: openvino.Tensor,
