@@ -11,8 +11,8 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 6) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP] [DRAFT_MODEL_DIR]");
+    if (argc < 3 || argc > 5) {
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP]");
     }
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
@@ -20,17 +20,10 @@ int main(int argc, char* argv[]) try {
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
     std::string device = (argc >= 4) ? argv[3] : "CPU";
-    std::string lookup = (argc >= 5) ? argv[4] : "false";
-    std::string draft_model_dir = (argc == 6) ? argv[5] : "";
-    if (device == "NPU" && !draft_model_dir.empty()) {
-        throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU");
-    }
+    std::string lookup = (argc == 5) ? argv[4] : "false";
     bool prompt_lookup = (lookup == "true");
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
     ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};
-    if (!draft_model_dir.empty()) {
-        properties.insert(ov::genai::draft_model(draft_model_dir, device));
-    }
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
