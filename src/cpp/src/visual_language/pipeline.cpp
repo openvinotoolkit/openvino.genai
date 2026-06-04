@@ -345,6 +345,7 @@ public:
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
+        const auto embeddings_start_time = std::chrono::steady_clock::now();
         auto encoded_images = m_inputs_embedder->encode_images(images);
         auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
@@ -394,7 +395,8 @@ public:
             generation_config,
             perf_metrics,
             streamer,
-            intermediate_remote_tensor
+            intermediate_remote_tensor,
+            embeddings_start_time
         );
 
         EncodedResults& encoded_result = finish_info.results;
@@ -525,6 +527,7 @@ public:
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
+        const auto embeddings_start_time = std::chrono::steady_clock::now();
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
         auto processed_chat_data = chat_context.process(images, videos, videos_metadata);
@@ -572,7 +575,8 @@ public:
             generation_config,
             perf_metrics,
             streamer,
-            intermediate_remote_tensor
+            intermediate_remote_tensor,
+            embeddings_start_time
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
@@ -727,13 +731,13 @@ private:
         GenerationConfig& generation_config,
         VLMPerfMetrics& perf_metrics,
         const StreamerVariant& streamer,
-        const bool use_intermediate_remote_tensor
+        const bool use_intermediate_remote_tensor,
+        const std::chrono::steady_clock::time_point& embeddings_start_time
     ) {
         ov::Tensor inputs_embeds;
         std::optional<ov::Tensor> token_type_ids;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
-        auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
             std::tie(inputs_embeds, token_type_ids) =
                 m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
@@ -758,8 +762,8 @@ private:
                 history_vision_count
             );
         }
-        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-        perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        const auto embeddings_end_time = std::chrono::steady_clock::now();
+        perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(embeddings_end_time - embeddings_start_time));
 
         if (m_is_npu) {
             // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
