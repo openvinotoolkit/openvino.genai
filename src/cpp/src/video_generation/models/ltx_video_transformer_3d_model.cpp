@@ -91,8 +91,8 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
         adapters->set_tensor_name_prefix(m_lora_prefix);
         m_adapter_controller = AdapterController(m_model, *adapters, device);
     }
-    // LTX-Video transformer is precision-sensitive: bf16 (CPU 'dynamic' default on
-    // AMX-BF16) compounds ~4% per-step error into grey/static output over 50 steps.
+    // LTX-Video transformer is sensitive to precision: CPU bf16 (AMX-BF16 default)
+    // compounds quantization error over inference steps, producing grey/static output.
     ov::AnyMap effective_properties = *filtered_properties;
     if (device.find("CPU") != std::string::npos &&
         effective_properties.find(ov::hint::inference_precision.name()) == effective_properties.end()) {
@@ -179,6 +179,11 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
                                                             int64_t tokenizer_model_max_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
+    // hidden_states=latent_model_input,
+    // timestep=timestep,
+    // encoder_hidden_states=prompt_embeds,
+    // pooled_projections=pooled_prompt_embeds,
+
     size_t patch_size = get_config().patch_size;
     size_t patch_size_t = get_config().patch_size_t;
 
@@ -194,7 +199,7 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            // Rank-1 [B] (default T2V export) or rank-2 [B, S] (I2V export with per-token conditioning).
+            // Rank-1 [B] (legacy export) or rank-2 [B, S] (current export, per-token conditioning).
             name_to_shape[input_name][0] = batch_size;
             if (name_to_shape[input_name].size() >= 2) {
                 name_to_shape[input_name][1] = video_sequence_length;

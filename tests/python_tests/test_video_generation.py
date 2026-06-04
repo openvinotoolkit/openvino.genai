@@ -152,6 +152,7 @@ class TestText2VideoPipelineGenerate:
             return False
 
         result = pipe.generate("test prompt", **self.GENERATE_KWARGS, callback=callback)
+
         assert result.video is not None
         assert len(callback_calls) == 2
         assert callback_calls[0] == (0, 2)
@@ -166,6 +167,7 @@ class TestText2VideoPipelineGenerate:
         result = pipe.generate(
             "test prompt", height=32, width=32, num_frames=9, num_inference_steps=5, callback=callback
         )
+
         assert result.video is not None
 
 
@@ -184,7 +186,9 @@ class TestText2VideoPipelineConfig:
         config.width = 64
         config.num_inference_steps = 3
         pipe.set_generation_config(config)
-        assert pipe.get_generation_config().num_frames == 17
+
+        retrieved_config = pipe.get_generation_config()
+        assert retrieved_config.num_frames == 17
 
 
 class TestVideoGenerationResult:
@@ -204,6 +208,7 @@ class TestGenerators:
     def test_cpp_std_generator(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         generator = ov_genai.CppStdGenerator(42)
+
         result = pipe.generate(
             "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, generator=generator
         )

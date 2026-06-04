@@ -92,7 +92,6 @@ static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
 
-
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.
  * @param generation_config An video generation config to convert to property-like format
