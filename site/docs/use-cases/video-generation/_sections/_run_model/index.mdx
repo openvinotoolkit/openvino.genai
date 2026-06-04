@@ -1,10 +1,15 @@
 import Text2VideoCPP from './_text2video_cpp.mdx';
 import Text2VideoPython from './_text2video_python.mdx';
+import Image2VideoCPP from './_image2video_cpp.mdx';
+import Image2VideoPython from './_image2video_python.mdx';
 
 ## Run Model Using OpenVINO GenAI
 
-OpenVINO GenAI supports the following video generation pipeline:
+OpenVINO GenAI supports the following video generation pipelines:
 - [`Text2VideoPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Text2VideoPipeline.html) for creating videos from text prompts.
+- [`Image2VideoPipeline`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.Image2VideoPipeline.html) for creating videos conditioned on an input image and text prompt.
+
+### Text to Video
 
 <LanguageTabs>
     <TabItemPython>
@@ -24,6 +29,33 @@ OpenVINO GenAI supports the following video generation pipeline:
             </TabItem>
             <TabItem label="GPU" value="gpu">
                 <Text2VideoCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+### Image to Video
+
+The `Image2VideoPipeline` requires a model exported with `--task image-to-video` so that the `vae_encoder` subdirectory is present alongside the standard model files.
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2VideoPython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2VideoPython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <Image2VideoCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <Image2VideoCPP device="GPU" />
             </TabItem>
         </Tabs>
     </TabItemCpp>
