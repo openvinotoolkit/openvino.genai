@@ -401,8 +401,10 @@ class LTXPipeline {
         ov::Tensor resized = m_image_resizer->execute(img, config.height, config.width);
         ov::Tensor processed = m_image_processor->execute(resized);
 
-        // Own the tensor before re-input: ImageProcessor returns an aliased buffer; reusing it
-        // as a set_input_tensor() target for another infer() causes a hang.
+        OPENVINO_ASSERT(processed.get_element_type() == ov::element::f32,
+                        "ImageProcessor must return f32, got ", processed.get_element_type());
+        OPENVINO_ASSERT(processed.get_shape().size() == 4,
+                        "ImageProcessor must return rank-4 [N,C,H,W], got rank ", processed.get_shape().size());
         const auto& proc_shape = processed.get_shape();
         ov::Tensor encoder_input(ov::element::f32, {proc_shape[0], proc_shape[1], 1, proc_shape[2], proc_shape[3]});
         std::memcpy(encoder_input.data<float>(), processed.data<const float>(),
@@ -756,6 +758,13 @@ public:
 
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
 
+        const size_t B_ts = latent_shape_cfg[0];
+        ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
+        float* timestep_data = timestep.data<float>();
+        for (size_t b = 0; b < B_ts; ++b) {
+            std::fill_n(timestep_data + b * video_sequence_length, tokens_per_frame, 0.0f);
+        }
+
         ov::Tensor noisy_residual_tensor(ov::element::f32, {});
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
@@ -776,17 +785,10 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            // timestep = t * (1 - conditioning_mask): frame-0 tokens see t=0 (clean anchor),
-            // others see t=current. Required by the rank-2 timestep export.
             const float t = timesteps[inference_step];
-            const size_t B_ts = latent_cfg.get_shape()[0];
-            ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
-            float* timestep_data = timestep.data<float>();
             for (size_t b = 0; b < B_ts; ++b) {
-                float* row = timestep_data + b * video_sequence_length;
-                for (size_t i = 0; i < video_sequence_length; ++i) {
-                    row[i] = t * (1.0f - conditioning_mask[i]);
-                }
+                std::fill_n(timestep_data + b * video_sequence_length + tokens_per_frame,
+                            video_sequence_length - tokens_per_frame, t);
             }
 
             ov::Tensor noise_pred_tensor;
