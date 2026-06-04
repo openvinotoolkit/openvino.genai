@@ -275,8 +275,8 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
-// LTX-Video is precision-sensitive: bf16 (CPU 'dynamic' default on AMX-BF16) compounds
-// ~4% per-step error into grey/static output over 50 denoising steps.
+// LTX-Video is sensitive to precision: CPU bf16 (AMX-BF16 default) compounds
+// quantization error over denoising steps, producing grey/static output.
 inline ov::AnyMap with_cpu_fp32_default(const std::string& device, const ov::AnyMap& properties) {
     if (device.find("CPU") == std::string::npos ||
         properties.find(ov::hint::inference_precision.name()) != properties.end()) {
@@ -744,8 +744,7 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        // Frame-0 occupies the first `tokens_per_frame` tokens in the packed [B, S, D] layout
-        // (pack permutes F-outermost). Mask is 1 at frame-0, 0 elsewhere.
+        // Frame-0 tokens are first in the packed [B, S, D] layout (pack_latents is F-outermost).
         const size_t tokens_per_frame =
             (m_latent_height / transformer_spatial_patch_size) *
             (m_latent_width  / transformer_spatial_patch_size);
@@ -791,6 +790,7 @@ public:
                             video_sequence_length - tokens_per_frame, t);
             }
 
+            // Use TaylorSeer if enabled and caching is appropriate
             ov::Tensor noise_pred_tensor;
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
                 noise_pred_tensor = ts_state.predict(inference_step);
@@ -835,8 +835,7 @@ public:
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            // Frame-0 stays exactly init_latents throughout the loop (matches diffusers
-            // LTXImageToVideoPipeline); discard the scheduler's update to those tokens.
+            // Frame-0 tokens are pinned to init_latents; discard the scheduler's update to them.
             {
                 const size_t D = latent.get_shape()[2];
                 const size_t B_l = latent.get_shape()[0];
@@ -989,7 +988,7 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        // The I2V export uses rank-2 timestep [B, S]; T2V default export is rank-1 [B].
+        // Rank-1 [B] (legacy export) or rank-2 [B, S] (current export, per-token conditioning).
         ov::Shape timestep_shape;
         const auto& timestep_partial = m_transformer->get_timestep_partial_shape();
         if (timestep_partial.size() == 2) {
@@ -1033,6 +1032,7 @@ public:
 
             std::fill_n(timestep_data, timestep.get_size(), timesteps[inference_step]);
 
+            // Use TaylorSeer if enabled and caching is appropriate
             ov::Tensor noise_pred_tensor;
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
                 noise_pred_tensor = ts_state.predict(inference_step);
