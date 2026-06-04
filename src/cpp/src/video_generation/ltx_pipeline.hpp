@@ -566,9 +566,9 @@ public:
             m_vae = std::make_shared<AutoencoderKLLTXVideo>(
                 models_dir / "vae_encoder", models_dir / "vae_decoder", device, properties);
             m_image_resizer = std::make_shared<ImageResizer>(
-                "CPU", ov::element::u8, "NHWC",
+                device, ov::element::u8, "NHWC",
                 ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
-            m_image_processor = std::make_shared<ImageProcessor>("CPU", true);
+            m_image_processor = std::make_shared<ImageProcessor>(device, true);
         } else {
             m_vae = std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties);
         }
@@ -595,9 +595,9 @@ public:
         cloned->m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_vae->clone());
         if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
             cloned->m_image_resizer = std::make_shared<ImageResizer>(
-                "CPU", ov::element::u8, "NHWC",
+                m_vae_device, ov::element::u8, "NHWC",
                 ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
-            cloned->m_image_processor = std::make_shared<ImageProcessor>("CPU", true);
+            cloned->m_image_processor = std::make_shared<ImageProcessor>(m_vae_device, true);
         }
         return cloned;
     }
