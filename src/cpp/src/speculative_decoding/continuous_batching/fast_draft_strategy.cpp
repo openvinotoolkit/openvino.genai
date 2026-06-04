@@ -44,7 +44,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
                                    allow_cache_rotation,
-                                   allow_xattention,
+                                   true,
                                    allow_adaptive_rkv,
                                    main_allow_qq_bias).run_on_model(main_model);
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
@@ -61,7 +61,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
 
     ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
                                draft_scheduler_config = is_draft_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
-
+    draft_scheduler_config.use_sparse_attention = false;
     if (is_draft_scheduler_undefined) {
         // split KV cache to 2 caches for main and draft models
         auto compute_total_hidden_size = [] (const std::shared_ptr<ov::Model>& model) -> size_t {
