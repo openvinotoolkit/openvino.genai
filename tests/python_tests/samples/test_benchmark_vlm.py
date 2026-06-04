@@ -5,8 +5,10 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, convert_model
 from test_utils import run_sample
+
+convert_draft_model = convert_model
 
 class TestBenchmarkVLM:
     @pytest.mark.vlm
@@ -28,4 +30,51 @@ class TestBenchmarkVLM:
         # Run Python benchmark sample
         benchmark_script = SAMPLES_PY_DIR / 'visual_language_chat/benchmark_vlm.py'
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "-i", download_test_content, "-n", num_iter]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.vlm
+    @pytest.mark.samples
+    @pytest.mark.eagle3_decoding
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model, download_test_content",
+        [
+            pytest.param("tiny-random-qwen3-vl-layer10", "tiny-random-qwen3-vl-eagle3", "images/image.png"),
+        ],
+        indirect=["convert_model", "convert_draft_model", "download_test_content"],
+    )
+    def test_benchmark_eagle3_vlm(self, convert_model, convert_draft_model, download_test_content):
+        num_iter = "3"
+        num_assistant_tokens = "5"
+
+        benchmark_sample = SAMPLES_CPP_DIR / "benchmark_vlm"
+        benchmark_cpp_command = [
+            benchmark_sample,
+            "-m",
+            convert_model,
+            "--dm",
+            convert_draft_model,
+            "--nat",
+            num_assistant_tokens,
+            "-i",
+            download_test_content,
+            "-n",
+            num_iter,
+        ]
+        run_sample(benchmark_cpp_command)
+
+        benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-dm",
+            convert_draft_model,
+            "-nat",
+            num_assistant_tokens,
+            "-i",
+            download_test_content,
+            "-n",
+            num_iter,
+        ]
         run_sample(benchmark_py_command)
