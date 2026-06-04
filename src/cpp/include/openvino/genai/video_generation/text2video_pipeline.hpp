@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <filesystem>
+
 #include "openvino/genai/video_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/image_generation/scheduler.hpp"

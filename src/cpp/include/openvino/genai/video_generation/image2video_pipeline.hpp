@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <filesystem>
+
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
 
 namespace ov::genai {

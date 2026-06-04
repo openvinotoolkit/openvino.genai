@@ -5,7 +5,6 @@
 
 #include <cmath>
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 #include <numeric>
 
@@ -589,9 +588,16 @@ public:
     std::shared_ptr<LTXPipeline> clone() {
         OPENVINO_ASSERT(m_is_compiled, "Cannot clone an uncompiled LTXPipeline");
         auto cloned = std::make_shared<LTXPipeline>(*this);
+        cloned->m_scheduler = cast_scheduler(Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
         cloned->m_t5_text_encoder = m_t5_text_encoder->clone();
         cloned->m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_transformer->clone());
         cloned->m_vae = std::make_shared<AutoencoderKLLTXVideo>(m_vae->clone());
+        if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
+            cloned->m_image_resizer = std::make_shared<ImageResizer>(
+                "CPU", ov::element::u8, "NHWC",
+                ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
+            cloned->m_image_processor = std::make_shared<ImageProcessor>("CPU", true);
+        }
         return cloned;
     }
 
@@ -720,7 +726,7 @@ public:
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size);
 
-        const size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
+        const size_t video_sequence_length = latent.get_shape().at(1);
         m_scheduler->set_timesteps(video_sequence_length,
                                    merged_generation_config.num_inference_steps,
                                    1.0f);
@@ -963,8 +969,7 @@ public:
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size);
 
-        // Prepare timesteps
-        size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
+        size_t video_sequence_length = latent.get_shape().at(1);
         m_scheduler->set_timesteps(video_sequence_length,
                                    merged_generation_config.num_inference_steps,
                                    1.0f);
