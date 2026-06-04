@@ -150,18 +150,26 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // remove first token from input_ids to create the draft model input
     // refer to: https://github.com/SafeAILab/EAGLE/blob/main/eagle/model/cnets.py#L617
     ov::Tensor draft_input = create_draft_input(input_ids);
+    std::optional<ov::Tensor> draft_token_type_ids = token_type_ids;
+    std::optional<ov::Tensor> draft_prompt_ids = prompt_ids;
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
+    if (draft_token_type_ids.has_value()) {
+        draft_token_type_ids = trim_first_token_sequence_tensor(*draft_token_type_ids, "token_type_ids");
+    }
+    if (draft_prompt_ids.has_value()) {
+        draft_prompt_ids = trim_first_token_sequence_tensor(*draft_prompt_ids, "prompt_ids");
+    }
     // Temporarily set draft position_ids/rope_delta (first token trimmed) for the draft pipeline.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder) {
         std::tie(main_position_ids, main_rope_delta) = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
-        ov::Tensor draft_position_ids = trim_first_token_position_ids(main_position_ids);
+        ov::Tensor draft_position_ids = trim_first_token_sequence_tensor(main_position_ids, "position_ids");
         m_inputs_embedder->set_position_ids(draft_position_ids);
         m_inputs_embedder->set_rope_delta(compute_rope_delta(draft_position_ids));
     }
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, token_type_ids, prompt_ids)});
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_token_type_ids, draft_prompt_ids)});
     // Restore main position_ids/rope_delta before adding to the main pipeline.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
@@ -245,19 +253,22 @@ int64_t ContinuousBatchingPipeline::Eagle3DecodingImpl::compute_rope_delta(const
     return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
 }
 
-ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_position_ids(const ov::Tensor& position_ids) {
-    const ov::Shape shape = position_ids.get_shape();
+ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_sequence_tensor(const ov::Tensor& tensor,
+                                                                                             const char* tensor_name) {
+    const ov::Shape shape = tensor.get_shape();
     OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
-                    "Expected position_ids rank 2 or 3 for Eagle3 draft path.");
+                    "Expected ", tensor_name, " rank 2 or 3 for Eagle3 draft path.");
 
     const size_t seq_axis = shape.size() == 3 ? 2 : 1;
-    OPENVINO_ASSERT(shape[seq_axis] > 1, "position_ids sequence length must be greater than 1 for Eagle3 draft path.");
+    OPENVINO_ASSERT(shape[seq_axis] > 1,
+                    tensor_name,
+                    " sequence length must be greater than 1 for Eagle3 draft path.");
 
     ov::Coordinate begin(shape.size(), 0);
     ov::Coordinate end(shape.begin(), shape.end());
     begin[seq_axis] = 1;
 
     // Return a ROI tensor skipping the first token along the sequence axis.
-    return ov::Tensor(position_ids, begin, end);
+    return ov::Tensor(tensor, begin, end);
 }
 }  // namespace ov::genai
