@@ -1,6 +1,6 @@
 # OpenVINO GenAI Video Generation C++ Samples
 
-These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The samples feature `ov::genai::Text2VideoPipeline` and `ov::genai::Image2VideoPipeline` for generating videos from text prompts, or text prompts combined with conditioning images, using models like LTX-Video.
+These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The samples feature `openvino_genai.Text2VideoPipeline` and `openvino_genai.Image2VideoPipeline` for generating videos from text prompts, or text prompts combined with conditioning images, using models like LTX-Video.
 The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
 
  - [`text2video.cpp`](./text2video.cpp) demonstrates basic text to video generation.
