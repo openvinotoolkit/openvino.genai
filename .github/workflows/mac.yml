@@ -101,7 +101,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15
+    runs-on: macos-14
     env:
       CMAKE_GENERATOR: Ninja
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -221,7 +221,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15-xlarge
+    runs-on: macos-14-xlarge
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -288,7 +288,7 @@ jobs:
       - name: Build GenAI Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON -Wno-deprecated" \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON -DCMAKE_CXX_FLAGS=-Wno-deprecated-declarations" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
@@ -330,7 +330,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15
+    runs-on: macos-14
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -387,7 +387,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15
+    runs-on: macos-14
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
@@ -502,7 +502,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15
+    runs-on: macos-14
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -580,7 +580,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15
+    runs-on: macos-14
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -678,7 +678,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15
+    runs-on: macos-14
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -750,7 +750,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: macos-15
+    runs-on: macos-14
 
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
