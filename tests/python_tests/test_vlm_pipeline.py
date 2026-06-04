@@ -1372,6 +1372,42 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_auto_embeddings_duration(cat_tensor):
+    models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048},
+            "AUTO": {openvino.properties.device.priorities: "CPU"},
+        }
+    }
+
+    npuw_pipe = VLMPipeline(models_path, "NPU", config=properties)
+    cpu_pipe = VLMPipeline(models_path, "CPU")
+
+    npuw_generation_config = _setup_generation_config(npuw_pipe)
+    cpu_generation_config = _setup_generation_config(cpu_pipe)
+
+    npuw_res = npuw_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=npuw_generation_config)
+    cpu_res = cpu_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=cpu_generation_config)
+
+    npuw_perf_metrics = npuw_res.perf_metrics
+    cpu_perf_metrics = cpu_res.perf_metrics
+
+    npuw_embeddings_mean = npuw_perf_metrics.get_prepare_embeddings_duration().mean
+    cpu_embeddings_mean = cpu_perf_metrics.get_prepare_embeddings_duration().mean
+    npuw_embeddings_std = npuw_perf_metrics.get_prepare_embeddings_duration().std
+    cpu_embeddings_std = cpu_perf_metrics.get_prepare_embeddings_duration().std
+
+    assert 0 < npuw_embeddings_mean
+    assert 0 < cpu_embeddings_mean
+    assert npuw_embeddings_std == 0.0
+    assert cpu_embeddings_std == 0.0
+
+    ratio = npuw_embeddings_mean / cpu_embeddings_mean
+    assert 0.8 <= ratio <= 1.2
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_auto_config(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
@@ -2713,6 +2749,7 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_rejects_image_input(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
 ):
@@ -2721,6 +2758,7 @@ def test_videochatflash_qwen_rejects_image_input(
         ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 @pytest.mark.parametrize(
     "config",
     [
