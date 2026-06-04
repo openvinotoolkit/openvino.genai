@@ -184,8 +184,7 @@ def test_tts_kokoro(model_id, model_type, speech_voice, speech_language, optimum
 )
 def test_tts_speecht5_default_speaker_embeddings(tmp_path):
     if sys.platform == "darwin":
-        pytest.xfail("CVS-187265")
-
+        pytest.xfail("Ticket 184323")
     model_id = "microsoft/speecht5_tts"
     model_type = "speech-generation"
     run_test(
