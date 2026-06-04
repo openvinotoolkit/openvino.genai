@@ -99,11 +99,9 @@ class TestText2VideoPipelineConstructor:
 
 
 class TestText2VideoPipelineGenerate:
-    GENERATE_KWARGS = dict(height=32, width=32, num_frames=9, num_inference_steps=2)
-
     def test_generate_basic(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        result = pipe.generate("test prompt", **self.GENERATE_KWARGS)
+        result = pipe.generate("test prompt", height=32, width=32, num_frames=9, num_inference_steps=2)
         assert result is not None
         assert result.video is not None
 
@@ -111,8 +109,11 @@ class TestText2VideoPipelineGenerate:
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         result = pipe.generate(
             "test prompt",
-            **self.GENERATE_KWARGS,
             negative_prompt="bad quality",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
             guidance_scale=3.0,
         )
         assert result is not None
@@ -122,8 +123,11 @@ class TestText2VideoPipelineGenerate:
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         result = pipe.generate(
             "test prompt",
-            **self.GENERATE_KWARGS,
             negative_prompt="bad quality",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
             guidance_scale=3.0,
             guidance_rescale=0.7,
         )
@@ -135,8 +139,11 @@ class TestText2VideoPipelineGenerate:
 
         generator_seed = 42
         common_kwargs = dict(
-            **self.GENERATE_KWARGS,
             negative_prompt="bad quality",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
             guidance_scale=3.0,
         )
 
@@ -170,7 +177,9 @@ class TestText2VideoPipelineGenerate:
             callback_calls.append((step, num_steps))
             return False
 
-        result = pipe.generate("test prompt", **self.GENERATE_KWARGS, callback=callback)
+        result = pipe.generate(
+            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, callback=callback
+        )
 
         assert result.video is not None
         assert len(callback_calls) == 2
