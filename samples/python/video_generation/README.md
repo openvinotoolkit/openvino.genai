@@ -97,7 +97,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
   Example (download the overture image first):
   ```bash
   wget -O overture-creations.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png
-  python image2video.py ./ltx_video_ov_i2v/FP32 overture-creations.png "A dog sitting on a bench in the park"
+  python image2video.py ./ltx_video_ov_i2v/FP32 overture-creations.png "A golden retriever in a sunlit bedroom slowly stands up, stretches its front paws forward, yawns wide showing pink tongue, then turns its head to look at the camera, ears perking up alertly, tail beginning to wag, warm afternoon window light, cinematic shallow depth of field, smooth handheld camera motion, photorealistic, detailed fur"
   ```
 
 ### LoRA Text to Video Sample (`lora_text2video.py`)
