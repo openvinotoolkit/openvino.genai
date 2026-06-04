@@ -4,19 +4,15 @@
 
 import argparse
 import numpy as np
-import cv2
 import openvino as ov
 import openvino_genai
+from PIL import Image
 from video_utils import save_video
 
 
-def load_image(image_path: str, height: int, width: int) -> ov.Tensor:
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError(f"Failed to read image: {image_path}")
-    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LANCZOS4)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return ov.Tensor(img)  # [H, W, 3] uint8
+def read_image(path: str) -> ov.Tensor:
+    pic = Image.open(path).convert("RGB")
+    return ov.Tensor(np.array(pic))  # [H, W, 3] uint8; pipeline handles resizing
 
 
 def main():
@@ -28,19 +24,18 @@ def main():
 
     pipe = openvino_genai.Image2VideoPipeline(args.model_dir, "CPU")  # GPU can be used as well
 
-    height, width, frame_rate = 480, 704, 25
-    image = load_image(args.image, height, width)
+    frame_rate = 25
 
     def callback(step, num_steps, latent):
         print(f"Generation step {step + 1} / {num_steps}")
         return False
 
     output = pipe.generate(
-        image,
+        read_image(args.image),
         args.prompt,
         negative_prompt="static, motionless, frozen, still photograph, no movement, low quality, blurry, distorted",
-        height=height,
-        width=width,
+        height=480,
+        width=704,
         num_frames=161,
         num_inference_steps=50,
         num_videos_per_prompt=1,
