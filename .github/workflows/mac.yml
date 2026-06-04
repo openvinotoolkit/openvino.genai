@@ -288,7 +288,7 @@ jobs:
       - name: Build GenAI Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_SUPPRESS_DEVELOPER_WARNINGS=ON -DCMAKE_CXX_FLAGS=-Wno-deprecated-declarations" \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_PARALLEL_LEVEL=2" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
