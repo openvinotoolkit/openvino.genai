@@ -138,7 +138,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, token_type_ids, prompt_ids, lm_extra_inputs)});
+    // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
+    // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids, draft_sampling_params, token_type_ids, prompt_ids)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
@@ -198,6 +200,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto update_result = m_main_pipeline->update_request(candidate.first, candidate.second, false);
         update_sequence_info.insert({{candidate.first, update_result}});
     }
+    m_main_pipeline->sync_generated_embeddings();
 
     // to ensure extras steps, if any, are finished before main model generation
     if (m_sync_future.valid()) {
@@ -216,6 +219,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
+    m_draft_pipeline->sync_generated_embeddings();
 
     // finish draft request if the generation was completed
     for (const auto& draft_request : draft_generated_requests) {
@@ -301,7 +305,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, prompt_ids, strategy);
+    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 SpeculativeDecodingMetrics

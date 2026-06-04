@@ -49,6 +49,14 @@ def weight_0_1(value):
 def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
+    parser.add_argument(
+        "-dm", "--draft_model", type=str, default="", help="Path to draft model (enables speculative decoding when set)"
+    )
+    parser.add_argument("-nat", "--num_assistant_tokens", type=int, default=15, help="Number of assistant tokens")
+    parser.add_argument(
+        "-bf", "--branching_factor", type=int, default=8, help="Branching factor for tree drafting (EAGLE3)"
+    )
+    parser.add_argument("-td", "--depth", type=int, default=4, help="Tree depth for tree drafting (EAGLE3)")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
@@ -67,6 +75,9 @@ def main():
         type=weight_0_1,
         help="(optional): Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
         "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
+    )
+    parser.add_argument(
+        "--cm_path", action="store_true", help="(optional): Use CM path scheduler config (default: false)."
     )
 
     args = parser.parse_args()
@@ -94,10 +105,18 @@ def main():
 
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
+    config.ignore_eos = True
     if args.pruning_ratio is not None:
         config.pruning_ratio = args.pruning_ratio
     if args.relevance_weight is not None:
         config.relevance_weight = args.relevance_weight
+
+    properties = {}
+    if args.draft_model:
+        properties["draft_model"] = ov_genai.draft_model(args.draft_model, device)
+        config.num_assistant_tokens = args.num_assistant_tokens
+        config.branching_factor = args.branching_factor
+        config.tree_depth = args.depth
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)
@@ -106,7 +125,15 @@ def main():
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
-        pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
+        if args.cm_path:
+            # CM PA path w/o sparse
+            sparse_attention_config = ov_genai.SparseAttentionConfig()
+            sparse_attention_config.mode = ov_genai.SparseAttentionMode.XATTENTION
+            sparse_attention_config.xattention_threshold = 100.0
+            scheduler_config.use_sparse_attention = True
+            scheduler_config.sparse_attention_config = sparse_attention_config
+        properties["scheduler_config"] = scheduler_config
+        pipe = ov_genai.VLMPipeline(models_path, device, **properties)
 
     input_data = pipe.get_tokenizer().encode(prompt)
     prompt_token_size = input_data.input_ids.get_shape()[1]
@@ -134,6 +161,38 @@ def main():
     print(f"TTFT: {perf_metrics.get_ttft().mean:.2f} ± {perf_metrics.get_ttft().std:.2f} ms")
     print(f"TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms")
     print(f"Throughput : {perf_metrics.get_throughput().mean:.2f} ± {perf_metrics.get_throughput().std:.2f} tokens/s")
+
+    sd_perf_metrics = res.extended_perf_metrics
+    if sd_perf_metrics is not None and hasattr(sd_perf_metrics, "main_model_metrics"):
+        main_model_metrics = sd_perf_metrics.main_model_metrics
+        print("\nMAIN MODEL")
+        print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms")
+        print(f"  TTFT: {main_model_metrics.get_ttft().mean:.2f} ± {main_model_metrics.get_ttft().std:.2f} ms")
+        print(f"  TTST: {main_model_metrics.get_ttst().mean:.2f} ± {main_model_metrics.get_ttst().std:.2f} ms/token")
+        print(
+            f"  TPOT: {main_model_metrics.get_tpot().mean:.2f} ± {main_model_metrics.get_tpot().std:.2f} ms/iteration"
+        )
+        print(
+            f"  AVG Latency: {main_model_metrics.get_latency().mean:.2f} ± {main_model_metrics.get_latency().std:.2f} ms/token"
+        )
+        print(f"  Num generated token: {main_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(main_model_metrics.raw_metrics.m_durations)}")
+        print(f"  Num accepted token: {sd_perf_metrics.get_num_accepted_tokens()} tokens")
+
+        draft_model_metrics = sd_perf_metrics.draft_model_metrics
+        print("\nDRAFT MODEL")
+        print(f"  Generate time: {draft_model_metrics.get_generate_duration().mean:.2f} ms")
+        print(f"  TTFT: {draft_model_metrics.get_ttft().mean:.2f} ms")
+        print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f} ms/token")
+        print(f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f} ± {draft_model_metrics.get_tpot().std:.2f} ms/token")
+        print(
+            f"  AVG Latency: {draft_model_metrics.get_latency().mean:.2f} ± {draft_model_metrics.get_latency().std:.2f} ms/iteration"
+        )
+        print(f"  Num generated token: {draft_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(draft_model_metrics.raw_metrics.m_durations)}")
+        main_iters = len(main_model_metrics.raw_metrics.m_durations)
+        accept_length = (sd_perf_metrics.get_num_generated_tokens() / main_iters) if main_iters else 0.0
+        print(f"  Accept length: {accept_length:.2f}")
 
 
 if __name__ == "__main__":

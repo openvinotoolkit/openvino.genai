@@ -26,6 +26,28 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     initialize_pipeline(model, scheduler_config, device, plugin_config);
 }
 
+ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
+    const std::shared_ptr<ov::Model>& model,
+    std::shared_ptr<InputsEmbedder> inputs_embedder,
+    const Tokenizer& tokenizer,
+    const GenerationConfig& generation_config,
+    const SchedulerConfig& scheduler_config,
+    const std::string& device,
+    const ov::AnyMap& plugin_config,
+    bool is_validation_mode_enabled)
+    : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                   tokenizer,
+                                                   generation_config,
+                                                   scheduler_config,
+                                                   device,
+                                                   plugin_config,
+                                                   is_validation_mode_enabled) {
+    m_inputs_embedder = inputs_embedder;
+    // Note: set_inputs_embedder also sets the embedding model internally.
+    m_model_runner->set_inputs_embedder(inputs_embedder);
+    m_model_input_type = ModelInputType::EMBEDDINGS;
+}
+
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::finish_request(SequenceGroup::Ptr request) {
     for (const auto& sequence: request->get_sequences()) {
@@ -448,6 +470,37 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         break;
     }
     return result;
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::sync_generated_embeddings() {
+    if (m_model_input_type != ModelInputType::EMBEDDINGS || m_requests.empty()) {
+        return;
+    }
+
+    Scheduler::Output scheduler_output;
+    scheduler_output.m_scheduled_sequence_groups_ids.reserve(m_requests.size());
+
+    for (size_t request_idx = 0; request_idx < m_requests.size(); ++request_idx) {
+        const auto& request = m_requests[request_idx];
+        if (request->get_sequence_group_type() != SequenceGroupType::EMBEDDINGS) {
+            continue;
+        }
+
+        bool has_missing_embeddings = false;
+        for (const auto& sequence : request->get_running_sequences()) {
+            OPENVINO_ASSERT(sequence->get_generated_len() >= sequence->get_generated_ids_embeds().size(),
+                            "Generated embeddings count exceeds generated ids count.");
+            has_missing_embeddings |= sequence->get_generated_len() != sequence->get_generated_ids_embeds().size();
+        }
+
+        if (has_missing_embeddings) {
+            scheduler_output.m_scheduled_sequence_groups_ids.push_back(request_idx);
+        }
+    }
+
+    if (!scheduler_output.m_scheduled_sequence_groups_ids.empty()) {
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::is_requests_empty() {
