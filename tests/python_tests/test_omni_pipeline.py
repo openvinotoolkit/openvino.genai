@@ -163,3 +163,24 @@ class TestOmniTalkerSpeechConfig:
 
         with pytest.raises(RuntimeError, match=r"(?i)talker_top_k"):
             cfg.validate()
+
+
+class TestOmniPipelineAccessors:
+    """OmniPipeline getter/setter surface — methods must exist with the right signatures.
+
+    No model is loaded here, so we only assert presence and signatures via the unbound
+    method handle. End-to-end behavior (get/set round-trip on a live pipeline) lives in
+    the temp/ scripts that load the MoE checkpoint.
+    """
+
+    def test_methods_exist(self) -> None:
+        for method in (
+            "get_text_generation_config",
+            "set_text_generation_config",
+            "get_talker_speech_config",
+            "set_talker_speech_config",
+            "get_talker",
+            "get_speaker_embedding",
+            "list_speakers",
+        ):
+            assert hasattr(ov_genai.OmniPipeline, method), f"OmniPipeline.{method}() missing from public surface"

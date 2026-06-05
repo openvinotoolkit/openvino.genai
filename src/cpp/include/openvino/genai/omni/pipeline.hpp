@@ -198,6 +198,30 @@ public:
     /// Used as the default `text_config` when callers don't pass one explicitly.
     GenerationConfig get_text_generation_config() const;
 
+    /// @brief Replace the VLM's GenerationConfig. Subsequent generate() calls that don't pass an
+    /// explicit `text_config` will use the new value.
+    void set_text_generation_config(const GenerationConfig& new_config);
+
+    /// @brief Return the pipeline's default OmniTalkerSpeechConfig. The path-based ctor seeds it
+    /// from `<models_path>/config.json -> talker_config.speaker_id`; the DI ctor leaves it
+    /// default-constructed. Used as the default when generate() is called without an explicit
+    /// `talker_speech_config`.
+    OmniTalkerSpeechConfig get_talker_speech_config() const;
+
+    /// @brief Replace the pipeline's default OmniTalkerSpeechConfig. The new value is `validate()`-d
+    /// before being stored so a misconfigured config can never silently take effect on a later call.
+    void set_talker_speech_config(const OmniTalkerSpeechConfig& new_config);
+
+    /// @brief Return the underlying VLM base (the same instance that backs the path-based ctor or
+    /// was passed to the DI ctor). Useful for inspecting model metadata or sharing the loaded VLM
+    /// with another pipeline without reloading multi-GB weights.
+    std::shared_ptr<VLMPipeline::VLMPipelineBase> get_vlm() const;
+
+    /// @brief Return the underlying TalkerBase. Useful for direct talker introspection (e.g.
+    /// `is_available`, `list_speakers` on a custom subclass) when the OmniPipeline-level helpers
+    /// don't expose what the caller needs.
+    std::shared_ptr<TalkerBase> get_talker() const;
+
 private:
     class OmniPipelineImpl;
     std::unique_ptr<OmniPipelineImpl> m_pimpl;

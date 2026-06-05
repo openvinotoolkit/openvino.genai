@@ -332,7 +332,7 @@ void init_omni_pipeline(py::module_& m) {
                 GenerationConfig resolved_text_config =
                     text_config.has_value() ? text_config.value() : pipe.get_text_generation_config();
                 OmniTalkerSpeechConfig resolved_talker_config =
-                    talker_speech_config.value_or(OmniTalkerSpeechConfig{});
+                    talker_speech_config.value_or(pipe.get_talker_speech_config());
                 return call_omni_generate(pipe,
                                           prompt,
                                           images,
@@ -368,7 +368,7 @@ void init_omni_pipeline(py::module_& m) {
                 GenerationConfig resolved_text_config =
                     text_config.has_value() ? text_config.value() : pipe.get_text_generation_config();
                 OmniTalkerSpeechConfig resolved_talker_config =
-                    talker_speech_config.value_or(OmniTalkerSpeechConfig{});
+                    talker_speech_config.value_or(pipe.get_talker_speech_config());
                 return call_omni_generate_history(pipe,
                                                   history,
                                                   images,
@@ -404,5 +404,43 @@ void init_omni_pipeline(py::module_& m) {
              R"(
                 List names of speakers available in the loaded model's talker_config.speaker_id.
                 Returns an empty list when the model exposes no named speakers.
+             )")
+
+        .def("get_text_generation_config",
+             &OmniPipeline::get_text_generation_config,
+             R"(
+                Return the VLM's loaded GenerationConfig. Used as the default text_config when
+                generate() is called without an explicit one.
+             )")
+        .def("set_text_generation_config",
+             &OmniPipeline::set_text_generation_config,
+             py::arg("new_config"),
+             R"(
+                Replace the VLM's GenerationConfig. Subsequent generate() calls that don't pass
+                an explicit text_config will use the new value.
+             )")
+        .def("get_talker_speech_config",
+             &OmniPipeline::get_talker_speech_config,
+             R"(
+                Return the pipeline's default OmniTalkerSpeechConfig. The path-based ctor seeds
+                it from <models_path>/config.json -> talker_config.speaker_id; the DI ctor leaves
+                it default-constructed.
+             )")
+        .def("set_talker_speech_config",
+             &OmniPipeline::set_talker_speech_config,
+             py::arg("new_config"),
+             R"(
+                Replace the pipeline's default OmniTalkerSpeechConfig. The new value is validate()d
+                before being stored.
+             )")
+        // Note: get_vlm() returns shared_ptr<VLMPipeline::VLMPipelineBase>, which is not currently
+        // exposed to Python (VLMPipeline itself is, but the internal base isn't). C++ callers can
+        // use get_vlm(); Python callers can get the same VLM by sharing the externally-loaded
+        // VLMPipeline through the DI ctor, which is the supported reuse path.
+        .def("get_talker",
+             &OmniPipeline::get_talker,
+             R"(
+                Return the underlying TalkerBase. Useful for direct talker introspection
+                (is_available, list_speakers, get_speaker_embedding) on a custom subclass.
              )");
 }

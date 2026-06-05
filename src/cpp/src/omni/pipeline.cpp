@@ -170,7 +170,7 @@ struct ExtractedOmniProps {
     std::vector<ov::Tensor> videos;
     std::vector<ov::Tensor> audios;
     std::optional<GenerationConfig> explicit_text_config;
-    OmniTalkerSpeechConfig talker_speech_config{};
+    std::optional<OmniTalkerSpeechConfig> explicit_talker_speech_config;
     StreamerVariant text_streamer = std::monostate{};
     OmniSpeechStreamerVariant speech_streamer = std::monostate{};
     ov::AnyMap leftover;
@@ -188,7 +188,7 @@ ExtractedOmniProps extract_omni_props(const ov::AnyMap& config_map) {
         } else if (key == ov::genai::text_config.name()) {
             out.explicit_text_config = value.as<GenerationConfig>();
         } else if (key == ov::genai::talker_speech_config.name()) {
-            out.talker_speech_config = value.as<OmniTalkerSpeechConfig>();
+            out.explicit_talker_speech_config = value.as<OmniTalkerSpeechConfig>();
         } else if (key == "streamer") {
             out.text_streamer = value.as<StreamerVariant>();
         } else if (key == ov::genai::speech_streamer.name()) {
@@ -205,16 +205,18 @@ ExtractedOmniProps extract_omni_props(const ov::AnyMap& config_map) {
 OmniDecodedResults OmniPipeline::generate(const std::string& prompt, const ov::AnyMap& config_map) {
     auto p = extract_omni_props(config_map);
     GenerationConfig text_config = p.explicit_text_config.value_or(m_pimpl->get_text_generation_config());
+    OmniTalkerSpeechConfig talker_speech_config =
+        p.explicit_talker_speech_config.value_or(m_pimpl->get_talker_speech_config());
     if (!p.leftover.empty()) {
         text_config.update_generation_config(p.leftover);
-        p.talker_speech_config.update_generation_config(p.leftover);
+        talker_speech_config.update_generation_config(p.leftover);
     }
     return m_pimpl->generate(prompt,
                              p.images,
                              p.videos,
                              p.audios,
                              text_config,
-                             p.talker_speech_config,
+                             talker_speech_config,
                              p.text_streamer,
                              p.speech_streamer);
 }
@@ -222,16 +224,18 @@ OmniDecodedResults OmniPipeline::generate(const std::string& prompt, const ov::A
 OmniDecodedResults OmniPipeline::generate(const ChatHistory& history, const ov::AnyMap& config_map) {
     auto p = extract_omni_props(config_map);
     GenerationConfig text_config = p.explicit_text_config.value_or(m_pimpl->get_text_generation_config());
+    OmniTalkerSpeechConfig talker_speech_config =
+        p.explicit_talker_speech_config.value_or(m_pimpl->get_talker_speech_config());
     if (!p.leftover.empty()) {
         text_config.update_generation_config(p.leftover);
-        p.talker_speech_config.update_generation_config(p.leftover);
+        talker_speech_config.update_generation_config(p.leftover);
     }
     return m_pimpl->generate(history,
                              p.images,
                              p.videos,
                              p.audios,
                              text_config,
-                             p.talker_speech_config,
+                             talker_speech_config,
                              p.text_streamer,
                              p.speech_streamer);
 }
@@ -246,6 +250,26 @@ std::vector<std::string> OmniPipeline::list_speakers() const {
 
 GenerationConfig OmniPipeline::get_text_generation_config() const {
     return m_pimpl->get_text_generation_config();
+}
+
+void OmniPipeline::set_text_generation_config(const GenerationConfig& new_config) {
+    m_pimpl->set_text_generation_config(new_config);
+}
+
+OmniTalkerSpeechConfig OmniPipeline::get_talker_speech_config() const {
+    return m_pimpl->get_talker_speech_config();
+}
+
+void OmniPipeline::set_talker_speech_config(const OmniTalkerSpeechConfig& new_config) {
+    m_pimpl->set_talker_speech_config(new_config);
+}
+
+std::shared_ptr<VLMPipeline::VLMPipelineBase> OmniPipeline::get_vlm() const {
+    return m_pimpl->get_vlm();
+}
+
+std::shared_ptr<TalkerBase> OmniPipeline::get_talker() const {
+    return m_pimpl->get_talker();
 }
 
 }  // namespace ov::genai

@@ -59,6 +59,27 @@ public:
         return m_vlm->get_generation_config();
     }
 
+    void set_text_generation_config(const GenerationConfig& new_config) {
+        m_vlm->set_generation_config(new_config);
+    }
+
+    OmniTalkerSpeechConfig get_talker_speech_config() const {
+        return m_default_talker_speech_config;
+    }
+
+    void set_talker_speech_config(const OmniTalkerSpeechConfig& new_config) {
+        new_config.validate();
+        m_default_talker_speech_config = new_config;
+    }
+
+    std::shared_ptr<VLMPipeline::VLMPipelineBase> get_vlm() const {
+        return m_vlm;
+    }
+
+    std::shared_ptr<TalkerBase> get_talker() const {
+        return m_talker;
+    }
+
 private:
     /// @brief Reject non-Omni-capable models early, before any inference work.
     void assert_omni_capable() const;
@@ -83,6 +104,7 @@ private:
 
     std::shared_ptr<VLMPipeline::VLMPipelineBase> m_vlm;
     std::shared_ptr<TalkerBase> m_talker;
+    OmniTalkerSpeechConfig m_default_talker_speech_config;
 };
 
 }  // namespace ov::genai
