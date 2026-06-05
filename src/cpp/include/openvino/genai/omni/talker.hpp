@@ -10,8 +10,8 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/omni/decoded_results.hpp"
-#include "openvino/genai/omni/speech_generation_config.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 
@@ -35,17 +35,17 @@ public:
 
     /// @brief Run speech generation against a VLM result.
     /// @param vlm_result VLM-side text result; must carry hidden states from a generate()
-    ///                   call that ran with `speech_config.return_audio == true`. The
+    ///                   call that ran with `talker_speech_config.return_audio == true`. The
     ///                   talker reads `hidden_states`, `intermediate_hidden_states`, and
     ///                   `prompt_ids` from the result.
-    /// @param speech_config Generation knobs for the talker (`return_audio`, `speaker`,
-    ///                      `speaker_embedding`, `audio_chunk_frames`, `max_new_tokens`,
-    ///                      `rng_seed`, `validate()` already enforced).
+    /// @param talker_speech_config Generation knobs for the talker (`return_audio`, `speaker`,
+    ///                             `speaker_embedding`, `audio_chunk_frames`, `max_new_tokens`,
+    ///                             `rng_seed`, `validate()` already enforced).
     /// @param speech_streamer Optional callback or `OmniSpeechStreamerBase` for streaming
     ///                        audio chunks. `monostate` = batch mode (single waveform).
     /// @return OmniDecodedResults with `speech_outputs` populated when `return_audio` is true.
     virtual OmniDecodedResults generate(VLMDecodedResults vlm_result,
-                                        const OmniSpeechGenerationConfig& speech_config,
+                                        const OmniTalkerSpeechConfig& talker_speech_config,
                                         const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) = 0;
 
     /// @brief List names of speakers exposed by this talker.
@@ -55,7 +55,7 @@ public:
     /// @brief Return precomputed speaker embedding for the named speaker.
     /// Tensor shape and dtype are backend-defined (Qwen3-Omni: `[1, 1, talker_hidden_size]`, f32).
     /// Use to blend voices: combine two named embeddings and pass the result via
-    /// `OmniSpeechGenerationConfig::speaker_embedding`.
+    /// `OmniTalkerSpeechConfig::speaker_embedding`.
     /// @throws when the backend has no named speakers, or `name` doesn't match.
     virtual ov::Tensor get_speaker_embedding(const std::string& name) const = 0;
 
@@ -96,7 +96,7 @@ public:
     Qwen3OmniTalker& operator=(const Qwen3OmniTalker&) = delete;
 
     OmniDecodedResults generate(VLMDecodedResults vlm_result,
-                                const OmniSpeechGenerationConfig& speech_config,
+                                const OmniTalkerSpeechConfig& talker_speech_config,
                                 const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
 
     std::vector<std::string> list_speakers() const override;

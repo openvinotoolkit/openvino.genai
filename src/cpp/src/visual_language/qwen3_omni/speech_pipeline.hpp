@@ -11,8 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "openvino/genai/omni/speech_generation_config.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "visual_language/vlm_config.hpp"
@@ -81,10 +81,10 @@ public:
     /// @param all_hidden_states Accumulated final hidden states [one tensor per step].
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
     /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
-    /// @param speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`,
-    ///                      `speaker_embedding`, `max_new_tokens`, `rng_seed`, and the
-    ///                      `talker_*` / `cp_*` optional sampling overrides. Unset overrides
-    ///                      keep the checkpoint defaults loaded from `generation_config.json`.
+    /// @param talker_speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`,
+    ///                              `speaker_embedding`, `max_new_tokens`, `rng_seed`, and the
+    ///                              `talker_*` / `cp_*` optional sampling overrides. Unset overrides
+    ///                              keep the checkpoint defaults loaded from `generation_config.json`.
     /// @return Waveform tensor [1, 1, audio_samples] or empty tensor on failure.
     /// @note Not thread-safe per instance — shares the pipeline's owned std::mt19937 and
     ///       ov::InferRequests across talker and CodePredictor sampling.
@@ -92,7 +92,7 @@ public:
                                const std::vector<ov::Tensor>& all_hidden_states,
                                const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                const OmniSpeechStreamerVariant& audio_streamer,
-                               const OmniSpeechGenerationConfig& speech_config);
+                               const OmniTalkerSpeechConfig& talker_speech_config);
 
     /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
     /// has no `talker_config.speaker_id` or the name doesn't match. Tensor shape is

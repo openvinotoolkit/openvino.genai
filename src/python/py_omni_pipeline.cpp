@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
+#include <optional>
 
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
@@ -11,9 +12,9 @@
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
-#include "openvino/genai/omni/speech_generation_config.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline_base.hpp"
 #include "py_utils.hpp"
@@ -26,7 +27,7 @@ using ov::genai::ChatHistory;
 using ov::genai::GenerationConfig;
 using ov::genai::OmniDecodedResults;
 using ov::genai::OmniPipeline;
-using ov::genai::OmniSpeechGenerationConfig;
+using ov::genai::OmniTalkerSpeechConfig;
 using ov::genai::Qwen3OmniTalker;
 using ov::genai::TalkerBase;
 using ov::genai::VLMDecodedResults;
@@ -34,38 +35,69 @@ using ov::genai::VLMPipeline;
 
 namespace {
 
-auto omni_speech_generation_config_docstring = R"(
-    OmniSpeechGenerationConfig
+auto omni_talker_speech_config_docstring = R"(
+    OmniTalkerSpeechConfig
 
-    Inherits all GenerationConfig fields and adds three Omni-specific knobs:
+    Standalone speech-side generation config for the Qwen3-Omni talker. Does NOT inherit
+    from GenerationConfig — the thinker text decode is steered by a separate
+    GenerationConfig argument to OmniPipeline.generate. This struct only carries fields
+    the talker actually consumes:
 
     :param return_audio: Enable speech output. Default True. Set False to short-circuit
         the talker and produce text only.
     :type return_audio: bool
 
-    :param speaker: Speaker name for speech output. Empty selects the model's default speaker.
-        Available names are listed under `talker_config.speaker_id` in the model's `config.json`.
+    :param speaker: Speaker name. Empty selects the model's default speaker. Available
+        names are listed under `talker_config.speaker_id` in the model's `config.json`.
+        Ignored when `speaker_embedding` is non-empty.
     :type speaker: str
 
-    :param audio_chunk_frames: Number of codec frames accumulated before streaming each audio
-        chunk. Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
+    :param speaker_embedding: Optional explicit talker speaker embedding
+        ([1, 1, talker_hidden_size], f32). Overrides `speaker` when non-empty.
+    :type speaker_embedding: openvino.Tensor
+
+    :param audio_chunk_frames: Number of codec frames accumulated before streaming each
+        audio chunk. Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
     :type audio_chunk_frames: int
+
+    :param max_new_tokens: Cap on talker AR steps. Independent of
+        `text_config.max_new_tokens` (which caps the thinker text decode). The talker
+        pipeline takes the min of this value and the model's
+        `talker_config.talker_max_new_tokens`.
+    :type max_new_tokens: int
+
+    :param rng_seed: RNG seed for deterministic talker + CodePredictor sampling.
+    :type rng_seed: int
+
+    :param talker_temperature, talker_top_k, talker_repetition_penalty: Talker sampling
+        overrides. None = keep the checkpoint default loaded from generation_config.json.
+    :type talker_temperature: float | None
+    :type talker_top_k: int | None
+    :type talker_repetition_penalty: float | None
+
+    :param cp_temperature, cp_top_k, cp_repetition_penalty: CodePredictor sampling
+        overrides. Same semantics as talker_*.
+    :type cp_temperature: float | None
+    :type cp_top_k: int | None
+    :type cp_repetition_penalty: float | None
 )";
 
 auto omni_pipeline_docstring = R"(
     OmniPipeline — Qwen3-Omni text + speech pipeline.
 
     Composes a VLM pipeline (text generation with hidden-state collection) with a Qwen3-Omni
-    speech pipeline (Talker + CodePredictor + Code2Wav). Speech generation is gated per-call
-    by OmniSpeechGenerationConfig.return_audio.
+    speech pipeline (Talker + CodePredictor + Code2Wav). Each `generate` call takes two
+    configs: a `GenerationConfig text_config` (thinker) and an `OmniTalkerSpeechConfig
+    talker_speech_config` (talker + speech). Speech generation is gated per-call by
+    `talker_speech_config.return_audio`.
 
     Two construction paths:
 
       - Path-based: OmniPipeline(models_path, device, **properties) loads VLM and speech
         models from a single directory.
 
-      - Shared-VLM: OmniPipeline(vlm_pipeline, speech_models_path, device, **properties)
-        reuses an externally-loaded VLMPipeline so multi-GB weights are not reloaded.
+      - DI: OmniPipeline(vlm_pipeline, talker) reuses an externally-loaded VLMPipeline
+        and a TalkerBase subclass for independent device choices or custom backends.
 
     Both ctors enforce that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
     and enable_audio_output) — non-Omni models throw at construction time.
@@ -86,9 +118,13 @@ auto omni_generate_prompt_docstring = R"(
     :param audios: audio tensors to be prepended to the prompt
     :type audios: list[ov.Tensor]
 
-    :param speech_config: speech generation config (inherits GenerationConfig fields plus the
-        three Omni fields). When None, the pipeline-default config is used.
-    :type speech_config: OmniSpeechGenerationConfig | None
+    :param text_config: thinker text-decode config. None = use the VLM's default
+        GenerationConfig loaded from generation_config.json.
+    :type text_config: GenerationConfig | None
+
+    :param talker_speech_config: talker + speech-output config. None = a default-
+        constructed OmniTalkerSpeechConfig (return_audio=True, model-default speaker).
+    :type talker_speech_config: OmniTalkerSpeechConfig | None
 
     :param streamer: optional streamer for text tokens.
     :type streamer: Callable[[str], bool] | StreamerBase | None
@@ -98,7 +134,8 @@ auto omni_generate_prompt_docstring = R"(
         StreamingStatus (or bool/None).
     :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] | OmniSpeechStreamerBase | None
 
-    :return: VLMDecodedResults with `speech_outputs` populated when speech_config.return_audio is True.
+    :return: VLMDecodedResults with `speech_outputs` populated when
+        `talker_speech_config.return_audio` is True.
     :rtype: VLMDecodedResults
 )";
 
@@ -115,7 +152,8 @@ py::object call_omni_generate(OmniPipeline& pipe,
                               const std::vector<ov::Tensor>& images,
                               const std::vector<ov::Tensor>& videos,
                               const std::vector<ov::Tensor>& audios,
-                              const OmniSpeechGenerationConfig& speech_config,
+                              const GenerationConfig& text_config,
+                              const OmniTalkerSpeechConfig& talker_speech_config,
                               const pyutils::PyBindStreamerVariant& py_streamer,
                               const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer) {
     auto streamer = pyutils::pystreamer_to_streamer(py_streamer);
@@ -123,7 +161,14 @@ py::object call_omni_generate(OmniPipeline& pipe,
     OmniDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(prompt, images, videos, audios, speech_config, streamer, speech_streamer);
+        res = pipe.generate(prompt,
+                            images,
+                            videos,
+                            audios,
+                            text_config,
+                            talker_speech_config,
+                            streamer,
+                            speech_streamer);
     }
     return py::cast(res);
 }
@@ -133,7 +178,8 @@ py::object call_omni_generate_history(OmniPipeline& pipe,
                                       const std::vector<ov::Tensor>& images,
                                       const std::vector<ov::Tensor>& videos,
                                       const std::vector<ov::Tensor>& audios,
-                                      const OmniSpeechGenerationConfig& speech_config,
+                                      const GenerationConfig& text_config,
+                                      const OmniTalkerSpeechConfig& talker_speech_config,
                                       const pyutils::PyBindStreamerVariant& py_streamer,
                                       const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer) {
     auto streamer = pyutils::pystreamer_to_streamer(py_streamer);
@@ -141,7 +187,14 @@ py::object call_omni_generate_history(OmniPipeline& pipe,
     OmniDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(history, images, videos, audios, speech_config, streamer, speech_streamer);
+        res = pipe.generate(history,
+                            images,
+                            videos,
+                            audios,
+                            text_config,
+                            talker_speech_config,
+                            streamer,
+                            speech_streamer);
     }
     return py::cast(res);
 }
@@ -185,28 +238,28 @@ void init_omni_pipeline(py::module_& m) {
                 kwargs: Device properties.
              )");
 
-    py::class_<OmniSpeechGenerationConfig, GenerationConfig>(m,
-                                                             "OmniSpeechGenerationConfig",
-                                                             omni_speech_generation_config_docstring)
+    py::class_<OmniTalkerSpeechConfig>(m, "OmniTalkerSpeechConfig", omni_talker_speech_config_docstring)
         .def(py::init<>())
         .def(py::init<std::filesystem::path>(),
              py::arg("models_path"),
-             "folder with generation_config.json and config.json (talker_config)")
-        .def_readwrite("return_audio", &OmniSpeechGenerationConfig::return_audio)
-        .def_readwrite("speaker", &OmniSpeechGenerationConfig::speaker)
-        .def_readwrite("speaker_embedding", &OmniSpeechGenerationConfig::speaker_embedding)
-        .def_readwrite("audio_chunk_frames", &OmniSpeechGenerationConfig::audio_chunk_frames)
-        .def_readwrite("talker_temperature", &OmniSpeechGenerationConfig::talker_temperature)
-        .def_readwrite("talker_top_k", &OmniSpeechGenerationConfig::talker_top_k)
-        .def_readwrite("talker_repetition_penalty", &OmniSpeechGenerationConfig::talker_repetition_penalty)
-        .def_readwrite("cp_temperature", &OmniSpeechGenerationConfig::cp_temperature)
-        .def_readwrite("cp_top_k", &OmniSpeechGenerationConfig::cp_top_k)
-        .def_readwrite("cp_repetition_penalty", &OmniSpeechGenerationConfig::cp_repetition_penalty)
+             "folder with config.json (talker_config) for default speaker resolution")
+        .def_readwrite("return_audio", &OmniTalkerSpeechConfig::return_audio)
+        .def_readwrite("speaker", &OmniTalkerSpeechConfig::speaker)
+        .def_readwrite("speaker_embedding", &OmniTalkerSpeechConfig::speaker_embedding)
+        .def_readwrite("audio_chunk_frames", &OmniTalkerSpeechConfig::audio_chunk_frames)
+        .def_readwrite("max_new_tokens", &OmniTalkerSpeechConfig::max_new_tokens)
+        .def_readwrite("rng_seed", &OmniTalkerSpeechConfig::rng_seed)
+        .def_readwrite("talker_temperature", &OmniTalkerSpeechConfig::talker_temperature)
+        .def_readwrite("talker_top_k", &OmniTalkerSpeechConfig::talker_top_k)
+        .def_readwrite("talker_repetition_penalty", &OmniTalkerSpeechConfig::talker_repetition_penalty)
+        .def_readwrite("cp_temperature", &OmniTalkerSpeechConfig::cp_temperature)
+        .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k)
+        .def_readwrite("cp_repetition_penalty", &OmniTalkerSpeechConfig::cp_repetition_penalty)
         .def("update_generation_config",
-             [](OmniSpeechGenerationConfig& config, const py::kwargs& kwargs) {
+             [](OmniTalkerSpeechConfig& config, const py::kwargs& kwargs) {
                  config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
              })
-        .def("validate", &OmniSpeechGenerationConfig::validate);
+        .def("validate", &OmniTalkerSpeechConfig::validate);
 
     py::class_<OmniDecodedResults, VLMDecodedResults>(m, "OmniDecodedResults",
         R"(Omni-specific decoded results including speech outputs.
@@ -268,16 +321,25 @@ void init_omni_pipeline(py::module_& m) {
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::Tensor>& audios,
-               const OmniSpeechGenerationConfig& speech_config,
+               const std::optional<GenerationConfig>& text_config,
+               const std::optional<OmniTalkerSpeechConfig>& talker_speech_config,
                const pyutils::PyBindStreamerVariant& streamer,
                const pyutils::PyBindOmniSpeechStreamerVariant& speech_streamer)
                 -> py::typing::Union<VLMDecodedResults> {
+                // text_config defaults to None — fall back to the VLM's loaded
+                // generation_config.json so a bare generate() call works without
+                // forcing the user to construct a fully-populated GenerationConfig.
+                GenerationConfig resolved_text_config =
+                    text_config.has_value() ? text_config.value() : pipe.get_text_generation_config();
+                OmniTalkerSpeechConfig resolved_talker_config =
+                    talker_speech_config.value_or(OmniTalkerSpeechConfig{});
                 return call_omni_generate(pipe,
                                           prompt,
                                           images,
                                           videos,
                                           audios,
-                                          speech_config,
+                                          resolved_text_config,
+                                          resolved_talker_config,
                                           streamer,
                                           speech_streamer);
             },
@@ -285,7 +347,8 @@ void init_omni_pipeline(py::module_& m) {
             py::arg("images") = std::vector<ov::Tensor>{},
             py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("audios") = std::vector<ov::Tensor>{},
-            py::arg("speech_config") = OmniSpeechGenerationConfig{},
+            py::arg("text_config") = py::none(),
+            py::arg("talker_speech_config") = py::none(),
             py::arg("streamer") = std::monostate(),
             py::arg("speech_streamer") = std::monostate(),
             omni_generate_prompt_docstring)
@@ -297,16 +360,22 @@ void init_omni_pipeline(py::module_& m) {
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::Tensor>& audios,
-               const OmniSpeechGenerationConfig& speech_config,
+               const std::optional<GenerationConfig>& text_config,
+               const std::optional<OmniTalkerSpeechConfig>& talker_speech_config,
                const pyutils::PyBindStreamerVariant& streamer,
                const pyutils::PyBindOmniSpeechStreamerVariant& speech_streamer)
                 -> py::typing::Union<VLMDecodedResults> {
+                GenerationConfig resolved_text_config =
+                    text_config.has_value() ? text_config.value() : pipe.get_text_generation_config();
+                OmniTalkerSpeechConfig resolved_talker_config =
+                    talker_speech_config.value_or(OmniTalkerSpeechConfig{});
                 return call_omni_generate_history(pipe,
                                                   history,
                                                   images,
                                                   videos,
                                                   audios,
-                                                  speech_config,
+                                                  resolved_text_config,
+                                                  resolved_talker_config,
                                                   streamer,
                                                   speech_streamer);
             },
@@ -314,7 +383,8 @@ void init_omni_pipeline(py::module_& m) {
             py::arg("images") = std::vector<ov::Tensor>{},
             py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("audios") = std::vector<ov::Tensor>{},
-            py::arg("speech_config") = OmniSpeechGenerationConfig{},
+            py::arg("text_config") = py::none(),
+            py::arg("talker_speech_config") = py::none(),
             py::arg("streamer") = std::monostate(),
             py::arg("speech_streamer") = std::monostate(),
             omni_generate_history_docstring)
@@ -325,7 +395,8 @@ void init_omni_pipeline(py::module_& m) {
              R"(
                 Return the precomputed talker speaker embedding for the named speaker.
                 Tensor shape is [1, 1, talker_hidden_size], f32. Use to blend voices: weight-sum
-                two named-speaker embeddings and pass the result via speech_config.speaker_embedding.
+                two named-speaker embeddings and pass the result via
+                talker_speech_config.speaker_embedding.
                 Raises if the model has no named speakers or `name` doesn't match.
              )")
         .def("list_speakers",

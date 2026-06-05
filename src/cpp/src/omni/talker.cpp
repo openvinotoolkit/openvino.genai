@@ -50,18 +50,18 @@ public:
     }
 
     OmniDecodedResults generate(VLMDecodedResults vlm_result,
-                                const OmniSpeechGenerationConfig& speech_config,
+                                const OmniTalkerSpeechConfig& talker_speech_config,
                                 const OmniSpeechStreamerVariant& speech_streamer) {
         OPENVINO_ASSERT(!vlm_result.hidden_states.empty(),
                         "Qwen3OmniTalker: hidden states missing on VLMDecodedResults; the VLM must run with "
-                        "speech_config.return_audio=true so it accumulates thinker hidden states.");
+                        "talker_speech_config.return_audio=true so it accumulates thinker hidden states.");
 
         auto all_hidden_states = flatten_hidden_states(vlm_result.hidden_states[0]);
         auto all_intermediate_hidden_states = vlm_result.intermediate_hidden_states.empty()
                                                   ? std::vector<ov::Tensor>{}
                                                   : flatten_hidden_states(vlm_result.intermediate_hidden_states[0]);
 
-        // speech_config carries audio_chunk_frames, speaker / speaker_embedding,
+        // talker_speech_config carries audio_chunk_frames, speaker / speaker_embedding,
         // max_new_tokens, rng_seed, plus the talker_* / cp_* sampling overrides. The pipeline
         // resolves each std::optional<...> against the JSON-loaded checkpoint defaults at the
         // top of generate_speech(); unset overrides keep the checkpoint values.
@@ -69,7 +69,7 @@ public:
                                                         all_hidden_states,
                                                         all_intermediate_hidden_states,
                                                         speech_streamer,
-                                                        speech_config);
+                                                        talker_speech_config);
 
         OmniDecodedResults omni_result;
         static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
@@ -105,9 +105,9 @@ Qwen3OmniTalker::Qwen3OmniTalker(Qwen3OmniTalker&&) noexcept = default;
 Qwen3OmniTalker& Qwen3OmniTalker::operator=(Qwen3OmniTalker&&) noexcept = default;
 
 OmniDecodedResults Qwen3OmniTalker::generate(VLMDecodedResults vlm_result,
-                                              const OmniSpeechGenerationConfig& speech_config,
+                                              const OmniTalkerSpeechConfig& talker_speech_config,
                                               const OmniSpeechStreamerVariant& speech_streamer) {
-    return m_impl->generate(std::move(vlm_result), speech_config, speech_streamer);
+    return m_impl->generate(std::move(vlm_result), talker_speech_config, speech_streamer);
 }
 
 std::vector<std::string> Qwen3OmniTalker::list_speakers() const {

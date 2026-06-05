@@ -768,15 +768,16 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                                                     const std::vector<ov::Tensor>& all_hidden_states,
                                                     const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                                     const OmniSpeechStreamerVariant& audio_streamer,
-                                                    const OmniSpeechGenerationConfig& speech_config) {
+                                                    const OmniTalkerSpeechConfig& talker_speech_config) {
     // Resolve sampling overrides up front: caller-supplied std::optional<...> takes precedence
     // over the JSON-loaded checkpoint defaults at m_config.{talker,cp}_*.
-    const float talker_temp = speech_config.talker_temperature.value_or(m_config.talker_temperature);
-    const size_t talker_top_k_resolved = speech_config.talker_top_k.value_or(m_config.talker_top_k);
-    const float talker_rep_penalty = speech_config.talker_repetition_penalty.value_or(m_config.talker_repetition_penalty);
-    const float cp_temp = speech_config.cp_temperature.value_or(m_config.cp_temperature);
-    const size_t cp_top_k_resolved = speech_config.cp_top_k.value_or(m_config.cp_top_k);
-    if (speech_config.cp_repetition_penalty) {
+    const float talker_temp = talker_speech_config.talker_temperature.value_or(m_config.talker_temperature);
+    const size_t talker_top_k_resolved = talker_speech_config.talker_top_k.value_or(m_config.talker_top_k);
+    const float talker_rep_penalty =
+        talker_speech_config.talker_repetition_penalty.value_or(m_config.talker_repetition_penalty);
+    const float cp_temp = talker_speech_config.cp_temperature.value_or(m_config.cp_temperature);
+    const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
+    if (talker_speech_config.cp_repetition_penalty) {
         // The exported (unrolled-API) CodePredictor model bakes the repetition-penalty pass
         // inside the graph and exposes only `temperature` / `top_k` / `seeds` as inputs, so a
         // per-call override has no effect today. Warn once so users don't silently assume the
@@ -785,7 +786,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                    "model has no per-call repetition-penalty input.");
     }
 
-    const size_t chunk_frames = speech_config.audio_chunk_frames;
+    const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
     bool streaming = is_speech_streamer_active(audio_streamer);
 
@@ -799,7 +800,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     // Reseed at every entry so output depends only on inputs + seed, not prior call history.
     // Single shared stream across talker first-code sampling and all CodePredictor steps — one
     // seed fully reproduces the generated audio. Matches the reference torch.Generator contract.
-    m_rng.seed(static_cast<std::mt19937::result_type>(speech_config.rng_seed));
+    m_rng.seed(static_cast<std::mt19937::result_type>(talker_speech_config.rng_seed));
 
     GENAI_DEBUG("Speech: tokens=%zu, hidden_states=%zu, intermediate=%zu",
                 full_token_ids.size(),
@@ -807,20 +808,20 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                 all_intermediate_hidden_states.size());
 
     // Resolve speaker embedding: caller-provided tensor takes precedence over the named-speaker
-    // lookup. Caller-validated shape at OmniSpeechGenerationConfig::validate(); we additionally
+    // lookup. Caller-validated shape at OmniTalkerSpeechConfig::validate(); we additionally
     // confirm last-dim matches talker_hidden_size since validate() can't see that bound.
     ov::Tensor speaker_embed_to_use;
-    if (speech_config.speaker_embedding) {
-        const auto& shape = speech_config.speaker_embedding.get_shape();
+    if (talker_speech_config.speaker_embedding) {
+        const auto& shape = talker_speech_config.speaker_embedding.get_shape();
         OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] == 1 &&
                             shape[2] == m_config.talker_hidden_size,
                         "speaker_embedding must have shape [1, 1, ",
                         m_config.talker_hidden_size,
                         "], got ",
                         shape);
-        speaker_embed_to_use = speech_config.speaker_embedding;
+        speaker_embed_to_use = talker_speech_config.speaker_embedding;
     } else {
-        int64_t speaker_codec_id = resolve_speaker_id(speech_config.speaker);
+        int64_t speaker_codec_id = resolve_speaker_id(talker_speech_config.speaker);
         speaker_embed_to_use = m_speaker_embed.at(speaker_codec_id);
     }
 
@@ -850,7 +851,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     m_talker.set_tensor("inputs_embeds", talker_input);
 
     // Use talker generation parameters from config
-    auto talker_max_tokens = std::min(speech_config.max_new_tokens, m_config.talker_max_new_tokens);
+    auto talker_max_tokens = std::min(talker_speech_config.max_new_tokens, m_config.talker_max_new_tokens);
 
     // F2: Pre-allocate attention mask at max size (input_len + talker_max_tokens)
     auto talker_max_len = input_len + talker_max_tokens;
@@ -906,7 +907,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     };
 
     // talker_temp / talker_top_k_resolved / talker_rep_penalty resolved at function entry
-    // from the OmniSpeechGenerationConfig overrides (or m_config defaults if unset).
+    // from the OmniTalkerSpeechConfig overrides (or m_config defaults if unset).
     const auto& suppress_tokens = m_config.talker_suppress_tokens;
     std::vector<int64_t> generated_first_codes;
 

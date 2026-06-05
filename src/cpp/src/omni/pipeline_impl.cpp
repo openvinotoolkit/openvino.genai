@@ -9,6 +9,24 @@
 
 namespace ov::genai {
 
+namespace {
+
+/// @brief Cross-config validation: when speech output is requested the thinker text decode
+/// must use a sampling mode the talker can consume — single hidden-state stream, no beam
+/// candidates, no speculative draft tokens.
+void enforce_text_config_compatible_with_audio(const GenerationConfig& text_config,
+                                               const OmniTalkerSpeechConfig& talker_speech_config) {
+    if (!talker_speech_config.return_audio) {
+        return;
+    }
+    OPENVINO_ASSERT(!text_config.is_beam_search(),
+                    "OmniPipeline: return_audio is not compatible with beam search (num_beams > 1)");
+    OPENVINO_ASSERT(!text_config.is_prompt_lookup() && !text_config.is_assisting_generation(),
+                    "OmniPipeline: return_audio is not compatible with prompt lookup or assistant/speculative decoding");
+}
+
+}  // namespace
+
 OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipeline::VLMPipelineBase>& vlm,
                                                   const std::shared_ptr<TalkerBase>& talker) {
     OPENVINO_ASSERT(vlm != nullptr, "OmniPipeline: VLM pointer is null");
@@ -33,23 +51,25 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
                                                              const std::vector<ov::Tensor>& images,
                                                              const std::vector<ov::Tensor>& videos,
                                                              const std::vector<ov::Tensor>& audios,
-                                                             const OmniSpeechGenerationConfig& speech_config,
+                                                             const GenerationConfig& text_config,
+                                                             const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& text_streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
-    speech_config.validate();
+    talker_speech_config.validate();
+    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 
     PendingAudiosGuard audios_guard(*m_vlm, audios);
-    GenerationConfig text_cfg = static_cast<GenerationConfig>(speech_config);
 
-    if (speech_config.return_audio) {
+    if (talker_speech_config.return_audio) {
         VLMPipeline::VLMPipelineBase::HiddenStatesCollectionScope hs_scope(*m_vlm);
         VLMDecodedResults vlm_result =
-            m_vlm->generate(prompt, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
-        return m_talker->generate(std::move(vlm_result), speech_config, speech_streamer);
+            m_vlm->generate(prompt, images, videos, /*videos_metadata=*/{}, text_config, text_streamer);
+        return m_talker->generate(std::move(vlm_result), talker_speech_config, speech_streamer);
     }
 
     // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_outputs.
-    VLMDecodedResults vlm_result = m_vlm->generate(prompt, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
+    VLMDecodedResults vlm_result =
+        m_vlm->generate(prompt, images, videos, /*videos_metadata=*/{}, text_config, text_streamer);
     OmniDecodedResults omni_result;
     static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
     return omni_result;
@@ -59,30 +79,33 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
                                                              const std::vector<ov::Tensor>& images,
                                                              const std::vector<ov::Tensor>& videos,
                                                              const std::vector<ov::Tensor>& audios,
-                                                             const OmniSpeechGenerationConfig& speech_config,
+                                                             const GenerationConfig& text_config,
+                                                             const OmniTalkerSpeechConfig& talker_speech_config,
                                                              const StreamerVariant& text_streamer,
                                                              const OmniSpeechStreamerVariant& speech_streamer) {
-    speech_config.validate();
+    talker_speech_config.validate();
+    enforce_text_config_compatible_with_audio(text_config, talker_speech_config);
 
     PendingAudiosGuard audios_guard(*m_vlm, audios);
-    GenerationConfig text_cfg = static_cast<GenerationConfig>(speech_config);
 
-    if (speech_config.return_audio) {
+    if (talker_speech_config.return_audio) {
         // Speech output requires the prompts overload's per-prompt loop, which captures the
         // prompt-id slice into VLMDecodedResults::prompt_ids. The histories overload doesn't
         // yet wire that capture (CB pipeline_base.cpp leaves original_prompt_ids_list empty
         // for the ChatHistory path — see the FIXME there). Apply the chat template here and
         // route through the prompts path so speech generation has its prompt_ids.
         const std::string templated_prompt = m_vlm->get_tokenizer().apply_chat_template(history, true);
+        GenerationConfig text_cfg = text_config;
         text_cfg.apply_chat_template = false;
         VLMPipeline::VLMPipelineBase::HiddenStatesCollectionScope hs_scope(*m_vlm);
         VLMDecodedResults vlm_result =
             m_vlm->generate(templated_prompt, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
-        return m_talker->generate(std::move(vlm_result), speech_config, speech_streamer);
+        return m_talker->generate(std::move(vlm_result), talker_speech_config, speech_streamer);
     }
 
     // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_outputs.
-    VLMDecodedResults vlm_result = m_vlm->generate(history, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
+    VLMDecodedResults vlm_result =
+        m_vlm->generate(history, images, videos, /*videos_metadata=*/{}, text_config, text_streamer);
     OmniDecodedResults omni_result;
     static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
     return omni_result;

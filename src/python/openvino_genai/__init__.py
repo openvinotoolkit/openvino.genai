@@ -52,7 +52,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     OmniDecodedResults,
     OmniPipeline,
-    OmniSpeechGenerationConfig,
+    OmniTalkerSpeechConfig,
     Qwen3OmniTalker,
     TalkerBase,
 )

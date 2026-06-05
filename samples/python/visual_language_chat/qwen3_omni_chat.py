@@ -49,11 +49,14 @@ def main() -> None:
 
     pipe = openvino_genai.OmniPipeline(args.model_dir, "CPU")
 
-    # Speech output is hardcoded here to show the multimodal path.
-    # Set return_audio = False to get text-only responses.
-    speech_config = openvino_genai.OmniSpeechGenerationConfig(args.model_dir)
-    speech_config.max_new_tokens = 256
-    speech_config.return_audio = True
+    # Two configs: text_config drives the thinker text decode; talker_speech_config drives the
+    # talker + speech output. Speech output is hardcoded on here to show the multimodal path.
+    # Set talker_speech_config.return_audio = False to get text-only responses.
+    text_config = openvino_genai.GenerationConfig()
+    text_config.max_new_tokens = 256
+
+    talker_speech_config = openvino_genai.OmniTalkerSpeechConfig(args.model_dir)
+    talker_speech_config.return_audio = True
     # Leaving speaker empty selects the model's default voice. Available voices vary by checkpoint
     # (e.g. MoE exposes "Ethan", "Chelsie", "Aiden", "Cherry"); the full list is in
     # talker_config.speaker_id of the model's config.json.
@@ -66,7 +69,8 @@ def main() -> None:
         images=rgbs,
         videos=[],
         audios=[],
-        speech_config=speech_config,
+        text_config=text_config,
+        talker_speech_config=talker_speech_config,
         streamer=streamer,
     )
     history.append({"role": "assistant", "content": decoded_results.texts[0]})
@@ -87,7 +91,8 @@ def main() -> None:
             images=[],
             videos=[],
             audios=[],
-            speech_config=speech_config,
+            text_config=text_config,
+            talker_speech_config=talker_speech_config,
             streamer=streamer,
         )
         history.append({"role": "assistant", "content": decoded_results.texts[0]})

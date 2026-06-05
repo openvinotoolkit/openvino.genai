@@ -7,8 +7,9 @@
 #include <vector>
 
 #include "load_image.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
-#include "openvino/genai/omni/speech_generation_config.hpp"
+#include "openvino/genai/omni/talker_speech_config.hpp"
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
@@ -22,11 +23,14 @@ int main(int argc, char* argv[]) try {
 
     const std::filesystem::path models_path = argv[1];
 
-    // Speech output is hardcoded here to show the multimodal path.
-    // Set return_audio = false to get text-only responses.
-    ov::genai::OmniSpeechGenerationConfig speech_config(models_path);
-    speech_config.max_new_tokens = 256;
-    speech_config.return_audio = true;
+    // Two configs: text_config drives the thinker text decode, talker_speech_config drives
+    // the talker + speech output. Speech output is hardcoded on here to show the multimodal
+    // path. Set talker_speech_config.return_audio = false to get text-only responses.
+    ov::genai::GenerationConfig text_config;
+    text_config.max_new_tokens = 256;
+
+    ov::genai::OmniTalkerSpeechConfig talker_speech_config(models_path);
+    talker_speech_config.return_audio = true;
     // Leaving speaker empty selects the model's default voice. Available voices vary by checkpoint
     // (e.g. MoE exposes "Ethan", "Chelsie", "Aiden", "Cherry"); the full list is in
     // talker_config.speaker_id of the model's config.json.
@@ -46,7 +50,8 @@ int main(int argc, char* argv[]) try {
                                                                    rgbs,
                                                                    /*videos=*/{},
                                                                    /*audios=*/{},
-                                                                   speech_config,
+                                                                   text_config,
+                                                                   talker_speech_config,
                                                                    print_subword);
     history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
 
@@ -64,7 +69,8 @@ int main(int argc, char* argv[]) try {
                                         /*images=*/{},
                                         /*videos=*/{},
                                         /*audios=*/{},
-                                        speech_config,
+                                        text_config,
+                                        talker_speech_config,
                                         print_subword);
         history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
 

@@ -111,7 +111,7 @@ public:
     };
 
     /// @brief Set audio inputs to be forwarded to the underlying CB pipeline on the next generate() call.
-    /// Internal-use API for OmniPipeline which constructs an OmniSpeechGenerationConfig path that
+    /// Internal-use API for OmniPipeline which constructs an OmniTalkerSpeechConfig path that
     /// bypasses the AnyMap audio extraction.
     void set_pending_audios(const std::vector<ov::Tensor>& audios) {
         m_pending_audios = audios;
