@@ -10,9 +10,9 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/chat_history.hpp"
-#include "openvino/genai/omni_pipeline.hpp"
-#include "openvino/genai/omni_speech_generation_config.hpp"
-#include "openvino/genai/omni_speech_streamer_base.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/omni/speech_generation_config.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline_base.hpp"
@@ -35,34 +35,30 @@ public:
                      const std::string& device,
                      const ov::AnyMap& properties);
 
-    VLMDecodedResults generate(const std::string& prompt,
-                               const std::vector<ov::Tensor>& images,
-                               const std::vector<ov::Tensor>& videos,
-                               const std::vector<ov::Tensor>& audios,
-                               const OmniSpeechGenerationConfig& speech_config,
+    OmniDecodedResults generate(const std::string& prompt,
+                                const std::vector<ov::Tensor>& images,
+                                const std::vector<ov::Tensor>& videos,
+                                const std::vector<ov::Tensor>& audios,
+                                const OmniSpeechGenerationConfig& speech_config,
+                                const StreamerVariant& text_streamer,
+                                const OmniSpeechStreamerVariant& speech_streamer);
+
+    OmniDecodedResults generate(const ChatHistory& history,
+                                const std::vector<ov::Tensor>& images,
+                                const std::vector<ov::Tensor>& videos,
+                                const std::vector<ov::Tensor>& audios,
+                                const OmniSpeechGenerationConfig& speech_config,
                                const StreamerVariant& text_streamer,
                                const OmniSpeechStreamerVariant& speech_streamer);
-
-    VLMDecodedResults generate(const ChatHistory& history,
-                               const std::vector<ov::Tensor>& images,
-                               const std::vector<ov::Tensor>& videos,
-                               const std::vector<ov::Tensor>& audios,
-                               const OmniSpeechGenerationConfig& speech_config,
-                               const StreamerVariant& text_streamer,
-                               const OmniSpeechStreamerVariant& speech_streamer);
-
-    void start_chat(const std::string& system_message);
-
-    void finish_chat();
 
 private:
     /// @brief Reject non-Omni-capable models early, before any inference work.
     void assert_omni_capable() const;
 
     /// @brief Run the speech step against the hidden states collected during VLM generation.
-    VLMDecodedResults run_with_speech(VLMDecodedResults vlm_result,
-                                      const OmniSpeechGenerationConfig& speech_config,
-                                      const OmniSpeechStreamerVariant& speech_streamer);
+    OmniDecodedResults run_with_speech(VLMDecodedResults vlm_result,
+                                       const OmniSpeechGenerationConfig& speech_config,
+                                       const OmniSpeechStreamerVariant& speech_streamer);
 
     /// @brief RAII guard that clears the shared VLM's pending-audios slot when the scope exits,
     /// even on exception. Keeps a stale audio batch from leaking into the next generate() call

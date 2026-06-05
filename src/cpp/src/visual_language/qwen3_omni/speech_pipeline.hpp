@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "openvino/genai/omni_speech_streamer_base.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "visual_language/vlm_config.hpp"

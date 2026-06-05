@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "openvino/genai/generation_config.hpp"
-#include "openvino/genai/omni_speech_generation_config.hpp"
+#include "openvino/genai/omni/speech_generation_config.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "visual_language/qwen3_omni/audio_encoder.hpp"
 

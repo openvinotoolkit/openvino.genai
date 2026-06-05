@@ -164,10 +164,6 @@ public:
         m_impl.set_collect_hidden_states(enabled);
     }
 
-    VLMModelType get_model_type() const override {
-        return m_vlm_config.model_type;
-    }
-
     bool is_audio_output_enabled() const override {
         return m_vlm_config.enable_audio_output;
     }

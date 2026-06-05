@@ -10,9 +10,9 @@
 #include <pybind11/stl_bind.h>
 
 #include "openvino/genai/generation_config.hpp"
-#include "openvino/genai/omni_pipeline.hpp"
-#include "openvino/genai/omni_speech_generation_config.hpp"
-#include "openvino/genai/omni_speech_streamer_base.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/omni/speech_generation_config.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline_base.hpp"
 #include "py_utils.hpp"
@@ -23,6 +23,7 @@ namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::ChatHistory;
 using ov::genai::GenerationConfig;
+using ov::genai::OmniDecodedResults;
 using ov::genai::OmniPipeline;
 using ov::genai::OmniSpeechGenerationConfig;
 using ov::genai::VLMDecodedResults;
@@ -116,7 +117,7 @@ py::object call_omni_generate(OmniPipeline& pipe,
                               const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer) {
     auto streamer = pyutils::pystreamer_to_streamer(py_streamer);
     auto speech_streamer = pyutils::py_speech_streamer_to_streamer(py_speech_streamer);
-    VLMDecodedResults res;
+    OmniDecodedResults res;
     {
         py::gil_scoped_release rel;
         res = pipe.generate(prompt, images, videos, audios, speech_config, streamer, speech_streamer);
@@ -134,7 +135,7 @@ py::object call_omni_generate_history(OmniPipeline& pipe,
                                       const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer) {
     auto streamer = pyutils::pystreamer_to_streamer(py_streamer);
     auto speech_streamer = pyutils::py_speech_streamer_to_streamer(py_speech_streamer);
-    VLMDecodedResults res;
+    OmniDecodedResults res;
     {
         py::gil_scoped_release rel;
         res = pipe.generate(history, images, videos, audios, speech_config, streamer, speech_streamer);
@@ -160,6 +161,20 @@ void init_omni_pipeline(py::module_& m) {
                  config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
              })
         .def("validate", &OmniSpeechGenerationConfig::validate);
+
+    py::class_<OmniDecodedResults, VLMDecodedResults>(m, "OmniDecodedResults",
+        R"(Omni-specific decoded results including speech outputs.
+
+        Extends VLMDecodedResults with speech output waveforms for Qwen3-Omni models.
+
+        Parameters:
+        texts:            vector of resulting sequences (inherited from DecodedResults).
+        scores:           scores for each sequence (inherited from DecodedResults).
+        perf_metrics:     performance metrics (inherited from VLMDecodedResults).
+        speech_outputs:   speech waveform tensors (one per result, present when return_audio=True).
+        )")
+        .def(py::init<>())
+        .def_readonly("speech_outputs", &OmniDecodedResults::speech_outputs);
 
     py::class_<OmniPipeline>(m, "OmniPipeline", omni_pipeline_docstring)
         .def(py::init([](const std::filesystem::path& models_path,
@@ -205,9 +220,6 @@ void init_omni_pipeline(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
              )")
-
-        .def("start_chat", &OmniPipeline::start_chat, py::arg("system_message") = "")
-        .def("finish_chat", &OmniPipeline::finish_chat)
 
         .def(
             "generate",

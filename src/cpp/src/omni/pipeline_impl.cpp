@@ -67,17 +67,17 @@ OmniPipeline::OmniPipelineImpl::OmniPipelineImpl(const std::shared_ptr<VLMPipeli
 
 void OmniPipeline::OmniPipelineImpl::assert_omni_capable() const {
     OPENVINO_ASSERT(
-        m_vlm->get_model_type() == VLMModelType::QWEN3_OMNI && m_vlm->is_audio_output_enabled(),
+        m_vlm->is_audio_output_enabled(),
         "OmniPipeline requires a Qwen3-Omni model with audio output enabled (config.json: enable_audio_output=true)");
 }
 
-VLMDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& prompt,
-                                                            const std::vector<ov::Tensor>& images,
-                                                            const std::vector<ov::Tensor>& videos,
-                                                            const std::vector<ov::Tensor>& audios,
-                                                            const OmniSpeechGenerationConfig& speech_config,
-                                                            const StreamerVariant& text_streamer,
-                                                            const OmniSpeechStreamerVariant& speech_streamer) {
+OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& prompt,
+                                                             const std::vector<ov::Tensor>& images,
+                                                             const std::vector<ov::Tensor>& videos,
+                                                             const std::vector<ov::Tensor>& audios,
+                                                             const OmniSpeechGenerationConfig& speech_config,
+                                                             const StreamerVariant& text_streamer,
+                                                             const OmniSpeechStreamerVariant& speech_streamer) {
     speech_config.validate();
 
     PendingAudiosGuard audios_guard(*m_vlm, audios);
@@ -90,16 +90,20 @@ VLMDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& pr
         return run_with_speech(std::move(vlm_result), speech_config, speech_streamer);
     }
 
-    return m_vlm->generate(prompt, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
+    // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_outputs.
+    VLMDecodedResults vlm_result = m_vlm->generate(prompt, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
+    OmniDecodedResults omni_result;
+    static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+    return omni_result;
 }
 
-VLMDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& history,
-                                                            const std::vector<ov::Tensor>& images,
-                                                            const std::vector<ov::Tensor>& videos,
-                                                            const std::vector<ov::Tensor>& audios,
-                                                            const OmniSpeechGenerationConfig& speech_config,
-                                                            const StreamerVariant& text_streamer,
-                                                            const OmniSpeechStreamerVariant& speech_streamer) {
+OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& history,
+                                                             const std::vector<ov::Tensor>& images,
+                                                             const std::vector<ov::Tensor>& videos,
+                                                             const std::vector<ov::Tensor>& audios,
+                                                             const OmniSpeechGenerationConfig& speech_config,
+                                                             const StreamerVariant& text_streamer,
+                                                             const OmniSpeechStreamerVariant& speech_streamer) {
     speech_config.validate();
 
     PendingAudiosGuard audios_guard(*m_vlm, audios);
@@ -112,12 +116,16 @@ VLMDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& hi
         return run_with_speech(std::move(vlm_result), speech_config, speech_streamer);
     }
 
-    return m_vlm->generate(history, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
+    // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_outputs.
+    VLMDecodedResults vlm_result = m_vlm->generate(history, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
+    OmniDecodedResults omni_result;
+    static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+    return omni_result;
 }
 
-VLMDecodedResults OmniPipeline::OmniPipelineImpl::run_with_speech(VLMDecodedResults vlm_result,
-                                                                   const OmniSpeechGenerationConfig& speech_config,
-                                                                   const OmniSpeechStreamerVariant& speech_streamer) {
+OmniDecodedResults OmniPipeline::OmniPipelineImpl::run_with_speech(VLMDecodedResults vlm_result,
+                                                                    const OmniSpeechGenerationConfig& speech_config,
+                                                                    const OmniSpeechStreamerVariant& speech_streamer) {
     OPENVINO_ASSERT(vlm_result.m_hidden_states_data != nullptr,
                     "OmniPipeline: hidden states missing despite return_audio=true; check that the model exposes "
                     "thinker hidden states");
@@ -144,16 +152,12 @@ VLMDecodedResults OmniPipeline::OmniPipelineImpl::run_with_speech(VLMDecodedResu
                                                     speech_config.speaker,
                                                     speech_config.max_new_tokens,
                                                     speech_config.rng_seed);
-    vlm_result.speech_outputs = {std::move(waveform)};
-    return vlm_result;
-}
 
-void OmniPipeline::OmniPipelineImpl::start_chat(const std::string& system_message) {
-    m_vlm->start_chat(system_message);
-}
-
-void OmniPipeline::OmniPipelineImpl::finish_chat() {
-    m_vlm->finish_chat();
+    // Convert VLMDecodedResults to OmniDecodedResults and populate speech_outputs.
+    OmniDecodedResults omni_result;
+    static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+    omni_result.speech_outputs = {std::move(waveform)};
+    return omni_result;
 }
 
 }  // namespace ov::genai

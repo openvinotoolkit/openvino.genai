@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/omni_speech_generation_config.hpp"
+#include "openvino/genai/omni/speech_generation_config.hpp"
 
 #include <fstream>
 

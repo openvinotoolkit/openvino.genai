@@ -7,7 +7,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 
-#include "openvino/genai/omni_speech_streamer_base.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/json_container.hpp"

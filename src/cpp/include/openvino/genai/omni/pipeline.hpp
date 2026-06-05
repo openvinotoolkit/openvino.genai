@@ -10,8 +10,9 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/genai/chat_history.hpp"
-#include "openvino/genai/omni_speech_generation_config.hpp"
-#include "openvino/genai/omni_speech_streamer_base.hpp"
+#include "openvino/genai/omni/decoded_results.hpp"
+#include "openvino/genai/omni/speech_generation_config.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -63,40 +64,23 @@ public:
     /// @param speech_config Generation config (inherits GenerationConfig fields plus the three Omni fields).
     /// @param text_streamer Optional streamer for text tokens.
     /// @param speech_streamer Optional streamer for audio chunks.
-    /// @return VLMDecodedResults with `speech_outputs` populated when speech_config.return_audio is true.
-    VLMDecodedResults generate(const std::string& prompt,
-                               const std::vector<ov::Tensor>& images,
-                               const std::vector<ov::Tensor>& videos,
-                               const std::vector<ov::Tensor>& audios,
-                               const OmniSpeechGenerationConfig& speech_config,
-                               const StreamerVariant& text_streamer = std::monostate{},
-                               const OmniSpeechStreamerVariant& speech_streamer = std::monostate{});
+    /// @return OmniDecodedResults with `speech_outputs` populated when speech_config.return_audio is true.
+    OmniDecodedResults generate(const std::string& prompt,
+                                const std::vector<ov::Tensor>& images,
+                                const std::vector<ov::Tensor>& videos,
+                                const std::vector<ov::Tensor>& audios,
+                                const OmniSpeechGenerationConfig& speech_config,
+                                const StreamerVariant& text_streamer = std::monostate{},
+                                const OmniSpeechStreamerVariant& speech_streamer = std::monostate{});
 
     /// @brief Generate text + (optionally) speech from a chat history.
-    VLMDecodedResults generate(const ChatHistory& history,
-                               const std::vector<ov::Tensor>& images,
-                               const std::vector<ov::Tensor>& videos,
-                               const std::vector<ov::Tensor>& audios,
-                               const OmniSpeechGenerationConfig& speech_config,
-                               const StreamerVariant& text_streamer = std::monostate{},
-                               const OmniSpeechStreamerVariant& speech_streamer = std::monostate{});
-
-    /// @brief Activate chat mode on the underlying VLM pipeline so subsequent flat-prompt
-    /// `generate()` calls accumulate history.
-    /// @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
-    /// Please, use generate() with ChatHistory argument.
-    OPENVINO_DEPRECATED(
-        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-        "Please, use generate() with ChatHistory argument.")
-    void start_chat(const std::string& system_message = "");
-
-    /// @brief Deactivate chat mode on the underlying VLM pipeline.
-    /// @deprecated start_chat() / finish_chat() API is deprecated and will be removed in the next major release.
-    /// Please, use generate() with ChatHistory argument.
-    OPENVINO_DEPRECATED(
-        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-        "Please, use generate() with ChatHistory argument.")
-    void finish_chat();
+    OmniDecodedResults generate(const ChatHistory& history,
+                                const std::vector<ov::Tensor>& images,
+                                const std::vector<ov::Tensor>& videos,
+                                const std::vector<ov::Tensor>& audios,
+                                const OmniSpeechGenerationConfig& speech_config,
+                                const StreamerVariant& text_streamer = std::monostate{},
+                                const OmniSpeechStreamerVariant& speech_streamer = std::monostate{});
 
 private:
     class OmniPipelineImpl;

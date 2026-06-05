@@ -18,9 +18,6 @@ namespace ov::genai {
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
     VLMPerfMetrics perf_metrics;
-    /// @brief Optional speech output waveforms (one per generated result).
-    /// Empty if speech generation was not requested or model does not support it.
-    std::vector<ov::Tensor> speech_outputs;
 
     // Internal fields for speech pipeline (not exposed to Python bindings).
     // Populated by CB generate when return_audio is requested, consumed by VLM adapter.

@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "load_image.hpp"
-#include "openvino/genai/omni_pipeline.hpp"
-#include "openvino/genai/omni_speech_generation_config.hpp"
+#include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/omni/speech_generation_config.hpp"
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
@@ -42,12 +42,12 @@ int main(int argc, char* argv[]) try {
     std::getline(std::cin, prompt);
 
     history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
-    ov::genai::VLMDecodedResults decoded_results = pipe.generate(history,
-                                                                 rgbs,
-                                                                 /*videos=*/{},
-                                                                 /*audios=*/{},
-                                                                 speech_config,
-                                                                 print_subword);
+    ov::genai::OmniDecodedResults decoded_results = pipe.generate(history,
+                                                                   rgbs,
+                                                                   /*videos=*/{},
+                                                                   /*audios=*/{},
+                                                                   speech_config,
+                                                                   print_subword);
     history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
 
     if (!decoded_results.speech_outputs.empty()) {

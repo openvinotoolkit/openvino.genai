@@ -6,17 +6,13 @@
 #include <string>
 #include <vector>
 
-#include "openvino/genai/omni_speech_streamer_base.hpp"
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
-
-// Forward-declared so the public header doesn't drag in the internal vlm_config.hpp.
-// The underlying type is fixed to `int` to keep the forward declaration valid.
-enum class VLMModelType : int;
 
 /**
  * @brief Public abstract interface for VLMPipeline implementations.
@@ -116,10 +112,8 @@ public:
     /// via HiddenStatesCollectionScope. Default is off.
     virtual void enable_hidden_states_collection(bool enabled) = 0;
 
-    /// @brief Backing model type. Used by OmniPipeline ctor to reject non-Omni-capable models early.
-    virtual VLMModelType get_model_type() const = 0;
-
     /// @brief True when the loaded VLM model has audio output enabled (Qwen3-Omni only).
+    /// Used by OmniPipeline's ctor to reject non-Omni-capable models early.
     virtual bool is_audio_output_enabled() const = 0;
 
     /// @brief RAII helper that flips `enable_hidden_states_collection` on entry and off on destruction.

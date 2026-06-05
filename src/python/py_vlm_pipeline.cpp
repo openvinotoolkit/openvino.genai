@@ -125,7 +125,6 @@ auto decoded_results_docstring = R"(
     texts:            vector of resulting sequences.
     scores:           scores for each sequence.
     metrics:          performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
-    speech_outputs:   optional speech waveform tensors (one per result, present when return_audio=True).
 )";
 
 auto video_metadata_docstring = R"(
@@ -265,7 +264,6 @@ void init_vlm_pipeline(py::module_& m) {
         .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8(dr.texts); })
         .def_readonly("scores", &ov::genai::VLMDecodedResults::scores)
         .def_readonly("perf_metrics", &ov::genai::VLMDecodedResults::perf_metrics)
-        .def_readonly("speech_outputs", &ov::genai::VLMDecodedResults::speech_outputs)
         .def("__str__", [](const ov::genai::VLMDecodedResults &dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8(dr.texts);
             py::str res;
