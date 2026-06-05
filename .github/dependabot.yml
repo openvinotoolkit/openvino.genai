@@ -95,6 +95,8 @@ updates:
       - dependency-name: "huggingface-hub"
       # update transformers version is dependent on optimum-intel for now and required more precise changes in repo
       - dependency-name: "transformers"
+      # new version fails on Windows due to import k2 module, remove ignore after CVS-186425 will be fixed
+      - dependency-name: "speechbrain"
     groups:
       pip-dependencies:
         patterns:
