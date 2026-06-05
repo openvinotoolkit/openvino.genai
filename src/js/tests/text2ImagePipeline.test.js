@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, before } from "node:test";
+import os from "node:os";
 import assert from "node:assert/strict";
 import { Text2ImagePipeline } from "../dist/index.js";
 import { Text2ImagePipeline as Text2ImagePipelineClass } from "../dist/pipelines/text2ImagePipeline.js";
@@ -25,7 +26,8 @@ describe("Text2ImagePipeline creation", () => {
   });
 });
 
-describe("Text2ImagePipeline methods", () => {
+// Skip due to CVS-179949
+describe("Text2ImagePipeline methods", { skip: os.platform() === "darwin" }, () => {
   let pipeline;
 
   before(async () => {

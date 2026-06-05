@@ -564,8 +564,20 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
-        .def("start_chat", &ContinuousBatchingPipeline::start_chat, py::arg("system_message") = "")
-        .def("finish_chat", &ContinuousBatchingPipeline::finish_chat)
+        .def("start_chat", [](ContinuousBatchingPipeline& pipe, const std::string& system_message) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.start_chat(system_message);
+        }, py::arg("system_message") = "")
+        .def("finish_chat", [](ContinuousBatchingPipeline& pipe) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.finish_chat();
+        })
 
         .def(
             "generate",
