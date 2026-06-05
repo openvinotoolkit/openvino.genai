@@ -47,22 +47,28 @@ def main() -> None:
 
     rgbs = read_images(args.image_dir)
 
-    pipe = openvino_genai.VLMPipeline(args.model_dir, "CPU")
+    pipe = openvino_genai.OmniPipeline(args.model_dir, "CPU")
 
     # Speech output is hardcoded here to show the multimodal path.
     # Set return_audio = False to get text-only responses.
-    config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 256
-    config.return_audio = True
+    speech_config = openvino_genai.OmniSpeechGenerationConfig(args.model_dir)
+    speech_config.max_new_tokens = 256
+    speech_config.return_audio = True
     # Leaving speaker empty selects the model's default voice. Available voices vary by checkpoint
     # (e.g. MoE exposes "Ethan", "Chelsie", "Aiden", "Cherry"); the full list is in
     # talker_config.speaker_id of the model's config.json.
-    config.speaker = ""
 
     history = openvino_genai.ChatHistory()
     prompt = input("question:\n")
     history.append({"role": "user", "content": prompt})
-    decoded_results = pipe.generate(history, images=rgbs, generation_config=config, streamer=streamer)
+    decoded_results = pipe.generate(
+        history,
+        images=rgbs,
+        videos=[],
+        audios=[],
+        speech_config=speech_config,
+        streamer=streamer,
+    )
     history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
     if decoded_results.speech_outputs:
@@ -76,7 +82,14 @@ def main() -> None:
 
         history.append({"role": "user", "content": prompt})
         # New images can be passed at each turn; here we only pass them on turn 1.
-        decoded_results = pipe.generate(history, generation_config=config, streamer=streamer)
+        decoded_results = pipe.generate(
+            history,
+            images=[],
+            videos=[],
+            audios=[],
+            speech_config=speech_config,
+            streamer=streamer,
+        )
         history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
         if decoded_results.speech_outputs:

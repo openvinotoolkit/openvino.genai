@@ -310,11 +310,27 @@ public:
     /// @param new_config A config to override default values with.
     void set_generation_config(const GenerationConfig& new_config);
 
-private:
     class VLMPipelineBase;
+
+    /// @brief Construct a backing VLMPipelineBase implementation from a model directory.
+    /// Used by OmniPipeline's shared-VLM ctor to load the VLM independently of an
+    /// existing VLMPipeline instance.
+    /// @return A shared_ptr to a freshly-constructed VLMPipelineBase implementation
+    ///         (CB adapter or VLMPipelineImpl, selected the same way as the path-based ctor).
+    static std::shared_ptr<VLMPipelineBase> create_base(const std::filesystem::path& models_dir,
+                                                        const std::string& device,
+                                                        const ov::AnyMap& properties);
+
+    /// @brief Get the backing VLMPipelineBase. Used by OmniPipeline's shared-VLM ctor to
+    /// reuse an already-loaded VLM without reloading multi-GB weights.
+    std::shared_ptr<VLMPipelineBase> get_base() const {
+        return m_pimpl;
+    }
+
+private:
     class VLMPipelineImpl;
     class VLMContinuousBatchingAdapter;
-    std::unique_ptr<VLMPipelineBase> m_pimpl;
+    std::shared_ptr<VLMPipelineBase> m_pimpl;
 };
 
 /*

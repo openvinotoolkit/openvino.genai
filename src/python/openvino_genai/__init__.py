@@ -16,7 +16,7 @@ from .py_openvino_genai import (
     RawPerfMetrics,
     PerfMetrics,
     StreamerBase,
-    AudioStreamerBase,
+    OmniSpeechStreamerBase,
     get_version,
     StreamingStatus,
     TextStreamer,
@@ -45,6 +45,13 @@ from .py_openvino_genai import (
     VLMPipeline,
     VLMDecodedResults,
     VideoMetadata,
+)
+
+# Omni pipeline (Qwen3-Omni text + speech)
+
+from .py_openvino_genai import (
+    OmniPipeline,
+    OmniSpeechGenerationConfig,
 )
 
 # LLM pipeline

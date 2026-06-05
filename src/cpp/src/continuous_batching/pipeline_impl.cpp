@@ -326,8 +326,9 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
                                                          token_type_ids);
     }
 
-    // Enable hidden state accumulation for speech output (Qwen3-Omni)
-    if (sampling_params_copy.return_audio) {
+    // Enable hidden state accumulation for speech output (Qwen3-Omni). Driven by OmniPipeline
+    // via VLMPipelineBase::HiddenStatesCollectionScope -> set_collect_hidden_states.
+    if (m_collect_hidden_states) {
         for (auto& seq : sequence_group->get_running_sequences()) {
             seq->set_accumulate_hidden_states(true);
         }
@@ -564,13 +565,9 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         HiddenStateExportGuard& operator=(const HiddenStateExportGuard&) = delete;
     };
 
-    // Enable hidden state export if any request requires audio output (Qwen3-Omni speech)
-    bool any_return_audio =
-        std::any_of(sampling_params.begin(), sampling_params.end(), [](const GenerationConfig& cfg) {
-            return cfg.return_audio;
-        });
+    // Enable hidden state export if hidden-states collection has been gated on by OmniPipeline.
     std::optional<HiddenStateExportGuard> hidden_state_guard;
-    if (any_return_audio) {
+    if (m_collect_hidden_states) {
         hidden_state_guard.emplace(m_model_runner);
     }
 
@@ -665,7 +662,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         result.m_finish_reasons.resize(num_outputs, GenerationFinishReason::NONE);
         result.m_status = request->get_generation_stream()->get_status();
 
-        bool collect_hidden_states = sampling_params.return_audio;
+        bool collect_hidden_states = m_collect_hidden_states;
         if (collect_hidden_states) {
             result.m_hidden_states.resize(num_outputs);
             result.m_intermediate_hidden_states.resize(num_outputs);

@@ -7,7 +7,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 
-#include "openvino/genai/audio_streamer_base.hpp"
+#include "openvino/genai/omni_speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/json_container.hpp"
@@ -52,12 +52,12 @@ ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfi
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
 
-using PyBindAudioStreamerVariant = std::variant<
+using PyBindOmniSpeechStreamerVariant = std::variant<
     std::function<std::optional<uint16_t>(ov::Tensor)>,
-    std::shared_ptr<ov::genai::AudioStreamerBase>,
+    std::shared_ptr<ov::genai::OmniSpeechStreamerBase>,
     std::monostate>;
 
-ov::genai::AudioStreamerVariant py_audio_streamer_to_streamer(const PyBindAudioStreamerVariant& py_streamer);
+ov::genai::OmniSpeechStreamerVariant py_speech_streamer_to_streamer(const PyBindOmniSpeechStreamerVariant& py_streamer);
 
 ov::AnyMap py_object_to_any_map(const py::object& py_obj);
 

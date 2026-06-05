@@ -70,12 +70,22 @@ protected:
 
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
+    // Hidden-states collection gate. Toggled by VLMPipelineBase::enable_hidden_states_collection
+    // (driven by OmniPipeline's HiddenStatesCollectionScope) to opt this pipeline into
+    // accumulating per-token hidden states during a generate() call. Off by default.
+    bool m_collect_hidden_states = false;
+
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
+
+    /// @brief Toggle hidden-states accumulation for the next generate() call(s).
+    /// OmniPipeline flips this on for the duration of an audio-producing generate via
+    /// `VLMPipelineBase::HiddenStatesCollectionScope`.
+    virtual void set_collect_hidden_states(bool enabled) { m_collect_hidden_states = enabled; }
 
     void encode_audios(const std::vector<ov::Tensor>& audios) {
         if (m_inputs_embedder) {

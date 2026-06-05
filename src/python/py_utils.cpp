@@ -489,10 +489,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
-    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::AudioStreamerBase>(py_obj)) &&
+    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::OmniSpeechStreamerBase>(py_obj)) &&
                property_name == "audio_streamer") {
-        auto audio_streamer = py::cast<ov::genai::pybind::utils::PyBindAudioStreamerVariant>(py_obj);
-        auto converted = py_audio_streamer_to_streamer(audio_streamer);
+        auto audio_streamer = py::cast<ov::genai::pybind::utils::PyBindOmniSpeechStreamerVariant>(py_obj);
+        auto converted = py_speech_streamer_to_streamer(audio_streamer);
         // Store the unwrapped concrete type so get_audio_streamer_from_map can .is<T>() it
         return std::visit(
             [](auto&& val) -> ov::Any {
@@ -585,8 +585,8 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
     return streamer;
 }
 
-ov::genai::AudioStreamerVariant py_audio_streamer_to_streamer(const PyBindAudioStreamerVariant& py_streamer) {
-    ov::genai::AudioStreamerVariant streamer = std::monostate();
+ov::genai::OmniSpeechStreamerVariant py_speech_streamer_to_streamer(const PyBindOmniSpeechStreamerVariant& py_streamer) {
+    ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
 
     std::visit(overloaded{[&streamer](const std::function<std::optional<uint16_t>(ov::Tensor)>& py_callback) {
                               // shared_ptr so the destructor runs with GIL held
@@ -614,7 +614,7 @@ ov::genai::AudioStreamerVariant py_audio_streamer_to_streamer(const PyBindAudioS
                               };
                               streamer = callback_wrapped;
                           },
-                          [&streamer](std::shared_ptr<ov::genai::AudioStreamerBase> streamer_cls) {
+                          [&streamer](std::shared_ptr<ov::genai::OmniSpeechStreamerBase> streamer_cls) {
                               streamer = streamer_cls;
                           },
                           [](std::monostate) { /* already monostate */ }},

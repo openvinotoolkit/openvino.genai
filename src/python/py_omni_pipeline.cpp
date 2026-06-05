@@ -1,0 +1,269 @@
+// Copyright (C) 2024-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include <filesystem>
+
+#include <pybind11/functional.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
+#include <pybind11/stl_bind.h>
+
+#include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/omni_pipeline.hpp"
+#include "openvino/genai/omni_speech_generation_config.hpp"
+#include "openvino/genai/omni_speech_streamer_base.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline_base.hpp"
+#include "py_utils.hpp"
+#include "tokenizer/tokenizers_path.hpp"
+
+namespace py = pybind11;
+namespace pyutils = ov::genai::pybind::utils;
+
+using ov::genai::ChatHistory;
+using ov::genai::GenerationConfig;
+using ov::genai::OmniPipeline;
+using ov::genai::OmniSpeechGenerationConfig;
+using ov::genai::VLMDecodedResults;
+using ov::genai::VLMPipeline;
+
+namespace {
+
+auto omni_speech_generation_config_docstring = R"(
+    OmniSpeechGenerationConfig
+
+    Inherits all GenerationConfig fields and adds three Omni-specific knobs:
+
+    :param return_audio: Enable speech output. Default True. Set False to short-circuit
+        the talker and produce text only.
+    :type return_audio: bool
+
+    :param speaker: Speaker name for speech output. Empty selects the model's default speaker.
+        Available names are listed under `talker_config.speaker_id` in the model's `config.json`.
+    :type speaker: str
+
+    :param audio_chunk_frames: Number of codec frames accumulated before streaming each audio
+        chunk. Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
+    :type audio_chunk_frames: int
+)";
+
+auto omni_pipeline_docstring = R"(
+    OmniPipeline — Qwen3-Omni text + speech pipeline.
+
+    Composes a VLM pipeline (text generation with hidden-state collection) with a Qwen3-Omni
+    speech pipeline (Talker + CodePredictor + Code2Wav). Speech generation is gated per-call
+    by OmniSpeechGenerationConfig.return_audio.
+
+    Two construction paths:
+
+      - Path-based: OmniPipeline(models_path, device, **properties) loads VLM and speech
+        models from a single directory.
+
+      - Shared-VLM: OmniPipeline(vlm_pipeline, speech_models_path, device, **properties)
+        reuses an externally-loaded VLMPipeline so multi-GB weights are not reloaded.
+
+    Both ctors enforce that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
+    and enable_audio_output) — non-Omni models throw at construction time.
+)";
+
+auto omni_generate_prompt_docstring = R"(
+    Generate text and (optionally) speech from a flat prompt.
+
+    :param prompt: Input prompt
+    :type prompt: str
+
+    :param images: image tensors to be prepended to the prompt
+    :type images: list[ov.Tensor]
+
+    :param videos: video tensors to be prepended to the prompt
+    :type videos: list[ov.Tensor]
+
+    :param audios: audio tensors to be prepended to the prompt
+    :type audios: list[ov.Tensor]
+
+    :param speech_config: speech generation config (inherits GenerationConfig fields plus the
+        three Omni fields). When None, the pipeline-default config is used.
+    :type speech_config: OmniSpeechGenerationConfig | None
+
+    :param streamer: optional streamer for text tokens.
+    :type streamer: Callable[[str], bool] | StreamerBase | None
+
+    :param speech_streamer: optional callback or OmniSpeechStreamerBase to receive audio chunks
+        during speech generation. Lambda receives ov.Tensor [1, 1, N_samples] and returns
+        StreamingStatus (or bool/None).
+    :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] | OmniSpeechStreamerBase | None
+
+    :return: VLMDecodedResults with `speech_outputs` populated when speech_config.return_audio is True.
+    :rtype: VLMDecodedResults
+)";
+
+auto omni_generate_history_docstring = R"(
+    Generate text and (optionally) speech from a chat history. Same parameter semantics as the
+    prompt overload.
+
+    :param history: Chat history
+    :type history: ChatHistory
+)";
+
+py::object call_omni_generate(OmniPipeline& pipe,
+                              const std::string& prompt,
+                              const std::vector<ov::Tensor>& images,
+                              const std::vector<ov::Tensor>& videos,
+                              const std::vector<ov::Tensor>& audios,
+                              const OmniSpeechGenerationConfig& speech_config,
+                              const pyutils::PyBindStreamerVariant& py_streamer,
+                              const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer) {
+    auto streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    auto speech_streamer = pyutils::py_speech_streamer_to_streamer(py_speech_streamer);
+    VLMDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(prompt, images, videos, audios, speech_config, streamer, speech_streamer);
+    }
+    return py::cast(res);
+}
+
+py::object call_omni_generate_history(OmniPipeline& pipe,
+                                      const ChatHistory& history,
+                                      const std::vector<ov::Tensor>& images,
+                                      const std::vector<ov::Tensor>& videos,
+                                      const std::vector<ov::Tensor>& audios,
+                                      const OmniSpeechGenerationConfig& speech_config,
+                                      const pyutils::PyBindStreamerVariant& py_streamer,
+                                      const pyutils::PyBindOmniSpeechStreamerVariant& py_speech_streamer) {
+    auto streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    auto speech_streamer = pyutils::py_speech_streamer_to_streamer(py_speech_streamer);
+    VLMDecodedResults res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(history, images, videos, audios, speech_config, streamer, speech_streamer);
+    }
+    return py::cast(res);
+}
+
+}  // namespace
+
+void init_omni_pipeline(py::module_& m) {
+    py::class_<OmniSpeechGenerationConfig, GenerationConfig>(m,
+                                                             "OmniSpeechGenerationConfig",
+                                                             omni_speech_generation_config_docstring)
+        .def(py::init<>())
+        .def(py::init<std::filesystem::path>(),
+             py::arg("models_path"),
+             "folder with generation_config.json and config.json (talker_config)")
+        .def_readwrite("return_audio", &OmniSpeechGenerationConfig::return_audio)
+        .def_readwrite("speaker", &OmniSpeechGenerationConfig::speaker)
+        .def_readwrite("audio_chunk_frames", &OmniSpeechGenerationConfig::audio_chunk_frames)
+        .def("update_generation_config",
+             [](OmniSpeechGenerationConfig& config, const py::kwargs& kwargs) {
+                 config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
+             })
+        .def("validate", &OmniSpeechGenerationConfig::validate);
+
+    py::class_<OmniPipeline>(m, "OmniPipeline", omni_pipeline_docstring)
+        .def(py::init([](const std::filesystem::path& models_path,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 py::gil_scoped_release rel;
+                 return std::make_unique<OmniPipeline>(models_path, device, properties);
+             }),
+             py::arg("models_path"),
+             "folder with exported Qwen3-Omni model files (VLM + speech)",
+             py::arg("device"),
+             "device on which inference will be done",
+             R"(
+                OmniPipeline path-based constructor.
+                models_path (os.PathLike): Path to the folder with exported Qwen3-Omni model files.
+                device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+             )")
+
+        .def(py::init([](VLMPipeline& vlm,
+                         const std::filesystem::path& speech_models_path,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 auto base = vlm.get_base();
+                 py::gil_scoped_release rel;
+                 return std::make_unique<OmniPipeline>(base, speech_models_path, device, properties);
+             }),
+             py::arg("vlm"),
+             "an already-loaded VLMPipeline whose backing pipeline is reused (no reload of weights)",
+             py::arg("speech_models_path"),
+             "folder with the Qwen3-Omni speech models (talker + code predictor + code2wav + config.json)",
+             py::arg("device"),
+             "device on which inference will be done",
+             py::keep_alive<1, 2>(),
+             R"(
+                OmniPipeline shared-VLM constructor.
+                vlm (VLMPipeline): Already-loaded VLMPipeline. Its base is shared with the OmniPipeline.
+                speech_models_path (os.PathLike): Path to folder with Qwen3-Omni speech models + config.json.
+                device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+             )")
+
+        .def("start_chat", &OmniPipeline::start_chat, py::arg("system_message") = "")
+        .def("finish_chat", &OmniPipeline::finish_chat)
+
+        .def(
+            "generate",
+            [](OmniPipeline& pipe,
+               const std::string& prompt,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::Tensor>& audios,
+               const OmniSpeechGenerationConfig& speech_config,
+               const pyutils::PyBindStreamerVariant& streamer,
+               const pyutils::PyBindOmniSpeechStreamerVariant& speech_streamer)
+                -> py::typing::Union<VLMDecodedResults> {
+                return call_omni_generate(pipe,
+                                          prompt,
+                                          images,
+                                          videos,
+                                          audios,
+                                          speech_config,
+                                          streamer,
+                                          speech_streamer);
+            },
+            py::arg("prompt"),
+            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("audios") = std::vector<ov::Tensor>{},
+            py::arg("speech_config") = OmniSpeechGenerationConfig{},
+            py::arg("streamer") = std::monostate(),
+            py::arg("speech_streamer") = std::monostate(),
+            omni_generate_prompt_docstring)
+
+        .def(
+            "generate",
+            [](OmniPipeline& pipe,
+               const ChatHistory& history,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::Tensor>& audios,
+               const OmniSpeechGenerationConfig& speech_config,
+               const pyutils::PyBindStreamerVariant& streamer,
+               const pyutils::PyBindOmniSpeechStreamerVariant& speech_streamer)
+                -> py::typing::Union<VLMDecodedResults> {
+                return call_omni_generate_history(pipe,
+                                                  history,
+                                                  images,
+                                                  videos,
+                                                  audios,
+                                                  speech_config,
+                                                  streamer,
+                                                  speech_streamer);
+            },
+            py::arg("history"),
+            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("audios") = std::vector<ov::Tensor>{},
+            py::arg("speech_config") = OmniSpeechGenerationConfig{},
+            py::arg("streamer") = std::monostate(),
+            py::arg("speech_streamer") = std::monostate(),
+            omni_generate_history_docstring);
+}

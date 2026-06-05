@@ -21,14 +21,14 @@
 
 namespace {
 
-ov::genai::StreamingStatus invoke_audio_streamer(const ov::genai::AudioStreamerVariant& streamer,
-                                                 const ov::Tensor& chunk) {
+ov::genai::StreamingStatus invoke_speech_streamer(const ov::genai::OmniSpeechStreamerVariant& streamer,
+                                                  const ov::Tensor& chunk) {
     return std::visit(
         [&chunk](auto&& arg) -> ov::genai::StreamingStatus {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, std::function<ov::genai::StreamingStatus(const ov::Tensor&)>>) {
                 return arg(chunk);
-            } else if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::AudioStreamerBase>>) {
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>) {
                 return arg->write(chunk);
             } else {
                 return ov::genai::StreamingStatus::RUNNING;
@@ -37,18 +37,18 @@ ov::genai::StreamingStatus invoke_audio_streamer(const ov::genai::AudioStreamerV
         streamer);
 }
 
-void end_audio_streamer(const ov::genai::AudioStreamerVariant& streamer) {
+void end_speech_streamer(const ov::genai::OmniSpeechStreamerVariant& streamer) {
     std::visit(
         [](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::AudioStreamerBase>>) {
+            if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>) {
                 arg->end();
             }
         },
         streamer);
 }
 
-bool is_audio_streamer_active(const ov::genai::AudioStreamerVariant& streamer) {
+bool is_speech_streamer_active(const ov::genai::OmniSpeechStreamerVariant& streamer) {
     return !std::holds_alternative<std::monostate>(streamer);
 }
 
@@ -736,19 +736,19 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
                                                     const std::vector<ov::Tensor>& all_hidden_states,
                                                     const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                                    const AudioStreamerVariant& audio_streamer,
+                                                    const OmniSpeechStreamerVariant& audio_streamer,
                                                     size_t chunk_frames,
                                                     const std::string& speaker,
                                                     size_t max_new_tokens,
                                                     size_t rng_seed) {
     // chunk_frames only controls chunk granularity; streaming is gated solely by audio_streamer.
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
-    bool streaming = is_audio_streamer_active(audio_streamer);
+    bool streaming = is_speech_streamer_active(audio_streamer);
 
     if (!m_talker_available) {
         GENAI_WARN("Speech: talker not available");
         if (streaming)
-            end_audio_streamer(audio_streamer);
+            end_speech_streamer(audio_streamer);
         return ov::Tensor();
     }
 
@@ -770,7 +770,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     if (talker_input.get_shape()[1] == 0) {
         GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");
         if (streaming)
-            end_audio_streamer(audio_streamer);
+            end_speech_streamer(audio_streamer);
         return ov::Tensor();
     }
 
@@ -909,7 +909,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
             auto chunk_wav = codes_to_wav(chunk_tensor);
             chunk_cursor = all_codes.size();
 
-            auto status = invoke_audio_streamer(audio_streamer, chunk_wav);
+            auto status = invoke_speech_streamer(audio_streamer, chunk_wav);
             if (status == StreamingStatus::STOP || status == StreamingStatus::CANCEL) {
                 GENAI_INFO("Speech: streaming %s at step %zu",
                            status == StreamingStatus::STOP ? "stopped" : "cancelled",
@@ -958,12 +958,12 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     if (streaming && chunk_cursor < all_codes.size() && !early_stop) {
         auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
         auto chunk_wav = codes_to_wav(chunk_tensor);
-        invoke_audio_streamer(audio_streamer, chunk_wav);
+        invoke_speech_streamer(audio_streamer, chunk_wav);
     }
 
     // Always call end() on active streamer
     if (streaming) {
-        end_audio_streamer(audio_streamer);
+        end_speech_streamer(audio_streamer);
     }
 
     if (all_codes.size() == talker_max_tokens) {

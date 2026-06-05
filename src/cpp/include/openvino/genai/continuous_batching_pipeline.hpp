@@ -354,6 +354,10 @@ public:
     */
     void encode_audios(const std::vector<ov::Tensor>& audios);
 
+    /// @brief Toggle hidden-states accumulation on the underlying CB pipeline. Used by
+    /// VLMPipeline's CB adapter to forward `OmniPipeline`'s hidden-states gate.
+    void set_collect_hidden_states(bool enabled);
+
     /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/omni_speech_generation_config.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "visual_language/qwen3_omni/audio_encoder.hpp"
 
@@ -77,39 +78,35 @@ TEST(AudioEncoderValidation, RejectsWrongElementType) {
     EXPECT_THROW({ ov::genai::AudioEncoderQwen3Omni::validate_audio_input(t); }, ov::Exception);
 }
 
-// ---- C6 audio_chunk_frames validation in GenerationConfig::validate() ----
+// ---- audio_chunk_frames validation in OmniSpeechGenerationConfig::validate() ----
 
-// Helper: a minimally-valid GenerationConfig that satisfies validate()'s
+// Helper: a minimally-valid OmniSpeechGenerationConfig that satisfies validate()'s
 // termination-invariant check (one of eos_token_id, stop_token_ids, stop_strings,
 // max_new_tokens, max_length must be set). All audio_chunk_frames tests build on
 // this so we only exercise the audio-specific assertion, not the unrelated
 // termination check.
-ov::genai::GenerationConfig make_terminable_config() {
-    ov::genai::GenerationConfig cfg;
+ov::genai::OmniSpeechGenerationConfig make_terminable_speech_config() {
+    ov::genai::OmniSpeechGenerationConfig cfg;
     cfg.max_new_tokens = 32;
     return cfg;
 }
 
-TEST(GenerationConfigAudioChunkFrames, RejectsZeroWhenReturnAudioTrue) {
-    // The >=1 check used to happen at speech-generation time; we want it at
-    // config validation time so users get the error at config construction.
-    auto cfg = make_terminable_config();
+TEST(OmniSpeechConfigAudioChunkFrames, RejectsZeroWhenReturnAudioTrue) {
+    auto cfg = make_terminable_speech_config();
     cfg.return_audio = true;
     cfg.audio_chunk_frames = 0;
     EXPECT_THROW({ cfg.validate(); }, ov::Exception);
 }
 
-TEST(GenerationConfigAudioChunkFrames, RejectsHugeChunkFramesWhenReturnAudioTrue) {
-    // SIZE_MAX / 2 used to pass the >=1 check and later underflow the
-    // streaming-chunk subtraction → never streams → OOM. Reject up front.
-    auto cfg = make_terminable_config();
+TEST(OmniSpeechConfigAudioChunkFrames, RejectsHugeChunkFramesWhenReturnAudioTrue) {
+    auto cfg = make_terminable_speech_config();
     cfg.return_audio = true;
     cfg.audio_chunk_frames = std::numeric_limits<size_t>::max() / 2;
     EXPECT_THROW({ cfg.validate(); }, ov::Exception);
 }
 
-TEST(GenerationConfigAudioChunkFrames, AcceptsValidChunkFrames) {
-    auto cfg = make_terminable_config();
+TEST(OmniSpeechConfigAudioChunkFrames, AcceptsValidChunkFrames) {
+    auto cfg = make_terminable_speech_config();
     cfg.return_audio = true;
     cfg.audio_chunk_frames = 1;
     EXPECT_NO_THROW({ cfg.validate(); });
@@ -117,10 +114,10 @@ TEST(GenerationConfigAudioChunkFrames, AcceptsValidChunkFrames) {
     EXPECT_NO_THROW({ cfg.validate(); });
 }
 
-TEST(GenerationConfigAudioChunkFrames, IgnoresChunkFramesWhenReturnAudioFalse) {
+TEST(OmniSpeechConfigAudioChunkFrames, IgnoresChunkFramesWhenReturnAudioFalse) {
     // When return_audio is false, audio_chunk_frames is unused; validate() must
     // not reject 0 / huge values (they're irrelevant to text-only generation).
-    auto cfg = make_terminable_config();
+    auto cfg = make_terminable_speech_config();
     cfg.return_audio = false;
     cfg.audio_chunk_frames = 0;
     EXPECT_NO_THROW({ cfg.validate(); });

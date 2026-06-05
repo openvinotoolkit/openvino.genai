@@ -224,9 +224,6 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
         OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-        OPENVINO_ASSERT(
-            !sampling_params[i].return_audio,
-            "return_audio is not supported with ChatHistory API. Use the prompt-based generate() overload instead.");
 
         constexpr bool add_generation_prompt = true;
 
@@ -343,24 +340,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight);
 
-    OPENVINO_ASSERT(!(generation_config.return_audio && generation_config.is_prompt_lookup()),
-                    "return_audio and prompt_lookup cannot both be enabled");
-    OPENVINO_ASSERT(
-        !generation_config.return_audio ||
-            (generation_config.num_return_sequences == 1 &&
-             (generation_config.is_greedy_decoding() || generation_config.is_multinomial())),
-        "return_audio requires num_return_sequences==1 and greedy or multinomial sampling (no beam search)");
-
-    // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches
+    // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches.
+    // When OmniPipeline has flipped `m_collect_hidden_states` on for this call, the cache-state size
+    // is captured pre-embedding so the new prompt-ids slice can be sent downstream for speech.
     auto prepare_prompt_ids = [&](const std::string& prompt, const GenerationConfig& params) -> size_t {
         if (params.is_prompt_lookup()) {
             original_prompt_ids_list.push_back(m_inputs_embedder->encode_prompt(prompt));
         }
-        return params.return_audio ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
+        return this->m_collect_hidden_states ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
     };
 
-    auto extract_audio_prompt_ids = [&](const GenerationConfig& params, size_t cache_size_before) {
-        if (!params.return_audio) {
+    auto extract_audio_prompt_ids = [&](const GenerationConfig& /*params*/, size_t cache_size_before) {
+        if (!this->m_collect_hidden_states) {
             return;
         }
         const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
@@ -657,9 +648,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                         "Chat template must be applied when using ChatHistory in generate method.");
         OPENVINO_ASSERT(!histories[i].empty(),
                         "Chat history must not be empty when using ChatHistory in generate method.");
-        OPENVINO_ASSERT(
-            !sampling_params[i].return_audio,
-            "return_audio is not supported with ChatHistory API. Use the prompt-based generate() overload instead.");
 
         const auto& generation_config = sampling_params[i];
         // Set visual token pruning configuration

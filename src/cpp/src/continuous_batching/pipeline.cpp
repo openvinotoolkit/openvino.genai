@@ -579,6 +579,10 @@ void ContinuousBatchingPipeline::encode_audios(const std::vector<ov::Tensor>& au
     m_impl->encode_audios(audios);
 }
 
+void ContinuousBatchingPipeline::set_collect_hidden_states(bool enabled) {
+    m_impl->set_collect_hidden_states(enabled);
+}
+
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
     m_impl->finish_chat();
     m_impl->start_chat(system_message);

@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "openvino/genai/audio_streamer_base.hpp"
+#include "openvino/genai/omni_speech_streamer_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "visual_language/vlm_config.hpp"
@@ -79,7 +79,7 @@ public:
     /// @param full_token_ids All token IDs from the full sequence (prompt + generated).
     /// @param all_hidden_states Accumulated final hidden states [one tensor per step].
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
-    /// @param audio_streamer Callback or AudioStreamerBase for streaming (monostate = batch mode).
+    /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
     /// @param chunk_frames Codec frames per streaming chunk (>= 1). Used only when audio_streamer is active.
     /// @param speaker Speaker name from `talker_config.speaker_id` in config.json; empty selects the default.
     /// @param max_new_tokens Maximum number of codec tokens to generate.
@@ -91,7 +91,7 @@ public:
     ov::Tensor generate_speech(const std::vector<int64_t>& full_token_ids,
                                const std::vector<ov::Tensor>& all_hidden_states,
                                const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                               const AudioStreamerVariant& audio_streamer = std::monostate{},
+                               const OmniSpeechStreamerVariant& audio_streamer = std::monostate{},
                                size_t chunk_frames = 1,
                                const std::string& speaker = "",
                                size_t max_new_tokens = 4096,

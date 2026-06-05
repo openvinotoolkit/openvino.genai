@@ -203,13 +203,13 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     return streamer;
 }
 
-ov::genai::AudioStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map) {
-    ov::genai::AudioStreamerVariant streamer = std::monostate();
+ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
 
     if (config_map.count(AUDIO_STREAMER_ARG_NAME)) {
         auto any_val = config_map.at(AUDIO_STREAMER_ARG_NAME);
-        if (any_val.is<std::shared_ptr<ov::genai::AudioStreamerBase>>()) {
-            streamer = any_val.as<std::shared_ptr<ov::genai::AudioStreamerBase>>();
+        if (any_val.is<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>();
         } else if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
             streamer = any_val.as<std::function<StreamingStatus(const ov::Tensor&)>>();
         }
