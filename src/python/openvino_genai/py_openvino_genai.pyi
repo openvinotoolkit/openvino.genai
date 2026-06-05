@@ -2715,7 +2715,7 @@ class SchedulerConfig:
         cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                     The internal interval is KV cache block size * cache_interval_multiplier.
                                     When unset, the default value 8 is used for hybrid models with prefix caching.
-                                    Explicit values are supported only for models with linear attention cache inputs.
+                                    For models without linear attention cache inputs, this parameter is ignored.
                                     0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
     
