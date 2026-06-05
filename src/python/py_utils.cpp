@@ -12,7 +12,7 @@
 #include <memory>
 #include <openvino/runtime/auto/properties.hpp>
 
-#include "logger.hpp"
+#include <iostream>
 #include "openvino/core/extension.hpp"
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
@@ -577,8 +577,9 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
                                   } catch (const py::error_already_set& e) {
                                       // Surface the failure but keep generation alive — historical
                                       // behavior is RUNNING so user callbacks that raise transiently
-                                      // don't abort. Warn so the error stops being invisible.
-                                      GENAI_WARN("Text streamer callback raised exception: %s", e.what());
+                                      // don't abort. Log to stderr so the error stops being invisible.
+                                      std::cerr << "[GenAI] Text streamer callback raised exception: " << e.what()
+                                                << std::endl;
                                       return StreamingStatus::RUNNING;
                                   }
                               };
@@ -615,7 +616,8 @@ ov::genai::OmniSpeechStreamerVariant py_speech_streamer_to_streamer(const PyBind
                                   try {
                                       return map_py_status((*shared_callback)(audio_chunk));
                                   } catch (const py::error_already_set& e) {
-                                      GENAI_WARN("Audio streamer callback raised exception: %s", e.what());
+                                      std::cerr << "[GenAI] Audio streamer callback raised exception: " << e.what()
+                                                << std::endl;
                                       return StreamingStatus::STOP;
                                   }
                               };
