@@ -168,6 +168,11 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // tree search
     read_anymap_param(properties, "branching_factor", branching_factor);
     read_anymap_param(properties, "tree_depth", tree_depth);
+
+    // Qwen3-Omni speech output
+    read_anymap_param(properties, "return_audio", return_audio);
+    read_anymap_param(properties, "speaker", speaker);
+    read_anymap_param(properties, "audio_chunk_frames", audio_chunk_frames);
 }
 
 
@@ -397,6 +402,9 @@ void GenerationConfig::validate() const {
     if(is_structured_output_generation()) {
         (*structured_output_config).validate();
     }
+
+    OPENVINO_ASSERT(!(return_audio && is_beam_search()), "return_audio is not compatible with beam search");
+    OPENVINO_ASSERT(!(return_audio && is_prompt_lookup()), "return_audio is not compatible with prompt lookup");
 }
 
 void StructuredOutputConfig::validate() const {
