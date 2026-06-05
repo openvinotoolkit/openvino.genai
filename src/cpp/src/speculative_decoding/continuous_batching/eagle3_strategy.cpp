@@ -182,6 +182,10 @@ GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    }
+
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
