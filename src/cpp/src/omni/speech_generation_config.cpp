@@ -44,6 +44,7 @@ void OmniSpeechGenerationConfig::update_generation_config(const ov::AnyMap& prop
 
     read_anymap_param(properties, "return_audio", return_audio);
     read_anymap_param(properties, "speaker", speaker);
+    read_anymap_param(properties, "speaker_embedding", speaker_embedding);
     read_anymap_param(properties, "audio_chunk_frames", audio_chunk_frames);
 
     GenerationConfig::update_generation_config(properties);
@@ -54,6 +55,16 @@ void OmniSpeechGenerationConfig::validate() const {
     // the speech-output failure mode directly, even when other stop-condition defaults
     // would otherwise trip the base validator first.
     if (return_audio) {
+        if (speaker_embedding) {
+            OPENVINO_ASSERT(speaker_embedding.get_element_type() == ov::element::f32,
+                            "OmniSpeechGenerationConfig: speaker_embedding must be f32, got ",
+                            speaker_embedding.get_element_type());
+            const auto& shape = speaker_embedding.get_shape();
+            OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] == 1,
+                            "OmniSpeechGenerationConfig: speaker_embedding must have shape "
+                            "[1, 1, talker_hidden_size], got ",
+                            shape);
+        }
         OPENVINO_ASSERT(audio_chunk_frames >= 1,
                         "OmniSpeechGenerationConfig: audio_chunk_frames must be >= 1, got ",
                         audio_chunk_frames);

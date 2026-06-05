@@ -13,6 +13,7 @@
 #include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/omni/speech_generation_config.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline_base.hpp"
 #include "py_utils.hpp"
@@ -26,6 +27,8 @@ using ov::genai::GenerationConfig;
 using ov::genai::OmniDecodedResults;
 using ov::genai::OmniPipeline;
 using ov::genai::OmniSpeechGenerationConfig;
+using ov::genai::Qwen3OmniTalker;
+using ov::genai::TalkerBase;
 using ov::genai::VLMDecodedResults;
 using ov::genai::VLMPipeline;
 
@@ -146,6 +149,42 @@ py::object call_omni_generate_history(OmniPipeline& pipe,
 }  // namespace
 
 void init_omni_pipeline(py::module_& m) {
+    py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
+        R"(Abstract speech-output backend for OmniPipeline.
+
+        Subclass to plug a custom talker into OmniPipeline. The default implementation
+        is Qwen3OmniTalker. Subclasses must override generate(), list_speakers(),
+        get_speaker_embedding(), and is_available().)")
+        .def("list_speakers", &TalkerBase::list_speakers)
+        .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"))
+        .def("is_available", &TalkerBase::is_available);
+
+    py::class_<Qwen3OmniTalker, TalkerBase, std::shared_ptr<Qwen3OmniTalker>>(m, "Qwen3OmniTalker",
+        R"(Default OmniPipeline talker for the Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
+
+        Loads the speech submodels from a directory containing
+        openvino_talker_model.xml, openvino_code_predictor_model.xml,
+        openvino_code2wav_model.xml, plus the talker text-embedding and projection
+        submodels and config.json.)")
+        .def(py::init([](const std::filesystem::path& model_dir,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 py::gil_scoped_release rel;
+                 return std::make_shared<Qwen3OmniTalker>(model_dir, device, properties);
+             }),
+             py::arg("model_dir"),
+             "folder with Qwen3-Omni speech submodels + config.json",
+             py::arg("device"),
+             "device on which inference will be done",
+             R"(
+                Qwen3OmniTalker constructor.
+                model_dir (os.PathLike): Folder with Qwen3-Omni speech submodels + config.json.
+                device (str): Device to run inference on (e.g., CPU, GPU).
+                kwargs: Device properties.
+             )");
+
     py::class_<OmniSpeechGenerationConfig, GenerationConfig>(m,
                                                              "OmniSpeechGenerationConfig",
                                                              omni_speech_generation_config_docstring)
@@ -155,6 +194,7 @@ void init_omni_pipeline(py::module_& m) {
              "folder with generation_config.json and config.json (talker_config)")
         .def_readwrite("return_audio", &OmniSpeechGenerationConfig::return_audio)
         .def_readwrite("speaker", &OmniSpeechGenerationConfig::speaker)
+        .def_readwrite("speaker_embedding", &OmniSpeechGenerationConfig::speaker_embedding)
         .def_readwrite("audio_chunk_frames", &OmniSpeechGenerationConfig::audio_chunk_frames)
         .def("update_generation_config",
              [](OmniSpeechGenerationConfig& config, const py::kwargs& kwargs) {
@@ -196,29 +236,23 @@ void init_omni_pipeline(py::module_& m) {
                 kwargs: Device properties.
              )")
 
-        .def(py::init([](VLMPipeline& vlm,
-                         const std::filesystem::path& speech_models_path,
-                         const std::string& device,
-                         const py::kwargs& kwargs) {
+        .def(py::init([](VLMPipeline& vlm, std::shared_ptr<TalkerBase> talker) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                  auto base = vlm.get_base();
                  py::gil_scoped_release rel;
-                 return std::make_unique<OmniPipeline>(base, speech_models_path, device, properties);
+                 return std::make_unique<OmniPipeline>(base, talker);
              }),
              py::arg("vlm"),
              "an already-loaded VLMPipeline whose backing pipeline is reused (no reload of weights)",
-             py::arg("speech_models_path"),
-             "folder with the Qwen3-Omni speech models (talker + code predictor + code2wav + config.json)",
-             py::arg("device"),
-             "device on which inference will be done",
+             py::arg("talker"),
+             "speech-output backend (default Qwen3OmniTalker, or any TalkerBase subclass)",
              py::keep_alive<1, 2>(),
+             py::keep_alive<1, 3>(),
              R"(
-                OmniPipeline shared-VLM constructor.
+                OmniPipeline DI constructor.
                 vlm (VLMPipeline): Already-loaded VLMPipeline. Its base is shared with the OmniPipeline.
-                speech_models_path (os.PathLike): Path to folder with Qwen3-Omni speech models + config.json.
-                device (str): Device to run the model on (e.g., CPU, GPU).
-                kwargs: Device properties.
+                talker (TalkerBase): Speech-output backend. Use Qwen3OmniTalker(model_dir, device, **props)
+                    for the default Qwen3-Omni stack, or pass your own TalkerBase subclass.
              )")
 
         .def(
@@ -277,5 +311,21 @@ void init_omni_pipeline(py::module_& m) {
             py::arg("speech_config") = OmniSpeechGenerationConfig{},
             py::arg("streamer") = std::monostate(),
             py::arg("speech_streamer") = std::monostate(),
-            omni_generate_history_docstring);
+            omni_generate_history_docstring)
+
+        .def("get_speaker_embedding",
+             &OmniPipeline::get_speaker_embedding,
+             py::arg("name"),
+             R"(
+                Return the precomputed talker speaker embedding for the named speaker.
+                Tensor shape is [1, 1, talker_hidden_size], f32. Use to blend voices: weight-sum
+                two named-speaker embeddings and pass the result via speech_config.speaker_embedding.
+                Raises if the model has no named speakers or `name` doesn't match.
+             )")
+        .def("list_speakers",
+             &OmniPipeline::list_speakers,
+             R"(
+                List names of speakers available in the loaded model's talker_config.speaker_id.
+                Returns an empty list when the model exposes no named speakers.
+             )");
 }

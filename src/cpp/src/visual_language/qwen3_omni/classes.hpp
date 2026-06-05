@@ -104,6 +104,25 @@ protected:
     /// @brief Override to use merged vision model for rotary dim instead of separate merger.
     ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) const override;
 
+    /// @brief Override Qwen2VL's create_position_ids to produce 4D position_ids for Qwen3-Omni's
+    /// multimodal RoPE (temporal, height, width, text). Plain Qwen3-VL uses the 3D variant from
+    /// Qwen2VL — only Omni's exported language model expects shape [4, batch, seq].
+    std::pair<ov::Tensor, int64_t> create_position_ids(
+        const ov::Tensor& input_ids_tensor,
+        const std::vector<std::array<size_t, 3>>& images_grid_thw,
+        const std::vector<size_t>& images_sequence,
+        const size_t image_id,
+        const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+        const std::vector<size_t>& videos_sequence,
+        const size_t video_id,
+        const int64_t vision_start_token_id,
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+    ) override;
+
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size,
+                                                                                    const size_t history_size,
+                                                                                    int64_t rope_delta) override;
+
 private:
     std::unique_ptr<AudioEncoderQwen3Omni> m_audio_encoder;
     // Cached audio embeddings from last encode_audios() call

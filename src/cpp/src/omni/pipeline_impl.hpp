@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,27 +12,20 @@
 #include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/omni/speech_generation_config.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline_base.hpp"
 #include "openvino/runtime/tensor.hpp"
-#include "visual_language/qwen3_omni/speech_pipeline.hpp"
 
 namespace ov::genai {
 
 /// @brief Implementation backing OmniPipeline. Holds a VLMPipelineBase (text-side) and a
-/// Qwen3OmniSpeechPipeline (speech-side). Speech is gated per-call via
-/// OmniSpeechGenerationConfig::return_audio.
+/// TalkerBase (speech-side). Speech is gated per-call via OmniSpeechGenerationConfig::return_audio.
 class OmniPipeline::OmniPipelineImpl {
 public:
-    OmniPipelineImpl(const std::filesystem::path& models_path,
-                     const std::string& device,
-                     const ov::AnyMap& properties);
-
     OmniPipelineImpl(const std::shared_ptr<VLMPipeline::VLMPipelineBase>& vlm,
-                     const std::filesystem::path& speech_models_path,
-                     const std::string& device,
-                     const ov::AnyMap& properties);
+                     const std::shared_ptr<TalkerBase>& talker);
 
     OmniDecodedResults generate(const std::string& prompt,
                                 const std::vector<ov::Tensor>& images,
@@ -51,14 +43,17 @@ public:
                                const StreamerVariant& text_streamer,
                                const OmniSpeechStreamerVariant& speech_streamer);
 
+    ov::Tensor get_speaker_embedding(const std::string& name) const {
+        return m_talker->get_speaker_embedding(name);
+    }
+
+    std::vector<std::string> list_speakers() const {
+        return m_talker->list_speakers();
+    }
+
 private:
     /// @brief Reject non-Omni-capable models early, before any inference work.
     void assert_omni_capable() const;
-
-    /// @brief Run the speech step against the hidden states collected during VLM generation.
-    OmniDecodedResults run_with_speech(VLMDecodedResults vlm_result,
-                                       const OmniSpeechGenerationConfig& speech_config,
-                                       const OmniSpeechStreamerVariant& speech_streamer);
 
     /// @brief RAII guard that clears the shared VLM's pending-audios slot when the scope exits,
     /// even on exception. Keeps a stale audio batch from leaking into the next generate() call
@@ -79,7 +74,7 @@ private:
     };
 
     std::shared_ptr<VLMPipeline::VLMPipelineBase> m_vlm;
-    std::unique_ptr<Qwen3OmniSpeechPipeline> m_speech;
+    std::shared_ptr<TalkerBase> m_talker;
 };
 
 }  // namespace ov::genai

@@ -69,27 +69,27 @@ public:
 
     VLMDecodedResults generate(const std::string& prompt,
                                const std::vector<ov::Tensor>& images,
-                               GenerationConfig generation_config,
+                               const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
-        return generate(prompt, images, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(const std::string& prompt,
                                const std::vector<ov::Tensor>& images,
                                const std::vector<ov::Tensor>& videos,
-                               GenerationConfig generation_config,
+                               const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
-        return generate(prompt, images, videos, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, videos, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(const std::string& prompt,
                                const std::vector<ov::Tensor>& images,
                                const std::vector<ov::Tensor>& videos,
                                const std::vector<VideoMetadata>& videos_metadata,
-                               GenerationConfig generation_config,
+                               const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
         auto start_time = std::chrono::steady_clock::now();
-        std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
+        std::vector<ov::genai::GenerationConfig> generation_configs = {generation_config};
         const auto decoded_results = m_impl.generate({prompt},
                                                      ov::genai::images_batches({images}),
                                                      ov::genai::videos_batches({videos}),
@@ -103,28 +103,28 @@ public:
 
     VLMDecodedResults generate(const ChatHistory& history,
                                const std::vector<ov::Tensor>& images,
-                               GenerationConfig generation_config,
+                               const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
-        return generate(history, images, {}, std::move(generation_config), streamer);
+        return generate(history, images, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(const ChatHistory& history,
                                const std::vector<ov::Tensor>& images,
                                const std::vector<ov::Tensor>& videos,
-                               GenerationConfig generation_config,
+                               const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
-        return generate(history, images, videos, {}, std::move(generation_config), streamer);
+        return generate(history, images, videos, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(const ChatHistory& history,
                                const std::vector<ov::Tensor>& images,
                                const std::vector<ov::Tensor>& videos,
                                const std::vector<VideoMetadata>& videos_metadata,
-                               GenerationConfig generation_config,
+                               const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         ChatHistoryInternalState::get_or_create(history);
-        std::vector<ov::genai::GenerationConfig> generation_configs = {std::move(generation_config)};
+        std::vector<ov::genai::GenerationConfig> generation_configs = {generation_config};
         const auto decoded_results = m_impl.generate({history},
                                                      ov::genai::images_batches({images}),
                                                      ov::genai::videos_batches({videos}),

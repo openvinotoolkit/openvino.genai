@@ -72,24 +72,6 @@ protected:
 
     bool has_lm_extra_input(const std::string& input_name) const;
 
-    // Overrides Qwen2VL's create_position_ids to produce 4D position_ids
-    // for Qwen3's multimodal RoPE (temporal, height, width, text)
-    std::pair<ov::Tensor, int64_t> create_position_ids(
-        const ov::Tensor& input_ids_tensor,
-        const std::vector<std::array<size_t, 3>>& images_grid_thw,
-        const std::vector<size_t>& images_sequence,
-        const size_t image_id,
-        const std::vector<std::array<size_t, 3>>& videos_grid_thw,
-        const std::vector<size_t>& videos_sequence,
-        const size_t video_id,
-        const int64_t vision_start_token_id,
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-    ) override;
-
-    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size,
-                                                                                    const size_t history_size,
-                                                                                    int64_t rope_delta) override;
-
     void expand_video_tags_in_prompt(
         std::string& unified_prompt,
         const std::vector<EncodedVideo>& encoded_videos,

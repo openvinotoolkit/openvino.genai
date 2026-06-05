@@ -297,6 +297,35 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
     }
 }
 
+ov::Tensor Qwen3OmniSpeechPipeline::get_speaker_embedding(const std::string& name) const {
+    OPENVINO_ASSERT(!m_lower_speaker_ids.empty(),
+                    "OmniPipeline::get_speaker_embedding: model has no named speakers; "
+                    "ensure 'talker_config.speaker_id' is defined in config.json");
+    std::string lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return std::tolower(c);
+    });
+    auto it = m_lower_speaker_ids.find(lower);
+    OPENVINO_ASSERT(it != m_lower_speaker_ids.end(),
+                    "OmniPipeline::get_speaker_embedding: unknown speaker '",
+                    name,
+                    "'. Use list_speakers() to enumerate available names.");
+    // Copy so caller can blend without mutating our internal cache.
+    const auto& cached = m_speaker_embed.at(it->second);
+    ov::Tensor copy(cached.get_element_type(), cached.get_shape());
+    cached.copy_to(copy);
+    return copy;
+}
+
+std::vector<std::string> Qwen3OmniSpeechPipeline::list_speakers() const {
+    std::vector<std::string> names;
+    names.reserve(m_config.speaker_ids.size());
+    for (const auto& [name, id] : m_config.speaker_ids) {
+        names.push_back(name);
+    }
+    return names;
+}
+
 int64_t Qwen3OmniSpeechPipeline::resolve_speaker_id(const std::string& speaker) const {
     if (!speaker.empty() && !m_lower_speaker_ids.empty()) {
         std::string lower_speaker = speaker;
@@ -482,7 +511,7 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
 std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
     const std::vector<int64_t>& full_token_ids,
     const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-    int64_t speaker_codec_id) {
+    const ov::Tensor& speaker_embed) {
     // Find <|im_start|> positions to identify segments
     std::vector<size_t> im_start_positions;
     for (size_t i = 0; i < full_token_ids.size(); i++) {
@@ -612,7 +641,7 @@ std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
             add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_nothink_id));
             add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_bos_id));
             add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_eos_id));
-            add_embeddings(tts_pad_embed, m_speaker_embed.at(speaker_codec_id));
+            add_embeddings(tts_pad_embed, speaker_embed);
 
             // Position 7: tts_bos + codec_pad
             add_embeddings(tts_bos_embed, m_codec_special_embed.at(m_config.codec_pad_id));
@@ -739,6 +768,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                                                     const OmniSpeechStreamerVariant& audio_streamer,
                                                     size_t chunk_frames,
                                                     const std::string& speaker,
+                                                    const ov::Tensor& speaker_embedding,
                                                     size_t max_new_tokens,
                                                     size_t rng_seed) {
     // chunk_frames only controls chunk granularity; streaming is gated solely by audio_streamer.
@@ -762,10 +792,26 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                 all_hidden_states.size(),
                 all_intermediate_hidden_states.size());
 
-    int64_t speaker_codec_id = resolve_speaker_id(speaker);
+    // Resolve speaker embedding: caller-provided tensor takes precedence over the named-speaker
+    // lookup. Caller-validated shape at OmniSpeechGenerationConfig::validate(); we additionally
+    // confirm last-dim matches talker_hidden_size since validate() can't see that bound.
+    ov::Tensor speaker_embed_to_use;
+    if (speaker_embedding) {
+        const auto& shape = speaker_embedding.get_shape();
+        OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] == 1 &&
+                            shape[2] == m_config.talker_hidden_size,
+                        "speaker_embedding must have shape [1, 1, ",
+                        m_config.talker_hidden_size,
+                        "], got ",
+                        shape);
+        speaker_embed_to_use = speaker_embedding;
+    } else {
+        int64_t speaker_codec_id = resolve_speaker_id(speaker);
+        speaker_embed_to_use = m_speaker_embed.at(speaker_codec_id);
+    }
 
     auto [talker_input, trailing_text_hidden] =
-        build_talker_input(full_token_ids, all_intermediate_hidden_states, speaker_codec_id);
+        build_talker_input(full_token_ids, all_intermediate_hidden_states, speaker_embed_to_use);
 
     if (talker_input.get_shape()[1] == 0) {
         GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");

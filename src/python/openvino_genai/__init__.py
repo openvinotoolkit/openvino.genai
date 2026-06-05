@@ -53,6 +53,8 @@ from .py_openvino_genai import (
     OmniDecodedResults,
     OmniPipeline,
     OmniSpeechGenerationConfig,
+    Qwen3OmniTalker,
+    TalkerBase,
 )
 
 # LLM pipeline

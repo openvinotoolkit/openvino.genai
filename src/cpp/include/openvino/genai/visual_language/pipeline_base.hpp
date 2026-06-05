@@ -15,18 +15,9 @@ namespace ov {
 namespace genai {
 
 /**
- * @brief Public abstract interface for VLMPipeline implementations.
- *
- * Promoted to a public type so OmniPipeline can hold a `std::shared_ptr<VLMPipelineBase>`
- * — the shared-VLM ctor reuses an already-loaded VLM pipeline instead of reloading
- * multi-GB weights.
- *
- * Hidden-states collection is gated at the pipeline level via
- * `enable_hidden_states_collection(bool)` — never via `GenerationConfig`. OmniPipeline
- * toggles the flag for the duration of an audio-producing generate() call using the
- * `HiddenStatesCollectionScope` RAII helper below.
+ * @brief Internal Omni-aware base for `VLMPipeline` implementations.
  */
-class OPENVINO_GENAI_EXPORTS VLMPipeline::VLMPipelineBase {
+class OPENVINO_GENAI_EXPORTS VLMPipeline::VLMPipelineBase : public ov::genai::VLMPipelineBase {
     float m_load_time_ms = 0.0f;
     std::string m_attention_backend;
 
@@ -53,59 +44,40 @@ protected:
     static std::vector<ov::Tensor> extract_audios_from_config_map(const ov::AnyMap& config_map);
 
 public:
-    virtual ~VLMPipelineBase();
+    ~VLMPipelineBase() override;
 
-    virtual VLMDecodedResults generate(const std::string& prompt,
-                                       const std::vector<ov::Tensor>& images,
-                                       GenerationConfig generation_config,
-                                       const StreamerVariant& streamer) = 0;
+    // Bring in the generate() overloads declared on the public abstract base so callers
+    // that hold `VLMPipeline::VLMPipelineBase*` can reach all of them (otherwise the
+    // metadata-aware overloads below would hide the inherited ones via name lookup rules).
+    using ov::genai::VLMPipelineBase::generate;
 
-    virtual VLMDecodedResults generate(const std::string& prompt,
-                                       const std::vector<ov::Tensor>& images,
-                                       const std::vector<ov::Tensor>& videos,
-                                       GenerationConfig generation_config,
-                                       const StreamerVariant& streamer) = 0;
-
+    /// @brief Internal-only overload that takes `videos_metadata`. Public-base inheritance
+    /// delivers the videos-with-metadata path through this entry point so OmniPipeline can
+    /// drive it directly.
     virtual VLMDecodedResults generate(const std::string& prompt,
                                        const std::vector<ov::Tensor>& images,
                                        const std::vector<ov::Tensor>& videos,
                                        const std::vector<VideoMetadata>& videos_metadata,
-                                       GenerationConfig generation_config,
+                                       const GenerationConfig& generation_config,
                                        const StreamerVariant& streamer) = 0;
 
-    VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map);
-
-    virtual VLMDecodedResults generate(const ChatHistory& history,
-                                       const std::vector<ov::Tensor>& images,
-                                       GenerationConfig generation_config,
-                                       const StreamerVariant& streamer) = 0;
-
-    virtual VLMDecodedResults generate(const ChatHistory& history,
-                                       const std::vector<ov::Tensor>& images,
-                                       const std::vector<ov::Tensor>& videos,
-                                       GenerationConfig generation_config,
-                                       const StreamerVariant& streamer) = 0;
-
+    /// @brief Internal-only metadata-aware ChatHistory path.
     virtual VLMDecodedResults generate(const ChatHistory& history,
                                        const std::vector<ov::Tensor>& images,
                                        const std::vector<ov::Tensor>& videos,
                                        const std::vector<VideoMetadata>& videos_metadata,
-                                       GenerationConfig generation_config,
+                                       const GenerationConfig& generation_config,
                                        const StreamerVariant& streamer) = 0;
 
-    VLMDecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map);
+    /// @brief Public-base AnyMap entry — extracts audios/streamer/vision props then delegates.
+    VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) override;
+    VLMDecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map) override;
 
+    /// @brief Activate chat mode (legacy stateful path; deprecated on `VLMPipeline` itself
+    /// but kept on the internal base because OmniPipeline / pipeline_base.cpp still calls
+    /// these to thread through impls).
     virtual void start_chat(const std::string& system_message) = 0;
-
     virtual void finish_chat() = 0;
-
-    virtual Tokenizer get_tokenizer() const = 0;
-
-    virtual void set_chat_template(const std::string& new_template) = 0;
-
-    virtual GenerationConfig get_generation_config() const = 0;
-
-    virtual void set_generation_config(const GenerationConfig& new_config) = 0;
 
     /// @brief Enable or disable hidden-states accumulation in the underlying CB pipeline.
     /// OmniPipeline toggles this for the duration of an audio-producing generate() call

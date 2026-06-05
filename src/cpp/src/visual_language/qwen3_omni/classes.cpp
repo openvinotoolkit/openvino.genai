@@ -530,4 +530,146 @@ void InputsEmbedderQwen3Omni::finish_chat() {
     m_audio_embeddings = ov::Tensor();
 }
 
+std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3Omni::create_position_ids(
+    const ov::Tensor& input_ids_tensor,
+    const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    const size_t image_id,
+    const std::vector<std::array<size_t, 3>>& videos_grid_thw,
+    const std::vector<size_t>& videos_sequence,
+    const size_t video_id,
+    const int64_t vision_start_token_id,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    // Create 4D position_ids for Qwen3-Omni's multimodal RoPE: [temporal, height, width, text]
+    const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
+    const size_t tokens_per_second = m_vlm_config.vision_config_tokens_per_second;
+
+    auto reordered_vision_grid_thw = get_vision_grid_thw_for_position_ids(images_grid_thw,
+                                                                          images_sequence,
+                                                                          image_id,
+                                                                          videos_grid_thw,
+                                                                          videos_sequence,
+                                                                          video_id,
+                                                                          history_vision_count);
+
+    const auto* input_ids = input_ids_tensor.data<int64_t>();
+    size_t batch_size = input_ids_tensor.get_shape().at(0);
+    size_t seq_len = input_ids_tensor.get_shape().at(1);
+
+    OPENVINO_ASSERT(batch_size == 1, "create_position_ids currently supports only batch_size == 1");
+
+    std::vector<size_t> vision_start_indices;
+    for (size_t i = 0; i < seq_len; ++i) {
+        if (input_ids[i] == vision_start_token_id) {
+            vision_start_indices.push_back(i);
+        }
+    }
+
+    // 4 dimensions: temporal, height, width, text
+    ov::Tensor position_ids{ov::element::i64, {4, batch_size, seq_len}};
+    auto* pos_data = position_ids.data<int64_t>();
+
+    size_t st = 0;
+    int64_t next_pos = 0;
+    size_t grid_idx = 0;
+
+    for (size_t i = 0; i < vision_start_indices.size(); ++i) {
+        size_t ed = vision_start_indices.at(i);
+
+        // Text tokens before vision: all 4 dims get the same sequential position
+        if (st < ed) {
+            for (size_t pos = st; pos < ed; ++pos) {
+                pos_data[pos] = next_pos;                // temporal
+                pos_data[seq_len + pos] = next_pos;      // height
+                pos_data[2 * seq_len + pos] = next_pos;  // width
+                pos_data[3 * seq_len + pos] = next_pos;  // text
+                next_pos++;
+            }
+        }
+
+        // Vision start token
+        pos_data[ed] = next_pos;
+        pos_data[seq_len + ed] = next_pos;
+        pos_data[2 * seq_len + ed] = next_pos;
+        pos_data[3 * seq_len + ed] = next_pos;
+        next_pos++;
+        ed++;
+
+        // Vision tokens with spatial grid
+        if (grid_idx < reordered_vision_grid_thw.size()) {
+            const auto& grid = reordered_vision_grid_thw.at(grid_idx);
+            size_t llm_grid_t = grid.at(0);
+            size_t llm_grid_h = grid.at(1) / spatial_merge_size;
+            size_t llm_grid_w = grid.at(2) / spatial_merge_size;
+            size_t llm_grid_sz = llm_grid_h * llm_grid_w;
+            size_t ed_image = ed + llm_grid_t * llm_grid_sz;
+
+            // Temporal dimension
+            for (size_t t = 0; t < llm_grid_t; t++) {
+                std::fill_n(pos_data + ed + t * llm_grid_sz, llm_grid_sz, next_pos + t * tokens_per_second);
+            }
+
+            // Height and width dimensions
+            int64_t* height_data = pos_data + seq_len + ed;
+            int64_t* width_data = pos_data + 2 * seq_len + ed;
+            for (size_t t = 0; t < llm_grid_t; t++) {
+                size_t offset_sz = t * llm_grid_sz;
+                for (size_t h = 0; h < llm_grid_h; ++h) {
+                    size_t offset = h * llm_grid_w + offset_sz;
+                    std::fill_n(height_data + offset, llm_grid_w, next_pos + h);
+                    for (size_t w = 0; w < llm_grid_w; ++w) {
+                        width_data[offset + w] = next_pos + w;
+                    }
+                }
+            }
+
+            // Text dimension: sequential position for all vision tokens
+            int64_t* text_data = pos_data + 3 * seq_len + ed;
+            for (size_t j = 0; j < llm_grid_t * llm_grid_sz; ++j) {
+                text_data[j] = next_pos + static_cast<int64_t>(j);
+            }
+
+            next_pos += std::max(((llm_grid_t - 1) * tokens_per_second + 1), std::max(llm_grid_h, llm_grid_w));
+            st = ed_image;
+            grid_idx++;
+        }
+    }
+
+    // Remaining text tokens
+    if (st < seq_len) {
+        for (size_t pos = st; pos < seq_len; ++pos) {
+            pos_data[pos] = next_pos;
+            pos_data[seq_len + pos] = next_pos;
+            pos_data[2 * seq_len + pos] = next_pos;
+            pos_data[3 * seq_len + pos] = next_pos;
+            next_pos++;
+        }
+    }
+
+    // Calculate rope delta from maximum position value
+    const int64_t position_ids_max_element = *std::max_element(
+        position_ids.data<int64_t>(),
+        position_ids.data<int64_t>() + position_ids.get_size()
+    );
+    const int64_t rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(seq_len);
+
+    return {position_ids, rope_delta};
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen3Omni::get_generation_phase_position_ids(
+    const size_t inputs_embeds_size,
+    const size_t history_size,
+    int64_t rope_delta) {
+    OPENVINO_ASSERT(history_size != 0,
+                    "get_generation_phase_position_ids() should only be called when history_size is non-zero.");
+    // 4 dimensions for Qwen3-Omni's multimodal RoPE
+    ov::Tensor position_ids{ov::element::i64, {4, 1, inputs_embeds_size}};
+    int64_t new_pos_id = static_cast<int64_t>(history_size + rope_delta);
+    for (size_t dim = 0; dim < 4; ++dim) {
+        auto* pos_data = position_ids.data<int64_t>() + dim * inputs_embeds_size;
+        std::iota(pos_data, pos_data + inputs_embeds_size, new_pos_id);
+    }
+    return {position_ids, rope_delta};
+}
+
 }  // namespace ov::genai

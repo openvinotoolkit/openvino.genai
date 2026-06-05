@@ -8,6 +8,7 @@
 #include <string>
 
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/runtime/tensor.hpp"
 
 namespace ov {
 namespace genai {
@@ -51,7 +52,14 @@ public:
 
     /// @brief Speaker name for speech output. Empty selects the model's default speaker.
     /// Available names are listed under `talker_config.speaker_id` in the model's `config.json`.
+    /// Ignored when `speaker_embedding` is non-empty.
     std::string speaker;
+
+    /// @brief Optional explicit talker speaker embedding (`[1, 1, talker_hidden_size]`, f32).
+    /// Overrides `speaker` when non-empty. Use `OmniPipeline::get_speaker_embedding()` to fetch
+    /// the precomputed tensors for named speakers and blend them yourself (e.g. weighted sum)
+    /// to mix voices.
+    ov::Tensor speaker_embedding;
 
     /// @brief Number of codec frames accumulated before streaming each audio chunk. Must be >= 1.
     /// Each frame is 80ms of audio at 24 kHz (1920 samples).

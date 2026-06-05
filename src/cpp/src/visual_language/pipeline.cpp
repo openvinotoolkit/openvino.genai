@@ -301,20 +301,20 @@ public:
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, videos, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, videos, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
@@ -322,9 +322,12 @@ public:
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
         const std::vector<VideoMetadata>& videos_metadata,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config_in,
         const StreamerVariant& streamer
     ) override {
+        // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
+        // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
+        GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -487,20 +490,20 @@ public:
     VLMDecodedResults generate(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(history, images, {}, std::move(generation_config), streamer);
+        return generate(history, images, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(history, images, videos, {}, std::move(generation_config), streamer);
+        return generate(history, images, videos, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
@@ -508,9 +511,10 @@ public:
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
         const std::vector<VideoMetadata>& videos_metadata,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config_in,
         const StreamerVariant& streamer
     ) override {
+        GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -999,15 +1003,6 @@ VLMDecodedResults VLMPipeline::generate(
 
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
-    const ov::Tensor& image,
-    const GenerationConfig& generation_config,
-    const StreamerVariant& streamer
-) {
-    return m_pimpl->generate(prompt, {image}, generation_config, streamer);
-}
-
-VLMDecodedResults VLMPipeline::generate(
-    const std::string& prompt,
     const ov::AnyMap& config_map
 ) {
     return m_pimpl->generate(prompt, config_map);
@@ -1030,15 +1025,6 @@ VLMDecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(history, images, generation_config, streamer);
-}
-
-VLMDecodedResults VLMPipeline::generate(
-    const ChatHistory& history,
-    const ov::Tensor& image,
-    const GenerationConfig& generation_config,
-    const StreamerVariant& streamer
-) {
-    return m_pimpl->generate(history, {image}, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(

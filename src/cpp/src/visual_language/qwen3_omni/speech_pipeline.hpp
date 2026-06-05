@@ -82,6 +82,10 @@ public:
     /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
     /// @param chunk_frames Codec frames per streaming chunk (>= 1). Used only when audio_streamer is active.
     /// @param speaker Speaker name from `talker_config.speaker_id` in config.json; empty selects the default.
+    ///                Ignored when `speaker_embedding` is non-empty.
+    /// @param speaker_embedding Optional explicit speaker embedding [1, 1, talker_hidden_size]. Overrides
+    ///                          `speaker` when non-empty. Useful for blending speakers (e.g. weighted sum
+    ///                          of two named-speaker embeddings).
     /// @param max_new_tokens Maximum number of codec tokens to generate.
     /// @param rng_seed Seed for the internal RNG. Reseeded on every call — the same seed with
     ///                 the same thinker outputs produces byte-identical audio. Default 0.
@@ -94,8 +98,19 @@ public:
                                const OmniSpeechStreamerVariant& audio_streamer = std::monostate{},
                                size_t chunk_frames = 1,
                                const std::string& speaker = "",
+                               const ov::Tensor& speaker_embedding = ov::Tensor{},
                                size_t max_new_tokens = 4096,
                                size_t rng_seed = 0);
+
+    /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
+    /// has no `talker_config.speaker_id` or the name doesn't match. Tensor shape is
+    /// `[1, 1, talker_hidden_size]`, f32. Use to blend voices: weight-sum two named embeddings
+    /// and pass the result to `generate_speech` via the `speaker_embedding` parameter.
+    ov::Tensor get_speaker_embedding(const std::string& name) const;
+
+    /// @brief List names of speakers available in the loaded model's `talker_config.speaker_id`.
+    /// Returns an empty vector when the model exposes no named speakers.
+    std::vector<std::string> list_speakers() const;
 
 private:
     Qwen3OmniSpeechConfig m_config;
@@ -181,10 +196,12 @@ private:
     ov::Tensor project_hidden(const ov::Tensor& hidden_state);
 
     /// @brief Build the talker input embeddings from thinker outputs.
+    /// @param speaker_embed Speaker embedding `[1, 1, talker_hidden_size]` summed with tts_pad in
+    ///                      the talker prefix. Caller owns shape validation.
     /// @return Pair of (talker_input_embeds, trailing_text_hidden).
     std::pair<ov::Tensor, ov::Tensor> build_talker_input(const std::vector<int64_t>& full_token_ids,
                                                          const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                                         int64_t speaker_codec_id);
+                                                         const ov::Tensor& speaker_embed);
 
     /// @brief Run the CodePredictor mini-loop for one talker step.
     /// @param talker_hidden_state The last hidden state from talker [1, 1, talker_hidden_size].

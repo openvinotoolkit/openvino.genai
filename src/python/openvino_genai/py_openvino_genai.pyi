@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechGenerationConfig', 'OmniSpeechStreamerBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechGenerationConfig', 'OmniSpeechStreamerBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen3OmniTalker', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TalkerBase', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -2259,13 +2259,12 @@ class OmniPipeline:
                         kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, vlm: VLMPipeline, speech_models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+    def __init__(self, vlm: VLMPipeline, talker: TalkerBase) -> None:
         """
-                        OmniPipeline shared-VLM constructor.
+                        OmniPipeline DI constructor.
                         vlm (VLMPipeline): Already-loaded VLMPipeline. Its base is shared with the OmniPipeline.
-                        speech_models_path (os.PathLike): Path to folder with Qwen3-Omni speech models + config.json.
-                        device (str): Device to run the model on (e.g., CPU, GPU).
-                        kwargs: Device properties.
+                        talker (TalkerBase): Speech-output backend. Use Qwen3OmniTalker(model_dir, device, **props)
+                            for the default Qwen3-Omni stack, or pass your own TalkerBase subclass.
         """
     @typing.overload
     def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], speech_config: OmniSpeechGenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], int | None] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> VLMDecodedResults:
@@ -2308,6 +2307,18 @@ class OmniPipeline:
             :param history: Chat history
             :type history: ChatHistory
         """
+    def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
+        """
+                        Return the precomputed talker speaker embedding for the named speaker.
+                        Tensor shape is [1, 1, talker_hidden_size], f32. Use to blend voices: weight-sum
+                        two named-speaker embeddings and pass the result via speech_config.speaker_embedding.
+                        Raises if the model has no named speakers or `name` doesn't match.
+        """
+    def list_speakers(self) -> list[str]:
+        """
+                        List names of speakers available in the loaded model's talker_config.speaker_id.
+                        Returns an empty list when the model exposes no named speakers.
+        """
 class OmniSpeechGenerationConfig(GenerationConfig):
     """
     
@@ -2329,6 +2340,7 @@ class OmniSpeechGenerationConfig(GenerationConfig):
     """
     return_audio: bool
     speaker: str
+    speaker_embedding: openvino._pyopenvino.Tensor
     @typing.overload
     def __init__(self) -> None:
         ...
@@ -2545,6 +2557,22 @@ class PipelineMetrics:
     @property
     def scheduled_requests(self) -> int:
         ...
+class Qwen3OmniTalker(TalkerBase):
+    """
+    Default OmniPipeline talker for the Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
+    
+            Loads the speech submodels from a directory containing
+            openvino_talker_model.xml, openvino_code_predictor_model.xml,
+            openvino_code2wav_model.xml, plus the talker text-embedding and projection
+            submodels and config.json.
+    """
+    def __init__(self, model_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                        Qwen3OmniTalker constructor.
+                        model_dir (os.PathLike): Folder with Qwen3-Omni speech submodels + config.json.
+                        device (str): Device to run inference on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
 class RawImageGenerationPerfMetrics:
     """
     
@@ -3717,6 +3745,20 @@ class T5EncoderModel:
     def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt, **kwargs) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: typing.SupportsInt, max_sequence_length: typing.SupportsInt) -> T5EncoderModel:
+        ...
+class TalkerBase:
+    """
+    Abstract speech-output backend for OmniPipeline.
+    
+            Subclass to plug a custom talker into OmniPipeline. The default implementation
+            is Qwen3OmniTalker. Subclasses must override generate(), list_speakers(),
+            get_speaker_embedding(), and is_available().
+    """
+    def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
+        ...
+    def is_available(self) -> bool:
+        ...
+    def list_speakers(self) -> list[str]:
         ...
 class TaylorSeerCacheConfig:
     """
