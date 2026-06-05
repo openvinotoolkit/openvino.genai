@@ -97,8 +97,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
         GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
     }
 
-    // plugins may change the precision internally, the most reliable way to is to get the kv prec from input ports
-    auto kv_cache_precision = m_main_pipeline->get_kv_cache_precision();
+    auto kv_cache_precision =
+        m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
     kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");

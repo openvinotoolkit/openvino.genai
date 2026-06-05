@@ -48,18 +48,15 @@ public:
 
     RawPerfMetrics raw_perf_metrics;
 
-    ov::element::Type get_kv_cache_precision() {
-        OPENVINO_ASSERT(m_model_runner,
-                        "get_kv_cache_precision() called before model runner is initialized");
+    ov::Any get_model_property(const std::string& name) {
+        OPENVINO_ASSERT(m_model_runner, "get_model_property('", name, "') called before model runner is initialized");
         auto compiled_model = m_model_runner->get_infer_request().get_compiled_model();
-        for (const auto& input : compiled_model.inputs()) {
-            for (const auto& name : input.get_names()) {
-                if (name.rfind("key_cache.", 0) == 0)
-                    return input.get_element_type();
-            }
-        }
-        OPENVINO_ASSERT(false, "Compiled model has no 'key_cache.*' input; cannot determine KV cache precision");
-        return {};
+        const auto supported = compiled_model.get_property(ov::supported_properties);
+        OPENVINO_ASSERT(std::find(supported.begin(), supported.end(), name) != supported.end(),
+                        "Compiled model does not support property '",
+                        name,
+                        "'");
+        return compiled_model.get_property(name);
     }
 
 protected:
