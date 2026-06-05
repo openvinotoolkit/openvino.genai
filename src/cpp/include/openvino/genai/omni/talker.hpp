@@ -36,8 +36,8 @@ public:
     /// @brief Run speech generation against a VLM result.
     /// @param vlm_result VLM-side text result; must carry hidden states from a generate()
     ///                   call that ran with `speech_config.return_audio == true`. The
-    ///                   talker reads `m_hidden_states_data` (final + intermediate
-    ///                   hidden states + prompt token ids) from the result.
+    ///                   talker reads `hidden_states`, `intermediate_hidden_states`, and
+    ///                   `prompt_ids` from the result.
     /// @param speech_config Generation knobs for the talker (`return_audio`, `speaker`,
     ///                      `speaker_embedding`, `audio_chunk_frames`, `max_new_tokens`,
     ///                      `rng_seed`, `validate()` already enforced).

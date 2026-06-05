@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include "openvino/genai/generation_config.hpp"
@@ -16,11 +17,6 @@ namespace genai {
 /**
  * @brief Generation config for Qwen3-Omni speech output.
  *
- * Adds the three Omni-specific knobs (`return_audio`, `speaker`, `audio_chunk_frames`)
- * on top of the inherited GenerationConfig surface. `validate()` enforces the
- * speech-output invariants — beam search and prompt lookup are incompatible with
- * a single talker hidden-state stream, so they are rejected when `return_audio`
- * is true.
  */
 class OPENVINO_GENAI_EXPORTS OmniSpeechGenerationConfig : public GenerationConfig {
 public:
@@ -64,6 +60,33 @@ public:
     /// @brief Number of codec frames accumulated before streaming each audio chunk. Must be >= 1.
     /// Each frame is 80ms of audio at 24 kHz (1920 samples).
     size_t audio_chunk_frames = 1;
+
+    /// @brief Talker sampling temperature override (must be > 0 when set). Higher = more
+    /// variation in voice timing/prosody. Checkpoint default is in `generation_config.json`
+    /// under `talker_temperature` (typically ~0.9).
+    std::optional<float> talker_temperature;
+
+    /// @brief Talker top-k override (must be >= 1 when set). Checkpoint default is in
+    /// `generation_config.json` under `talker_top_k` (typically 50).
+    std::optional<size_t> talker_top_k;
+
+    /// @brief Talker repetition penalty override (must be > 0 when set; 1.0 = no penalty).
+    /// Checkpoint default is in `generation_config.json` under `talker_repetition_penalty`
+    /// (typically 1.0).
+    std::optional<float> talker_repetition_penalty;
+
+    /// @brief CodePredictor sampling temperature override (must be > 0 when set).
+    /// Checkpoint default is in `generation_config.json` under `cp_temperature` (typically 1.0).
+    std::optional<float> cp_temperature;
+
+    /// @brief CodePredictor top-k override (must be >= 1 when set). Checkpoint default is
+    /// in `generation_config.json` under `cp_top_k` (typically 50).
+    std::optional<size_t> cp_top_k;
+
+    /// @brief CodePredictor repetition penalty override (must be > 0 when set; 1.0 = no penalty).
+    /// Checkpoint default is in `generation_config.json` under `cp_repetition_penalty`
+    /// (typically 1.0).
+    std::optional<float> cp_repetition_penalty;
 };
 
 }  // namespace genai

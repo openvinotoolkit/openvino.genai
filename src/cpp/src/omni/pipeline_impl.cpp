@@ -69,10 +69,10 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
 
     if (speech_config.return_audio) {
         // Speech output requires the prompts overload's per-prompt loop, which captures the
-        // prompt-id slice into VLMDecodedResults::m_hidden_states_data. The histories overload
-        // doesn't yet wire that capture (CB pipeline_base.cpp leaves original_prompt_ids_list
-        // empty for the ChatHistory path — see the FIXME there). Apply the chat template here
-        // and route through the prompts path so speech generation has its prompt_ids.
+        // prompt-id slice into VLMDecodedResults::prompt_ids. The histories overload doesn't
+        // yet wire that capture (CB pipeline_base.cpp leaves original_prompt_ids_list empty
+        // for the ChatHistory path — see the FIXME there). Apply the chat template here and
+        // route through the prompts path so speech generation has its prompt_ids.
         const std::string templated_prompt = m_vlm->get_tokenizer().apply_chat_template(history, true);
         text_cfg.apply_chat_template = false;
         VLMPipeline::VLMPipelineBase::HiddenStatesCollectionScope hs_scope(*m_vlm);

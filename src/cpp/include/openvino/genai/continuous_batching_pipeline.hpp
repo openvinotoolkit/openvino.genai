@@ -348,12 +348,6 @@ public:
         return generate(histories, AnyMap{std::forward<Properties>(properties)...});
     }
 
-    /**
-    * @brief Forward audio tensors to the inputs embedder for encoding (Qwen3-Omni).
-    * @param audios vector of audio tensors to encode.
-    */
-    void encode_audios(const std::vector<ov::Tensor>& audios);
-
     /// @brief Toggle hidden-states accumulation on the underlying CB pipeline. Used by
     /// VLMPipeline's CB adapter to forward `OmniPipeline`'s hidden-states gate.
     void set_collect_hidden_states(bool enabled);

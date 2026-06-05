@@ -94,13 +94,6 @@ public:
     /// `VLMPipelineBase::HiddenStatesCollectionScope`.
     virtual void set_collect_hidden_states(bool enabled) { m_collect_hidden_states = enabled; }
 
-    void encode_audios(const std::vector<ov::Tensor>& audios) {
-        if (m_inputs_embedder) {
-            std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-            m_inputs_embedder->encode_audios(audios);
-        }
-    }
-
     /**
      * Adds requests to awaiting queue using encoded inputs
      */

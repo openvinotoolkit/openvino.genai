@@ -204,8 +204,12 @@ private:
             decoded.scores.push_back(result.scores.at(idx));
         }
         decoded.finish_reasons = result.finish_reasons;
-        // Forward hidden-states data unchanged so OmniPipelineImpl can drive speech generation.
-        decoded.m_hidden_states_data = result.m_hidden_states_data;
+        // Forward hidden-states fields so OmniPipelineImpl / TalkerBase can drive speech
+        // generation. Inner ov::Tensor copies are ref-counted handles, so the outer-vector
+        // copies are O(n) in step count, not in tensor bytes.
+        decoded.hidden_states = result.hidden_states;
+        decoded.intermediate_hidden_states = result.intermediate_hidden_states;
+        decoded.prompt_ids = result.prompt_ids;
         return decoded;
     }
 };

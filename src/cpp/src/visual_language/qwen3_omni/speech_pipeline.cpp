@@ -685,7 +685,9 @@ std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
 
 std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_codes(
     const ov::Tensor& talker_hidden_state,
-    int64_t first_code) {
+    int64_t first_code,
+    float cp_temperature,
+    size_t cp_top_k) {
     std::vector<int64_t> codes;
     codes.reserve(m_config.num_code_groups - 1);
 
@@ -701,12 +703,12 @@ std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_cod
 
     // Temperature scalar (f32, shape {})
     ov::Tensor temp_tensor(ov::element::f32, {});
-    temp_tensor.data<float>()[0] = m_config.cp_temperature;
+    temp_tensor.data<float>()[0] = cp_temperature;
     m_code_predictor.set_tensor("temperature", temp_tensor);
 
     // Top-k scalar (i64, shape {})
     ov::Tensor topk_tensor(ov::element::i64, {});
-    topk_tensor.data<int64_t>()[0] = static_cast<int64_t>(m_config.cp_top_k);
+    topk_tensor.data<int64_t>()[0] = static_cast<int64_t>(cp_top_k);
     m_code_predictor.set_tensor("top_k", topk_tensor);
 
     // Seeds: [num_code_groups - 1] = 15 sequential seeds derived from m_rng
@@ -766,12 +768,24 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
                                                     const std::vector<ov::Tensor>& all_hidden_states,
                                                     const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                                     const OmniSpeechStreamerVariant& audio_streamer,
-                                                    size_t chunk_frames,
-                                                    const std::string& speaker,
-                                                    const ov::Tensor& speaker_embedding,
-                                                    size_t max_new_tokens,
-                                                    size_t rng_seed) {
-    // chunk_frames only controls chunk granularity; streaming is gated solely by audio_streamer.
+                                                    const OmniSpeechGenerationConfig& speech_config) {
+    // Resolve sampling overrides up front: caller-supplied std::optional<...> takes precedence
+    // over the JSON-loaded checkpoint defaults at m_config.{talker,cp}_*.
+    const float talker_temp = speech_config.talker_temperature.value_or(m_config.talker_temperature);
+    const size_t talker_top_k_resolved = speech_config.talker_top_k.value_or(m_config.talker_top_k);
+    const float talker_rep_penalty = speech_config.talker_repetition_penalty.value_or(m_config.talker_repetition_penalty);
+    const float cp_temp = speech_config.cp_temperature.value_or(m_config.cp_temperature);
+    const size_t cp_top_k_resolved = speech_config.cp_top_k.value_or(m_config.cp_top_k);
+    if (speech_config.cp_repetition_penalty) {
+        // The exported (unrolled-API) CodePredictor model bakes the repetition-penalty pass
+        // inside the graph and exposes only `temperature` / `top_k` / `seeds` as inputs, so a
+        // per-call override has no effect today. Warn once so users don't silently assume the
+        // override took. Future CP model exports can plumb this through.
+        GENAI_WARN("Speech: cp_repetition_penalty override is ignored — current CodePredictor "
+                   "model has no per-call repetition-penalty input.");
+    }
+
+    const size_t chunk_frames = speech_config.audio_chunk_frames;
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
     bool streaming = is_speech_streamer_active(audio_streamer);
 
@@ -785,7 +799,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     // Reseed at every entry so output depends only on inputs + seed, not prior call history.
     // Single shared stream across talker first-code sampling and all CodePredictor steps — one
     // seed fully reproduces the generated audio. Matches the reference torch.Generator contract.
-    m_rng.seed(static_cast<std::mt19937::result_type>(rng_seed));
+    m_rng.seed(static_cast<std::mt19937::result_type>(speech_config.rng_seed));
 
     GENAI_DEBUG("Speech: tokens=%zu, hidden_states=%zu, intermediate=%zu",
                 full_token_ids.size(),
@@ -796,17 +810,17 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     // lookup. Caller-validated shape at OmniSpeechGenerationConfig::validate(); we additionally
     // confirm last-dim matches talker_hidden_size since validate() can't see that bound.
     ov::Tensor speaker_embed_to_use;
-    if (speaker_embedding) {
-        const auto& shape = speaker_embedding.get_shape();
+    if (speech_config.speaker_embedding) {
+        const auto& shape = speech_config.speaker_embedding.get_shape();
         OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] == 1 &&
                             shape[2] == m_config.talker_hidden_size,
                         "speaker_embedding must have shape [1, 1, ",
                         m_config.talker_hidden_size,
                         "], got ",
                         shape);
-        speaker_embed_to_use = speaker_embedding;
+        speaker_embed_to_use = speech_config.speaker_embedding;
     } else {
-        int64_t speaker_codec_id = resolve_speaker_id(speaker);
+        int64_t speaker_codec_id = resolve_speaker_id(speech_config.speaker);
         speaker_embed_to_use = m_speaker_embed.at(speaker_codec_id);
     }
 
@@ -836,7 +850,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     m_talker.set_tensor("inputs_embeds", talker_input);
 
     // Use talker generation parameters from config
-    auto talker_max_tokens = std::min(max_new_tokens, m_config.talker_max_new_tokens);
+    auto talker_max_tokens = std::min(speech_config.max_new_tokens, m_config.talker_max_new_tokens);
 
     // F2: Pre-allocate attention mask at max size (input_len + talker_max_tokens)
     auto talker_max_len = input_len + talker_max_tokens;
@@ -891,9 +905,8 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
         return m_stack_codes_buf;
     };
 
-    auto talker_temp = m_config.talker_temperature;
-    auto talker_top_k = m_config.talker_top_k;
-    auto talker_rep_penalty = m_config.talker_repetition_penalty;
+    // talker_temp / talker_top_k_resolved / talker_rep_penalty resolved at function entry
+    // from the OmniSpeechGenerationConfig overrides (or m_config defaults if unset).
     const auto& suppress_tokens = m_config.talker_suppress_tokens;
     std::vector<int64_t> generated_first_codes;
 
@@ -904,7 +917,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
     GENAI_INFO("Speech: generating codec tokens (max %zu steps, temp=%.2f, top_k=%zu, rep_penalty=%.2f)...",
                talker_max_tokens,
                talker_temp,
-               talker_top_k,
+               talker_top_k_resolved,
                talker_rep_penalty);
 
     for (size_t step = 0; step < talker_max_tokens; step++) {
@@ -917,7 +930,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
         auto first_code = sample_top_k(logits_data,
                                        vocab_size,
                                        talker_temp,
-                                       talker_top_k,
+                                       talker_top_k_resolved,
                                        talker_rep_penalty,
                                        generated_first_codes,
                                        suppress_tokens);
@@ -940,7 +953,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
         std::memcpy(last_hidden.data<float>(), hs_data, hs_size * sizeof(float));
 
         // Run CodePredictor for additional code groups
-        auto [additional_codes, cp_embed_sum] = predict_codes(last_hidden, first_code);
+        auto [additional_codes, cp_embed_sum] = predict_codes(last_hidden, first_code, cp_temp, cp_top_k_resolved);
 
         // F8: Emplace directly into all_codes (no intermediate step_codes copy)
         all_codes.emplace_back();

@@ -19,14 +19,17 @@ class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
     VLMPerfMetrics perf_metrics;
 
-    // Internal fields for speech pipeline (not exposed to Python bindings).
-    // Populated by CB generate when return_audio is requested, consumed by VLM adapter.
-    struct HiddenStatesData {
-        std::vector<std::vector<ov::Tensor>> hidden_states;
-        std::vector<std::vector<ov::Tensor>> intermediate_hidden_states;
-        std::vector<int64_t> prompt_ids;
-    };
-    std::shared_ptr<HiddenStatesData> m_hidden_states_data;
+    // Internal fields for the speech pipeline (not exposed to Python bindings).
+    // Populated by the CB pipeline when `return_audio` is requested on the GenerationConfig.
+    // Consumed by Qwen3OmniTalker / TalkerBase impls to drive Qwen3-Omni speech generation.
+    // All three fields are empty (default-constructed) on the text-only path.
+    //
+    // Outer index of hidden_states / intermediate_hidden_states is per return sequence;
+    // inner is one tensor per generation step.
+    std::vector<std::vector<ov::Tensor>> hidden_states;
+    std::vector<std::vector<ov::Tensor>> intermediate_hidden_states;
+    // Full prompt + generated token ids for the first sequence (talker input construction).
+    std::vector<int64_t> prompt_ids;
 };
 
 /**

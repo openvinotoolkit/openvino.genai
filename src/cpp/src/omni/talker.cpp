@@ -52,32 +52,24 @@ public:
     OmniDecodedResults generate(VLMDecodedResults vlm_result,
                                 const OmniSpeechGenerationConfig& speech_config,
                                 const OmniSpeechStreamerVariant& speech_streamer) {
-        OPENVINO_ASSERT(vlm_result.m_hidden_states_data != nullptr,
+        OPENVINO_ASSERT(!vlm_result.hidden_states.empty(),
                         "Qwen3OmniTalker: hidden states missing on VLMDecodedResults; the VLM must run with "
                         "speech_config.return_audio=true so it accumulates thinker hidden states.");
 
-        const auto& hs_data = *vlm_result.m_hidden_states_data;
-        OPENVINO_ASSERT(!hs_data.hidden_states.empty(),
-                        "Qwen3OmniTalker: collected hidden states are empty; speech pipeline cannot run.");
-
-        auto all_hidden_states = flatten_hidden_states(hs_data.hidden_states[0]);
-        auto all_intermediate_hidden_states = hs_data.intermediate_hidden_states.empty()
+        auto all_hidden_states = flatten_hidden_states(vlm_result.hidden_states[0]);
+        auto all_intermediate_hidden_states = vlm_result.intermediate_hidden_states.empty()
                                                   ? std::vector<ov::Tensor>{}
-                                                  : flatten_hidden_states(hs_data.intermediate_hidden_states[0]);
+                                                  : flatten_hidden_states(vlm_result.intermediate_hidden_states[0]);
 
-        // The user's speech_config.max_new_tokens (inherited from GenerationConfig, default
-        // SIZE_MAX) is forwarded to the talker; Qwen3OmniSpeechPipeline takes
-        // min(max_new_tokens, m_config.talker_max_new_tokens) internally so the checkpoint's
-        // talker_max_new_tokens (loaded from generation_config.json) always caps the result.
-        ov::Tensor waveform = m_speech->generate_speech(hs_data.prompt_ids,
+        // speech_config carries audio_chunk_frames, speaker / speaker_embedding,
+        // max_new_tokens, rng_seed, plus the talker_* / cp_* sampling overrides. The pipeline
+        // resolves each std::optional<...> against the JSON-loaded checkpoint defaults at the
+        // top of generate_speech(); unset overrides keep the checkpoint values.
+        ov::Tensor waveform = m_speech->generate_speech(vlm_result.prompt_ids,
                                                         all_hidden_states,
                                                         all_intermediate_hidden_states,
                                                         speech_streamer,
-                                                        speech_config.audio_chunk_frames,
-                                                        speech_config.speaker,
-                                                        speech_config.speaker_embedding,
-                                                        speech_config.max_new_tokens,
-                                                        speech_config.rng_seed);
+                                                        speech_config);
 
         OmniDecodedResults omni_result;
         static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);

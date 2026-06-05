@@ -196,6 +196,12 @@ void init_omni_pipeline(py::module_& m) {
         .def_readwrite("speaker", &OmniSpeechGenerationConfig::speaker)
         .def_readwrite("speaker_embedding", &OmniSpeechGenerationConfig::speaker_embedding)
         .def_readwrite("audio_chunk_frames", &OmniSpeechGenerationConfig::audio_chunk_frames)
+        .def_readwrite("talker_temperature", &OmniSpeechGenerationConfig::talker_temperature)
+        .def_readwrite("talker_top_k", &OmniSpeechGenerationConfig::talker_top_k)
+        .def_readwrite("talker_repetition_penalty", &OmniSpeechGenerationConfig::talker_repetition_penalty)
+        .def_readwrite("cp_temperature", &OmniSpeechGenerationConfig::cp_temperature)
+        .def_readwrite("cp_top_k", &OmniSpeechGenerationConfig::cp_top_k)
+        .def_readwrite("cp_repetition_penalty", &OmniSpeechGenerationConfig::cp_repetition_penalty)
         .def("update_generation_config",
              [](OmniSpeechGenerationConfig& config, const py::kwargs& kwargs) {
                  config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));

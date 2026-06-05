@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "openvino/genai/omni/speech_generation_config.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -80,27 +81,18 @@ public:
     /// @param all_hidden_states Accumulated final hidden states [one tensor per step].
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
     /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
-    /// @param chunk_frames Codec frames per streaming chunk (>= 1). Used only when audio_streamer is active.
-    /// @param speaker Speaker name from `talker_config.speaker_id` in config.json; empty selects the default.
-    ///                Ignored when `speaker_embedding` is non-empty.
-    /// @param speaker_embedding Optional explicit speaker embedding [1, 1, talker_hidden_size]. Overrides
-    ///                          `speaker` when non-empty. Useful for blending speakers (e.g. weighted sum
-    ///                          of two named-speaker embeddings).
-    /// @param max_new_tokens Maximum number of codec tokens to generate.
-    /// @param rng_seed Seed for the internal RNG. Reseeded on every call — the same seed with
-    ///                 the same thinker outputs produces byte-identical audio. Default 0.
+    /// @param speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`,
+    ///                      `speaker_embedding`, `max_new_tokens`, `rng_seed`, and the
+    ///                      `talker_*` / `cp_*` optional sampling overrides. Unset overrides
+    ///                      keep the checkpoint defaults loaded from `generation_config.json`.
     /// @return Waveform tensor [1, 1, audio_samples] or empty tensor on failure.
     /// @note Not thread-safe per instance — shares the pipeline's owned std::mt19937 and
     ///       ov::InferRequests across talker and CodePredictor sampling.
     ov::Tensor generate_speech(const std::vector<int64_t>& full_token_ids,
                                const std::vector<ov::Tensor>& all_hidden_states,
                                const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                               const OmniSpeechStreamerVariant& audio_streamer = std::monostate{},
-                               size_t chunk_frames = 1,
-                               const std::string& speaker = "",
-                               const ov::Tensor& speaker_embedding = ov::Tensor{},
-                               size_t max_new_tokens = 4096,
-                               size_t rng_seed = 0);
+                               const OmniSpeechStreamerVariant& audio_streamer,
+                               const OmniSpeechGenerationConfig& speech_config);
 
     /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
     /// has no `talker_config.speaker_id` or the name doesn't match. Tensor shape is
@@ -206,10 +198,14 @@ private:
     /// @brief Run the CodePredictor mini-loop for one talker step.
     /// @param talker_hidden_state The last hidden state from talker [1, 1, talker_hidden_size].
     /// @param first_code The first codec code from talker sampling.
+    /// @param cp_temperature Resolved CodePredictor temperature for this call.
+    /// @param cp_top_k Resolved CodePredictor top-k for this call.
     /// @return Pair of (additional_codes, codec_embeddings_sum) where codec_embeddings_sum
     ///         is the sum of all 15 step-specific codec embeddings [1, 1, hidden_size].
     std::pair<std::vector<int64_t>, ov::Tensor> predict_codes(const ov::Tensor& talker_hidden_state,
-                                                              int64_t first_code);
+                                                              int64_t first_code,
+                                                              float cp_temperature,
+                                                              size_t cp_top_k);
 
     /// @brief Convert codec codes to waveform.
     ov::Tensor codes_to_wav(const ov::Tensor& codes);
