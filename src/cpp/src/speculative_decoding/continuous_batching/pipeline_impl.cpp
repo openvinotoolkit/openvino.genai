@@ -362,6 +362,13 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::r
         }
 
         const size_t current_processed_tokens = request->get_num_processed_tokens();
+        OPENVINO_ASSERT(processed_tokens <= current_processed_tokens,
+                        "Cannot rewind awaiting request forward, request_id=",
+                        request_id,
+                        ", current_processed_tokens=",
+                        current_processed_tokens,
+                        ", target_processed_tokens=",
+                        processed_tokens);
         if (processed_tokens < current_processed_tokens) {
             request->update_processed_tokens_num(processed_tokens);
             std::vector<SequenceGroup::Ptr> requests_to_cleanup{request};
