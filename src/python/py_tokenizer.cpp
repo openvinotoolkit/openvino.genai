@@ -32,8 +32,8 @@ constexpr char common_encode_docstring[] =R"(
  'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
  'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
  'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
- 'truncation' - whether to truncate the sequence to max_length. Default is False.
- 'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+'truncation' - whether to truncate the sequence to max_length. Default is False.
 Returns:
  TokenizedInputs object containing input_ids and attention_mask tensors.
 )";
@@ -141,13 +141,13 @@ void init_tokenizer(py::module_& m) {
                           bool add_special_tokens, 
                           bool pad_to_max_length,
                           std::optional<size_t> max_length,
-                                                    std::optional<std::string> padding_side,
-                                                    bool truncation
+                          std::optional<std::string> padding_side,
+                          bool truncation
                         ) {
                 ov::AnyMap tokenization_params;
                 tokenization_params[ov::genai::add_special_tokens.name()] = add_special_tokens;
                 tokenization_params[ov::genai::pad_to_max_length.name()] = pad_to_max_length;
-                                tokenization_params[ov::genai::truncation.name()] = truncation;
+                tokenization_params[ov::genai::truncation.name()] = truncation;
                 if (max_length.has_value()) {
                     tokenization_params[ov::genai::max_length.name()] = *max_length;
                 }

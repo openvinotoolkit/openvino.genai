@@ -4145,11 +4145,13 @@ class Tokenizer:
         Encodes a list of prompts into tokenized inputs.
         Args:
          'prompts' - list of prompts to encode
-         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
-         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
-         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-         'truncation' - whether to truncate the sequence to max_length. Default is False.
-         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         Args:
+          'prompts' - list of prompts to encode
+          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -4159,11 +4161,13 @@ class Tokenizer:
         Encodes a single prompt into tokenized input.
         Args:
          'prompt' - prompt to encode
-         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
-         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
-         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-         'truncation' - whether to truncate the sequence to max_length. Default is False.
-         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         Args:
+          'prompt' - prompt to encode
+          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -4175,11 +4179,14 @@ class Tokenizer:
         Args:
          'prompts_1' - list of prompts to encode
          'prompts_2' - list of prompts to encode
-         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
-         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
-         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-         'truncation' - whether to truncate the sequence to max_length. Default is False.
-         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         Args:
+          'prompts_1' - list of prompts to encode
+          'prompts_2' - list of prompts to encode
+          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -4189,11 +4196,13 @@ class Tokenizer:
         Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
         Args:
          'prompts' - list of prompts to encode\\n
-         'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
-         'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
-         'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-         'truncation' - whether to truncate the sequence to max_length. Default is False.
-         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         Args:
+          'prompts' - list of prompts to encode\\n
+          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
+          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
+          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+          'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
