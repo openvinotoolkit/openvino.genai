@@ -1268,6 +1268,29 @@ def test_sampling(
     ov_pipe.generate(PROMPTS[0], image=cat_tensor, generation_config=config)
 
 
+@parametrize_one_model_sdpa
+def test_numpy_image_kwargs(
+    ov_pipe_model: VlmModelInfo,
+    cat_image,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    image = np.array(cat_image)
+
+    multi_image_result = ov_pipe.generate(
+        PROMPTS[0],
+        images=[image],
+        generation_config=GenerationConfig(max_new_tokens=1),
+    )
+    assert len(multi_image_result.texts) == 1
+
+    single_image_result = ov_pipe.generate(
+        PROMPTS[0],
+        image=image,
+        generation_config=GenerationConfig(max_new_tokens=1),
+    )
+    assert len(single_image_result.texts) == 1
+
+
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_perf_metrics(
     backend: str,

@@ -277,8 +277,12 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
 ) {
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
-    if (sampling_params_copy.stop_token_ids.empty())
+    if (sampling_params_copy.stop_token_ids.empty() && !sampling_params_copy.stop_token_ids_defined)
         sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
+    if (sampling_params_copy.stop_strings.empty() && !sampling_params_copy.stop_strings_defined) {
+        sampling_params_copy.stop_strings = m_generation_config.stop_strings;
+        sampling_params_copy.include_stop_str_in_output = m_generation_config.include_stop_str_in_output;
+    }
     // If eos_token_id was not provided, take value from default m_generation_config
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);

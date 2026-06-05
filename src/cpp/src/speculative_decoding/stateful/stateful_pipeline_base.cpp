@@ -38,7 +38,11 @@ GenerationConfig StatefulSpeculativePipelineBase::resolve_generation_config(
     GenerationConfig config = generation_config.value_or(m_generation_config);
 
     // Apply defaults from base config
-    if (config.stop_token_ids.empty()) {
+    if (config.stop_strings.empty() && !config.stop_strings_defined) {
+        config.stop_strings = m_generation_config.stop_strings;
+        config.include_stop_str_in_output = m_generation_config.include_stop_str_in_output;
+    }
+    if (config.stop_token_ids.empty() && !config.stop_token_ids_defined) {
         config.stop_token_ids = m_generation_config.stop_token_ids;
     }
     if (config.eos_token_id == -1) {

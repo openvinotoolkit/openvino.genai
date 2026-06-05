@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include <pybind11/stl/filesystem.h>
@@ -28,6 +29,16 @@
 namespace py = pybind11;
 
 namespace {
+
+bool expects_tensor_argument(const std::string& property_name) {
+    static const std::set<std::string> tensor_properties = {"image", "images", "videos"};
+    return tensor_properties.count(property_name) > 0;
+}
+
+ov::Tensor convert_numpy_array_to_tensor(const py::handle& py_obj) {
+    py::object tensor_ctor = py::module_::import("openvino").attr("Tensor");
+    return tensor_ctor(py::reinterpret_borrow<py::object>(py_obj)).cast<ov::Tensor>();
+}
 
 class GilSafeGeneratorWrapper : public ov::genai::Generator {
     std::shared_ptr<ov::genai::Generator> m_impl;
@@ -258,6 +269,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     check_type(PY_TYPE::PARTIAL_SHAPE);
                 } else if (py::isinstance<ov::Tensor>(it)) {
                     check_type(PY_TYPE::TENSOR);
+                } else if (expects_tensor_argument(property_name) && py::isinstance<py::array>(it)) {
+                    check_type(PY_TYPE::TENSOR);
                 } else if (py::isinstance<py::dict>(it)) {
                     check_type(PY_TYPE::DICT);
                 }
@@ -277,8 +290,20 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 return _list.cast<std::vector<bool>>();
             case PY_TYPE::PARTIAL_SHAPE:
                 return _list.cast<std::vector<ov::PartialShape>>();
-            case PY_TYPE::TENSOR:
-                return _list.cast<std::vector<ov::Tensor>>();
+            case PY_TYPE::TENSOR: {
+                std::vector<ov::Tensor> tensors;
+                tensors.reserve(_list.size());
+                for (const auto& item : _list) {
+                    if (py::isinstance<ov::Tensor>(item)) {
+                        tensors.push_back(item.cast<ov::Tensor>());
+                    } else {
+                        OPENVINO_ASSERT(py::isinstance<py::array>(item),
+                            "Incorrect value in \"" + property_name + "\". Expected Tensor or numpy.ndarray.");
+                        tensors.push_back(convert_numpy_array_to_tensor(item));
+                    }
+                }
+                return tensors;
+            }
             case PY_TYPE::DICT: {
                 std::vector<ov::AnyMap> any_map_list(_list.size());
                 for (const auto& item : _list) {
@@ -397,6 +422,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::streams::Num>(py_obj);
     } else if (py::isinstance<ov::Tensor>(py_obj)) {
         return py::cast<ov::Tensor>(py_obj);
+    } else if (expects_tensor_argument(property_name) && py::isinstance<py::array>(py_obj)) {
+        return convert_numpy_array_to_tensor(py_obj);
     } else if (py::isinstance<ov::Output<ov::Node>>(py_obj)) {
         return py::cast<ov::Output<ov::Node>>(py_obj);
     } else if (py::isinstance<ov::genai::SchedulerConfig>(py_obj)) {

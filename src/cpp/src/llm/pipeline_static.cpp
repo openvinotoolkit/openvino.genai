@@ -262,8 +262,12 @@ EncodedResults StatefulLLMPipeline::generate(
 
     GenerationConfig config = generation_config.value_or(m_generation_config);
     // If stop_token_ids were not provided, take value from default m_generation_config
-    if (config.stop_token_ids.empty())
+    if (config.stop_token_ids.empty() && !config.stop_token_ids_defined)
         config.stop_token_ids = m_generation_config.stop_token_ids;
+    if (config.stop_strings.empty() && !config.stop_strings_defined) {
+        config.stop_strings = m_generation_config.stop_strings;
+        config.include_stop_str_in_output = m_generation_config.include_stop_str_in_output;
+    }
     // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);

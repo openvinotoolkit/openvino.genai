@@ -651,9 +651,11 @@ public:
     // EOS special token
     int64_t eos_token_id = -1;
     std::set<std::string> stop_strings;
+    bool stop_strings_defined = false;
     // Default setting in vLLM (and OpenAI API) is not to include stop string in the output
     bool include_stop_str_in_output = false;
     std::set<int64_t> stop_token_ids;
+    bool stop_token_ids_defined = false;
 
     // penalties (not used in beam search)
     float repetition_penalty = 1.0f;

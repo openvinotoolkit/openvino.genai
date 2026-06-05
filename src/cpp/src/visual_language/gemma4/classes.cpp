@@ -85,6 +85,75 @@ void extract_patches(const clip_image_f32& float_image,
     }
 }
 
+/// @brief Apply k×k spatial pooling to raw patch embeddings by concatenating k² neighbouring
+/// patches per output token. Matches HuggingFace Gemma4SpatialPooling (concatenation mode).
+/// @param pixel_values        Raw patches [1, num_patches_h * num_patches_w, patch_dim].
+/// @param num_patches_h       Number of patches along height; must be divisible by pooling_kernel_size.
+/// @param num_patches_w       Number of patches along width; must be divisible by pooling_kernel_size.
+/// @param pooling_kernel_size k; output token dimension = k² × patch_dim.
+/// @param max_soft_tokens     Maximum output tokens; result is zero-padded to this count.
+/// @returns Pair of { pooled_pixel_values [1, max_soft_tokens, k²*patch_dim],
+///                    pooled_position_ids [1, max_soft_tokens, 2] }, padding filled with 0 / -1.
+std::pair<ov::Tensor, ov::Tensor> pool_vision_patches(const ov::Tensor& pixel_values,
+                                                      size_t num_patches_h,
+                                                      size_t num_patches_w,
+                                                      size_t pooling_kernel_size,
+                                                      size_t max_soft_tokens) {
+    const size_t patch_dim = pixel_values.get_shape()[2];
+    const size_t k = pooling_kernel_size;
+    const size_t pooled_dim = k * k * patch_dim;
+    const size_t num_pooled_h = num_patches_h / k;
+    const size_t num_pooled_w = num_patches_w / k;
+    const size_t num_pooled_tokens = num_pooled_h * num_pooled_w;
+
+    OPENVINO_ASSERT(num_patches_h % k == 0 && num_patches_w % k == 0,
+                    "Patch grid (",
+                    num_patches_h,
+                    "x",
+                    num_patches_w,
+                    ") must be divisible by pooling_kernel_size=",
+                    k);
+    OPENVINO_ASSERT(num_pooled_tokens <= max_soft_tokens,
+                    "Pooled token count (",
+                    num_pooled_tokens,
+                    ") exceeds max_soft_tokens=",
+                    max_soft_tokens);
+
+    const float* pv_src = pixel_values.data<const float>();
+
+    ov::Tensor pooled_pixel_values(ov::element::f32, {1, max_soft_tokens, pooled_dim});
+    ov::Tensor pooled_position_ids(ov::element::i64, {1, max_soft_tokens, 2});
+
+    float* pv_dst = pooled_pixel_values.data<float>();
+    int64_t* pos_dst = pooled_position_ids.data<int64_t>();
+
+    std::fill(pv_dst, pv_dst + max_soft_tokens * pooled_dim, 0.0f);
+    std::fill(pos_dst, pos_dst + max_soft_tokens * 2, int64_t{-1});
+
+    for (size_t pool_py = 0; pool_py < num_pooled_h; ++pool_py) {
+        for (size_t pool_px = 0; pool_px < num_pooled_w; ++pool_px) {
+            const size_t pooled_idx = pool_py * num_pooled_w + pool_px;
+            float* token_dst = pv_dst + pooled_idx * pooled_dim;
+
+            // Concatenate k² patches in row-major order (dy, dx) within the block,
+            // matching HuggingFace Gemma4SpatialPooling concatenation order.
+            for (size_t dy = 0; dy < k; ++dy) {
+                for (size_t dx = 0; dx < k; ++dx) {
+                    const size_t raw_idx = (pool_py * k + dy) * num_patches_w + (pool_px * k + dx);
+                    std::memcpy(token_dst + (dy * k + dx) * patch_dim,
+                                pv_src + raw_idx * patch_dim,
+                                patch_dim * sizeof(float));
+                }
+            }
+
+            pos_dst[pooled_idx * 2] = static_cast<int64_t>(pool_px);
+            pos_dst[pooled_idx * 2 + 1] = static_cast<int64_t>(pool_py);
+        }
+    }
+
+    return {std::move(pooled_pixel_values), std::move(pooled_position_ids)};
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -126,25 +195,20 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
 
     extract_patches(float_image, config.patch_size, pv_data, num_patches_h, num_patches_w);
 
-    // 6. Compute 2D position IDs: meshgrid(arange(patch_w), arange(patch_h), indexing="xy")
-    // Then pad to max_patches with -1
-    ov::Tensor image_position_ids(ov::element::i64, {1, max_patches, 2});
-    int64_t* pos_data = image_position_ids.data<int64_t>();
-    std::fill(pos_data, pos_data + max_patches * 2, int64_t{-1});
-
-    for (size_t py = 0; py < num_patches_h; py++) {
-        for (size_t px = 0; px < num_patches_w; px++) {
-            const size_t patch_idx = py * num_patches_w + px;
-            pos_data[patch_idx * 2 + 0] = static_cast<int64_t>(px);  // x coordinate
-            pos_data[patch_idx * 2 + 1] = static_cast<int64_t>(py);  // y coordinate
-        }
-    }
+    // 6. Apply k×k spatial pooling to produce [1, max_soft_tokens, k²*patch_dim] input
+    //    for the vision embeddings model, which expects pooled (not raw) patches.
+    const auto [pooled_pixel_values, pooled_position_ids] = pool_vision_patches(
+        pixel_values,
+        num_patches_h,
+        num_patches_w,
+        config.pooling_kernel_size,
+        config.max_soft_tokens);
 
     // 7. Run vision encoder
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
-    encoder.set_tensor("pixel_values", pixel_values);
-    encoder.set_tensor("image_position_ids", image_position_ids);
+    encoder.set_tensor("pixel_values", pooled_pixel_values);
+    encoder.set_tensor("image_position_ids", pooled_position_ids);
     encoder.infer();
 
     // 8. Output shape is [num_soft_tokens, hidden_size] → reshape to [1, num_soft_tokens, hidden_size]
