@@ -259,17 +259,6 @@ public:
                 return;
             }
 
-            if (kv_plan.cache_token_position < la_plan.cache_token_position) {
-                la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, kv_plan.cache_token_position);
-                if (la_plan.empty()) {
-                    return;
-                }
-                kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, la_plan.cache_token_position);
-                if (kv_plan.empty()) {
-                    return;
-                }
-            }
-
             const size_t common_cache_token_position = std::min(kv_plan.cache_token_position,
                                                                la_plan.cache_token_position);
             kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, common_cache_token_position);

@@ -1416,7 +1416,7 @@ private:
                 plan.processed_tokens = get_processed_tokens_after_restore(content_len, prompt_len);
             } else {
                 for (size_t i = 1; i < m_block_size; i++) {
-                    if (prev_iteration_content_len + i > capped_token_position) {
+                    if (prev_iteration_content_len + i >= content_len) {
                         break;
                     }
                     const size_t partial_content_len = prev_iteration_content_len + i;
