@@ -58,8 +58,12 @@ void AudioEncoderQwen3Omni::validate_audio_shape(const ov::Shape& shape, ov::ele
                     "Audio input must be a 1-D tensor of PCM samples, got rank ",
                     shape.size());
     const size_t audio_len = ov::shape_size(shape);
-    OPENVINO_ASSERT(audio_len > 0,
-                    "Audio input is empty (0 samples). Provide at least n_fft/2 + 1 samples.");
+    OPENVINO_ASSERT(audio_len > WHISPER_N_FFT / 2,
+                    "Audio input too short: got ",
+                    audio_len,
+                    " samples, need at least ",
+                    WHISPER_N_FFT / 2 + 1,
+                    ".");
     OPENVINO_ASSERT(audio_len <= MAX_AUDIO_SAMPLES,
                     "Audio input too large: got ",
                     audio_len,

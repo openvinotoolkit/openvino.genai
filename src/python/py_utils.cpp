@@ -62,6 +62,9 @@ public:
     }
 };
 
+// Permissive mapping: any value outside {RUNNING, CANCEL, TOOL_CALL_STOP} (including legacy
+// `True`/non-zero ints from older Python callbacks that returned bool) is treated as STOP so
+// we don't break user code that returned bools to mean "stop streaming".
 ov::genai::StreamingStatus map_py_status(const std::optional<uint16_t>& result) {
     if (!result.has_value())
         return ov::genai::StreamingStatus::RUNNING;
@@ -571,7 +574,11 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
                                   auto py_str_obj = py::reinterpret_steal<py::str>(py_str);
                                   try {
                                       return map_py_status((*shared_callback)(py_str_obj));
-                                  } catch (const py::error_already_set&) {
+                                  } catch (const py::error_already_set& e) {
+                                      // Surface the failure but keep generation alive — historical
+                                      // behavior is RUNNING so user callbacks that raise transiently
+                                      // don't abort. Warn so the error stops being invisible.
+                                      GENAI_WARN("Text streamer callback raised exception: %s", e.what());
                                       return StreamingStatus::RUNNING;
                                   }
                               };

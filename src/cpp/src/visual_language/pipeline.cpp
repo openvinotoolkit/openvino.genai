@@ -689,6 +689,10 @@ public:
         // OmniPipeline only attaches to the CB-backed adapter which actually implements this gate.
     }
 
+    bool supports_hidden_states_collection() const override {
+        return false;
+    }
+
     bool is_audio_output_enabled() const override {
         return m_vlm_config.enable_audio_output;
     }

@@ -164,6 +164,10 @@ public:
         m_impl.set_collect_hidden_states(enabled);
     }
 
+    bool supports_hidden_states_collection() const override {
+        return true;
+    }
+
     bool is_audio_output_enabled() const override {
         return m_vlm_config.enable_audio_output;
     }

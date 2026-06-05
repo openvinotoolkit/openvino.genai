@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniSpeechStreamerBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechGenerationConfig', 'OmniSpeechStreamerBase', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -1095,8 +1095,6 @@ class GenerationConfig:
     echo: bool
     ignore_eos: bool
     include_stop_str_in_output: bool
-    return_audio: bool
-    speaker: str
     stop_criteria: StopCriteria
     structured_output_config: openvino_genai.py_openvino_genai.StructuredOutputConfig | None
     @typing.overload
@@ -1130,12 +1128,6 @@ class GenerationConfig:
         ...
     @assistant_confidence_threshold.setter
     def assistant_confidence_threshold(self, arg0: typing.SupportsFloat) -> None:
-        ...
-    @property
-    def audio_chunk_frames(self) -> int:
-        ...
-    @audio_chunk_frames.setter
-    def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def branching_factor(self) -> int:
@@ -2220,16 +2212,151 @@ class MeanStdPair:
     @property
     def std(self) -> float:
         ...
+class OmniDecodedResults(VLMDecodedResults):
+    """
+    Omni-specific decoded results including speech outputs.
+    
+            Extends VLMDecodedResults with speech output waveforms for Qwen3-Omni models.
+    
+            Parameters:
+            texts:            vector of resulting sequences (inherited from DecodedResults).
+            scores:           scores for each sequence (inherited from DecodedResults).
+            perf_metrics:     performance metrics (inherited from VLMDecodedResults).
+            speech_outputs:   speech waveform tensors (one per result, present when return_audio=True).
+            
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def speech_outputs(self) -> list[openvino._pyopenvino.Tensor]:
+        ...
+class OmniPipeline:
+    """
+    
+        OmniPipeline — Qwen3-Omni text + speech pipeline.
+    
+        Composes a VLM pipeline (text generation with hidden-state collection) with a Qwen3-Omni
+        speech pipeline (Talker + CodePredictor + Code2Wav). Speech generation is gated per-call
+        by OmniSpeechGenerationConfig.return_audio.
+    
+        Two construction paths:
+    
+          - Path-based: OmniPipeline(models_path, device, **properties) loads VLM and speech
+            models from a single directory.
+    
+          - Shared-VLM: OmniPipeline(vlm_pipeline, speech_models_path, device, **properties)
+            reuses an externally-loaded VLMPipeline so multi-GB weights are not reloaded.
+    
+        Both ctors enforce that the loaded model is Qwen3-Omni capable (model_type == QWEN3_OMNI
+        and enable_audio_output) — non-Omni models throw at construction time.
+    """
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                        OmniPipeline path-based constructor.
+                        models_path (os.PathLike): Path to the folder with exported Qwen3-Omni model files.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, vlm: VLMPipeline, speech_models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                        OmniPipeline shared-VLM constructor.
+                        vlm (VLMPipeline): Already-loaded VLMPipeline. Its base is shared with the OmniPipeline.
+                        speech_models_path (os.PathLike): Path to folder with Qwen3-Omni speech models + config.json.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    @typing.overload
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], speech_config: OmniSpeechGenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], int | None] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> VLMDecodedResults:
+        """
+            Generate text and (optionally) speech from a flat prompt.
+        
+            :param prompt: Input prompt
+            :type prompt: str
+        
+            :param images: image tensors to be prepended to the prompt
+            :type images: list[ov.Tensor]
+        
+            :param videos: video tensors to be prepended to the prompt
+            :type videos: list[ov.Tensor]
+        
+            :param audios: audio tensors to be prepended to the prompt
+            :type audios: list[ov.Tensor]
+        
+            :param speech_config: speech generation config (inherits GenerationConfig fields plus the
+                three Omni fields). When None, the pipeline-default config is used.
+            :type speech_config: OmniSpeechGenerationConfig | None
+        
+            :param streamer: optional streamer for text tokens.
+            :type streamer: Callable[[str], bool] | StreamerBase | None
+        
+            :param speech_streamer: optional callback or OmniSpeechStreamerBase to receive audio chunks
+                during speech generation. Lambda receives ov.Tensor [1, 1, N_samples] and returns
+                StreamingStatus (or bool/None).
+            :type speech_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] | OmniSpeechStreamerBase | None
+        
+            :return: VLMDecodedResults with `speech_outputs` populated when speech_config.return_audio is True.
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
+    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], speech_config: OmniSpeechGenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], int | None] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> VLMDecodedResults:
+        """
+            Generate text and (optionally) speech from a chat history. Same parameter semantics as the
+            prompt overload.
+        
+            :param history: Chat history
+            :type history: ChatHistory
+        """
+class OmniSpeechGenerationConfig(GenerationConfig):
+    """
+    
+        OmniSpeechGenerationConfig
+    
+        Inherits all GenerationConfig fields and adds three Omni-specific knobs:
+    
+        :param return_audio: Enable speech output. Default True. Set False to short-circuit
+            the talker and produce text only.
+        :type return_audio: bool
+    
+        :param speaker: Speaker name for speech output. Empty selects the model's default speaker.
+            Available names are listed under `talker_config.speaker_id` in the model's `config.json`.
+        :type speaker: str
+    
+        :param audio_chunk_frames: Number of codec frames accumulated before streaming each audio
+            chunk. Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
+        :type audio_chunk_frames: int
+    """
+    return_audio: bool
+    speaker: str
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
+        """
+        folder with generation_config.json and config.json (talker_config)
+        """
+    def update_generation_config(self, **kwargs) -> None:
+        ...
+    def validate(self) -> None:
+        ...
+    @property
+    def audio_chunk_frames(self) -> int:
+        ...
+    @audio_chunk_frames.setter
+    def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
+        ...
 class OmniSpeechStreamerBase:
     """
-
+    
         Base class for audio streamers. Inherit and implement write() and end()
         to receive audio chunks during speech generation.
-
+    
         write(audio_chunk: ov.Tensor) -> StreamingStatus:
             Called with each audio chunk [1, 1, N_samples] float32 PCM at 24kHz.
             Return StreamingStatus.RUNNING to continue or STOP/CANCEL to halt.
-
+    
         end():
             Called when speech generation completes (always, even on early stop).
     """
@@ -4392,7 +4519,6 @@ class VLMDecodedResults(DecodedResults):
         texts:            vector of resulting sequences.
         scores:           scores for each sequence.
         metrics:          performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
-        speech_outputs:   optional speech waveform tensors (one per result, present when return_audio=True).
     """
     def __init__(self) -> None:
         ...
@@ -4403,9 +4529,6 @@ class VLMDecodedResults(DecodedResults):
         ...
     @property
     def scores(self) -> list[float]:
-        ...
-    @property
-    def speech_outputs(self) -> list[openvino._pyopenvino.Tensor]:
         ...
     @property
     def texts(self) -> list[str]:

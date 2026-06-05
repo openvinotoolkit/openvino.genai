@@ -69,6 +69,11 @@ void OmniPipeline::OmniPipelineImpl::assert_omni_capable() const {
     OPENVINO_ASSERT(
         m_vlm->is_audio_output_enabled(),
         "OmniPipeline requires a Qwen3-Omni model with audio output enabled (config.json: enable_audio_output=true)");
+    OPENVINO_ASSERT(
+        m_vlm->supports_hidden_states_collection(),
+        "OmniPipeline speech output requires the continuous-batching backend, but the loaded VLM uses the SDPA "
+        "fallback path. Load the model with attention_backend=PA on a CPU or GPU device (NPU is not supported "
+        "for Qwen3-Omni speech output).");
 }
 
 OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& prompt,
@@ -110,9 +115,16 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
     GenerationConfig text_cfg = static_cast<GenerationConfig>(speech_config);
 
     if (speech_config.return_audio) {
+        // Speech output requires the prompts overload's per-prompt loop, which captures the
+        // prompt-id slice into VLMDecodedResults::m_hidden_states_data. The histories overload
+        // doesn't yet wire that capture (CB pipeline_base.cpp leaves original_prompt_ids_list
+        // empty for the ChatHistory path — see the FIXME there). Apply the chat template here
+        // and route through the prompts path so speech generation has its prompt_ids.
+        const std::string templated_prompt = m_vlm->get_tokenizer().apply_chat_template(history, true);
+        text_cfg.apply_chat_template = false;
         VLMPipeline::VLMPipelineBase::HiddenStatesCollectionScope hs_scope(*m_vlm);
         VLMDecodedResults vlm_result =
-            m_vlm->generate(history, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
+            m_vlm->generate(templated_prompt, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
         return run_with_speech(std::move(vlm_result), speech_config, speech_streamer);
     }
 

@@ -112,6 +112,13 @@ public:
     /// via HiddenStatesCollectionScope. Default is off.
     virtual void enable_hidden_states_collection(bool enabled) = 0;
 
+    /// @brief True when the backing pipeline implementation actually supports hidden-states
+    /// collection (only the continuous-batching adapter does today). The SDPA fallback path
+    /// returns false. OmniPipeline asserts on this at construction so users hit a clear
+    /// "speech requires the CB backend" error instead of a cryptic late-stage failure
+    /// inside run_with_speech.
+    virtual bool supports_hidden_states_collection() const = 0;
+
     /// @brief True when the loaded VLM model has audio output enabled (Qwen3-Omni only).
     /// Used by OmniPipeline's ctor to reject non-Omni-capable models early.
     virtual bool is_audio_output_enabled() const = 0;

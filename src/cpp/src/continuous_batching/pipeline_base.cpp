@@ -372,6 +372,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
 
+        // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
+        if (!m_pending_audios_batches.empty() && !m_pending_audios_batches[0].empty()) {
+            std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+            m_inputs_embedder->encode_audios(m_pending_audios_batches[0]);
+        }
+
         auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
@@ -434,6 +440,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
             auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
             const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode, videos_metadata);
+
+            // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
+            // encode_audios overwrites the embedder's audio cache, so this must run per-prompt.
+            if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
+                std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+                m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
+            }
 
             auto [unified_prompt, image_sequence, video_sequence] =
                 m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
@@ -577,15 +590,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // Audios must be encoded before tokenization so <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
-    if (m_inputs_embedder) {
-        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-        for (const auto& batch_audios : audios_vector) {
-            if (!batch_audios.empty()) {
-                m_inputs_embedder->encode_audios(batch_audios);
-            }
-        }
-    }
+    // Stash audios per-request and clear on scope exit so the inner per-prompt loop can
+    // encode the i-th batch immediately before tokenizing prompts[i]. Pre-encoding all
+    // batches up front would overwrite the embedder's audio cache and leave every prompt
+    // seeing the last batch's embeddings.
+    struct PendingAudiosGuard {
+        std::vector<std::vector<ov::Tensor>>& slot;
+        ~PendingAudiosGuard() { slot.clear(); }
+    } guard{m_pending_audios_batches};
+    m_pending_audios_batches = audios_vector;
     return generate(prompts, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
 }
 
@@ -599,14 +612,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    if (m_inputs_embedder) {
-        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-        for (const auto& batch_audios : audios_vector) {
-            if (!batch_audios.empty()) {
-                m_inputs_embedder->encode_audios(batch_audios);
-            }
-        }
-    }
+    // Same per-prompt deferral as the prompts overload — see comment there.
+    struct PendingAudiosGuard {
+        std::vector<std::vector<ov::Tensor>>& slot;
+        ~PendingAudiosGuard() { slot.clear(); }
+    } guard{m_pending_audios_batches};
+    m_pending_audios_batches = audios_vector;
     return generate(histories, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
 }
 
@@ -655,6 +666,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                            generation_config.relevance_weight);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
+
+        // Encode this history's audios under m_embeddings_mutex right before tokenization.
+        // encode_audios overwrites the embedder's audio cache, so this must run per-history.
+        if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
+            std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+            m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
+        }
 
         VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
         chat_contexts.push_back(std::move(chat_context));

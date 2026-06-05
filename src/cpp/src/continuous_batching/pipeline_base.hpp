@@ -68,6 +68,13 @@ protected:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
 
+    // Per-request audio batches passed by the audios-aware generate() overloads.
+    // Populated under m_embeddings_mutex by the audio overload and consumed inside the
+    // per-prompt loop right before tokenization, so each prompt sees its own audio
+    // embeddings (m_inputs_embedder->encode_audios overwrites internal cache state).
+    // Empty when the no-audio overloads are used.
+    std::vector<std::vector<ov::Tensor>> m_pending_audios_batches;
+
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
     // Hidden-states collection gate. Toggled by VLMPipelineBase::enable_hidden_states_collection
