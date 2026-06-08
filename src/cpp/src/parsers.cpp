@@ -304,17 +304,29 @@ public:
         std::string reasoning_content;
         std::string content = message["content"].get_string();
 
-        size_t start = content.find(m_open_tag);
-        size_t end = content.find(m_close_tag);
-
-        if (start != std::string::npos && end != std::string::npos && end > start) {
-            reasoning_content = content.substr(start + m_open_tag.size(), end - (start + m_open_tag.size()));
-            if (!m_keep_original_content) {
-                // Remove <think>...</think/> from content
-                message["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
+        if (!m_expect_open_tag) {
+            const size_t end = content.find(m_close_tag);
+            if (end != std::string::npos) {
+                reasoning_content = content.substr(0, end);
+                if (!m_keep_original_content) {
+                    message["content"] = content.substr(end + m_close_tag.size());
+                }
+            } else {
+                reasoning_content = content;
+                if (!m_keep_original_content) {
+                    message["content"] = std::string{};
+                }
             }
         } else {
-            reasoning_content = "";
+            const size_t start = content.find(m_open_tag);
+            const size_t end = content.find(m_close_tag);
+
+            if (start != std::string::npos && end != std::string::npos && end > start) {
+                reasoning_content = content.substr(start + m_open_tag.size(), end - (start + m_open_tag.size()));
+                if (!m_keep_original_content) {
+                    message["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
+                }
+            }
         }
 
         message["reasoning_content"] = reasoning_content;
