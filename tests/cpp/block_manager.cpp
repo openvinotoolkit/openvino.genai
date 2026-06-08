@@ -478,6 +478,8 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlder
 
     const auto producer_seq_id = producer_group->get_running_sequences().at(0)->get_id();
     ASSERT_EQ(block_manager.get_block_table(producer_seq_id, 0).size(), 2);
+    const auto older_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(0);
+    const auto latest_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(1);
     const auto older_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(0)->get_index();
     const auto latest_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
     block_manager.free_sequence(producer_seq_id);
@@ -496,6 +498,8 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlder
     ASSERT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 1);
     EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_index(), latest_checkpoint_idx);
     EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
+    EXPECT_EQ(older_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
 
     block_manager.free_sequence(pressure_seq_id);

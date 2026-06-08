@@ -1453,6 +1453,9 @@ private:
                 latest_content_len = content_len;
             }
             plan.block_content_lengths.push_back(content_len);
+            if (content_len % m_block_size != 0) {
+                break;
+            }
             interval_end = get_interval_start(content_len);
         }
 
