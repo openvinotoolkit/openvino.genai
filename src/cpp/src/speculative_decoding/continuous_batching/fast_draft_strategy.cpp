@@ -44,7 +44,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
                                    allow_cache_rotation,
-                                   true,
+                                   main_model_desc.scheduler_config.use_sparse_attention,
                                    allow_adaptive_rkv,
                                    main_allow_qq_bias).run_on_model(main_model);
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
