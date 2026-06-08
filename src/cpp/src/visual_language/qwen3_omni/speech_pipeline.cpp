@@ -764,11 +764,28 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
     return result;
 }
 
-ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
-                                                    const std::vector<ov::Tensor>& all_hidden_states,
-                                                    const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                                                    const OmniSpeechStreamerVariant& audio_streamer,
-                                                    const OmniTalkerSpeechConfig& talker_speech_config) {
+TalkerResult Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
+                                                       const std::vector<ov::Tensor>& all_hidden_states,
+                                                       const std::vector<ov::Tensor>& all_intermediate_hidden_states,
+                                                       const OmniSpeechStreamerVariant& audio_streamer,
+                                                       const OmniTalkerSpeechConfig& talker_speech_config) {
+    // Stamp start_time for the speech-side perf record. Single duration entry per generate_speech
+    // call; raw_metrics is otherwise empty (no per-token TTFT — speech AR is too coarse to
+    // care about per-codec-step latency, and num_generated_samples captures throughput).
+    const auto speech_start_time = std::chrono::steady_clock::now();
+    auto build_result = [&](ov::Tensor waveform) -> TalkerResult {
+        TalkerResult result;
+        if (waveform && waveform.get_size() > 0) {
+            result.perf_metrics.num_generated_samples = waveform.get_size();
+            result.speech_outputs.push_back(std::move(waveform));
+        }
+        const auto duration =
+            ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - speech_start_time);
+        result.perf_metrics.raw_metrics.generate_durations.emplace_back(duration);
+        result.perf_metrics.evaluate_statistics(speech_start_time);
+        return result;
+    };
+
     // Resolve sampling overrides up front: caller-supplied std::optional<...> takes precedence
     // over the JSON-loaded checkpoint defaults at m_config.{talker,cp}_*.
     const float talker_temp = talker_speech_config.talker_temperature.value_or(m_config.talker_temperature);
@@ -794,7 +811,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
         GENAI_WARN("Speech: talker not available");
         if (streaming)
             end_speech_streamer(audio_streamer);
-        return ov::Tensor();
+        return build_result(ov::Tensor{});
     }
 
     // Reseed at every entry so output depends only on inputs + seed, not prior call history.
@@ -832,7 +849,7 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
         GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");
         if (streaming)
             end_speech_streamer(audio_streamer);
-        return ov::Tensor();
+        return build_result(ov::Tensor{});
     }
 
     GENAI_DEBUG("Speech: talker_input=[1, %zu, %zu], trailing=[1, %zu, ...], streaming=%s, chunk_frames=%zu",
@@ -1032,14 +1049,13 @@ ov::Tensor Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& 
 
     if (all_codes.empty()) {
         GENAI_WARN("Speech: no codes generated");
-        return ov::Tensor();
+        return build_result(ov::Tensor{});
     }
 
     GENAI_INFO("Speech: %zu codec steps generated, converting to waveform...", all_codes.size());
 
-    // Always return full waveform for backward compatibility
     auto full_codes = stack_codes_range(0, all_codes.size());
-    return codes_to_wav(full_codes);
+    return build_result(codes_to_wav(full_codes));
 }
 
 }  // namespace ov::genai

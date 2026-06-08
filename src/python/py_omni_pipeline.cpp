@@ -267,13 +267,15 @@ void init_omni_pipeline(py::module_& m) {
         Extends VLMDecodedResults with speech output waveforms for Qwen3-Omni models.
 
         Parameters:
-        texts:            vector of resulting sequences (inherited from DecodedResults).
-        scores:           scores for each sequence (inherited from DecodedResults).
-        perf_metrics:     performance metrics (inherited from VLMDecodedResults).
-        speech_outputs:   speech waveform tensors (one per result, present when return_audio=True).
+        texts:                  vector of resulting sequences (inherited from DecodedResults).
+        scores:                 scores for each sequence (inherited from DecodedResults).
+        perf_metrics:           text-side perf metrics (inherited from VLMDecodedResults).
+        speech_outputs:         speech waveform tensors (one per result, present when return_audio=True).
+        speech_perf_metrics:    speech-side perf metrics (SpeechGenerationPerfMetrics).
         )")
         .def(py::init<>())
-        .def_readonly("speech_outputs", &OmniDecodedResults::speech_outputs);
+        .def_readonly("speech_outputs", &OmniDecodedResults::speech_outputs)
+        .def_readonly("speech_perf_metrics", &OmniDecodedResults::speech_perf_metrics);
 
     py::class_<OmniPipeline>(m, "OmniPipeline", omni_pipeline_docstring)
         .def(py::init([](const std::filesystem::path& models_path,

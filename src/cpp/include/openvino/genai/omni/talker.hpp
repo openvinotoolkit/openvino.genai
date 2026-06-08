@@ -12,10 +12,25 @@
 #include "openvino/genai/omni/decoded_results.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 
 namespace ov::genai {
+
+/**
+ * @brief Output of TalkerBase::generate. Holds the talker-side waveform plus its perf metrics.
+ * OmniPipelineImpl combines this with VLMDecodedResults from the VLM stage to produce the
+ * public OmniDecodedResults.
+ */
+struct OPENVINO_GENAI_EXPORTS TalkerResult {
+    /// Speech output waveforms. Empty when `talker_speech_config.return_audio == false`.
+    std::vector<ov::Tensor> speech_outputs;
+
+    /// Speech-side perf metrics: `num_generated_samples`, `raw_metrics.generate_durations`, etc.
+    /// Populated even when `speech_outputs` is empty so callers can see how long the no-op path took.
+    SpeechGenerationPerfMetrics perf_metrics;
+};
 
 /**
  * @brief Public abstract interface for OmniPipeline's speech-output backend.
@@ -37,16 +52,19 @@ public:
     /// @param vlm_result VLM-side text result; must carry hidden states from a generate()
     ///                   call that ran with `talker_speech_config.return_audio == true`. The
     ///                   talker reads `hidden_states`, `intermediate_hidden_states`, and
-    ///                   `prompt_ids` from the result.
+    ///                   `prompt_ids` from the result. Passed by const-ref — the talker does
+    ///                   not own the VLM result; OmniPipelineImpl assembles the final
+    ///                   `OmniDecodedResults` from both the VLM and talker outputs.
     /// @param talker_speech_config Generation knobs for the talker (`return_audio`, `speaker`,
     ///                             `speaker_embedding`, `audio_chunk_frames`, `max_new_tokens`,
     ///                             `rng_seed`, `validate()` already enforced).
     /// @param speech_streamer Optional callback or `OmniSpeechStreamerBase` for streaming
     ///                        audio chunks. `monostate` = batch mode (single waveform).
-    /// @return OmniDecodedResults with `speech_outputs` populated when `return_audio` is true.
-    virtual OmniDecodedResults generate(VLMDecodedResults vlm_result,
-                                        const OmniTalkerSpeechConfig& talker_speech_config,
-                                        const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) = 0;
+    /// @return TalkerResult with `speech_outputs` populated when `return_audio` is true and
+    ///         `perf_metrics` populated regardless.
+    virtual TalkerResult generate(const VLMDecodedResults& vlm_result,
+                                  const OmniTalkerSpeechConfig& talker_speech_config,
+                                  const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) = 0;
 
     /// @brief List names of speakers exposed by this talker.
     /// Returns an empty vector when the backend does not enumerate named speakers.
@@ -95,9 +113,9 @@ public:
     Qwen3OmniTalker(const Qwen3OmniTalker&) = delete;
     Qwen3OmniTalker& operator=(const Qwen3OmniTalker&) = delete;
 
-    OmniDecodedResults generate(VLMDecodedResults vlm_result,
-                                const OmniTalkerSpeechConfig& talker_speech_config,
-                                const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
+    TalkerResult generate(const VLMDecodedResults& vlm_result,
+                          const OmniTalkerSpeechConfig& talker_speech_config,
+                          const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
 
     std::vector<std::string> list_speakers() const override;
     ov::Tensor get_speaker_embedding(const std::string& name) const override;

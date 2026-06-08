@@ -2219,16 +2219,20 @@ class OmniDecodedResults(VLMDecodedResults):
             Extends VLMDecodedResults with speech output waveforms for Qwen3-Omni models.
     
             Parameters:
-            texts:            vector of resulting sequences (inherited from DecodedResults).
-            scores:           scores for each sequence (inherited from DecodedResults).
-            perf_metrics:     performance metrics (inherited from VLMDecodedResults).
-            speech_outputs:   speech waveform tensors (one per result, present when return_audio=True).
+            texts:                  vector of resulting sequences (inherited from DecodedResults).
+            scores:                 scores for each sequence (inherited from DecodedResults).
+            perf_metrics:           text-side perf metrics (inherited from VLMDecodedResults).
+            speech_outputs:         speech waveform tensors (one per result, present when return_audio=True).
+            speech_perf_metrics:    speech-side perf metrics (SpeechGenerationPerfMetrics).
             
     """
     def __init__(self) -> None:
         ...
     @property
     def speech_outputs(self) -> list[openvino._pyopenvino.Tensor]:
+        ...
+    @property
+    def speech_perf_metrics(self) -> ...:
         ...
 class OmniPipeline:
     """

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 
 namespace ov::genai {
@@ -17,6 +18,11 @@ public:
     /// Speech output waveforms (one per generated result).
     /// Empty if speech generation was not requested (return_audio=false).
     std::vector<ov::Tensor> speech_outputs;
+
+    /// Speech-side perf metrics. Populated regardless of `return_audio`; when speech is
+    /// disabled, holds the trivially-fast no-op path's timing. Use alongside the inherited
+    /// `perf_metrics` (text-side) to break down end-to-end Omni latency.
+    SpeechGenerationPerfMetrics speech_perf_metrics;
 };
 
 }  // namespace ov::genai

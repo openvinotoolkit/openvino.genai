@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "openvino/genai/omni/speech_streamer_base.hpp"
+#include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -85,14 +86,15 @@ public:
     ///                              `speaker_embedding`, `max_new_tokens`, `rng_seed`, and the
     ///                              `talker_*` / `cp_*` optional sampling overrides. Unset overrides
     ///                              keep the checkpoint defaults loaded from `generation_config.json`.
-    /// @return Waveform tensor [1, 1, audio_samples] or empty tensor on failure.
+    /// @return TalkerResult with `speech_outputs` (the [1, 1, audio_samples] waveform; empty
+    ///         on no-op or failure) and `perf_metrics` (talker-side timing + sample count).
     /// @note Not thread-safe per instance — shares the pipeline's owned std::mt19937 and
     ///       ov::InferRequests across talker and CodePredictor sampling.
-    ov::Tensor generate_speech(const std::vector<int64_t>& full_token_ids,
-                               const std::vector<ov::Tensor>& all_hidden_states,
-                               const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-                               const OmniSpeechStreamerVariant& audio_streamer,
-                               const OmniTalkerSpeechConfig& talker_speech_config);
+    TalkerResult generate_speech(const std::vector<int64_t>& full_token_ids,
+                                 const std::vector<ov::Tensor>& all_hidden_states,
+                                 const std::vector<ov::Tensor>& all_intermediate_hidden_states,
+                                 const OmniSpeechStreamerVariant& audio_streamer,
+                                 const OmniTalkerSpeechConfig& talker_speech_config);
 
     /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
     /// has no `talker_config.speaker_id` or the name doesn't match. Tensor shape is

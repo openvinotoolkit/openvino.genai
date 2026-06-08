@@ -64,7 +64,12 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
         VLMPipeline::VLMPipelineBase::HiddenStatesCollectionScope hs_scope(*m_vlm);
         VLMDecodedResults vlm_result =
             m_vlm->generate(prompt, images, videos, /*videos_metadata=*/{}, text_config, text_streamer);
-        return m_talker->generate(std::move(vlm_result), talker_speech_config, speech_streamer);
+        TalkerResult talker_result = m_talker->generate(vlm_result, talker_speech_config, speech_streamer);
+        OmniDecodedResults omni_result;
+        static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+        omni_result.speech_outputs = std::move(talker_result.speech_outputs);
+        omni_result.speech_perf_metrics = std::move(talker_result.perf_metrics);
+        return omni_result;
     }
 
     // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_outputs.
@@ -100,7 +105,12 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
         VLMPipeline::VLMPipelineBase::HiddenStatesCollectionScope hs_scope(*m_vlm);
         VLMDecodedResults vlm_result =
             m_vlm->generate(templated_prompt, images, videos, /*videos_metadata=*/{}, text_cfg, text_streamer);
-        return m_talker->generate(std::move(vlm_result), talker_speech_config, speech_streamer);
+        TalkerResult talker_result = m_talker->generate(vlm_result, talker_speech_config, speech_streamer);
+        OmniDecodedResults omni_result;
+        static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
+        omni_result.speech_outputs = std::move(talker_result.speech_outputs);
+        omni_result.speech_perf_metrics = std::move(talker_result.perf_metrics);
+        return omni_result;
     }
 
     // Text-only path: convert VLMDecodedResults to OmniDecodedResults with empty speech_outputs.
