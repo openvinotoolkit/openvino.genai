@@ -1022,7 +1022,7 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     iteration_images: list[list[PIL.Image]],
 ):
     if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("CVS-188205")
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
     ov_pipe = ov_pipe_model.pipeline
 
@@ -1447,7 +1447,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
     if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("CVS-188205")
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
