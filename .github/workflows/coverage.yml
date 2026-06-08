@@ -967,14 +967,16 @@ jobs:
         working-directory: ${{ env.JS_DIR }}
         run: |
           npm install "${OV_INSTALL_DIR}"/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          cp -R "${OV_INSTALL_DIR}/openvino_node_npm_package/bin" node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin
+          ln -sfn "${OV_INSTALL_DIR}/openvino_node_npm_package/bin" node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install npm sample dependencies
         working-directory: ${{ github.workspace }}/samples/js
         run: |
           npm install "${OV_INSTALL_DIR}"/openvino_node_npm_package/openvino-node-* "${JS_DIR}" --ignore-scripts
-          cp -R "${OV_INSTALL_DIR}/openvino_node_npm_package/bin" node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin
+          ln -sfn "${OV_INSTALL_DIR}/openvino_node_npm_package/bin" node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Install coverage Python dependencies
@@ -1478,7 +1480,8 @@ jobs:
         working-directory: ${{ env.JS_DIR }}
         run: |
           npm install "${OV_INSTALL_DIR}"/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          cp -R "${OV_INSTALL_DIR}/openvino_node_npm_package/bin" node_modules/openvino-node/bin
+          rm -rf node_modules/openvino-node/bin
+          ln -sfn "${OV_INSTALL_DIR}/openvino_node_npm_package/bin" node_modules/openvino-node/bin
           npm install --verbose
           npm install --no-save c8
 
