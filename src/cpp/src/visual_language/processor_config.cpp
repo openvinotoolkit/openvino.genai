@@ -37,6 +37,9 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
     read_json_param(parsed, "merge_size", merge_size);
 
+    // Setting youtu_vl (Siglip2) config params
+    read_json_param(parsed, "max_num_patches", max_num_patches);
+
     // Setting qwen3_vl config params
     // qwen3_vl uses size.shortest_edge and size.longest_edge instead of min_pixels and max_pixels
     if (!parsed.contains("min_pixels") && !parsed.contains("max_pixels") ||
