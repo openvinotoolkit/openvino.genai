@@ -223,7 +223,6 @@ jobs:
         shell: bash
     runs-on: macos-14-xlarge
     env:
-      CMAKE_GENERATOR: Ninja
       CCACHE_DIR: ${{ github.workspace }}/ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
       CMAKE_C_COMPILER_LAUNCHER: ccache
@@ -257,8 +256,7 @@ jobs:
         run: brew install coreutils ccache
 
       - name: Setup ccache
-        id: ccache-restore
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel-${{ github.sha }}
           restore-keys: |
@@ -302,12 +300,8 @@ jobs:
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
       
-      - name: Show ccache dir
-        run: ls -laR ${{ env.CCACHE_DIR }}
-      
       - name: Save ccache
-        # if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        if: always()
+        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel-${{ github.sha }}
