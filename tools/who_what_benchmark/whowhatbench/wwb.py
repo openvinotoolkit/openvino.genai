@@ -53,6 +53,8 @@ def parse_args():
         description="This script generates answers for questions from csv file",
     )
 
+    text_def_dataset_group = parser.add_mutually_exclusive_group()
+
     parser.add_argument(
         "--base-model",
         default=None,
@@ -146,8 +148,8 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=str,
-        default=None,
-        help="Directory name for saving the per sample comparison and metrics in CSV files.",
+        default="wwb_output",
+        help="Directory name for saving the per sample comparison and metrics in CSV files. Defaults to 'wwb_output'.",
     )
     parser.add_argument(
         "--num-samples",
@@ -248,10 +250,16 @@ def parse_args():
         default=None,
         help="Weights for LoRA adapters.",
     )
-    parser.add_argument(
+    text_def_dataset_group.add_argument(
         "--long-prompt",
         action='store_true',
-        help="LLMPipeline specific parameter that defines the use of a long context prompt.",
+        help="LLMPipeline specific parameter that defines the use of a long context prompt. "
+        "Deprecated. Kept for backward compatibility, long prompts are used by default.",
+    )
+    text_def_dataset_group.add_argument(
+        "--short-prompt",
+        action="store_true",
+        help="LLMPipeline specific parameter that defines the use of a short context prompt.",
     )
     parser.add_argument(
         "--empty_adapters",
@@ -390,6 +398,10 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
+    if args.gt_data is not None and os.path.isdir(args.gt_data):
+        raise ValueError(f"--gt-data must be a file path, not a directory: '{args.gt_data}'")
+    if args.output is not None and os.path.isfile(args.output):
+        raise ValueError(f"--output must be a directory path, not a file: '{args.output}'")
 
 
 def load_prompts(args):
@@ -810,7 +822,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
-                long_prompt=args.long_prompt,
+                long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
                     int(args.num_assistant_tokens)
                     if args.num_assistant_tokens is not None else 0
@@ -1240,8 +1252,7 @@ def main():
             logger.info(all_metrics)
 
         if args.output:
-            if not os.path.exists(args.output):
-                os.mkdir(args.output)
+            os.makedirs(args.output, exist_ok=True)
             df = pd.DataFrame(all_metrics_per_question)
             df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)

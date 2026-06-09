@@ -235,6 +235,7 @@ USE_CASES = {
                 "gptj",
                 "hunyuan",
                 "yi-",
+                "lfm2",
                 "lfm2-moe",
                 "afmoe",
             ]
