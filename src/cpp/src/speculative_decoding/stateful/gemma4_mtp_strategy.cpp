@@ -10,9 +10,6 @@
 
 #include "continuous_batching/timer.hpp"
 #include "openvino/genai/text_streamer.hpp"
-#include "openvino/op/convert.hpp"
-#include "openvino/op/gather.hpp"
-#include "openvino/op/multiply.hpp"
 #include "openvino/op/result.hpp"
 
 namespace {
@@ -93,37 +90,38 @@ Gemma4MTPTargetWrapper::Gemma4MTPTargetWrapper(const ModelDesc& model_desc)
 }
 
 std::shared_ptr<ov::Model> Gemma4MTPTargetWrapper::create_embedding_model(const std::shared_ptr<ov::Model>& model) const {
-    std::shared_ptr<ov::Node> multiply_node;
-    std::shared_ptr<ov::Node> gather_node;
+    ov::Output<ov::Node> embedding_output;
     for (const auto& node : model->get_ordered_ops()) {
         const std::string name = node->get_friendly_name();
         if (name.find("embed_tokens/aten::mul/Multiply") != std::string::npos &&
             name.find("embed_tokens_per_layer") == std::string::npos && node->get_output_size() > 0) {
-            multiply_node = node;
+            embedding_output = node->output(0);
             break;
         }
     }
-    for (const auto& node : model->get_ordered_ops()) {
-        const std::string name = node->get_friendly_name();
-        if (name.find("embed_tokens/aten::embedding/Gather") != std::string::npos &&
-            name.find("embed_tokens_per_layer") == std::string::npos && node->get_output_size() > 0) {
-            gather_node = node;
-            break;
+    if (!embedding_output.get_node_shared_ptr()) {
+        for (const auto& node : model->get_ordered_ops()) {
+            const std::string name = node->get_friendly_name();
+            if (name.find("embed_tokens/aten::embedding/Gather") != std::string::npos &&
+                name.find("embed_tokens_per_layer") == std::string::npos && node->get_output_size() > 0) {
+                embedding_output = node->output(0);
+                break;
+            }
         }
     }
-    OPENVINO_ASSERT(gather_node, "Cannot find Gemma4 token embedding gather in target model.");
+    OPENVINO_ASSERT(embedding_output.get_node_shared_ptr(),
+                    "Cannot find Gemma4 token embedding path in target model.");
 
-    const auto input_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape::dynamic(2));
-    input_ids->set_friendly_name("input_ids");
-    input_ids->output(0).set_names({"input_ids"});
-    const auto converted_input_ids = std::make_shared<ov::op::v0::Convert>(input_ids, ov::element::i32);
-    const auto gather = std::make_shared<ov::op::v8::Gather>(gather_node->input_value(0), converted_input_ids, gather_node->input_value(2));
-    ov::Output<ov::Node> embedding_output = gather;
-    if (multiply_node) {
-        embedding_output = std::make_shared<ov::op::v1::Multiply>(embedding_output, multiply_node->input_value(1));
+    ov::ParameterVector parameters;
+    for (const auto& parameter : model->get_parameters()) {
+        if (parameter->get_friendly_name() == "input_ids") {
+            parameters.push_back(parameter);
+            break;
+        }
     }
+    OPENVINO_ASSERT(parameters.size() == 1, "Cannot find input_ids parameter for Gemma4 embedding model.");
     auto result = std::make_shared<ov::op::v0::Result>(embedding_output);
-    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input_ids}, "gemma4_mtp_embeddings");
+    return std::make_shared<ov::Model>(ov::ResultVector{result}, parameters, "gemma4_mtp_embeddings");
 }
 
 uint64_t Gemma4MTPTargetWrapper::execute_inference(ov::InferRequest& request) {
