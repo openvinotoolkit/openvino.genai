@@ -822,7 +822,15 @@ def _load_speecht5_hifigan_vocoder(vocoder_path=None):
 
 
 def _is_kokoro_model_id(model_id):
-    return isinstance(model_id, str) and "kokoro" in model_id.lower()
+    if not isinstance(model_id, str):
+        return False
+
+    # Robust detection for local exports (directory name can be arbitrary).
+    model_path = Path(model_id)
+    if model_path.is_dir() and (model_path / "voices").is_dir():
+        return True
+
+    return "kokoro" in model_id.lower()
 
 
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
