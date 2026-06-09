@@ -197,7 +197,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
-    if not torch.cuda.is_available or device.lower() == "cpu":
+    if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
         is_awq = False
         if not kwargs.get("gguf_file") and config and getattr(config, "quantization_config", None):
