@@ -31,8 +31,17 @@ public:
     bool is_requests_empty();
 
     size_t get_processed_tokens_per_iteration();
+    uint64_t reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t checkpoint_count);
+    void promote_linear_attention_checkpoint_for_sequence(uint64_t seq_id, size_t checkpoint_slot);
+    void release_linear_attention_checkpoints_for_sequence(uint64_t seq_id);
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
+
+    void set_hidden_state_export_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_export(is_needed);
+        }
+    }
 
     RawPerfMetrics raw_perf_metrics;
 
@@ -78,20 +87,6 @@ public:
     void set_d2t_for_draft_decoding(const std::shared_ptr<ov::op::v0::Constant>& d2t) {
         if (m_sampler) {
             m_sampler->set_d2t_for_decoding(d2t);
-        }
-    }
-
-    /**
-     * @brief Sets whether the export of hidden states is needed during model execution.
-     *
-     * This function enables or disables the export of hidden states by delegating
-     * the request to the underlying model runner, if it exists.
-     *
-     * @param is_needed Boolean flag indicating whether hidden state export is required.
-     */
-    void set_hidden_state_export_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_export(is_needed);
         }
     }
 
