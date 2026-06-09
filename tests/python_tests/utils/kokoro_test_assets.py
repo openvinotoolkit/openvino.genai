@@ -284,7 +284,7 @@ def generate_tiny_g2p_model(output_dir: Path) -> Path:
 
     model = BartForConditionalGeneration(config)
     model.eval()
-    model.save_pretrained(str(output_dir))
+    model.save_pretrained(str(output_dir), safe_serialization=False)
 
     generation_config = {
         "_from_model_config": True,
