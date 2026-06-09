@@ -196,7 +196,7 @@ def test_full_gguf_pipeline(
         }
     ]
 )
-@pytest.mark.skipif(sys.platform == "darwin", reason="CVS-172335, hangs")
+@pytest.mark.xfail(sys.platform == "darwin", reason="CVS-172335")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
