@@ -614,8 +614,10 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
             timeout: 60
           - name: 'Kokoro TTS'
-            cmd: 'python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
+            cmd: |
+              pip freeze
+              python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py
+            run_condition: ${{ true }}
             timeout: 60
           - name: 'Misaki C++ Parity'
             cmd: |
