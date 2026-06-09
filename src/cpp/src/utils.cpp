@@ -825,7 +825,9 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
     }
 
     if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() && !is_npu_requested) {
-        if (is_paged_attention_available()) {
+        if (attention_backend_it->second.as<std::string>() == SDPA_BACKEND) {
+            return false;
+        } else if (is_paged_attention_available()) {
             return true;
         } else {
             OPENVINO_THROW("Speculative decoding requires PagedAttention operation support on non-NPU devices, which is available on x86_64 or ARM64 platforms only");
