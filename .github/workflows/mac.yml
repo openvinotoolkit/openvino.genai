@@ -177,7 +177,7 @@ jobs:
         run: ccache --show-stats
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
