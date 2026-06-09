@@ -17,6 +17,7 @@ public:
      * Can be set for multilingual models only.
      */
     std::optional<std::string> language = std::nullopt;
+    std::optional<std::vector<std::string>> languages = std::nullopt;
 
     // Whether to return segment-level timestamps.
     bool return_timestamps = false;
@@ -66,6 +67,9 @@ public:
      *  //  He has gone and gone for good answered Polychrome who...
      */
     std::optional<std::string> initial_prompt = std::nullopt;
+
+    // qwen3-asr name is contexts
+    std::optional<std::vector<std::string>> initial_prompts = std::nullopt;
 
     /*
      * Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.

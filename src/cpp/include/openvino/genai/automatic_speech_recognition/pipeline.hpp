@@ -31,6 +31,7 @@ struct ASRDecodedResultChunk {
 struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     std::vector<std::string> texts;
     std::vector<float> scores;
+    // todo: std::vector<std::string> languages;
     std::string language;
     ASRPerfMetrics perf_metrics;
 
