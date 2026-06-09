@@ -4,7 +4,7 @@
 #include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
 #include <filesystem>
-
+#include <openvino/genai/speculative_decoding/perf_metrics.hpp>
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
     return ov::genai::StreamingStatus::RUNNING;
@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) try {
         // Speculative decoding (e.g. EAGLE3) — also enforces ContinuousBatching backend
         properties.insert(ov::genai::draft_model(draft_model_dir, device));
     }
-    use_cm_path = true;
+
     if (use_cm_path && device != "NPU") {
         // CM PA path w/o sparse — XATTENTION mode with a high threshold
         ov::genai::SchedulerConfig scheduler_config;
@@ -50,13 +50,14 @@ int main(int argc, char* argv[]) try {
         scheduler_config.use_sparse_attention = true;
         scheduler_config.sparse_attention_config = sparse_attention_config;
         properties.insert(ov::genai::scheduler_config(scheduler_config));
+        properties.insert(ov::hint::kv_cache_precision(ov::element::i8));
     }
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
         //properties.insert({ov::cache_dir("vlm_cache")});
     }
-    properties.insert(ov::hint::kv_cache_precision(ov::element::f16));
+    //properties.insert(ov::hint::kv_cache_precision(ov::element::f16));
     ov::genai::VLMPipeline pipe(argv[1], device, properties);
 
     ov::genai::GenerationConfig generation_config;
@@ -87,6 +88,34 @@ int main(int argc, char* argv[]) try {
         ov::genai::generation_config(generation_config),
         ov::genai::streamer(print_subword)
     );
+    auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(decoded_results.extended_perf_metrics);
+    if (sd_perf_metrics) {
+        auto main_model_metrics = sd_perf_metrics->main_model_metrics;
+        std::cout << "\nMAIN MODEL " << std::endl;
+        std::cout << "  Generate time: " << main_model_metrics.get_generate_duration().mean << " ms" << std::endl;
+        std::cout << "  TTFT: " << main_model_metrics.get_ttft().mean  << " ± " << main_model_metrics.get_ttft().std << " ms" << std::endl;
+        std::cout << "  TTST: " << main_model_metrics.get_ttst().mean  << " ± " << main_model_metrics.get_ttst().std << " ms/token " << std::endl;
+        std::cout << "  TPOT: " << main_model_metrics.get_tpot().mean  << " ± " << main_model_metrics.get_tpot().std << " ms/iteration " << std::endl;
+        std::cout << "  AVG Latency: " << main_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/token " << std::endl;
+        std::cout << "  Num generated token: " << main_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+        std::cout << "  Total iteration number: " << main_model_metrics.raw_metrics.m_durations.size() << std::endl;
+        std::cout << "  Num accepted token: " << sd_perf_metrics->get_num_accepted_tokens() << " tokens" << std::endl;
+
+        auto draft_model_metrics = sd_perf_metrics->draft_model_metrics;
+        std::cout << "\nDRAFT MODEL " << std::endl;
+        std::cout << "  Generate time: " << draft_model_metrics.get_generate_duration().mean << " ms" << std::endl;
+        std::cout << "  TTFT: " << draft_model_metrics.get_ttft().mean  << " ms" << std::endl;
+        std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ms/token " << std::endl;
+        std::cout << "  TPOT: " << draft_model_metrics.get_tpot().mean  << " ± " << draft_model_metrics.get_tpot().std << " ms/token " << std::endl;
+        std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << draft_model_metrics.get_latency().std << " ms/iteration " << std::endl;
+        std::cout << "  Num generated token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+        std::cout << "  Total iteration number: " << draft_model_metrics.raw_metrics.m_durations.size() << std::endl;
+        const float accept_length = main_model_metrics.raw_metrics.m_durations.empty()
+            ? 0.f
+            : static_cast<float>(sd_perf_metrics->get_num_generated_tokens()) /
+                static_cast<float>(main_model_metrics.raw_metrics.m_durations.size());
+        std::cout << "  Accept length: " << accept_length << std::endl;
+    }
     history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
     std::cout << "\n----------\n"
                  "question:\n";

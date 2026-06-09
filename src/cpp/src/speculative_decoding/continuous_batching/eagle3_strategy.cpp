@@ -102,6 +102,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
     kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
+    if (main_model_desc.scheduler_config.use_sparse_attention)
+        kv_model->set_rt_info(true, "sparse_enabled");
     if (kv_cache_precision == ov::element::u4) {
         kv_cache_precision = ov::element::u8;
     }
