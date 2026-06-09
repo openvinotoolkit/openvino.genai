@@ -18,6 +18,11 @@ bool is_gguf_model(const std::filesystem::path& file_path);
 std::map<std::string, GGUFMetaData> tokenizer_config_from_meta(
     const std::unordered_map<std::string, GGUFMetaData>& metadata);
 
+/// @brief Build the tokenizer config map from the native GGUF FrontEnd rt-info schema
+/// carried on the ov::Model produced by Core::read_model("*.gguf"),
+/// instead of re-parsing the .gguf file's metadata dictionary.
+std::map<std::string, GGUFMetaData> tokenizer_config_from_meta(const ov::Model& model);
+
 std::tuple<std::shared_ptr<ov::Model>, std::shared_ptr<ov::Model>, std::map<std::string, GGUFMetaData>>
 create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_tokenizers,
                              const std::filesystem::path& gguf_model_path);
