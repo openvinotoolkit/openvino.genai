@@ -241,59 +241,6 @@ def ensure_tiny_voice_bin(ov_path: Path, tiny_kokoro_model_path: Path) -> Path:
     logger.info("Created fallback tiny voice pack at %s", voice_bin)
     return voice_bin
 
-import os
-import sys
-import shutil
-import platform
-import traceback
-
-def _debug_fs(path: Path, label: str) -> None:
-    path = Path(path)
-    print(f"\n[DEBUG:{label}] path={path}", flush=True)
-    print(f"[DEBUG:{label}] exists={path.exists()} is_dir={path.is_dir()}", flush=True)
-
-    probe_dir = path if path.is_dir() else path.parent
-    try:
-        usage = shutil.disk_usage(probe_dir)
-        print(
-            f"[DEBUG:{label}] disk total={usage.total} used={usage.used} free={usage.free}",
-            flush=True,
-        )
-    except Exception:
-        traceback.print_exc()
-
-    try:
-        st = os.statvfs(str(probe_dir))
-        print(
-            f"[DEBUG:{label}] inodes files={st.f_files} free={st.f_ffree} "
-            f"bavail={st.f_bavail} bsize={st.f_bsize}",
-            flush=True,
-        )
-    except Exception:
-        traceback.print_exc()
-
-    try:
-        probe = probe_dir / f".pytest_write_probe_{os.getpid()}"
-        with open(probe, "wb") as f:
-            f.write(b"x" * 1024 * 1024)
-            f.flush()
-            os.fsync(f.fileno())
-        print(f"[DEBUG:{label}] write/fsync probe OK: {probe}", flush=True)
-        probe.unlink(missing_ok=True)
-    except Exception:
-        print(f"[DEBUG:{label}] write/fsync probe FAILED", flush=True)
-        traceback.print_exc()
-
-    try:
-        if path.exists():
-            for p in sorted(path.rglob("*"))[:100]:
-                print(
-                    f"[DEBUG:{label}] child={p} "
-                    f"size={p.stat().st_size if p.is_file() else '<dir>'}",
-                    flush=True,
-                )
-    except Exception:
-        traceback.print_exc()
 
 def generate_tiny_g2p_model(output_dir: Path) -> Path:
     """Generate a tiny random BART G2P model with Kokoro fallback vocab fields."""
@@ -337,19 +284,8 @@ def generate_tiny_g2p_model(output_dir: Path) -> Path:
 
     model = BartForConditionalGeneration(config)
     model.eval()
-    print(f"[DEBUG:g2p] platform={platform.platform()}", flush=True)
-    print(f"[DEBUG:g2p] python={sys.version}", flush=True)
-    print(f"[DEBUG:g2p] torch={torch.__version__}", flush=True)
-    print(f"[DEBUG:g2p] output_dir={output_dir}", flush=True)
-    _debug_fs(output_dir, "g2p-before-save")
-    try:
-        print("[DEBUG:g2p] calling save_pretrained...", flush=True)
-        model.save_pretrained(str(output_dir), safe_serialization=False)
-        print("[DEBUG:g2p] save_pretrained OK", flush=True)
-    except Exception:
-        print("[DEBUG:g2p] save_pretrained FAILED", flush=True)
-        _debug_fs(output_dir, "g2p-after-save-failure")
-        raise
+    config.save_pretrained(str(output_dir))
+    torch.save(model.state_dict(), output_dir / "pytorch_model.bin")
 
     generation_config = {
         "_from_model_config": True,
@@ -432,32 +368,10 @@ def prepare_tiny_kokoro_ov_path(converted_models_dir: Path, tiny_kokoro_model_pa
 
 def prepare_tiny_g2p_model_path(converted_models_dir: Path) -> Path:
     """Prepare tiny random BART G2P model in cache and return its path."""
-    converted_models_dir = Path(converted_models_dir)
-    model_path = converted_models_dir / "tiny-random-g2p"
-
-    print(f"[DEBUG:g2p-prepare] converted_models_dir={converted_models_dir}", flush=True)
-    print(f"[DEBUG:g2p-prepare] model_path={model_path}", flush=True)
-    _debug_fs(converted_models_dir, "prepare-before")
-
+    model_path = Path(converted_models_dir) / "tiny-random-g2p"
     manager = AtomicDownloadManager(model_path)
-
-    try:
-        manager.execute(lambda temp_path: generate_tiny_g2p_model(temp_path / "model"))
-    except Exception:
-        print("[DEBUG:g2p-prepare] AtomicDownloadManager.execute FAILED", flush=True)
-
-        temp_path = getattr(manager, "temp_path", None)
-        print(f"[DEBUG:g2p-prepare] manager.temp_path={temp_path}", flush=True)
-
-        _debug_fs(converted_models_dir, "prepare-after-failure-converted")
-        _debug_fs(model_path, "prepare-after-failure-model-path")
-        if temp_path:
-            _debug_fs(Path(temp_path), "prepare-after-failure-temp-path")
-
-        raise
-
+    manager.execute(lambda temp_path: generate_tiny_g2p_model(temp_path / "model"))
     _flatten_atomic_model_dir(model_path)
-    _debug_fs(model_path, "prepare-after-flatten")
     return model_path
 
 
