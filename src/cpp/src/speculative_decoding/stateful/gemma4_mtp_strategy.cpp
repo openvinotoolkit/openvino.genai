@@ -34,7 +34,7 @@ bool model_has_ports(const std::shared_ptr<ov::Model>& model,
     });
 }
 
-ov::genai::StreamingStatus stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer,
+ov::genai::StreamingStatus stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase>& streamer,
                                                    const std::vector<int64_t>& tokens) {
     if (streamer) {
         return streamer->write(tokens);
@@ -288,15 +288,6 @@ ov::Tensor StatefulGemma4MTPLLMPipeline::build_position_ids(size_t start, size_t
     ov::Tensor position_ids(ov::element::i64, {1, length});
     std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + length, static_cast<int64_t>(start));
     return position_ids;
-}
-
-ov::Tensor StatefulGemma4MTPLLMPipeline::build_input_ids(const std::vector<int64_t>& tokens,
-                                                         size_t start,
-                                                         size_t length) const {
-    OPENVINO_ASSERT(start + length <= tokens.size(), "Invalid Gemma4 input_ids slice.");
-    ov::Tensor input_ids(ov::element::i64, {1, length});
-    std::copy_n(tokens.data() + start, length, input_ids.data<int64_t>());
-    return input_ids;
 }
 
 Gemma4MTPSharedKV StatefulGemma4MTPLLMPipeline::crop_shared_kv(const Gemma4MTPSharedKV& shared_kv,

@@ -50,10 +50,6 @@ public:
         return m_raw_perf_metrics;
     }
 
-    size_t get_processed_tokens() const {
-        return m_processed_tokens;
-    }
-
 private:
     std::shared_ptr<ov::Model> create_embedding_model(const std::shared_ptr<ov::Model>& model) const;
     uint64_t execute_inference(ov::InferRequest& request);
@@ -122,7 +118,6 @@ private:
     ov::Tensor select_hidden_state(const ov::Tensor& hidden_states, size_t position) const;
     ov::Tensor build_attention_mask(size_t length) const;
     ov::Tensor build_position_ids(size_t start, size_t length) const;
-    ov::Tensor build_input_ids(const std::vector<int64_t>& tokens, size_t start, size_t length) const;
     ov::Tensor concatenate_embedding_and_hidden(const ov::Tensor& embedding, const ov::Tensor& hidden_state) const;
     std::vector<int64_t> sample_greedy_tokens(const ov::Tensor& logits, size_t token_count) const;
     bool is_stop_token(int64_t token, const GenerationConfig& config) const;
