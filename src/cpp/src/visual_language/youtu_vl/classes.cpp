@@ -5,13 +5,25 @@
 
 #include <cmath>
 #include <cstring>
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
 
 #include "visual_language/clip.hpp"
+#include "continuous_batching/timer.hpp"
+#include "json_utils.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
 
 namespace {
+
+std::vector<int64_t> tensor_to_i64_vector(const ov::Tensor& tensor) {
+    OPENVINO_ASSERT(tensor.get_element_type() == ov::element::i64,
+        "YoutuVL token ids are expected to be i64, got ", tensor.get_element_type());
+    const int64_t* data = tensor.data<const int64_t>();
+    return {data, data + tensor.get_size()};
+}
 
 /// @brief Compute target image dimensions (multiples of patch_size*2) such that
 /// the total number of patches does not exceed max_num_patches.
@@ -221,7 +233,9 @@ InputsEmbedderYoutuVL::InputsEmbedderYoutuVL(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap device_config)
-    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    load_special_token_ids(model_dir);
+}
 
 InputsEmbedderYoutuVL::InputsEmbedderYoutuVL(
     const VLMConfig& vlm_config,
@@ -230,7 +244,96 @@ InputsEmbedderYoutuVL::InputsEmbedderYoutuVL(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config)
-    : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+    : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    load_special_token_ids(config_dir_path);
+}
+
+void InputsEmbedderYoutuVL::load_special_token_ids(const std::filesystem::path& config_dir_path) {
+    std::ifstream stream(config_dir_path / "tokenizer.json");
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open tokenizer.json for YoutuVL at ", config_dir_path);
+    nlohmann::json tokenizer_json = nlohmann::json::parse(stream);
+
+    const std::vector<std::string> required_tokens = {
+        "<|begin_of_text|>",
+        "<|end_of_text|>",
+        m_vlm_config.vision_start_token,
+        m_vlm_config.image_pad_token,
+        m_vlm_config.vision_end_token,
+    };
+
+    for (const auto& token : required_tokens) {
+        for (const auto& added_token : tokenizer_json.at("added_tokens")) {
+            if (added_token.at("content").get<std::string>() == token) {
+                m_special_token_ids[token] = added_token.at("id").get<int64_t>();
+                break;
+            }
+        }
+        OPENVINO_ASSERT(m_special_token_ids.count(token) != 0,
+            "YoutuVL: tokenizer.json does not contain added token ", token);
+    }
+}
+
+ov::Tensor InputsEmbedderYoutuVL::encode_prompt_with_special_token_ids(
+    const std::string& prompt,
+    ov::genai::VLMPerfMetrics& metrics)
+{
+    ManualTimer encode_timer("Encode");
+    encode_timer.start();
+
+    const std::vector<std::string> special_tokens = {
+        "<|begin_of_text|>",
+        "<|end_of_text|>",
+        m_vlm_config.vision_start_token,
+        m_vlm_config.image_pad_token,
+        m_vlm_config.vision_end_token,
+    };
+
+    auto append_text = [this](std::vector<int64_t>& ids, const std::string& text) {
+        if (text.empty()) {
+            return;
+        }
+        ov::Tensor encoded = m_tokenizer.encode(text, ov::genai::add_special_tokens(false)).input_ids;
+        std::vector<int64_t> text_ids = tensor_to_i64_vector(encoded);
+        ids.insert(ids.end(), text_ids.begin(), text_ids.end());
+    };
+
+    std::vector<int64_t> ids;
+    size_t pos = 0;
+    while (pos < prompt.size()) {
+        const std::string* matched_token = nullptr;
+        for (const std::string& token : special_tokens) {
+            if (prompt.compare(pos, token.size(), token) == 0) {
+                matched_token = &token;
+                break;
+            }
+        }
+
+        if (matched_token != nullptr) {
+            ids.push_back(m_special_token_ids.at(*matched_token));
+            pos += matched_token->size();
+            continue;
+        }
+
+        size_t next_special = std::string::npos;
+        for (const std::string& token : special_tokens) {
+            size_t token_pos = prompt.find(token, pos);
+            next_special = std::min(next_special, token_pos);
+        }
+        if (next_special == std::string::npos) {
+            append_text(ids, prompt.substr(pos));
+            break;
+        }
+        append_text(ids, prompt.substr(pos, next_special - pos));
+        pos = next_special;
+    }
+
+    encode_timer.end();
+    metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+
+    ov::Tensor result(ov::element::i64, {1, ids.size()});
+    std::copy(ids.begin(), ids.end(), result.data<int64_t>());
+    return update_history(result);
+}
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderYoutuVL::encode_images(
     const std::vector<ov::Tensor>& images)
@@ -295,7 +398,7 @@ ov::Tensor InputsEmbedderYoutuVL::get_inputs_embeds(
     }
 
     // Tokenize the expanded prompt
-    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    ov::Tensor input_ids = encode_prompt_with_special_token_ids(unified_prompt, metrics);
 
     // Get text embeddings
     CircularBufferQueueElementGuard<EmbeddingsRequest> emb_guard(
@@ -310,17 +413,7 @@ ov::Tensor InputsEmbedderYoutuVL::get_inputs_embeds(
         return out;
     }
 
-    // Resolve the <|image_pad|> token id
-    auto start_tok = std::chrono::steady_clock::now();
-    ov::Tensor encoded_pad = m_tokenizer.encode(
-        m_vlm_config.image_pad_token, ov::genai::add_special_tokens(false)).input_ids;
-    auto end_tok = std::chrono::steady_clock::now();
-    OPENVINO_ASSERT(!metrics.raw_metrics.tokenization_durations.empty());
-    metrics.raw_metrics.tokenization_durations.back() +=
-        ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tok - start_tok));
-
-    int64_t image_pad_token_id =
-        encoded_pad.data<int64_t>()[encoded_pad.get_size() - 1];
+    int64_t image_pad_token_id = m_special_token_ids.at(m_vlm_config.image_pad_token);
 
     // Replace <|image_pad|> tokens with vision embeddings
     return utils::merge_text_and_image_embeddings_llava(

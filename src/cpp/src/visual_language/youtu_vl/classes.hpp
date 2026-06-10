@@ -4,6 +4,8 @@
 #pragma once
 
 #include <filesystem>
+#include <unordered_map>
+#include <vector>
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vision_encoder.hpp"
@@ -59,6 +61,14 @@ protected:
     // Native image tag produced by the YoutuVL chat template:
     //   <|vision_start|><|image_pad|><|vision_end|>
     inline static const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
+
+private:
+    std::unordered_map<std::string, int64_t> m_special_token_ids;
+
+    void load_special_token_ids(const std::filesystem::path& config_dir_path);
+    ov::Tensor encode_prompt_with_special_token_ids(
+        const std::string& prompt,
+        ov::genai::VLMPerfMetrics& metrics);
 };
 
 } // namespace ov::genai
