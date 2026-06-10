@@ -10,8 +10,6 @@
 
 #include "continuous_batching/timer.hpp"
 #include "openvino/genai/text_streamer.hpp"
-#include "openvino/op/concat.hpp"
-#include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
 
 namespace {
@@ -42,16 +40,6 @@ ov::genai::StreamingStatus stream_generated_tokens(const std::shared_ptr<ov::gen
         return streamer->write(tokens);
     }
     return ov::genai::StreamingStatus{};
-}
-
-std::shared_ptr<ov::op::v0::Parameter> find_parameter(const std::shared_ptr<ov::Model>& model,
-                                                      const std::string& name) {
-    for (const auto& parameter : model->get_parameters()) {
-        if (parameter->get_friendly_name() == name || parameter->output(0).get_names().count(name) > 0) {
-            return parameter;
-        }
-    }
-    return nullptr;
 }
 
 }  // namespace
@@ -101,7 +89,7 @@ Gemma4MTPTargetWrapper::Gemma4MTPTargetWrapper(const ModelDesc& model_desc)
     m_raw_perf_metrics.detokenization_durations = {MicroSeconds(0.0f)};
 }
 
-std::shared_ptr<ov::Model> Gemma4MTPTargetWrapper::create_embedding_model(const std::shared_ptr<ov::Model>& model) {
+std::shared_ptr<ov::Model> Gemma4MTPTargetWrapper::create_embedding_model(const std::shared_ptr<ov::Model>& model) const {
     ov::Output<ov::Node> embedding_output;
     for (const auto& node : model->get_ordered_ops()) {
         const std::string name = node->get_friendly_name();
@@ -123,11 +111,6 @@ std::shared_ptr<ov::Model> Gemma4MTPTargetWrapper::create_embedding_model(const 
     }
     OPENVINO_ASSERT(embedding_output.get_node_shared_ptr(),
                     "Cannot find Gemma4 token embedding path in target model.");
-    const ov::PartialShape embedding_shape = embedding_output.get_partial_shape();
-    OPENVINO_ASSERT(embedding_shape.rank().is_static() && embedding_shape.rank().get_length() == 3 &&
-                        embedding_shape[2].is_static(),
-                    "Gemma4 token embedding output must have static rank 3 and static hidden size.");
-    m_embedding_size = static_cast<size_t>(embedding_shape[2].get_length());
 
     ov::ParameterVector parameters;
     for (const auto& parameter : model->get_parameters()) {
@@ -208,59 +191,16 @@ void Gemma4MTPTargetWrapper::crop_state_to_length(size_t target_length) {
     m_processed_tokens = target_length;
 }
 
-Gemma4MTPAssistantWrapper::Gemma4MTPAssistantWrapper(const ModelDesc& model_desc, size_t embedding_size)
+Gemma4MTPAssistantWrapper::Gemma4MTPAssistantWrapper(const ModelDesc& model_desc)
     : m_device(model_desc.device),
       m_properties(model_desc.properties) {
     
     OPENVINO_ASSERT(model_desc.model, "Assistant model must not be null");
     OPENVINO_ASSERT(!m_device.empty(), "Assistant device must not be empty.");
-    auto transformed_model = transform_model(model_desc.model, embedding_size);
-    m_request = utils::singleton_core().compile_model(transformed_model, m_device, m_properties).create_infer_request();
+    m_request = utils::singleton_core().compile_model(model_desc.model, m_device, m_properties).create_infer_request();
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.tokenization_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.detokenization_durations = {MicroSeconds(0.0f)};
-}
-
-std::shared_ptr<ov::Model> Gemma4MTPAssistantWrapper::transform_model(const std::shared_ptr<ov::Model>& model,
-                                                                       size_t embedding_size) const {
-    OPENVINO_ASSERT(embedding_size > 0, "Gemma4 token embedding size must be positive.");
-    auto inputs_embeds = find_parameter(model, "inputs_embeds");
-    OPENVINO_ASSERT(inputs_embeds, "Cannot find inputs_embeds parameter in Gemma4 assistant model.");
-
-    const ov::PartialShape inputs_embeds_shape = inputs_embeds->get_output_partial_shape(0);
-    OPENVINO_ASSERT(inputs_embeds_shape.rank().is_static() && inputs_embeds_shape.rank().get_length() == 3 &&
-                        inputs_embeds_shape[2].is_static(),
-                    "Gemma4 assistant inputs_embeds must have static rank 3 and static hidden size.");
-
-    const size_t inputs_embeds_size = static_cast<size_t>(inputs_embeds_shape[2].get_length());
-    OPENVINO_ASSERT(inputs_embeds_size > embedding_size,
-                    "Gemma4 assistant inputs_embeds hidden size must be larger than token embedding size.");
-    const size_t hidden_size = inputs_embeds_size - embedding_size;
-
-    ov::PartialShape token_embedding_shape = inputs_embeds_shape;
-    token_embedding_shape[2] = static_cast<int64_t>(embedding_size);
-    ov::PartialShape hidden_state_shape = inputs_embeds_shape;
-    hidden_state_shape[2] = static_cast<int64_t>(hidden_size);
-
-    auto token_embedding = std::make_shared<ov::op::v0::Parameter>(inputs_embeds->get_element_type(), token_embedding_shape);
-    token_embedding->set_friendly_name("token_embedding");
-    token_embedding->output(0).set_names({"token_embedding"});
-
-    auto hidden_state = std::make_shared<ov::op::v0::Parameter>(inputs_embeds->get_element_type(), hidden_state_shape);
-    hidden_state->set_friendly_name("hidden_state");
-    hidden_state->output(0).set_names({"hidden_state"});
-
-    auto concat = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{token_embedding, hidden_state}, -1);
-    concat->set_friendly_name("inputs_embeds");
-
-    const auto target_inputs = inputs_embeds->output(0).get_target_inputs();
-    for (const auto& target_input : target_inputs) {
-        target_input.replace_source_output(concat);
-    }
-    model->remove_parameter(inputs_embeds);
-    model->add_parameters({token_embedding, hidden_state});
-    model->validate_nodes_and_infer_types();
-    return model;
 }
 
 uint64_t Gemma4MTPAssistantWrapper::execute_inference() {
@@ -278,13 +218,11 @@ void Gemma4MTPAssistantWrapper::release_memory() {
     m_request.get_compiled_model().release_memory();
 }
 
-Gemma4MTPOutput Gemma4MTPAssistantWrapper::infer(const ov::Tensor& token_embedding,
-                                                 const ov::Tensor& hidden_state,
+Gemma4MTPOutput Gemma4MTPAssistantWrapper::infer(const ov::Tensor& inputs_embeds,
                                                  const ov::Tensor& attention_mask,
                                                  const ov::Tensor& position_ids,
                                                  const Gemma4MTPSharedKV& shared_kv) {
-    m_request.set_tensor("token_embedding", token_embedding);
-    m_request.set_tensor("hidden_state", hidden_state);
+    m_request.set_tensor("inputs_embeds", inputs_embeds);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
     m_request.set_tensor("full_attention_key", shared_kv.full_key);
@@ -322,7 +260,7 @@ StatefulGemma4MTPLLMPipeline::StatefulGemma4MTPLLMPipeline(const ModelDesc& targ
         assistant_desc.properties = target_model_desc.properties;
     }
     m_target = std::make_unique<Gemma4MTPTargetWrapper>(target_model_desc);
-    m_assistant = std::make_unique<Gemma4MTPAssistantWrapper>(assistant_desc, m_target->get_embedding_size());
+    m_assistant = std::make_unique<Gemma4MTPAssistantWrapper>(assistant_desc);
 }
 
 StatefulGemma4MTPLLMPipeline::~StatefulGemma4MTPLLMPipeline() {
@@ -363,6 +301,25 @@ ov::Tensor StatefulGemma4MTPLLMPipeline::select_hidden_state(const ov::Tensor& h
     const ov::Shape shape = hidden_states.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && position < shape[1], "Invalid Gemma4 hidden state shape.");
     return ov::Tensor(hidden_states, ov::Coordinate{0, position, 0}, ov::Coordinate{shape[0], position + 1, shape[2]});
+}
+
+ov::Tensor StatefulGemma4MTPLLMPipeline::concatenate_embedding_and_hidden(const ov::Tensor& embedding,
+                                                                          const ov::Tensor& hidden_state) {
+    const ov::Shape embedding_shape = embedding.get_shape();
+    const ov::Shape hidden_shape = hidden_state.get_shape();
+    OPENVINO_ASSERT(embedding_shape.size() == 3 && hidden_shape.size() == 3,
+                    "Gemma4 assistant input tensors must be rank 3.");
+    OPENVINO_ASSERT(embedding_shape[0] == hidden_shape[0] && embedding_shape[1] == hidden_shape[1],
+                    "Gemma4 embedding and hidden state shape mismatch.");
+
+    const ov::Shape inputs_embeds_shape = {embedding_shape[0], embedding_shape[1], embedding_shape[2] + hidden_shape[2]};
+    if (!m_inputs_embeds_buffer || m_inputs_embeds_buffer.get_shape() != inputs_embeds_shape) {
+        m_inputs_embeds_buffer = ov::Tensor(ov::element::f32, inputs_embeds_shape);
+    }
+    float* destination = m_inputs_embeds_buffer.data<float>();
+    std::copy_n(embedding.data<const float>(), embedding_shape[2], destination);
+    std::copy_n(hidden_state.data<const float>(), hidden_shape[2], destination + embedding_shape[2]);
+    return m_inputs_embeds_buffer;
 }
 
 std::vector<int64_t> StatefulGemma4MTPLLMPipeline::sample_greedy_tokens(const ov::Tensor& logits, size_t token_count) const {
@@ -409,11 +366,8 @@ StatefulGemma4MTPLLMPipeline::DraftResult StatefulGemma4MTPLLMPipeline::draft_to
 
     result.tokens.reserve(draft_limit);
     for (size_t i = 0; i < draft_limit; ++i) {
-        Gemma4MTPOutput assistant_output = m_assistant->infer(m_target->embed_token(last_token_id),
-                                                             last_hidden_state,
-                                                             attention_mask,
-                                                             position_ids,
-                                                             shared_kv);
+        ov::Tensor inputs_embeds = concatenate_embedding_and_hidden(m_target->embed_token(last_token_id), last_hidden_state);
+        Gemma4MTPOutput assistant_output = m_assistant->infer(inputs_embeds, attention_mask, position_ids, shared_kv);
         last_token_id = sample_greedy_tokens(assistant_output.logits, 1).front();
         result.tokens.push_back(last_token_id);
         last_hidden_state = assistant_output.hidden_states;
