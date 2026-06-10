@@ -97,7 +97,16 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
             return {};
         }
         auto model = utils::singleton_core().read_model(path);
-        auto compiled = utils::singleton_core().compile_model(model, device, properties);
+
+        // Force FP32 inference precision on GPU for talker models to match CPU behavior
+        // GPU FP16 causes numerical differences in logits → different sampled tokens → wrong speech length
+        ov::AnyMap compilation_props = properties;
+        if (device == "GPU" || device.find("GPU") == 0) {
+            compilation_props["INFERENCE_PRECISION_HINT"] = "f32";
+            GENAI_DEBUG("Speech: forcing FP32 precision for %s on GPU", filename.c_str());
+        }
+
+        auto compiled = utils::singleton_core().compile_model(model, device, compilation_props);
         return compiled.create_infer_request();
     };
 
@@ -756,9 +765,18 @@ std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_cod
 }
 
 ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
+    auto codes_shape = codes.get_shape();
+    GENAI_DEBUG("Speech: code2wav input codes shape=[%zu, %zu, %zu]",
+                codes_shape[0], codes_shape[1], codes_shape[2]);
+
     m_code2wav.set_tensor("codes", codes);
     m_code2wav.infer();
     auto waveform = m_code2wav.get_tensor("waveform");
+    auto wav_shape = waveform.get_shape();
+
+    GENAI_INFO("Speech: code2wav output waveform shape=[%zu, %zu, %zu], total_samples=%zu",
+               wav_shape[0], wav_shape[1], wav_shape[2], waveform.get_size());
+
     ov::Tensor result(waveform.get_element_type(), waveform.get_shape());
     waveform.copy_to(result);
     return result;
@@ -954,11 +972,11 @@ TalkerResult Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>
                                        suppress_tokens);
 
         if (step < 3 || step % 100 == 0) {
-            GENAI_DEBUG("Speech: step %zu, code=%lld", step, (long long)first_code);
+            GENAI_DEBUG("Speech: step %zu, code=%lld (EOS=%lld)", step, (long long)first_code, (long long)m_config.codec_eos_token_id);
         }
 
         if (first_code == m_config.codec_eos_token_id) {
-            GENAI_INFO("Speech: completed at step %zu", step);
+            GENAI_INFO("Speech: completed at step %zu (code=%lld matched EOS=%lld)", step, (long long)first_code, (long long)m_config.codec_eos_token_id);
             break;
         }
 
