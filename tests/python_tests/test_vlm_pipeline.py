@@ -984,6 +984,9 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
+
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1406,6 +1409,9 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1540,6 +1546,9 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 ):
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
+
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
