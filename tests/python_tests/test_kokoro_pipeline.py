@@ -251,6 +251,7 @@ class TestKokoroPipeline:
 
 
 @pytest.mark.speech_generation
+@pytest.mark.xfail(reason="SafetensorError: Error while serializing: I/O error: (os error 5). CVS-188204")
 class TestKokoroFallback:
     """
     Tests for the OpenVINO G2P fallback mechanism (``phonemize_fallback_model_dir``).
