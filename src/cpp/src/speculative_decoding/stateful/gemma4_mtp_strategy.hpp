@@ -46,6 +46,10 @@ public:
     ov::Tensor embed_token(int64_t token_id);
     void crop_state_to_length(size_t target_length);
 
+    size_t get_kv_sequence_axis() const {
+        return m_kv_axes_pos.seq_len;
+    }
+
     ov::genai::RawPerfMetrics& get_raw_perf_metrics() {
         return m_raw_perf_metrics;
     }
@@ -116,9 +120,7 @@ private:
 
     Gemma4MTPSharedKV crop_shared_kv(const Gemma4MTPSharedKV& shared_kv, size_t accepted_length) const;
     ov::Tensor select_hidden_state(const ov::Tensor& hidden_states, size_t position) const;
-    ov::Tensor build_attention_mask(size_t length) const;
-    ov::Tensor build_position_ids(size_t start, size_t length) const;
-    ov::Tensor concatenate_embedding_and_hidden(const ov::Tensor& embedding, const ov::Tensor& hidden_state) const;
+    ov::Tensor concatenate_embedding_and_hidden(const ov::Tensor& embedding, const ov::Tensor& hidden_state);
     std::vector<int64_t> sample_greedy_tokens(const ov::Tensor& logits, size_t token_count) const;
     bool is_stop_token(int64_t token, const GenerationConfig& config) const;
 
@@ -130,6 +132,7 @@ private:
 
     std::unique_ptr<Gemma4MTPTargetWrapper> m_target;
     std::unique_ptr<Gemma4MTPAssistantWrapper> m_assistant;
+    ov::Tensor m_inputs_embeds_buffer;
     size_t m_num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     size_t m_prompt_length = 0;
 };

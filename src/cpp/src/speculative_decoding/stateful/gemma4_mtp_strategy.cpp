@@ -154,10 +154,8 @@ Gemma4MTPOutput Gemma4MTPTargetWrapper::infer(const ov::Tensor& input_ids,
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
-    if (m_device != "NPU") {
-        m_request.get_tensor("beam_idx").set_shape({BATCH_SIZE});
-        m_request.get_tensor("beam_idx").data<int32_t>()[0] = 0;
-    }
+    m_request.get_tensor("beam_idx").set_shape({BATCH_SIZE});
+    m_request.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
     const uint64_t inference_time_us = execute_inference(m_request);
     update_inference_time(inference_time_us);
@@ -194,9 +192,11 @@ void Gemma4MTPTargetWrapper::crop_state_to_length(size_t target_length) {
 }
 
 Gemma4MTPAssistantWrapper::Gemma4MTPAssistantWrapper(const ModelDesc& model_desc)
-    : m_device(model_desc.device.empty() ? "CPU" : model_desc.device),
+    : m_device(model_desc.device),
       m_properties(model_desc.properties) {
+    
     OPENVINO_ASSERT(model_desc.model, "Assistant model must not be null");
+    OPENVINO_ASSERT(!m_device.empty(), "Assistant device must not be empty.");
     m_request = utils::singleton_core().compile_model(model_desc.model, m_device, m_properties).create_infer_request();
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.tokenization_durations = {MicroSeconds(0.0f)};
@@ -278,28 +278,21 @@ GenerationConfig StatefulGemma4MTPLLMPipeline::resolve_generation_config(Optiona
     return config;
 }
 
-ov::Tensor StatefulGemma4MTPLLMPipeline::build_attention_mask(size_t length) const {
-    ov::Tensor attention_mask(ov::element::i64, {1, length});
-    std::fill_n(attention_mask.data<int64_t>(), length, 1);
-    return attention_mask;
-}
-
-ov::Tensor StatefulGemma4MTPLLMPipeline::build_position_ids(size_t start, size_t length) const {
-    ov::Tensor position_ids(ov::element::i64, {1, length});
-    std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + length, static_cast<int64_t>(start));
-    return position_ids;
-}
-
 Gemma4MTPSharedKV StatefulGemma4MTPLLMPipeline::crop_shared_kv(const Gemma4MTPSharedKV& shared_kv,
                                                                size_t accepted_length) const {
-    auto crop = [accepted_length](const ov::Tensor& tensor) {
+    const size_t sequence_axis = m_target->get_kv_sequence_axis();
+    auto crop = [accepted_length, sequence_axis](const ov::Tensor& tensor) {
         const ov::Shape shape = tensor.get_shape();
-        OPENVINO_ASSERT(shape.size() == 4 && shape[2] >= accepted_length,
-                        "Invalid Gemma4 shared KV shape: ",
+        OPENVINO_ASSERT(shape.size() == 4 && sequence_axis < shape.size() && shape[sequence_axis] >= accepted_length,
+                        "Invalid Gemma4 shared KV shape. Expected rank-4 tensor with sequence axis ",
+                        sequence_axis,
+                        ": ",
                         shape,
                         ", accepted length: ",
                         accepted_length);
-        return ov::Tensor(tensor, ov::Coordinate{0, 0, 0, 0}, ov::Coordinate{shape[0], shape[1], accepted_length, shape[3]});
+        ov::Coordinate end = shape;
+        end[sequence_axis] = accepted_length;
+        return ov::Tensor(tensor, ov::Coordinate(shape.size(), 0), end);
     };
     return Gemma4MTPSharedKV{crop(shared_kv.full_key), crop(shared_kv.full_value), crop(shared_kv.sliding_key), crop(shared_kv.sliding_value)};
 }
@@ -311,7 +304,7 @@ ov::Tensor StatefulGemma4MTPLLMPipeline::select_hidden_state(const ov::Tensor& h
 }
 
 ov::Tensor StatefulGemma4MTPLLMPipeline::concatenate_embedding_and_hidden(const ov::Tensor& embedding,
-                                                                          const ov::Tensor& hidden_state) const {
+                                                                          const ov::Tensor& hidden_state) {
     const ov::Shape embedding_shape = embedding.get_shape();
     const ov::Shape hidden_shape = hidden_state.get_shape();
     OPENVINO_ASSERT(embedding_shape.size() == 3 && hidden_shape.size() == 3,
@@ -319,11 +312,14 @@ ov::Tensor StatefulGemma4MTPLLMPipeline::concatenate_embedding_and_hidden(const 
     OPENVINO_ASSERT(embedding_shape[0] == hidden_shape[0] && embedding_shape[1] == hidden_shape[1],
                     "Gemma4 embedding and hidden state shape mismatch.");
 
-    ov::Tensor result(ov::element::f32, {embedding_shape[0], embedding_shape[1], embedding_shape[2] + hidden_shape[2]});
-    float* destination = result.data<float>();
+    const ov::Shape inputs_embeds_shape = {embedding_shape[0], embedding_shape[1], embedding_shape[2] + hidden_shape[2]};
+    if (!m_inputs_embeds_buffer || m_inputs_embeds_buffer.get_shape() != inputs_embeds_shape) {
+        m_inputs_embeds_buffer = ov::Tensor(ov::element::f32, inputs_embeds_shape);
+    }
+    float* destination = m_inputs_embeds_buffer.data<float>();
     std::copy_n(embedding.data<const float>(), embedding_shape[2], destination);
     std::copy_n(hidden_state.data<const float>(), hidden_shape[2], destination + embedding_shape[2]);
-    return result;
+    return m_inputs_embeds_buffer;
 }
 
 std::vector<int64_t> StatefulGemma4MTPLLMPipeline::sample_greedy_tokens(const ov::Tensor& logits, size_t token_count) const {
@@ -362,7 +358,8 @@ StatefulGemma4MTPLLMPipeline::DraftResult StatefulGemma4MTPLLMPipeline::draft_to
     const size_t cur_len = accepted_tokens.size();
     Gemma4MTPSharedKV shared_kv = crop_shared_kv(previous_target_output.shared_kv, cur_len - 1);
     ov::Tensor last_hidden_state = select_hidden_state(previous_target_output.hidden_states, n_last_matches);
-    ov::Tensor attention_mask = build_attention_mask(cur_len);
+    ov::Tensor attention_mask(ov::element::i64, {1, cur_len});
+    std::fill_n(attention_mask.data<int64_t>(), cur_len, 1);
     ov::Tensor position_ids(ov::element::i64, {1, 1});
     position_ids.data<int64_t>()[0] = static_cast<int64_t>(cur_len - 1);
     int64_t last_token_id = accepted_tokens.back();
@@ -440,8 +437,12 @@ EncodedResults StatefulGemma4MTPLLMPipeline::generate_tokens(const EncodedInputs
         ov::Tensor candidate_input_ids(ov::element::i64, {1, candidate_tokens.size()});
         std::copy(candidate_tokens.begin(), candidate_tokens.end(), candidate_input_ids.data<int64_t>());
         const size_t previous_length = accepted_tokens.size();
-        ov::Tensor candidate_attention_mask = build_attention_mask(previous_length + draft_result.tokens.size());
-        ov::Tensor candidate_position_ids = build_position_ids(previous_length - 1, candidate_tokens.size());
+        ov::Tensor candidate_attention_mask(ov::element::i64, {1, previous_length + draft_result.tokens.size()});
+        std::fill_n(candidate_attention_mask.data<int64_t>(), candidate_attention_mask.get_size(), 1);
+        ov::Tensor candidate_position_ids(ov::element::i64, {1, candidate_tokens.size()});
+        std::iota(candidate_position_ids.data<int64_t>(),
+              candidate_position_ids.data<int64_t>() + candidate_tokens.size(),
+              static_cast<int64_t>(previous_length - 1));
 
         target_output = m_target->infer(candidate_input_ids, candidate_attention_mask, candidate_position_ids);
         std::vector<int64_t> target_tokens = sample_greedy_tokens(target_output.logits, draft_result.tokens.size() + 1);

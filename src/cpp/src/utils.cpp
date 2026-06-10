@@ -825,7 +825,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
     }
 
     if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() && !is_npu_requested) {
-        if (attention_backend_it->second.as<std::string>() == SDPA_BACKEND) {
+        if (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == SDPA_BACKEND) {
             return false;
         } else if (is_paged_attention_available()) {
             return true;
