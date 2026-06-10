@@ -4164,8 +4164,8 @@ class Tokenizer:
          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'truncation' - whether to truncate the sequence to max_length. Default is False.
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -4178,8 +4178,8 @@ class Tokenizer:
          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'truncation' - whether to truncate the sequence to max_length. Default is False.
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -4194,8 +4194,8 @@ class Tokenizer:
          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'truncation' - whether to truncate the sequence to max_length. Default is False.
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -4208,8 +4208,8 @@ class Tokenizer:
          'add_special_tokens' - whether to add special tokens like BOS, EOS, PAD. Default is True.
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
-        'truncation' - whether to truncate the sequence to max_length. Default is False.
+         'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
