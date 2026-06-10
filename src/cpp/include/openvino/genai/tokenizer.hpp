@@ -154,7 +154,7 @@ public:
    * Prompts should be of the same length, or one of them should be of length 1. In the latest case, the prompt will be
    * broadcasted to the length of the other prompt.
    * @param prompts vector storing batch of prompts
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}, {"truncation", true}}
+   * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}, {"truncation", true}}
    * @return pair of [input_ids, attention_mask]
    */
     TokenizedInputs encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {});

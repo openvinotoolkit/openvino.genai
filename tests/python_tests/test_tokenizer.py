@@ -470,7 +470,7 @@ def test_padding(
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
 
     # In openvino_tokenizers if sequences are of different length by default padding is applied
-    # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor
+    # to the longest sequence in the batch since resulting tokenization is stored as a single  ov::Tensor
     # which cannot store irregular/ragged array.
     # Match HF truncating behavior explicitly. By default, GenAI tokenizers do not truncate.
     is_max_len_set = max_length is not None
