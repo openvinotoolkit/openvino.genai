@@ -42,8 +42,6 @@ disable_progress_bar()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
-
 
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
     import openvino_genai
@@ -188,7 +186,7 @@ def load_text_llamacpp_pipeline(model_dir):
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
-    model_kwargs = {**PYTORCH_MODEL_DTYPE_KWARG}
+    model_kwargs = {}
     trust_remote_code = False
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
@@ -198,21 +196,13 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
-        # MoE weights of gpt_oss models post-trained with MXFP4 quantization
-        # they are dequantized with torch.bfloat16 https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/integrations/mxfp4.py#L104
-        # forcing the model to any other type will cause a type mismatch error
-        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L117
-        if getattr(config, "model_type", None) == "gpt_oss":
-            model_kwargs["torch_dtype"] = "auto"
 
-    if not torch.cuda.is_available or device.lower() == "cpu":
+    if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
         is_awq = False
-        if not kwargs.get('gguf_file'):
-
-            if getattr(config, "quantization_config", None):
-                is_gptq = config.quantization_config["quant_method"] == "gptq"
-                is_awq = config.quantization_config["quant_method"] == "awq"
+        if not kwargs.get("gguf_file") and config and getattr(config, "quantization_config", None):
+            is_gptq = config.quantization_config["quant_method"] == "gptq"
+            is_awq = config.quantization_config["quant_method"] == "awq"
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
@@ -310,9 +300,9 @@ def load_text2image_model(
 
         logger.info("Using HF Transformers API")
         try:
-            model = DiffusionPipeline.from_pretrained(model_id, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = DiffusionPipeline.from_pretrained(model_id)
         except Exception:
-            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -406,7 +396,7 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
-        model_kwargs = {"trust_remote_code": trust_remote_code, **PYTORCH_MODEL_DTYPE_KWARG}
+        model_kwargs = {"trust_remote_code": trust_remote_code}
         try:
             model_cls = None
 
@@ -526,9 +516,7 @@ def load_imagetext2image_model(
         from diffusers import AutoPipelineForImage2Image
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForImage2Image.from_pretrained(
-            model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG
-        )
+        model = AutoPipelineForImage2Image.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_image2image_genai_pipeline(model_id, device, ov_config)
@@ -575,7 +563,7 @@ def load_inpainting_model(
         from diffusers import AutoPipelineForInpainting
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_inpainting_genai_pipeline(model_id, device, ov_config)
@@ -637,7 +625,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
         from transformers import AutoModel
 
         logger.info("Using HF Transformers API")
-        model = AutoModel.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+        model = AutoModel.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_embedding_genai_pipeline(model_id, device, ov_config, **kwargs)
@@ -693,13 +681,11 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
         if is_qwen3_causallm(config):
             from transformers import AutoModelForCausalLM
 
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
         else:
             from transformers import AutoModelForSequenceClassification
 
-            model = AutoModelForSequenceClassification.from_pretrained(
-                model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG
-            )
+            model = AutoModelForSequenceClassification.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         is_qwen3_model = is_qwen3(config)
@@ -754,9 +740,9 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
 
         logger.info("Using HF Transformers API")
         try:
-            model = LTXPipeline.from_pretrained(model_id, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = LTXPipeline.from_pretrained(model_id)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -830,11 +816,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         from transformers import SpeechT5ForTextToSpeech
 
         remote_code, _ = _resolve_remote_code_and_config(model_id)
-        model = SpeechT5ForTextToSpeech.from_pretrained(
-            model_id,
-            trust_remote_code=remote_code,
-            **PYTORCH_MODEL_DTYPE_KWARG,
-        )
+        model = SpeechT5ForTextToSpeech.from_pretrained(model_id, trust_remote_code=remote_code)
         processor = _load_speecht5_processor(model_id, remote_code)
 
         # for HF, we need to explicitly load the vocoder.
