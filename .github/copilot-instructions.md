@@ -29,7 +29,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
    - No `using namespace std;`.
    - No `auto` for primitive types where it obscures readability.
    - Use `const` and `constexpr` wherever possible.
-7. Follow constructors and member initializer lists style instead of direct assignments in the constructor body.
+7. Prefer member initializer lists over assignments in the constructor body.
 8. When initial container values are known upfront, prefer initializer-list / brace-initialization over constructing an empty container and immediately inserting values.
 9. Make sure the function names are descriptive.
 10. Check for variables with different names but similar meaning or aliasing.
