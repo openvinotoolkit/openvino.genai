@@ -218,12 +218,14 @@ public:
     BlockAllocator(size_t num_blocks, bool enable_prefix_caching, size_t num_layers = 1) :
             m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
+        OPENVINO_ASSERT(num_blocks <= static_cast<size_t>(std::numeric_limits<int>::max()),
+                        "num_blocks ", num_blocks, " exceeds the maximum allowed block index (", std::numeric_limits<int>::max(), ")");
         m_free_blocks.resize(m_num_layers);
         if (num_blocks > 0) {
             m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
             for (auto& per_layer_block_list : m_free_blocks) {
                 for (size_t block_id = 0; block_id < m_total_num_blocks; ++block_id) {
-                    per_layer_block_list.push_back(std::make_shared<CacheBlock>(block_id));
+                    per_layer_block_list.push_back(std::make_shared<CacheBlock>(static_cast<int>(block_id)));
                 }
             }
         } else {
@@ -244,6 +246,8 @@ public:
     }
 
     void increase_block_count(size_t new_block_count) {
+        OPENVINO_ASSERT(new_block_count <= static_cast<size_t>(std::numeric_limits<int>::max()),
+                        "new_block_count ", new_block_count, " exceeds the maximum allowed block index (", std::numeric_limits<int>::max(), ")");
         OPENVINO_ASSERT(new_block_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
         size_t added_blocks = new_block_count - m_total_num_blocks;
         for (size_t idx = 0; idx < m_free_blocks_num.size(); ++idx) {
@@ -251,7 +255,7 @@ public:
         }
         for (auto& per_layer_block_list : m_free_blocks) {
             for (size_t block_id = m_total_num_blocks; block_id < new_block_count; ++block_id) {
-                per_layer_block_list.push_back(std::make_shared<CacheBlock>(block_id));
+                per_layer_block_list.push_back(std::make_shared<CacheBlock>(static_cast<int>(block_id)));
             }
         }
         m_total_num_blocks = new_block_count;
