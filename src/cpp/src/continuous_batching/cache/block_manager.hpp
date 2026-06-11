@@ -1223,6 +1223,7 @@ public:
             auto it = m_block_table.find(seq_id);
             if (it == m_block_table.end() || it->second.empty() || it->second[0].empty()) {
                 if (num_logical_blocks == 0 && it != m_block_table.end()) {
+                    m_block_table_logical_start.erase(seq_id);
                     OPENVINO_ASSERT(m_block_table.erase(seq_id) == 1);
                 }
                 continue;
