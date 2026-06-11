@@ -5,7 +5,7 @@
 """End-to-end validation of a HuggingFace model with OpenVINO GenAI."""
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 import re
@@ -66,6 +66,28 @@ class ToolResult:
     def raise_if_failed(self) -> None:
         if not self.success and self.err_msg:
             raise RuntimeError(self.err_msg)
+
+
+@dataclass
+class ToolResultCollector:
+    results: list[ToolResult] = field(default_factory=list)
+    failures: list[ToolResult] = field(default_factory=list)
+
+    def add_result(self, new_result: ToolResult) -> None:
+        self.results.append(new_result)
+        if not new_result.success:
+            self.failures.append(new_result)
+
+    def raise_if_any_failed(self) -> None:
+        if not self.failures:
+            return
+
+        full_err_msg = ""
+        for result in self.failures:
+            full_err_msg += f"FAILED: {result.name} "
+            full_err_msg += f"\n{result.err_msg}\n" if result.err_msg else "\n"
+
+        raise RuntimeError(full_err_msg)
 
 
 class ToolWrapper:
@@ -146,7 +168,7 @@ class OptimumExportTool(ToolWrapper):
         super().__init__(name="optimum_export", commands_list=cmd, work_dir=work_dir)
 
 
-class LlmBenchTool(ToolWrapper):
+class GenAILlmBenchTool(ToolWrapper):
     def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path):
         llm_bench_script_path = Path("tools/llm_bench/benchmark.py")
 
@@ -164,7 +186,36 @@ class LlmBenchTool(ToolWrapper):
             "--task",
             task,
         ]
-        super().__init__(name="llm_bench", commands_list=cmd, work_dir=work_dir)
+        super().__init__(name="llm_bench_genai", commands_list=cmd, work_dir=work_dir)
+
+    def _post_run_hook(self, result):
+        if result.returncode != 0:
+            return super()._post_run_hook(result)
+        last_llm_bench_line = result.stdout[-1]
+        logger.info(f"{self.logger_prefix}: llm_bench metrics: {last_llm_bench_line}")
+        return ToolResult(name=self.name, success=True)
+
+
+class OptimumLlmBenchTool(ToolWrapper):
+    def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path):
+        llm_bench_script_path = Path("tools/llm_bench/benchmark.py")
+
+        if not llm_bench_script_path.is_file():
+            raise FileNotFoundError(f"llm_bench script not found: {llm_bench_script_path}")
+        cmd = [
+            sys.executable,
+            str(llm_bench_script_path),
+            "-m",
+            str(model_dir),
+            "-d",
+            device,
+            "-n",
+            "1",
+            "--task",
+            task,
+            "--optimum",
+        ]
+        super().__init__(name="llm_bench_optimum", commands_list=cmd, work_dir=work_dir)
 
     def _post_run_hook(self, result):
         if result.returncode != 0:
@@ -234,7 +285,6 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
             device,
             "--num-samples",
             str(num_samples),
-            # Optimum backend used by default
             "--output",
             str(work_dir / "optimum"),
         ]
@@ -419,13 +469,18 @@ def main():
         result = OptimumExportTool(args.model_id, args.task, model_dir, optimum_export_work_dir).run()
         result.raise_if_failed()
 
+    tools_results = ToolResultCollector()
+
     # Step 2: Inference test
     if args.skip_llm_bench:
         logger.info("Skipping llm_bench test")
     else:
         llm_bench_work_dir = work_dir / "llm_bench"
-        result = LlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
-        result.raise_if_failed()
+        genai_llm_bench_result = GenAILlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        tools_results.add_result(genai_llm_bench_result)
+
+        optimum_llm_bench_result = OptimumLlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        tools_results.add_result(optimum_llm_bench_result)
 
     # Step 3: WWB accuracy
     if args.skip_wwb or wwb_task is None:
@@ -433,17 +488,19 @@ def main():
     else:
         wwb_work_dir = work_dir / "wwb"
         hf_gt_result = HFWWBGroundTruthTool(args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device).run()
-        hf_gt_result.raise_if_failed()
+        tools_results.add_result(hf_gt_result)
 
         optimum_result = OptimumWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
-        optimum_result.raise_if_failed()
+        tools_results.add_result(optimum_result)
 
         genai_result = GenAIWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
-        genai_result.raise_if_failed()
+        tools_results.add_result(genai_result)
+
+    tools_results.raise_if_any_failed()
 
 
 if __name__ == "__main__":
