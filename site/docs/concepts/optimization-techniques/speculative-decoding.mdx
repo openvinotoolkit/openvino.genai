@@ -19,7 +19,7 @@ OpenVINO GenAI implements three drafting strategies, sharing the same target-sid
 | Prompt Lookup Decoding | n-gram match against prompt | Best when output copies large spans of input (RAG, summarization, code edit) | `prompt_lookup=True` (at pipeline construction) + `num_assistant_tokens` + `max_ngram_size` |
 | EAGLE3 | Custom 1-layer draft head trained on the target's hidden states; supports tree drafting | Highest acceptance rate, tightest target/draft alignment | `draft_model(...)` with an EAGLE3 head + `num_assistant_tokens` + `branching_factor`/`tree_depth` |
 
-All three are usable with the `LLMPipeline` Python and C++ APIs. Fast Draft and EAGLE3 can be supported on both the Continuous Batching(CPU/GPU/NPU) and Stateful backends(NPU only); Prompt Lookup is supported on the Continuous Batching backend only.
+All three are usable with the `LLMPipeline` Python and C++ APIs. Fast Draft and EAGLE3 can be supported on both the Continuous Batching(CPU/GPU) and Stateful backends(NPU only); Prompt Lookup is supported on the Continuous Batching backend only.
 
 ## Common Configuration
 
@@ -232,7 +232,7 @@ Compared to chain drafting, tree drafting trades a larger validation batch for a
 
 ## Current Limitations
 
-* Speculative decoding is supported on Continuous Batching (CPU/GPU) and on the Stateful backend (CPU/GPU/NPU). Multi-request batching is supported on the Continuous Batching backend only (regardless of drafting strategy); the Stateful backend is single-request. `assistant_confidence_threshold` is supported by Fast Draft on the Continuous Batching backend only — EAGLE3 requires it to be 0.
+* Speculative decoding is supported on Continuous Batching (CPU/GPU) and on the Stateful backend (NPU). Multi-request batching is supported on the Continuous Batching backend only (regardless of drafting strategy); the Stateful backend is single-request. `assistant_confidence_threshold` is supported by Fast Draft on the Continuous Batching backend only — EAGLE3 requires it to be 0.
 * EAGLE3 streaming is restricted to greedy decoding with batch size 1; beam search and multinomial sampling are not supported in streaming mode.
 * Tree drafting (`tree_depth > 0`) is supported only by the EAGLE3 path.
 * Prompt Lookup is single-model and uses no draft model; the `draft_model` and `prompt_lookup` constructor options are mutually exclusive.
