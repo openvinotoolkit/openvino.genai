@@ -103,6 +103,7 @@ int main(int argc, char* argv[]) try {
 
             scheduler_config.use_sparse_attention = true;
             scheduler_config.sparse_attention_config = sparse_attention_config;
+            properties.insert(ov::hint::kv_cache_precision(ov::element::i8));
         }
         properties.insert(ov::genai::scheduler_config(scheduler_config));
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, properties);
@@ -111,6 +112,7 @@ int main(int argc, char* argv[]) try {
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
     std::cout << "Number of images:" << images.size() << ", prompt token size:" << prompt_token_size << std::endl;
+    std::cout << prompt << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
         pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
