@@ -4,7 +4,6 @@
 #include "eagle3_model_transforms.hpp"
 
 #include <fstream>
-#include <optional>
 #include <nlohmann/json.hpp>
 
 #include "json_utils.hpp"
@@ -21,86 +20,6 @@ namespace ov {
 namespace genai {
 namespace utils {
 namespace eagle3 {
-
-namespace {
-
-constexpr const char* HIDDEN_STATES_RT_INFO_KEY = "hidden_states_decoder_layers";
-constexpr const char* LAST_HIDDEN_STATE_OUTPUT_NAME = "last_hidden_state";
-
-// Optimum records semantic decoder-layer hidden states as tensor names in model rt_info.
-// GenAI only needs to find those named internal tensors and expose the requested ones.
-std::optional<ov::Output<ov::Node>> find_output_by_tensor_name(const std::shared_ptr<ov::Model>& model,
-                                                               const std::string& tensor_name) {
-    for (const auto& node : model->get_ordered_ops()) {
-        for (const auto& output : node->outputs()) {
-            if (output.get_names().count(tensor_name) != 0) {
-                return output;
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-void add_hidden_state_result(std::shared_ptr<ov::Model>& model,
-                             const std::vector<ov::Output<ov::Node>>& hidden_state_outputs) {
-    std::shared_ptr<ov::Node> node_to_operate;
-    if (hidden_state_outputs.size() > 1) {
-        // Eagle3 draft expects selected target hidden states packed along the feature dimension.
-        auto concat = std::make_shared<ov::op::v0::Concat>(hidden_state_outputs, -1);
-        concat->set_friendly_name("eagle3_hidden_states_concat");
-        node_to_operate = concat;
-    } else {
-        node_to_operate = hidden_state_outputs[0].get_node_shared_ptr();
-    }
-
-    auto result = std::make_shared<ov::op::v0::Result>(node_to_operate);
-    result->output(0).set_names({LAST_HIDDEN_STATE_OUTPUT_NAME});
-    result->set_friendly_name(LAST_HIDDEN_STATE_OUTPUT_NAME);
-    // NPUW use this info to identify manually added outputs
-    result->get_rt_info()["manually_added_output"] = true;
-    model->add_results({result});
-}
-
-std::vector<ov::Output<ov::Node>> get_annotated_hidden_state_outputs(
-    const std::shared_ptr<ov::Model>& model,
-    const std::vector<int32_t>& hidden_layers_to_abstract) {
-    if (!model->has_rt_info(HIDDEN_STATES_RT_INFO_KEY)) {
-        return {};
-    }
-
-    for (const auto layer_idx : hidden_layers_to_abstract) {
-        // Draft model hidden-state extraction still uses the existing "midlayer" fallback path.
-        if (layer_idx < 0) {
-            return {};
-        }
-    }
-
-    const auto annotation = nlohmann::json::parse(model->get_rt_info<std::string>(HIDDEN_STATES_RT_INFO_KEY));
-    OPENVINO_ASSERT(annotation.contains("layers") && annotation["layers"].is_object(),
-                    "Invalid hidden-state annotation metadata in model rt_info.");
-
-    std::vector<ov::Output<ov::Node>> outputs;
-    outputs.reserve(hidden_layers_to_abstract.size());
-    for (const auto layer_idx : hidden_layers_to_abstract) {
-        const auto key = std::to_string(layer_idx);
-        OPENVINO_ASSERT(annotation["layers"].contains(key),
-                        "Missing hidden-state annotation for decoder layer ",
-                        layer_idx,
-                        ".");
-
-        const auto tensor_name = annotation["layers"].at(key).get<std::string>();
-        auto output = find_output_by_tensor_name(model, tensor_name);
-        OPENVINO_ASSERT(output.has_value(),
-                        "Hidden-state tensor annotated for decoder layer ",
-                        layer_idx,
-                        " was not found in the model graph: ",
-                        tensor_name);
-        outputs.push_back(*output);
-    }
-    return outputs;
-}
-
-}  // namespace
 
 Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
     Eagle3RTInfo eagle_rt_info;
@@ -312,12 +231,6 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         "Expected exactly 1 or 3 hidden layers for extraction: 1 for draft model, 3 for main model (early/middle/late stages)."
     );
 
-    auto annotated_outputs = get_annotated_hidden_state_outputs(model, hidden_layers_to_abstract);
-    if (!annotated_outputs.empty()) {
-        add_hidden_state_result(model, annotated_outputs);
-        return;
-    }
-
     std::vector<std::string> patterns;
     if (hidden_layers_to_abstract.size() > 1) {
         patterns.reserve(hidden_layers_to_abstract.size());
@@ -355,7 +268,21 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
     if (!residual_outputs.empty()) {
         OPENVINO_ASSERT(residual_outputs.size() == patterns.size(),
                         "Number of extracted hidden states does not match the requested number.");
-        add_hidden_state_result(model, residual_outputs);
+        std::shared_ptr<ov::Node> node_to_operate;
+        if (residual_outputs.size() > 1) {
+            auto concat = std::make_shared<ov::op::v0::Concat>(residual_outputs, -1);
+            concat->set_friendly_name("eagle3_hidden_states_concat");
+            node_to_operate = concat;
+        } else {
+            node_to_operate = residual_outputs[0].get_node_shared_ptr();
+        }
+        auto result = std::make_shared<ov::op::v0::Result>(node_to_operate);
+        const std::string output_name = "last_hidden_state";
+        result->output(0).set_names({output_name});
+        result->set_friendly_name(output_name);
+        // NPUW use this info to identify manually added outputs
+        result->get_rt_info()["manually_added_output"] = true;
+        model->add_results({result});
     }
 }
 
