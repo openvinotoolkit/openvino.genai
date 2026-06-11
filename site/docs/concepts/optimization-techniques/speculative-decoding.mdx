@@ -19,7 +19,7 @@ OpenVINO GenAI implements three drafting strategies, sharing the same target-sid
 | Prompt Lookup Decoding | n-gram match against prompt | Best when output copies large spans of input (RAG, summarization, code edit) | `prompt_lookup=True` (at pipeline construction) + `num_assistant_tokens` + `max_ngram_size` |
 | EAGLE3 | Custom 1-layer draft head trained on the target's hidden states; supports tree drafting | Highest acceptance rate, tightest target/draft alignment | `draft_model(...)` with an EAGLE3 head + `num_assistant_tokens` + `branching_factor`/`tree_depth` |
 
-All three are usable with the `LLMPipeline` Python and C++ APIs. Fast Draft and EAGLE3 are supported on both the Continuous Batching and Stateful backends; Prompt Lookup is supported on the Continuous Batching backend only.
+All three are usable with the `LLMPipeline` Python and C++ APIs. Fast Draft and EAGLE3 can be supported on both the Continuous Batching(CPU/GPU/NPU) and Stateful backends(NPU only); Prompt Lookup is supported on the Continuous Batching backend only.
 
 ## Common Configuration
 
