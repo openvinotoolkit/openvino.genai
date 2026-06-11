@@ -206,6 +206,11 @@ def parse_args():
         help="Use llama-cpp-python to instantiate the model.",
     )
     parser.add_argument(
+        "--llamacpp-chat",
+        action="store_true",
+        help="Use llama.cpp chat-completions API for model-type 'text'.",
+    )
+    parser.add_argument(
         "--image-size",
         type=int,
         default=None,
@@ -397,6 +402,11 @@ def parse_args():
         default=128,
         required=False,
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
+    )
+    parser.add_argument(
+        "--strip-think-blocks",
+        action="store_true",
+        help="Strip think/reasoning blocks from generated text before scoring.",
     )
 
     return parser.parse_args()
@@ -612,8 +622,12 @@ def genai_gen_chat_text(
     return answers
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
-                      assistant_confidence_threshold=0.0):
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
+                      num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+    _ = tokenizer
+    _ = empty_adapters
+    _ = num_assistant_tokens
+    _ = assistant_confidence_threshold
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -856,9 +870,12 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
-            use_chat_template = (
-                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
-            )
+            if args.llamacpp:
+                use_chat_template = args.llamacpp_chat and not args.omit_chat_template
+            else:
+                use_chat_template = (
+                    tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
+                )
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -870,6 +887,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
+                strip_think_blocks=args.strip_think_blocks,
                 long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
                     int(args.num_assistant_tokens)
