@@ -497,6 +497,39 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Lfm2ForCausalLM',
+    models: [
+      {
+        name: 'LFM2',
+        links: [
+          'https://huggingface.co/LiquidAI/LFM2-350M',
+          'https://huggingface.co/LiquidAI/LFM2-700M',
+          'https://huggingface.co/LiquidAI/LFM2-1.2B',
+          'https://huggingface.co/LiquidAI/LFM2-2.6B',
+          'https://huggingface.co/LiquidAI/LFM2-2.6B-Exp',
+          'https://huggingface.co/LiquidAI/LFM2.5-350M',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Base',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Lfm2MoeForCausalLM',
+    models: [
+      {
+        name: 'LFM2 MoE',
+        links: [
+          'https://huggingface.co/LiquidAI/LFM2-8B-A1B',
+          'https://huggingface.co/LiquidAI/LFM2-24B-A2B',
+          'https://huggingface.co/LiquidAI/LFM2.5-8B-A1B',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'LlamaForCausalLM',
     models: [
       {
