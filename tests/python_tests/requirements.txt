@@ -8,7 +8,7 @@ gguf==0.19.0
 
 # rag requirements
 langchain_community==0.4.2
-langchain-core==1.4.1
+langchain-core==1.4.5
 
 # requirements for specific models
 # - Qwen/Qwen-7B
