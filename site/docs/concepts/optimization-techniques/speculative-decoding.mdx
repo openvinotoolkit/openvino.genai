@@ -2,6 +2,8 @@
 sidebar_position: 1
 ---
 
+import OptimumCLI from '@site/src/components/OptimumCLI';
+
 # Speculative Decoding
 
 ## Overview
@@ -9,7 +11,7 @@ Speculative decoding (also referred to as [assisted-generation](https://huggingf
 
 Because validation is parallel over the candidate length, each accepted draft token replaces a sequential decode step of the target model with (a fraction of) one batched step. When acceptance is high, this can yield end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution in theory (the standard verification scheme is statistically equivalent to sampling from the target).
 
-`openvino.genai` implements three drafting strategies, sharing the same target-side validation step and the same `GenerationConfig` knobs (`num_assistant_tokens`, `assistant_confidence_threshold`):
+OpenVINO GenAI implements three drafting strategies, sharing the same target-side validation step and the same `GenerationConfig` knobs (`num_assistant_tokens`, `assistant_confidence_threshold`):
 
 | Strategy | Drafter | Strength | Configured by |
 |---|---|---|---|
@@ -40,36 +42,41 @@ Performance can be inspected via `result.extended_perf_metrics`, which exposes `
 
 Fast Draft is the classic two-model setup: a smaller off-the-shelf LLM that shares the target's tokenizer drafts tokens autoregressively, and the target verifies them. It works for any target/draft pair the user has, without retraining; the speedup is bounded by how often the small model's distribution agrees with the large one.
 
-### Usage with openvino.genai
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai
 
-Python:
-```python
-import openvino_genai
+        draft_model = openvino_genai.draft_model(draft_model_dir, "CPU")
+        pipe = openvino_genai.LLMPipeline(model_dir, "CPU", draft_model=draft_model)
 
-draft_model = openvino_genai.draft_model(draft_model_dir, "CPU")
-pipe = openvino_genai.LLMPipeline(model_dir, "CPU", draft_model=draft_model)
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        config.num_assistant_tokens = 5
+        # Or, on the Continuous Batching backend, dynamic-length drafting:
+        # config.assistant_confidence_threshold = 0.4
 
-config = openvino_genai.GenerationConfig()
-config.max_new_tokens = 100
-config.num_assistant_tokens = 5
-# Or, on the Continuous Batching backend, dynamic-length drafting:
-# config.assistant_confidence_threshold = 0.4
+        result = pipe.generate("The Sun is yellow because", config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
 
-result = pipe.generate("The Sun is yellow because", config)
-```
+        ov::genai::LLMPipeline pipe(
+            main_model_path, main_device,
+            ov::genai::draft_model(draft_model_path, draft_device));
 
-C++:
-```cpp
-ov::genai::LLMPipeline pipe(
-    main_model_path, main_device,
-    ov::genai::draft_model(draft_model_path, draft_device),
-    ov::genai::scheduler_config(scheduler_config));
+        ov::genai::GenerationConfig config;
+        config.max_new_tokens = 100;
+        config.num_assistant_tokens = 5;
+        // Or, on the Continuous Batching backend, dynamic-length drafting:
+        // config.assistant_confidence_threshold = 0.4f;
 
-ov::genai::GenerationConfig config;
-config.max_new_tokens = 100;
-config.num_assistant_tokens = 5;
-pipe.generate(prompt, config);
-```
+        pipe.generate(prompt, config);
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 End-to-end samples: [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/speculative_decoding_lm.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/speculative_decoding_lm.cpp).
 
@@ -85,20 +92,36 @@ For NPU deployments, the recommended configuration is to place both the target a
 
 This is highly effective for *input-grounded* generation — RAG / document QA, summarization, code editing, multi-turn chat — where the output frequently copies entity names, phrases, or code chunks verbatim from the input. On these workloads it produces speculative-decoding-class speedups at near-zero drafter cost, and on workloads with low prompt/output overlap it degrades back to plain decoding (the proposals are simply rejected).
 
-### Usage with openvino.genai
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai
 
-Python:
-```python
-import openvino_genai
+        pipe = openvino_genai.LLMPipeline(model_dir, "CPU", prompt_lookup=True)
 
-pipe = openvino_genai.LLMPipeline(model_dir, "CPU", prompt_lookup=True)
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        config.num_assistant_tokens = 5
+        config.max_ngram_size = 3
+        pipe.generate(prompt, config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
 
-config = openvino_genai.GenerationConfig()
-config.max_new_tokens = 100
-config.num_assistant_tokens = 5
-config.max_ngram_size = 3
-pipe.generate(prompt, config)
-```
+        ov::genai::LLMPipeline pipe(
+            model_path, "CPU",
+            ov::genai::prompt_lookup(true));
+
+        ov::genai::GenerationConfig config;
+        config.max_new_tokens = 100;
+        config.num_assistant_tokens = 5;
+        config.max_ngram_size = 3;
+        pipe.generate(prompt, config);
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 End-to-end samples: [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/prompt_lookup_decoding_lm.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/prompt_lookup_decoding_lm.cpp).
 
@@ -112,40 +135,83 @@ OpenVINO GenAI's EAGLE3 path additionally supports **tree drafting with top-k dy
 
 ### Model preparation
 
-Export both the target and the matching EAGLE3 draft head with `optimum-cli`. The draft repository must be an EAGLE3 head trained against the same target family (the head exposes a `d2t` mapping table that openvino.genai picks up automatically):
+Export both the target and the matching EAGLE3 draft head with `optimum-cli`. The draft repository must be an EAGLE3 head trained against the same target family (the head exposes a `d2t` mapping table that OpenVINO GenAI picks up automatically):
 
-```bash
-optimum-cli export openvino --weight-format int4 --trust-remote-code \
-    --task text-generation-with-past -m Qwen/Qwen3-8B Qwen3-8B-ov-int4
+<OptimumCLI model='Qwen/Qwen3-8B' outputDir='Qwen3-8B-ov-int4' weightFormat='int4' task='text-generation-with-past' trustRemoteCode />
 
-optimum-cli export openvino --weight-format int4 --trust-remote-code \
-    --task text-generation-with-past -m AngelSlim/Qwen3-8B_eagle3 Qwen3-8B_eagle3-ov-int4
-```
+<OptimumCLI model='AngelSlim/Qwen3-8B_eagle3' outputDir='Qwen3-8B_eagle3-ov-int4' weightFormat='int4' task='text-generation-with-past' trustRemoteCode />
 
-### Usage with openvino.genai
+### Chain drafting (linear)
 
-Python — chain drafting (linear, EAGLE3 head only):
-```python
-import openvino_genai
+Chain drafting runs the EAGLE3 head autoregressively for `num_assistant_tokens` iterations and submits the resulting linear chain to the target for verification.
 
-draft_model = openvino_genai.draft_model("Qwen3-8B_eagle3-ov-int4", "GPU")
-pipe = openvino_genai.LLMPipeline("Qwen3-8B-ov-int4", "GPU", draft_model=draft_model)
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai
 
-config = openvino_genai.GenerationConfig()
-config.max_new_tokens = 100
-config.num_assistant_tokens = 5
-pipe.generate("What is OpenVINO?", config)
-```
+        draft_model = openvino_genai.draft_model("Qwen3-8B_eagle3-ov-int4", "GPU")
+        pipe = openvino_genai.LLMPipeline("Qwen3-8B-ov-int4", "GPU", draft_model=draft_model)
 
-Python — tree drafting (top-k dynamic tree):
-```python
-config = openvino_genai.GenerationConfig()
-config.max_new_tokens = 100
-config.num_assistant_tokens = 15  # top-K verified per step
-config.branching_factor = 8       # top-k per tree node
-config.tree_depth = 4              # number of draft layers
-pipe.generate("What is OpenVINO?", config)
-```
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        config.num_assistant_tokens = 5
+        pipe.generate("What is OpenVINO?", config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
+
+        ov::genai::LLMPipeline pipe(
+            "Qwen3-8B-ov-int4", "GPU",
+            ov::genai::draft_model("Qwen3-8B_eagle3-ov-int4", "GPU"));
+
+        ov::genai::GenerationConfig config;
+        config.max_new_tokens = 100;
+        config.num_assistant_tokens = 5;
+        pipe.generate("What is OpenVINO?", config);
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Tree drafting (top-k dynamic tree)
+
+Tree drafting expands the top `branching_factor` continuations at each of `tree_depth` layers and submits the highest-scoring `num_assistant_tokens` paths to the target in a single packed verification step.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai
+
+        draft_model = openvino_genai.draft_model("Qwen3-8B_eagle3-ov-int4", "GPU")
+        pipe = openvino_genai.LLMPipeline("Qwen3-8B-ov-int4", "GPU", draft_model=draft_model)
+
+        config = openvino_genai.GenerationConfig()
+        config.max_new_tokens = 100
+        config.num_assistant_tokens = 15  # top-K verified per step
+        config.branching_factor = 8       # top-k per tree node
+        config.tree_depth = 4              # number of draft layers
+        pipe.generate("What is OpenVINO?", config)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
+
+        ov::genai::LLMPipeline pipe(
+            "Qwen3-8B-ov-int4", "GPU",
+            ov::genai::draft_model("Qwen3-8B_eagle3-ov-int4", "GPU"));
+
+        ov::genai::GenerationConfig config;
+        config.max_new_tokens = 100;
+        config.num_assistant_tokens = 15;  // top-K verified per step
+        config.branching_factor = 8;       // top-k per tree node
+        config.tree_depth = 4;             // number of draft layers
+        pipe.generate("What is OpenVINO?", config);
+        ```
+    </TabItemCpp>
+</LanguageTabs>
 
 EAGLE3 streaming is currently restricted to batch size 1 with greedy decoding.
 
