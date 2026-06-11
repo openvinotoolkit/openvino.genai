@@ -39,8 +39,8 @@ private:
     std::pair<std::vector<std::string>, std::vector<std::string>> merge_chunk_results(
         const std::vector<AudioChunk>& chunks,
         const std::vector<std::string>& infer_results);
-    std::vector<std::string> replace_multimodal_special_tokens(const std::vector<std::string>& prompts,
-                                                               const std::vector<size_t>& audio_lengths);
+    std::vector<std::string> extend_audio_tokens(const std::vector<std::string>& prompts,
+                                                 const std::vector<size_t>& audio_lengths);
 
     ASRGenerationConfig resolve_generation_config(std::optional<ASRGenerationConfig> generation_config) const;
 };

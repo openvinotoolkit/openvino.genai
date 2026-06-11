@@ -58,8 +58,7 @@ std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const AS
         context = config.context.value();
     }
 
-    // Hardcoded chat template to avoid minja overhead and spurious tool-call warnings.
-    // Equivalent to: chat_template.jinja with system + user(audio) + generation prompt.
+    // Hardcoded chat template to avoid tool-call warnings.
     std::string prompt = "<|im_start|>system\n" + context +
                          "<|im_end|>\n"
                          "<|im_start|>user\n<|audio_start|><|audio_pad|><|audio_end|><|im_end|>\n"
@@ -122,12 +121,11 @@ std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_ch
     return {std::move(merged_texts), std::move(merged_languages)};
 }
 
-std::vector<std::string> Qwen3ASR::replace_multimodal_special_tokens(const std::vector<std::string>& prompts,
-                                                                     const std::vector<size_t>& audio_lengths) {
+std::vector<std::string> Qwen3ASR::extend_audio_tokens(const std::vector<std::string>& prompts,
+                                                       const std::vector<size_t>& audio_lengths) {
     OPENVINO_ASSERT(prompts.size() == audio_lengths.size(),
-                    "replace_multimodal_special_tokens: prompts and audio_lengths must have the same size");
+                    "extend_audio_tokens: prompts and audio_lengths must have the same size");
 
-    // TODO(asr): obtain audio token from model config.json
     static const std::string audio_token = "<|audio_pad|>";
 
     std::vector<std::string> results = prompts;
@@ -180,8 +178,7 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
 
         const size_t audio_token_count = encoder_hidden_states.get_shape()[1];
 
-        const std::vector<std::string> processed_prompts =
-            replace_multimodal_special_tokens({prompt}, {audio_token_count});
+        const std::vector<std::string> processed_prompts = extend_audio_tokens({prompt}, {audio_token_count});
 
         const auto tokenization_start_time = std::chrono::steady_clock::now();
         const ov::Tensor input_ids = m_tokenizer.encode(processed_prompts).input_ids;
