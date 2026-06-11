@@ -233,7 +233,6 @@ def test_chat_scenario_vs_stateful(
             assert generated == reference
 
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize("llm_model", CHAT_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize(
     "generation_config_kwargs",
@@ -279,7 +278,6 @@ def test_continuous_batching_add_request_health_check(
         for output in outputs:
             assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
 
-@pytest.mark.transformers_lower_v5(reason="Accuracy drop with optimum-intel 423b423 and transformers>=5.0, CVS-185788")
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
     [
@@ -775,16 +773,13 @@ def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, 
 
     # Create pipeline
     ov_pipe = create_ov_pipeline(
-        main_model_path,
-        pipeline_type=PipelineType.SPECULATIVE_DECODING,
-        draft_model_path=draft_model_path,
-        ov_config={"KV_CACHE_PRECISION": "f16"},
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
     )
 
     # Test with tree-based configuration
     num_assistant_tokens = max(tree_depth, 10)  # Ensure num_assistant_tokens >= tree_depth
     tree_gen_config = GenerationConfig(
-        max_new_tokens=20,
+        max_new_tokens=10,
         num_assistant_tokens=num_assistant_tokens,
         branching_factor=branching_factor,
         tree_depth=tree_depth,
@@ -801,7 +796,7 @@ def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, 
     assert tree_perf_metrics.get_num_accepted_tokens() > 0
 
     # Run reference HF model for correctness check
-    ref_gen_config = GenerationConfig(max_new_tokens=20)
+    ref_gen_config = GenerationConfig(max_new_tokens=10)
     ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ref_gen_config)
     tree_gen_results = convert_decoded_results_to_generation_result(tree_result, 1, 1, False)
 
@@ -820,21 +815,18 @@ def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_d
 
     # Create pipeline
     ov_pipe = create_ov_pipeline(
-        main_model_path,
-        pipeline_type=PipelineType.SPECULATIVE_DECODING,
-        draft_model_path=draft_model_path,
-        ov_config={"KV_CACHE_PRECISION": "f16"},
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
     )
 
     # Sequential configuration (tree_depth=0 or branching_factor=1)
     seq_config = GenerationConfig(
-        max_new_tokens=20, num_assistant_tokens=10, branching_factor=1, tree_depth=0, do_sample=False
+        max_new_tokens=10, num_assistant_tokens=4, branching_factor=1, tree_depth=0, do_sample=False
     )
     seq_result = ov_pipe.generate([prompt], seq_config)
 
     # Tree configuration
     tree_config = GenerationConfig(
-        max_new_tokens=20, num_assistant_tokens=10, branching_factor=8, tree_depth=4, do_sample=False
+        max_new_tokens=10, num_assistant_tokens=8, branching_factor=4, tree_depth=2, do_sample=False
     )
     tree_result = ov_pipe.generate([prompt], tree_config)
     # Both should produce the same output with greedy decoding

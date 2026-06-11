@@ -4,6 +4,8 @@
 #include "pipeline_impl.hpp"
 #include <numeric>
 
+#include "sequence_group.hpp"
+
 namespace ov::genai {
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::ContinuousBatchingForSpeculativeDecodingImpl(
     const std::shared_ptr<ov::Model>& model,
@@ -61,10 +63,19 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
             result.insert({request_id, {{}} });
         }
         auto& generated_request = result[request_id];
+        const bool is_tree_search = request->get_sampling_parameters().is_tree_search();
         for (const auto& sequence : request->get_running_sequences()) {
             const auto& sequence_id = sequence->get_grouped_id();
             OPENVINO_ASSERT(!generated_request.count(sequence_id));
-            generated_request.insert({{sequence_id, { sequence->get_generated_ids(), sequence->get_generated_log_probs(), sequence->get_hidden_state(), sequence->get_tree_metadata() } }});
+            std::shared_ptr<const TreeMetaData> tree_metadata_snapshot;
+            if (is_tree_search) {
+                tree_metadata_snapshot = std::make_shared<const TreeMetaData>(sequence->get_tree_metadata());
+            }
+            generated_request.insert({{sequence_id,
+                                       {sequence->get_generated_ids(),
+                                        sequence->get_generated_log_probs(),
+                                        sequence->get_hidden_state(),
+                                        std::move(tree_metadata_snapshot)}}});
         }
     }
     return result;
@@ -114,6 +125,20 @@ ov::Tensor select_rows_by_indices(const ov::Tensor& tensor, const std::vector<si
 
     return result;
 }
+
+// Look up a candidate for the given running sequence.
+// Tree-search drafting may produce a candidate whose grouped_id no longer matches any
+// surviving running sequence on the consuming side.
+const GeneratedSequence* find_candidate_for(const Sequence::Ptr& running_sequence,
+                                            const GeneratedSequences& candidates) {
+    auto it = candidates.find(running_sequence->get_grouped_id());
+    if (it != candidates.end())
+        return &it->second;
+    if (candidates.size() == 1)
+        return &candidates.begin()->second;
+    return nullptr;
+}
+
 // { min_len_of_prefix, min_length_of_candidate }
 std::pair<size_t, size_t>
 get_prefix_len(
@@ -123,12 +148,11 @@ get_prefix_len(
     size_t min_generated_tokens = std::numeric_limits<size_t>::max(),
            min_candidate_len = std::numeric_limits<size_t>::max();
     for (const auto& running_sequence : running_sequences) {
-        const auto& sequence_id = running_sequence->get_grouped_id();
-        if (!candidates.count(sequence_id)) {
+        const GeneratedSequence* candidate_ptr = find_candidate_for(running_sequence, candidates);
+        if (candidate_ptr == nullptr) {
             continue;
         }
-
-        const auto& candidate_sequence = candidates.at(sequence_id);
+        const auto& candidate_sequence = *candidate_ptr;
 
         const std::vector<int64_t>& candidate_token_ids = candidate_sequence.token_ids,
                                     running_token_ids = running_sequence->get_generated_ids();
@@ -309,13 +333,14 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates, need_prefix_adjustment);
 
             for (auto& running_sequence : running_sequences) {
-                if (!candidates.count(running_sequence->get_grouped_id())) {
+                const GeneratedSequence* candidate_ptr = find_candidate_for(running_sequence, candidates);
+                if (candidate_ptr == nullptr) {
                     continue;
                 }
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
 
-                auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());
+                auto candidate_sequence = *candidate_ptr;
                 std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
                 std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
                 candidate_token_ids.resize(min_candidate_len);
@@ -346,8 +371,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                         indices.resize(keep_len);
                         std::iota(indices.begin(), indices.end(), 0);
                     } else {
-                        indices = candidate_sequence.tree_metadata.validated_indices;
-                        auto total_candidates_count = candidate_sequence.tree_metadata.tree_position_ids.size();
+                        result.inserted_tokens_cnt = 1; // reset to 1
+                        OPENVINO_ASSERT(candidate_sequence.tree_metadata,
+                                        "tree_search candidate is missing tree_metadata snapshot");
+                        indices = candidate_sequence.tree_metadata->validated_indices;
+                        auto total_candidates_count = candidate_sequence.tree_metadata->tree_position_ids.size();
                         result.removed_tokens_cnt = total_candidates_count - indices.size() + 1;
                     }
 
@@ -363,12 +391,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // Safe cast: we know indices is not empty (asserted above)
                     num_tokens_needs_kv_update = static_cast<int>(indices.size()) - 1;
                 }
-                // update hidden states for main model in validation mode
-                if (eagle_mode_enabled && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
-                    // retrieve eagle metadata
-                    auto& tree_metadata = candidate_sequence.tree_metadata;
-                    tree_metadata.validated_indices = running_sequence->get_tree_metadata().validated_indices;
-                    running_sequence->set_tree_metadata(tree_metadata);
+                if (candidate_sequence.tree_metadata && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
+                    TreeMetaData merged = *candidate_sequence.tree_metadata;
+                    merged.validated_indices = running_sequence->get_tree_metadata().validated_indices;
+                    running_sequence->set_tree_metadata(std::move(merged));
                 }
             }
             // we should update a logit processor just for draft model to generate the same tokens
@@ -413,7 +439,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         if (!m_is_validation_mode_enabled) {
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
-            generated_len +=  eagle_mode_enabled ? 1 : result.inserted_tokens_cnt;
+            generated_len += result.inserted_tokens_cnt;
             if (generated_len >= max_new_tokens - 1 || generated_len != 0 && result.inserted_tokens_cnt == 0) {
                 pause_gen_status = true;
             }
@@ -523,13 +549,22 @@ void ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl::collec
 
         OPENVINO_ASSERT(sequences.size() == 1);
         for (const auto& seq_entry : sequences) {
-            const auto& validated_indices = seq_entry.second.tree_metadata.validated_indices;
+            if (!seq_entry.second.tree_metadata) {
+                continue;
+            }
+            const auto& validated_indices = seq_entry.second.tree_metadata->validated_indices;
             if (validated_indices.empty()) {
                 continue;
             }
 
-            const size_t prev_num_processed_tokens =
-                (*seq_group_it)->get_num_processed_tokens() - validated_indices.size();
+            const size_t num_processed_tokens = (*seq_group_it)->get_num_processed_tokens();
+            OPENVINO_ASSERT(num_processed_tokens >= validated_indices.size(),
+                            "collect_block_update_info: num_processed_tokens (",
+                            num_processed_tokens,
+                            ") is smaller than validated_indices.size() (",
+                            validated_indices.size(),
+                            ")");
+            const size_t prev_num_processed_tokens = num_processed_tokens - validated_indices.size();
             size_t index = prev_num_processed_tokens;
 
             for (const auto& idx : validated_indices) {

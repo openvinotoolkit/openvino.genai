@@ -159,8 +159,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
     assert similarity_metric > test_struct.similarity_threshold
     assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
-    assert pipeline_opt_metrics.kv_cache_size_in_bytes > 0
-    assert pipeline_noopt_metrics.kv_cache_size_in_bytes > 0
+    assert pipeline_opt_metrics.cache_size_in_bytes > 0
+    assert pipeline_noopt_metrics.cache_size_in_bytes > 0
 
 
 def get_greedy_seq_len_300() -> GenerationConfig:

@@ -159,6 +159,12 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct',
         ],
       },
+      {
+        name: 'Fara-7B',
+        links: [
+          'https://huggingface.co/microsoft/Fara-7B',
+        ],
+      },
     ],
   },
   {
@@ -227,6 +233,7 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/google/gemma-4-E2B-it',
           'https://huggingface.co/google/gemma-4-E4B-it',
           'https://huggingface.co/google/gemma-4-26B-A4B-it',
+          'https://huggingface.co/google/gemma-4-31B-it',
         ],
       },
     ],

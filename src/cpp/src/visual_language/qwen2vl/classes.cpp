@@ -261,9 +261,6 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(const std::shared_ptr<ov:
 namespace qwen2_vl_utils {
 
 ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
-    if (height < factor || width < factor) {
-        OPENVINO_THROW("Height (" + std::to_string(height) + ") and width (" + std::to_string(width) + ") must be greater than factor (" + std::to_string(factor) + ")");
-    }
     if (std::max(height, width) / std::min(height, width) > 200) {
         OPENVINO_THROW("Absolute aspect ratio must be smaller than 200");
     }
@@ -615,6 +612,15 @@ ov::Tensor merge_text_and_video_image_embeddings(
             }
         }
     }
+
+    OPENVINO_ASSERT(image_embed_idx == processed_image_embeds.get_shape().at(0),
+        "Image embeddings count (", processed_image_embeds.get_shape().at(0), 
+        ") does not match image pad tokens in prompt (", image_embed_idx, ")");
+
+    OPENVINO_ASSERT(video_embed_idx == processed_video_embeds.get_shape().at(0),
+        "Video embeddings count (", processed_video_embeds.get_shape().at(0), 
+        ") does not match video pad tokens in prompt (", video_embed_idx, ")");
+
     return merged_embeds;
 }
     
@@ -636,7 +642,8 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
     auto image_scale = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, a_image_scale.data());
 
     auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
-    auto compiled_model = utils::singleton_core().compile_model(model, device, config);
+    auto compiled_model = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(config, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     return std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -931,7 +938,8 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
     utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
+    auto compiled_model = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
 
     m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
     ov::genai::utils::print_compiled_model_properties(compiled_model,
@@ -962,10 +970,8 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
     utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model,
-        device,
-        device_config
-    );
+    auto compiled_model = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
 
     m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
     ov::genai::utils::print_compiled_model_properties(compiled_model,

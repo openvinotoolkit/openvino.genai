@@ -30,35 +30,41 @@ namespace {
 auto raw_perf_metrics_docstring = R"(
     Structure with raw performance metrics for each generation before any statistics are calculated.
 
-    :param generate_durations: Durations for each generate call in milliseconds.
+    :param generate_durations: Durations for each generate call in microseconds.
     :type generate_durations: list[float]
 
-    :param tokenization_durations: Durations for the tokenization process in milliseconds.
+    :param tokenization_durations: Durations for the tokenization process in microseconds.
     :type tokenization_durations: list[float]
 
-    :param detokenization_durations: Durations for the detokenization process in milliseconds.
+    :param detokenization_durations: Durations for the detokenization process in microseconds.
     :type detokenization_durations: list[float]
 
-    :param m_times_to_first_token: Times to the first token for each call in milliseconds.
+    :param chat_template_durations: Durations for the chat template application in microseconds.
+    :type chat_template_durations: list[float]
+
+    :param m_times_to_first_token: Times to the first token for each call in microseconds.
     :type m_times_to_first_token: list[float]
 
-    :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
+    :param m_new_token_times: Timestamps of generation every token or batch of tokens in microseconds.
     :type m_new_token_times: list[double]
 
-    :param token_infer_durations : Inference time for each token in milliseconds.
-    :type batch_sizes: list[float]
+    :param token_infer_durations : Inference time for each token in microseconds.
+    :type token_infer_durations: list[float]
 
     :param m_batch_sizes: Batch sizes for each generate call.
     :type m_batch_sizes: list[int]
 
-    :param m_durations: Total durations for each generate call in milliseconds.
+    :param m_durations: Total durations for each generate call in microseconds.
     :type m_durations: list[float]
 
-    :param inference_durations : Total inference duration for each generate call in milliseconds.
-    :type batch_sizes: list[float]
+    :param inference_durations : Total inference duration for each generate call in microseconds.
+    :type inference_durations: list[float]
 
-    :param grammar_compile_times: Time to compile the grammar in milliseconds.
+    :param grammar_compile_times: Time to compile the grammar in microseconds.
     :type grammar_compile_times: list[float]
+
+    :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call.
+    :type sampling_durations: list[float]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -72,6 +78,7 @@ auto perf_metrics_docstring = R"(
     - Inference duration, ms
     - Tokenization duration, ms
     - Detokenization duration, ms
+    - Chat template application duration, ms
     - Throughput, tokens/s
 
     Additional metrics include:
@@ -117,11 +124,17 @@ auto perf_metrics_docstring = R"(
     :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
     :type get_detokenization_duration: MeanStdPair
 
+    :param get_chat_template_duration: Returns the mean and standard deviation of chat template application durations in milliseconds.
+    :type get_chat_template_duration: MeanStdPair
+
     :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
     :type get_grammar_compiler_init_times: dict[str, float]
 
     :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
     :type get_grammar_compile_time: SummaryStats
+
+    :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+    :type get_sampling_duration: MeanStdPair
 
     :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
     :type raw_metrics: RawPerfMetrics
@@ -179,6 +192,9 @@ void init_perf_metrics(py::module_& m) {
         .def_property_readonly("detokenization_durations", [](const RawPerfMetrics &rw) { 
             return common_utils::get_ms(rw, &RawPerfMetrics::detokenization_durations); 
         })
+        .def_property_readonly("chat_template_durations", [](const RawPerfMetrics &rw) { 
+            return common_utils::get_ms(rw, &RawPerfMetrics::chat_template_durations); 
+        })
         .def_property_readonly("m_times_to_first_token", [](const RawPerfMetrics &rw) {
             return common_utils::get_ms(rw, &RawPerfMetrics::m_times_to_first_token);
         })
@@ -197,6 +213,9 @@ void init_perf_metrics(py::module_& m) {
         })
         .def_property_readonly("grammar_compile_times", [](const RawPerfMetrics &rw) {
             return common_utils::get_ms(rw, &RawPerfMetrics::m_grammar_compile_times);
+        })
+        .def_property_readonly("sampling_durations", [](const RawPerfMetrics &rw) {
+            return common_utils::get_ms(rw, &RawPerfMetrics::m_sampling_durations);
         });
 
     py::class_<SummaryStats>(m, "SummaryStats")
@@ -232,6 +251,8 @@ void init_perf_metrics(py::module_& m) {
         .def("get_inference_duration", &PerfMetrics::get_inference_duration)
         .def("get_tokenization_duration", &PerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &PerfMetrics::get_detokenization_duration)
+        .def("get_chat_template_duration", &PerfMetrics::get_chat_template_duration)
+        .def("get_sampling_duration", &PerfMetrics::get_sampling_duration)
         .def("__add__", &PerfMetrics::operator+, py::arg("metrics"))
         .def("__iadd__", &PerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &PerfMetrics::raw_metrics);
@@ -249,6 +270,8 @@ void init_perf_metrics(py::module_& m) {
         .def("get_inference_duration", &ExtendedPerfMetrics::get_inference_duration)
         .def("get_tokenization_duration", &ExtendedPerfMetrics::get_tokenization_duration)
         .def("get_detokenization_duration", &ExtendedPerfMetrics::get_detokenization_duration)
+        .def("get_chat_template_duration", &ExtendedPerfMetrics::get_chat_template_duration)
+        .def("get_sampling_duration", &ExtendedPerfMetrics::get_sampling_duration)
         .def("__add__", &ExtendedPerfMetrics::operator+, py::arg("metrics"))
         .def("__iadd__", &ExtendedPerfMetrics::operator+=, py::arg("right"))
         .def_readonly("raw_metrics", &ExtendedPerfMetrics::raw_metrics);

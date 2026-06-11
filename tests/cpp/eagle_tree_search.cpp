@@ -571,7 +571,7 @@ ov::genai::SequenceGroup::Ptr make_prefilled_group(int64_t prefill_token,
     std::vector<int64_t> prompt = {7};
     ov::Tensor input_ids(ov::element::i64, {1, 1}, prompt.data());
     auto sg = std::make_shared<ov::genai::SequenceGroup>(
-        /*request_id=*/0, input_ids, cfg, /*block_size=*/32);
+        /*request_id=*/0, input_ids, cfg);
     sg->get_sequences().front()->append_token(prefill_token, 0.0f);
     sg->update_processed_tokens_num(/*prompt_len=*/1);
     return sg;

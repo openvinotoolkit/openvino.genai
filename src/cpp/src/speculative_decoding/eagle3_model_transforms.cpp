@@ -300,8 +300,8 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
 }
 
 std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model) {
-    // the kv update model acceptes all kv cache inputs from main_model
-    // extra inputs for updating kv cache: block_indices, block_indices_begins, block_update_indices, block_update_indices_begins， all with element::i32, PartialShape{-1}
+    // The KV update model accepts all KV cache inputs from main_model.
+    // Extra inputs for updating KV cache: block_indices, block_indices_begins, block_update_indices, block_update_indices_begins, all element::i32, PartialShape{-1}.
     using namespace ov;
     ParameterVector inputs;
     // clone the kv cache parameters from the main model
@@ -412,9 +412,6 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
     }
 
     auto model = std::make_shared<Model>(results, inputs, "kv_cache_reorder_model");
-    // addition runtime info for identification
-    // in GPU, we need to sync kv precision with main model, which already been assigned default values based on PA ops
-    model->get_rt_info()["auxiliary_kv_update_model"] = true;
     return model;
 }
 }  // namespace eagle3

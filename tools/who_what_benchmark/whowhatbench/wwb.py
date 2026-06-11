@@ -6,6 +6,7 @@ import difflib
 import numpy as np
 import logging
 import os
+from pathlib import Path
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
@@ -17,7 +18,7 @@ from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
-from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
 
@@ -52,6 +53,8 @@ def parse_args():
         prog="WWB CLI",
         description="This script generates answers for questions from csv file",
     )
+
+    text_def_dataset_group = parser.add_mutually_exclusive_group()
 
     parser.add_argument(
         "--base-model",
@@ -146,8 +149,8 @@ def parse_args():
     parser.add_argument(
         "--output",
         type=str,
-        default=None,
-        help="Directory name for saving the per sample comparison and metrics in CSV files.",
+        default="wwb_output",
+        help="Directory name for saving the per sample comparison and metrics in CSV files. Defaults to 'wwb_output'.",
     )
     parser.add_argument(
         "--num-samples",
@@ -248,10 +251,16 @@ def parse_args():
         default=None,
         help="Weights for LoRA adapters.",
     )
-    parser.add_argument(
+    text_def_dataset_group.add_argument(
         "--long-prompt",
         action='store_true',
-        help="LLMPipeline specific parameter that defines the use of a long context prompt.",
+        help="LLMPipeline specific parameter that defines the use of a long context prompt. "
+        "Deprecated. Kept for backward compatibility, long prompts are used by default.",
+    )
+    text_def_dataset_group.add_argument(
+        "--short-prompt",
+        action="store_true",
+        help="LLMPipeline specific parameter that defines the use of a short context prompt.",
     )
     parser.add_argument(
         "--empty_adapters",
@@ -333,9 +342,26 @@ def parse_args():
         type=str,
         default=None,
         help="Optional path to .bin or .npy float32 speaker embedding file for text-to-speech generation. "
-        "If omitted for SpeechT5 with HF/Optimum, WWB downloads "
+        "If using SpeechT5 TTS model with HF/Optimum, WWB downloads "
         "Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin automatically. "
-        "For GenAI, this is the default speaker embedding that is compiled into the runtime.",
+        "For GenAI, this is the default speaker embedding that is compiled into the runtime. "
+        "For Kokoro, when using optimum or genai modes, this parameter is supported for specifying path "
+        "to a <voice>.bin file, but it is recommended to instead use --speech-voice parameter.",
+    )
+    parser.add_argument(
+        "--speech-language",
+        type=str,
+        default="",
+        help="Speech-generation language code. This is currently used only for Kokoro. "
+        "If omitted, the default language used is 'en-us'.",
+    )
+    parser.add_argument(
+        "--speech-voice",
+        type=str,
+        default="",
+        help="Speech-generation voice name (for example, af_heart for Kokoro). This is currently used only for Kokoro. "
+        "For other TTS models (such as SpeechT5), please use --speaker_embeddings parameter to specify the voice. "
+        "If omitted for Kokoro, the default voice used is 'af_heart'",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
@@ -390,6 +416,10 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
+    if args.gt_data is not None and os.path.isdir(args.gt_data):
+        raise ValueError(f"--gt-data must be a file path, not a directory: '{args.gt_data}'")
+    if args.output is not None and os.path.isfile(args.output):
+        raise ValueError(f"--output must be a directory path, not a file: '{args.output}'")
 
 
 def load_prompts(args):
@@ -495,6 +525,8 @@ def load_processor(args):
                 trust_remote_code=True)
             preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
             config = model.config
+        elif config.model_type == "videochat_flash_qwen":
+            preprocessor = None
         else:
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
@@ -668,20 +700,50 @@ def genai_gen_text2video(
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
-def genai_gen_speech(model, prompt, speaker_embedding=None, voice=""):
+def _is_voice_pack_enabled_model(model):
+    if not hasattr(model, "model_dir"):
+        return False
+
+    voices_dir = Path(model.model_dir) / "voices"
+    return voices_dir.is_dir()
+
+
+def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
     generation_properties = {}
-    if voice:
-        generation_properties["voice"] = voice
+    if isinstance(language, str) and language.strip():
+        generation_properties["language"] = language.strip().lower()
+
+    selected_voice = voice.strip() if isinstance(voice, str) else ""
+
+    # Only Kokoro voice-pack exports use named voice bins under <model_dir>/voices.
+    if _is_voice_pack_enabled_model(model) and speaker_embedding is None:
+        if not selected_voice:
+            selected_voice = "af_heart"
+
+        # Voice selection loads <model_dir>/voices/<voice>.bin.
+        voices_dir = Path(model.model_dir) / "voices"
+        voice_path = voices_dir / f"{selected_voice}.bin"
+        if voice_path.exists():
+            speaker_data = np.fromfile(voice_path, dtype=np.float32)
+            expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
+            expected_flat_size = int(np.prod(expected_shape))
+            if speaker_data.size != expected_flat_size:
+                raise ValueError(
+                    f"Voice embedding file {voice_path} has {speaker_data.size} values; expected {expected_flat_size}."
+                )
+            speaker_embedding = ov.Tensor(speaker_data.reshape(expected_shape))
+        else:
+            raise ValueError(f"Voice embedding file does not exist: {voice_path}")
 
     result = model.generate(prompt, speaker_embedding, **generation_properties)
     if len(result.speeches) != 1:
         raise ValueError(f"Expected exactly one generated waveform per prompt, got {len(result.speeches)}")
 
     speech = np.array(result.speeches[0].data).reshape(-1)
-    sample_rate = 16000
+    sample_rate = int(getattr(result, "output_sample_rate", 16000))
     return speech, sample_rate
 
 
@@ -767,7 +829,11 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 
 
 def is_model_with_automatic_crop(config):
-    return "internvl" in config.model_type or "minicpmv" in config.model_type
+    return (
+        "internvl" in config.model_type
+        or "minicpmv" in config.model_type
+        or "videochat_flash_qwen" in config.model_type
+    )
 
 
 def create_evaluator(base_model, args):
@@ -804,7 +870,7 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
-                long_prompt=args.long_prompt,
+                long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
                     int(args.num_assistant_tokens)
                     if args.num_assistant_tokens is not None else 0
@@ -850,6 +916,8 @@ def create_evaluator(base_model, args):
                 speaker_embedding_file_path=args.speaker_embeddings,
                 whisper_model=args.tts_eval_whisper_model,
                 vocoder_path=args.vocoder_path,
+                speech_language=args.speech_language,
+                speech_voice=args.speech_voice,
             )
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
@@ -953,7 +1021,13 @@ def create_evaluator(base_model, args):
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
-            if processor is not None and processor.chat_template is None:
+            # If base_model/target_model is provided, wwb will generate data and the chat_template should be defined.
+            # If test_data only is provided, wwb will not generate data and the chat_template is not necessary.
+            if (
+                (args.base_model is not None or args.target_model is not None)
+                and getattr(processor, "chat_template", None) is None
+                and getattr(tokenizer, "chat_template", None) is None
+            ):
                 raise ValueError(
                     "Model has no 'chat_template' defined, but was run with model-type 'visual-text-chat'. "
                     "WWB can't start an evaluation in visual-text-chat mode, "
@@ -1228,8 +1302,7 @@ def main():
             logger.info(all_metrics)
 
         if args.output:
-            if not os.path.exists(args.output):
-                os.mkdir(args.output)
+            os.makedirs(args.output, exist_ok=True)
             df = pd.DataFrame(all_metrics_per_question)
             df.to_csv(os.path.join(args.output, "metrics_per_question.csv"))
             df = pd.DataFrame(all_metrics)

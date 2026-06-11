@@ -201,7 +201,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
     // to ensure extras steps, if any, are finished before main model generation
     if (m_sync_future.valid()) {
-        m_sync_future.wait();
+        m_sync_future.get();
     }
 
     const auto main_start = std::chrono::steady_clock::now();

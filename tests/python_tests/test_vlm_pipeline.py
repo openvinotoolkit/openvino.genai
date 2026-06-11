@@ -179,6 +179,7 @@ else:
         "qnguyen3/nanoLLaVA",
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
         *VIDEO_MODEL_IDS,
     ]
 
@@ -204,6 +205,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -262,6 +264,7 @@ NPU_UNSUPPORTED_MODELS = {
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     "optimum-intel-internal-testing/tiny-random-gemma4",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+    "optimum-intel-internal-testing/tiny-random-gemma4-31B",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -332,6 +335,7 @@ def _get_ov_model(model_id: str) -> str:
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     ] and is_transformers_version("<", "5.5.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
@@ -434,9 +438,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
-
-    if "tiny-random-qwen3.5" in ov_model and ov_backend == "PA":
-        pytest.xfail("Qwen3.5 does not support PA attention backend")
 
     if "gemma4" in ov_model and ov_backend == "PA":
         pytest.xfail("gemma4 does not support PA attention backend")
@@ -1020,8 +1021,8 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
     ov_pipe = ov_pipe_model.pipeline
 
@@ -1201,9 +1202,6 @@ def test_vlm_pipeline_chat_with_video(
     system_message: str,
     iteration_images_and_videos,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -1377,6 +1375,42 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_auto_embeddings_duration(cat_tensor):
+    models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048},
+            "AUTO": {openvino.properties.device.priorities: "CPU"},
+        }
+    }
+
+    npuw_pipe = VLMPipeline(models_path, "NPU", config=properties)
+    cpu_pipe = VLMPipeline(models_path, "CPU")
+
+    npuw_generation_config = _setup_generation_config(npuw_pipe)
+    cpu_generation_config = _setup_generation_config(cpu_pipe)
+
+    npuw_res = npuw_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=npuw_generation_config)
+    cpu_res = cpu_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=cpu_generation_config)
+
+    npuw_perf_metrics = npuw_res.perf_metrics
+    cpu_perf_metrics = cpu_res.perf_metrics
+
+    npuw_embeddings_mean = npuw_perf_metrics.get_prepare_embeddings_duration().mean
+    cpu_embeddings_mean = cpu_perf_metrics.get_prepare_embeddings_duration().mean
+    npuw_embeddings_std = npuw_perf_metrics.get_prepare_embeddings_duration().std
+    cpu_embeddings_std = cpu_perf_metrics.get_prepare_embeddings_duration().std
+
+    assert 0 < npuw_embeddings_mean
+    assert 0 < cpu_embeddings_mean
+    assert npuw_embeddings_std == 0.0
+    assert cpu_embeddings_std == 0.0
+
+    ratio = npuw_embeddings_mean / cpu_embeddings_mean
+    assert 0.8 <= ratio <= 1.2
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_auto_config(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
@@ -1412,8 +1446,8 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id:
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
@@ -1550,6 +1584,9 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
 
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Why is the Sun yellow?",
@@ -1668,6 +1705,7 @@ else:
         ("qnguyen3/nanoLLaVA", "PA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-moe", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
     ]
 
@@ -1809,9 +1847,6 @@ def test_model_tags_prepend_native(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -1852,9 +1887,6 @@ def test_model_tags_prepend_universal(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
 
     conversation_requests = request.getfixturevalue(
@@ -1894,9 +1926,6 @@ def test_model_tags_append(
     vision_type: VisionType,
     request: pytest.FixtureRequest,
 ):
-    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and sys.platform == "win32":
-        pytest.xfail("Incorrect vision embeddings merging in chat mode for linear attention. Ticket CVS-186072")
-
     ov_pipe = ov_pipe_model.pipeline
     vision_tag = ov_pipe_model.get_vision_tag(vision_type)
 
@@ -2729,6 +2758,7 @@ def ov_videochatflash_qwen_pipe_raw(request: pytest.FixtureRequest) -> VLMPipeli
     return VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_backend)
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 def test_videochatflash_qwen_rejects_image_input(
     ov_videochatflash_qwen_pipe_raw: VLMPipeline, cat_tensor: openvino.Tensor
 ):
@@ -2737,6 +2767,7 @@ def test_videochatflash_qwen_rejects_image_input(
         ov_videochatflash_qwen_pipe_raw.generate(PROMPTS[0], image=cat_tensor, generation_config=generation_config)
 
 
+@pytest.mark.transformers_lower_v5(reason="videochat_flash_qwen is intended only for transformers <5.0 in this suite")
 @pytest.mark.parametrize(
     "config",
     [
@@ -2859,6 +2890,9 @@ def test_video_metadata_sampling(
     if "tiny-videochat-flash-qwen" in ov_pipe_model.model_id:
         pytest.xfail("Implement proper video sampling for VideoChat-Flash-Qwen. Ticket - CVS-183520.")
 
+    if "tiny-random-qwen3.5" in ov_pipe_model.model_id and ov_pipe_model.prompt_lookup:
+        pytest.xfail("Qwen3.5 with prompt_lookup does not currently support video metadata sampling.")
+
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(
@@ -2931,3 +2965,43 @@ def test_video_metadata_sampling_continuous_batching(
             outputs_add_request_api.append(tokenizer.decode(result.generated_ids))
 
     _compare_outputs_for_video_sampling(*outputs_add_request_api)
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [("optimum-intel-internal-testing/tiny-random-qwen3-vl", b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_tensor):
+    """Test that VISION_POS_EMBEDS=CPP (CPU fallback) and default (patched model)
+    produce identical results for Qwen3-VL."""
+    # Default-mode pipeline comes from the module-scoped fixture (env var unset
+    # at construction time => patched model, device-side weighted sum).
+    ov_pipe_default = ov_pipe_model.pipeline
+
+    gen_config = GenerationConfig()
+    gen_config.max_new_tokens = 20
+    gen_config.do_sample = False
+
+    result_default = ov_pipe_default.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
+
+    # CPP mode: CPU fallback weighted sum. Build a fresh pipeline with the env
+    # var set, since VISION_POS_EMBEDS is read in the InputsEmbedder constructor.
+    prev_val = os.environ.get("VISION_POS_EMBEDS")
+    os.environ["VISION_POS_EMBEDS"] = "CPP"
+    try:
+        model_path = _get_ov_model(ov_pipe_model.model_id)
+        ov_pipe_cpp = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=ov_pipe_model.ov_backend)
+        result_cpp = ov_pipe_cpp.generate(PROMPTS[0], images=[cat_tensor], generation_config=gen_config)
+    finally:
+        if prev_val is None:
+            os.environ.pop("VISION_POS_EMBEDS", None)
+        else:
+            os.environ["VISION_POS_EMBEDS"] = prev_val
+
+    assert result_default.texts[0] == result_cpp.texts[0], (
+        f"VISION_POS_EMBEDS modes produced different results.\n"
+        f"Default (patched model): '{result_default.texts[0]}'\n"
+        f"CPP (CPU fallback):      '{result_cpp.texts[0]}'"
+    )

@@ -44,6 +44,8 @@ function(ov_genai_link_opencv target_name)
         set(BUILD_opencv_ml OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_objdetect OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_photo OFF CACHE BOOL "" FORCE)
+        set(BUILD_opencv_python2 OFF CACHE BOOL "" FORCE)
+        set(BUILD_opencv_python3 OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_python_tests OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_stitching OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_ts OFF CACHE BOOL "" FORCE)
@@ -75,6 +77,11 @@ function(ov_genai_link_opencv target_name)
                 INSTALL_RPATH "@loader_path/../lib"
                 INSTALL_RPATH_USE_LINK_PATH ON)
         endif()
+
+        # Signal to callers that OpenCV was built from source via FetchContent,
+        # so target-scoped CMake can emit any runtime deployment rules it needs
+        # (e.g., installing the fetched DLLs next to a Windows sample EXE).
+        set_property(GLOBAL PROPERTY OV_GENAI_FETCHED_OPENCV TRUE)
     else()
         set(opencv_targets ${OpenCV_LIBS})
         if(OpenCV_INCLUDE_DIRS)

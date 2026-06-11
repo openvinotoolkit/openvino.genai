@@ -69,10 +69,17 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     } else {
         GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
     }
-    auto kv_cache_precision = m_main_pipeline->get_model_properties().at(ov::hint::kv_cache_precision.name());
-    // transformatin for kv update model
-    std::cout << kv_cache_precision.as<ov::element::Type>() << std::endl;
-    ov::pass::PaKVReorderFusion(kv_cache_precision.as<ov::element::Type>()).run_on_model(kv_model);
+
+    auto kv_cache_precision =
+        m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
+    // transformation for kv update model: u4 KV cache is stored as u8 internally,
+    // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
+    kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
+    if (kv_cache_precision == ov::element::u4) {
+        kv_cache_precision = ov::element::u8;
+    }
+    ov::pass::PaKVReorderFusion(kv_cache_precision).run_on_model(kv_model);
+    // add rt_info for real kv precision into kv_model
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
@@ -195,7 +202,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::step() {
     // general step for speculative decoding
     ContinuousBatchingPipeline::SpeculativeDecodingImpl::step();
-    auto main_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
+    auto main_pipeline = std::static_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
     // specific step for eagle3 to update main model kv cache after validation
     {
         // Launch KV update asynchronously
@@ -205,6 +212,10 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::step() {
             main_pipeline->collect_block_update_info(main_generated_requests,
                                                      block_update_indices,
                                                      block_update_begins);
+
+            if (block_update_indices.empty()) {
+                return;
+            }
 
             ov::Tensor block_indices_tensor = main_pipeline->get_tensor_by_name("block_indices");
             ov::Tensor block_indices_begins_tensor = main_pipeline->get_tensor_by_name("block_indices_begins");

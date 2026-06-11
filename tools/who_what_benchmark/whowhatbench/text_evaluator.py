@@ -38,7 +38,7 @@ class TextEvaluator(BaseEvaluator):
         generation_config_base=None,
         seqs_per_request=None,
         use_chat_template=None,
-        long_prompt=False,
+        long_prompt=True,
         empty_adapters=False,
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0
