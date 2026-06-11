@@ -520,7 +520,7 @@ export const LLM_MODELS: LLMModelType[] = [
     architecture: 'Lfm2MoeForCausalLM',
     models: [
       {
-        name: 'LFM2 MoE',
+        name: 'LFM2MoE',
         links: [
           'https://huggingface.co/LiquidAI/LFM2-8B-A1B',
           'https://huggingface.co/LiquidAI/LFM2-24B-A2B',
@@ -864,6 +864,20 @@ export const LLM_MODELS: LLMModelType[] = [
         links: [
           'https://huggingface.co/Qwen/Qwen3-30B-A3B',
           'https://huggingface.co/Qwen/Qwen3-30B-A3B-Base',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Qwen3NextForCausalLM',
+    models: [
+      {
+        name: 'Qwen3Next',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-Coder-Next',
+          'https://huggingface.co/Qwen/Qwen3-Coder-Next-Base',
+          'https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Thinking',
         ],
       },
     ],
