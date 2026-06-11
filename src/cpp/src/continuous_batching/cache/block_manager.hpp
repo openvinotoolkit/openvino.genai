@@ -517,7 +517,7 @@ public:
     }
 
     /**
-    * @return The total number of blocks.
+     * @return The total number of blocks.
      */
     size_t get_total_block_count() const {
         return m_total_num_blocks;
@@ -864,7 +864,7 @@ public:
     }
 
     /**
-    * @return The number of cache blocks available to be assigned to new sequences.
+     * @return The number of cache blocks available to be assigned to new sequences.
      */
     size_t num_free_blocks() const {
         return m_allocator.num_free_blocks(0); // relying on the invariant that all layers have identical number of blocks
@@ -900,7 +900,7 @@ public:
     }
 
     /**
-    * Checks whether enough cache blocks can be allocated to accommodate the given number of tokens,
+     * Checks whether enough cache blocks can be allocated to accommodate the given number of tokens,
      * accounting for unused slots in already-allocated blocks.
      * @param seq_group The sequence group to check allocation feasibility for.
      * @param num_tokens The number of additional tokens to accommodate.
@@ -929,7 +929,7 @@ public:
     }
 
     /**
-    * Allocates cache blocks to accommodate the given number of additional tokens for a sequence,
+     * Allocates cache blocks to accommodate the given number of additional tokens for a sequence,
      * accounting for unused slots in already-allocated blocks.
      * @param sequence The sequence to allocate blocks for.
      * @param seq_group The sequence group to which this sequence belongs.
@@ -960,22 +960,22 @@ public:
     }
 
     /**
-    * @return Percentage of cache blocks used by all sequences.
+     * @return Percentage of cache blocks used by all sequences.
      */
     float get_used_percentage() const {
         return m_allocator.get_used_percentage();
     }
 
     /**
-    * Increases the number of blocks.
-    * @param num_blocks The new number of blocks.
+     * Increases the number of blocks.
+     * @param num_blocks The new number of blocks.
      */
     void increase_block_count(size_t num_blocks) {
         m_allocator.increase_block_count(num_blocks);
     }
 
     /**
-    * @return The total number of blocks.
+     * @return The total number of blocks.
      */
     size_t get_total_block_count() const {
         return m_allocator.get_total_block_count();
@@ -1133,7 +1133,7 @@ public:
 
     /**
      * @param seq_group Pointer to a sequence group.
-    * @return Whether enough cache blocks are available to host the sequences in the group.
+     * @return Whether enough cache blocks are available to host the sequences in the group.
      */
     bool can_append_slots(SequenceGroup::CPtr seq_group) {
         return required_blocks_count(std::move(seq_group)) <= m_allocator.num_free_blocks(0);
@@ -1208,7 +1208,7 @@ public:
     }
 
     /**
-    * Clean up not busy physical cache blocks in a sequence group.
+     * Clean up not busy physical cache blocks in a sequence group.
      * @param seq_group Pointer to a sequence group.
      */
     void free_empty_physical_blocks(SequenceGroup::Ptr seq_group) {
@@ -1233,7 +1233,7 @@ public:
 
 
     /**
-    * Allocates just enough physical cache blocks to a sequence group to be enough for the sequences in it. If the sequences
+     * Allocates just enough physical cache blocks to a sequence group to be enough for the sequences in it. If the sequences
      * in the group were forked before and their last block is a copy-on-write, then the block contents will have to be copied separately
      * into the freshly allocated block copies as reported in the returned map.
      * @param seq_group Pointer to a sequence group.

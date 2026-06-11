@@ -129,7 +129,10 @@ public:
         }
 
         const KVPagedAttentionData& get_kv_paged_attention_data(uint64_t seq_id) const {
-            return m_kv_paged_attention_data.at(seq_id);
+            auto it = m_kv_paged_attention_data.find(seq_id);
+            OPENVINO_ASSERT(it != m_kv_paged_attention_data.end(),
+                            "KV paged attention data was not scheduled for sequence ", seq_id);
+            return it->second;
         }
 
         const KVPagedAttentionGlobalData& get_kv_paged_attention_global_data() const {
@@ -180,7 +183,10 @@ public:
         }
 
         const LinearAttentionPagingData& get_linear_attention_paging_data(uint64_t seq_id) const {
-            return m_linear_attention_paging_data.at(seq_id);
+            auto it = m_linear_attention_paging_data.find(seq_id);
+            OPENVINO_ASSERT(it != m_linear_attention_paging_data.end(),
+                            "Linear attention paging data was not scheduled for sequence ", seq_id);
+            return it->second;
         }
     };
 

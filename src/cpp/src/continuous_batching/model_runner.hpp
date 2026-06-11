@@ -1432,7 +1432,10 @@ private:
                     const size_t block_table_size = block_table.size();
                     for (size_t block_id = 0; block_id < selected_logical_blocks.size(); ++block_id) {
                         const size_t logical_block_idx = selected_logical_blocks[block_id];
-                        OPENVINO_ASSERT(logical_block_idx < block_table_size);
+                        OPENVINO_ASSERT(logical_block_idx < block_table_size,
+                                        "Adaptive R-KV diversity block set contains out-of-range logical block index for sequence ",
+                                        seq_id, ", layer ", layer_idx, ": logical_block_idx=", logical_block_idx,
+                                        ", block_table_size=", block_table_size);
                         indices_data[block_id] = block_table[logical_block_idx]->get_index();
                     }
                     indices_data += selected_logical_blocks.size();
