@@ -309,7 +309,7 @@ TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalMultiplierForHybridM
                                               }));
 }
 
-TEST(TestCacheOrchestratorHybrid, CreateRejectsCustomCacheIntervalMultiplierWithoutLinearAttentionCache) {
+TEST(TestCacheOrchestratorHybrid, CreateIgnoresCacheIntervalMultiplierWithoutLinearAttentionCache) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, /*num_layers=*/3))
                                       .create_infer_request();
@@ -318,12 +318,11 @@ TEST(TestCacheOrchestratorHybrid, CreateRejectsCustomCacheIntervalMultiplierWith
     config.num_kv_blocks = 4;
     config.cache_interval_multiplier = 4;
 
-    EXPECT_THROW(CacheOrchestrator::create(request,
-                                           config,
-                                           [](const std::string&, size_t) {
-                                               return std::numeric_limits<size_t>::max();
-                                           }),
-                 ov::Exception);
+    EXPECT_NO_THROW(CacheOrchestrator::create(request,
+                                              config,
+                                              [](const std::string&, size_t) {
+                                                  return std::numeric_limits<size_t>::max();
+                                              }));
 }
 
 /// @test RequiredTokens_UsesMax
