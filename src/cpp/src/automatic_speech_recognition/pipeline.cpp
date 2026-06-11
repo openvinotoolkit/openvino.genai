@@ -63,14 +63,14 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
     }
 }
 
-ASRDecodedResults ASRPipeline::generate(const RawSpeechInput& raw_speech_input,
+ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs,
                                         std::optional<ASRGenerationConfig> generation_config,
                                         StreamerVariant streamer) {
     const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer, m_impl->m_tokenizer);
-    return m_impl->generate(raw_speech_input, std::move(generation_config), base_streamer);
+    return m_impl->generate(audio_inputs, std::move(generation_config), base_streamer);
 }
 
-ASRDecodedResults ASRPipeline::generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map) {
+ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map) {
     auto config_arg = get_config_from_map(config_map);
     ASRGenerationConfig config = config_arg.has_value() ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
@@ -78,7 +78,7 @@ ASRDecodedResults ASRPipeline::generate(const RawSpeechInput& raw_speech_input, 
     StreamerVariant streamer_variant = utils::get_streamer_from_map(config_map);
     const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer_variant, m_impl->m_tokenizer);
 
-    return m_impl->generate(raw_speech_input, config, base_streamer);
+    return m_impl->generate(audio_inputs, config, base_streamer);
 }
 
 Tokenizer ASRPipeline::get_tokenizer() {

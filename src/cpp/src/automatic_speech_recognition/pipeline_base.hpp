@@ -19,7 +19,7 @@ public:
         m_generation_config.update_generation_config(properties);
     }
 
-    virtual ASRDecodedResults generate(const RawSpeechInput& raw_speech_input,
+    virtual ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                        std::optional<ASRGenerationConfig> generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
 

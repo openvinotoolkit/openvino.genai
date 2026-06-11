@@ -27,10 +27,10 @@ void Qwen3ASRDecoder::set_seed(size_t seed) {
     m_sampler.set_seed(seed);
 }
 
-EncodedResults Qwen3ASRDecoder::decode(const ov::Tensor& input_ids,
-                                       const ov::Tensor& encoder_hidden_state,
-                                       const ASRGenerationConfig& config,
-                                       const std::shared_ptr<StreamerBase>& streamer_ptr) {
+EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
+                                         const ov::Tensor& encoder_hidden_states,
+                                         const ASRGenerationConfig& config,
+                                         const std::shared_ptr<StreamerBase>& streamer_ptr) {
     const ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
     OPENVINO_ASSERT(batch_size == 1 || !streamer_ptr, "Streaming is only supported with batch_size == 1");
@@ -69,26 +69,8 @@ EncodedResults Qwen3ASRDecoder::decode(const ov::Tensor& input_ids,
         }
     };
 
-    // Set encoder hidden states
-    m_request.set_tensor("encoder_hidden_states", encoder_hidden_state);
-
-    // Reorder encoder_hidden_states according to beam_idx so each batch position's
-    // encoder output stays aligned with its KV cache state after beam reordering.
-    const size_t enc_seq_len = encoder_hidden_state.get_shape()[1];
-    const size_t enc_hidden_dim = encoder_hidden_state.get_shape()[2];
-    const size_t enc_row_bytes = enc_seq_len * enc_hidden_dim * sizeof(float);
-    auto reorder_encoder_hidden_states = [&](const std::vector<int32_t>& beam_indices) {
-        const size_t num_beams = beam_indices.size();
-        ov::Tensor reordered(ov::element::f32, {num_beams, enc_seq_len, enc_hidden_dim});
-        const float* src = encoder_hidden_state.data<const float>();
-        float* dst = reordered.data<float>();
-        for (size_t i = 0; i < num_beams; ++i) {
-            std::memcpy(dst + i * enc_seq_len * enc_hidden_dim,
-                        src + beam_indices[i] * enc_seq_len * enc_hidden_dim,
-                        enc_row_bytes);
-        }
-        m_request.set_tensor("encoder_hidden_states", reordered);
-    };
+    ov::Tensor current_encoder_hidden_states = encoder_hidden_states;
+    m_request.set_tensor("encoder_hidden_states", current_encoder_hidden_states);
 
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
@@ -176,7 +158,7 @@ EncodedResults Qwen3ASRDecoder::decode(const ov::Tensor& input_ids,
 
         m_request.set_tensor("input_ids", new_input_ids);
         m_request.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
-        reorder_encoder_hidden_states(next_beams);
+        // for beam search investigate encoder batches reordering based on next_beams
         m_request.infer();
 
         logits = m_request.get_tensor("logits");

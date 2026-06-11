@@ -16,10 +16,10 @@ class Qwen3ASRDecoder {
 public:
     Qwen3ASRDecoder(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
-    EncodedResults decode(const ov::Tensor& input_ids,
-                          const ov::Tensor& encoder_hidden_state,
-                          const ASRGenerationConfig& config,
-                          const std::shared_ptr<StreamerBase>& streamer_ptr = nullptr);
+    EncodedResults generate(const ov::Tensor& input_ids,
+                            const ov::Tensor& encoder_hidden_state,
+                            const ASRGenerationConfig& config,
+                            const std::shared_ptr<StreamerBase>& streamer_ptr = nullptr);
 
     void set_seed(size_t seed);
 

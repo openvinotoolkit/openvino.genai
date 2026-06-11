@@ -17,7 +17,6 @@ public:
      * Can be set for multilingual models only.
      */
     std::optional<std::string> language = std::nullopt;
-    std::optional<std::vector<std::string>> languages = std::nullopt;
 
     // Whether to return segment-level timestamps.
     bool return_timestamps = false;
@@ -68,9 +67,6 @@ public:
      */
     std::optional<std::string> initial_prompt = std::nullopt;
 
-    // qwen3-asr name is contexts
-    std::optional<std::vector<std::string>> initial_prompts = std::nullopt;
-
     /*
      * Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
      * Can be used to steer the model to use particular spellings or styles.
@@ -83,6 +79,10 @@ public:
      *  //  He has gone and gone for good answered Polychrome who...
      */
     std::optional<std::string> hotwords = std::nullopt;
+
+    // Qwen3-ASR parameters
+
+    std::optional<std::string> context = std::nullopt;
 
     using GenerationConfig::update_generation_config;
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
@@ -116,5 +116,6 @@ static constexpr ov::Property<bool> word_timestamps{"word_timestamps"};
 static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
 static constexpr ov::Property<std::string> hotwords{"hotwords"};
+static constexpr ov::Property<std::string> context{"context"};
 
 }  // namespace ov::genai

@@ -3,11 +3,10 @@
 
 #include "encoder.hpp"
 
+#include <cstring>
+
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
-
-// todo: remove
-#include "debug_utils.hpp"
 
 namespace {
 ov::InferRequest init_model(ov::CompiledModel& compiled) {
@@ -45,17 +44,13 @@ ov::Tensor Qwen3ASREncoder::encode(std::vector<WhisperFeatures> features) {
 
     ov::Tensor input_tensor = chunk_mel_features(feat);
     m_request.set_tensor("input_features", input_tensor);
-    print_tensor_stats("encoder input (chunked)", input_tensor);
 
     m_request.infer();
 
     const ov::Tensor chunked_output = m_request.get_tensor("last_hidden_state");
     ov::Tensor output = merge_chunked_encoder_output(chunked_output, remainder_frames);
 
-    // Reset input tensor to free memory
     m_request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, 0, 0}));
-
-    print_tensor_stats("encoder output (chunked)", output);
 
     return output;
 }

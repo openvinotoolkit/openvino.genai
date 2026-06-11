@@ -5,6 +5,7 @@
 
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 
@@ -21,9 +22,17 @@ public:
         m_whisper_pipeline.set_generation_config(to_whisper_config(config));
     }
 
-    ASRDecodedResults generate(const RawSpeechInput& raw_speech_input,
+    ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                std::optional<ASRGenerationConfig> generation_config,
                                const std::shared_ptr<StreamerBase> streamer) override {
+        const std::vector<float>& raw_speech = std::visit(
+            ov::genai::utils::overloaded{
+                [](const std::vector<float>& input) -> const std::vector<float>& {
+                    return input;
+                },
+            },
+            audio_inputs);
+
         OptionalWhisperGenerationConfig whisper_config = std::nullopt;
         if (generation_config.has_value()) {
             whisper_config = to_whisper_config(generation_config.value());
@@ -32,7 +41,7 @@ public:
         StreamerVariant streamer_variant = streamer ? StreamerVariant{streamer} : StreamerVariant{std::monostate{}};
 
         WhisperDecodedResults whisper_result =
-            m_whisper_pipeline.generate(raw_speech_input, whisper_config, streamer_variant);
+            m_whisper_pipeline.generate(raw_speech, whisper_config, streamer_variant);
 
         return to_asr_results(std::move(whisper_result));
     }
@@ -82,7 +91,7 @@ private:
         ASRDecodedResults result;
         result.texts = std::move(whisper_result.texts);
         result.scores = std::move(whisper_result.scores);
-        result.language = std::move(whisper_result.language);
+        result.languages = std::vector<std::string>{std::move(whisper_result.language)};
         result.perf_metrics = ASRPerfMetrics{base_metrics};
         result.perf_metrics.asr_raw_metrics.features_extraction_durations =
             std::move(whisper_result.perf_metrics.whisper_raw_metrics.features_extraction_durations);
