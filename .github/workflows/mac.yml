@@ -43,7 +43,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@ac001bacd3a9f207db30326a605154e14783b40a
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@337f63746c4711ebac953c8788732e76d9a2fadc
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -177,7 +177,7 @@ jobs:
         run: ccache --show-stats
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
@@ -256,13 +256,12 @@ jobs:
         run: brew install coreutils ccache
 
       - name: Setup ccache
-        id: ccache-restore
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel
-          path: ${{ env.CCACHE_DIR }}\
+          path: ${{ env.CCACHE_DIR }}
 
       - name: Set CI environment
         id: create_manifest
@@ -288,9 +287,14 @@ jobs:
       - name: Build GenAI Wheel
         run: |
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache" \
+              --config-settings=override=cmake.generator="Ninja" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Show ccache stats
+        run: ccache --show-stats
 
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
@@ -300,7 +304,7 @@ jobs:
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel-${{ github.sha }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload Wheels
