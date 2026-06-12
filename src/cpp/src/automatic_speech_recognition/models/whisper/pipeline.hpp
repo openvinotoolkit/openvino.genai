@@ -107,7 +107,7 @@ private:
             for (auto& chunk : *whisper_result.chunks) {
                 chunks.push_back({chunk.start_ts, chunk.end_ts, std::move(chunk.text), {}});
             }
-            result.chunks = std::move(chunks);
+            result.chunks = {std::move(chunks)};
         }
 
         if (whisper_result.words.has_value()) {
@@ -116,7 +116,7 @@ private:
             for (auto& word : *whisper_result.words) {
                 words.push_back({word.start_ts, word.end_ts, std::move(word.word), std::move(word.token_ids)});
             }
-            result.words = std::move(words);
+            result.words = {std::move(words)};
         }
 
         return result;

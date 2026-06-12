@@ -46,7 +46,7 @@ class ASRDecodedResults:
     def __repr__(self) -> str:
         ...
     @property
-    def chunks(self) -> list[ASRDecodedResultChunk] | None:
+    def chunks(self) -> list[list[ASRDecodedResultChunk]] | None:
         ...
     @property
     def language(self) -> list[str]:
@@ -61,7 +61,7 @@ class ASRDecodedResults:
     def texts(self) -> list[str]:
         ...
     @property
-    def words(self) -> list[ASRDecodedResultChunk] | None:
+    def words(self) -> list[list[ASRDecodedResultChunk]] | None:
         ...
 class ASRGenerationConfig(GenerationConfig):
     """

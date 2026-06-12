@@ -34,8 +34,8 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     std::vector<std::string> languages;
     ASRPerfMetrics perf_metrics;
 
-    std::optional<std::vector<ASRDecodedResultChunk>> chunks = std::nullopt;
-    std::optional<std::vector<ASRDecodedResultChunk>> words = std::nullopt;
+    std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> chunks = std::nullopt;
+    std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> words = std::nullopt;
 
     operator std::string() const {
         std::stringstream ss;

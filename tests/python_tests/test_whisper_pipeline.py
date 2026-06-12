@@ -319,9 +319,14 @@ def compare_results(hf_result, genai_result):
     if "chunks" not in hf_result and genai_result.chunks is None:
         return
 
-    assert len(genai_result.chunks) == len(hf_result["chunks"])
+    genai_chunks = (
+        genai_result.chunks[0]
+        if len(genai_result.chunks) and isinstance(genai_result.chunks[0], list)
+        else genai_result.chunks
+    )
+    assert len(genai_chunks) == len(hf_result["chunks"])
 
-    for opt_chunk, genai_chunk in zip(hf_result["chunks"], genai_result.chunks):
+    for opt_chunk, genai_chunk in zip(hf_result["chunks"], genai_chunks):
         assert opt_chunk["text"] == genai_chunk.text
         assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
         if opt_chunk["timestamp"][1]:
@@ -337,7 +342,8 @@ def test_language_detection_en(model_descr, sample_from_dataset, pipeline_type):
     _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
-    assert result.language[0] == "en"
+    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    assert detected_language == "en"
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -669,7 +675,7 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_r
         )
         result_words = [
             {"word": get_word_text(w, pipeline_type), "start_ts": round(w.start_ts, 2), "end_ts": round(w.end_ts, 2)}
-            for w in result.words
+            for w in result.words[0]
         ]
 
         reference = whisper_librispeech_10_openai_tiny_reference[i]
@@ -710,7 +716,8 @@ def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_data
         config=config,
     )
 
-    assert len(genai_result.words) > 0
+    words = genai_result.words[0] if pipeline_type == PipelineType.ASR else genai_result.words
+    assert len(words) > 0
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
