@@ -562,3 +562,19 @@ TEST(TestBlockManager, PrefixRestorePlanningCapsFullRestoreToLatestStateRestore)
     kv_block_manager.free_sequence(consumer_seq_id);
     state_block_manager.free_sequence(consumer_seq_id);
 }
+
+TEST(TestBlockManager, PrefixRestoreStalePlanReturnsFalseWithoutRestoring) {
+    const size_t block_size = 4;
+    ov::genai::BlockManager block_manager(/*num_blocks=*/1, /*enable_prefix_caching=*/true, block_size);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3};
+    auto consumer_group = create_sequence_group(tokens, 31);
+
+    ov::genai::BlockManager::PrefixRestorePlan stale_plan;
+    stale_plan.block_content_lengths = {tokens.size()};
+    stale_plan.cache_token_position = tokens.size();
+    stale_plan.processed_tokens = tokens.size() - 1;
+
+    EXPECT_FALSE(block_manager.restore_cached_blocks(consumer_group, stale_plan));
+    EXPECT_FALSE(block_manager.has_block_table(consumer_group->get_running_sequences().at(0)->get_id()));
+}

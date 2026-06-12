@@ -267,8 +267,10 @@ public:
                 return;
             }
 
-            kv_block_mgr.restore_cached_blocks(sequence_group, kv_plan);
-            la_block_mgr.restore_cached_blocks(sequence_group, la_plan);
+            if (!kv_block_mgr.restore_cached_blocks(sequence_group, kv_plan) ||
+                !la_block_mgr.restore_cached_blocks(sequence_group, la_plan)) {
+                return;
+            }
             sequence_group->update_processed_tokens_num(std::min(kv_plan.processed_tokens, la_plan.processed_tokens));
             return;
         }
@@ -300,7 +302,9 @@ public:
 
         size_t common_processed_tokens = std::numeric_limits<size_t>::max();
         for (auto& [type, plan] : restore_plans) {
-            m_block_managers.at(type)->restore_cached_blocks(sequence_group, plan);
+            if (!m_block_managers.at(type)->restore_cached_blocks(sequence_group, plan)) {
+                return;
+            }
             common_processed_tokens = std::min(common_processed_tokens, plan.processed_tokens);
         }
         if (common_processed_tokens != std::numeric_limits<size_t>::max()) {

@@ -1337,12 +1337,13 @@ public:
         return copy_blocks_map;
     }
 
-    void restore_cached_blocks(SequenceGroup::Ptr group) {
+    bool restore_cached_blocks(SequenceGroup::Ptr group) {
         if (!m_enable_prefix_caching) {
-            return;
+            return false;
         }
 
-        restore_cached_blocks(group, get_prefix_restore_plan(group));
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        return restore_cached_blocks_unlocked(group, get_prefix_restore_plan_unlocked(group, group->get_prompt_len()));
     }
 
     PrefixRestorePlan get_prefix_restore_plan(SequenceGroup::Ptr group) {
@@ -1355,9 +1356,39 @@ public:
             return plan;
         }
 
-        // When add_request() is executed in multiple threads accessing to cached_blocks causes segfault.
-        // The mutex is needed to prevent such segfaults.
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        return get_prefix_restore_plan_unlocked(group, max_cache_token_position);
+    }
+
+    bool restore_cached_blocks(SequenceGroup::Ptr group, const PrefixRestorePlan& plan) {
+        if (!m_enable_prefix_caching || plan.empty()) {
+            return false;
+        }
+
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        return restore_cached_blocks_unlocked(group, plan);
+    }
+
+    void clear() {
+        // KV-cache should not be cleared if prefix caching is enabled
+        OPENVINO_ASSERT(m_enable_prefix_caching == false);
+
+        m_allocator.clear();
+        m_prefix_hash_to_occupied_block_map.clear();
+        m_cached_content_length_ref_counts.clear();
+        m_cached_hash_to_content_length.clear();
+
+        // Block tables should be cleared when generation is finished
+        OPENVINO_ASSERT(m_block_table.empty());
+    }
+
+private:
+    PrefixRestorePlan get_prefix_restore_plan_unlocked(SequenceGroup::Ptr group, size_t max_cache_token_position) const {
+        PrefixRestorePlan plan;
+        if (!m_enable_prefix_caching || max_cache_token_position == 0) {
+            return plan;
+        }
+
         const size_t prompt_len = group->get_prompt_len();
         const size_t capped_token_position = std::min(prompt_len, max_cache_token_position);
         auto sequences = group->get_not_finished_sequences();
@@ -1371,16 +1402,22 @@ public:
         return get_full_prefix_restore_plan(sequence, capped_token_position, prompt_len);
     }
 
-    void restore_cached_blocks(SequenceGroup::Ptr group, const PrefixRestorePlan& plan) {
-        if (!m_enable_prefix_caching || plan.empty()) {
-            return;
+    bool restore_cached_blocks_unlocked(SequenceGroup::Ptr group, const PrefixRestorePlan& plan) {
+        if (plan.empty()) {
+            return false;
         }
 
-        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         const auto sequences = group->get_not_finished_sequences();
         OPENVINO_ASSERT(sequences.size() == 1);
         const auto sequence = sequences[0];
         const auto seq_id = sequence->get_id();
+
+        for (size_t content_len : plan.block_content_lengths) {
+            if (!m_allocator.has_cached_block(sequence->get_hash(content_len, m_block_size),
+                                              m_prefix_hash_to_occupied_block_map)) {
+                return false;
+            }
+        }
 
         if (m_block_table.find(seq_id) == m_block_table.end()) {
             m_block_table[seq_id].resize(m_num_layers);
@@ -1405,22 +1442,9 @@ public:
             m_block_table_logical_start.erase(seq_id);
         }
         group->update_processed_tokens_num(plan.processed_tokens);
+        return true;
     }
 
-    void clear() {
-        // KV-cache should not be cleared if prefix caching is enabled
-        OPENVINO_ASSERT(m_enable_prefix_caching == false);
-
-        m_allocator.clear();
-        m_prefix_hash_to_occupied_block_map.clear();
-        m_cached_content_length_ref_counts.clear();
-        m_cached_hash_to_content_length.clear();
-
-        // Block tables should be cleared when generation is finished
-        OPENVINO_ASSERT(m_block_table.empty());
-    }
-
-private:
     PrefixRestorePlan get_full_prefix_restore_plan(const Sequence::Ptr& sequence,
                                                    size_t capped_token_position,
                                                    size_t prompt_len) const {
