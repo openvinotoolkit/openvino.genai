@@ -5,7 +5,8 @@ import numpy as np
 import pytest
 import gc
 from pathlib import Path
-from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
+import openvino_genai
+from openvino_genai import FeatureExtractionPipeline, TextEmbeddingPipeline, TextRerankPipeline
 from utils.hugging_face import download_and_convert_model, download_and_convert_model_class, OVConvertedModelSchema
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
@@ -65,6 +66,11 @@ processors are capable of up to 2.5x the AI inference\
 performance per watt as compared to Intel’s previous\
 mobile processor offering.2\
 "
+
+def test_feature_extraction_pipeline_public_api():
+    assert hasattr(openvino_genai, "FeatureExtractionPipeline")
+    assert FeatureExtractionPipeline.__name__ == "FeatureExtractionPipeline"
+    assert hasattr(FeatureExtractionPipeline, "extract")
 
 
 @pytest.fixture(scope="module")

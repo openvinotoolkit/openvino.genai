@@ -1,0 +1,75 @@
+// Copyright (C) 2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include <filesystem>
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include "openvino/genai/tokenizer.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
+
+namespace ov {
+namespace genai {
+
+/**
+ * @brief Feature extraction pipeline for multimodal inputs.
+ *
+ * Computes a single embedding vector for a prompt with optional images and videos.
+ */
+class OPENVINO_GENAI_EXPORTS FeatureExtractionPipeline {
+public:
+    /**
+     * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
+     *
+     * @param models_path Path to the directory containing model xml/bin files and tokenizer.
+     * @param device Device.
+     * @param properties Optional plugin properties to pass to ov::Core::compile_model().
+     */
+    FeatureExtractionPipeline(const std::filesystem::path& models_path,
+                              const std::string& device,
+                              const ov::AnyMap& properties = {});
+
+    /**
+     * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
+     *
+     * @param models_path Path to the directory containing model xml/bin files and tokenizer.
+     * @param device Device.
+     * @param properties Plugin and/or config properties.
+     */
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    FeatureExtractionPipeline(const std::filesystem::path& models_path,
+                              const std::string& device,
+                              Properties&&... properties)
+        : FeatureExtractionPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+
+    /**
+     * @brief Computes an embedding vector for text.
+     */
+    std::vector<float> extract(const std::string& text);
+
+    /**
+     * @brief Computes an embedding vector for text and images.
+     */
+    std::vector<float> extract(const std::string& text, const std::vector<ov::Tensor>& images);
+
+    /**
+     * @brief Computes an embedding vector for text, images and videos.
+     */
+    std::vector<float> extract(const std::string& text,
+                               const std::vector<ov::Tensor>& images,
+                               const std::vector<ov::Tensor>& videos,
+                               const std::vector<VideoMetadata>& videos_metadata = {});
+
+    ~FeatureExtractionPipeline();
+
+private:
+    class FeatureExtractionPipelineImpl;
+    std::unique_ptr<FeatureExtractionPipelineImpl> m_impl;
+};
+
+}  // namespace genai
+}  // namespace ov

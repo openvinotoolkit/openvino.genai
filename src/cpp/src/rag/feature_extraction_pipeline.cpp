@@ -1,0 +1,266 @@
+// Copyright (C) 2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "openvino/genai/rag/feature_extraction_pipeline.hpp"
+
+#include <optional>
+#include <unordered_set>
+
+#include "openvino/core/except.hpp"
+#include "openvino/core/type/bfloat16.hpp"
+#include "openvino/core/type/float16.hpp"
+#include "openvino/runtime/core.hpp"
+#include "visual_language/inputs_embedder.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
+
+namespace {
+
+template <typename ElementType>
+std::vector<float> mean_pool_embeddings_impl(const ov::Tensor& tensor) {
+    const ov::Shape shape = tensor.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3, "Expected embedding tensor rank 3, got rank ", shape.size());
+    OPENVINO_ASSERT(shape[0] == 1, "Expected batch size 1, got ", shape[0]);
+    OPENVINO_ASSERT(shape[1] > 0, "Sequence length must be greater than 0");
+
+    const size_t sequence_length = shape[1];
+    const size_t hidden_size = shape[2];
+    const ElementType* embeddings = tensor.data<const ElementType>();
+
+    std::vector<float> pooled(hidden_size, 0.0f);
+    for (size_t token_idx = 0; token_idx < sequence_length; ++token_idx) {
+        const size_t token_offset = token_idx * hidden_size;
+        for (size_t hidden_idx = 0; hidden_idx < hidden_size; ++hidden_idx) {
+            pooled[hidden_idx] += static_cast<float>(embeddings[token_offset + hidden_idx]);
+        }
+    }
+
+    const float inv_sequence = 1.0f / static_cast<float>(sequence_length);
+    for (float& value : pooled) {
+        value *= inv_sequence;
+    }
+
+    return pooled;
+}
+
+template <typename ElementType>
+std::vector<float> get_vec_from_tensor(const ov::Tensor& tensor) {
+    const ov::Shape shape = tensor.get_shape();
+    OPENVINO_ASSERT(shape.size() == 2, "Expected embedding tensor rank 2, got rank ", shape.size());
+    OPENVINO_ASSERT(shape[0] == 1, "Expected batch size 1, got ", shape[0]);
+    OPENVINO_ASSERT(shape[1] > 0, "Embedding size must be greater than 0");
+
+    const size_t embedding_size = shape[1];
+    const ElementType* embeddings = tensor.data<const ElementType>();
+
+    std::vector<float> vec(embedding_size);
+    for (size_t i = 0; i < embedding_size; ++i) {
+        vec[i] = static_cast<float>(embeddings[i]);
+    }
+    return vec;
+}
+
+std::vector<float> mean_pool_embeddings(const ov::Tensor& tensor) {
+    const ov::Shape shape = tensor.get_shape();
+    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
+                    "Expected embedding tensor rank 2 or 3, got rank ",
+                    shape.size());
+
+    const auto element_type = tensor.get_element_type();
+
+    // Rank-2 tensor is already pooled: [1, hidden_size].
+    if (shape.size() == 2) {
+        if (element_type == ov::element::f32) {
+            return get_vec_from_tensor<float>(tensor);
+        }
+        if (element_type == ov::element::f16) {
+            return get_vec_from_tensor<ov::float16>(tensor);
+        }
+        if (element_type == ov::element::bf16) {
+            return get_vec_from_tensor<ov::bfloat16>(tensor);
+        }
+    }
+
+    // Rank-3 tensor needs mean pooling over sequence: [1, seq_len, hidden_size].
+    if (element_type == ov::element::f32) {
+        return mean_pool_embeddings_impl<float>(tensor);
+    }
+    if (element_type == ov::element::f16) {
+        return mean_pool_embeddings_impl<ov::float16>(tensor);
+    }
+    if (element_type == ov::element::bf16) {
+        return mean_pool_embeddings_impl<ov::bfloat16>(tensor);
+    }
+
+    OPENVINO_THROW("Unsupported embedding element type: ", element_type);
+}
+
+}  // namespace
+
+namespace ov {
+namespace genai {
+
+class FeatureExtractionPipeline::FeatureExtractionPipelineImpl {
+public:
+    FeatureExtractionPipelineImpl(const std::filesystem::path& models_path,
+                                  const std::string& device,
+                                  const ov::AnyMap& properties)
+        : m_inputs_embedder(std::make_shared<InputsEmbedder>(models_path, device, properties)) {
+        ov::Core core;
+        std::shared_ptr<ov::Model> language_model =
+            core.read_model(models_path / "openvino_language_model.xml");
+        m_compiled_language_model = core.compile_model(language_model, device, properties);
+        m_language_model_request = m_compiled_language_model.create_infer_request();
+
+        for (const auto& input : m_compiled_language_model.inputs()) {
+            const auto& input_names = input.get_names();
+            m_language_model_input_names.insert(input_names.begin(), input_names.end());
+        }
+
+        for (const auto& output : m_compiled_language_model.outputs()) {
+            const auto& output_names = output.get_names();
+            m_language_model_output_names.insert(output_names.begin(), output_names.end());
+        }
+
+        if (has_lm_output("last_hidden_state")) {
+            m_embedding_output_name = "last_hidden_state";
+        } else if (has_lm_output("logits")) {
+            // Some embedding-style exports expose the sequence embedding under 'logits'.
+            m_embedding_output_name = "logits";
+        } else {
+            OPENVINO_THROW("Language model must expose 'last_hidden_state' or 'logits' output for FeatureExtractionPipeline");
+        }
+
+        OPENVINO_ASSERT(has_lm_input("inputs_embeds"),
+                        "Language model must expose 'inputs_embeds' input for FeatureExtractionPipeline");
+    }
+
+    std::vector<float> extract(const std::string& text) {
+        return extract(text, {}, {}, {});
+    }
+
+    std::vector<float> extract(const std::string& text, const std::vector<ov::Tensor>& images) {
+        return extract(text, images, {}, {});
+    }
+
+    std::vector<float> extract(const std::string& text,
+                               const std::vector<ov::Tensor>& images,
+                               const std::vector<ov::Tensor>& videos,
+                               const std::vector<VideoMetadata>& videos_metadata) {
+        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                        "videos_metadata size (",
+                        videos_metadata.size(),
+                        ") must be equal to videos size (",
+                        videos.size(),
+                        ") or empty");
+
+        std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
+        std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+
+        const NormalizedPrompt normalized_prompt =
+            m_inputs_embedder->normalize_prompt(text, 0, 0, encoded_images, encoded_videos);
+
+        VLMPerfMetrics metrics;
+        ov::Tensor inputs_embeds;
+        std::optional<ov::Tensor> token_type_ids;
+
+        if (m_inputs_embedder->has_token_type_ids()) {
+            std::tie(inputs_embeds, token_type_ids) =
+                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(normalized_prompt.unified_prompt,
+                                                                         encoded_images,
+                                                                         encoded_videos,
+                                                                         metrics,
+                                                                         true,
+                                                                         normalized_prompt.images_sequence,
+                                                                         normalized_prompt.videos_sequence);
+        } else {
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(normalized_prompt.unified_prompt,
+                                                                 encoded_images,
+                                                                 encoded_videos,
+                                                                 metrics,
+                                                                 true,
+                                                                 normalized_prompt.images_sequence,
+                                                                 normalized_prompt.videos_sequence);
+        }
+
+        m_language_model_request.reset_state();
+
+        m_language_model_request.set_tensor("inputs_embeds", inputs_embeds);
+
+        const size_t input_sequence_length = inputs_embeds.get_shape().at(1);
+        if (has_lm_input("attention_mask")) {
+            ov::Tensor attention_mask(ov::element::i64, {1, input_sequence_length});
+            std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
+            m_language_model_request.set_tensor("attention_mask", attention_mask);
+        }
+
+        if (token_type_ids.has_value() && has_lm_input("token_type_ids")) {
+            m_language_model_request.set_tensor("token_type_ids", *token_type_ids);
+        }
+
+        std::optional<ov::Tensor> position_ids;
+        std::optional<int64_t> rope_delta;
+        std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(input_sequence_length, 0);
+        if (position_ids.has_value() && has_lm_input("position_ids")) {
+            m_language_model_request.set_tensor("position_ids", *position_ids);
+        }
+
+        if (has_lm_input("beam_idx")) {
+            ov::Tensor beam_idx(ov::element::i32, {1});
+            beam_idx.data<int32_t>()[0] = 0;
+            m_language_model_request.set_tensor("beam_idx", beam_idx);
+        }
+
+        const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+        for (const auto& [name, tensor] : lm_extra_inputs) {
+            if (has_lm_input(name) && tensor.get_size() > 0) {
+                m_language_model_request.set_tensor(name, tensor);
+            }
+        }
+
+        m_language_model_request.infer();
+
+        const ov::Tensor hidden_or_logits = m_language_model_request.get_tensor(m_embedding_output_name);
+        return mean_pool_embeddings(hidden_or_logits);
+    }
+
+private:
+    bool has_lm_input(const std::string& input_name) const {
+        return m_language_model_input_names.count(input_name) > 0;
+    }
+
+    bool has_lm_output(const std::string& output_name) const {
+        return m_language_model_output_names.count(output_name) > 0;
+    }
+
+    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+    ov::CompiledModel m_compiled_language_model;
+    ov::InferRequest m_language_model_request;
+    std::unordered_set<std::string> m_language_model_input_names;
+    std::unordered_set<std::string> m_language_model_output_names;
+    std::string m_embedding_output_name;
+};
+
+FeatureExtractionPipeline::FeatureExtractionPipeline(const std::filesystem::path& models_path,
+                                                     const std::string& device,
+                                                     const ov::AnyMap& properties)
+    : m_impl(std::make_unique<FeatureExtractionPipelineImpl>(models_path, device, properties)) {}
+
+std::vector<float> FeatureExtractionPipeline::extract(const std::string& text) {
+    return m_impl->extract(text);
+}
+
+std::vector<float> FeatureExtractionPipeline::extract(const std::string& text, const std::vector<ov::Tensor>& images) {
+    return m_impl->extract(text, images);
+}
+
+std::vector<float> FeatureExtractionPipeline::extract(const std::string& text,
+                                                      const std::vector<ov::Tensor>& images,
+                                                      const std::vector<ov::Tensor>& videos,
+                                                      const std::vector<VideoMetadata>& videos_metadata) {
+    return m_impl->extract(text, images, videos, videos_metadata);
+}
+
+FeatureExtractionPipeline::~FeatureExtractionPipeline() = default;
+
+}  // namespace genai
+}  // namespace ov
