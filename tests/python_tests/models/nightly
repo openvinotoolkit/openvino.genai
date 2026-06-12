@@ -14,6 +14,7 @@ hf-tiny-model-private/tiny-random-MBartForCausalLM
 hf-tiny-model-private/tiny-random-MvpForCausalLM
 hf-tiny-model-private/tiny-random-PegasusForCausalLM
 hf-tiny-model-private/tiny-random-PLBartForCausalLM
+hf-tiny-model-private/tiny-random-XGLMForCausalLM
 hf-internal-testing/tiny-random-PersimmonForCausalLM
 hf-internal-testing/tiny-random-BartForCausalLM
 hf-internal-testing/tiny-random-GPTNeoForCausalLM
@@ -23,6 +24,7 @@ hf-internal-testing/tiny-random-BloomForCausalLM
 hf-internal-testing/tiny-random-GPTJForCausalLM
 hf-internal-testing/tiny-random-CohereForCausalLM
 hf-internal-testing/tiny-random-FalconForCausalLM
+hf-internal-testing/tiny-random-XGLMForCausalLM
 hf-internal-testing/tiny-random-PegasusForCausalLM
 hf-internal-testing/tiny-random-MBartForCausalLM
 hf-internal-testing/tiny-random-BigBirdPegasusForCausalLM
