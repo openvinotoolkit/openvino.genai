@@ -105,6 +105,8 @@ public:
                                   const std::string& device,
                                   const ov::AnyMap& properties)
         : m_inputs_embedder(std::make_shared<InputsEmbedder>(models_path, device, properties)) {
+        m_inputs_embedder->set_apply_chat_template_status(false);
+
         ov::Core core;
         std::shared_ptr<ov::Model> language_model =
             core.read_model(models_path / "openvino_language_model.xml");
