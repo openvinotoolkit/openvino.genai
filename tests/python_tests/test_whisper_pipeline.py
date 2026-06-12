@@ -12,7 +12,7 @@ import pytest
 import openvino_tokenizers
 import openvino
 import datasets
-from transformers import WhisperProcessor, AutoTokenizer
+from transformers import AutoProcessor, AutoTokenizer
 from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 from huggingface_hub import snapshot_download
@@ -107,7 +107,7 @@ def read_whisper_model(params, word_timestamps=False, pipeline_type=PipelineType
     )
 
     processor = retry_request(
-        lambda: WhisperProcessor.from_pretrained(
+        lambda: AutoProcessor.from_pretrained(
             path,
             trust_remote_code=True,
             local_files_only=True,
@@ -161,7 +161,7 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
         opt_model.config.save_pretrained(temp_path)
         opt_model.save_pretrained(temp_path)
 
-        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_cached, trust_remote_code=True))
+        processor = retry_request(lambda: AutoProcessor.from_pretrained(model_cached, trust_remote_code=True))
         processor.save_pretrained(temp_path)
 
     manager.execute(save_to_temp)
@@ -229,18 +229,9 @@ MAX_DATASET_LENGTH = 30
 
 
 @functools.lru_cache(16)
-def get_whisper_dataset(language: str, long_form: bool) -> list:
-    # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0"
-    # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
-    # if not long_form:
-    if False:
-        ds = load_dataset_via_snapshot(
-            "mozilla-foundation/common_voice_11_0",
-            language,
-            split="test",
-            streaming=True,
-            trust_remote_code=True,
-        )
+def get_audio_dataset(long_form: bool) -> list:
+    if not long_form:
+        ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
     else:
         ds = load_dataset_via_snapshot(
             "distil-whisper/meanwhile",
@@ -255,7 +246,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
 
 
 @functools.lru_cache(16)
-def get_multilingual_dataset(language: Literal["de", "fr", "es"]) -> list:
+def get_multilingual_audio_dataset(language: Literal["de", "fr", "es"]) -> list:
     mls_config = {"de": "german", "fr": "french", "es": "spanish"}
     # dataset is too big (450gb) for snapshot download
     ds = retry_request(
@@ -275,26 +266,23 @@ def get_multilingual_dataset(language: Literal["de", "fr", "es"]) -> list:
 
 @pytest.fixture
 def sample_from_dataset(request):
-    language = request.param.get("language", "en")
     long_form = request.param.get("long_form", False)
 
     sample_id = request.param.get("sample_id", 0)
-    samples = get_whisper_dataset(language, long_form)
+    samples = get_audio_dataset(long_form)
     assert sample_id < MAX_DATASET_LENGTH
 
     return samples[sample_id]
 
 
-def get_fixture_params_for_n_whisper_dataset_samples(
-    n: int, language: str = "en", long_form: bool = False
-) -> list[dict[str, Any]]:
-    return [{"language": language, "long_form": long_form, "sample_id": i} for i in range(n)]
+def get_fixture_params_for_n_whisper_dataset_samples(n: int, long_form: bool = False) -> list[dict[str, Any]]:
+    return [{"long_form": long_form, "sample_id": i} for i in range(n)]
 
 
 @pytest.fixture
 def sample_from_multilingual_dataset(request):
     language = request.param
-    samples = get_multilingual_dataset(language)
+    samples = get_multilingual_audio_dataset(language)
     return samples[0]
 
 
@@ -343,45 +331,13 @@ def compare_results(hf_result, genai_result):
             assert round(genai_chunk.end_ts, 2) == -1.0
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-def test_smoke(model_descr, sample_from_dataset, pipeline_type):
-    run_pipeline_with_ref(
-        model_id=model_descr[0],
-        tmp_path=model_descr[1],
-        sample=sample_from_dataset,
-        pipeline_type=pipeline_type,
-    )
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize(
-    "sample_from_multilingual_dataset,language",
-    [
-        ("de", "de"),
-        ("fr", "fr"),
-        ("es", "es"),
-    ],
-    indirect=["sample_from_multilingual_dataset"],
-)
-def test_language_detection(model_descr, sample_from_multilingual_dataset, language, pipeline_type):
-    _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
-
-    result = genai_pipe.generate(sample_from_multilingual_dataset)
-    assert result.language == language
-
-    # explicit language should also be reflected in the result
-    result = genai_pipe.generate(sample_from_multilingual_dataset, language=f"<|{language}|>")
-    assert result.language == language
-
-
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_language_detection_en(model_descr, sample_from_dataset, pipeline_type):
     _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
-    assert result.language == "en"
+    assert result.language[0] == "en"
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -422,7 +378,7 @@ def test_asr_config_constructor(model_descr, pipeline_type):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
@@ -459,91 +415,108 @@ def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.parametrize("language", ["fr", "de"])
 def test_language_mode(model_descr, language, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
-    sample = get_whisper_dataset(language, long_form=False)[0]
+    sample = get_multilingual_audio_dataset(language)[0]
 
-    expected = hf_pipe(sample, max_new_tokens=30, generate_kwargs={"language": language})
+    config_cls = get_config_cls(pipeline_type)
+    config = config_cls(max_new_tokens=30, language=language)
+
+    expected = run_huggingface(hf_pipe, sample, config)
 
     genai_result = genai_pipe.generate(sample, max_new_tokens=30, language=f"<|{language}|>")
 
     compare_results(expected, genai_result)
 
-    config = genai_pipe.get_generation_config()
-    config.max_new_tokens = 30
-    config.language = f"<|{language}|>"
-    genai_result = genai_pipe.generate(sample, config)
+    genai_config = genai_pipe.get_generation_config()
+    genai_config.max_new_tokens = 30
+    genai_config.language = f"<|{language}|>"
+    genai_result = genai_pipe.generate(sample, genai_config)
 
     compare_results(expected, genai_result)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"), indirect=True)
-def test_task_mode(model_descr, sample_from_dataset, pipeline_type):
+@pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr"], indirect=True)
+def test_task_mode(model_descr, sample_from_multilingual_dataset, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
-    expected = hf_pipe(
-        sample_from_dataset,
-        max_new_tokens=30,
-        generate_kwargs={"language": "fr", "task": "translate"},
-    )
+    config_cls = get_config_cls(pipeline_type)
+    hf_config = config_cls(max_new_tokens=30, language="fr", task="translate")
 
-    genai_result = genai_pipe.generate(sample_from_dataset, max_new_tokens=30, language="<|fr|>", task="translate")
+    expected = run_huggingface(hf_pipe, sample_from_multilingual_dataset, hf_config)
+
+    genai_result = genai_pipe.generate(
+        sample_from_multilingual_dataset, max_new_tokens=30, language="<|fr|>", task="translate"
+    )
 
     compare_results(expected, genai_result)
 
-    config = genai_pipe.get_generation_config()
-    config.max_new_tokens = 30
-    config.language = "<|fr|>"
-    config.task = "translate"
-    genai_result = genai_pipe.generate(sample_from_dataset, config)
+    genai_config = genai_pipe.get_generation_config()
+    genai_config.max_new_tokens = 30
+    genai_config.language = "<|fr|>"
+    genai_config.task = "translate"
+    genai_result = genai_pipe.generate(sample_from_multilingual_dataset, genai_config)
 
     compare_results(expected, genai_result)
 
     # seems to be equivalent to translate task
-    expected = hf_pipe(
-        sample_from_dataset,
-        max_new_tokens=30,
-        generate_kwargs={"language": "en", "task": "transcribe"},
-    )
+    hf_config = config_cls(max_new_tokens=30, language="en", task="transcribe")
 
-    genai_result = genai_pipe.generate(sample_from_dataset, max_new_tokens=30, language="<|en|>", task="transcribe")
+    expected = run_huggingface(hf_pipe, sample_from_multilingual_dataset, hf_config)
+
+    genai_result = genai_pipe.generate(
+        sample_from_multilingual_dataset, max_new_tokens=30, language="<|en|>", task="transcribe"
+    )
 
     compare_results(expected, genai_result)
 
-    config = genai_pipe.get_generation_config()
-    config.max_new_tokens = 30
-    config.language = "<|en|>"
-    config.task = "transcribe"
-    genai_result = genai_pipe.generate(sample_from_dataset, config)
+    genai_config = genai_pipe.get_generation_config()
+    genai_config.max_new_tokens = 30
+    genai_config.language = "<|en|>"
+    genai_config.task = "transcribe"
+    genai_result = genai_pipe.generate(sample_from_multilingual_dataset, genai_config)
 
     compare_results(expected, genai_result)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize(
-    "sample_from_dataset",
-    [
-        *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"),
-        *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="de"),
-        *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="es"),
-    ],
-    indirect=True,
-)
-def test_language_autodetect(model_descr, sample_from_dataset, pipeline_type):
+@pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr", "de", "es"], indirect=True)
+def test_language_autodetect(model_descr, sample_from_multilingual_dataset, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
-    input_features = hf_pipe.feature_extractor(sample_from_dataset)
+    input_features = hf_pipe.feature_extractor(sample_from_multilingual_dataset)
     language_id = hf_pipe.model.detect_language(input_features["input_features"])[0]
-    # ensure detected language us not english
+    # ensure detected language is not english
     assert language_id != genai_pipe.get_generation_config().lang_to_id["<|en|>"]
 
     config_cls = get_config_cls(pipeline_type)
     run_pipeline_with_ref(
         model_id=model_descr[0],
         tmp_path=model_descr[1],
-        sample=sample_from_dataset,
+        sample=sample_from_multilingual_dataset,
         generation_config=config_cls(max_new_tokens=30),
         pipeline_type=pipeline_type,
     )
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "sample_from_multilingual_dataset,language",
+    [
+        ("de", "de"),
+        ("fr", "fr"),
+        ("es", "es"),
+    ],
+    indirect=["sample_from_multilingual_dataset"],
+)
+def test_language_detection(model_descr, sample_from_multilingual_dataset, language, pipeline_type):
+    _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+
+    result = genai_pipe.generate(sample_from_multilingual_dataset)
+    assert result.language[0] == language
+
+    # explicit language should also be reflected in the result
+    result = genai_pipe.generate(sample_from_multilingual_dataset, language=f"<|{language}|>")
+    assert result.language[0] == language
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -562,7 +535,7 @@ def test_return_timestamps_short_form(model_descr, sample_from_dataset, pipeline
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 1}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 1}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_on_cut_sample(model_descr, sample_from_dataset, pipeline_type):
     sample_from_dataset = sample_from_dataset[: 30 * 16000]
@@ -666,8 +639,6 @@ def align_words_by_text(ref_words, test_words):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference, pipeline_type):
-    if model_descr[0] == "openai/whisper-tiny":
-        pytest.xfail("Accuracy issue. Ticket CVS-185132")
     ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 
@@ -763,28 +734,26 @@ def test_beam_search(model_descr, sample_from_dataset, pipeline_type):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
+    assert "Kwilter" not in result.texts[0]
+    assert "Quilter" in result.texts[0]
 
-    assert "Joel Keaton" in result.texts[0]
-    assert "Joel Kyton" not in result.texts[0]
+    # initial_prompt steers spelling of proper nouns
+    result = genai_pipe.generate(sample_from_dataset, initial_prompt="Mr. Kwilter is known for his work.")
+    assert "Kwilter" in result.texts[0]
+    assert "Quilter" not in result.texts[0]
 
-    result = genai_pipe.generate(sample_from_dataset, initial_prompt="Joel Kyton")
-
-    assert "Joel Keaton" not in result.texts[0]
-    assert "Joel Kyton" in result.texts[0]
-
-    result = genai_pipe.generate(sample_from_dataset, hotwords="Joel Kyton")
-
-    assert "Joel Keaton" not in result.texts[0]
-    assert "Joel Kyton" in result.texts[0]
+    result = genai_pipe.generate(sample_from_dataset, hotwords="Mr. Kwilter is known for his work.")
+    assert "Kwilter" in result.texts[0]
+    assert "Quilter" not in result.texts[0]
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
     _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
@@ -823,7 +792,7 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_perf_metrics(model_descr, sample_from_dataset, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(
@@ -925,7 +894,7 @@ def streamer_for_test(request):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
 def test_streamers(model_descr, sample_from_dataset, streamer_for_test, pipeline_type):
     _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
