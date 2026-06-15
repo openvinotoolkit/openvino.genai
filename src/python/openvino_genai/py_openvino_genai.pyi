@@ -2717,7 +2717,7 @@ class SchedulerConfig:
         cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                     The internal interval is KV cache block size * cache_interval_multiplier.
                                     When unset, the default value 8 is used for hybrid models with prefix caching.
-                                    Explicit values are supported only for models with linear attention cache inputs.
+                                    For models without linear attention cache inputs, this parameter is ignored.
                                     0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
     
@@ -4158,7 +4158,7 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
         Args:
@@ -4167,11 +4167,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
         Args:
@@ -4180,11 +4181,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
         In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.)
@@ -4195,11 +4197,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
         Args:
@@ -4208,6 +4211,7 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """

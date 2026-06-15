@@ -27,7 +27,9 @@
 namespace ov::genai {
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(
+        model_dir / "openvino_vision_embeddings_model.xml", device,
+        utils::get_model_properties(properties, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -44,7 +46,9 @@ VisionEncoder::VisionEncoder(
     const ov::AnyMap device_config) {
     const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_embeddings").first;
     const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
-    auto compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, device_config);
+    auto compiled_model = utils::singleton_core().compile_model(
+        vision_encoder_model, vision_encoder_weights, device,
+        utils::get_model_properties(device_config, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),

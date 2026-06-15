@@ -1070,7 +1070,7 @@ TEST(TestScheduler, scheduler_config_zero_cache_interval_multiplier_requires_dis
     EXPECT_EQ(scheduler_config.cache_interval_multiplier.value(), 0);
 }
 
-TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_requires_linear_attention_model) {
+TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_is_ignored_for_kv_only_model) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();
     auto get_available_memory = [](const std::string&, size_t) {
@@ -1085,12 +1085,12 @@ TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_requires_l
     SchedulerConfig explicit_default_config;
     explicit_default_config.num_kv_blocks = 64;
     explicit_default_config.cache_interval_multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
-    EXPECT_ANY_THROW(CacheOrchestrator::create(request, explicit_default_config, get_available_memory));
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, explicit_default_config, get_available_memory));
 
     SchedulerConfig custom_interval_config;
     custom_interval_config.num_kv_blocks = 64;
     custom_interval_config.cache_interval_multiplier = TEST_CUSTOM_CACHE_INTERVAL_MULTIPLIER;
-    EXPECT_ANY_THROW(CacheOrchestrator::create(request, custom_interval_config, get_available_memory));
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, custom_interval_config, get_available_memory));
 }
 
 TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_single_fixed_linear_attention_block_for_client_scenario) {

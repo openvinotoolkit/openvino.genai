@@ -177,6 +177,8 @@ wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type t
 ```
 
 ### Compare Speech-generation models
+
+#### SpeechT5
 ```sh
 # Export SpeechT5 to OpenVINO.
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts_ov
@@ -201,6 +203,31 @@ For SpeechT5, `--speaker_embeddings` is optional.
 If omitted for HF/Optimum, WWB will download and use
 `Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin` automatically.
 For GenAI, this is the default speaker embedding that is compiled into the runtime.
+
+#### Kokoro
+```sh
+# Kokoro export
+pip install .[kokoro]
+optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code ov_Kokoro-82M
+
+# Note that above export command will populate a ov_Kokoro-82M directory with:
+# * data folder, containing phonemizer lexicon files
+# * voices folder, containing .bin files. One for each of the voices listed here: https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
+
+# Collect reference audio with Kokoro HF baseline.
+# For Kokoro, use --speech-voice to specify which voice names from the model card to use (for example, af_heart).
+# If omitted, WWB defaults to af_heart.
+wwb --base-model hexgrad/Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --hf --speech-voice af_heart --speech-language en-us
+
+# Compute metrics with Optimum Kokoro target.
+wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --output kokoro_optimum_output --speech-voice af_heart --speech-language en-us
+
+# Compute metrics with GenAI Kokoro target.
+wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --genai --output kokoro_genai_output --speech-voice af_heart --speech-language en-us
+```
+
+For Kokoro, `--speech-voice` is optional. If not specified, it will default to `"af_heart"`. For *optimum* and *genai* modes, you can alternatively use `--speaker_embeddings <model>/voices/<voice>.bin`.
+
 
 The speech-generation evaluator reports these metrics:
 
