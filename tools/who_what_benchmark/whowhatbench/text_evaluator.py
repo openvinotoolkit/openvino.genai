@@ -128,10 +128,11 @@ class TextEvaluator(BaseEvaluator):
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
+        compared_rows = min(len(self.gt_data), len(predictions))
         self.last_cmp = all_metrics_per_prompt
-        self.last_cmp["prompts"] = predictions["prompts"].values
-        self.last_cmp["source_model"] = self.gt_data["answers"].values
-        self.last_cmp["optimized_model"] = predictions["answers"].values
+        self.last_cmp["prompts"] = predictions["prompts"].values[:compared_rows]
+        self.last_cmp["source_model"] = self.gt_data["answers"].values[:compared_rows]
+        self.last_cmp["optimized_model"] = predictions["answers"].values[:compared_rows]
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 

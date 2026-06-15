@@ -211,6 +211,12 @@ def parse_args():
         help="Use llama.cpp chat-completions API for model-type 'text'.",
     )
     parser.add_argument(
+        "--llamacpp-n-ctx",
+        type=positive_integer,
+        default=None,
+        help="Context window size for llama.cpp backend in model-type 'text' (for example, 4096 or 8192).",
+    )
+    parser.add_argument(
         "--image-size",
         type=int,
         default=None,
@@ -1248,6 +1254,9 @@ def main():
 
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
+
+    if args.llamacpp_n_ctx is not None:
+        kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
 
     if args.base_model is not None:
         base_model = load_model(

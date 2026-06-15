@@ -175,14 +175,18 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
 
-def load_text_llamacpp_pipeline(model_dir):
+def load_text_llamacpp_pipeline(model_dir, **kwargs):
     try:
         from llama_cpp import Llama
     except ImportError:
         logger.error(
             "Failed to import llama_cpp package. Please install llama-cpp-python.")
         exit(-1)
-    model = Llama(model_dir)
+    n_ctx = kwargs.get("llamacpp_n_ctx", None)
+    model_kwargs = {}
+    if n_ctx is not None:
+        model_kwargs["n_ctx"] = int(n_ctx)
+    model = Llama(model_dir, **model_kwargs)
     return model
 
 
@@ -235,7 +239,7 @@ def load_text_model(
         model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:
         logger.info("Using llama.cpp API")
-        model = load_text_llamacpp_pipeline(model_id)
+        model = load_text_llamacpp_pipeline(model_id, **kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM
