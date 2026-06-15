@@ -146,8 +146,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     SchedulerConfig normalized_config = scheduler_config;
     normalized_config.validate();
 
+    // Resolve per-role MODEL_PROPERTIES overlay for the language model and
+    // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
+    const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
+
     // apply LoRA
-    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
@@ -428,7 +432,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         static ManualTimer timer("sample");
         timer.start();
+        const auto sample_start = std::chrono::steady_clock::now();
         sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
+        m_pipeline_metrics.sampling_duration =
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }
@@ -575,6 +582,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
+                raw_perf_counters.m_sampling_durations.emplace_back(m_pipeline_metrics.sampling_duration);
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception

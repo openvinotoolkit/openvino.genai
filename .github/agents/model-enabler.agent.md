@@ -8,10 +8,12 @@ You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingF
 
 ## Skills
 
-| Skill         | Path                                    |
-| ------------- | --------------------------------------- |
-| model-checker | `.github/skills/model-checker/SKILL.md` |
-| update-docs   | `.github/skills/update-docs/SKILL.md`   |
+| Skill                     | Path                                                |
+| ------------------------- | --------------------------------------------------- |
+| model-checker             | `.github/skills/model-checker/SKILL.md`             |
+| update-docs               | `.github/skills/update-docs/SKILL.md`               |
+| wwb-fail-analyzer         | `.github/skills/wwb-fail-analyzer/SKILL.md`         |
+| llm-bench-fail-analyzer   | `.github/skills/llm-bench-fail-analyzer/SKILL.md`   |
 
 ## Inputs
 
@@ -30,9 +32,10 @@ Read and follow the **model-checker** skill.
 
 Read **model-checker** step results. Depending on the results:
 
-- If all steps passed, proceed to Step 3.
-- If optimum-intel export failed or wwb results for optimum-intel below threshold, proceed to Step 4. Provide a summary of the failure and relevant log paths for context.
-- If GenAI inference test failed or wwb results for GenAI below threshold, proceed to Step 2.
+- If all steps passed, proceed to Step 4.
+- If optimum-intel export failed, proceed to Step 4.
+- If wwb execution failed or results for GenAI/optimum-intel below threshold, read and follow the **wwb-fail-analyzer** skill.
+- If llm_bench execution failed, read and follow the **llm-bench-fail-analyzer** skill.
 
 ### Step 2: Model Enablement
 
@@ -51,10 +54,15 @@ Report a structured summary:
 - **Performance** (if passed):
   - 1st token latency, 2nd token latency, throughput
   - Optimum similarity / GenAI similarity
+- **Tools Failure Analysis** (if wwb-fail-analyzer or llm-bench-fail-analyzer was run):
+  - **Root Cause**: Brief description of what failed and why
+  - **Recommendations**: Actionable next steps from the analyzer
+  - **Modification results**: Summary of any fixes
 - **Model Enablement Status**:
   - **Enabled/Not Enabled** if passed all model-checker steps
   - **Details**: Provide a summary of changes. Highlight design and architectural decisions made during enablement.
 - **Docs Update Status**:
   - **Updated/Not Updated** if updated the supported models docs
   - **Details**: summary of doc changes.
+  - **PR Created** (if applicable): Link or reference to documentation PR
 - **Details**: Additional details required for context, next steps, or follow-ups.
