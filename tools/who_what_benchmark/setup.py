@@ -52,7 +52,7 @@ setup(
             "torchvision==0.25.0",
             "torchaudio==2.10.0",
             "transformers>=4.50,<=4.51.3",
-            "optimum-intel==2.0.0",
+            "optimum-intel==1.27.0",
         ],
         "llm-test-openvino": [
             "torchaudio==2.8.0",
@@ -60,7 +60,7 @@ setup(
             "sentence_transformers==5.3.0",
             "huggingface-hub==0.36.2",
             "tqdm==4.68.2",
-            "optimum-intel[nncf,tests]==2.0.0",
+            "optimum-intel[nncf,tests]==1.27.0",
         ],
         "kokoro": [
             "spacy==3.8.14",
