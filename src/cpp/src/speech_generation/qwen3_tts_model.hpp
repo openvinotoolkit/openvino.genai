@@ -17,6 +17,13 @@ namespace genai {
 
 class Qwen3TTSImpl : public Text2SpeechPipelineImpl {
 public:
+    // Internal voice-clone prompt used by the generate() dispatch path.
+    struct Qwen3VoiceClonePrompt {
+        ov::Tensor ref_spk_embedding;
+        ov::Tensor ref_code;
+        std::string ref_text;
+        bool x_vector_only_mode = false;
+    };
     Qwen3TTSImpl(const std::filesystem::path& models_path,
                  const std::string& device,
                  const ov::AnyMap& properties,
@@ -74,6 +81,7 @@ private:
                                       int64_t generation_step,
                                       bool reset_state);
     ov::Tensor infer_predictor_embedding(int64_t token_id, int64_t generation_step);
+    ov::Tensor infer_predictor_embedding_seq(const std::vector<int64_t>& token_ids, int64_t generation_step);
 
     int64_t sample_token_from_logits(const ov::Tensor& logits,
                                      const SpeechGenerationConfig& generation_config,
@@ -85,6 +93,15 @@ private:
                                                const SpeechGenerationConfig& generation_config,
                                                std::mt19937& rng);
 
+    Text2SpeechDecodedResults generate_voice_clone(const std::string& text,
+                                                   const Qwen3VoiceClonePrompt& prompt,
+                                                   const SpeechGenerationConfig& generation_config);
+
+    Text2SpeechDecodedResults decode_from_prefill(const ov::Tensor& talker_prefill,
+                                                  const ov::Tensor& tts_pad,
+                                                  const SpeechGenerationConfig& generation_config,
+                                                  const std::vector<bool>& suppress_tokens);
+
     ov::Tensor make_attention_mask(size_t length);
     ov::Tensor make_position_ids_prefill(size_t length);
     ov::Tensor make_position_ids_decode(size_t absolute_position);
@@ -94,12 +111,17 @@ private:
 
     std::string normalize_text_language(const std::string& language) const;
     std::string normalize_speaker(const std::string& speaker) const;
+    bool is_base_model() const;
+    ov::Tensor normalize_external_speaker_embedding(const ov::Tensor& speaker_embedding,
+                                                    size_t hidden_size) const;
 
 private:
     std::filesystem::path m_models_path;
     std::string m_device;
     Tokenizer m_tokenizer;
     QwenIds m_ids;
+    std::string m_tts_model_type = "custom_voice";
+    size_t m_speaker_embedding_dim = 1024;
 
     ov::InferRequest m_talker;
     ov::InferRequest m_talker_embedding;

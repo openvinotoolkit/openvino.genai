@@ -179,6 +179,8 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
 
     json config = json::parse(config_stream);
 
+    m_tts_model_type = to_lower(config.value("tts_model_type", std::string("custom_voice")));
+
     m_ids.tts_bos_token_id = config.value("tts_bos_token_id", -1);
     m_ids.tts_eos_token_id = config.value("tts_eos_token_id", -1);
     m_ids.tts_pad_token_id = config.value("tts_pad_token_id", -1);
@@ -193,6 +195,12 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
     m_ids.codec_think_eos_id = talker.value("codec_think_eos_id", -1);
     m_ids.num_code_groups = talker.value("num_code_groups", 16);
     m_ids.talker_vocab_size = talker.value("vocab_size", 3072);
+
+    if (config.contains("speaker_encoder_config") && config["speaker_encoder_config"].is_object()) {
+        m_speaker_embedding_dim = config["speaker_encoder_config"].value("enc_dim", static_cast<size_t>(talker.value("hidden_size", 1024)));
+    } else {
+        m_speaker_embedding_dim = talker.value("hidden_size", 1024);
+    }
 
     if (talker.contains("codec_language_id") && talker["codec_language_id"].is_object()) {
         for (auto it = talker["codec_language_id"].begin(); it != talker["codec_language_id"].end(); ++it) {
@@ -226,6 +234,65 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
             }
         }
     }
+}
+
+bool Qwen3TTSImpl::is_base_model() const {
+    return m_tts_model_type == "base";
+}
+
+ov::Tensor Qwen3TTSImpl::normalize_external_speaker_embedding(const ov::Tensor& speaker_embedding,
+                                                              size_t hidden_size) const {
+    OPENVINO_ASSERT(!speaker_embedding.get_shape().empty(),
+                    "Qwen3 Base expects speaker_embedding tensor with rank 1, 2 or 3");
+
+    const auto in_shape = speaker_embedding.get_shape();
+    ov::Tensor out(ov::element::f32, ov::Shape{1, 1, hidden_size});
+    float* out_ptr = out.data<float>();
+
+    auto assign_from_flat = [&](const float* src, size_t src_size) {
+        OPENVINO_ASSERT(src_size == hidden_size,
+                        "Qwen3 Base speaker_embedding size mismatch. Expected ",
+                        hidden_size,
+                        " values, got ",
+                        src_size);
+        std::copy_n(src, hidden_size, out_ptr);
+    };
+
+    if (speaker_embedding.get_element_type() == ov::element::f32) {
+        const float* src = speaker_embedding.data<const float>();
+        if (in_shape.size() == 1) {
+            assign_from_flat(src, in_shape[0]);
+        } else if (in_shape.size() == 2) {
+            OPENVINO_ASSERT(in_shape[0] == 1,
+                            "Qwen3 Base speaker_embedding rank-2 tensor must have shape [1, D]");
+            assign_from_flat(src, in_shape[1]);
+        } else if (in_shape.size() == 3) {
+            OPENVINO_ASSERT(in_shape[0] == 1,
+                            "Qwen3 Base speaker_embedding rank-3 tensor must have batch dimension 1");
+            OPENVINO_ASSERT(in_shape[1] == 1,
+                            "Qwen3 Base speaker_embedding rank-3 tensor must have shape [1, 1, D]");
+            assign_from_flat(src, in_shape[2]);
+        } else {
+            OPENVINO_THROW("Qwen3 Base speaker_embedding rank must be 1, 2 or 3");
+        }
+        return out;
+    }
+
+    if (speaker_embedding.get_element_type() == ov::element::f16) {
+        const ov::float16* src = speaker_embedding.data<const ov::float16>();
+        const size_t src_size = speaker_embedding.get_size();
+        OPENVINO_ASSERT(src_size == hidden_size,
+                        "Qwen3 Base speaker_embedding size mismatch. Expected ",
+                        hidden_size,
+                        " values, got ",
+                        src_size);
+        for (size_t i = 0; i < hidden_size; ++i) {
+            out_ptr[i] = static_cast<float>(src[i]);
+        }
+        return out;
+    }
+
+    OPENVINO_THROW("Qwen3 Base speaker_embedding must be f32 or f16");
 }
 
 ov::Tensor Qwen3TTSImpl::infer_embedding(ov::InferRequest& request, int64_t token_id) {
@@ -347,6 +414,21 @@ ov::Tensor Qwen3TTSImpl::infer_predictor_embedding(int64_t token_id, int64_t gen
     m_talker_code_predictor_embedding.infer();
     auto out = clone_tensor(m_talker_code_predictor_embedding.get_output_tensor(0));
     debug_print_tensor("infer_predictor_embedding", "output_0", out);
+    return out;
+}
+
+ov::Tensor Qwen3TTSImpl::infer_predictor_embedding_seq(const std::vector<int64_t>& token_ids, int64_t generation_step) {
+    if (token_ids.empty()) {
+        return ov::Tensor(ov::element::f32, ov::Shape{1, 0, m_speaker_embedding_dim});
+    }
+
+    ov::Tensor out(ov::element::f32, ov::Shape{1, token_ids.size(), m_speaker_embedding_dim});
+    for (size_t i = 0; i < token_ids.size(); ++i) {
+        auto emb = infer_predictor_embedding(token_ids[i], generation_step);
+        OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
+                        "Qwen3 predictor embedding must produce shape [1, 1, D]");
+        std::copy_n(emb.data<const float>(), m_speaker_embedding_dim, out.data<float>() + i * m_speaker_embedding_dim);
+    }
     return out;
 }
 
@@ -512,6 +594,108 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     return groups;
 }
 
+Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& talker_prefill,
+                                                            const ov::Tensor& tts_pad,
+                                                            const SpeechGenerationConfig& generation_config,
+                                                            const std::vector<bool>& suppress_tokens) {
+    Text2SpeechDecodedResults result;
+    result.output_sample_rate = m_output_sample_rate;
+
+    auto prefill_mask = make_attention_mask(talker_prefill.get_shape()[1]);
+    auto prefill_pos = make_position_ids_prefill(talker_prefill.get_shape()[1]);
+    debug_print_tensor("generate", "talker_prefill", talker_prefill);
+    debug_print_tensor("generate", "prefill_mask", prefill_mask);
+    debug_print_tensor("generate", "prefill_pos", prefill_pos);
+
+    auto logits = infer_talker(talker_prefill, prefill_mask, prefill_pos, true);
+    auto hidden_states = clone_tensor(m_talker.get_tensor("hidden_states"));
+
+    std::vector<int64_t> generated_main;
+    std::vector<int64_t> all_codes;
+    size_t max_steps = generation_config.get_max_new_tokens();
+    if (max_steps == SIZE_MAX) {
+        max_steps = 2048;
+    }
+    generated_main.reserve(std::min(max_steps, size_t(8192)));
+    all_codes.reserve(std::min(max_steps, size_t(8192)) * m_ids.num_code_groups);
+
+    std::mt19937 rng(generation_config.seed != 0 ? generation_config.seed : std::random_device{}());
+    size_t absolute_pos = talker_prefill.get_shape()[1];
+
+    for (size_t step = 0; step < max_steps; ++step) {
+        int64_t token = sample_token_from_logits(logits, generation_config, generated_main, suppress_tokens, rng);
+        if (qwen_debug_enabled() && (step < 5 || step % 32 == 0)) {
+            std::cout << "[QWEN_DEBUG] decode step=" << step << " token=" << token << std::endl;
+        }
+        if (token == m_ids.codec_eos_token_id) {
+            debug_print_stage("main decoder produced EOS");
+            break;
+        }
+        generated_main.push_back(token);
+
+        ov::Tensor past_hidden(ov::element::f32, ov::Shape{1, 1, hidden_states.get_shape()[2]});
+        const float* hs_ptr = hidden_states.data<const float>();
+        const size_t hs_len = hidden_states.get_shape()[1];
+        std::copy_n(hs_ptr + (hs_len - 1) * hidden_states.get_shape()[2], hidden_states.get_shape()[2], past_hidden.data<float>());
+
+        auto groups = generate_codec_groups(past_hidden, token, generation_config, rng);
+        if (qwen_debug_enabled() && step < 3) {
+            std::cout << "[QWEN_DEBUG] step=" << step << " main_token=" << token
+                      << " codec_group0=" << groups.front()
+                      << " codec_group_last=" << groups.back() << std::endl;
+            if (step == 0) {
+                std::cout << "[QWEN_DEBUG] step=0 codec_row=";
+                for (size_t i = 0; i < groups.size(); ++i) {
+                    if (i > 0) {
+                        std::cout << ",";
+                    }
+                    std::cout << groups[i];
+                }
+                std::cout << std::endl;
+            }
+        }
+        all_codes.insert(all_codes.end(), groups.begin(), groups.end());
+
+        auto token_embed = infer_embedding(m_talker_embedding, groups[0]);
+        float* token_embed_ptr = token_embed.data<float>();
+        for (size_t g = 1; g < groups.size(); ++g) {
+            auto pred_emb = infer_predictor_embedding(groups[g], static_cast<int64_t>(g - 1));
+            const float* pred_ptr = pred_emb.data<const float>();
+            for (size_t h_i = 0; h_i < token_embed.get_shape()[2]; ++h_i) {
+                token_embed_ptr[h_i] += pred_ptr[h_i];
+            }
+        }
+        if (generation_config.non_streaming_mode) {
+            const float* tts_pad_ptr = tts_pad.data<const float>();
+            for (size_t h_i = 0; h_i < token_embed.get_shape()[2]; ++h_i) {
+                token_embed_ptr[h_i] += tts_pad_ptr[h_i];
+            }
+        }
+
+        auto attn = make_attention_mask(absolute_pos + 1);
+        auto pos = make_position_ids_decode(absolute_pos);
+        logits = infer_talker(token_embed, attn, pos, false);
+        hidden_states = clone_tensor(m_talker.get_tensor("hidden_states"));
+        ++absolute_pos;
+    }
+
+    auto waveform = decode_speech_tokenizer(all_codes);
+    if (qwen_debug_enabled()) {
+        std::cout << "[QWEN_DEBUG] decoded code groups=" << all_codes.size()
+                  << " waveform_samples=" << waveform.size() << std::endl;
+    }
+    ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
+    if (!waveform.empty()) {
+        std::copy(waveform.begin(), waveform.end(), wav_tensor.data<float>());
+    }
+
+    result.perf_metrics.num_generated_samples += wav_tensor.get_size();
+    result.speeches.push_back(std::move(wav_tensor));
+    result.perf_metrics.evaluate_statistics();
+    m_perf_metrics = result.perf_metrics;
+    return result;
+}
+
 ov::Tensor Qwen3TTSImpl::make_attention_mask(size_t length) {
     ov::Tensor mask(ov::element::i64, ov::Shape{1, length});
     std::fill_n(mask.data<int64_t>(), length, static_cast<int64_t>(1));
@@ -617,7 +801,7 @@ std::vector<float> Qwen3TTSImpl::decode_speech_tokenizer(const std::vector<int64
 }
 
 Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>& texts,
-                                                  const ov::Tensor&,
+                                                  const ov::Tensor& speaker_embedding,
                                                   const SpeechGenerationConfig& generation_config) {
     debug_print_stage("generate() entered");
     if (qwen_debug_enabled()) {
@@ -644,6 +828,36 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
 
     const std::string language = normalize_text_language(generation_config.language);
     const std::string speaker = normalize_speaker(generation_config.speaker);
+    const bool base_model = is_base_model();
+
+    const bool has_qwen_voice_clone_props =
+        base_model && (generation_config.qwen_x_vector_only_mode ||
+                       !generation_config.qwen_ref_text.empty() ||
+                       static_cast<bool>(generation_config.qwen_ref_code));
+
+    if (has_qwen_voice_clone_props) {
+        OPENVINO_ASSERT(speaker_embedding,
+                        "Qwen3 Base voice cloning via generate(...) requires speaker_embedding input");
+
+        Qwen3VoiceClonePrompt prompt;
+        prompt.ref_spk_embedding = speaker_embedding;
+        prompt.ref_text = generation_config.qwen_ref_text;
+        prompt.ref_code = generation_config.qwen_ref_code;
+        prompt.x_vector_only_mode = generation_config.qwen_x_vector_only_mode;
+
+        for (const auto& text : texts) {
+            auto decoded = generate_voice_clone(text, prompt, generation_config);
+            result.speeches.insert(result.speeches.end(), decoded.speeches.begin(), decoded.speeches.end());
+            result.perf_metrics.num_generated_samples += decoded.perf_metrics.num_generated_samples;
+        }
+
+        auto generation_end = std::chrono::steady_clock::now();
+        result.perf_metrics.raw_metrics.generate_durations.emplace_back(
+            PerfMetrics::get_microsec(generation_end - generation_start));
+        result.perf_metrics.evaluate_statistics();
+        m_perf_metrics = result.perf_metrics;
+        return result;
+    }
 
     for (const auto& text : texts) {
         if (qwen_debug_enabled()) {
@@ -692,7 +906,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         auto codec_prefill_embed1 = infer_embedding_seq(m_talker_embedding, {m_ids.codec_pad_id, m_ids.codec_bos_id});
 
         int64_t speaker_token_id = -1;
-        if (!speaker.empty()) {
+        if (!base_model && !speaker.empty()) {
             auto spk_it = m_ids.spk_id.find(speaker);
             if (spk_it != m_ids.spk_id.end()) {
                 speaker_token_id = spk_it->second;
@@ -702,12 +916,19 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             std::cout << "[QWEN_DEBUG] language_id=" << language_id
                       << " speaker_token_id=" << speaker_token_id
                       << " codec_prefill_tokens=" << speaker_and_codec_prefill.size()
+                      << " tts_model_type='" << m_tts_model_type << "'"
                       << std::endl;
         }
 
         ov::Tensor speaker_embed;
         bool has_speaker_embed = false;
-        if (speaker_token_id != -1) {
+        if (base_model) {
+            OPENVINO_ASSERT(speaker_embedding,
+                            "Qwen3 Base requires speaker_embedding input. "
+                            "Provide a speaker embedding tensor shaped [D], [1,D], or [1,1,D].");
+            speaker_embed = normalize_external_speaker_embedding(speaker_embedding, codec_prefill_embed0.get_shape()[2]);
+            has_speaker_embed = true;
+        } else if (speaker_token_id != -1) {
             speaker_embed = infer_embedding(m_talker_embedding, speaker_token_id);
             has_speaker_embed = true;
         }
@@ -858,98 +1079,9 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             talker_prefill = concat_embed({instruct_embed, talker_prefill});
         }
 
-        auto prefill_mask = make_attention_mask(talker_prefill.get_shape()[1]);
-        auto prefill_pos = make_position_ids_prefill(talker_prefill.get_shape()[1]);
-        debug_print_tensor("generate", "talker_prefill", talker_prefill);
-        debug_print_tensor("generate", "prefill_mask", prefill_mask);
-        debug_print_tensor("generate", "prefill_pos", prefill_pos);
-
-        auto logits = infer_talker(talker_prefill, prefill_mask, prefill_pos, true);
-        auto hidden_states = clone_tensor(m_talker.get_tensor("hidden_states"));
-
-        std::vector<int64_t> generated_main;
-        std::vector<int64_t> all_codes;
-        size_t max_steps = generation_config.get_max_new_tokens();
-        if (max_steps == SIZE_MAX) {
-            max_steps = 2048;
-        }
-        generated_main.reserve(std::min(max_steps, size_t(8192)));
-        all_codes.reserve(std::min(max_steps, size_t(8192)) * m_ids.num_code_groups);
-
-        std::mt19937 rng(generation_config.seed != 0 ? generation_config.seed : std::random_device{}());
-
-        size_t absolute_pos = talker_prefill.get_shape()[1];
-        for (size_t step = 0; step < max_steps; ++step) {
-            int64_t token = sample_token_from_logits(logits, generation_config, generated_main, suppress_tokens, rng);
-            if (qwen_debug_enabled() && (step < 5 || step % 32 == 0)) {
-                std::cout << "[QWEN_DEBUG] decode step=" << step << " token=" << token << std::endl;
-            }
-            if (token == m_ids.codec_eos_token_id) {
-                debug_print_stage("main decoder produced EOS");
-                break;
-            }
-            generated_main.push_back(token);
-
-            ov::Tensor past_hidden(ov::element::f32, ov::Shape{1, 1, hidden});
-            const float* hs_ptr = hidden_states.data<const float>();
-            const size_t hs_len = hidden_states.get_shape()[1];
-            std::copy_n(hs_ptr + (hs_len - 1) * hidden, hidden, past_hidden.data<float>());
-
-            auto groups = generate_codec_groups(past_hidden, token, generation_config, rng);
-            if (qwen_debug_enabled() && step < 3) {
-                std::cout << "[QWEN_DEBUG] step=" << step << " main_token=" << token
-                          << " codec_group0=" << groups.front()
-                          << " codec_group_last=" << groups.back() << std::endl;
-                if (step == 0) {
-                    std::cout << "[QWEN_DEBUG] step=0 codec_row=";
-                    for (size_t i = 0; i < groups.size(); ++i) {
-                        if (i > 0) {
-                            std::cout << ",";
-                        }
-                        std::cout << groups[i];
-                    }
-                    std::cout << std::endl;
-                }
-            }
-            all_codes.insert(all_codes.end(), groups.begin(), groups.end());
-
-            // Match Python helper logic for talker generation stage:
-            // next inputs_embeds = sum(codec_group_embeddings) + trailing_text_hidden.
-            auto token_embed = infer_embedding(m_talker_embedding, groups[0]);
-            float* token_embed_ptr = token_embed.data<float>();
-            for (size_t g = 1; g < groups.size(); ++g) {
-                auto pred_emb = infer_predictor_embedding(groups[g], static_cast<int64_t>(g - 1));
-                const float* pred_ptr = pred_emb.data<const float>();
-                for (size_t h_i = 0; h_i < hidden; ++h_i) {
-                    token_embed_ptr[h_i] += pred_ptr[h_i];
-                }
-            }
-            // In non-streaming mode Python sets trailing_text_hidden to tts_pad_embed.
-            if (generation_config.non_streaming_mode) {
-                const float* tts_pad_ptr = tts_pad.data<const float>();
-                for (size_t h_i = 0; h_i < hidden; ++h_i) {
-                    token_embed_ptr[h_i] += tts_pad_ptr[h_i];
-                }
-            }
-            auto attn = make_attention_mask(absolute_pos + 1);
-            auto pos = make_position_ids_decode(absolute_pos);
-            logits = infer_talker(token_embed, attn, pos, false);
-            hidden_states = clone_tensor(m_talker.get_tensor("hidden_states"));
-            ++absolute_pos;
-        }
-
-        auto waveform = decode_speech_tokenizer(all_codes);
-        if (qwen_debug_enabled()) {
-            std::cout << "[QWEN_DEBUG] decoded code groups=" << all_codes.size()
-                      << " waveform_samples=" << waveform.size() << std::endl;
-        }
-        ov::Tensor wav_tensor(ov::element::f32, ov::Shape{waveform.size()});
-        if (!waveform.empty()) {
-            std::copy(waveform.begin(), waveform.end(), wav_tensor.data<float>());
-        }
-
-        result.perf_metrics.num_generated_samples += wav_tensor.get_size();
-        result.speeches.push_back(std::move(wav_tensor));
+        auto decoded = decode_from_prefill(talker_prefill, tts_pad, generation_config, suppress_tokens);
+        result.speeches.insert(result.speeches.end(), decoded.speeches.begin(), decoded.speeches.end());
+        result.perf_metrics.num_generated_samples += decoded.perf_metrics.num_generated_samples;
     }
 
     auto generation_end = std::chrono::steady_clock::now();
@@ -960,7 +1092,208 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
     return result;
 }
 
+Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& text,
+                                                             const Qwen3VoiceClonePrompt& prompt,
+                                                             const SpeechGenerationConfig& generation_config) {
+    OPENVINO_ASSERT(is_base_model(), "Qwen3 voice-clone prompt generation is supported only for Base models");
+    if (prompt.x_vector_only_mode) {
+        SpeechGenerationConfig cfg = generation_config;
+        cfg.qwen_ref_text.clear();
+        cfg.qwen_ref_code = ov::Tensor();
+        cfg.qwen_x_vector_only_mode = false;
+        return generate(std::vector<std::string>{text}, prompt.ref_spk_embedding, cfg);
+    }
+
+    OPENVINO_ASSERT(!prompt.ref_text.empty(), "Qwen3 voice-clone ICL mode requires a non-empty reference transcript");
+    OPENVINO_ASSERT(!prompt.ref_code.get_shape().empty(), "Qwen3 voice-clone ICL mode requires reference codec ids");
+    OPENVINO_ASSERT(prompt.ref_code.get_shape().size() == 2 || prompt.ref_code.get_shape().size() == 3,
+                    "Qwen3 voice-clone prompt expects ref_code shaped [T, G] or [1, T, G]");
+
+    const std::string language = normalize_text_language(generation_config.language);
+    const std::string speaker = normalize_speaker(generation_config.speaker);
+
+    std::vector<bool> suppress_tokens(m_ids.talker_vocab_size, false);
+    const size_t suppress_begin = m_ids.talker_vocab_size > 1024 ? (m_ids.talker_vocab_size - 1024) : 0;
+    for (size_t i = suppress_begin; i < m_ids.talker_vocab_size; ++i) {
+        if (static_cast<int64_t>(i) != m_ids.codec_eos_token_id) {
+            suppress_tokens[i] = true;
+        }
+    }
+
+    auto result = Text2SpeechDecodedResults{};
+    result.output_sample_rate = m_output_sample_rate;
+
+    const std::string assistant_text = "<|im_start|>assistant\n" + prompt.ref_text + text + "<|im_end|>\n<|im_start|>assistant\n";
+    auto input = m_tokenizer.encode(assistant_text);
+    auto input_ids_tensor = input.input_ids;
+    OPENVINO_ASSERT(input_ids_tensor.get_element_type() == ov::element::i64,
+                    "Qwen3-TTS tokenizer must produce i64 input_ids tensor");
+    OPENVINO_ASSERT(input_ids_tensor.get_shape().size() == 2 && input_ids_tensor.get_shape()[0] == 1,
+                    "Expected input_ids shape [1, T]");
+
+    const size_t input_len = input_ids_tensor.get_shape()[1];
+    const int64_t* input_ids = input_ids_tensor.data<const int64_t>();
+
+    int64_t language_id = -1;
+    auto lang_it = m_ids.codec_language_id.find(language);
+    if (language != "auto" && lang_it != m_ids.codec_language_id.end()) {
+        language_id = lang_it->second;
+    }
+    if (language_id == -1 && !speaker.empty()) {
+        auto spk_dialect = m_ids.spk_is_dialect.find(speaker);
+        if (spk_dialect != m_ids.spk_is_dialect.end()) {
+            auto dialect_it = m_ids.codec_language_id.find(spk_dialect->second);
+            if (dialect_it != m_ids.codec_language_id.end()) {
+                language_id = dialect_it->second;
+            }
+        }
+    }
+
+    std::vector<int64_t> speaker_and_codec_prefill;
+    if (language_id == -1) {
+        speaker_and_codec_prefill = {m_ids.codec_nothink_id, m_ids.codec_think_bos_id, m_ids.codec_think_eos_id};
+    } else {
+        speaker_and_codec_prefill = {m_ids.codec_think_id, m_ids.codec_think_bos_id, language_id, m_ids.codec_think_eos_id};
+    }
+
+    auto codec_prefill_embed0 = infer_embedding_seq(m_talker_embedding, speaker_and_codec_prefill);
+    // Split codec_pad and codec_bos: they occupy different structural roles in the prefill.
+    auto codec_pad_embed1 = infer_embedding_seq(m_talker_embedding, {m_ids.codec_pad_id});
+    auto codec_bos_embed = infer_embedding_seq(m_talker_embedding, {m_ids.codec_bos_id});
+    auto special_text_embed = infer_embedding_seq(m_talker_text_embedding,
+                                                  {m_ids.tts_bos_token_id, m_ids.tts_eos_token_id, m_ids.tts_pad_token_id});
+    auto special_projected = infer_text_projection(special_text_embed);
+
+    const size_t hidden = special_projected.get_shape()[2];
+    ov::Tensor tts_bos(ov::element::f32, ov::Shape{1, 1, hidden});
+    ov::Tensor tts_eos(ov::element::f32, ov::Shape{1, 1, hidden});
+    ov::Tensor tts_pad(ov::element::f32, ov::Shape{1, 1, hidden});
+    const float* sp = special_projected.data<const float>();
+    std::copy_n(sp + 0 * hidden, hidden, tts_bos.data<float>());
+    std::copy_n(sp + 1 * hidden, hidden, tts_eos.data<float>());
+    std::copy_n(sp + 2 * hidden, hidden, tts_pad.data<float>());
+
+    auto concat_embed = [&](const std::vector<ov::Tensor>& tensors) {
+        size_t total_len = 0;
+        size_t h = tensors.front().get_shape()[2];
+        for (const auto& t : tensors) {
+            total_len += t.get_shape()[1];
+        }
+        ov::Tensor out(ov::element::f32, ov::Shape{1, total_len, h});
+        float* out_ptr = out.data<float>();
+        size_t cursor = 0;
+        for (const auto& t : tensors) {
+            std::copy_n(t.data<const float>(), t.get_size(), out_ptr + cursor);
+            cursor += t.get_size();
+        }
+        return out;
+    };
+
+    ov::Tensor speaker_embed = normalize_external_speaker_embedding(prompt.ref_spk_embedding, codec_prefill_embed0.get_shape()[2]);
+    // codec_input_no_bos = [codec_prefill0, speaker, codec_pad] — codec_bos is placed separately at start of codec_side
+    ov::Tensor codec_input_no_bos = concat_embed({codec_prefill_embed0, speaker_embed, codec_pad_embed1});
+
+    ov::Shape ref_code_shape = prompt.ref_code.get_shape();
+    const bool ref_code_rank3 = ref_code_shape.size() == 3;
+    const size_t ref_len = ref_code_rank3 ? ref_code_shape[1] : ref_code_shape[0];
+    const size_t num_code_groups = ref_code_rank3 ? ref_code_shape[2] : ref_code_shape[1];
+    OPENVINO_ASSERT(num_code_groups == m_ids.num_code_groups,
+                    "Qwen3 voice-clone ref_code group count mismatch. Expected ",
+                    m_ids.num_code_groups,
+                    ", got ",
+                    num_code_groups);
+
+    ov::Tensor ref_code_embed(ov::element::f32, ov::Shape{1, ref_len, hidden});
+    std::fill_n(ref_code_embed.data<float>(), ref_code_embed.get_size(), 0.0f);
+    for (size_t g = 0; g < num_code_groups; ++g) {
+        std::vector<int64_t> group_ids(ref_len);
+        const int64_t* codes = prompt.ref_code.data<const int64_t>();
+        for (size_t t = 0; t < ref_len; ++t) {
+            group_ids[t] = ref_code_rank3 ? codes[t * num_code_groups + g] : codes[t * num_code_groups + g];
+        }
+
+        ov::Tensor group_embed = (g == 0) ? infer_embedding_seq(m_talker_embedding, group_ids)
+                                          : infer_predictor_embedding_seq(group_ids, static_cast<int64_t>(g - 1));
+        const float* group_ptr = group_embed.data<const float>();
+        float* ref_ptr = ref_code_embed.data<float>();
+        for (size_t i = 0; i < ref_len * hidden; ++i) {
+            ref_ptr[i] += group_ptr[i];
+        }
+    }
+
+    // Role embed: first 3 tokens = <|im_start|>assistant\n
+    const std::vector<int64_t> role_tokens(input_ids, input_ids + std::min<size_t>(3, input_len));
+    auto role_embed = infer_text_projection(infer_embedding_seq(m_talker_text_embedding, role_tokens));
+
+    // text_embed: ref_text + target_text, strip role (first 3) and trailing structural tokens (last 5:
+    // <|im_end|>\n<|im_start|>assistant\n), then append tts_eos.
+    auto ref_text_embed = infer_text_projection(infer_embedding_seq(
+        m_talker_text_embedding,
+        std::vector<int64_t>(input_ids + std::min<size_t>(3, input_len), input_ids + input_len)));
+    const size_t ref_text_tokens_len = ref_text_embed.get_shape()[1];
+    const size_t ref_trimmed_len = ref_text_tokens_len > 5 ? ref_text_tokens_len - 5 : ref_text_tokens_len;
+    ov::Tensor ref_text_trimmed(ov::element::f32, ov::Shape{1, ref_trimmed_len, hidden});
+    if (ref_trimmed_len > 0) {
+        std::copy_n(ref_text_embed.data<const float>(), ref_text_trimmed.get_size(), ref_text_trimmed.data<float>());
+    }
+    // Append tts_eos to text (matches Python: text_embed = torch.cat([text_embed, tts_eos_embed], dim=1))
+    ov::Tensor text_embed_with_eos = concat_embed({ref_text_trimmed, tts_eos});
+    const size_t text_eos_len = text_embed_with_eos.get_shape()[1];
+
+    std::cerr << "[DEBUG] ICL path: text_eos_len=" << text_eos_len << " ref_len=" << ref_len << " hidden=" << hidden << std::endl;
+
+    // Part 1: codec_input_part — blend codec_input_no_bos with [tts_pad × (len-2), tts_bos]
+    // Matches Python's: [(tts_pad*(N-2) + tts_bos)] + codec_input_embedding[:-1]
+    const size_t ci_len = codec_input_no_bos.get_shape()[1];
+    ov::Tensor codec_input_part(ov::element::f32, ov::Shape{1, ci_len, hidden});
+    for (size_t i = 0; i < ci_len; ++i) {
+        const float* src = codec_input_no_bos.data<const float>() + i * hidden;
+        float* dst = codec_input_part.data<float>() + i * hidden;
+        const float* blend = (i == ci_len - 1) ? tts_bos.data<const float>() : tts_pad.data<const float>();
+        for (size_t h = 0; h < hidden; ++h) {
+            dst[h] = src[h] + blend[h];
+        }
+    }
+
+    // Part 2: text_side — (text_embed + tts_eos) blended with codec_pad per-position
+    auto codec_pad_for_text = infer_embedding_seq(m_talker_embedding, std::vector<int64_t>(text_eos_len, m_ids.codec_pad_id));
+    ov::Tensor text_side(ov::element::f32, ov::Shape{1, text_eos_len, hidden});
+    for (size_t i = 0; i < text_side.get_size(); ++i) {
+        text_side.data<float>()[i] = text_embed_with_eos.data<const float>()[i] + codec_pad_for_text.data<const float>()[i];
+    }
+
+    // Part 3: codec_side — (codec_bos + ref_codes) blended with tts_pad per-position
+    ov::Tensor codec_bos_plus_ref = concat_embed({codec_bos_embed, ref_code_embed});
+    const size_t codec_side_len = codec_bos_plus_ref.get_shape()[1];
+    ov::Tensor codec_side(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+    for (size_t i = 0; i < codec_side.get_size(); ++i) {
+        codec_side.data<float>()[i] = codec_bos_plus_ref.data<const float>()[i] + tts_pad.data<const float>()[i % hidden];
+    }
+
+    // Full prefill: role | codec_input_part | text_side | codec_side
+    // Matches Python non-streaming ICL: role + codec_prefill/speaker + (text+tts_eos+cpad) + (cbos+ref_codes+tpad)
+    ov::Tensor talker_prefill = concat_embed({role_embed, codec_input_part, text_side, codec_side});
+
+    if (!generation_config.instruct.empty()) {
+        const std::string instruct_text = "<|im_start|>user\n" + generation_config.instruct + "<|im_end|>\n";
+        auto instruct_ids = m_tokenizer.encode(instruct_text).input_ids;
+        const int64_t* instr = instruct_ids.data<const int64_t>();
+        const size_t instr_len = instruct_ids.get_shape()[1];
+        auto instruct_embed = infer_text_projection(infer_embedding_seq(m_talker_text_embedding, std::vector<int64_t>(instr, instr + instr_len)));
+        talker_prefill = concat_embed({instruct_embed, talker_prefill});
+    }
+
+    // Force non-streaming decode behavior: always add tts_pad to each generated token embed.
+    // This matches Python's trailing_text_hidden = tts_pad_embed for ICL mode when text_len <= codec_len.
+    SpeechGenerationConfig vc_config = generation_config;
+    vc_config.non_streaming_mode = true;
+    return decode_from_prefill(talker_prefill, tts_pad, vc_config, suppress_tokens);
+}
+
 ov::Shape Qwen3TTSImpl::get_speaker_embedding_shape() const {
+    if (is_base_model()) {
+        return ov::Shape{1, 1, m_speaker_embedding_dim};
+    }
     // Qwen3 CustomVoice does not consume external speaker embeddings in the GenAI API.
     return ov::Shape{1};
 }

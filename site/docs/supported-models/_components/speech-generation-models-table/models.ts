@@ -25,4 +25,17 @@ export const SPEECH_GENERATION_MODELS: SpeechGenerationModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Qwen3TTSForConditionalGeneration',
+    models: [
+      {
+        name: 'Qwen3-TTS-12Hz-0.6B-CustomVoice',
+        links: ['https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice'],
+      },
+      {
+        name: 'Qwen3-TTS-12Hz-0.6B-Base',
+        links: ['https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base'],
+      },
+    ],
+  },
 ];

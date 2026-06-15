@@ -19,6 +19,12 @@ This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 		- `it` (Italian)
 		- `pt-br` (Portuguese, Brazil)
 	- Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
+- **Qwen3-TTS**
+	- Supports both `custom_voice` and `base` variants.
+	- `custom_voice`: pass `--speaker <name>` with one of the predefined speaker ids.
+	- `base`: pass an external speaker embedding `.bin` file as the positional speaker embedding argument
+	  or with `--speaker_embedding_file_path <PATH>`.
+	  Expected shape is returned by `pipe.get_speaker_embedding_shape()`.
 
 ## SpeechT5 setup
 
@@ -32,6 +38,13 @@ optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vo
 Create a speaker embedding file (SpeechT5-specific):
 
 `python ../../python/speech_generation/create_speaker_embedding.py`
+
+Create a speaker embedding file for Qwen3 Base from reference audio:
+
+`python ../../python/speech_generation/create_qwen3_speaker_embedding.py qwen3_tts_base_ov ref_audio.wav --output qwen_speaker_embedding.bin`
+
+Note: this utility expects reference audio already at the model sample rate (typically 24000 Hz)
+and does not resample internally.
 
 ## Kokoro setup
 ```sh
@@ -83,6 +96,34 @@ Text2speech with speed control:
 ```
 text2speech ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate." ov_Kokoro-82M/voices/af_heart.bin --language en-us --speed 1.15
 ```
+
+Qwen3-TTS CustomVoice:
+```
+text2speech qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice" --speaker ryan --language english --instruct "speak in a calm style"
+```
+
+Qwen3-TTS Base (x-vector style voice clone):
+```
+text2speech qwen3_tts_base_ov "Hello from Qwen3 Base" qwen_speaker_embedding.bin --language english
+```
+
+Qwen3-TTS Base (named speaker embedding argument):
+```
+text2speech qwen3_tts_base_ov "Hello from Qwen3 Base" --speaker_embedding_file_path qwen_speaker_embedding.bin --language english
+```
+
+Qwen3-TTS Base (ICL mode via `generate(...)` properties):
+```
+text2speech qwen3_tts_base_ov "Hello from Qwen3 Base ICL" qwen_speaker_embedding.bin --language english --qwen_x_vector_only_mode false --qwen_ref_text "Reference transcript for prompt conditioning" --qwen_ref_code_file_path ref_code.npy
+```
+
+If speaker embedding is omitted for a Base model, the sample now fails early with a clear message
+that includes the expected shape (for example, `{1, 1, 1024}`).
+
+For Qwen3 ICL mode in the C++ sample:
+- Set `--qwen_x_vector_only_mode false`
+- Pass `--qwen_ref_text <TEXT>`
+- Pass `--qwen_ref_code_file_path <PATH.npy>` (expects int64 `.npy`, for example produced by the Python utility)
 
 ### 2) `kokoro_phonemize_fallback` (Kokoro only)
 
@@ -141,6 +182,16 @@ gen_speech = pipe.generate(prompt, speaker_embedding);
 gen_speech = pipe.generate(prompt,
                            speaker_embedding,
                            ov::AnyMap{{"language", "en-us"}});
+
+// Qwen3 Base generation with an application-prepared embedding tensor
+gen_speech = pipe.generate(prompt,
+						   speaker_embedding,
+						   ov::AnyMap{{"language", "english"}});
+
+// Qwen3 CustomVoice generation (no external embedding required)
+gen_speech = pipe.generate(prompt,
+						   ov::Tensor(),
+						   ov::AnyMap{{"speaker", "ryan"}, {"language", "english"}});
 
 auto speech = gen_speech.speeches[0];
 // speech tensor contains the waveform of the spoken phrase

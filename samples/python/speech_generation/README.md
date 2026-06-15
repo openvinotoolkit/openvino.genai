@@ -2,8 +2,10 @@
 
 This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
 
-- `text2speech.py`: basic text → audio generation (SpeechT5 and Kokoro)
+- `text2speech.py`: basic text → audio generation (SpeechT5, Kokoro, and Qwen3-TTS)
 - `kokoro_phonemize_fallback.py`: Kokoro unknown-word fallback behavior
+- `create_qwen3_speaker_embedding.py`: create Qwen3 Base speaker embedding file from reference audio
+- `qwen3_tts_voice_clone.py`: Qwen3 Base voice cloning via OV GenAI `generate(...)` properties
 
 ## Supported Models
 
@@ -22,6 +24,11 @@ This folder contains Python examples for `openvino_genai.Text2SpeechPipeline`:
         - `it` (Italian)
         - `pt-br` (Portuguese, Brazil)
     - Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
+- **Qwen3-TTS**
+        - Supports both `custom_voice` and `base` variants.
+        - `custom_voice`: use `--speaker` with a predefined speaker id from model config.
+        - `base`: provide an external speaker embedding file via `--speaker_embedding_file_path`.
+            The expected embedding shape can be queried from `pipe.get_speaker_embedding_shape()`.
 
 ## Install dependencies
 
@@ -54,6 +61,33 @@ optimum-cli export openvino -m hexgrad/Kokoro-82M ov_Kokoro-82M --trust-remote-c
 
 > **Note:**
 > After export is complete, you will find the available speaker embedding `.bin` files in `ov_Kokoro-82M/voices`.
+
+## Qwen3-TTS Base setup
+
+Create a speaker embedding file for Qwen3 Base from reference audio:
+
+```sh
+python create_qwen3_speaker_embedding.py qwen3_tts_base_ov ref_audio.wav --output qwen_speaker_embedding.bin
+```
+
+Create speaker embedding and ICL reference codes in one call:
+
+```sh
+python create_qwen3_speaker_embedding.py qwen3_tts_base_ov ref_audio.wav --output qwen_speaker_embedding.bin --ref_code_output ref_code.npy --ref_text "Reference transcript"
+```
+
+Note: the utility does not resample audio. Provide reference audio at the model sample rate
+(typically 24000 Hz for Qwen3 Base speaker encoder), otherwise it fails with a clear error.
+
+`--ref_text` is optional and is stored only in the `--metadata_output` sidecar JSON, if you request one.
+The current C++ runtime does not read that metadata file; it is there as provenance for the generated
+embedding and for future prompt-building work.
+
+Optional: store reference metadata (including `ref_text`) alongside embedding:
+
+```sh
+python create_qwen3_speaker_embedding.py qwen3_tts_base_ov ref_audio.wav --ref_text "Reference transcript" --output qwen_speaker_embedding.bin --metadata_output qwen_speaker_embedding.json
+```
 
 ## Use of `espeak-ng` within the Kokoro Pipeline
 
@@ -95,6 +129,28 @@ Text2speech with speed control:
 ```
 python text2speech.py --speaker_embedding_file_path ov_Kokoro-82M/voices/af_heart.bin --language en-us --speed 1.15 ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate."
 ```
+
+Qwen3-TTS CustomVoice:
+```
+python text2speech.py qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice" --speaker ryan --language english --instruct "speak in a calm style"
+```
+
+Qwen3-TTS Base (x-vector style voice clone):
+```
+python text2speech.py --speaker_embedding_file_path qwen_speaker_embedding.bin qwen3_tts_base_ov "Hello from Qwen3 Base" --language english
+```
+
+Qwen3-TTS Base (OV GenAI `generate(...)`, x-vector-only mode):
+```
+python qwen3_tts_voice_clone.py qwen3_tts_base_ov "Hello from OV GenAI voice clone" --ref_speaker_embedding_file_path qwen_speaker_embedding.bin --x_vector_only_mode --language english
+```
+
+Qwen3-TTS Base (OV GenAI `generate(...)`, ICL mode):
+```
+python qwen3_tts_voice_clone.py qwen3_tts_base_ov "Hello from OV GenAI ICL voice clone" --ref_speaker_embedding_file_path qwen_speaker_embedding.bin --ref_code_file_path ref_code.npy --ref_text "Reference transcript for prompt conditioning" --language english
+```
+
+Note: `--ref_code_output` requires `speech_tokenizer/openvino_speech_tokenizer_encoder_model.xml` in the model directory.
 
 ### 2) `kokoro_phonemize_fallback.py` (Kokoro only)
 
@@ -151,6 +207,12 @@ result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding)
 
 # Kokoro generation with an application-prepared embedding tensor
 result = pipe.generate("Hello from Kokoro", speaker_embedding, language="en-us")
+
+# Qwen3 Base generation with an application-prepared embedding tensor
+result = pipe.generate("Hello from Qwen3 Base", speaker_embedding, language="english")
+
+# Qwen3 CustomVoice generation (no external embedding required)
+result = pipe.generate("Hello from Qwen3 CustomVoice", None, speaker="ryan", language="english")
 
 # Kokoro unknown-word fallback via config
 cfg = pipe.get_generation_config()

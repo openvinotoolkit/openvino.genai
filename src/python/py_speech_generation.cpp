@@ -59,6 +59,43 @@ auto speech_generation_config_docstring = R"(
                                          omit this key instead of passing None because kwargs-to-AnyMap
                                          conversion rejects None values.
     :type phonemize_fallback_model_dir: str | None
+
+    Qwen3-TTS-specific parameters:
+    :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+    :type speaker: str
+
+    :param instruct: optional instruction text that controls speaking style.
+    :type instruct: str
+
+    :param non_streaming_mode: Qwen3 prompt assembly mode.
+                               ``True`` means non-streaming prompt assembly.
+                               ``False`` means streaming-style prompt assembly.
+    :type non_streaming_mode: bool
+
+    :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+    :type subtalker_dosample: bool
+
+    :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+    :type subtalker_top_k: int
+
+    :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+    :type subtalker_top_p: float
+
+    :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+    :type subtalker_temperature: float
+
+    :param seed: random seed for deterministic Qwen3 sampling when ``do_sample=True``.
+    :type seed: int
+
+    Qwen3 Base voice-clone over ``generate``:
+    :param qwen_ref_text: reference transcript for ICL mode.
+    :type qwen_ref_text: str
+
+    :param qwen_ref_code: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+    :type qwen_ref_code: openvino.Tensor
+
+    :param qwen_x_vector_only_mode: set True to force embedding-only clone mode.
+    :type qwen_x_vector_only_mode: bool
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -91,7 +128,9 @@ auto text_to_speech_generate_docstring = R"(
     :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                              voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
                              `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                             to prepare this tensor externally and pass it explicitly.
+                             to prepare this tensor externally and pass it explicitly. Qwen3-TTS Base backend also
+                             expects caller-provided speaker embedding (x-vector style cloning), while Qwen3-TTS
+                             CustomVoice uses predefined speaker ids and does not require this tensor.
     :type speaker_embedding: openvino.Tensor or None
 
     :param properties: speech generation parameters specified as properties
@@ -132,6 +171,17 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("language", &SpeechGenerationConfig::language)
         .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
         .def_readwrite("phonemize_fallback_model_dir", &SpeechGenerationConfig::phonemize_fallback_model_dir)
+        .def_readwrite("speaker", &SpeechGenerationConfig::speaker)
+        .def_readwrite("instruct", &SpeechGenerationConfig::instruct)
+        .def_readwrite("non_streaming_mode", &SpeechGenerationConfig::non_streaming_mode)
+        .def_readwrite("subtalker_dosample", &SpeechGenerationConfig::subtalker_dosample)
+        .def_readwrite("subtalker_top_k", &SpeechGenerationConfig::subtalker_top_k)
+        .def_readwrite("subtalker_top_p", &SpeechGenerationConfig::subtalker_top_p)
+        .def_readwrite("subtalker_temperature", &SpeechGenerationConfig::subtalker_temperature)
+        .def_readwrite("seed", &SpeechGenerationConfig::seed)
+        .def_readwrite("qwen_ref_text", &SpeechGenerationConfig::qwen_ref_text)
+        .def_readwrite("qwen_ref_code", &SpeechGenerationConfig::qwen_ref_code)
+        .def_readwrite("qwen_x_vector_only_mode", &SpeechGenerationConfig::qwen_x_vector_only_mode)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -222,5 +272,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"))
         .def("get_speaker_embedding_shape", &Text2SpeechPipeline::get_speaker_embedding_shape,
              "Get the expected speaker embedding shape for the loaded model. "
-             "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}");
+               "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}. "
+               "Qwen3 Base: Shape{1, 1, D}.");
 }

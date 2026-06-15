@@ -39,6 +39,8 @@ SpeechGenerationConfig::SpeechGenerationConfig(const std::filesystem::path& json
         read_json_param(data, "subtalker_top_p", subtalker_top_p);
         read_json_param(data, "subtalker_temperature", subtalker_temperature);
         read_json_param(data, "seed", seed);
+        read_json_param(data, "qwen_ref_text", qwen_ref_text);
+        read_json_param(data, "qwen_x_vector_only_mode", qwen_x_vector_only_mode);
     }
     validate();
 }
@@ -62,6 +64,9 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
     read_anymap_param(config_map, "subtalker_top_p", subtalker_top_p);
     read_anymap_param(config_map, "subtalker_temperature", subtalker_temperature);
     read_anymap_param(config_map, "seed", seed);
+    read_anymap_param(config_map, "qwen_ref_text", qwen_ref_text);
+    read_anymap_param(config_map, "qwen_ref_code", qwen_ref_code);
+    read_anymap_param(config_map, "qwen_x_vector_only_mode", qwen_x_vector_only_mode);
 
     GenerationConfig::update_generation_config(config_map);
 }
