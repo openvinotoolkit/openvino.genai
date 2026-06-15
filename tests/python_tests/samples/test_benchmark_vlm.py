@@ -83,8 +83,8 @@ class TestBenchmarkVLM:
     @pytest.mark.vlm
     @pytest.mark.samples
     def test_sample_benchmark_vlm_negative_dimensions(self):
-        # Validation of negative dimensions in the Python script raises RuntimeError
-        # before any image or model is loaded, so no fixtures are required.
+        # Validation of negative dimensions causes the Python sample subprocess to fail
+        # before any image or model is loaded, so this test observes CalledProcessError.
         benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
 
         with pytest.raises(subprocess.CalledProcessError):
