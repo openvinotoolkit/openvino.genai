@@ -106,16 +106,16 @@ python benchmark_vlm.py [OPTIONS]
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"What is on the image?"`
-- `-pf, --prompt_file` Read prompt from file.
+- `-F, --prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
-- `-ih, --image_height` (default: `None`): Target image height for resizing. Must be a positive value and provided together with `-iw, --image_width`.
-- `-iw, --image_width` (default: `None`): Target image width for resizing. Must be a positive value and provided together with `-ih, --image_height`.
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `-H, --image_height` (default: `None`): Target image height for resizing. Must be a positive value and provided together with `-iw, --image_width`.
+- `-W, --image_width` (default: `None`): Target image width for resizing. Must be a positive value and provided together with `-ih, --image_height`.
+- `-N, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `2`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
-- `-pr, --pruning_ratio` (optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.
-- `-rw, --relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
+- `-P, --pruning_ratio` (optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.
+- `-R, --relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
 
 ### Output:
 
