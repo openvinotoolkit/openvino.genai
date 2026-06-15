@@ -183,11 +183,17 @@ Napi::Value Image2ImagePipelineWrapper::generate(const Napi::CallbackInfo& info)
         // generate(prompt, image, properties, streamer, doneCallback)
         VALIDATE_ARGS_COUNT(info, 5, "generate()");
         OPENVINO_ASSERT(info[0].IsString(), "Image2ImagePipeline.generate() expects a prompt string.");
+        OPENVINO_ASSERT(info[3].IsUndefined() || info[3].IsNull() || info[3].IsFunction(),
+                        "Image2ImagePipeline.generate() expects streamer to be a function, null or undefined.");
         OPENVINO_ASSERT(info[4].IsFunction(), "generate done callback is not a function");
 
         auto prompt = js_to_cpp<std::string>(env, info[0]);
         auto image = js_to_cpp<ov::Tensor>(env, info[1]);
         const auto& image_shape = image.get_shape();
+        OPENVINO_ASSERT(image.get_element_type() == ov::element::u8,
+                        "Image2ImagePipeline.generate() expects image tensor with u8 element type, got ",
+                        image.get_element_type(),
+                        ".");
         OPENVINO_ASSERT(image_shape.size() == 4 && image_shape[0] == 1 && image_shape[3] == 3,
                         "Image2ImagePipeline.generate() expects image tensor with batched NHWC shape [1, H, W, 3], got ",
                         image_shape,
@@ -202,9 +208,7 @@ Napi::Value Image2ImagePipelineWrapper::generate(const Napi::CallbackInfo& info)
         context->pipe = this->pipe;
 
         // streamer at index 3 can be a function or null/undefined
-        OPENVINO_ASSERT(info[3].IsUndefined() || info[3].IsNull() || info[3].IsFunction(),
-                        "Image2ImagePipeline.generate() expects streamer to be a function, null or undefined.");
-        if (!info[3].IsUndefined() && !info[3].IsNull() && info[3].IsFunction()) {
+        if (info[3].IsFunction()) {
             context->streamer_tsfn =
                 Napi::ThreadSafeFunction::New(env, info[3].As<Napi::Function>(), "Image2Image_streamer", 0, 1);
         }

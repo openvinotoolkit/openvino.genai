@@ -4,6 +4,7 @@
 import { describe, it, before } from "node:test";
 import os from "node:os";
 import assert from "node:assert/strict";
+import { addon as ov } from "openvino-node";
 import { Image2ImagePipeline } from "../dist/index.js";
 import { Image2ImagePipeline as Image2ImagePipelineClass } from "../dist/pipelines/image2ImagePipeline.js";
 import { createTestImageTensor } from "./utils.js";
@@ -145,6 +146,11 @@ describe("Image2ImagePipeline methods", { skip: os.platform() === "darwin" }, ()
       pipeline.generate("a tiny robot", unbatchedImage),
       /batched NHWC shape \[1, H, W, 3\]/,
     );
+  });
+
+  it("generate(prompt, image) rejects non-u8 image tensor", async () => {
+    const floatImage = new ov.Tensor("f32", [1, 64, 64, 3], new Float32Array(64 * 64 * 3));
+    await assert.rejects(pipeline.generate("a tiny robot", floatImage), /u8 element type/);
   });
 });
 
