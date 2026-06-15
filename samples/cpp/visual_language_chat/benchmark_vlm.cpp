@@ -16,16 +16,16 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
-    ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
+    ("F,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
     ("H,image_height", "Target image height (if resizing is needed)", cxxopts::value<int32_t>())
     ("W,image_width", "Target image width (if resizing is needed)", cxxopts::value<int32_t>())
-    ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
+    ("N,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
-    ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
+    ("M,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
-    ("rw,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
+    ("P,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
+    ("R,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -64,11 +64,16 @@ int main(int argc, char* argv[]) try {
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
 
-    const std::optional<int32_t> image_height = result.count("image_height") ? std::optional<int32_t>(result["image_height"].as<int32_t>()) : std::nullopt;
-    const std::optional<int32_t> image_width = result.count("image_width") ? std::optional<int32_t>(result["image_width"].as<int32_t>()) : std::nullopt;
-    OPENVINO_ASSERT(image_height.has_value() == image_width.has_value(),
-                    "image_height and image_width must be provided together.");
-    std::vector<ov::Tensor> images = utils::load_images(image_path, image_height, image_width);
+    if (result.count("image_height") && !result.count("image_width")) {
+        std::cout << "image_height and image_width must be provided together!" << std::endl;
+        return EXIT_FAILURE;
+    }
+    const std::optional<utils::ImageSize> image_size = 
+        (result.count("image_width") && result.count("image_height"))
+        ? std::optional<utils::ImageSize>{utils::ImageSize{result["image_width"].as<int32_t>(), result["image_height"].as<int32_t>()}}
+        : std::nullopt;
+    
+    std::vector<ov::Tensor> images = utils::load_images(image_path, image_size);
 
     ov::genai::GenerationConfig config;
     if (result.count("pruning_ratio")) {
@@ -108,6 +113,9 @@ int main(int argc, char* argv[]) try {
     }
 
     std::cout << std::fixed << std::setprecision(2);
+    if (image_size.has_value()) {
+        std::cout << "Image size is resized to: " << image_size->width << "x" << image_size->height << std::endl; 
+    }
     std::cout << "Input token size: " << res.perf_metrics.get_num_input_tokens() << std::endl;
     std::cout << "Output token size: " << res.perf_metrics.get_num_generated_tokens() << std::endl;
     std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
