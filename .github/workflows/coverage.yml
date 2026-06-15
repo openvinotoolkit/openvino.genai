@@ -27,12 +27,6 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   ENABLE_BRANCH_COVERAGE: 'false'
   LCOV_CAPTURE_TIMEOUT_SECONDS: '3600'
-  IGPU_DRIVER_PACKAGES: |-
-    https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.15985.7/intel-igc-core_1.0.15985.7_amd64.deb
-    https://github.com/intel/intel-graphics-compiler/releases/download/igc-1.0.15985.7/intel-igc-opencl_1.0.15985.7_amd64.deb
-    https://github.com/intel/compute-runtime/releases/download/24.05.28454.6/intel-level-zero-gpu_1.3.28454.6_amd64.deb
-    https://github.com/intel/compute-runtime/releases/download/24.05.28454.6/intel-opencl-icd_24.05.28454.6_amd64.deb
-    https://github.com/intel/compute-runtime/releases/download/24.05.28454.6/libigdgmm12_22.3.11_amd64.deb
   GENAI_COVERAGE_INSTALL_ARTIFACT: coverage_genai_install
   GENAI_COVERAGE_NOTES_ARTIFACT: coverage_build_notes
   GENAI_COVERAGE_NODEJS_ARTIFACT: coverage_genai_nodejs_bindings
@@ -500,7 +494,7 @@ jobs:
     timeout-minutes: 120
     runs-on: [self-hosted, igpu]
     container:
-      image: ubuntu:22.04
+      image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64_igpu:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /usr/local/share/ca-certificates:/usr/local/share/ca-certificates:ro
         - /mount:/mount
@@ -523,14 +517,6 @@ jobs:
       COVERAGE_WRITE_STEP_SUMMARY: 'false'
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
-      - name: Install iGPU coverage dependencies
-        run: |
-          apt-get update
-          apt-get install -y lcov clinfo wget ca-certificates gpg-agent software-properties-common tzdata git python3-yaml
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          TZ: Europe/London
-
       - name: Checkout sources
         uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
         timeout-minutes: 15
@@ -557,21 +543,6 @@ jobs:
           name: ${{ env.GENAI_COVERAGE_NOTES_ARTIFACT }}
           path: ${{ github.workspace }}/coverage_notes
           merge-multiple: true
-
-      - name: Install iGPU driver dependencies
-        run: |
-          set -euo pipefail
-          bash "${OV_INSTALL_DIR}/install_dependencies/install_openvino_dependencies.sh" -c=core -c=dev -c=gpu -y
-
-          tmp_dir="$(mktemp -d)"
-          trap 'rm -rf "${tmp_dir}"' EXIT
-          pushd "${tmp_dir}"
-          while IFS= read -r package_url; do
-            [[ -n "${package_url}" ]] || continue
-            wget "${package_url}"
-          done <<< "${IGPU_DRIVER_PACKAGES}"
-          dpkg -i *.deb
-          popd
 
       - name: Verify GPU device availability
         run: clinfo
