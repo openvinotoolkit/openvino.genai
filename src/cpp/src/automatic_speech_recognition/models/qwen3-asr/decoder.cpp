@@ -170,9 +170,6 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
 
     // Flush streamer cache
     stream_generated_tokens();
-    if (streamer_ptr) {
-        streamer_ptr->end();
-    }
 
     // Collect results
     EncodedResults results;

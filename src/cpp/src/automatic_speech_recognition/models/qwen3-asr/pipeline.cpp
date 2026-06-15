@@ -29,6 +29,7 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
+    m_decoder.set_seed(config.rng_seed);
 
     ASRDecodedResults results;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
@@ -38,8 +39,11 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
                                                                    MAX_ASR_INPUT_SECONDS);
 
     const auto infer_results = infer(chunks, config, results.perf_metrics, streamer);
+    if (streamer) {
+        streamer->end();
+    }
 
-    auto [merged_texts, merged_languages] = merge_chunk_results(chunks, infer_results);
+    auto [merged_texts, merged_languages] = merge_chunk_results(chunks, infer_results, config);
     results.languages = std::move(merged_languages);
     for (size_t i = 0; i < merged_texts.size(); ++i) {
         results.texts.push_back(merged_texts[i]);
@@ -71,9 +75,14 @@ std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const AS
     return std::vector<std::string>(batch_size, prompt);
 }
 
-std::pair<std::string, std::string> Qwen3ASR::parse_asr_output(const std::string& raw) {
+std::pair<std::string, std::string> Qwen3ASR::parse_asr_output(const std::string& raw,
+                                                               const std::optional<std::string>& forced_language) {
     static const std::string asr_text_tag = "<asr_text>";
     static const std::string lang_prefix = "language ";
+
+    if (forced_language.has_value() && !forced_language.value().empty()) {
+        return {forced_language.value(), raw};
+    }
 
     const size_t tag_pos = raw.find(asr_text_tag);
     if (tag_pos == std::string::npos) {
@@ -100,7 +109,8 @@ std::pair<std::string, std::string> Qwen3ASR::parse_asr_output(const std::string
 
 std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_chunk_results(
     const std::vector<AudioChunk>& chunks,
-    const std::vector<std::string>& infer_results) {
+    const std::vector<std::string>& infer_results,
+    const ASRGenerationConfig& config) {
     size_t num_samples = 0;
     for (const auto& chunk : chunks) {
         num_samples = std::max(num_samples, chunk.orig_batch + 1);
@@ -110,7 +120,7 @@ std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_ch
     std::vector<std::string> merged_languages(num_samples);
     for (size_t i = 0; i < chunks.size(); ++i) {
         const size_t orig = chunks[i].orig_batch;
-        const auto [language, text] = parse_asr_output(infer_results[i]);
+        const auto [language, text] = parse_asr_output(infer_results[i], config.language);
         if (!merged_texts[orig].empty()) {
             merged_texts[orig] += ' ';
         }
@@ -171,7 +181,7 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
     for (size_t batch = 0; batch < batch_size; ++batch) {
         const std::string prompt = prompts[batch];
         const auto encoder_start_time = std::chrono::steady_clock::now();
-        const ov::Tensor encoder_hidden_states = m_encoder.encode({features[batch]});
+        const ov::Tensor encoder_hidden_states = m_encoder.encode(features[batch]);
         const auto encoder_stop_time = std::chrono::steady_clock::now();
         perf_metrics.raw_metrics.m_inference_durations[0] +=
             MicroSeconds(PerfMetrics::get_microsec(encoder_stop_time - encoder_start_time));
