@@ -14,7 +14,7 @@ from openvino import get_version
 
 
 def read_image(path: str, image_size: Optional[tuple[int, int]] = None) -> Tensor:
-    '''
+    """
 
     Args:
         path: The path to the image.
@@ -22,7 +22,7 @@ def read_image(path: str, image_size: Optional[tuple[int, int]] = None) -> Tenso
 
     Returns: the ov.Tensor containing the image.
 
-    '''
+    """
     pic = Image.open(path).convert("RGB")
     if image_size is not None and (not isinstance(image_size, tuple) or len(image_size) != 2):
         raise ValueError("image_size must be provided as a tuple (width, height)")
@@ -143,7 +143,7 @@ def main():
     for _ in range(num_iter - 1):
         res = pipe.generate(prompt, images=images, generation_config=config)
         perf_metrics += res.perf_metrics
-    if (image_size):
+    if image_size:
         print(f"Image is resized to: {image_size[0]}x{image_size[1]}")
     print(f"Input token size: {res.perf_metrics.get_num_input_tokens()}")
     print(f"Output token size: {res.perf_metrics.get_num_generated_tokens()}")
