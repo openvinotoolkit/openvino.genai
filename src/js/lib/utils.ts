@@ -540,6 +540,8 @@ export type Text2ImagePipelineProperties = Record<string, unknown>;
 
 export type Image2ImagePipelineProperties = Record<string, unknown>;
 
+export type InpaintingPipelineProperties = Record<string, unknown>;
+
 /**
  * Callback for image generation, called once per denoising step.
  *

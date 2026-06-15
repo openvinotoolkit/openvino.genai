@@ -28,6 +28,7 @@ import {
   ImageGenerationCallback,
   Text2ImagePipelineProperties,
   Image2ImagePipelineProperties,
+  InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
 import {
@@ -257,6 +258,27 @@ export interface Image2ImagePipeline {
   setGenerationConfig(config: ImageGenerationConfig): void;
 }
 
+export interface InpaintingPipeline {
+  new (): InpaintingPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: InpaintingPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    image: Tensor,
+    mask: Tensor,
+    properties: ImageGenerationConfig,
+    streamer: ImageGenerationCallback | undefined,
+    callback: (err: Error | null, result: Tensor) => void,
+  ): void;
+  getPerformanceMetrics(): ImageGenerationPerfMetrics;
+  getGenerationConfig(): ImageGenerationConfig;
+  setGenerationConfig(config: ImageGenerationConfig): void;
+}
+
 export interface Text2SpeechPipeline {
   new (): Text2SpeechPipeline;
   init(
@@ -289,6 +311,7 @@ interface OpenVINOGenAIAddon {
   WhisperPipeline: WhisperPipeline;
   Text2ImagePipeline: Text2ImagePipeline;
   Image2ImagePipeline: Image2ImagePipeline;
+  InpaintingPipeline: InpaintingPipeline;
   Text2SpeechPipeline: Text2SpeechPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
@@ -326,6 +349,7 @@ export const {
   WhisperPipeline,
   Text2ImagePipeline,
   Image2ImagePipeline,
+  InpaintingPipeline,
   Text2SpeechPipeline,
   ChatHistory,
   Tokenizer,

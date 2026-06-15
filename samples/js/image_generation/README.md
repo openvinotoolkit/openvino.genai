@@ -5,6 +5,7 @@ This directory hosts JavaScript samples that showcase inference of image generat
 Sample files:
  - [`text2image.js`](./text2image.js) demonstrates basic usage of the `Text2ImagePipeline` (text-to-image) with a step callback and saves the result as a BMP file using `bmp-js`.
  - [`image2image.js`](./image2image.js) demonstrates basic usage of the `Image2ImagePipeline` (image-to-image): reads an input image (JPEG, PNG or BMP), runs the pipeline with a `strength` parameter and step callback, and saves the result as a BMP file using `bmp-js`.
+ - [`inpainting.js`](./inpainting.js) demonstrates basic usage of the `InpaintingPipeline` (inpainting): reads an input image and a mask (JPEG, PNG or BMP), runs the pipeline with a step callback, and saves the result as a BMP file using `bmp-js`.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -41,7 +42,7 @@ npm install
 
 If you use the master branch, you may need to [build openvino-genai-node from source](../../../src/js/README.md#build-bindings) first.
 
-Run the text-to-image sample:
+### Run the text-to-image sample:
 
 ```bash
 node image_generation/text2image.js dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
@@ -49,17 +50,48 @@ node image_generation/text2image.js dreamlike_anime_1_0_ov/FP16 "cyberpunk citys
 
 The result is saved as `image.bmp` in the current directory.
 
-Run the image-to-image sample (JPEG, PNG and BMP inputs are supported):
+### Run image to image pipeline
 
-```bash
-node image_generation/image2image.js dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting" input.bmp
-```
+The `image2image.js` sample demonstrates basic image to image generation pipeline. The difference with text to image pipeline is that final image is denoised from initial image converted to latent space and noised with image noise according to `strength` parameter. `strength` should be in range of `[0., 1.]` where `1.` means initial image is fully noised and it is an equivalent to text to image generation.
+Also, `strength` parameter linearly affects a number of inference steps, because lower `strength` values means initial latent already has some structure and it requires less steps to denoise it.
 
-The result is saved as `image.bmp` in the current directory.
+To run the sample, download initial image first:
+
+`wget -O cat.png https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png`
+
+And then run the sample:
+
+`node image_generation/image2image.js ./dreamlike_anime_1_0_ov/FP16 "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k" cat.png`
+
+The resulting image is:
+
+   ![](./../../cpp/image_generation/imageimage.bmp)
+
+### Run inpainting pipeline
+
+The `inpainting.js` sample demonstrates usage of inpainting pipeline, which can inpaint initial image by a given mask. Inpainting pipeline can work on typical text to image models as well as on specialized models which are often named `space/model-inpainting`, e.g. `stabilityai/stable-diffusion-2-inpainting`.
+
+Such models can be converted in the same way as regular ones via `optimum-cli`:
+
+`optimum-cli export openvino --model stabilityai/stable-diffusion-2-inpainting --weight-format fp16 stable-diffusion-2-inpainting`
+
+Let's also download input data:
+
+`wget -O image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png`
+
+`wget -O mask_image.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo_mask.png`
+
+And run the sample:
+
+`node image_generation/inpainting.js ./stable-diffusion-2-inpainting "Face of a yellow cat, high resolution, sitting on a park bench" image.png mask_image.png`
+
+The resulting image is:
+
+   ![](./../../cpp/image_generation/inpainting.bmp)
 
 ### Optional: change device
 
-The device is hardcoded to `CPU` in the samples. To use `GPU`, edit `text2image.js` / `image2image.js` and change:
+The device is hardcoded to `CPU` in the samples. To use `GPU`, edit `text2image.js` / `image2image.js` / `inpainting.js` and change:
 
 ```js
 const device = "CPU"; // GPU can be used as well

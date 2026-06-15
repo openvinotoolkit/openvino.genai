@@ -11,6 +11,7 @@ import {
 import { WhisperPipeline as Whisper } from "./pipelines/whisperPipeline.js";
 import { Text2ImagePipeline as Text2Image } from "./pipelines/text2ImagePipeline.js";
 import { Image2ImagePipeline as Image2Image } from "./pipelines/image2ImagePipeline.js";
+import { InpaintingPipeline as Inpainting } from "./pipelines/inpaintingPipeline.js";
 import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipeline.js";
 import {
   LLMPipelineProperties,
@@ -18,6 +19,7 @@ import {
   WhisperPipelineProperties,
   Text2ImagePipelineProperties,
   Image2ImagePipelineProperties,
+  InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
 
@@ -103,6 +105,17 @@ class PipelineFactory {
     return pipeline;
   }
 
+  static async InpaintingPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: InpaintingPipelineProperties = {},
+  ) {
+    const pipeline = new Inpainting(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
   static async Text2SpeechPipeline(
     modelPath: string,
     device: string = "CPU",
@@ -123,6 +136,7 @@ export const {
   WhisperPipeline,
   Text2ImagePipeline,
   Image2ImagePipeline,
+  InpaintingPipeline,
   Text2SpeechPipeline,
 } = PipelineFactory;
 export {
