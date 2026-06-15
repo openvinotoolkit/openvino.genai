@@ -11,8 +11,8 @@
 
 namespace utils {
 struct ImageSize {
-    int width;
-    int height;
+    int32_t width;
+    int32_t height;
 };
 
 ov::Tensor load_image(const std::filesystem::path& image_path, std::optional<ImageSize> target_size = std::nullopt);
