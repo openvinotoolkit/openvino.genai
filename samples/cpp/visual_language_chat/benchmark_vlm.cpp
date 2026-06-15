@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) try {
 
     std::cout << std::fixed << std::setprecision(2);
     if (image_size.has_value()) {
-        std::cout << "Image size is resized to: " << image_size->width << "x" << image_size->height << std::endl; 
+        std::cout << "Image is resized to: " << image_size->width << "x" << image_size->height << std::endl; 
     }
     std::cout << "Input token size: " << res.perf_metrics.get_num_input_tokens() << std::endl;
     std::cout << "Output token size: " << res.perf_metrics.get_num_generated_tokens() << std::endl;

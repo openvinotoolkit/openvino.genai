@@ -126,7 +126,7 @@ Throughput: 73.97 ± 16.59 tokens/s
 
 	```
 	Number of images: 1, Prompt token size: 6
-	Image size is resized to: 224x224
+	Image is resized to: 224x224
 	Input token size: 80
 	Output token size: 20
 	Load time: 4460.00 ms
