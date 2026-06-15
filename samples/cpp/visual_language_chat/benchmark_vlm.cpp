@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) try {
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
 
-    if (result.count("image_height") && !result.count("image_width")) {
+    if (!(result.count("image_height") && result.count("image_width"))) {
         std::cout << "image_height and image_width must be provided together!" << std::endl;
         return EXIT_FAILURE;
     }
