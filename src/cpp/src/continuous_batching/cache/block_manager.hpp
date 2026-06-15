@@ -375,20 +375,15 @@ public:
                             ++m_free_blocks_num[layer_idx];
                         }
 
-                        // As block returns to free memory, it should be removed from cached_blocks.
-                        // It prevents restoring of freed block from prefix cache map
-                        // Only erase from cached_blocks if the entry actually refers to the evicted (colliding) block,
-                        // not the currently-freed block which may be stored under the same hash key.
+                        // As block returns to free memory, cached_blocks should stop referring to the evicted block.
+                        // Keep the hash registered because blocks_for_all_layers will remain cached under the same hash.
                         auto cached_it = cached_blocks.find(colliding_blocks_per_layer[0]->get_hash());
                         if (cached_it != cached_blocks.end()) {
                             OPENVINO_ASSERT(!cached_it->second.empty(), "cached_blocks entry must not be empty");
                             const auto colliding_block_idx = colliding_blocks_per_layer[0]->get_index();
                             const auto cached_block_idx = cached_it->second[0]->get_index();
                             if (colliding_block_idx == cached_block_idx) {
-                                if (erased_cached_hashes != nullptr) {
-                                    erased_cached_hashes->push_back(cached_it->first);
-                                }
-                                cached_blocks.erase(cached_it);
+                                cached_it->second = blocks_for_all_layers;
                             }
                         }
                     }
