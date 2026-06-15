@@ -85,16 +85,16 @@ benchmark_vlm [OPTIONS]
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: ''): The prompt to generate text. If neither `-p` nor `--prompt_file` is provided, the default prompt is `"What is on the image?"`
-- `--prompt_file` Read prompt from file.
+- `-F, --prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
 - `-H, --image_height`: Target image height for resizing. Must be a positive value and provided together with `-W, --image_width`.
 - `-W, --image_width`: Target image width for resizing. Must be a positive value and provided together with `-H, --image_height`.
-- `--num_warmup` (default: `1`): Number of warmup iterations.
-- `--max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `-N` (default: `1`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
+- `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
-- `--pruning_ratio`: (optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.
-- `--relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
+- `-P, --pruning_ratio`: (optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.
+- `-R, --relevance_weight` (optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
 
 
 
@@ -126,6 +126,7 @@ Throughput: 73.97 ± 16.59 tokens/s
 
 	```
 	Number of images: 1, Prompt token size: 6
+	Image size is resized to: 224x224
 	Input token size: 80
 	Output token size: 20
 	Load time: 4460.00 ms
