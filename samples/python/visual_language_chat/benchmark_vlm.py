@@ -13,20 +13,31 @@ import numpy as np
 from openvino import get_version
 
 
-def read_image(path: str, target_height: Optional[int] = None, target_width: Optional[int] = None) -> Tensor:
+def read_image(path: str, image_size: Optional[tuple[int, int]] = None) -> Tensor:
+    '''
+
+    Args:
+        path: The path to the image.
+        image_size: Optional. Tuple (width, height) to resize the image. If None, the original size is kept.
+
+    Returns: the ov.Tensor containing the image.
+
+    '''
     pic = Image.open(path).convert("RGB")
-    if (target_height is None) != (target_width is None):
-        raise ValueError("target_height and target_width must be provided together")
-    if target_height is not None and target_width is not None:
-        pic = pic.resize((target_width, target_height))
+    if image_size is not None and (not isinstance(image_size, tuple) or len(image_size) != 2):
+        raise ValueError("image_size must be provided as a tuple (width, height)")
+    if image_size is not None:
+        if image_size[0] <= 0 or image_size[1] <= 0:
+            raise ValueError("width and height of image_size must be positive values.")
+        pic = pic.resize(image_size)
     image_data = np.array(pic)
     return Tensor(image_data)
 
-def read_images(path: str, target_height: Optional[int] = None, target_width: Optional[int] = None) -> list[Tensor]:
+def read_images(path: str, image_size: Optional[tuple[int, int]] = None) -> list[Tensor]:
     entry = Path(path)
     if entry.is_dir():
-        return [read_image(str(file), target_height, target_width) for file in sorted(entry.iterdir())]
-    return [read_image(path, target_height, target_width)]
+        return [read_image(str(file), image_size) for file in sorted(entry.iterdir())]
+    return [read_image(path, image_size)]
 
 
 def ratio_type(value):
@@ -98,7 +109,8 @@ def main():
         parser.error("image_height and image_width must be provided together.")
     if image_height is not None and (image_height <= 0 or image_width <= 0):
         parser.error("image_height and image_width must be positive values.")
-    images = read_images(args.image, image_height, image_width)
+    image_size = (image_width, image_height) if image_width is not None and image_height is not None else None
+    images = read_images(args.image, image_size)
     device = args.device
     num_warmup = args.num_warmup
     num_iter = args.num_iter
@@ -131,7 +143,8 @@ def main():
     for _ in range(num_iter - 1):
         res = pipe.generate(prompt, images=images, generation_config=config)
         perf_metrics += res.perf_metrics
-
+    if (image_size):
+        print(f"Image is resized to: {image_size[0]}x{image_size[1]}")
     print(f"Input token size: {res.perf_metrics.get_num_input_tokens()}")
     print(f"Output token size: {res.perf_metrics.get_num_generated_tokens()}")
     print(f"Load time: {perf_metrics.get_load_time():.2f} ms")
