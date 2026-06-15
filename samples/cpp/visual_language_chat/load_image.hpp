@@ -10,6 +10,11 @@
 #include <filesystem>
 
 namespace utils {
-ov::Tensor load_image(const std::filesystem::path& image_path, std::optional<int32_t> target_height = std::nullopt, std::optional<int32_t> target_width = std::nullopt);
-std::vector<ov::Tensor> load_images(const std::filesystem::path& image_path, std::optional<int32_t> target_height = std::nullopt, std::optional<int32_t> target_width = std::nullopt);
+struct ImageSize {
+    int width;
+    int height;
+};
+
+ov::Tensor load_image(const std::filesystem::path& image_path, std::optional<ImageSize> target_size = std::nullopt);
+std::vector<ov::Tensor> load_images(const std::filesystem::path& image_path, std::optional<ImageSize> target_size = std::nullopt);
 }

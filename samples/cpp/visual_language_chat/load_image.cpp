@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_path, std::optional<int32_t> target_height, std::optional<int32_t> target_width) {
+std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_path, std::optional<ImageSize> target_size) {
     if (input_path.empty() || !fs::exists(input_path)) {
         throw std::runtime_error{"Path to images is empty or does not exist."};
     }
@@ -20,21 +20,18 @@ std::vector<ov::Tensor> utils::load_images(const std::filesystem::path& input_pa
         std::set<fs::path> sorted_images{fs::directory_iterator(input_path), fs::directory_iterator()};
         std::vector<ov::Tensor> images;
         for (const fs::path& dir_entry : sorted_images) {
-            images.push_back(utils::load_image(dir_entry, target_height, target_width));
+            images.push_back(utils::load_image(dir_entry, target_size));
         }
         return images;
     }
-    return {utils::load_image(input_path, target_height, target_width)};
+    return {utils::load_image(input_path, target_size)};
 }
 
-ov::Tensor utils::load_image(const std::filesystem::path& image_path, std::optional<int32_t> target_height, std::optional<int32_t> target_width) {
-    if (target_height.has_value() != target_width.has_value()) {
-        throw std::runtime_error{"target_height and target_width must be provided together."};
+ov::Tensor utils::load_image(const std::filesystem::path& image_path, std::optional<ImageSize> target_size) {
+    if (target_size.has_value() && (target_size->width <= 0 || target_size->height <= 0)) {
+        throw std::runtime_error{"width and height of target_size must be positive values."};
     }
-    if (target_height && (*target_height <= 0 || *target_width <= 0)) {
-        throw std::runtime_error{"target_height and target_width must be positive values."};
-    }
-    bool do_resize = target_height.has_value(); 
+    bool do_resize = target_size.has_value(); 
     int x = 0, y = 0, channels_in_file = 0;
     constexpr int desired_channels = 3;
     unsigned char* image = stbi_load(
@@ -47,14 +44,14 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path, std::optio
     }
     if (do_resize) {
         unsigned char* resized = static_cast<unsigned char*>(
-            malloc(size_t(*target_width) * size_t(*target_height) * desired_channels));
+            malloc(size_t(target_size->width) * size_t(target_size->height) * desired_channels));
         if (!resized) {
             stbi_image_free(image);
             throw std::runtime_error{"Failed to allocate memory for resized image."};
         }
         unsigned char* resize_result = stbir_resize_uint8_linear(
             image, x, y, 0,
-            resized, *target_width, *target_height, 0,
+            resized, target_size->width, target_size->height, 0,
             static_cast<stbir_pixel_layout>(desired_channels));
         if (!resize_result) {
             stbi_image_free(image);
@@ -63,8 +60,8 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path, std::optio
         }
         stbi_image_free(image);
         image = resized;
-        x = *target_width;
-        y = *target_height;
+        x = target_size->width;
+        y = target_size->height;
     }
     struct SharedImageAllocator {
         unsigned char* image;
