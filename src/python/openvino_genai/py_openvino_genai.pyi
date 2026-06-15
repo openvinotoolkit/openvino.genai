@@ -917,6 +917,9 @@ class ExtendedPerfMetrics:
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
     
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -941,6 +944,8 @@ class ExtendedPerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_sampling_duration(self) -> MeanStdPair:
         ...
     def get_throughput(self) -> MeanStdPair:
         ...
@@ -2282,6 +2287,9 @@ class PerfMetrics:
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
     
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
+    
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -2310,6 +2318,8 @@ class PerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_sampling_duration(self) -> MeanStdPair:
         ...
     def get_throughput(self) -> MeanStdPair:
         ...
@@ -2439,6 +2449,9 @@ class RawPerfMetrics:
     
         :param grammar_compile_times: Time to compile the grammar in microseconds.
         :type grammar_compile_times: list[float]
+    
+        :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call.
+        :type sampling_durations: list[float]
     """
     def __init__(self) -> None:
         ...
@@ -2468,6 +2481,9 @@ class RawPerfMetrics:
         ...
     @property
     def m_times_to_first_token(self) -> list[float]:
+        ...
+    @property
+    def sampling_durations(self) -> list[float]:
         ...
     @property
     def token_infer_durations(self) -> list[float]:
@@ -2699,7 +2715,7 @@ class SchedulerConfig:
         cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                     The internal interval is KV cache block size * cache_interval_multiplier.
                                     When unset, the default value 8 is used for hybrid models with prefix caching.
-                                    Explicit values are supported only for models with linear attention cache inputs.
+                                    For models without linear attention cache inputs, this parameter is ignored.
                                     0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
     
@@ -4140,7 +4156,7 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
         Args:
@@ -4149,11 +4165,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
         Args:
@@ -4162,11 +4179,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
         In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.)
@@ -4177,11 +4195,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
         Args:
@@ -4190,6 +4209,7 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -5035,10 +5055,20 @@ class WhisperPerfMetrics(PerfMetrics):
         :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
         :type get_word_level_timestamps_processing_duration: MeanStdPair
     
+        :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds.
+        :type get_encode_inference_duration: MeanStdPair
+    
+        :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration per token in milliseconds.
+        :type get_decode_inference_duration: MeanStdPair
+    
         :param whisper_raw_metrics: Whisper specific raw metrics
         :type WhisperRawPerfMetrics:
     """
     def __init__(self) -> None:
+        ...
+    def get_decode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_encode_inference_duration(self) -> MeanStdPair:
         ...
     def get_features_extraction_duration(self) -> MeanStdPair:
         ...
@@ -5214,8 +5244,20 @@ class WhisperRawPerfMetrics:
     
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
+    
+        :param encode_inference_durations: Duration for each encoder inference call in microseconds.
+        :type encode_inference_durations: list[float]
+    
+        :param decode_inference_durations: Duration for each decoder inference call during token generation in microseconds.
+        :type decode_inference_durations: list[float]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
         ...
     @property
     def features_extraction_durations(self) -> list[float]:
