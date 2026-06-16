@@ -183,7 +183,7 @@ private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
 
-    explicit Text2VideoPipeline(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
+    explicit Text2VideoPipeline(std::unique_ptr<Impl> impl);
 };
 
 }  // namespace ov::genai

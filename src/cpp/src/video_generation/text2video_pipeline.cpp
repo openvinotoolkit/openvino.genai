@@ -6,6 +6,8 @@
 
 using namespace ov::genai;
 
+Text2VideoPipeline::Text2VideoPipeline(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
+
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path)
     : m_impl{std::make_unique<Impl>(model_path)} {}
 
