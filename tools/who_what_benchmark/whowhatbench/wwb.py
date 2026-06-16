@@ -628,8 +628,17 @@ def genai_gen_chat_text(
     return answers
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
-                      num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+def llamacpp_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+   skip_question,
+    use_chat_template=False,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+):
     _ = tokenizer
     _ = empty_adapters
     _ = num_assistant_tokens
