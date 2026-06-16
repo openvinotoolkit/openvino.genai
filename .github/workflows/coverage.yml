@@ -240,7 +240,7 @@ jobs:
       - name: Configure and build GenAI coverage package
         run: |
           apt update
-          apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev lcov ocl-icd-opencl-dev opencl-headers opencl-clhpp-headers
+          apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev opencl-clhpp-headers
           source "${OV_INSTALL_DIR}/setupvars.sh"
           cmake -DOpenVINODeveloperPackage_DIR="${OpenVINODeveloperPackage_DIR}" \
                 -DENABLE_PYTHON=ON \
