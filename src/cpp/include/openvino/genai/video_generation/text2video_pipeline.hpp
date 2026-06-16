@@ -182,9 +182,9 @@ public:
     ~Text2VideoPipeline();
 
 private:
-    std::shared_ptr<LTXPipeline> m_impl;
+    std::unique_ptr<LTXPipeline> m_impl;
 
-    explicit Text2VideoPipeline(std::shared_ptr<LTXPipeline> impl) : m_impl(std::move(impl)) {}
+    explicit Text2VideoPipeline(std::unique_ptr<LTXPipeline> impl) : m_impl(std::move(impl)) {}
 };
 
 }  // namespace ov::genai

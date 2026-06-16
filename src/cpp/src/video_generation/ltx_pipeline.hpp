@@ -578,9 +578,9 @@ public:
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
-    std::shared_ptr<LTXPipeline> clone() {
+    std::unique_ptr<LTXPipeline> clone() {
         OPENVINO_ASSERT(m_is_compiled, "Cannot clone an uncompiled LTXPipeline");
-        auto cloned = std::make_shared<LTXPipeline>(*this);
+        auto cloned = std::make_unique<LTXPipeline>(*this);
         cloned->m_scheduler = cast_scheduler(Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
         cloned->m_t5_text_encoder = m_t5_text_encoder->clone();
         cloned->m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_transformer->clone());
@@ -738,9 +738,6 @@ public:
         const size_t tokens_per_frame =
             (m_latent_height / transformer_spatial_patch_size) *
             (m_latent_width  / transformer_spatial_patch_size);
-        std::vector<float> conditioning_mask(video_sequence_length, 0.0f);
-        std::fill_n(conditioning_mask.begin(), tokens_per_frame, 1.0f);
-
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);

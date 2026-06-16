@@ -11,7 +11,7 @@ Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& model_path
                     "Image2VideoPipeline requires a 'vae_encoder' directory in ",
                     model_path,
                     ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_shared<LTXPipeline>(model_path, VideoPipelineType::IMAGE_2_VIDEO);
+    m_impl = std::make_unique<LTXPipeline>(model_path, VideoPipelineType::IMAGE_2_VIDEO);
 }
 
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& models_path,
@@ -21,10 +21,10 @@ Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& models_pat
                     "Image2VideoPipeline requires a 'vae_encoder' directory in ",
                     models_path,
                     ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_shared<LTXPipeline>(models_path, device, properties, VideoPipelineType::IMAGE_2_VIDEO);
+    m_impl = std::make_unique<LTXPipeline>(models_path, device, properties, VideoPipelineType::IMAGE_2_VIDEO);
 }
 
-Image2VideoPipeline::Image2VideoPipeline(std::shared_ptr<LTXPipeline> impl) : m_impl(std::move(impl)) {}
+Image2VideoPipeline::Image2VideoPipeline(std::unique_ptr<LTXPipeline> impl) : m_impl(std::move(impl)) {}
 
 const VideoGenerationConfig& Image2VideoPipeline::get_generation_config() const {
     return m_impl->m_generation_config;

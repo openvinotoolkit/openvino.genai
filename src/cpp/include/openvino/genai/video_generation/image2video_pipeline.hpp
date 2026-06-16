@@ -123,8 +123,8 @@ public:
     ~Image2VideoPipeline();
 
 private:
-    std::shared_ptr<LTXPipeline> m_impl;
-    explicit Image2VideoPipeline(std::shared_ptr<LTXPipeline> impl);
+    std::unique_ptr<LTXPipeline> m_impl;
+    explicit Image2VideoPipeline(std::unique_ptr<LTXPipeline> impl);
     friend class Text2VideoPipeline;
 };
 
