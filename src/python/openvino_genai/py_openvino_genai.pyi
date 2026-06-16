@@ -38,7 +38,7 @@ class ASRDecodedResults:
         Parameters:
         texts:              vector of resulting sequences.
         scores:             scores for each sequence.
-        language:           detected language for the input audio, e.g. "en".
+        languages:          detected languages for the input audio(s), e.g. ["en"].
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
@@ -251,6 +251,10 @@ class ASRPerfMetrics(PerfMetrics):
     """
     def __init__(self) -> None:
         ...
+    def get_decode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_encode_inference_duration(self) -> MeanStdPair:
+        ...
     def get_features_extraction_duration(self) -> MeanStdPair:
         ...
     def get_word_level_timestamps_processing_duration(self) -> MeanStdPair:
@@ -393,6 +397,12 @@ class ASRRawPerfMetrics:
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
         ...
     @property
     def features_extraction_durations(self) -> list[float]:

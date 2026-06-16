@@ -59,7 +59,7 @@ auto asr_decoded_results_docstring = R"(
     Parameters:
     texts:              vector of resulting sequences.
     scores:             scores for each sequence.
-    language:           detected language for the input audio, e.g. "en".
+    languages:          detected languages for the input audio(s), e.g. ["en"].
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps
@@ -258,8 +258,17 @@ void init_asr_pipeline(py::module_& m) {
                                [](const ASRRawPerfMetrics& rw) {
                                    return common_utils::get_ms(rw, &ASRRawPerfMetrics::features_extraction_durations);
                                })
-        .def_property_readonly("word_level_timestamps_processing_durations", [](const ASRRawPerfMetrics& rw) {
-            return common_utils::get_ms(rw, &ASRRawPerfMetrics::word_level_timestamps_processing_durations);
+        .def_property_readonly(
+            "word_level_timestamps_processing_durations",
+            [](const ASRRawPerfMetrics& rw) {
+                return common_utils::get_ms(rw, &ASRRawPerfMetrics::word_level_timestamps_processing_durations);
+            })
+        .def_property_readonly("encode_inference_durations",
+                               [](const ASRRawPerfMetrics& rw) {
+                                   return common_utils::get_ms(rw, &ASRRawPerfMetrics::encode_inference_durations);
+                               })
+        .def_property_readonly("decode_inference_durations", [](const ASRRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &ASRRawPerfMetrics::decode_inference_durations);
         });
 
     py::class_<ASRPerfMetrics, PerfMetrics>(m, "ASRPerfMetrics", asr_perf_metrics_docstring)
@@ -267,6 +276,8 @@ void init_asr_pipeline(py::module_& m) {
         .def("get_features_extraction_duration", &ASRPerfMetrics::get_features_extraction_duration)
         .def("get_word_level_timestamps_processing_duration",
              &ASRPerfMetrics::get_word_level_timestamps_processing_duration)
+        .def("get_encode_inference_duration", &ASRPerfMetrics::get_encode_inference_duration)
+        .def("get_decode_inference_duration", &ASRPerfMetrics::get_decode_inference_duration)
         .def_readonly("asr_raw_metrics", &ASRPerfMetrics::asr_raw_metrics);
 
     py::class_<ASRDecodedResultChunk>(m, "ASRDecodedResultChunk", asr_decoded_result_chunk_docstring)

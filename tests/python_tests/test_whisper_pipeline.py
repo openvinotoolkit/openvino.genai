@@ -331,9 +331,10 @@ def compare_results(hf_result, genai_result):
     if "chunks" not in hf_result and genai_result.chunks is None:
         return
 
-    assert len(genai_result.chunks) == len(hf_result["chunks"])
+    genai_chunks = genai_result.chunks[0] if isinstance(genai_result.chunks[0], list) else genai_result.chunks
+    assert len(genai_chunks) == len(hf_result["chunks"])
 
-    for opt_chunk, genai_chunk in zip(hf_result["chunks"], genai_result.chunks):
+    for opt_chunk, genai_chunk in zip(hf_result["chunks"], genai_chunks):
         assert opt_chunk["text"] == genai_chunk.text
         assert opt_chunk["timestamp"][0] == round(genai_chunk.start_ts, 2)
         if opt_chunk["timestamp"][1]:
@@ -368,12 +369,13 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
     _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_multilingual_dataset)
-    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    detected_language = result.languages[0] if hasattr(result, "languages") else result.language
     assert detected_language == language
 
     # explicit language should also be reflected in the result
     result = genai_pipe.generate(sample_from_multilingual_dataset, language=f"<|{language}|>")
 
+    detected_language = result.languages[0] if hasattr(result, "languages") else result.language
     assert detected_language == language
 
 
@@ -383,7 +385,7 @@ def test_language_detection_en(model_descr, sample_from_dataset, pipeline_type):
     _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
-    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    detected_language = result.languages[0] if hasattr(result, "languages") else result.language
     assert detected_language == "en"
 
 
