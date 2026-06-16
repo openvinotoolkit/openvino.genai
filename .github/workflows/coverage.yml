@@ -1,5 +1,6 @@
 name: Code coverage
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions: read-all
