@@ -12,6 +12,8 @@ diffusers>=0.22.0,<=0.38.0
 # optimum is in dependency list of optimum-intel
 # last supported commit f50a0b326df82d4b05c461a9184a97f616bfa63a
 optimum-intel[nncf]>=1.25.0
+# pin safetensors (<0.8.0) to avoid dependency resolution that downgrades optimum-intel
+safetensors<0.8.0
 packaging>=20.0,<=26.2
 psutil
 timm<=1.0.27
