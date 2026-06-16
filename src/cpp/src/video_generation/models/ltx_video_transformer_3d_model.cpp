@@ -91,15 +91,7 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
         adapters->set_tensor_name_prefix(m_lora_prefix);
         m_adapter_controller = AdapterController(m_model, *adapters, device);
     }
-    // LTX-Video transformer is sensitive to precision: CPU bf16 (AMX-BF16 default)
-    // compounds quantization error over inference steps, producing grey/static output.
-    ov::AnyMap effective_properties = *filtered_properties;
-    if (device.find("CPU") != std::string::npos &&
-        effective_properties.find(ov::hint::inference_precision.name()) == effective_properties.end()) {
-        effective_properties[ov::hint::inference_precision.name()] = ov::element::f32;
-    }
-
-    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, effective_properties);
+    ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input(0).get_partial_shape();
@@ -169,7 +161,8 @@ ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
             }
         }
     }
-    return ov::PartialShape{};
+    OPENVINO_THROW("LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
+                   "The model may be corrupted or exported incorrectly.");
 }
 
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,

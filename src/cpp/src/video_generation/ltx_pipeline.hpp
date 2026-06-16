@@ -1150,7 +1150,15 @@ public:
         update_adapters_from_properties(properties, m_generation_config.adapters);
         m_t5_text_encoder->compile(text_encode_device, properties);
         m_vae->compile(vae_device, properties);
-        m_transformer->compile(denoise_device, properties);
+
+        ov::AnyMap transformer_properties = properties;
+        if (denoise_device.find("CPU") != std::string::npos &&
+            transformer_properties.find(ov::hint::inference_precision.name()) == transformer_properties.end()) {
+            GENAI_WARN("LTX-Video transformer: CPU bf16 produces grey/static output over multiple denoising steps. "
+                       "Forcing inference_precision=f32. Pass inference_precision explicitly to override.");
+            transformer_properties[ov::hint::inference_precision.name()] = ov::element::f32;
+        }
+        m_transformer->compile(denoise_device, transformer_properties);
         m_text_encode_device = text_encode_device;
         m_denoise_device = denoise_device;
         m_vae_device = vae_device;
