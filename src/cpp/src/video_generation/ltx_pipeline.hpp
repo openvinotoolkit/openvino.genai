@@ -578,9 +578,11 @@ public:
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
-    std::unique_ptr<LTXPipeline> clone() {
+    template<typename T = LTXPipeline>
+    std::unique_ptr<T> clone() {
+        static_assert(std::is_base_of_v<LTXPipeline, T>, "T must derive from LTXPipeline");
         OPENVINO_ASSERT(m_is_compiled, "Cannot clone an uncompiled LTXPipeline");
-        auto cloned = std::make_unique<LTXPipeline>(*this);
+        auto cloned = std::make_unique<T>(static_cast<const LTXPipeline&>(*this));
         cloned->m_scheduler = cast_scheduler(Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
         cloned->m_t5_text_encoder = m_t5_text_encoder->clone();
         cloned->m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_transformer->clone());
@@ -1178,3 +1180,16 @@ private:
 };
 
 }  // namespace ov::genai
+
+#include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "openvino/genai/video_generation/image2video_pipeline.hpp"
+
+class ov::genai::Text2VideoPipeline::Impl final : public ov::genai::LTXPipeline {
+public:
+    using LTXPipeline::LTXPipeline;
+};
+
+class ov::genai::Image2VideoPipeline::Impl final : public ov::genai::LTXPipeline {
+public:
+    using LTXPipeline::LTXPipeline;
+};

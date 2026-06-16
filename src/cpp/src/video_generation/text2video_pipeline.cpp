@@ -7,15 +7,15 @@
 using namespace ov::genai;
 
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path)
-    : m_impl{std::make_unique<ov::genai::LTXPipeline>(model_path)} {}
+    : m_impl{std::make_unique<Impl>(model_path)} {}
 
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& models_dir,
                                        const std::string& device,
                                        const AnyMap& properties)
-    : m_impl{std::make_unique<ov::genai::LTXPipeline>(models_dir, device, properties)} {}
+    : m_impl{std::make_unique<Impl>(models_dir, device, properties)} {}
 
 Text2VideoPipeline Text2VideoPipeline::clone() {
-    return Text2VideoPipeline(m_impl->clone());
+    return Text2VideoPipeline(m_impl->clone<Impl>());
 }
 
 VideoGenerationResult Text2VideoPipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
