@@ -59,7 +59,7 @@ auto asr_decoded_results_docstring = R"(
     Parameters:
     texts:              vector of resulting sequences.
     scores:             scores for each sequence.
-    language:           detected language for the input audio, e.g. "en".
+    languages:          detected languages for the input audio(s), e.g. ["en"].
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps

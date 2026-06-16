@@ -51,11 +51,11 @@ def main():
     print(result)
 
     if result.chunks:
-        for chunk in result.chunks:
+        for chunk in result.chunks[0]:
             print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
 
     if result.words:
-        for word in result.words:
+        for word in result.words[0]:
             print(f"[{word.start_ts:.2f}, {word.end_ts:.2f}]: {word.text}")
 
 

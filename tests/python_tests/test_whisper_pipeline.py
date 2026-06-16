@@ -544,7 +544,7 @@ def test_language_detection_en(model_descr, sample_from_dataset, pipeline_type):
     _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
-    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    detected_language = result.languages[0] if hasattr(result, "languages") else result.language
     assert detected_language == "en"
 
 
@@ -562,7 +562,7 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
     _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_multilingual_dataset)
-    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    detected_language = result.languages[0] if hasattr(result, "languages") else result.language
     assert detected_language == language
 
 
