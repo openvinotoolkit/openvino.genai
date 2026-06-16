@@ -8,6 +8,7 @@
 
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
+#include "visual_language/vl_sdpa_transformations.hpp"
 
 namespace ov::genai {
 
@@ -168,7 +169,15 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
     auto vision_model_path = model_dir / "openvino_vision_embeddings_model.xml";
     if (std::filesystem::exists(vision_model_path)) {
         auto model = utils::singleton_core().read_model(vision_model_path);
+        // Enable VLSDPA (CM flash-attention) fusion on the vision transformer's self-attention.
+        // Sets rt_info "model_type_hint"="QWenVL" so the GPU SDPAToVLSDPA pass can replace the dense
+        // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
+        utils::request_vl_sdpa_transformations(model);
         auto compiled = utils::singleton_core().compile_model(model, device, device_config);
+        m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled);
+        ov::genai::utils::print_compiled_model_properties(compiled,
+            m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"
+                                    : "Omni vision embeddings model with VLSDPA optimization DISABLED");
         m_ireq_queue_merged_vision = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             compiled.get_property(ov::optimal_number_of_infer_requests),
             [&compiled]() -> ov::InferRequest {
@@ -196,7 +205,15 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
     if (models_map.count("vision_embeddings")) {
         const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
         auto model = utils::singleton_core().read_model(model_str, weights);
+        // Enable VLSDPA (CM flash-attention) fusion on the vision transformer's self-attention.
+        // Sets rt_info "model_type_hint"="QWenVL" so the GPU SDPAToVLSDPA pass can replace the dense
+        // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
+        utils::request_vl_sdpa_transformations(model);
         auto compiled = utils::singleton_core().compile_model(model, device, device_config);
+        m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled);
+        ov::genai::utils::print_compiled_model_properties(compiled,
+            m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"
+                                    : "Omni vision embeddings model with VLSDPA optimization DISABLED");
         m_ireq_queue_merged_vision = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             compiled.get_property(ov::optimal_number_of_infer_requests),
             [&compiled]() -> ov::InferRequest {
@@ -406,7 +423,6 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3Omni::run_video_image_embed
         pos_embeds = get_interpolated_pos_embeds(combined_grid_thw);
     }
 
-    auto attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw, reordered_videos_grid_thw);
     auto rotary_pos_emb = get_rotary_pos_emb(combined_grid_thw);
 
     CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue_merged_vision.get());
@@ -416,7 +432,15 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen3Omni::run_video_image_embed
     if (pos_embeds) {
         ireq.set_tensor("pos_embeds", pos_embeds);
     }
-    ireq.set_tensor("attention_mask", attention_mask);
+    // When VLSDPA fusion is active the GPU pass renamed "attention_mask" -> "cu_seq_lens" (packed
+    // segment boundaries, i32). Otherwise feed the dense float attention_mask as before.
+    if (m_with_cu_seqlens_input) {
+        auto cu_seq_lens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw, reordered_videos_grid_thw);
+        ireq.set_tensor("cu_seq_lens", cu_seq_lens);
+    } else {
+        auto attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw, reordered_videos_grid_thw);
+        ireq.set_tensor("attention_mask", attention_mask);
+    }
     ireq.set_tensor("rotary_pos_emb", rotary_pos_emb);
     ireq.infer();
 

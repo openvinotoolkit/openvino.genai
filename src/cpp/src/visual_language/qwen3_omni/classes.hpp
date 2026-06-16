@@ -134,6 +134,9 @@ private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_merged_vision;
     // Cached rotary embedding dimension from merged vision model (avoids queue lock in get_rotary_pos_emb)
     size_t m_rotary_dim = 0;
+    // True when the GPU SDPAToVLSDPA pass fired and the vision model now expects a packed
+    // "cu_seq_lens" input instead of the dense "attention_mask".
+    bool m_with_cu_seqlens_input = false;
 
     /// @brief Replace audio token positions in input_embeds with audio features.
     void merge_audio_embeddings(ov::Tensor& input_embeds, const std::vector<int64_t>& input_ids);
