@@ -133,6 +133,7 @@ uint64_t Gemma4MTPTargetWrapper::execute_inference(ov::InferRequest& request) {
 void Gemma4MTPTargetWrapper::update_inference_time(uint64_t inference_time_us) {
     m_raw_perf_metrics.m_durations.emplace_back(static_cast<float>(inference_time_us));
     m_raw_perf_metrics.m_inference_durations[0] += MicroSeconds(static_cast<float>(inference_time_us));
+    m_raw_perf_metrics.m_batch_sizes.emplace_back(0u);
 }
 
 void Gemma4MTPTargetWrapper::reset_state() {
@@ -212,6 +213,7 @@ uint64_t Gemma4MTPAssistantWrapper::execute_inference() {
 void Gemma4MTPAssistantWrapper::update_inference_time(uint64_t inference_time_us) {
     m_raw_perf_metrics.m_durations.emplace_back(static_cast<float>(inference_time_us));
     m_raw_perf_metrics.m_inference_durations[0] += MicroSeconds(static_cast<float>(inference_time_us));
+    m_raw_perf_metrics.m_batch_sizes.emplace_back(1u);
 }
 
 void Gemma4MTPAssistantWrapper::release_memory() {
@@ -416,6 +418,7 @@ EncodedResults StatefulGemma4MTPLLMPipeline::generate_tokens(const EncodedInputs
     int64_t first_token = sample_greedy_tokens(target_output.logits, 1).front();
     accepted_tokens.push_back(first_token);
     generated_tokens.push_back(first_token);
+    m_target->get_raw_perf_metrics().m_batch_sizes.back() = 1u;
     m_target->crop_state_to_length(accepted_tokens.size() - 1);
     streaming_status = stream_generated_tokens(streamer_ptr, {first_token});
 
@@ -459,6 +462,7 @@ EncodedResults StatefulGemma4MTPLLMPipeline::generate_tokens(const EncodedInputs
         }
         accepted_tokens.insert(accepted_tokens.end(), validated_tokens.begin(), validated_tokens.end());
         generated_tokens.insert(generated_tokens.end(), validated_tokens.begin(), validated_tokens.end());
+        m_target->get_raw_perf_metrics().m_batch_sizes.back() = validated_tokens.size();
         m_target->crop_state_to_length(accepted_tokens.size() - 1);
 
         streaming_status = stream_generated_tokens(streamer_ptr, validated_tokens);
@@ -490,6 +494,11 @@ EncodedResults StatefulGemma4MTPLLMPipeline::generate_tokens(const EncodedInputs
     m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
     m_sd_perf_metrics.raw_metrics.generate_durations.clear();
     m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
+
+    m_sd_perf_metrics.m_evaluated = false;
+    m_sd_perf_metrics.main_model_metrics.m_evaluated = false;
+    m_sd_perf_metrics.draft_model_metrics.m_evaluated = false;
+
     m_sd_perf_metrics.main_model_metrics.raw_metrics = m_target->get_raw_perf_metrics();
     m_sd_perf_metrics.draft_model_metrics.raw_metrics = m_assistant->get_raw_perf_metrics();
     if (total_draft_generated > 0) {

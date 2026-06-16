@@ -220,6 +220,150 @@ A:""",
 
 eagle3_devices = [("NPU", "NPU")]
 
+gemma4_mtp_models_and_input = [
+    (
+        "google/gemma-4-e2b-it",
+        "google/gemma-4-e2b-it-assistant",
+        "OpenVINO is",
+    )
+]
+
+gemma4_mtp_devices = [("CPU", "CPU")]
+
+
+@pytest.fixture(params=gemma4_mtp_models_and_input)
+def gemma4_mtp_model_input(request):
+    return request.param
+
+
+@pytest.fixture(params=gemma4_mtp_devices)
+def gemma4_mtp_device_pair(request):
+    return request.param
+
+
+@pytest.fixture
+def gemma4_mtp_target_model_schema(gemma4_mtp_model_input):
+    target_model, _, _ = gemma4_mtp_model_input
+    target_model_schema = download_and_convert_model(target_model)
+    return target_model_schema
+
+
+@pytest.fixture
+def gemma4_mtp_draft_model_path(gemma4_mtp_model_input):
+    _, draft_model, _ = gemma4_mtp_model_input
+    return download_and_convert_model(draft_model).models_path
+
+
+@pytest.fixture
+def gemma4_mtp_pipeline(gemma4_mtp_target_model_schema, gemma4_mtp_draft_model_path, gemma4_mtp_device_pair):
+    target_device, draft_device = gemma4_mtp_device_pair
+    ov_draft_model = ov_genai.draft_model(gemma4_mtp_draft_model_path, draft_device)
+
+    target_config = get_default_llm_properties()
+    ov_pipe = ov_genai.LLMPipeline(
+        gemma4_mtp_target_model_schema.models_path,
+        target_device,
+        target_config,
+        draft_model=ov_draft_model,
+        ATTENTION_BACKEND="SDPA",
+    )
+    return ov_pipe
+
+
+@pytest.mark.nightly
+@pytest.mark.real_models
+def test_gemma4_mtp_string_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_model_schema, gemma4_mtp_model_input):
+    _, _, prompt = gemma4_mtp_model_input
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=3)
+    ref_gen_results = run_hugging_face(
+        gemma4_mtp_target_model_schema.opt_model,
+        gemma4_mtp_target_model_schema.hf_tokenizer,
+        [prompt],
+        generation_config,
+    )
+
+    ov_decoded_results = gemma4_mtp_pipeline.generate([prompt], generation_config)
+    ov_gen_results = convert_decoded_results_to_generation_result(ov_decoded_results, 1, 1, False)
+
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": prompt}])
+    ov_chat_history_decoded_results = gemma4_mtp_pipeline.generate(chat_history, generation_config)
+    ov_chat_history_gen_results = convert_decoded_results_to_generation_result(
+        ov_chat_history_decoded_results,
+        1,
+        1,
+        False,
+    )
+
+    compare_generation_results([prompt], ref_gen_results, ov_gen_results, generation_config)
+    compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, generation_config)
+
+
+@pytest.mark.nightly
+@pytest.mark.real_models
+def test_gemma4_mtp_tokenized_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_model_schema, gemma4_mtp_model_input):
+    _, _, prompt = gemma4_mtp_model_input
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=20,
+        num_assistant_tokens=3,
+        apply_chat_template=False,
+    )
+    tokenized = gemma4_mtp_target_model_schema.hf_tokenizer(prompt, return_tensors="np")
+    tokenized_inputs = ov_genai.TokenizedInputs(
+        ov.Tensor(tokenized["input_ids"].astype(np.int64)),
+        ov.Tensor(tokenized["attention_mask"].astype(np.int64)),
+    )
+
+    # Compare against the string-input path with identical generation settings.
+    # This isolates tokenized-input handling from chat-template and HF-export differences.
+    ov_string_results = gemma4_mtp_pipeline.generate([prompt], generation_config)
+    ov_string_gen_results = convert_decoded_results_to_generation_result(ov_string_results, 1, 1, False)
+
+    ov_encoded_results = gemma4_mtp_pipeline.generate(tokenized_inputs, generation_config)
+    ov_result = ov_genai.GenerationResult()
+    ov_result.m_generation_ids = [
+        gemma4_mtp_target_model_schema.hf_tokenizer.decode(ov_encoded_results.tokens[0], skip_special_tokens=True)
+    ]
+    ov_gen_results = [ov_result]
+
+    compare_generation_results([prompt], ov_string_gen_results, ov_gen_results, generation_config)
+
+
+@pytest.mark.nightly
+@pytest.mark.real_models
+def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
+    _, _, prompt = gemma4_mtp_model_input
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=20,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+
+    results = gemma4_mtp_pipeline.generate([prompt], generation_config)
+    extended_perf_metrics = results.extended_perf_metrics
+
+    assert extended_perf_metrics is not None
+    assert extended_perf_metrics.main_model_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics is not None
+
+    num_main_generated = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
+    num_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+    assert num_main_generated > 0 and num_main_generated <= generation_config.max_new_tokens
+    assert num_draft_generated >= 0
+
+    num_accepted = extended_perf_metrics.get_num_accepted_tokens()
+    assert num_accepted > 0
+    assert num_accepted <= num_draft_generated, (
+        "Inconsistent extended perf metrics: accepted tokens exceed draft-generated tokens "
+        f"(accepted={num_accepted}, draft_generated={num_draft_generated})"
+    )
+
+    target_iterations = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
+    draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
+    assert target_iterations > 0 and target_iterations <= generation_config.max_new_tokens
+    assert draft_iterations > 0
+
 
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
 @pytest.mark.parametrize("target_device,draft_device", eagle3_devices)

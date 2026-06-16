@@ -62,6 +62,8 @@ def generation_config_to_hf(
     # copy default parameters
     kwargs["bos_token_id"] = default_generation_config.bos_token_id
     kwargs["pad_token_id"] = default_generation_config.pad_token_id
+    if hasattr(default_generation_config, "use_cache"):
+        kwargs["use_cache"] = default_generation_config.use_cache
 
     if generation_config.ignore_eos:
         kwargs["eos_token_id"] = []
@@ -285,9 +287,13 @@ def sanitize_model_id(model_id: str) -> str:
 
 TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
+NO_CACHE_MODELS = ("google/gemma-4-e2b-it-assistant",)
+
 # Some models require optimum-cli export instead of the Python API path.
 # This maps model_id to the --task value used during export - CVS-183496
 FORCE_OPTIMUM_CLI_EXPORT_MODELS = {
+    "google/gemma-4-e2b-it": "text-generation-with-past",
+    "google/gemma-4-e2b-it-assistant": "text-generation",
     "optimum-intel-internal-testing/tiny-random-flux": "text-to-image",
     "optimum-intel-internal-testing/tiny-random-lfm2": "text-generation-with-past",
     "optimum-intel-internal-testing/tiny-random-qwen3-next": "text-generation-with-past",
@@ -329,6 +335,9 @@ def download_and_convert_model_class(
 
     if model_kwargs is None:
         model_kwargs = {}
+
+    if str(model_id) in NO_CACHE_MODELS:
+        model_kwargs.setdefault("use_cache", False)
 
     if "has_tokenizer" not in model_kwargs and "eagle3" in str(model_id).lower():
         model_kwargs["has_tokenizer"] = False
