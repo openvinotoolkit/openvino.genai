@@ -275,17 +275,7 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
-// LTX-Video is sensitive to precision: CPU bf16 (AMX-BF16 default) compounds
-// quantization error over denoising steps, producing grey/static output.
-inline ov::AnyMap with_cpu_fp32_default(const std::string& device, const ov::AnyMap& properties) {
-    if (device.find("CPU") == std::string::npos ||
-        properties.find(ov::hint::inference_precision.name()) != properties.end()) {
-        return properties;
-    }
-    ov::AnyMap augmented = properties;
-    augmented[ov::hint::inference_precision.name()] = ov::element::f32;
-    return augmented;
-}
+
 
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
@@ -560,7 +550,7 @@ public:
                 VideoPipelineType pipeline_type = VideoPipelineType::TEXT_2_VIDEO,
                 std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now())
         : m_scheduler{cast_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"))},
-          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, with_cpu_fp32_default(device, properties))},
+          m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
           m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, properties)},
           m_generation_config{LTX_VIDEO_DEFAULT_CONFIG},
           m_pipeline_type{pipeline_type} {
