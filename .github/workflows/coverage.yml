@@ -376,11 +376,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install native coverage tools
-        run: |
-          apt update
-          apt install -y lcov
-
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
@@ -704,11 +699,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install native coverage tools
-        run: |
-          apt update
-          apt install -y lcov
-
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
@@ -871,11 +861,6 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
-
-      - name: Install native coverage tools
-        run: |
-          apt update
-          apt install -y lcov
 
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
@@ -1054,11 +1039,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install native coverage tools
-        run: |
-          apt update
-          apt install -y lcov
-
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
@@ -1231,11 +1211,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install native coverage tools
-        run: |
-          apt update
-          apt install -y lcov
-
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
@@ -1384,11 +1359,6 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
-
-      - name: Install native coverage tools
-        run: |
-          apt update
-          apt install -y lcov
 
       - name: Download OpenVINO package
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
