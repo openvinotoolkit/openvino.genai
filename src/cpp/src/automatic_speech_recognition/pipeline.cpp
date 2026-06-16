@@ -3,6 +3,7 @@
 
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
+#include <chrono>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <unordered_map>
@@ -51,6 +52,7 @@ namespace ov::genai {
 ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
                          const std::string& device,
                          const ov::AnyMap& properties) {
+    const auto start_time = std::chrono::steady_clock::now();
     switch (read_model_type(models_path)) {
     case ASRModelType::whisper: {
         m_impl = std::make_unique<WhisperASRPipelineAdapter>(models_path, device, properties);
@@ -61,6 +63,8 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
         break;
     }
     }
+    const auto stop_time = std::chrono::steady_clock::now();
+    m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs,

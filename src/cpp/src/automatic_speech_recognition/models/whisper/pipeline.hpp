@@ -97,9 +97,15 @@ private:
             std::move(whisper_result.perf_metrics.whisper_raw_metrics.features_extraction_durations);
         result.perf_metrics.asr_raw_metrics.word_level_timestamps_processing_durations =
             std::move(whisper_result.perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations);
+        result.perf_metrics.asr_raw_metrics.encode_inference_durations =
+            std::move(whisper_result.perf_metrics.whisper_raw_metrics.encode_inference_durations);
+        result.perf_metrics.asr_raw_metrics.decode_inference_durations =
+            std::move(whisper_result.perf_metrics.whisper_raw_metrics.decode_inference_durations);
         result.perf_metrics.features_extraction_duration = whisper_result.perf_metrics.features_extraction_duration;
         result.perf_metrics.word_level_timestamps_processing_duration =
             whisper_result.perf_metrics.word_level_timestamps_processing_duration;
+        result.perf_metrics.encode_inference_duration = whisper_result.perf_metrics.encode_inference_duration;
+        result.perf_metrics.decode_inference_duration = whisper_result.perf_metrics.decode_inference_duration;
 
         if (whisper_result.chunks.has_value()) {
             std::vector<ASRDecodedResultChunk> chunks;

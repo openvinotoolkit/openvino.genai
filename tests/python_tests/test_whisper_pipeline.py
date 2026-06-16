@@ -359,7 +359,7 @@ MODEL_PIPELINE_PAIRS = [
 
 
 def get_model_pipeline_pair_id(model_pipeline_pair):
-    model_id, pipeline_type = model_pipeline_pair
+    model_id, pipeline_type = model_pipeline_pair[:2]
     return f"pipeline_{pipeline_type.name}_{model_id.split('/')[-1]}"
 
 
@@ -372,10 +372,11 @@ def get_model_pipeline_pair_params(model_pipeline_pairs=MODEL_PIPELINE_PAIRS):
 
 @pytest.fixture(params=get_model_pipeline_pair_params())
 def pipelines_fixture(request):
-    model_id, pipeline_type = request.param
+    model_id, pipeline_type = request.param[:2]
+    options = request.param[2] if len(request.param) > 2 else {}
     model_name = model_id.split("/")[-1]
     model_path = get_ov_cache_converted_models_dir() / model_name
-    model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type)
+    model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type, **options)
     return hf_pipe, genai_pipe, model_id, pipeline_type
 
 
@@ -885,16 +886,30 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
     assert genai_result.texts[0] != hf_result["text"]
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params(
+        [
+            ("openai/whisper-tiny", PipelineType.ASR, {"word_timestamps": True}),
+            ("openai/whisper-tiny", PipelineType.WHISPER, {"word_timestamps": True}),
+            (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+        ]
+    ),
+    indirect=True,
+)
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_perf_metrics(model_descr, sample_from_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, word_timestamps=True, pipeline_type=pipeline_type)
+def test_perf_metrics(pipelines_fixture, sample_from_dataset):
+    _, genai_pipe, model_id, pipeline_type = pipelines_fixture
+
+    if model_id == QWEN3_ASR_MODEL_ID:
+        generate_kwargs = {"language": "English", "max_new_tokens": 200}
+    else:
+        generate_kwargs = {"return_timestamps": True, "word_timestamps": True}
 
     result = genai_pipe.generate(
         sample_from_dataset,
-        return_timestamps=True,
-        word_timestamps=True,
+        **generate_kwargs,
     )
 
     perf_metrics = result.perf_metrics
@@ -910,11 +925,15 @@ def test_perf_metrics(model_descr, sample_from_dataset, pipeline_type):
     assert perf_metrics.get_throughput().mean > 0
     assert perf_metrics.get_inference_duration().mean > 0
     assert perf_metrics.get_generate_duration().mean > 0
-    assert perf_metrics.get_tokenization_duration().mean == 0
+    if model_id == QWEN3_ASR_MODEL_ID:
+        assert perf_metrics.get_tokenization_duration().mean > 0
+    else:
+        assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_features_extraction_duration().mean > 0
-    assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
+    if model_id != QWEN3_ASR_MODEL_ID:
+        assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
     assert perf_metrics.get_encode_inference_duration().mean > 0
     assert perf_metrics.get_decode_inference_duration().mean > 0
     assert perf_metrics.get_sampling_duration().mean > 0
@@ -927,21 +946,20 @@ def test_perf_metrics(model_descr, sample_from_dataset, pipeline_type):
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
 
-    # processing duration is a single value per generate
-    assert len(raw_metrics.word_level_timestamps_processing_durations) == 1
+    if model_id != QWEN3_ASR_MODEL_ID:
+        assert len(raw_metrics.word_level_timestamps_processing_durations) == 1
+        word_ts_raw_dur = np.array(raw_metrics.word_level_timestamps_processing_durations) / 1000
+        mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
+        assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
+        assert np.allclose(std_dur, np.std(word_ts_raw_dur))
 
-    word_ts_raw_dur = np.array(raw_metrics.word_level_timestamps_processing_durations) / 1000
-    mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
-    assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
-    assert np.allclose(std_dur, np.std(word_ts_raw_dur))
-
-    enc_raw_dur = np.array(whisper_raw_metrics.encode_inference_durations) / 1000
+    enc_raw_dur = np.array(raw_metrics.encode_inference_durations) / 1000
     mean_dur, std_dur = perf_metrics.get_encode_inference_duration()
     assert len(enc_raw_dur) > 0
     assert np.allclose(mean_dur, np.mean(enc_raw_dur))
     assert np.allclose(std_dur, np.std(enc_raw_dur))
 
-    dec_raw_dur = np.array(whisper_raw_metrics.decode_inference_durations) / 1000
+    dec_raw_dur = np.array(raw_metrics.decode_inference_durations) / 1000
     mean_dur, std_dur = perf_metrics.get_decode_inference_duration()
     assert len(dec_raw_dur) > 0
     assert np.allclose(mean_dur, np.mean(dec_raw_dur))

@@ -30,6 +30,8 @@ void Qwen3ASRDecoder::set_seed(size_t seed) {
 EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
                                          const ov::Tensor& encoder_hidden_states,
                                          const ASRGenerationConfig& config,
+                                         RawPerfMetrics& raw_metrics,
+                                         ASRRawPerfMetrics& asr_raw_metrics,
                                          const std::shared_ptr<StreamerBase>& streamer_ptr) {
     const ov::Shape prompts_shape = input_ids.get_shape();
     const size_t batch_size = prompts_shape[0];
@@ -78,7 +80,15 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
 
     // Prefill: run decoder with full prompt
     m_request.set_tensor("input_ids", input_ids);
+    const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
+    const auto infer_end = std::chrono::steady_clock::now();
+    const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+    raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+    raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
+    raw_metrics.m_new_token_times.emplace_back(infer_end);
+    raw_metrics.m_batch_sizes.emplace_back(batch_size);
+    asr_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
     ov::Tensor logits = m_request.get_tensor("logits");
     const int64_t output_sequence_len = logits.get_shape().at(1);
@@ -95,7 +105,10 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         beam_offsets.insert({sequence_groups[i]->get_request_id(), i});
     }
 
+    const auto sample_start = std::chrono::steady_clock::now();
     m_sampler.sample(sequence_groups, logits);
+    raw_metrics.m_sampling_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     stream_generated_tokens();
 
     // Track active (not yet finished) sequence groups
@@ -159,11 +172,22 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         m_request.set_tensor("input_ids", new_input_ids);
         m_request.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
         // for beam search investigate encoder batches reordering based on next_beams
+        const auto infer_start = std::chrono::steady_clock::now();
         m_request.infer();
+        const auto infer_end = std::chrono::steady_clock::now();
+        const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+        raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
+        raw_metrics.m_token_infer_durations.emplace_back(infer_ms);
+        raw_metrics.m_new_token_times.emplace_back(infer_end);
+        raw_metrics.m_batch_sizes.emplace_back(total_num_tokens);
+        asr_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
         logits = m_request.get_tensor("logits");
 
+        const auto sample_start = std::chrono::steady_clock::now();
         m_sampler.sample(active_sequence_groups, logits);
+        raw_metrics.m_sampling_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         stream_generated_tokens();
         free_finished_requests();
     }

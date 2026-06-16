@@ -45,6 +45,7 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     m_decoder.set_seed(config.rng_seed);
 
     ASRDecodedResults results;
+    results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
     const std::vector<AudioChunk> chunks = split_audio_into_chunks({std::get<std::vector<float>>(audio_inputs)},
@@ -66,6 +67,7 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     auto stop_time = std::chrono::steady_clock::now();
     results.perf_metrics.raw_metrics.generate_durations.emplace_back(
         MicroSeconds(PerfMetrics::get_microsec(stop_time - start_time)));
+    results.perf_metrics.evaluate_statistics(start_time);
     return results;
 }
 
@@ -198,8 +200,9 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
         const auto encoder_start_time = std::chrono::steady_clock::now();
         const ov::Tensor encoder_hidden_states = m_encoder.encode(features[batch]);
         const auto encoder_stop_time = std::chrono::steady_clock::now();
-        perf_metrics.raw_metrics.m_inference_durations[0] +=
-            MicroSeconds(PerfMetrics::get_microsec(encoder_stop_time - encoder_start_time));
+        const auto encoder_infer_ms = PerfMetrics::get_microsec(encoder_stop_time - encoder_start_time);
+        perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(encoder_infer_ms);
+        perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(encoder_infer_ms);
 
         const size_t audio_token_count = encoder_hidden_states.get_shape()[1];
 
@@ -217,11 +220,12 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
                 ? std::make_shared<Qwen3ASRStreamer>(streamer_ptr, m_asr_text_token_id, true)
                 : streamer_ptr;
 
-        const auto decoder_start_time = std::chrono::steady_clock::now();
-        const auto encoded_results = m_decoder.generate(input_ids, encoder_hidden_states, config, decoder_streamer);
-        const auto decoder_stop_time = std::chrono::steady_clock::now();
-        perf_metrics.raw_metrics.m_inference_durations[0] +=
-            MicroSeconds(PerfMetrics::get_microsec(decoder_stop_time - decoder_start_time));
+        const auto encoded_results = m_decoder.generate(input_ids,
+                                                        encoder_hidden_states,
+                                                        config,
+                                                        perf_metrics.raw_metrics,
+                                                        perf_metrics.asr_raw_metrics,
+                                                        decoder_streamer);
 
         const auto detokenization_start_time = std::chrono::steady_clock::now();
         const auto text = m_tokenizer.decode(encoded_results.tokens[0]);

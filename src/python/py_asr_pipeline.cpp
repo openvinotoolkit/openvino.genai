@@ -175,6 +175,12 @@ auto asr_raw_perf_metrics_docstring = R"(
 
     :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
     :type word_level_timestamps_processing_durations: list[MicroSeconds]
+
+    :param encode_inference_durations: Duration for each encoder inference call.
+    :type encode_inference_durations: list[MicroSeconds]
+
+    :param decode_inference_durations: Duration for each decoder inference call during token generation.
+    :type decode_inference_durations: list[MicroSeconds]
 )";
 
 auto asr_perf_metrics_docstring = R"(
@@ -185,6 +191,12 @@ auto asr_perf_metrics_docstring = R"(
 
     :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
     :type get_word_level_timestamps_processing_duration: MeanStdPair
+
+    :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds
+    :type get_encode_inference_duration: MeanStdPair
+
+    :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration in milliseconds
+    :type get_decode_inference_duration: MeanStdPair
 
     :param asr_raw_metrics: ASR specific raw metrics
     :type ASRRawPerfMetrics:
@@ -264,8 +276,17 @@ void init_asr_pipeline(py::module_& m) {
                                [](const ASRRawPerfMetrics& rw) {
                                    return common_utils::get_ms(rw, &ASRRawPerfMetrics::features_extraction_durations);
                                })
-        .def_property_readonly("word_level_timestamps_processing_durations", [](const ASRRawPerfMetrics& rw) {
-            return common_utils::get_ms(rw, &ASRRawPerfMetrics::word_level_timestamps_processing_durations);
+        .def_property_readonly(
+            "word_level_timestamps_processing_durations",
+            [](const ASRRawPerfMetrics& rw) {
+                return common_utils::get_ms(rw, &ASRRawPerfMetrics::word_level_timestamps_processing_durations);
+            })
+        .def_property_readonly("encode_inference_durations",
+                               [](const ASRRawPerfMetrics& rw) {
+                                   return common_utils::get_ms(rw, &ASRRawPerfMetrics::encode_inference_durations);
+                               })
+        .def_property_readonly("decode_inference_durations", [](const ASRRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &ASRRawPerfMetrics::decode_inference_durations);
         });
 
     py::class_<ASRPerfMetrics, PerfMetrics>(m, "ASRPerfMetrics", asr_perf_metrics_docstring)
@@ -273,6 +294,8 @@ void init_asr_pipeline(py::module_& m) {
         .def("get_features_extraction_duration", &ASRPerfMetrics::get_features_extraction_duration)
         .def("get_word_level_timestamps_processing_duration",
              &ASRPerfMetrics::get_word_level_timestamps_processing_duration)
+        .def("get_encode_inference_duration", &ASRPerfMetrics::get_encode_inference_duration)
+        .def("get_decode_inference_duration", &ASRPerfMetrics::get_decode_inference_duration)
         .def_readonly("asr_raw_metrics", &ASRPerfMetrics::asr_raw_metrics);
 
     py::class_<ASRDecodedResultChunk>(m, "ASRDecodedResultChunk", asr_decoded_result_chunk_docstring)
