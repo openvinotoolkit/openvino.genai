@@ -748,6 +748,9 @@ public:
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
 
         const size_t B_ts = latent_shape_cfg[0];
+        OPENVINO_ASSERT(m_transformer->get_timestep_partial_shape().size() == 2,
+                        "Image-to-video requires a rank-2 [B, S] timestep input. "
+                        "Re-export the model with: optimum-cli export openvino --task image-to-video");
         ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
         float* timestep_data = timestep.data<float>();
         for (size_t b = 0; b < B_ts; ++b) {
