@@ -1187,9 +1187,11 @@ private:
 class ov::genai::Text2VideoPipeline::Impl final : public ov::genai::LTXPipeline {
 public:
     using LTXPipeline::LTXPipeline;
+    explicit Impl(const LTXPipeline& base) : LTXPipeline(base) {}
 };
 
 class ov::genai::Image2VideoPipeline::Impl final : public ov::genai::LTXPipeline {
 public:
     using LTXPipeline::LTXPipeline;
+    explicit Impl(const LTXPipeline& base) : LTXPipeline(base) {}
 };
