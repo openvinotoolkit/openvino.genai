@@ -21,7 +21,7 @@ public:
         m_whisper_pipeline.set_generation_config(to_whisper_config(config));
     }
 
-    ASRDecodedResults generate(const RawSpeechInput& raw_speech_input,
+    ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                std::optional<ASRGenerationConfig> generation_config,
                                const std::shared_ptr<StreamerBase> streamer) override {
         OptionalWhisperGenerationConfig whisper_config = std::nullopt;
@@ -32,7 +32,7 @@ public:
         StreamerVariant streamer_variant = streamer ? StreamerVariant{streamer} : StreamerVariant{std::monostate{}};
 
         WhisperDecodedResults whisper_result =
-            m_whisper_pipeline.generate(raw_speech_input, whisper_config, streamer_variant);
+            m_whisper_pipeline.generate(std::get<std::vector<float>>(audio_inputs), whisper_config, streamer_variant);
 
         return to_asr_results(std::move(whisper_result));
     }
@@ -82,7 +82,7 @@ private:
         ASRDecodedResults result;
         result.texts = std::move(whisper_result.texts);
         result.scores = std::move(whisper_result.scores);
-        result.language = std::move(whisper_result.language);
+        result.languages = {std::move(whisper_result.language)};
         result.perf_metrics = ASRPerfMetrics{base_metrics};
         result.perf_metrics.asr_raw_metrics.features_extraction_durations =
             std::move(whisper_result.perf_metrics.whisper_raw_metrics.features_extraction_durations);
@@ -98,7 +98,7 @@ private:
             for (auto& chunk : *whisper_result.chunks) {
                 chunks.push_back({chunk.start_ts, chunk.end_ts, std::move(chunk.text), {}});
             }
-            result.chunks = std::move(chunks);
+            result.chunks = {std::move(chunks)};
         }
 
         if (whisper_result.words.has_value()) {
@@ -107,7 +107,7 @@ private:
             for (auto& word : *whisper_result.words) {
                 words.push_back({word.start_ts, word.end_ts, std::move(word.word), std::move(word.token_ids)});
             }
-            result.words = std::move(words);
+            result.words = {std::move(words)};
         }
 
         return result;

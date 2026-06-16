@@ -46,10 +46,10 @@ class ASRDecodedResults:
     def __repr__(self) -> str:
         ...
     @property
-    def chunks(self) -> list[ASRDecodedResultChunk] | None:
+    def chunks(self) -> list[list[ASRDecodedResultChunk]] | None:
         ...
     @property
-    def language(self) -> str:
+    def languages(self) -> list[str]:
         ...
     @property
     def perf_metrics(self) -> ASRPerfMetrics:
@@ -61,7 +61,7 @@ class ASRDecodedResults:
     def texts(self) -> list[str]:
         ...
     @property
-    def words(self) -> list[ASRDecodedResultChunk] | None:
+    def words(self) -> list[list[ASRDecodedResultChunk]] | None:
         ...
 class ASRGenerationConfig(GenerationConfig):
     """
@@ -268,12 +268,12 @@ class ASRPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def generate(self, raw_speech_input: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
+    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
         
-            :param raw_speech_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-            :type raw_speech_input: list[float]
+            :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+            :type audio_inputs: list[float]
         
             :param generation_config: generation_config
             :type generation_config: ASRGenerationConfig or a dict

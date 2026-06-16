@@ -16,7 +16,7 @@
 
 namespace ov::genai {
 
-using RawSpeechInput = std::vector<float>;
+using AudioInputs = std::variant<std::vector<float>>;
 
 /// Time-aligned text chunk — used for both segment-level and word-level timestamps.
 /// For segments: text is the decoded segment, token_ids are the tokens in that segment.
@@ -31,11 +31,11 @@ struct ASRDecodedResultChunk {
 struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     std::vector<std::string> texts;
     std::vector<float> scores;
-    std::string language;
+    std::vector<std::string> languages;
     ASRPerfMetrics perf_metrics;
 
-    std::optional<std::vector<ASRDecodedResultChunk>> chunks = std::nullopt;
-    std::optional<std::vector<ASRDecodedResultChunk>> words = std::nullopt;
+    std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> chunks = std::nullopt;
+    std::optional<std::vector<std::vector<ASRDecodedResultChunk>>> words = std::nullopt;
 
     operator std::string() const {
         std::stringstream ss;
@@ -78,17 +78,17 @@ public:
 
     ~ASRPipeline();
 
-    ASRDecodedResults generate(const RawSpeechInput& raw_speech_input,
+    ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                std::optional<ASRGenerationConfig> generation_config = std::nullopt,
                                StreamerVariant streamer = std::monostate());
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<ASRDecodedResults, Properties...> generate(const RawSpeechInput& raw_speech_input,
+    ov::util::EnableIfAllStringAny<ASRDecodedResults, Properties...> generate(const AudioInputs& audio_inputs,
                                                                               Properties&&... properties) {
-        return generate(raw_speech_input, AnyMap{std::forward<Properties>(properties)...});
+        return generate(audio_inputs, AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ASRDecodedResults generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);
+    ASRDecodedResults generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map);
 
     Tokenizer get_tokenizer();
     ASRGenerationConfig get_generation_config() const;

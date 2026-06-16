@@ -16,6 +16,7 @@
 namespace ov {
 namespace genai {
 
+using RawSpeechInput = std::vector<float>;
 using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 struct WhisperRawPerfMetrics {
