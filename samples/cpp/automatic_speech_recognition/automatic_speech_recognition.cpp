@@ -46,14 +46,18 @@ int main(int argc, char* argv[]) try {
 
     std::cout << result << "\n";
 
-    // std::cout << std::fixed << std::setprecision(2);
-    // for (auto& chunk : *result.chunks) {
-    //     std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
-    // }
+    std::cout << std::fixed << std::setprecision(2);
+    if (result.chunks.has_value()) {
+        for (auto& chunk : (*result.chunks)[0]) {
+            std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
+        }
+    }
 
-    // for (auto& word : *result.words) {
-    //     std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
-    // }
+    if (result.words.has_value()) {
+        for (auto& word : (*result.words)[0]) {
+            std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
+        }
+    }
 
 } catch (const std::exception& error) {
     try {

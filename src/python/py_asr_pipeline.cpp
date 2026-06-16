@@ -36,8 +36,8 @@ namespace {
 auto asr_generate_docstring = R"(
     High level generate that receives raw speech as a vector of floats and returns decoded output.
 
-    :param audio_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-    :type audio_input: list[float]
+    :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+    :type audio_inputs: list[float]
 
     :param generation_config: generation_config
     :type generation_config: ASRGenerationConfig or a dict
@@ -206,7 +206,7 @@ std::optional<ASRGenerationConfig> update_asr_config_from_kwargs(const std::opti
 }
 
 py::object call_asr_common_generate(ASRPipeline& pipe,
-                                    const AudioInputs& audio_input,
+                                    const AudioInputs& audio_inputs,
                                     const std::optional<ASRGenerationConfig>& config,
                                     const pyutils::PyBindStreamerVariant& py_streamer,
                                     const py::kwargs& kwargs) {
@@ -221,7 +221,7 @@ py::object call_asr_common_generate(ASRPipeline& pipe,
     ASRDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res = pipe.generate(audio_input, updated_config, streamer);
+        res = pipe.generate(audio_inputs, updated_config, streamer);
     }
     return py::cast(res);
 }
@@ -291,7 +291,7 @@ void init_asr_pipeline(py::module_& m) {
                                    return pyutils::handle_utf8((std::vector<std::string>)dr);
                                })
         .def_readonly("scores", &ASRDecodedResults::scores)
-        .def_readonly("language", &ASRDecodedResults::languages)
+        .def_readonly("languages", &ASRDecodedResults::languages)
         .def_readonly("chunks", &ASRDecodedResults::chunks)
         .def_readonly("words", &ASRDecodedResults::words)
         .def_readonly("perf_metrics", &ASRDecodedResults::perf_metrics)
@@ -328,13 +328,13 @@ void init_asr_pipeline(py::module_& m) {
         .def(
             "generate",
             [](ASRPipeline& pipe,
-               const AudioInputs& audio_input,
+               const AudioInputs& audio_inputs,
                const std::optional<ASRGenerationConfig>& generation_config,
                const pyutils::PyBindStreamerVariant& streamer,
                const py::kwargs& kwargs) -> py::typing::Union<ASRDecodedResults> {
-                return call_asr_common_generate(pipe, audio_input, generation_config, streamer, kwargs);
+                return call_asr_common_generate(pipe, audio_inputs, generation_config, streamer, kwargs);
             },
-            py::arg("audio_input"),
+            py::arg("audio_inputs"),
             "List of floats representing raw speech audio. "
             "Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.",
             py::arg("generation_config") = std::nullopt,
