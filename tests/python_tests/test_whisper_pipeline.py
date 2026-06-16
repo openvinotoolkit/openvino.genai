@@ -368,11 +368,13 @@ def test_language_detection(model_descr, sample_from_multilingual_dataset, langu
     _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_multilingual_dataset)
-    assert result.language == language
+    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    assert detected_language == language
 
     # explicit language should also be reflected in the result
     result = genai_pipe.generate(sample_from_multilingual_dataset, language=f"<|{language}|>")
-    assert result.language == language
+
+    assert detected_language == language
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
@@ -381,7 +383,8 @@ def test_language_detection_en(model_descr, sample_from_dataset, pipeline_type):
     _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
-    assert result.language == "en"
+    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    assert detected_language == "en"
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -874,13 +877,13 @@ def test_perf_metrics(model_descr, sample_from_dataset, pipeline_type):
     assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
     assert np.allclose(std_dur, np.std(word_ts_raw_dur))
 
-    enc_raw_dur = np.array(whisper_raw_metrics.encode_inference_durations) / 1000
+    enc_raw_dur = np.array(raw_metrics.encode_inference_durations) / 1000
     mean_dur, std_dur = perf_metrics.get_encode_inference_duration()
     assert len(enc_raw_dur) > 0
     assert np.allclose(mean_dur, np.mean(enc_raw_dur))
     assert np.allclose(std_dur, np.std(enc_raw_dur))
 
-    dec_raw_dur = np.array(whisper_raw_metrics.decode_inference_durations) / 1000
+    dec_raw_dur = np.array(raw_metrics.decode_inference_durations) / 1000
     mean_dur, std_dur = perf_metrics.get_decode_inference_duration()
     assert len(dec_raw_dur) > 0
     assert np.allclose(mean_dur, np.mean(dec_raw_dur))
