@@ -28,7 +28,7 @@ class TextAgentEvaluator(BaseEvaluator):
         test_data: Optional[List[Dict[str, Any]]] = None,
         metrics: str = "similarity",
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
-        max_new_tokens: int = 128,
+        max_new_tokens: int = 1024,
         num_samples: Optional[int] = None,
         gen_answer_fn=None,
         empty_adapters: bool = False,
@@ -36,9 +36,10 @@ class TextAgentEvaluator(BaseEvaluator):
         assistant_confidence_threshold: float = 0.0,
         is_genai_backend: bool = False,
     ) -> None:
-        assert (
-            base_model is not None or gt_data is not None
-        ), "Text generation pipeline for evaluation or ground truth data must be defined"
+        if base_model is None and gt_data is None:
+            raise ValueError(
+                "Text generation pipeline for evaluation or ground truth data must be defined"
+            )
 
         self.test_data = test_data
         self.metrics = metrics
@@ -64,7 +65,8 @@ class TextAgentEvaluator(BaseEvaluator):
         if "similarity" in self.metrics:
             self.similarity = TextSimilarity(similarity_model_id)
         if "divergency" in self.metrics:
-            assert tokenizer is not None
+            if tokenizer is None:
+                raise ValueError("tokenizer must be provided when divergency metric is enabled")
             self.divergency = TextDivergency(tokenizer)
 
         self.last_cmp = None
@@ -170,7 +172,8 @@ class TextAgentEvaluator(BaseEvaluator):
         return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
 
     def worst_examples(self, top_k: int = 5, metric="similarity"):
-        assert self.last_cmp is not None
+        if self.last_cmp is None:
+            raise ValueError("No comparison data available. Run score() before worst_examples().")
 
         if metric in ["SDT", "SDT norm"]:
             res = self.last_cmp.nlargest(top_k, metric)
@@ -224,16 +227,6 @@ class TextAgentEvaluator(BaseEvaluator):
 
         if user_texts:
             return "\n".join(user_texts)
-
-        # Fallback to any non-empty content to avoid empty prompt metadata.
-        for msg in messages:
-            if not isinstance(msg, dict):
-                continue
-            content = msg.get("content", "")
-            if isinstance(content, str) and content.strip():
-                return content
-            if isinstance(content, list) and len(content) > 0:
-                return json.dumps(content, ensure_ascii=False)
 
         return ""
 
@@ -295,6 +288,19 @@ class TextAgentEvaluator(BaseEvaluator):
 
         return None
 
+    @staticmethod
+    def _get_tokenizer_chat_template(tokenizer) -> Optional[str]:
+        if tokenizer is None:
+            return None
+
+        if hasattr(tokenizer, "get_chat_template"):
+            try:
+                return tokenizer.get_chat_template()
+            except Exception:
+                return getattr(tokenizer, "chat_template", None)
+
+        return getattr(tokenizer, "chat_template", None)
+
     def _load_chat_template(self, model, tokenizer):
         chat_template_source = self._get_chat_template_for_model(model, tokenizer)
         if chat_template_source:
@@ -306,26 +312,20 @@ class TextAgentEvaluator(BaseEvaluator):
                 response.raise_for_status()
                 return response.text
 
-            try:
-                tokenizer_chat_template = tokenizer.get_chat_template()
-            except Exception:
-                tokenizer_chat_template = getattr(tokenizer, "chat_template", None)
-
             logger.info("Loading chat template from model: %s", chat_template_source)
             custom_tokenizer = AutoTokenizer.from_pretrained(chat_template_source, trust_remote_code=True)
-            if hasattr(custom_tokenizer, "get_chat_template"):
-                return custom_tokenizer.get_chat_template()
-            return custom_tokenizer.chat_template
+            custom_template = self._get_tokenizer_chat_template(custom_tokenizer)
+            if custom_template is not None:
+                return custom_template
 
         if tokenizer is not None:
             try:
-                if hasattr(tokenizer, "get_chat_template"):
-                    chat_template = tokenizer.get_chat_template()
-                else:
-                    chat_template = tokenizer.chat_template
+                chat_template = self._get_tokenizer_chat_template(tokenizer)
+                if chat_template is None:
+                    raise ValueError("No chat template found on tokenizer")
                 logger.info("Chat template loaded from tokenizer")
                 return chat_template
-            except AttributeError:
+            except Exception:
                 logger.warning("Failed to load chat template from tokenizer")
 
         return None
@@ -388,13 +388,11 @@ class TextAgentEvaluator(BaseEvaluator):
 
         return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, tools)
 
-    def _generate_non_genai(self, model, tokenizer, record: Dict[str, Any], chat_template: Optional[str] = None) -> str:
+    def _generate_non_genai(self, model, tokenizer, record: Dict[str, Any], chat_template: Optional[str]) -> str:
         messages = record["messages"]
 
         tools = record.get("tools")
         device = getattr(model, "device", "cpu")
-        if chat_template is None:
-            chat_template = self._load_chat_template(model, tokenizer)
         prompt = self._build_prompt_text(tokenizer, messages, tools, chat_template, backend_name="HF")
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
@@ -428,7 +426,7 @@ class TextAgentEvaluator(BaseEvaluator):
         answer_tokens = tokens[:, inputs["input_ids"].shape[-1]:]
         return tokenizer.batch_decode(answer_tokens, skip_special_tokens=True)[0]
 
-    def _generate_genai(self, model, _tokenizer, record: Dict[str, Any], chat_template: Optional[str] = None) -> str:
+    def _generate_genai(self, model, _tokenizer, record: Dict[str, Any], chat_template: Optional[str]) -> str:
         import openvino_genai
 
         messages = record["messages"]
@@ -465,8 +463,6 @@ class TextAgentEvaluator(BaseEvaluator):
             kwargs["adapters"] = openvino_genai.AdapterConfig()
 
         tools = record.get("tools")
-        if chat_template is None:
-            chat_template = self._load_chat_template(model, _tokenizer)
         prompt = self._build_prompt_text(_tokenizer, messages, tools, chat_template, backend_name="GenAI")
 
         # Prompt is already rendered with chat template; do not re-apply template in GenAI.
@@ -477,12 +473,9 @@ class TextAgentEvaluator(BaseEvaluator):
             return res.texts[0]
         return str(res)
 
-    def _generate_data(self, model, gen_answer_fn=None, result_dir=None, output_dir=None):
+    def _generate_data(self, model, gen_answer_fn=None, result_dir=None):
         if gen_answer_fn is None:
             gen_answer_fn = self._generate_genai if self.is_genai_backend else self._generate_non_genai
-
-        if output_dir is not None:
-            result_dir = output_dir
 
         chat_template = self._load_chat_template(model, self.tokenizer)
 
@@ -498,12 +491,7 @@ class TextAgentEvaluator(BaseEvaluator):
                     "check the messages content in your dataset"
                 )
             prompts.append(prompt_preview)
-            # Pass chat_template if the generation function accepts it
-            try:
-                answers.append(gen_answer_fn(model, self.tokenizer, record, chat_template=chat_template))
-            except TypeError:
-                # Fallback for custom gen_answer_fn that don't accept chat_template parameter
-                answers.append(gen_answer_fn(model, self.tokenizer, record))
+            answers.append(gen_answer_fn(model, self.tokenizer, record, chat_template=chat_template))
 
         # For long prompts/answers prefer path-based storage in CSV.
         if result_dir:

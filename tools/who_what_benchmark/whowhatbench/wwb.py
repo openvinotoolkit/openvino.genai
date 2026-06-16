@@ -31,6 +31,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+AGENT_DATASET_VARIANTS = {
+    "base": "messages_500.jsonl",
+    "small": "messages_5k.jsonl",
+    "medium": "messages_20k.jsonl",
+    "large": "messages_100k.jsonl",
+}
+
+
 def pruning_ratio_type(value: str) -> int:
     ivalue = int(value)
     if ivalue < 0 or ivalue > 100:
@@ -137,6 +145,20 @@ def parse_args():
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
         " Local .json/.jsonl files are also supported for chat messages datasets (records with messages/tools)."
         " If None then internal list of prompts will be used.",
+    )
+    parser.add_argument(
+        "--agent-dataset",
+        type=str,
+        choices=list(AGENT_DATASET_VARIANTS.keys()),
+        default=None,
+        help=(
+            "Text-agent dataset preset."
+            " Variants map to JSONL files:"
+            " base=messages_500.jsonl, small=messages_5k.jsonl,"
+            " medium=messages_20k.jsonl, large=messages_100k.jsonl."
+            " Used only for --model-type text-agent."
+            " If set, it overrides default/--long-prompt selection."
+        ),
     )
     parser.add_argument(
         "--dataset-field",
@@ -448,11 +470,25 @@ def load_prompts(args):
 
 
 def load_agent_dataset(args):
-    if args.dataset is None:
+    if args.dataset is not None:
+        resolved_path = resolve_json_dataset_path(args.dataset)
+        logger.info("Text-agent dataset selected from --dataset: %s", resolved_path)
+    elif args.agent_dataset is not None:
+        dataset_name = AGENT_DATASET_VARIANTS[args.agent_dataset]
+        resolved_path = resolve_json_dataset_path(dataset_name)
+        logger.info(
+            "Text-agent dataset selected from --agent-dataset=%s: %s",
+            args.agent_dataset,
+            resolved_path,
+        )
+    else:
         dataset_name = "messages_20k.jsonl" if args.long_prompt else "messages_500.jsonl"
         resolved_path = resolve_json_dataset_path(dataset_name)
-    else:
-        resolved_path = resolve_json_dataset_path(args.dataset)
+        logger.info(
+            "Text-agent dataset selected by legacy flag/default (%s): %s",
+            "--long-prompt" if args.long_prompt else "default",
+            resolved_path,
+        )
 
     data = read_json_dataset(resolved_path)
     return data

@@ -359,22 +359,18 @@ def read_json_dataset(dataset_path: str):
     with open(dataset_path, "r", encoding="utf-8") as input_file:
         content = input_file.read()
 
-    # Try parsing as a standard JSON array first
-    try:
+    items = []
+    if Path(dataset_path).suffix.lower() == ".json":
         items = json.loads(content)
         if not isinstance(items, list):
             raise ValueError("Top-level JSON value is not an array")
-        logger.info(f"Loaded {len(items)} records from JSON dataset")
-        return items
-    except (json.JSONDecodeError, ValueError):
-        pass
+    else:
+        # Parse as JSONL (line-delimited JSON)
+        for line in content.splitlines():
+            line = line.strip()
+            if line:
+                items.append(json.loads(line))
 
-    # Fall back to JSONL (line-delimited JSON)
-    items = []
-    for line in content.splitlines():
-        line = line.strip()
-        if line:
-            items.append(json.loads(line))
     logger.info(f"Loaded {len(items)} records from JSON dataset")
     return items
 
