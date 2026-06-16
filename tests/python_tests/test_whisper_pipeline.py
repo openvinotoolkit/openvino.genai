@@ -31,6 +31,7 @@ from typing import Any, Literal
 from difflib import SequenceMatcher
 
 from utils.dataset_utils import load_dataset_via_snapshot
+from utils.qwen3_asr import Qwen3ASROptimumPipeline
 
 
 class PipelineType(enum.Enum):
@@ -85,10 +86,13 @@ def get_whisper_models_list(tiny_only=False):
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
+QWEN3_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-asr"
+
+
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_whisper_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER):
+def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER):
     model_id, path = params
 
     manager = AtomicDownloadManager(path)
@@ -114,19 +118,28 @@ def read_whisper_model(params, word_timestamps=False, pipeline_type=PipelineType
         )
     )
 
-    hf_pipe = AutomaticSpeechRecognitionPipeline(
-        model=opt_model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-    )
+    if model_id == QWEN3_ASR_MODEL_ID:
+        hf_pipe = Qwen3ASROptimumPipeline(
+            model=opt_model,
+            processor=processor,
+        )
+    else:
+        hf_pipe = AutomaticSpeechRecognitionPipeline(
+            model=opt_model,
+            tokenizer=processor.tokenizer,
+            feature_extractor=processor.feature_extractor,
+        )
 
+    properties = {}
+    if word_timestamps:
+        properties["word_timestamps"] = True
     pipeline_cls = get_pipeline_cls(pipeline_type)
 
     return (
         model_id,
         path,
         hf_pipe,
-        pipeline_cls(path, "CPU", word_timestamps=word_timestamps, ENABLE_MMAP=False),
+        pipeline_cls(path, "CPU", **properties, ENABLE_MMAP=False),
     )
 
 
@@ -294,7 +307,7 @@ def run_pipeline_with_ref(
     streamer: typing.Callable[[str], bool] | None = None,
     pipeline_type: PipelineType = PipelineType.WHISPER,
 ):
-    _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path), pipeline_type=pipeline_type)
+    _, _, hf_pipe, genai_pipe = read_asr_model((model_id, tmp_path), pipeline_type=pipeline_type)
 
     if type(sample) is np.ndarray and len(sample.shape) == 1:
         sample = np.expand_dims(sample, 0)
@@ -336,14 +349,34 @@ def compare_results(hf_result, genai_result):
             assert round(genai_chunk.end_ts, 2) == -1.0
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list())
-@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-def test_language_detection_en(model_descr, sample_from_dataset, pipeline_type):
-    _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+MODEL_PIPELINE_PAIRS = [
+    ("openai/whisper-tiny", PipelineType.ASR),
+    ("distil-whisper/distil-small.en", PipelineType.ASR),
+    (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+    # test backawrd compatibility for tiny model only
+    ("openai/whisper-tiny", PipelineType.WHISPER),
+]
 
-    result = genai_pipe.generate(sample_from_dataset)
-    detected_language = result.language[0] if isinstance(result.language, list) else result.language
-    assert detected_language == "en"
+
+def get_model_pipeline_pair_id(model_pipeline_pair):
+    model_id, pipeline_type = model_pipeline_pair
+    return f"pipeline_{pipeline_type.name}_{model_id.split('/')[-1]}"
+
+
+def get_model_pipeline_pair_params(model_pipeline_pairs=MODEL_PIPELINE_PAIRS):
+    return [
+        pytest.param(model_pipeline_pair, id=get_model_pipeline_pair_id(model_pipeline_pair))
+        for model_pipeline_pair in model_pipeline_pairs
+    ]
+
+
+@pytest.fixture(params=get_model_pipeline_pair_params())
+def pipelines_fixture(request):
+    model_id, pipeline_type = request.param
+    model_name = model_id.split("/")[-1]
+    model_path = get_ov_cache_converted_models_dir() / model_name
+    model_id, _, hf_pipe, genai_pipe = read_asr_model((model_id, model_path), pipeline_type=pipeline_type)
+    return hf_pipe, genai_pipe, model_id, pipeline_type
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -386,7 +419,7 @@ def test_asr_config_constructor(model_descr, pipeline_type):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     expected = hf_pipe(sample_from_dataset)["text"]
 
@@ -403,7 +436,7 @@ def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     expected = hf_pipe(sample_from_dataset, max_new_tokens=10)
 
@@ -420,7 +453,7 @@ def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
 def test_language_mode(model_descr, language, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
     sample = get_multilingual_audio_dataset(language)[0]
 
     config_cls = get_config_cls(pipeline_type)
@@ -443,7 +476,7 @@ def test_language_mode(model_descr, language, pipeline_type):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr"], indirect=True)
 def test_task_mode(model_descr, sample_from_multilingual_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     config_cls = get_config_cls(pipeline_type)
     hf_config = config_cls(max_new_tokens=30, language="fr", task="translate")
@@ -487,7 +520,7 @@ def test_task_mode(model_descr, sample_from_multilingual_dataset, pipeline_type)
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr", "de", "es"], indirect=True)
 def test_language_autodetect(model_descr, sample_from_multilingual_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     input_features = hf_pipe.feature_extractor(sample_from_multilingual_dataset)
     language_id = hf_pipe.model.detect_language(input_features["input_features"])[0]
@@ -504,6 +537,16 @@ def test_language_autodetect(model_descr, sample_from_multilingual_dataset, pipe
     )
 
 
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_language_detection_en(model_descr, sample_from_dataset, pipeline_type):
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+
+    result = genai_pipe.generate(sample_from_dataset)
+    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    assert detected_language == "en"
+
+
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize(
     "sample_from_multilingual_dataset,language",
@@ -515,14 +558,39 @@ def test_language_autodetect(model_descr, sample_from_multilingual_dataset, pipe
     indirect=["sample_from_multilingual_dataset"],
 )
 def test_language_detection(model_descr, sample_from_multilingual_dataset, language, pipeline_type):
-    _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_multilingual_dataset)
-    assert result.language[0] == language
+    detected_language = result.language[0] if isinstance(result.language, list) else result.language
+    assert detected_language == language
 
-    # explicit language should also be reflected in the result
-    result = genai_pipe.generate(sample_from_multilingual_dataset, language=f"<|{language}|>")
-    assert result.language[0] == language
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params(
+        [
+            ("openai/whisper-tiny", PipelineType.ASR),
+            ("openai/whisper-tiny", PipelineType.WHISPER),
+            (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+        ]
+    ),
+    indirect=True,
+)
+@pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr"], indirect=True)
+def test_forced_language(pipelines_fixture, sample_from_multilingual_dataset):
+    _, genai_pipe, model_id, _ = pipelines_fixture
+
+    config = {"language": "<|en|>"}
+    if model_id == QWEN3_ASR_MODEL_ID:
+        # tiny random model used for Qwen3-ASR tesing.
+        # it cannot predict language so we have to force it to prevent streamer autodetection prefix suppresion
+        # also max_new_tokens have to be set as model cannot stop at eos token
+        config = {"language": "English", "max_new_tokens": 200}
+
+    genai_result = genai_pipe.generate(sample_from_multilingual_dataset, **config)
+    detected_language = genai_result.language[0] if isinstance(genai_result.language, list) else genai_result.language
+    expected_language = "en" if model_id != QWEN3_ASR_MODEL_ID else "English"
+    assert detected_language == expected_language
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -571,26 +639,44 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
 
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
-@pytest.mark.parametrize("model_descr", get_whisper_models_list())
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params(
+        [
+            ("openai/whisper-tiny", PipelineType.ASR),
+            ("openai/whisper-tiny", PipelineType.WHISPER),
+            (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
+        ]
+    ),
+    indirect=True,
+)
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_longform_audio(model_descr, sample_from_dataset, pipeline_type):
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+def test_longform_audio(pipelines_fixture, sample_from_dataset):
+    hf_pipe, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
     streamer_result = []
 
     config_cls = get_config_cls(pipeline_type)
+
+    config = {}
+    if model_id == QWEN3_ASR_MODEL_ID:
+        # tiny random model used for Qwen3-ASR tesing.
+        # it cannot predict language so we have to force it to prevent streamer autodetection prefix suppresion
+        # also max_new_tokens have to be set as model cannot stop at eos token
+        config = {"language": "English", "max_new_tokens": 200}
+
     genai_result = run_genai(
         genai_pipe,
         sample_from_dataset,
-        config=config_cls(return_timestamps=True),
+        config=config_cls(return_timestamps=True, **config),
         streamer=lambda x: streamer_result.append(x),
     )
 
     hf_result = run_huggingface(
         hf_pipe,
         sample_from_dataset,
-        config=ov_genai.ASRGenerationConfig(return_timestamps=True),
+        config=ov_genai.ASRGenerationConfig(return_timestamps=True, **config),
     )
 
     compare_results(hf_result, genai_result)
@@ -648,7 +734,7 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_r
     ds = load_dataset_via_snapshot("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
     samples = [i["audio"]["array"] for i in ds]
 
-    pipe = read_whisper_model(model_descr, word_timestamps=True, pipeline_type=pipeline_type)[3]
+    pipe = read_asr_model(model_descr, word_timestamps=True, pipeline_type=pipeline_type)[3]
 
     def openai_reference_to_words(reference):
         results = []
@@ -673,9 +759,10 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_r
             return_timestamps=True,
             word_timestamps=True,
         )
+        words = result.words[0] if pipeline_type == PipelineType.ASR else result.words
         result_words = [
             {"word": get_word_text(w, pipeline_type), "start_ts": round(w.start_ts, 2), "end_ts": round(w.end_ts, 2)}
-            for w in result.words[0]
+            for w in words
         ]
 
         reference = whisper_librispeech_10_openai_tiny_reference[i]
@@ -702,7 +789,7 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_r
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_dataset, pipeline_type):
-    genai_pipe = read_whisper_model(model_descr, word_timestamps=True, pipeline_type=pipeline_type)[3]
+    genai_pipe = read_asr_model(model_descr, word_timestamps=True, pipeline_type=pipeline_type)[3]
 
     config_cls = get_config_cls(pipeline_type)
     config = config_cls(return_timestamps=True, word_timestamps=True)
@@ -728,7 +815,7 @@ def test_beam_search(model_descr, sample_from_dataset, pipeline_type):
     # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
     # ticket: 167239
     sample_from_dataset = sample_from_dataset[: 30 * 16000]
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    _, _, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
     config_cls = get_config_cls(pipeline_type)
     generation_config = config_cls(
         num_beams=2,
@@ -743,7 +830,7 @@ def test_beam_search(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(sample_from_dataset)
     assert "Kwilter" not in result.texts[0]
@@ -762,7 +849,7 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    _, _, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     config_cls = get_config_cls(pipeline_type)
     config = config_cls(do_sample=True, top_p=0.01)
@@ -802,9 +889,7 @@ def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_perf_metrics(model_descr, sample_from_dataset, pipeline_type):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(
-        model_descr, word_timestamps=True, pipeline_type=pipeline_type
-    )
+    model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, word_timestamps=True, pipeline_type=pipeline_type)
 
     result = genai_pipe.generate(
         sample_from_dataset,
@@ -904,7 +989,7 @@ def streamer_for_test(request):
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 @pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
 def test_streamers(model_descr, sample_from_dataset, streamer_for_test, pipeline_type):
-    _, _, _, genai_pipe = read_whisper_model(model_descr, pipeline_type=pipeline_type)
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     streamer, result_handler = streamer_for_test
 

@@ -8,6 +8,18 @@
 
 #include "audio_chunk.hpp"
 #include "openvino/core/parallel.hpp"
+#include "streamer.hpp"
+
+namespace {
+
+int64_t get_required_token_id(const ov::genai::Tokenizer& tokenizer, const std::string& token) {
+    const ov::genai::Vocab vocab = tokenizer.get_vocab();
+    const auto token_it = vocab.find(token);
+    OPENVINO_ASSERT(token_it != vocab.end(), "Qwen3-ASR tokenizer must contain '", token, "' token");
+    return token_it->second;
+}
+
+}  // namespace
 
 namespace ov::genai {
 
@@ -15,7 +27,8 @@ Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& 
     : ASRPipelineImplBase(models_path, properties),
       m_feature_extractor{models_path / "preprocessor_config.json"},
       m_encoder{models_path, device, properties},
-      m_decoder{models_path, device, properties} {
+      m_decoder{models_path, device, properties},
+      m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")} {
     // Qwen3-ASR EOS tokens: <|endoftext|>=151643, <|im_end|>=151645
     // The exported model has no generation_config.json. Qwen3-ASR original implementation hardcodes them as well.
     m_generation_config.set_eos_token_id(151643);
@@ -178,6 +191,8 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
     std::vector<std::string> results;
     results.reserve(batch_size);
 
+    const bool forced_language = config.language.has_value() && !config.language.value().empty();
+
     for (size_t batch = 0; batch < batch_size; ++batch) {
         const std::string prompt = prompts[batch];
         const auto encoder_start_time = std::chrono::steady_clock::now();
@@ -196,8 +211,14 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
         perf_metrics.raw_metrics.tokenization_durations.emplace_back(
             MicroSeconds(PerfMetrics::get_microsec(tokenization_stop_time - tokenization_start_time)));
 
+        // streamer wrapper should be reset for each batch to properly handle suppression
+        const std::shared_ptr<StreamerBase> decoder_streamer =
+            streamer_ptr && !forced_language
+                ? std::make_shared<Qwen3ASRStreamer>(streamer_ptr, m_asr_text_token_id, true)
+                : streamer_ptr;
+
         const auto decoder_start_time = std::chrono::steady_clock::now();
-        const auto encoded_results = m_decoder.generate(input_ids, encoder_hidden_states, config, streamer_ptr);
+        const auto encoded_results = m_decoder.generate(input_ids, encoder_hidden_states, config, decoder_streamer);
         const auto decoder_stop_time = std::chrono::steady_clock::now();
         perf_metrics.raw_metrics.m_inference_durations[0] +=
             MicroSeconds(PerfMetrics::get_microsec(decoder_stop_time - decoder_start_time));

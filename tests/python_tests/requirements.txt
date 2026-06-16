@@ -38,3 +38,5 @@ decord==0.6.0; platform_system != "Darwin"
 opencv-python==4.13.0.92
 # - kokoro TTS
 kokoro==0.9.4
+# - Qwen/Qwen3-ASR-0.6B
+qwen-asr==0.0.6

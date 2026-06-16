@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,6 +28,7 @@ private:
     Qwen3ASREncoder m_encoder;
     Qwen3ASRDecoder m_decoder;
     WhisperFeatureExtractor m_feature_extractor;
+    const int64_t m_asr_text_token_id;
 
     static constexpr size_t MAX_ASR_INPUT_SECONDS = 1200;
 

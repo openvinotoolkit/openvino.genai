@@ -28,7 +28,8 @@ namespace ov::genai {
 
 Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
                                  const std::string& device,
-                                 const ov::AnyMap& properties) {
+                                 const ov::AnyMap& properties)
+    : m_model_config{models_path / "config.json"} {
     ov::Core core = utils::singleton_core();
     ov::CompiledModel compiled_model =
         core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
@@ -37,7 +38,7 @@ Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
 }
 
 ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
-    const size_t remainder_frames = features.n_frames % ENCODER_CHUNK_FRAMES;
+    const size_t remainder_frames = features.n_frames % m_encoder_chunk_frames;
 
     ov::Tensor input_tensor = chunk_mel_features(features);
     m_request.set_tensor("input_features", input_tensor);
@@ -57,30 +58,30 @@ ov::Tensor Qwen3ASREncoder::chunk_mel_features(const WhisperFeatures& features) 
     const size_t n_frames = features.n_frames;
     OPENVINO_ASSERT(n_frames > 0, "Qwen3-ASR encoder input features must contain at least one frame.");
 
-    const size_t num_full_chunks = n_frames / ENCODER_CHUNK_FRAMES;
-    const size_t remainder_frames = n_frames % ENCODER_CHUNK_FRAMES;
+    const size_t num_full_chunks = n_frames / m_encoder_chunk_frames;
+    const size_t remainder_frames = n_frames % m_encoder_chunk_frames;
     const size_t num_chunks = num_full_chunks + (remainder_frames > 0 ? 1 : 0);
 
-    ov::Tensor input_tensor(ov::element::f32, {num_chunks, n_features, ENCODER_CHUNK_FRAMES});
+    ov::Tensor input_tensor(ov::element::f32, {num_chunks, n_features, m_encoder_chunk_frames});
     float* dst = input_tensor.data<float>();
 
     // Source layout: features.data is [n_features, n_frames] (row = one mel band, contiguous in time).
     for (size_t chunk_index = 0; chunk_index < num_full_chunks; ++chunk_index) {
-        const size_t frame_offset = chunk_index * ENCODER_CHUNK_FRAMES;
+        const size_t frame_offset = chunk_index * m_encoder_chunk_frames;
         for (size_t feature_index = 0; feature_index < n_features; ++feature_index) {
             const float* src = features.data.data() + feature_index * n_frames + frame_offset;
-            float* chunk_dst = dst + (chunk_index * n_features + feature_index) * ENCODER_CHUNK_FRAMES;
-            std::memcpy(chunk_dst, src, ENCODER_CHUNK_FRAMES * sizeof(float));
+            float* chunk_dst = dst + (chunk_index * n_features + feature_index) * m_encoder_chunk_frames;
+            std::memcpy(chunk_dst, src, m_encoder_chunk_frames * sizeof(float));
         }
     }
 
     if (remainder_frames > 0) {
         const size_t chunk_index = num_full_chunks;
-        const size_t frame_offset = chunk_index * ENCODER_CHUNK_FRAMES;
-        const size_t padding_frames = ENCODER_CHUNK_FRAMES - remainder_frames;
+        const size_t frame_offset = chunk_index * m_encoder_chunk_frames;
+        const size_t padding_frames = m_encoder_chunk_frames - remainder_frames;
         for (size_t feature_index = 0; feature_index < n_features; ++feature_index) {
             const float* src = features.data.data() + feature_index * n_frames + frame_offset;
-            float* chunk_dst = dst + (chunk_index * n_features + feature_index) * ENCODER_CHUNK_FRAMES;
+            float* chunk_dst = dst + (chunk_index * n_features + feature_index) * m_encoder_chunk_frames;
             std::memcpy(chunk_dst, src, remainder_frames * sizeof(float));
             std::memset(chunk_dst + remainder_frames, 0, padding_frames * sizeof(float));
         }
@@ -90,7 +91,7 @@ ov::Tensor Qwen3ASREncoder::chunk_mel_features(const WhisperFeatures& features) 
 }
 
 size_t Qwen3ASREncoder::infer_output_frames(const size_t input_frames, const size_t full_chunk_output_frames) {
-    return (input_frames * full_chunk_output_frames + ENCODER_CHUNK_FRAMES - 1) / ENCODER_CHUNK_FRAMES;
+    return (input_frames * full_chunk_output_frames + m_encoder_chunk_frames - 1) / m_encoder_chunk_frames;
 }
 
 ov::Tensor Qwen3ASREncoder::merge_chunked_encoder_output(const ov::Tensor& chunked_output, size_t remainder_frames) {
