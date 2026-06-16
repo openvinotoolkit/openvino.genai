@@ -42,19 +42,8 @@ private:
 
     static WhisperGenerationConfig to_whisper_config(const ASRGenerationConfig& asr_config) {
         WhisperGenerationConfig config;
+        static_cast<GenerationConfig&>(config) = static_cast<const GenerationConfig&>(asr_config);
 
-        // GenerationConfig base fields
-        config.max_new_tokens = asr_config.max_new_tokens;
-        config.max_length = asr_config.max_length;
-        config.eos_token_id = asr_config.eos_token_id;
-        config.temperature = asr_config.temperature;
-        config.do_sample = asr_config.do_sample;
-        config.top_p = asr_config.top_p;
-        config.top_k = asr_config.top_k;
-        config.repetition_penalty = asr_config.repetition_penalty;
-        config.num_beams = asr_config.num_beams;
-
-        // Whisper-specific fields (1:1 mapping)
         config.decoder_start_token_id = asr_config.decoder_start_token_id;
         config.pad_token_id = asr_config.pad_token_id;
         config.translate_token_id = asr_config.translate_token_id;
