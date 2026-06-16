@@ -617,7 +617,7 @@ jobs:
   CoveragePythonTests:
     name: Coverage Python Tests ${{ matrix.test.name }} (CPU)
     needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, CoverageBuild]
-    timeout-minutes: 720
+    timeout-minutes: 360
     runs-on: ${{ matrix.test.runner }}
     strategy:
       fail-fast: false
@@ -821,7 +821,7 @@ jobs:
   CoveragePythonSamples:
     name: Coverage Python Samples ${{ matrix.test.name }} (CPU)
     needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, CoverageBuild]
-    timeout-minutes: 720
+    timeout-minutes: 360
     runs-on: ${{ matrix.test.runner }}
     strategy:
       fail-fast: false
@@ -1017,7 +1017,7 @@ jobs:
   CoveragePythonTools:
     name: Coverage Python Tools ${{ matrix.test.name }} (CPU)
     needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, CoverageBuild]
-    timeout-minutes: 720
+    timeout-minutes: 360
     runs-on: aks-linux-4-cores-16gb
     strategy:
       fail-fast: false
@@ -1190,7 +1190,7 @@ jobs:
   CoveragePythonXgrammarOff:
     name: Coverage Python XGrammar Off ${{ matrix.test.name }} (CPU)
     needs: [openvino_download, genai_build_wheels, CoverageBuild]
-    timeout-minutes: 720
+    timeout-minutes: 360
     runs-on: ${{ matrix.test.runner }}
     strategy:
       fail-fast: false
