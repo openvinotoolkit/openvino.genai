@@ -91,6 +91,13 @@ auto speech_generation_config_docstring = R"(
     :param qwen_ref_text: reference transcript for ICL mode.
     :type qwen_ref_text: str
 
+    :param qwen_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                           Expected shape: [T], [1, T], or [1, 1, T].
+                           Expected dtype: float32.
+                           Expected sample rate: 24000 Hz.
+                           OV GenAI does not decode audio files or resample this tensor.
+    :type qwen_ref_audio: openvino.Tensor
+
     :param qwen_ref_code: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
     :type qwen_ref_code: openvino.Tensor
 
@@ -180,6 +187,7 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("subtalker_temperature", &SpeechGenerationConfig::subtalker_temperature)
         .def_readwrite("seed", &SpeechGenerationConfig::seed)
         .def_readwrite("qwen_ref_text", &SpeechGenerationConfig::qwen_ref_text)
+        .def_readwrite("qwen_ref_audio", &SpeechGenerationConfig::qwen_ref_audio)
         .def_readwrite("qwen_ref_code", &SpeechGenerationConfig::qwen_ref_code)
         .def_readwrite("qwen_x_vector_only_mode", &SpeechGenerationConfig::qwen_x_vector_only_mode)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {

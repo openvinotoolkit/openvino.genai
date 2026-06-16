@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
+import openvino as ov
 
 import openvino_genai as ov_genai
 
@@ -31,6 +32,7 @@ class TestSpeechGenerationConfigQwenFields:
 
     def test_qwen_fields_update_generation_config(self):
         config = ov_genai.SpeechGenerationConfig()
+        ref_audio = ov.Tensor([0.0, 0.1, -0.2])
         config.update_generation_config(
             speaker="vivian",
             instruct="neutral style",
@@ -40,6 +42,7 @@ class TestSpeechGenerationConfigQwenFields:
             subtalker_top_p=0.9,
             subtalker_temperature=0.8,
             seed=7,
+            qwen_ref_audio=ref_audio,
         )
 
         assert config.speaker == "vivian"
@@ -50,3 +53,4 @@ class TestSpeechGenerationConfigQwenFields:
         assert config.subtalker_top_p == pytest.approx(0.9)
         assert config.subtalker_temperature == pytest.approx(0.8)
         assert config.seed == 7
+        assert tuple(config.qwen_ref_audio.get_shape()) == (3,)

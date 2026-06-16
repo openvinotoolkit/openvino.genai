@@ -114,6 +114,9 @@ private:
     bool is_base_model() const;
     ov::Tensor normalize_external_speaker_embedding(const ov::Tensor& speaker_embedding,
                                                     size_t hidden_size) const;
+    std::vector<float> normalize_ref_audio_waveform(const ov::Tensor& ref_audio) const;
+    ov::Tensor extract_qwen3_speaker_embedding_from_audio(const ov::Tensor& ref_audio) const;
+    ov::Tensor extract_qwen3_ref_code_from_audio(const ov::Tensor& ref_audio) const;
 
 private:
     std::filesystem::path m_models_path;
@@ -130,10 +133,20 @@ private:
     ov::InferRequest m_talker_code_predictor;
     ov::InferRequest m_talker_code_predictor_embedding;
     ov::InferRequest m_speech_tokenizer_decoder;
+    ov::InferRequest m_qwen3_mel_preprocess;
+    ov::InferRequest m_speaker_encoder;
+    ov::InferRequest m_speech_tokenizer_encoder;
 
     uint32_t m_output_sample_rate = 24000;
     uint32_t m_decoder_num_quantizers = 16;
     uint32_t m_decoder_upsample = 1920;
+    uint32_t m_speaker_encoder_sample_rate = 24000;
+    uint32_t m_speaker_encoder_mel_dim = 128;
+    uint32_t m_speech_tokenizer_input_sample_rate = 24000;
+
+    bool m_has_speaker_encoder = false;
+    bool m_has_speech_tokenizer_encoder = false;
+    bool m_has_qwen3_mel_preprocess = false;
 };
 
 }  // namespace genai

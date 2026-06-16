@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) try {
         args.size() >= 3,
         "Usage: ",
         args[0],
-        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--speaker_embedding_file_path <PATH>] [--language <LANG>] [--speaker <NAME>] [--instruct <TEXT>] [--speed <FLOAT>] [--non_streaming_mode <true|false>] [--subtalker_dosample <true|false>] [--subtalker_top_k <INT>] [--subtalker_top_p <FLOAT>] [--subtalker_temperature <FLOAT>] [--do_sample <true|false>] [--top_k <INT>] [--top_p <FLOAT>] [--temperature <FLOAT>] [--repetition_penalty <FLOAT>] [--seed <INT>] [--max_new_tokens <INT>] [--qwen_x_vector_only_mode <true|false>] [--qwen_ref_text <TEXT>] [--qwen_ref_code_file_path <PATH.npy>] [--device <DEVICE>]");
+        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--speaker_embedding_file_path <PATH>] [--qwen_ref_audio_wav_path <PATH.wav>] [--language <LANG>] [--speaker <NAME>] [--instruct <TEXT>] [--speed <FLOAT>] [--non_streaming_mode <true|false>] [--subtalker_dosample <true|false>] [--subtalker_top_k <INT>] [--subtalker_top_p <FLOAT>] [--subtalker_temperature <FLOAT>] [--do_sample <true|false>] [--top_k <INT>] [--top_p <FLOAT>] [--temperature <FLOAT>] [--repetition_penalty <FLOAT>] [--seed <INT>] [--max_new_tokens <INT>] [--qwen_x_vector_only_mode <true|false>] [--qwen_ref_text <TEXT>] [--qwen_ref_code_file_path <PATH.npy>] [--device <DEVICE>]");
 
     const std::string models_path = args[1], prompt = args[2];
     std::string device = "CPU";
@@ -193,6 +193,7 @@ int main(int argc, char* argv[]) try {
     int max_new_tokens = 4096;  // Match Python default instead of C++ default (2048)
     bool qwen_x_vector_only_mode = true;
     std::string qwen_ref_text;
+    std::optional<std::string> qwen_ref_audio_wav_path;
     std::optional<std::string> qwen_ref_code_file_path;
 
     auto parse_bool = [](const std::string& value) {
@@ -256,6 +257,8 @@ int main(int argc, char* argv[]) try {
             qwen_x_vector_only_mode = parse_bool(value);
         } else if (option == "--qwen_ref_text") {
             qwen_ref_text = value;
+        } else if (option == "--qwen_ref_audio_wav_path") {
+            qwen_ref_audio_wav_path = value;
         } else if (option == "--qwen_ref_code_file_path") {
             qwen_ref_code_file_path = value;
         } else if (option == "--device") {
@@ -271,10 +274,10 @@ int main(int argc, char* argv[]) try {
     // Qwen3 Base expects x-vector style embedding with shape {1, 1, D}.
     const bool expects_qwen3_base_speaker_embedding =
         expected_speaker_shape.size() == 3 && expected_speaker_shape[0] == 1 && expected_speaker_shape[1] == 1;
-    if (expects_qwen3_base_speaker_embedding && !speaker_embedding_path.has_value()) {
+    if (expects_qwen3_base_speaker_embedding && !speaker_embedding_path.has_value() && !qwen_ref_audio_wav_path.has_value()) {
         OPENVINO_THROW("This model expects a speaker embedding tensor with shape ",
                        shape_to_string(expected_speaker_shape),
-                       ". Provide SPEAKER_EMBEDDING_BIN_FILE or --speaker_embedding_file_path <PATH>.");
+                       ". Provide SPEAKER_EMBEDDING_BIN_FILE, --speaker_embedding_file_path <PATH>, or --qwen_ref_audio_wav_path <PATH.wav>.");
     }
 
     ov::AnyMap properties;
@@ -310,14 +313,18 @@ int main(int argc, char* argv[]) try {
     }
     if (!qwen_x_vector_only_mode) {
         OPENVINO_ASSERT(!qwen_ref_text.empty(), "--qwen_ref_text is required when --qwen_x_vector_only_mode=false.");
-        OPENVINO_ASSERT(qwen_ref_code_file_path.has_value(),
-                        "--qwen_ref_code_file_path is required when --qwen_x_vector_only_mode=false.");
+        OPENVINO_ASSERT(qwen_ref_code_file_path.has_value() || qwen_ref_audio_wav_path.has_value(),
+                        "When --qwen_x_vector_only_mode=false, provide either --qwen_ref_code_file_path <PATH.npy> "
+                        "or --qwen_ref_audio_wav_path <PATH.wav>.");
     }
 
     if (!qwen_ref_text.empty()) {
         properties["qwen_ref_text"] = qwen_ref_text;
     }
     properties["qwen_x_vector_only_mode"] = qwen_x_vector_only_mode;
+    if (qwen_ref_audio_wav_path.has_value()) {
+        properties["qwen_ref_audio"] = utils::audio::read_wav_mono_f32(*qwen_ref_audio_wav_path, 24000);
+    }
     if (qwen_ref_code_file_path.has_value()) {
         properties["qwen_ref_code"] = read_i64_npy_tensor(*qwen_ref_code_file_path);
     }
@@ -340,6 +347,7 @@ int main(int argc, char* argv[]) try {
               << " max_new_tokens=" << max_new_tokens
               << " qwen_x_vector_only_mode=" << (qwen_x_vector_only_mode ? "true" : "false")
               << " qwen_ref_text_len=" << qwen_ref_text.size()
+              << " qwen_ref_audio_wav_path='" << (qwen_ref_audio_wav_path.has_value() ? *qwen_ref_audio_wav_path : "") << "'"
               << " qwen_ref_code_file_path='" << (qwen_ref_code_file_path.has_value() ? *qwen_ref_code_file_path : "") << "'"
               << " expected_speaker_shape=" << shape_to_string(expected_speaker_shape)
               << std::endl;
