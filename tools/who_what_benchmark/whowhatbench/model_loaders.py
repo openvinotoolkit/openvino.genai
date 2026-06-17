@@ -143,6 +143,31 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
+    # Check if this is a seq2seq model
+    try:
+        config = AutoConfig.from_pretrained(model_dir, trust_remote_code=False)
+    except Exception:
+        try:
+            config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+        except Exception:
+            config = None
+
+    # If encoder-decoder (seq2seq), use OpenVINO GenAI Seq2SeqPipeline
+    if config is not None and getattr(config, "is_encoder_decoder", False):
+        logger.info("Detected encoder-decoder model, using GenAI Seq2SeqPipeline")
+        import openvino_genai
+        
+        max_new_tokens = kwargs.get("max_new_tokens", 128)
+        pipeline = openvino_genai.Seq2SeqPipeline(
+            model_dir,
+            device=device,
+        )
+        gen_config = pipeline.get_generation_config()
+        gen_config.max_new_tokens = max_new_tokens
+        pipeline.set_generation_config(gen_config)
+        return GenAIModelWrapper(pipeline, model_dir, "text")
+
+    # Otherwise, use standard LLMPipeline (causal models)
     pipeline_path = model_dir
     if kwargs.get('gguf_file'):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
