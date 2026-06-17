@@ -11,6 +11,7 @@ from packaging.version import Version
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
     AutoModel,
     AutoTokenizer,
     __version__,
@@ -189,6 +190,7 @@ def load_text_llamacpp_pipeline(model_dir):
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
     trust_remote_code = False
+    config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
@@ -198,6 +200,10 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+    model_class = AutoModelForCausalLM
+    if config is not None and getattr(config, "is_encoder_decoder", False):
+        model_class = AutoModelForSeq2SeqLM
+
     if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
         is_awq = False
@@ -205,16 +211,16 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             is_gptq = config.quantization_config["quant_method"] == "gptq"
             is_awq = config.quantization_config["quant_method"] == "awq"
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
+            model = model_class.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
     else:
         try:
-            model = AutoModelForCausalLM.from_pretrained(
+            model = model_class.from_pretrained(
                 model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
             )
         except Exception:
-            model = AutoModelForCausalLM.from_pretrained(
+            model = model_class.from_pretrained(
                 model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
 
