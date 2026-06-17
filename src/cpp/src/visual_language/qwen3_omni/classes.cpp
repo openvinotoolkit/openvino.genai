@@ -646,10 +646,18 @@ std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3Omni::create_position_ids(
         }
     }
 
-    // Calculate rope delta from maximum position value
+    // Calculate rope delta from the maximum position value.
+    // position_ids has shape {dims, batch=1, seq_len} with rows [temporal, height, width, text].
+    // RoPE only consumes the spatial rows (config mrope_section = [24, 20, 20], i.e. 3 sections); the
+    // trailing "text" row carries large per-token sequential values inside the vision span that would
+    // pollute the global max and push the decode position far past the real sequence end. Excluding
+    // that last row mirrors HF, whose rope delta is computed from the 3D grid. Derive the spatial row
+    // count from the tensor shape so this stays correct if the row layout ever changes.
+    const size_t num_position_dims = position_ids.get_shape().at(0);
+    const size_t num_spatial_dims = num_position_dims - 1;  // drop the trailing "text" row
     const int64_t position_ids_max_element = *std::max_element(
         position_ids.data<int64_t>(),
-        position_ids.data<int64_t>() + position_ids.get_size()
+        position_ids.data<int64_t>() + num_spatial_dims * seq_len
     );
     const int64_t rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(seq_len);
 
