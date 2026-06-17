@@ -353,7 +353,7 @@ MODEL_PIPELINE_PAIRS = [
     ("openai/whisper-tiny", PipelineType.ASR),
     ("distil-whisper/distil-small.en", PipelineType.ASR),
     (QWEN3_ASR_MODEL_ID, PipelineType.ASR),
-    # test backawrd compatibility for tiny model only
+    # test backward compatibility for tiny model only
     ("openai/whisper-tiny", PipelineType.WHISPER),
 ]
 
@@ -583,13 +583,13 @@ def test_forced_language(pipelines_fixture, sample_from_multilingual_dataset):
 
     config = {"language": "<|en|>"}
     if model_id == QWEN3_ASR_MODEL_ID:
-        # tiny random model used for Qwen3-ASR tesing.
-        # it cannot predict language so we have to force it to prevent streamer autodetection prefix suppresion
-        # also max_new_tokens have to be set as model cannot stop at eos token
+        # tiny random model used for Qwen3-ASR testing. It was not trained to autodetect language.
+        # Internal streamer suppresses language autodetection prefix, so if language is not forced all output is suppressed
+        # also max_new_tokens have to be set as model cannot generate eos token
         config = {"language": "English", "max_new_tokens": 200}
 
     genai_result = genai_pipe.generate(sample_from_multilingual_dataset, **config)
-    detected_language = genai_result.language[0] if isinstance(genai_result.language, list) else genai_result.language
+    detected_language = genai_result.languages[0] if hasattr(genai_result, "languages") else genai_result.language
     expected_language = "en" if model_id != QWEN3_ASR_MODEL_ID else "English"
     assert detected_language == expected_language
 

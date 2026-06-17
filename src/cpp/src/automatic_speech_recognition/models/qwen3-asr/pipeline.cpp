@@ -7,7 +7,6 @@
 #include <chrono>
 
 #include "audio_chunk.hpp"
-#include "openvino/core/parallel.hpp"
 #include "streamer.hpp"
 
 namespace {

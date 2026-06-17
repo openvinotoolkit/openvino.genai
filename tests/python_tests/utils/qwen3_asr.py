@@ -1,13 +1,12 @@
 import re
 
-# qwen_asr must be imported to register model with AutoConfig/AutoModel
-import qwen_asr  # noqa: F401
 from optimum.intel import OVModelForSpeechSeq2Seq
 from transformers import AutoProcessor
 
 
 def check_qwen3_asr_package():
     try:
+        # qwen_asr must be imported to register model with AutoConfig/AutoModel
         import qwen_asr  # noqa: F401
     except ImportError:
         raise ImportError(

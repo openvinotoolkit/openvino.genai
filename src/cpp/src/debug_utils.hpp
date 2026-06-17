@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -109,9 +110,9 @@ void print_tensor_stats(const ov::Tensor& tensor) {
     for (size_t i = 0; i < size; ++i) {
         sq_sum += (data[i] - mean) * (data[i] - mean);
     }
-    double std = std::sqrt(sq_sum / size);
+    double _std = std::sqrt(sq_sum / size);
 
-    std::cout << ": " << mean << "-+" << std << ", " << min << "/" << max << ", [";
+    std::cout << ": " << mean << "-+" << _std << ", " << min << "/" << max << ", [";
     for (size_t i = 0; i < std::min(size, size_t(5)); ++i) {
         std::cout << data[i] << " ";
     }
