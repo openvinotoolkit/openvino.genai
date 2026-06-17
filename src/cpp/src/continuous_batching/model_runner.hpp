@@ -197,6 +197,69 @@ struct DeepstackContext {
 };
 
 /**
+ * @brief Per-forward-call context for per-layer embedding inputs (e.g. Gemma4).
+ */
+struct PerLayerInputsContext {
+    size_t num_hidden_layers = 0;
+    size_t hidden_size = 0;
+    size_t per_token_size = 0; // num_hidden_layers * hidden_size
+
+    std::function<ov::Tensor(const ov::Tensor& input_ids)> embeds_callback;
+
+    size_t filled_tokens_offset = 0;
+    bool has_per_layer_inputs = false;
+
+    void init(
+        const ov::Tensor& initial_per_layer_inputs,
+        const std::function<ov::Tensor(const ov::Tensor&)>& per_layer_embeddings_callback
+    ) {
+        if (!initial_per_layer_inputs || !per_layer_embeddings_callback) {
+            return;
+        }
+        const auto& shape = initial_per_layer_inputs.get_shape();
+        num_hidden_layers = shape.at(2);
+        hidden_size = shape.at(3);
+        per_token_size = num_hidden_layers * hidden_size;
+        embeds_callback = per_layer_embeddings_callback;
+        has_per_layer_inputs = true;
+    }
+
+    void fill_per_layer_inputs(
+        ov::Tensor& per_layer_inputs,
+        const SequenceGroup::CPtr& sequence_group,
+        Sequence::CPtr sequence
+    ) {
+        const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        const size_t prompt_len = sequence_group->get_prompt_len();
+
+        float* dst = per_layer_inputs.data<float>() + filled_tokens_offset * per_token_size;
+        const size_t bytes_to_copy = num_scheduled_tokens * per_token_size * sizeof(float);
+
+        if (num_processed_tokens < prompt_len) {
+            // prompt phase: copy from stored per_layer_inputs
+            const auto& initial_per_layer_inputs = sequence_group->get_per_layer_inputs();
+            OPENVINO_ASSERT(initial_per_layer_inputs, "per_layer_inputs not stored for sequence group in prompt phase");
+            const float* src = initial_per_layer_inputs.data<const float>() + num_processed_tokens * per_token_size;
+            std::memcpy(dst, src, bytes_to_copy);
+        } else {
+            // generation phase: call callback to get per-layer embeddings
+            const auto& generated_ids = sequence->get_generated_ids();
+            ov::Tensor input_ids(ov::element::i64, {1, num_scheduled_tokens});
+            int64_t* input_ids_data = input_ids.data<int64_t>();
+            for (size_t i = 0; i < num_scheduled_tokens; ++i) {
+                input_ids_data[i] = generated_ids[num_processed_tokens + i - prompt_len];
+            }
+            const ov::Tensor per_layer_embeds = embeds_callback(input_ids);
+            const float* src = per_layer_embeds.data<const float>();
+            std::memcpy(dst, src, bytes_to_copy);
+        }
+
+        filled_tokens_offset += num_scheduled_tokens;
+    }
+};
+
+/**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
  */
@@ -251,6 +314,7 @@ class ModelRunner {
     ov::Tensor m_cached_token_type_ids;
     ov::Tensor m_cached_deepstack_visual_embeds;
     ov::Tensor m_cached_visual_pos_masks;
+    ov::Tensor m_cached_per_layer_inputs;
 public:
     /**
      * Constructs the ModelRunner.
@@ -372,13 +436,23 @@ public:
         size_t hidden_size = 0;
         bool have_token_type_ids = false;
 
+        DeepstackContext deepstack_context;
+        PerLayerInputsContext per_layer_inputs_context;
+
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+            OPENVINO_ASSERT(m_inputs_embedder, "Inputs embedder is not set for embeddings-based model");
+
             hidden_size = sequence_groups[0]->get_hidden_size();
+
+            const size_t first_sequence_groups_id = scheduler_output.m_scheduled_sequence_groups_ids[0];
+            per_layer_inputs_context.init(
+                sequence_groups[first_sequence_groups_id]->get_per_layer_inputs(),
+                m_inputs_embedder->get_per_layer_embeddings_callback()
+            );
         }
 
-        DeepstackContext deepstack_context;
 
         // compute aggregated values
         for (size_t i = 0; i < num_sequence_groups; ++i) {
@@ -434,6 +508,8 @@ public:
         ov::Tensor visual_pos_masks;
         bool *visual_pos_masks_data = nullptr;
 
+        ov::Tensor per_layer_inputs;
+
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
@@ -464,6 +540,12 @@ public:
 
                 visual_pos_masks_data = visual_pos_masks.data<bool>();
                 std::fill_n(visual_pos_masks_data, total_num_tokens, false);
+            }
+
+            if (per_layer_inputs_context.has_per_layer_inputs) {
+                per_layer_inputs = _get_or_resize_tensor(m_cached_per_layer_inputs, "per_layer_inputs",
+                    {total_num_tokens, 1, per_layer_inputs_context.num_hidden_layers, per_layer_inputs_context.hidden_size},
+                    ov::element::f32);
             }
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
@@ -523,13 +605,17 @@ public:
             }
 
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
+                output_seq_len = 0;
+                Sequence::CPtr sequence = running_sequences[seq_idx];
+
                 if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     // compute token_type_ids for current sequence
                     if (auto token_type_ids = sequence_group->get_token_type_ids()) {
                         have_token_type_ids = true;
                         OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
                         for (size_t j = 0; j < num_scheduled_tokens; ++j) {
-                            token_type_ids_data[j] = (j < prompt_len ? (*token_type_ids)[j] : 0);
+                            size_t pos = group_position_id + j;
+                            token_type_ids_data[j] = (pos < prompt_len ? (*token_type_ids)[pos] : 0);
                         }
                     }
 
@@ -541,10 +627,12 @@ public:
                             visual_pos_masks_data[j] = (mask && pos < mask->size()) ? (*mask)[pos] : false;
                         }
                     }
+
+                    if (per_layer_inputs_context.has_per_layer_inputs) {
+                        per_layer_inputs_context.fill_per_layer_inputs(per_layer_inputs, sequence_group, sequence);
+                    }
                 }
 
-                output_seq_len = 0;
-                Sequence::CPtr sequence = running_sequences[seq_idx];
                 if (_is_hs_export()) {
                     size_t start_token_idx = current_token_idx;
                     size_t sequence_length = num_scheduled_tokens;
@@ -706,6 +794,10 @@ public:
                 if (!m_cached_visual_pos_masks) {
                     m_request.set_tensor("visual_pos_masks", visual_pos_masks);
                 }
+            }
+
+            if (per_layer_inputs_context.has_per_layer_inputs && !m_cached_per_layer_inputs) {
+                m_request.set_tensor("per_layer_inputs", per_layer_inputs);
             }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
