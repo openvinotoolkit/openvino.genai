@@ -296,7 +296,7 @@ class ASRPipeline:
             :type audio_inputs: list[float]
         
             :param generation_config: generation_config
-            :type generation_config: ASRGenerationConfig or a dict
+            :type generation_config: ASRGenerationConfig
         
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
                              Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
