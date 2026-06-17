@@ -3887,7 +3887,7 @@ class Text2VideoPipeline:
         ...
 class EmbeddingPipeline:
     """
-    Multimodal feature extraction pipeline.
+    Multimodal embedding pipeline.
     """
     def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
@@ -3897,19 +3897,27 @@ class EmbeddingPipeline:
         kwargs: Plugin and/or config properties.
         """
     @typing.overload
-    def extract(self, text: str) -> list[float]:
+    def embed(self, text: str) -> list[float]:
         """
         Computes an embedding vector for text.
         """
     @typing.overload
-    def extract(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor]) -> list[float]:
+    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor]) -> list[float]:
         """
         Computes an embedding vector for text and images.
         """
     @typing.overload
-    def extract(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata] = []) -> list[float]:
+    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata] = []) -> list[float]:
         """
         Computes an embedding vector for text, images and videos.
+        """
+    def embed_document(self, text: str) -> list[float]:
+        """
+        Computes a document embedding vector for text.
+        """
+    def embed_documents(self, texts: collections.abc.Sequence[str]) -> list[list[float]]:
+        """
+        Computes document embedding vectors for a batch of texts.
         """
 class TextEmbeddingPipeline:
     """

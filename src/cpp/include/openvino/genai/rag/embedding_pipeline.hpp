@@ -49,20 +49,30 @@ public:
     /**
      * @brief Computes an embedding vector for text.
      */
-    std::vector<float> extract(const std::string& text);
+    std::vector<float> embed(const std::string& text);
+
+    /**
+     * @brief Computes a document embedding vector for text.
+     */
+    std::vector<float> embed_document(const std::string& text);
+
+    /**
+     * @brief Computes document embedding vectors for a batch of texts.
+     */
+    std::vector<std::vector<float>> embed_documents(const std::vector<std::string>& texts);
 
     /**
      * @brief Computes an embedding vector for text and images.
      */
-    std::vector<float> extract(const std::string& text, const std::vector<ov::Tensor>& images);
+    std::vector<float> embed(const std::string& text, const std::vector<ov::Tensor>& images);
 
     /**
      * @brief Computes an embedding vector for text, images and videos.
      */
-    std::vector<float> extract(const std::string& text,
-                               const std::vector<ov::Tensor>& images,
-                               const std::vector<ov::Tensor>& videos,
-                               const std::vector<VideoMetadata>& videos_metadata = {});
+    std::vector<float> embed(const std::string& text,
+                             const std::vector<ov::Tensor>& images,
+                             const std::vector<ov::Tensor>& videos,
+                             const std::vector<VideoMetadata>& videos_metadata = {});
 
     ~EmbeddingPipeline();
 

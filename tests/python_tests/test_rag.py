@@ -70,7 +70,9 @@ mobile processor offering.2\
 def test_embedding_pipeline_public_api():
     assert hasattr(openvino_genai, "EmbeddingPipeline")
     assert EmbeddingPipeline.__name__ == "EmbeddingPipeline"
-    assert hasattr(EmbeddingPipeline, "extract")
+    assert hasattr(EmbeddingPipeline, "embed")
+    assert hasattr(EmbeddingPipeline, "embed_document")
+    assert hasattr(EmbeddingPipeline, "embed_documents")
 
 
 @pytest.fixture(scope="module")

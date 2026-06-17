@@ -118,6 +118,38 @@ std::vector<float> embedding_result_to_float(const ov::genai::EmbeddingResult& e
     return result;
 }
 
+std::vector<float> embedding_results_to_float_single(const ov::genai::EmbeddingResults& embedding_results) {
+    if (const auto* float_vectors = std::get_if<std::vector<std::vector<float>>>(&embedding_results)) {
+        OPENVINO_ASSERT(float_vectors->size() == 1,
+                        "Expected single embedding result, got ",
+                        float_vectors->size());
+        return float_vectors->at(0);
+    }
+    if (const auto* int8_vectors = std::get_if<std::vector<std::vector<int8_t>>>(&embedding_results)) {
+        OPENVINO_ASSERT(int8_vectors->size() == 1,
+                        "Expected single embedding result, got ",
+                        int8_vectors->size());
+        std::vector<float> result;
+        result.reserve(int8_vectors->at(0).size());
+        for (const int8_t value : int8_vectors->at(0)) {
+            result.push_back(static_cast<float>(value));
+        }
+        return result;
+    }
+
+    const auto* uint8_vectors = std::get_if<std::vector<std::vector<uint8_t>>>(&embedding_results);
+    OPENVINO_ASSERT(uint8_vectors != nullptr, "Unexpected embedding results type");
+    OPENVINO_ASSERT(uint8_vectors->size() == 1,
+                    "Expected single embedding result, got ",
+                    uint8_vectors->size());
+    std::vector<float> result;
+    result.reserve(uint8_vectors->at(0).size());
+    for (const uint8_t value : uint8_vectors->at(0)) {
+        result.push_back(static_cast<float>(value));
+    }
+    return result;
+}
+
 }  // namespace
 
 namespace ov {
@@ -145,14 +177,62 @@ public:
         }
     }
 
-    std::vector<float> extract(const std::string& text) {
+    std::vector<float> embed(const std::string& text) {
         if (m_mode == Mode::TEXT_ONLY) {
             return embedding_result_to_float(m_text_embedding_pipeline->embed_query(text));
         }
         return extract_multimodal(text, {}, {}, {});
     }
 
-    std::vector<float> extract(const std::string& text, const std::vector<ov::Tensor>& images) {
+    std::vector<float> embed_document(const std::string& text) {
+        if (m_mode == Mode::TEXT_ONLY) {
+            return embedding_results_to_float_single(m_text_embedding_pipeline->embed_documents({text}));
+        }
+        return extract_multimodal(text, {}, {}, {});
+    }
+
+    std::vector<std::vector<float>> embed_documents(const std::vector<std::string>& texts) {
+        if (m_mode == Mode::TEXT_ONLY) {
+            const EmbeddingResults results = m_text_embedding_pipeline->embed_documents(texts);
+            if (const auto* float_vectors = std::get_if<std::vector<std::vector<float>>>(&results)) {
+                return *float_vectors;
+            }
+            if (const auto* int8_vectors = std::get_if<std::vector<std::vector<int8_t>>>(&results)) {
+                std::vector<std::vector<float>> out;
+                out.reserve(int8_vectors->size());
+                for (const auto& row : *int8_vectors) {
+                    std::vector<float> converted;
+                    converted.reserve(row.size());
+                    for (const int8_t v : row) {
+                        converted.push_back(static_cast<float>(v));
+                    }
+                    out.push_back(std::move(converted));
+                }
+                return out;
+            }
+            const auto* uint8_vectors = std::get_if<std::vector<std::vector<uint8_t>>>(&results);
+            OPENVINO_ASSERT(uint8_vectors != nullptr, "Unexpected embedding results type");
+            std::vector<std::vector<float>> out;
+            out.reserve(uint8_vectors->size());
+            for (const auto& row : *uint8_vectors) {
+                std::vector<float> converted;
+                converted.reserve(row.size());
+                for (const uint8_t v : row) {
+                    converted.push_back(static_cast<float>(v));
+                }
+                out.push_back(std::move(converted));
+            }
+            return out;
+        }
+        std::vector<std::vector<float>> out;
+        out.reserve(texts.size());
+        for (const auto& text : texts) {
+            out.push_back(extract_multimodal(text, {}, {}, {}));
+        }
+        return out;
+    }
+
+    std::vector<float> embed(const std::string& text, const std::vector<ov::Tensor>& images) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(images.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support image input");
@@ -161,10 +241,10 @@ public:
         return extract_multimodal(text, images, {}, {});
     }
 
-    std::vector<float> extract(const std::string& text,
-                               const std::vector<ov::Tensor>& images,
-                               const std::vector<ov::Tensor>& videos,
-                               const std::vector<VideoMetadata>& videos_metadata) {
+    std::vector<float> embed(const std::string& text,
+                             const std::vector<ov::Tensor>& images,
+                             const std::vector<ov::Tensor>& videos,
+                             const std::vector<VideoMetadata>& videos_metadata) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(images.empty() && videos.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support image/video input");
@@ -321,19 +401,27 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-std::vector<float> EmbeddingPipeline::extract(const std::string& text) {
-    return m_impl->extract(text);
+std::vector<float> EmbeddingPipeline::embed(const std::string& text) {
+    return m_impl->embed(text);
 }
 
-std::vector<float> EmbeddingPipeline::extract(const std::string& text, const std::vector<ov::Tensor>& images) {
-    return m_impl->extract(text, images);
+std::vector<float> EmbeddingPipeline::embed_document(const std::string& text) {
+    return m_impl->embed_document(text);
 }
 
-std::vector<float> EmbeddingPipeline::extract(const std::string& text,
-                                              const std::vector<ov::Tensor>& images,
-                                              const std::vector<ov::Tensor>& videos,
-                                              const std::vector<VideoMetadata>& videos_metadata) {
-    return m_impl->extract(text, images, videos, videos_metadata);
+std::vector<std::vector<float>> EmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
+    return m_impl->embed_documents(texts);
+}
+
+std::vector<float> EmbeddingPipeline::embed(const std::string& text, const std::vector<ov::Tensor>& images) {
+    return m_impl->embed(text, images);
+}
+
+std::vector<float> EmbeddingPipeline::embed(const std::string& text,
+                                            const std::vector<ov::Tensor>& images,
+                                            const std::vector<ov::Tensor>& videos,
+                                            const std::vector<VideoMetadata>& videos_metadata) {
+    return m_impl->embed(text, images, videos, videos_metadata);
 }
 
 EmbeddingPipeline::~EmbeddingPipeline() = default;

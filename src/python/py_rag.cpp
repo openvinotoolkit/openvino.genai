@@ -86,31 +86,47 @@ void init_rag_pipelines(py::module_& m) {
             "Device to run the model on (e.g., CPU, GPU)",
             "Plugin and/or config properties")
         .def(
-            "extract",
+            "embed",
             [](EmbeddingPipeline& pipe, const std::string& text) -> std::vector<float> {
                 py::gil_scoped_release rel;
-                return pipe.extract(text);
+                return pipe.embed(text);
             },
             py::arg("text"),
             "Computes an embedding vector for text.")
         .def(
-            "extract",
+            "embed_document",
+            [](EmbeddingPipeline& pipe, const std::string& text) -> std::vector<float> {
+                py::gil_scoped_release rel;
+                return pipe.embed_document(text);
+            },
+            py::arg("text"),
+            "Computes a document embedding vector for text.")
+        .def(
+            "embed_documents",
+            [](EmbeddingPipeline& pipe, const std::vector<std::string>& texts) -> std::vector<std::vector<float>> {
+                py::gil_scoped_release rel;
+                return pipe.embed_documents(texts);
+            },
+            py::arg("texts"),
+            "Computes document embedding vectors for a batch of texts.")
+        .def(
+            "embed",
             [](EmbeddingPipeline& pipe, const std::string& text, const std::vector<ov::Tensor>& images) -> std::vector<float> {
                 py::gil_scoped_release rel;
-                return pipe.extract(text, images);
+                return pipe.embed(text, images);
             },
             py::arg("text"),
             py::arg("images"),
             "Computes an embedding vector for text and images.")
         .def(
-            "extract",
+            "embed",
                 [](EmbeddingPipeline& pipe,
                const std::string& text,
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::genai::VideoMetadata>& videos_metadata) -> std::vector<float> {
                 py::gil_scoped_release rel;
-                return pipe.extract(text, images, videos, videos_metadata);
+                return pipe.embed(text, images, videos, videos_metadata);
             },
             py::arg("text"),
             py::arg("images"),
