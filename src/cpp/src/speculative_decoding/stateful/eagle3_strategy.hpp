@@ -414,7 +414,7 @@ private:
     /// @brief Step 5: Gathers accepted hidden states for the next iteration.
     void gather_accepted_hidden_states(const ValidationResult& validation);
 
-    /// @brief Applies default tree_params if the user did not set them.
+    /// @brief Applies default tree search parameters if the user did not set them.
     static void ensure_tree_params_is_set(GenerationConfig& config);
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;

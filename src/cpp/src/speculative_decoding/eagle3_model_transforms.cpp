@@ -128,6 +128,7 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
         clone_node_recursive =
             [&](const std::shared_ptr<ov::Node>& node,
                 std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) -> std::shared_ptr<ov::Node> {
+
         auto it = cloned_nodes.find(node.get());
         if (it != cloned_nodes.end()) {
             return it->second;
