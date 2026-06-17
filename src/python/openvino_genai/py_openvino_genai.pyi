@@ -3919,6 +3919,22 @@ class EmbeddingPipeline:
         """
         Computes document embedding vectors for a batch of texts.
         """
+    def start_embed_documents_async(self, texts: collections.abc.Sequence[str]) -> None:
+        """
+        Asynchronously computes document embedding vectors for a batch of texts.
+        """
+    def wait_embed_documents(self) -> list[list[float]]:
+        """
+        Waits for asynchronous document embeddings and returns results.
+        """
+    def start_embed_async(self, text: str) -> None:
+        """
+        Asynchronously computes an embedding vector for text.
+        """
+    def wait_embed(self) -> list[float]:
+        """
+        Waits for asynchronous text embedding and returns result.
+        """
 class TextEmbeddingPipeline:
     """
     Text embedding pipeline

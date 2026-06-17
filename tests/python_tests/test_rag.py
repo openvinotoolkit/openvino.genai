@@ -73,6 +73,10 @@ def test_embedding_pipeline_public_api():
     assert hasattr(EmbeddingPipeline, "embed")
     assert hasattr(EmbeddingPipeline, "embed_document")
     assert hasattr(EmbeddingPipeline, "embed_documents")
+    assert hasattr(EmbeddingPipeline, "start_embed_documents_async")
+    assert hasattr(EmbeddingPipeline, "wait_embed_documents")
+    assert hasattr(EmbeddingPipeline, "start_embed_async")
+    assert hasattr(EmbeddingPipeline, "wait_embed")
 
 
 @pytest.fixture(scope="module")

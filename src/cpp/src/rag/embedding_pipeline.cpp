@@ -3,6 +3,7 @@
 
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
+#include <future>
 #include <optional>
 #include <unordered_set>
 
@@ -150,6 +151,39 @@ std::vector<float> embedding_results_to_float_single(const ov::genai::EmbeddingR
     return result;
 }
 
+std::vector<std::vector<float>> embedding_results_to_float_vectors(const ov::genai::EmbeddingResults& embedding_results) {
+    if (const auto* float_vectors = std::get_if<std::vector<std::vector<float>>>(&embedding_results)) {
+        return *float_vectors;
+    }
+    if (const auto* int8_vectors = std::get_if<std::vector<std::vector<int8_t>>>(&embedding_results)) {
+        std::vector<std::vector<float>> out;
+        out.reserve(int8_vectors->size());
+        for (const auto& row : *int8_vectors) {
+            std::vector<float> converted;
+            converted.reserve(row.size());
+            for (const int8_t value : row) {
+                converted.push_back(static_cast<float>(value));
+            }
+            out.push_back(std::move(converted));
+        }
+        return out;
+    }
+
+    const auto* uint8_vectors = std::get_if<std::vector<std::vector<uint8_t>>>(&embedding_results);
+    OPENVINO_ASSERT(uint8_vectors != nullptr, "Unexpected embedding results type");
+    std::vector<std::vector<float>> out;
+    out.reserve(uint8_vectors->size());
+    for (const auto& row : *uint8_vectors) {
+        std::vector<float> converted;
+        converted.reserve(row.size());
+        for (const uint8_t value : row) {
+            converted.push_back(static_cast<float>(value));
+        }
+        out.push_back(std::move(converted));
+    }
+    return out;
+}
+
 }  // namespace
 
 namespace ov {
@@ -192,44 +226,51 @@ public:
     }
 
     std::vector<std::vector<float>> embed_documents(const std::vector<std::string>& texts) {
+        start_embed_documents_async(texts);
+        return wait_embed_documents();
+    }
+
+    void start_embed_documents_async(const std::vector<std::string>& texts) {
         if (m_mode == Mode::TEXT_ONLY) {
-            const EmbeddingResults results = m_text_embedding_pipeline->embed_documents(texts);
-            if (const auto* float_vectors = std::get_if<std::vector<std::vector<float>>>(&results)) {
-                return *float_vectors;
-            }
-            if (const auto* int8_vectors = std::get_if<std::vector<std::vector<int8_t>>>(&results)) {
-                std::vector<std::vector<float>> out;
-                out.reserve(int8_vectors->size());
-                for (const auto& row : *int8_vectors) {
-                    std::vector<float> converted;
-                    converted.reserve(row.size());
-                    for (const int8_t v : row) {
-                        converted.push_back(static_cast<float>(v));
-                    }
-                    out.push_back(std::move(converted));
-                }
-                return out;
-            }
-            const auto* uint8_vectors = std::get_if<std::vector<std::vector<uint8_t>>>(&results);
-            OPENVINO_ASSERT(uint8_vectors != nullptr, "Unexpected embedding results type");
+            m_text_embedding_pipeline->start_embed_documents_async(texts);
+            return;
+        }
+        OPENVINO_ASSERT(!m_embed_documents_future.valid(), "Previous asynchronous embed_documents request is still pending");
+        m_embed_documents_future = std::async(std::launch::async, [this, texts]() {
             std::vector<std::vector<float>> out;
-            out.reserve(uint8_vectors->size());
-            for (const auto& row : *uint8_vectors) {
-                std::vector<float> converted;
-                converted.reserve(row.size());
-                for (const uint8_t v : row) {
-                    converted.push_back(static_cast<float>(v));
-                }
-                out.push_back(std::move(converted));
+            out.reserve(texts.size());
+            for (const auto& text : texts) {
+                out.push_back(extract_multimodal(text, {}, {}, {}));
             }
             return out;
+        });
+    }
+
+    std::vector<std::vector<float>> wait_embed_documents() {
+        if (m_mode == Mode::TEXT_ONLY) {
+            return embedding_results_to_float_vectors(m_text_embedding_pipeline->wait_embed_documents());
         }
-        std::vector<std::vector<float>> out;
-        out.reserve(texts.size());
-        for (const auto& text : texts) {
-            out.push_back(extract_multimodal(text, {}, {}, {}));
+        OPENVINO_ASSERT(m_embed_documents_future.valid(), "Asynchronous embed_documents request was not started");
+        return m_embed_documents_future.get();
+    }
+
+    void start_embed_async(const std::string& text) {
+        if (m_mode == Mode::TEXT_ONLY) {
+            m_text_embedding_pipeline->start_embed_query_async(text);
+            return;
         }
-        return out;
+        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
+        m_embed_future = std::async(std::launch::async, [this, text]() {
+            return extract_multimodal(text, {}, {}, {});
+        });
+    }
+
+    std::vector<float> wait_embed() {
+        if (m_mode == Mode::TEXT_ONLY) {
+            return embedding_result_to_float(m_text_embedding_pipeline->wait_embed_query());
+        }
+        OPENVINO_ASSERT(m_embed_future.valid(), "Asynchronous embed request was not started");
+        return m_embed_future.get();
     }
 
     std::vector<float> embed(const std::string& text, const std::vector<ov::Tensor>& images) {
@@ -394,6 +435,8 @@ private:
     std::unordered_set<std::string> m_language_model_input_names;
     std::unordered_set<std::string> m_language_model_output_names;
     std::string m_embedding_output_name;
+    std::future<std::vector<float>> m_embed_future;
+    std::future<std::vector<std::vector<float>>> m_embed_documents_future;
 };
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
@@ -411,6 +454,22 @@ std::vector<float> EmbeddingPipeline::embed_document(const std::string& text) {
 
 std::vector<std::vector<float>> EmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
     return m_impl->embed_documents(texts);
+}
+
+void EmbeddingPipeline::start_embed_documents_async(const std::vector<std::string>& texts) {
+    return m_impl->start_embed_documents_async(texts);
+}
+
+std::vector<std::vector<float>> EmbeddingPipeline::wait_embed_documents() {
+    return m_impl->wait_embed_documents();
+}
+
+void EmbeddingPipeline::start_embed_async(const std::string& text) {
+    return m_impl->start_embed_async(text);
+}
+
+std::vector<float> EmbeddingPipeline::wait_embed() {
+    return m_impl->wait_embed();
 }
 
 std::vector<float> EmbeddingPipeline::embed(const std::string& text, const std::vector<ov::Tensor>& images) {

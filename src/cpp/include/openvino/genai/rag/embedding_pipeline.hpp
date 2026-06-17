@@ -62,6 +62,26 @@ public:
     std::vector<std::vector<float>> embed_documents(const std::vector<std::string>& texts);
 
     /**
+     * @brief Starts asynchronous embedding computation for a batch of texts.
+     */
+    void start_embed_documents_async(const std::vector<std::string>& texts);
+
+    /**
+     * @brief Waits for asynchronous batch embedding computation and returns results.
+     */
+    std::vector<std::vector<float>> wait_embed_documents();
+
+    /**
+     * @brief Starts asynchronous embedding computation for text.
+     */
+    void start_embed_async(const std::string& text);
+
+    /**
+     * @brief Waits for asynchronous embedding computation and returns result.
+     */
+    std::vector<float> wait_embed();
+
+    /**
      * @brief Computes an embedding vector for text and images.
      */
     std::vector<float> embed(const std::string& text, const std::vector<ov::Tensor>& images);

@@ -110,6 +110,36 @@ void init_rag_pipelines(py::module_& m) {
             py::arg("texts"),
             "Computes document embedding vectors for a batch of texts.")
         .def(
+            "start_embed_documents_async",
+            [](EmbeddingPipeline& pipe, const std::vector<std::string>& texts) -> void {
+                py::gil_scoped_release rel;
+                pipe.start_embed_documents_async(texts);
+            },
+            py::arg("texts"),
+            "Asynchronously computes document embedding vectors for a batch of texts.")
+        .def(
+            "wait_embed_documents",
+            [](EmbeddingPipeline& pipe) -> std::vector<std::vector<float>> {
+                py::gil_scoped_release rel;
+                return pipe.wait_embed_documents();
+            },
+            "Waits for asynchronous document embeddings and returns results.")
+        .def(
+            "start_embed_async",
+            [](EmbeddingPipeline& pipe, const std::string& text) -> void {
+                py::gil_scoped_release rel;
+                pipe.start_embed_async(text);
+            },
+            py::arg("text"),
+            "Asynchronously computes an embedding vector for text.")
+        .def(
+            "wait_embed",
+            [](EmbeddingPipeline& pipe) -> std::vector<float> {
+                py::gil_scoped_release rel;
+                return pipe.wait_embed();
+            },
+            "Waits for asynchronous text embedding and returns result.")
+        .def(
             "embed",
             [](EmbeddingPipeline& pipe, const std::string& text, const std::vector<ov::Tensor>& images) -> std::vector<float> {
                 py::gil_scoped_release rel;
