@@ -375,6 +375,25 @@ class TextAgentEvaluator(BaseEvaluator):
             raise ValueError("Rendered prompt is empty after chat template application; check/fix the template or messages")
         return prompt
 
+    def _build_prompt_text_without_tools(self, tokenizer, messages, chat_template, backend_name: str) -> str:
+        logger.warning(
+            "Retrying prompt rendering without tools in %s path due to incompatible tools format",
+            backend_name,
+        )
+
+        if chat_template is not None:
+            try:
+                return self._render_messages_to_prompt(messages, None, chat_template)
+            except Exception as render_exc:
+                logger.warning(
+                    "Template rendering without tools failed for current record in %s path; "
+                    "falling back to tokenizer.apply_chat_template without tools. Error: %s",
+                    backend_name,
+                    render_exc,
+                )
+
+        return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, None)
+
     def _build_prompt_text(self, tokenizer, messages, tools, chat_template, backend_name: str) -> str:
         if chat_template is not None:
             try:
@@ -385,8 +404,18 @@ class TextAgentEvaluator(BaseEvaluator):
                     backend_name,
                     render_exc,
                 )
-
-        return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, tools)
+        try:
+            return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, tools)
+        except Exception as template_exc:
+            if tools is None:
+                raise
+            logger.warning(
+                "tokenizer.apply_chat_template failed with tools in %s path; "
+                "retrying without tools. Error: %s",
+                backend_name,
+                template_exc,
+            )
+            return self._build_prompt_text_without_tools(tokenizer, messages, chat_template, backend_name)
 
     def _generate_non_genai(self, model, tokenizer, record: Dict[str, Any], chat_template: Optional[str]) -> str:
         messages = record["messages"]
