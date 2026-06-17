@@ -8,7 +8,11 @@ import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_default_llm_properties
-from utils.hugging_face import download_and_convert_model, run_hugging_face
+from utils.hugging_face import (
+    download_and_convert_model,
+    generate_and_save_gemma4_mtp_assistant_model,
+    run_hugging_face,
+)
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import convert_decoded_results_to_generation_result
 
@@ -158,9 +162,9 @@ def test_extended_perf_metrics():
     extended_perf_metrics = ov_pipe.generate(["Why is the Sun yellow?"], generation_config).extended_perf_metrics
     total_time = (time.perf_counter() - start_time) * 1000
 
-    assert not extended_perf_metrics is None
-    assert not extended_perf_metrics.main_model_metrics is None
-    assert not extended_perf_metrics.draft_model_metrics is None
+    assert extended_perf_metrics is not None
+    assert extended_perf_metrics.main_model_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics is not None
 
     assert extended_perf_metrics.get_num_accepted_tokens() > 0
 
@@ -220,10 +224,10 @@ A:""",
 
 eagle3_devices = [("NPU", "NPU")]
 
+# assistant model is randomly generated from the target model
 gemma4_mtp_models_and_input = [
     (
-        "google/gemma-4-e2b-it",
-        "google/gemma-4-e2b-it-assistant",
+        "optimum-intel-internal-testing/tiny-random-gemma4",
         "OpenVINO is",
     )
 ]
@@ -243,15 +247,16 @@ def gemma4_mtp_device_pair(request):
 
 @pytest.fixture
 def gemma4_mtp_target_model_schema(gemma4_mtp_model_input):
-    target_model, _, _ = gemma4_mtp_model_input
+    target_model, _ = gemma4_mtp_model_input
     target_model_schema = download_and_convert_model(target_model)
     return target_model_schema
 
 
 @pytest.fixture
-def gemma4_mtp_draft_model_path(gemma4_mtp_model_input):
-    _, draft_model, _ = gemma4_mtp_model_input
-    return download_and_convert_model(draft_model).models_path
+def gemma4_mtp_draft_model_path(gemma4_mtp_target_model_schema):
+    return generate_and_save_gemma4_mtp_assistant_model(
+        gemma4_mtp_target_model_schema.models_path,
+    )
 
 
 @pytest.fixture
@@ -270,10 +275,8 @@ def gemma4_mtp_pipeline(gemma4_mtp_target_model_schema, gemma4_mtp_draft_model_p
     return ov_pipe
 
 
-@pytest.mark.nightly
-@pytest.mark.real_models
 def test_gemma4_mtp_string_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_model_schema, gemma4_mtp_model_input):
-    _, _, prompt = gemma4_mtp_model_input
+    _, prompt = gemma4_mtp_model_input
     generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=3)
     ref_gen_results = run_hugging_face(
         gemma4_mtp_target_model_schema.opt_model,
@@ -298,10 +301,8 @@ def test_gemma4_mtp_string_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_model_s
     compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, generation_config)
 
 
-@pytest.mark.nightly
-@pytest.mark.real_models
 def test_gemma4_mtp_tokenized_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_model_schema, gemma4_mtp_model_input):
-    _, _, prompt = gemma4_mtp_model_input
+    _, prompt = gemma4_mtp_model_input
     generation_config = ov_genai.GenerationConfig(
         do_sample=False,
         max_new_tokens=20,
@@ -329,10 +330,8 @@ def test_gemma4_mtp_tokenized_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_mode
     compare_generation_results([prompt], ov_string_gen_results, ov_gen_results, generation_config)
 
 
-@pytest.mark.nightly
-@pytest.mark.real_models
 def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
-    _, _, prompt = gemma4_mtp_model_input
+    _, prompt = gemma4_mtp_model_input
     generation_config = ov_genai.GenerationConfig(
         do_sample=False,
         max_new_tokens=20,
@@ -353,7 +352,7 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
     assert num_draft_generated >= 0
 
     num_accepted = extended_perf_metrics.get_num_accepted_tokens()
-    assert num_accepted > 0
+    assert num_accepted >= 0
     assert num_accepted <= num_draft_generated, (
         "Inconsistent extended perf metrics: accepted tokens exceed draft-generated tokens "
         f"(accepted={num_accepted}, draft_generated={num_draft_generated})"

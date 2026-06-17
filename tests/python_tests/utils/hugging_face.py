@@ -7,10 +7,16 @@ from typing import Type
 import subprocess  # nosec B404
 
 from optimum.modeling_base import OptimizedModel
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    Gemma4AssistantConfig,
+    Gemma4AssistantForCausalLM,
+)
 from transformers import GenerationConfig as HFGenerationConfig
 
-from optimum.intel import OVModelForCausalLM
+from optimum.intel import OVAssistantForCausalLM, OVModelForCausalLM
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -281,19 +287,47 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConverted
     return download_and_convert_model_class(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
 
+def generate_and_save_gemma4_mtp_assistant_model(target_models_path: Path) -> Path:
+    assistant_models_path = target_models_path.parent / f"{target_models_path.name}_assistant"
+    manager = AtomicDownloadManager(assistant_models_path)
+
+    def convert_to_temp(temp_path: Path) -> None:
+        target_config = AutoConfig.from_pretrained(target_models_path)
+        assistant_text_config = target_config.text_config.to_dict()
+        assistant_text_config["hidden_size_per_layer_input"] = 0
+        assistant_text_config["use_double_wide_mlp"] = False
+        assistant_text_config["vocab_size_per_layer_input"] = 0
+        assistant_text_config["num_kv_shared_layers"] = assistant_text_config["num_hidden_layers"]
+        assistant_config = Gemma4AssistantConfig(
+            text_config=assistant_text_config,
+            backbone_hidden_size=target_config.text_config.hidden_size,
+            tie_word_embeddings=target_config.tie_word_embeddings,
+            use_ordered_embeddings=True,
+        )
+        assistant_model = Gemma4AssistantForCausalLM(assistant_config)
+        assistant_hf_path = temp_path / "hf_assistant"
+        assistant_model.save_pretrained(assistant_hf_path)
+        ov_assistant_model = OVAssistantForCausalLM.from_pretrained(
+            assistant_hf_path,
+            export=True,
+            compile=False,
+            ov_config=get_default_llm_properties(),
+        )
+        ov_assistant_model.save_pretrained(temp_path)
+
+    manager.execute(convert_to_temp)
+    return assistant_models_path
+
+
 def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
 TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
 
-NO_CACHE_MODELS = ("google/gemma-4-e2b-it-assistant",)
-
 # Some models require optimum-cli export instead of the Python API path.
 # This maps model_id to the --task value used during export - CVS-183496
 FORCE_OPTIMUM_CLI_EXPORT_MODELS = {
-    "google/gemma-4-e2b-it": "text-generation-with-past",
-    "google/gemma-4-e2b-it-assistant": "text-generation",
     "optimum-intel-internal-testing/tiny-random-flux": "text-to-image",
     "optimum-intel-internal-testing/tiny-random-lfm2": "text-generation-with-past",
     "optimum-intel-internal-testing/tiny-random-qwen3-next": "text-generation-with-past",
@@ -335,9 +369,6 @@ def download_and_convert_model_class(
 
     if model_kwargs is None:
         model_kwargs = {}
-
-    if str(model_id) in NO_CACHE_MODELS:
-        model_kwargs.setdefault("use_cache", False)
 
     if "has_tokenizer" not in model_kwargs and "eagle3" in str(model_id).lower():
         model_kwargs["has_tokenizer"] = False
