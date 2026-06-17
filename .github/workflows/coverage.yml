@@ -488,7 +488,7 @@ jobs:
     name: Coverage C++ (iGPU, CDPruner OpenCL)
     needs: [openvino_download, CoverageBuild]
     timeout-minutes: 120
-    runs-on: [self-hosted, igpu]
+    runs-on: [self-hosted, igpu, Linux]
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64_igpu:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -512,6 +512,7 @@ jobs:
       BUILD_JS_DIR: ${{ github.workspace }}/build_js
       COVERAGE_WRITE_STEP_SUMMARY: 'false'
       PYTHONDONTWRITEBYTECODE: '1'
+      GIT_SSL_CAINFO: /usr/local/share/ca-certificates/IntelProxyRootCA-Base64.crt
     steps:
       - name: Checkout sources
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
