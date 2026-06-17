@@ -513,6 +513,8 @@ jobs:
       COVERAGE_WRITE_STEP_SUMMARY: 'false'
       PYTHONDONTWRITEBYTECODE: '1'
       GIT_SSL_CAINFO: /usr/local/share/ca-certificates/IntelProxyRootCA-Base64.crt
+      REQUESTS_CA_BUNDLE: /usr/local/share/ca-certificates/IntelProxyRootCA-Base64.crt
+      PIP_CERT: /usr/local/share/ca-certificates/IntelProxyRootCA-Base64.crt
     steps:
       - name: Checkout sources
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
