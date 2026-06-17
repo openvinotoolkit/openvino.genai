@@ -244,16 +244,30 @@ def load_text_model(
         model = load_text_llamacpp_pipeline(model_id)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel.openvino import OVModelForCausalLM
+        from optimum.intel.openvino import OVModelForCausalLM, OVModelForSeq2SeqLM
+        
+        # Determine if model is encoder-decoder (seq2seq)
+        model_class = OVModelForCausalLM
         try:
-            model = OVModelForCausalLM.from_pretrained(
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
+            try:
+                config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            except Exception:
+                config = None
+        
+        if config is not None and getattr(config, "is_encoder_decoder", False):
+            model_class = OVModelForSeq2SeqLM
+        
+        try:
+            model = model_class.from_pretrained(
                 model_id, device=device, ov_config=ov_config, **kwargs
             )
         except Exception:
             try:
                 config = AutoConfig.from_pretrained(
                     model_id, trust_remote_code=True)
-                model = OVModelForCausalLM.from_pretrained(
+                model = model_class.from_pretrained(
                     model_id,
                     config=config,
                     trust_remote_code=True,
@@ -264,7 +278,7 @@ def load_text_model(
                 )
             except Exception:
                 config = AutoConfig.from_pretrained(model_id)
-                model = OVModelForCausalLM.from_pretrained(
+                model = model_class.from_pretrained(
                     model_id,
                     config=config,
                     use_cache=True,
