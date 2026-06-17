@@ -38,7 +38,6 @@ struct InferenceOutput {
 /// @brief Context for a single forward pass.
 struct InferContext {
     size_t input_token_count = 0;             ///< Number of input tokens for this inference
-    size_t sample_count = 1;                  ///< Number of positions to sample from
     bool use_target_hidden = false;           ///< Whether to use hidden states from target_sequence
     Sequence::Ptr target_sequence = nullptr;  ///< Source sequence for hidden states (DRAFT_INITIAL only)
     size_t num_tokens_to_validate = 0;        ///< Number of draft tokens to validate (TARGET_VALIDATION only)
@@ -336,6 +335,7 @@ private:
     // Pre-allocated buffers (initialized by allocate_buffers).
     ov::Tensor m_logits_gather_buf;  ///< {1, max_sequences, vocab_size} for logit gathering
     ov::Tensor m_hidden_concat_buf;  ///< {1, max_sequences * max_depth, hidden_size} for concat
+    std::vector<ov::Tensor> m_per_seq_hidden_bufs;  ///< {1, max_depth, hidden_size} per sequence
     size_t m_max_sequences = 0;
     size_t m_max_depth = 0;
     size_t m_hidden_size = 0;
@@ -377,8 +377,6 @@ public:
 
     ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
 
-    void finish_chat() override;
-
 protected:
     GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config) override;
 
@@ -389,6 +387,7 @@ protected:
 private:
     struct SpeculativeResult {
         size_t accepted_tokens_count = 0;
+        size_t num_draft_tokens = 0;
         size_t next_window_size = 0;
         bool eos_reached = false;
         std::vector<int64_t> validated_tokens;

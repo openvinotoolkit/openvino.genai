@@ -475,16 +475,20 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_next_tokens(const ov::Tensor
     // next iteration still needs every sequence reachable.
     restore_running_status();
 
+    // Re-fetch running sequences after sampler — advance_draft_layer may have forked sequences.
+    const auto updated_sequences = sequence_group->get_running_sequences();
+    const size_t updated_count = updated_sequences.size();
+
     // Collect the last generated token from each sequence.
     std::vector<int64_t> result_tokens;
-    result_tokens.reserve(num_sequences);
-    for (size_t seq_idx = 0; seq_idx < num_sequences; ++seq_idx) {
-        const auto& generated_ids = running_sequences[seq_idx]->get_generated_ids();
+    result_tokens.reserve(updated_count);
+    for (size_t seq_idx = 0; seq_idx < updated_count; ++seq_idx) {
+        const auto& generated_ids = updated_sequences[seq_idx]->get_generated_ids();
         OPENVINO_ASSERT(!generated_ids.empty(), "Sequence ", seq_idx, " has no generated tokens");
         result_tokens.push_back(generated_ids.back());
     }
 
-    record_generated_tokens(num_sequences);
+    record_generated_tokens(updated_count);
     return result_tokens;
 }
 
@@ -697,6 +701,12 @@ void Eagle3DraftWrapper::allocate_buffers(size_t max_sequences,
     // Pre-allocate hidden state concatenation buffer: {1, max_sequences * max_depth, hidden_size}.
     m_hidden_concat_buf = ov::Tensor(ov::element::f32, {1, max_sequences * max_depth, hidden_size});
 
+    // Pre-allocate per-sequence hidden state buffers: {1, max_depth, hidden_size} each.
+    m_per_seq_hidden_bufs.resize(max_sequences);
+    for (size_t i = 0; i < max_sequences; ++i) {
+        m_per_seq_hidden_bufs[i] = ov::Tensor(ov::element::f32, {1, max_depth, hidden_size});
+    }
+
     m_buffers_allocated = true;
 }
 
@@ -783,8 +793,17 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
         // DRAFT_INITIAL: all beam sequences start from the same root hidden state.
         const auto& h_shape = output.hidden_features.get_shape();
         const auto root_hidden = slice_hidden_state(output.hidden_features, h_shape[1] - 1);
+        const size_t hidden_size = h_shape[2];
+
         for (size_t i = 0; i < num_sequences; ++i) {
-            running_sequences[i]->update_hidden_state(root_hidden);
+            if (m_buffers_allocated && i < m_per_seq_hidden_bufs.size()) {
+                // Use pre-allocated buffer: set shape to {1, 1, H} and copy root.
+                m_per_seq_hidden_bufs[i].set_shape({1, 1, hidden_size});
+                std::memcpy(m_per_seq_hidden_bufs[i].data(), root_hidden.data(), hidden_size * sizeof(float));
+                running_sequences[i]->update_hidden_state(m_per_seq_hidden_bufs[i]);
+            } else {
+                running_sequences[i]->update_hidden_state(root_hidden);
+            }
         }
         return;
     }
@@ -815,16 +834,20 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
         // The last branch token for sequence i sits at (i+1)*branch_len - 1.
         const size_t last_tok_pos = (i + 1) * branch_len - 1;
 
-        // Allocate {1, branch_len+1, H} and copy existing + new row.
-        ov::Tensor updated(ov::element::f32, {1, new_len, hidden_size});
-        const auto existing = running_sequences[i]->get_hidden_state();
-
-        // Copy existing branch_len rows.
-        std::memcpy(updated.data(), existing.data(), branch_len * hidden_size * sizeof(float));
-        // Copy the new token's hidden state as the last row.
-        copy_hidden_state_row(output.hidden_features, last_tok_pos, updated, branch_len);
-
-        running_sequences[i]->update_hidden_state(updated);
+        if (m_buffers_allocated && i < m_per_seq_hidden_bufs.size() && new_len <= m_max_depth) {
+            // Grow pre-allocated buffer in-place: {1, branch_len, H} → {1, branch_len+1, H}.
+            // Previous data is preserved by set_shape when growing within capacity.
+            m_per_seq_hidden_bufs[i].set_shape({1, new_len, hidden_size});
+            copy_hidden_state_row(output.hidden_features, last_tok_pos, m_per_seq_hidden_bufs[i], branch_len);
+            running_sequences[i]->update_hidden_state(m_per_seq_hidden_bufs[i]);
+        } else {
+            // Fallback: allocate new tensor.
+            ov::Tensor updated(ov::element::f32, {1, new_len, hidden_size});
+            const auto existing = running_sequences[i]->get_hidden_state();
+            std::memcpy(updated.data(), existing.data(), branch_len * hidden_size * sizeof(float));
+            copy_hidden_state_row(output.hidden_features, last_tok_pos, updated, branch_len);
+            running_sequences[i]->update_hidden_state(updated);
+        }
     }
 }
 
@@ -923,6 +946,12 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     ensure_tree_params_is_set(m_generation_config);
 
     OPENVINO_ASSERT(m_generation_config.is_tree_search(), "Eagle3 pipeline requires tree_depth > 0.");
+
+    // Eagle3 stateful pipeline is designed for NPU devices. Non-NPU KV cache management
+    // paths exist in the base class but are not validated for correctness in this pipeline.
+    OPENVINO_ASSERT(target_model_desc.device == "NPU" && draft_model_desc.device == "NPU",
+                    "Eagle3 stateful pipeline currently supports NPU devices only. "
+                    "Target device: ", target_model_desc.device, ", Draft device: ", draft_model_desc.device);
 
     // Extract hidden_layers_list from draft model properties — used only during model
     // construction to wire the target model's hidden-state extraction.
@@ -1091,7 +1120,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
         streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
 
         // Update statistics.
-        total_draft_generated += m_draft_iterations;
+        total_draft_generated += result.num_draft_tokens;
         total_draft_accepted += result.accepted_tokens_count;
         generated_tokens += result.validated_tokens.size();
         eos_reached = result.eos_reached;
@@ -1200,7 +1229,6 @@ ValidationResult StatefulEagle3LLMPipeline::validate_draft_with_target() {
     // Run target validation.
     InferContext val_ctx;
     val_ctx.input_token_count = num_candidates;
-    val_ctx.sample_count = num_candidates;
     val_ctx.num_tokens_to_validate = num_tree_nodes;
     const auto val_result = m_target->forward(val_ctx);
 
@@ -1327,14 +1355,11 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
     SpeculativeResult result;
     result.accepted_tokens_count = validation.accepted_count;
+    result.num_draft_tokens = validation.num_candidates - 1;  // tree nodes excluding root
     result.next_window_size = validation.accepted_count + 1;
     result.validated_tokens = std::move(validation.validated_tokens);
     result.eos_reached = (target_predicted_token == eos_token_id);
     return result;
-}
-
-void StatefulEagle3LLMPipeline::finish_chat() {
-    StatefulSpeculativePipelineBase::finish_chat();
 }
 
 SpeculativeDecodingMetrics StatefulEagle3LLMPipeline::get_speculative_decoding_metrics() const {
