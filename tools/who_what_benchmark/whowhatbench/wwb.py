@@ -645,16 +645,10 @@ def llamacpp_gen_text(
     _ = assistant_confidence_threshold
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
-        text = output["choices"][0]["message"]["content"]
-        if skip_question:
-            text = text[len(question):]
-        return text
+        return output["choices"][0]["message"]["content"]
     else:
-        output = model(question, max_tokens=max_new_tokens, echo=True, temperature=0.0)
-        text = output["choices"][0]["text"]
-        if skip_question:
-            text = text[len(question):]
-        return text
+        output = model(question, max_tokens=max_new_tokens, echo=False, temperature=0.0)
+        return output["choices"][0]["text"]
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
