@@ -24,6 +24,19 @@ int main(int argc, char* argv[]) try {
     // NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
     // config.assistant_confidence_threshold = 0.4;
 
+    // Tree search parameters (for Eagle3 tree-based speculative decoding):
+    // `branching_factor` is the number of top-k candidates selected per tree node and kept globally per tree layer.
+    // `tree_depth` is the lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+    // NOTE: The total number of draft tokens produced by the tree is
+    // `total_draft_tokens = branching_factor^2 * (tree_depth - 1) + branching_factor`.
+    // `total_draft_tokens >= num_assistant_tokens` must hold. The top `num_assistant_tokens` candidates (by score) are
+    // selected from the tree for verification.
+    // For tree search, `num_assistant_tokens` serves as the overall number of candidate (non-root) tokens submitted to
+    // the target model for verification; total tree nodes = `num_assistant_tokens + 1` (including root).
+    // config.branching_factor = 2;
+    // config.tree_depth = 4;
+    // config.num_assistant_tokens = 8;
+
     std::string main_model_path = argv[1];
     std::string draft_model_path = argv[2];
     std::string prompt = argv[3];
