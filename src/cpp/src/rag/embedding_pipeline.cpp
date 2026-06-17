@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/rag/feature_extraction_pipeline.hpp"
+#include "openvino/genai/rag/embedding_pipeline.hpp"
 
 #include <optional>
 #include <unordered_set>
@@ -9,6 +9,7 @@
 #include "openvino/core/except.hpp"
 #include "openvino/core/type/bfloat16.hpp"
 #include "openvino/core/type/float16.hpp"
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
@@ -94,17 +95,96 @@ std::vector<float> mean_pool_embeddings(const ov::Tensor& tensor) {
     OPENVINO_THROW("Unsupported embedding element type: ", element_type);
 }
 
+std::vector<float> embedding_result_to_float(const ov::genai::EmbeddingResult& embedding_result) {
+    if (const auto* floats = std::get_if<std::vector<float>>(&embedding_result)) {
+        return *floats;
+    }
+    if (const auto* int8_values = std::get_if<std::vector<int8_t>>(&embedding_result)) {
+        std::vector<float> result;
+        result.reserve(int8_values->size());
+        for (const int8_t value : *int8_values) {
+            result.push_back(static_cast<float>(value));
+        }
+        return result;
+    }
+    const auto* uint8_values = std::get_if<std::vector<uint8_t>>(&embedding_result);
+    OPENVINO_ASSERT(uint8_values != nullptr, "Unexpected embedding result type");
+
+    std::vector<float> result;
+    result.reserve(uint8_values->size());
+    for (const uint8_t value : *uint8_values) {
+        result.push_back(static_cast<float>(value));
+    }
+    return result;
+}
+
 }  // namespace
 
 namespace ov {
 namespace genai {
 
-class FeatureExtractionPipeline::FeatureExtractionPipelineImpl {
+class EmbeddingPipeline::EmbeddingPipelineImpl {
 public:
-    FeatureExtractionPipelineImpl(const std::filesystem::path& models_path,
-                                  const std::string& device,
-                                  const ov::AnyMap& properties)
-        : m_inputs_embedder(std::make_shared<InputsEmbedder>(models_path, device, properties)) {
+    EmbeddingPipelineImpl(const std::filesystem::path& models_path,
+                          const std::string& device,
+                          const ov::AnyMap& properties) {
+        try {
+            init_multimodal(models_path, device, properties);
+            m_mode = Mode::MULTIMODAL;
+        } catch (const std::exception& multimodal_error) {
+            try {
+                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path, device, properties);
+                m_mode = Mode::TEXT_ONLY;
+            } catch (const std::exception& text_error) {
+                OPENVINO_THROW("EmbeddingPipeline initialization failed. "
+                               "Multimodal initialization error: ",
+                               multimodal_error.what(),
+                               ". TextEmbeddingPipeline fallback error: ",
+                               text_error.what());
+            }
+        }
+    }
+
+    std::vector<float> extract(const std::string& text) {
+        if (m_mode == Mode::TEXT_ONLY) {
+            return embedding_result_to_float(m_text_embedding_pipeline->embed_query(text));
+        }
+        return extract_multimodal(text, {}, {}, {});
+    }
+
+    std::vector<float> extract(const std::string& text, const std::vector<ov::Tensor>& images) {
+        if (m_mode == Mode::TEXT_ONLY) {
+            OPENVINO_ASSERT(images.empty(),
+                            "TextEmbeddingPipeline fallback is active and does not support image input");
+            return embedding_result_to_float(m_text_embedding_pipeline->embed_query(text));
+        }
+        return extract_multimodal(text, images, {}, {});
+    }
+
+    std::vector<float> extract(const std::string& text,
+                               const std::vector<ov::Tensor>& images,
+                               const std::vector<ov::Tensor>& videos,
+                               const std::vector<VideoMetadata>& videos_metadata) {
+        if (m_mode == Mode::TEXT_ONLY) {
+            OPENVINO_ASSERT(images.empty() && videos.empty(),
+                            "TextEmbeddingPipeline fallback is active and does not support image/video input");
+            OPENVINO_ASSERT(videos_metadata.empty(),
+                            "TextEmbeddingPipeline fallback is active and does not support video metadata input");
+            return embedding_result_to_float(m_text_embedding_pipeline->embed_query(text));
+        }
+        return extract_multimodal(text, images, videos, videos_metadata);
+    }
+
+private:
+    enum class Mode {
+        MULTIMODAL,
+        TEXT_ONLY,
+    };
+
+    void init_multimodal(const std::filesystem::path& models_path,
+                         const std::string& device,
+                         const ov::AnyMap& properties) {
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties);
         m_inputs_embedder->set_apply_chat_template_status(false);
 
         ov::Core core;
@@ -129,25 +209,17 @@ public:
             // Some embedding-style exports expose the sequence embedding under 'logits'.
             m_embedding_output_name = "logits";
         } else {
-            OPENVINO_THROW("Language model must expose 'last_hidden_state' or 'logits' output for FeatureExtractionPipeline");
+            OPENVINO_THROW("Language model must expose 'last_hidden_state' or 'logits' output for EmbeddingPipeline");
         }
 
         OPENVINO_ASSERT(has_lm_input("inputs_embeds"),
-                        "Language model must expose 'inputs_embeds' input for FeatureExtractionPipeline");
+                        "Language model must expose 'inputs_embeds' input for EmbeddingPipeline");
     }
 
-    std::vector<float> extract(const std::string& text) {
-        return extract(text, {}, {}, {});
-    }
-
-    std::vector<float> extract(const std::string& text, const std::vector<ov::Tensor>& images) {
-        return extract(text, images, {}, {});
-    }
-
-    std::vector<float> extract(const std::string& text,
-                               const std::vector<ov::Tensor>& images,
-                               const std::vector<ov::Tensor>& videos,
-                               const std::vector<VideoMetadata>& videos_metadata) {
+    std::vector<float> extract_multimodal(const std::string& text,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<VideoMetadata>& videos_metadata) {
         OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
                         "videos_metadata size (",
                         videos_metadata.size(),
@@ -234,7 +306,9 @@ private:
         return m_language_model_output_names.count(output_name) > 0;
     }
 
+    Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
+    std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
     std::unordered_set<std::string> m_language_model_input_names;
@@ -242,27 +316,27 @@ private:
     std::string m_embedding_output_name;
 };
 
-FeatureExtractionPipeline::FeatureExtractionPipeline(const std::filesystem::path& models_path,
-                                                     const std::string& device,
-                                                     const ov::AnyMap& properties)
-    : m_impl(std::make_unique<FeatureExtractionPipelineImpl>(models_path, device, properties)) {}
+EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
+                                     const std::string& device,
+                                     const ov::AnyMap& properties)
+    : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-std::vector<float> FeatureExtractionPipeline::extract(const std::string& text) {
+std::vector<float> EmbeddingPipeline::extract(const std::string& text) {
     return m_impl->extract(text);
 }
 
-std::vector<float> FeatureExtractionPipeline::extract(const std::string& text, const std::vector<ov::Tensor>& images) {
+std::vector<float> EmbeddingPipeline::extract(const std::string& text, const std::vector<ov::Tensor>& images) {
     return m_impl->extract(text, images);
 }
 
-std::vector<float> FeatureExtractionPipeline::extract(const std::string& text,
-                                                      const std::vector<ov::Tensor>& images,
-                                                      const std::vector<ov::Tensor>& videos,
-                                                      const std::vector<VideoMetadata>& videos_metadata) {
+std::vector<float> EmbeddingPipeline::extract(const std::string& text,
+                                              const std::vector<ov::Tensor>& images,
+                                              const std::vector<ov::Tensor>& videos,
+                                              const std::vector<VideoMetadata>& videos_metadata) {
     return m_impl->extract(text, images, videos, videos_metadata);
 }
 
-FeatureExtractionPipeline::~FeatureExtractionPipeline() = default;
+EmbeddingPipeline::~EmbeddingPipeline() = default;
 
 }  // namespace genai
 }  // namespace ov

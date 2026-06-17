@@ -7,7 +7,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/stl_bind.h>
 
-#include "openvino/genai/rag/feature_extraction_pipeline.hpp"
+#include "openvino/genai/rag/embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "py_utils.hpp"
@@ -16,7 +16,7 @@
 namespace py = pybind11;
 using ov::genai::EmbeddingResult;
 using ov::genai::EmbeddingResults;
-using ov::genai::FeatureExtractionPipeline;
+using ov::genai::EmbeddingPipeline;
 using ov::genai::TextEmbeddingPipeline;
 using ov::genai::TextRerankPipeline;
 
@@ -61,8 +61,8 @@ Attributes:
         Side to use for padding "left" or "right"
 )";
 
-const auto feature_extraction_pipeline_docstring = R"(
-Multimodal feature extraction pipeline.
+const auto embedding_pipeline_docstring = R"(
+Embedding pipeline.
 
 Computes a single embedding vector for:
 - text only
@@ -73,12 +73,12 @@ Computes a single embedding vector for:
 }  // namespace
 
 void init_rag_pipelines(py::module_& m) {
-    py::class_<FeatureExtractionPipeline>(m, "FeatureExtractionPipeline", feature_extraction_pipeline_docstring)
+    py::class_<EmbeddingPipeline>(m, "EmbeddingPipeline", embedding_pipeline_docstring)
         .def(
             py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
                 py::gil_scoped_release rel;
-                return std::make_unique<FeatureExtractionPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+                return std::make_unique<EmbeddingPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
             }),
             py::arg("models_path"),
             "Path to the directory containing model xml/bin files and tokenizer",
@@ -87,7 +87,7 @@ void init_rag_pipelines(py::module_& m) {
             "Plugin and/or config properties")
         .def(
             "extract",
-            [](FeatureExtractionPipeline& pipe, const std::string& text) -> std::vector<float> {
+            [](EmbeddingPipeline& pipe, const std::string& text) -> std::vector<float> {
                 py::gil_scoped_release rel;
                 return pipe.extract(text);
             },
@@ -95,7 +95,7 @@ void init_rag_pipelines(py::module_& m) {
             "Computes an embedding vector for text.")
         .def(
             "extract",
-            [](FeatureExtractionPipeline& pipe, const std::string& text, const std::vector<ov::Tensor>& images) -> std::vector<float> {
+            [](EmbeddingPipeline& pipe, const std::string& text, const std::vector<ov::Tensor>& images) -> std::vector<float> {
                 py::gil_scoped_release rel;
                 return pipe.extract(text, images);
             },
@@ -104,7 +104,7 @@ void init_rag_pipelines(py::module_& m) {
             "Computes an embedding vector for text and images.")
         .def(
             "extract",
-            [](FeatureExtractionPipeline& pipe,
+                [](EmbeddingPipeline& pipe,
                const std::string& text,
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,

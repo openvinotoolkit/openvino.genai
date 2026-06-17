@@ -15,11 +15,11 @@ namespace ov {
 namespace genai {
 
 /**
- * @brief Feature extraction pipeline for multimodal inputs.
+ * @brief Embedding pipeline for multimodal and text-only inputs.
  *
  * Computes a single embedding vector for a prompt with optional images and videos.
  */
-class OPENVINO_GENAI_EXPORTS FeatureExtractionPipeline {
+class OPENVINO_GENAI_EXPORTS EmbeddingPipeline {
 public:
     /**
      * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
@@ -28,9 +28,9 @@ public:
      * @param device Device.
      * @param properties Optional plugin properties to pass to ov::Core::compile_model().
      */
-    FeatureExtractionPipeline(const std::filesystem::path& models_path,
-                              const std::string& device,
-                              const ov::AnyMap& properties = {});
+    EmbeddingPipeline(const std::filesystem::path& models_path,
+                      const std::string& device,
+                      const ov::AnyMap& properties = {});
 
     /**
      * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
@@ -41,10 +41,10 @@ public:
      */
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    FeatureExtractionPipeline(const std::filesystem::path& models_path,
-                              const std::string& device,
-                              Properties&&... properties)
-        : FeatureExtractionPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+    EmbeddingPipeline(const std::filesystem::path& models_path,
+                      const std::string& device,
+                      Properties&&... properties)
+        : EmbeddingPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
 
     /**
      * @brief Computes an embedding vector for text.
@@ -64,11 +64,11 @@ public:
                                const std::vector<ov::Tensor>& videos,
                                const std::vector<VideoMetadata>& videos_metadata = {});
 
-    ~FeatureExtractionPipeline();
+    ~EmbeddingPipeline();
 
 private:
-    class FeatureExtractionPipelineImpl;
-    std::unique_ptr<FeatureExtractionPipelineImpl> m_impl;
+    class EmbeddingPipelineImpl;
+    std::unique_ptr<EmbeddingPipelineImpl> m_impl;
 };
 
 }  // namespace genai

@@ -6,7 +6,7 @@ import pytest
 import gc
 from pathlib import Path
 import openvino_genai
-from openvino_genai import FeatureExtractionPipeline, TextEmbeddingPipeline, TextRerankPipeline
+from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
 from utils.hugging_face import download_and_convert_model, download_and_convert_model_class, OVConvertedModelSchema
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
@@ -67,10 +67,10 @@ performance per watt as compared to Intel’s previous\
 mobile processor offering.2\
 "
 
-def test_feature_extraction_pipeline_public_api():
-    assert hasattr(openvino_genai, "FeatureExtractionPipeline")
-    assert FeatureExtractionPipeline.__name__ == "FeatureExtractionPipeline"
-    assert hasattr(FeatureExtractionPipeline, "extract")
+def test_embedding_pipeline_public_api():
+    assert hasattr(openvino_genai, "EmbeddingPipeline")
+    assert EmbeddingPipeline.__name__ == "EmbeddingPipeline"
+    assert hasattr(EmbeddingPipeline, "extract")
 
 
 @pytest.fixture(scope="module")
