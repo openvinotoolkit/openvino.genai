@@ -66,9 +66,7 @@ public:
             return;
         }
 
-        ov::Tensor copied(hidden_delta.get_element_type(), shape);
-        copy_tensor_bytes(hidden_delta, copied);
-        m_chunks.push_back(std::move(copied));
+        m_chunks.push_back(hidden_delta);
         m_token_count += token_count;
     }
 
