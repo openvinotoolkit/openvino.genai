@@ -315,8 +315,6 @@ def test_gemma4_mtp_tokenized_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_mode
         ov.Tensor(tokenized["attention_mask"].astype(np.int64)),
     )
 
-    # Compare against the string-input path with identical generation settings.
-    # This isolates tokenized-input handling from chat-template and HF-export differences.
     ov_string_results = gemma4_mtp_pipeline.generate([prompt], generation_config)
     ov_string_gen_results = convert_decoded_results_to_generation_result(ov_string_results, 1, 1, False)
 
