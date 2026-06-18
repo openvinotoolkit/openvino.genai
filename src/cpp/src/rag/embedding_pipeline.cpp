@@ -19,7 +19,7 @@
 namespace {
 
 template <typename ElementType>
-std::vector<float> mean_pool_embeddings_impl(const ov::Tensor& tensor) {
+ov::Tensor mean_pool_embeddings_impl(const ov::Tensor& tensor) {
     const ov::Shape shape = tensor.get_shape();
     OPENVINO_ASSERT(shape.size() == 3, "Expected embedding tensor rank 3, got rank ", shape.size());
     OPENVINO_ASSERT(shape[0] == 1, "Expected batch size 1, got ", shape[0]);
@@ -29,7 +29,9 @@ std::vector<float> mean_pool_embeddings_impl(const ov::Tensor& tensor) {
     const size_t hidden_size = shape[2];
     const ElementType* embeddings = tensor.data<const ElementType>();
 
-    std::vector<float> pooled(hidden_size, 0.0f);
+    ov::Tensor pooled_tensor(ov::element::f32, {1, hidden_size});
+    float* pooled = pooled_tensor.data<float>();
+    std::fill_n(pooled, hidden_size, 0.0f);
     for (size_t token_idx = 0; token_idx < sequence_length; ++token_idx) {
         const size_t token_offset = token_idx * hidden_size;
         for (size_t hidden_idx = 0; hidden_idx < hidden_size; ++hidden_idx) {
@@ -38,15 +40,15 @@ std::vector<float> mean_pool_embeddings_impl(const ov::Tensor& tensor) {
     }
 
     const float inv_sequence = 1.0f / static_cast<float>(sequence_length);
-    for (float& value : pooled) {
-        value *= inv_sequence;
+    for (size_t hidden_idx = 0; hidden_idx < hidden_size; ++hidden_idx) {
+        pooled[hidden_idx] *= inv_sequence;
     }
 
-    return pooled;
+    return pooled_tensor;
 }
 
 template <typename ElementType>
-std::vector<float> get_vec_from_tensor(const ov::Tensor& tensor) {
+ov::Tensor get_tensor_as_f32(const ov::Tensor& tensor) {
     const ov::Shape shape = tensor.get_shape();
     OPENVINO_ASSERT(shape.size() == 2, "Expected embedding tensor rank 2, got rank ", shape.size());
     OPENVINO_ASSERT(shape[0] == 1, "Expected batch size 1, got ", shape[0]);
@@ -55,14 +57,15 @@ std::vector<float> get_vec_from_tensor(const ov::Tensor& tensor) {
     const size_t embedding_size = shape[1];
     const ElementType* embeddings = tensor.data<const ElementType>();
 
-    std::vector<float> vec(embedding_size);
+    ov::Tensor result(ov::element::f32, {1, embedding_size});
+    float* result_data = result.data<float>();
     for (size_t i = 0; i < embedding_size; ++i) {
-        vec[i] = static_cast<float>(embeddings[i]);
+        result_data[i] = static_cast<float>(embeddings[i]);
     }
-    return vec;
+    return result;
 }
 
-std::vector<float> mean_pool_embeddings(const ov::Tensor& tensor) {
+ov::Tensor mean_pool_embeddings(const ov::Tensor& tensor) {
     const ov::Shape shape = tensor.get_shape();
     OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
                     "Expected embedding tensor rank 2 or 3, got rank ",
@@ -73,13 +76,13 @@ std::vector<float> mean_pool_embeddings(const ov::Tensor& tensor) {
     // Rank-2 tensor is already pooled: [1, hidden_size].
     if (shape.size() == 2) {
         if (element_type == ov::element::f32) {
-            return get_vec_from_tensor<float>(tensor);
+            return get_tensor_as_f32<float>(tensor);
         }
         if (element_type == ov::element::f16) {
-            return get_vec_from_tensor<ov::float16>(tensor);
+            return get_tensor_as_f32<ov::float16>(tensor);
         }
         if (element_type == ov::element::bf16) {
-            return get_vec_from_tensor<ov::bfloat16>(tensor);
+            return get_tensor_as_f32<ov::bfloat16>(tensor);
         }
     }
 
@@ -97,9 +100,61 @@ std::vector<float> mean_pool_embeddings(const ov::Tensor& tensor) {
     OPENVINO_THROW("Unsupported embedding element type: ", element_type);
 }
 
-std::vector<float> embedding_result_to_float(const ov::genai::EmbeddingResult& embedding_result) {
+ov::Tensor vector_to_tensor(const std::vector<float>& values) {
+    ov::Tensor result(ov::element::f32, {1, values.size()});
+    std::copy(values.begin(), values.end(), result.data<float>());
+    return result;
+}
+
+ov::Tensor vectors_to_tensor(const std::vector<std::vector<float>>& values) {
+    if (values.empty()) {
+        return ov::Tensor(ov::element::f32, {0, 0});
+    }
+
+    const size_t embedding_size = values.front().size();
+    ov::Tensor result(ov::element::f32, {values.size(), embedding_size});
+    float* result_data = result.data<float>();
+
+    for (size_t row_idx = 0; row_idx < values.size(); ++row_idx) {
+        OPENVINO_ASSERT(values[row_idx].size() == embedding_size,
+                        "All embedding vectors must have the same size");
+        std::copy(values[row_idx].begin(), values[row_idx].end(), result_data + row_idx * embedding_size);
+    }
+
+    return result;
+}
+
+ov::Tensor stack_tensors(const std::vector<ov::Tensor>& tensors) {
+    if (tensors.empty()) {
+        return ov::Tensor(ov::element::f32, {0, 0});
+    }
+
+    const ov::Shape first_shape = tensors.front().get_shape();
+    OPENVINO_ASSERT(first_shape.size() == 2 && first_shape[0] == 1,
+                    "Expected rank-2 single embedding tensor");
+    const size_t embedding_size = first_shape[1];
+    ov::Tensor result(ov::element::f32, {tensors.size(), embedding_size});
+    float* result_data = result.data<float>();
+
+    for (size_t row_idx = 0; row_idx < tensors.size(); ++row_idx) {
+        const ov::Tensor& tensor = tensors[row_idx];
+        const ov::Shape shape = tensor.get_shape();
+        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32,
+                        "Expected f32 embedding tensor, got ",
+                        tensor.get_element_type());
+        OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1 && shape[1] == embedding_size,
+                        "Expected all embeddings to have shape [1, ",
+                        embedding_size,
+                        "]");
+        std::copy_n(tensor.data<const float>(), embedding_size, result_data + row_idx * embedding_size);
+    }
+
+    return result;
+}
+
+ov::Tensor embedding_result_to_tensor(const ov::genai::EmbeddingResult& embedding_result) {
     if (const auto* floats = std::get_if<std::vector<float>>(&embedding_result)) {
-        return *floats;
+        return vector_to_tensor(*floats);
     }
     if (const auto* int8_values = std::get_if<std::vector<int8_t>>(&embedding_result)) {
         std::vector<float> result;
@@ -107,7 +162,7 @@ std::vector<float> embedding_result_to_float(const ov::genai::EmbeddingResult& e
         for (const int8_t value : *int8_values) {
             result.push_back(static_cast<float>(value));
         }
-        return result;
+        return vector_to_tensor(result);
     }
     const auto* uint8_values = std::get_if<std::vector<uint8_t>>(&embedding_result);
     OPENVINO_ASSERT(uint8_values != nullptr, "Unexpected embedding result type");
@@ -117,12 +172,12 @@ std::vector<float> embedding_result_to_float(const ov::genai::EmbeddingResult& e
     for (const uint8_t value : *uint8_values) {
         result.push_back(static_cast<float>(value));
     }
-    return result;
+    return vector_to_tensor(result);
 }
 
-std::vector<std::vector<float>> embedding_results_to_float_vectors(const ov::genai::EmbeddingResults& embedding_results) {
+ov::Tensor embedding_results_to_tensor(const ov::genai::EmbeddingResults& embedding_results) {
     if (const auto* float_vectors = std::get_if<std::vector<std::vector<float>>>(&embedding_results)) {
-        return *float_vectors;
+        return vectors_to_tensor(*float_vectors);
     }
     if (const auto* int8_vectors = std::get_if<std::vector<std::vector<int8_t>>>(&embedding_results)) {
         std::vector<std::vector<float>> out;
@@ -135,7 +190,7 @@ std::vector<std::vector<float>> embedding_results_to_float_vectors(const ov::gen
             }
             out.push_back(std::move(converted));
         }
-        return out;
+        return vectors_to_tensor(out);
     }
 
     const auto* uint8_vectors = std::get_if<std::vector<std::vector<uint8_t>>>(&embedding_results);
@@ -150,7 +205,7 @@ std::vector<std::vector<float>> embedding_results_to_float_vectors(const ov::gen
         }
         out.push_back(std::move(converted));
     }
-    return out;
+    return vectors_to_tensor(out);
 }
 
 }  // namespace
@@ -180,87 +235,93 @@ public:
         }
     }
 
-    std::vector<float> embed(const std::string& text, const std::optional<std::string>& prompt) {
+    ov::Tensor embed(const std::string& text, const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
-            return embedding_result_to_float(m_text_embedding_pipeline->embed_query(text));
+            return embedding_result_to_tensor(m_text_embedding_pipeline->embed_query(text));
         }
         return extract_multimodal(text, {}, {}, {}, prompt);
     }
 
-    std::vector<std::vector<float>> embed_documents(const std::vector<std::string>& texts) {
-        start_embed_documents_async(texts);
-        return wait_embed_documents();
-    }
-
-    void start_embed_documents_async(const std::vector<std::string>& texts) {
-        if (m_mode == Mode::TEXT_ONLY) {
-            m_text_embedding_pipeline->start_embed_documents_async(texts);
-            return;
-        }
-        OPENVINO_ASSERT(!m_embed_documents_future.valid(), "Previous asynchronous embed_documents request is still pending");
-        m_embed_documents_future = std::async(std::launch::async, [this, texts]() {
-            std::vector<std::vector<float>> out;
-            out.reserve(texts.size());
-            for (const auto& text : texts) {
-                out.push_back(extract_multimodal(text, {}, {}, {}, std::nullopt));
-            }
-            return out;
-        });
-    }
-
-    std::vector<std::vector<float>> wait_embed_documents() {
-        if (m_mode == Mode::TEXT_ONLY) {
-            return embedding_results_to_float_vectors(m_text_embedding_pipeline->wait_embed_documents());
-        }
-        OPENVINO_ASSERT(m_embed_documents_future.valid(), "Asynchronous embed_documents request was not started");
-        return m_embed_documents_future.get();
+    ov::Tensor embed(const std::vector<std::string>& texts, const std::optional<std::string>& prompt) {
+        start_embed_async(texts, prompt);
+        return wait_embed();
     }
 
     void start_embed_async(const std::string& text, const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
             m_text_embedding_pipeline->start_embed_query_async(text);
+            m_async_request_type = AsyncRequestType::SINGLE;
             return;
         }
         OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
         m_embed_future = std::async(std::launch::async, [this, text, prompt]() {
             return extract_multimodal(text, {}, {}, {}, prompt);
         });
+        m_async_request_type = AsyncRequestType::SINGLE;
     }
 
-    std::vector<float> wait_embed() {
+    void start_embed_async(const std::vector<std::string>& texts, const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
-            return embedding_result_to_float(m_text_embedding_pipeline->wait_embed_query());
+            OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
+            m_text_embedding_pipeline->start_embed_documents_async(texts);
+            m_async_request_type = AsyncRequestType::BATCH;
+            return;
+        }
+        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
+        m_embed_future = std::async(std::launch::async, [this, texts, prompt]() {
+            std::vector<ov::Tensor> out;
+            out.reserve(texts.size());
+            for (const auto& text : texts) {
+                out.push_back(extract_multimodal(text, {}, {}, {}, prompt));
+            }
+            return stack_tensors(out);
+        });
+        m_async_request_type = AsyncRequestType::BATCH;
+    }
+
+    ov::Tensor wait_embed() {
+        OPENVINO_ASSERT(m_async_request_type != AsyncRequestType::NONE,
+                        "Asynchronous embed request was not started");
+        if (m_mode == Mode::TEXT_ONLY) {
+            const AsyncRequestType async_request_type = m_async_request_type;
+            m_async_request_type = AsyncRequestType::NONE;
+            if (async_request_type == AsyncRequestType::SINGLE) {
+                return embedding_result_to_tensor(m_text_embedding_pipeline->wait_embed_query());
+            }
+            return embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents());
         }
         OPENVINO_ASSERT(m_embed_future.valid(), "Asynchronous embed request was not started");
-        return m_embed_future.get();
+        ov::Tensor result = m_embed_future.get();
+        m_async_request_type = AsyncRequestType::NONE;
+        return result;
     }
 
-    std::vector<float> embed(const std::string& text,
-                             const std::vector<ov::Tensor>& images,
-                             const std::optional<std::string>& prompt) {
+    ov::Tensor embed(const std::string& text,
+                     const std::vector<ov::Tensor>& images,
+                     const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(images.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support image input");
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
-            return embedding_result_to_float(m_text_embedding_pipeline->embed_query(text));
+            return embedding_result_to_tensor(m_text_embedding_pipeline->embed_query(text));
         }
         return extract_multimodal(text, images, {}, {}, prompt);
     }
 
-    std::vector<float> embed(const std::string& text,
-                             const std::vector<ov::Tensor>& images,
-                             const std::vector<ov::Tensor>& videos,
-                             const std::vector<VideoMetadata>& videos_metadata,
-                             const std::optional<std::string>& prompt) {
+    ov::Tensor embed(const std::string& text,
+                     const std::vector<ov::Tensor>& images,
+                     const std::vector<ov::Tensor>& videos,
+                     const std::vector<VideoMetadata>& videos_metadata,
+                     const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(images.empty() && videos.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support image/video input");
             OPENVINO_ASSERT(videos_metadata.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support video metadata input");
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
-            return embedding_result_to_float(m_text_embedding_pipeline->embed_query(text));
+            return embedding_result_to_tensor(m_text_embedding_pipeline->embed_query(text));
         }
         return extract_multimodal(text, images, videos, videos_metadata, prompt);
     }
@@ -269,6 +330,12 @@ private:
     enum class Mode {
         MULTIMODAL,
         TEXT_ONLY,
+    };
+
+    enum class AsyncRequestType {
+        NONE,
+        SINGLE,
+        BATCH,
     };
 
     void init_multimodal(const std::filesystem::path& models_path,
@@ -306,11 +373,11 @@ private:
                         "Language model must expose 'inputs_embeds' input for EmbeddingPipeline");
     }
 
-    std::vector<float> extract_multimodal(const std::string& text,
-                                          const std::vector<ov::Tensor>& images,
-                                          const std::vector<ov::Tensor>& videos,
-                                          const std::vector<VideoMetadata>& videos_metadata,
-                                          const std::optional<std::string>& prompt) {
+    ov::Tensor extract_multimodal(const std::string& text,
+                                  const std::vector<ov::Tensor>& images,
+                                  const std::vector<ov::Tensor>& videos,
+                                  const std::vector<VideoMetadata>& videos_metadata,
+                                  const std::optional<std::string>& prompt) {
         OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
                         "videos_metadata size (",
                         videos_metadata.size(),
@@ -415,8 +482,8 @@ private:
     std::unordered_set<std::string> m_language_model_input_names;
     std::unordered_set<std::string> m_language_model_output_names;
     std::string m_embedding_output_name;
-    std::future<std::vector<float>> m_embed_future;
-    std::future<std::vector<std::vector<float>>> m_embed_documents_future;
+    std::future<ov::Tensor> m_embed_future;
+    AsyncRequestType m_async_request_type = AsyncRequestType::NONE;
 };
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
@@ -424,41 +491,38 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-std::vector<float> EmbeddingPipeline::embed(const std::string& text, const std::optional<std::string>& prompt) {
+ov::Tensor EmbeddingPipeline::embed(const std::string& text, const std::optional<std::string>& prompt) {
     return m_impl->embed(text, prompt);
 }
 
-std::vector<std::vector<float>> EmbeddingPipeline::embed_documents(const std::vector<std::string>& texts) {
-    return m_impl->embed_documents(texts);
-}
-
-void EmbeddingPipeline::start_embed_documents_async(const std::vector<std::string>& texts) {
-    return m_impl->start_embed_documents_async(texts);
-}
-
-std::vector<std::vector<float>> EmbeddingPipeline::wait_embed_documents() {
-    return m_impl->wait_embed_documents();
+ov::Tensor EmbeddingPipeline::embed(const std::vector<std::string>& texts, const std::optional<std::string>& prompt) {
+    return m_impl->embed(texts, prompt);
 }
 
 void EmbeddingPipeline::start_embed_async(const std::string& text, const std::optional<std::string>& prompt) {
     return m_impl->start_embed_async(text, prompt);
 }
 
-std::vector<float> EmbeddingPipeline::wait_embed() {
+void EmbeddingPipeline::start_embed_async(const std::vector<std::string>& texts,
+                                          const std::optional<std::string>& prompt) {
+    return m_impl->start_embed_async(texts, prompt);
+}
+
+ov::Tensor EmbeddingPipeline::wait_embed() {
     return m_impl->wait_embed();
 }
 
-std::vector<float> EmbeddingPipeline::embed(const std::string& text,
-                                            const std::vector<ov::Tensor>& images,
-                                            const std::optional<std::string>& prompt) {
+ov::Tensor EmbeddingPipeline::embed(const std::string& text,
+                                    const std::vector<ov::Tensor>& images,
+                                    const std::optional<std::string>& prompt) {
     return m_impl->embed(text, images, prompt);
 }
 
-std::vector<float> EmbeddingPipeline::embed(const std::string& text,
-                                            const std::vector<ov::Tensor>& images,
-                                            const std::vector<ov::Tensor>& videos,
-                                            const std::vector<VideoMetadata>& videos_metadata,
-                                            const std::optional<std::string>& prompt) {
+ov::Tensor EmbeddingPipeline::embed(const std::string& text,
+                                    const std::vector<ov::Tensor>& images,
+                                    const std::vector<ov::Tensor>& videos,
+                                    const std::vector<VideoMetadata>& videos_metadata,
+                                    const std::optional<std::string>& prompt) {
     return m_impl->embed(text, images, videos, videos_metadata, prompt);
 }
 

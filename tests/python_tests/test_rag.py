@@ -72,9 +72,9 @@ def test_embedding_pipeline_public_api():
     assert EmbeddingPipeline.__name__ == "EmbeddingPipeline"
     assert hasattr(EmbeddingPipeline, "embed")
     assert not hasattr(EmbeddingPipeline, "embed_document")
-    assert hasattr(EmbeddingPipeline, "embed_documents")
-    assert hasattr(EmbeddingPipeline, "start_embed_documents_async")
-    assert hasattr(EmbeddingPipeline, "wait_embed_documents")
+    assert not hasattr(EmbeddingPipeline, "embed_documents")
+    assert not hasattr(EmbeddingPipeline, "start_embed_documents_async")
+    assert not hasattr(EmbeddingPipeline, "wait_embed_documents")
     assert hasattr(EmbeddingPipeline, "start_embed_async")
     assert hasattr(EmbeddingPipeline, "wait_embed")
     assert "prompt" in EmbeddingPipeline.embed.__doc__
@@ -147,13 +147,20 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
     pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
 
     result = pipeline.embed("What is OpenVINO?")
-    assert isinstance(result, list)
-    assert result
+    assert result.shape[0] == 1
+    assert result.shape[1] > 0
+
+    batch_result = pipeline.embed(["What is OpenVINO?", "What is OpenVINO GenAI?"])
+    assert batch_result.shape[0] == 2
+    assert batch_result.shape[1] == result.shape[1]
 
     pipeline.start_embed_async("What is OpenVINO?")
     async_result = pipeline.wait_embed()
-    assert isinstance(async_result, list)
-    assert async_result
+    assert async_result.shape == result.shape
+
+    pipeline.start_embed_async(["What is OpenVINO?", "What is OpenVINO GenAI?"])
+    async_batch_result = pipeline.wait_embed()
+    assert async_batch_result.shape == batch_result.shape
 
     with pytest.raises(RuntimeError, match="Prompt is supported only by multimodal EmbeddingPipeline"):
         pipeline.embed("What is OpenVINO?", prompt="Represent the user's input.")

@@ -89,7 +89,7 @@ void init_rag_pipelines(py::module_& m) {
             "embed",
             [](EmbeddingPipeline& pipe,
                const std::string& text,
-               const std::optional<std::string>& prompt) -> std::vector<float> {
+               const std::optional<std::string>& prompt) -> ov::Tensor {
                 py::gil_scoped_release rel;
                 return pipe.embed(text, prompt);
             },
@@ -97,28 +97,16 @@ void init_rag_pipelines(py::module_& m) {
             py::arg("prompt") = std::nullopt,
             "Computes an embedding vector for text.")
         .def(
-            "embed_documents",
-            [](EmbeddingPipeline& pipe, const std::vector<std::string>& texts) -> std::vector<std::vector<float>> {
+            "embed",
+            [](EmbeddingPipeline& pipe,
+               const std::vector<std::string>& texts,
+               const std::optional<std::string>& prompt) -> ov::Tensor {
                 py::gil_scoped_release rel;
-                return pipe.embed_documents(texts);
+                return pipe.embed(texts, prompt);
             },
             py::arg("texts"),
-            "Computes document embedding vectors for a batch of texts.")
-        .def(
-            "start_embed_documents_async",
-            [](EmbeddingPipeline& pipe, const std::vector<std::string>& texts) -> void {
-                py::gil_scoped_release rel;
-                pipe.start_embed_documents_async(texts);
-            },
-            py::arg("texts"),
-            "Asynchronously computes document embedding vectors for a batch of texts.")
-        .def(
-            "wait_embed_documents",
-            [](EmbeddingPipeline& pipe) -> std::vector<std::vector<float>> {
-                py::gil_scoped_release rel;
-                return pipe.wait_embed_documents();
-            },
-            "Waits for asynchronous document embeddings and returns results.")
+            py::arg("prompt") = std::nullopt,
+            "Computes embedding vectors for a batch of texts.")
         .def(
             "start_embed_async",
             [](EmbeddingPipeline& pipe, const std::string& text, const std::optional<std::string>& prompt) -> void {
@@ -129,8 +117,17 @@ void init_rag_pipelines(py::module_& m) {
             py::arg("prompt") = std::nullopt,
             "Asynchronously computes an embedding vector for text.")
         .def(
+            "start_embed_async",
+            [](EmbeddingPipeline& pipe, const std::vector<std::string>& texts, const std::optional<std::string>& prompt) -> void {
+                py::gil_scoped_release rel;
+                pipe.start_embed_async(texts, prompt);
+            },
+            py::arg("texts"),
+            py::arg("prompt") = std::nullopt,
+            "Asynchronously computes embedding vectors for a batch of texts.")
+        .def(
             "wait_embed",
-            [](EmbeddingPipeline& pipe) -> std::vector<float> {
+            [](EmbeddingPipeline& pipe) -> ov::Tensor {
                 py::gil_scoped_release rel;
                 return pipe.wait_embed();
             },
@@ -140,7 +137,7 @@ void init_rag_pipelines(py::module_& m) {
             [](EmbeddingPipeline& pipe,
                const std::string& text,
                const std::vector<ov::Tensor>& images,
-               const std::optional<std::string>& prompt) -> std::vector<float> {
+               const std::optional<std::string>& prompt) -> ov::Tensor {
                 py::gil_scoped_release rel;
                 return pipe.embed(text, images, prompt);
             },
@@ -150,12 +147,12 @@ void init_rag_pipelines(py::module_& m) {
             "Computes an embedding vector for text and images.")
         .def(
             "embed",
-                [](EmbeddingPipeline& pipe,
+            [](EmbeddingPipeline& pipe,
                const std::string& text,
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
-               const std::optional<std::string>& prompt) -> std::vector<float> {
+               const std::optional<std::string>& prompt) -> ov::Tensor {
                 py::gil_scoped_release rel;
                 return pipe.embed(text, images, videos, videos_metadata, prompt);
             },
