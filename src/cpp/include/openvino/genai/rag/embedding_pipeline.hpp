@@ -60,6 +60,15 @@ public:
                      const std::vector<VideoMetadata>& videos_metadata = {},
                      const std::optional<std::string>& prompt = std::nullopt);
 
+    /**
+    * @brief Starts asynchronous embedding computation for text or a batch of texts with images and videos.
+     */
+    void start_embed_async(const TextInput& text,
+                           const std::vector<ov::Tensor>& images,
+                           const std::vector<ov::Tensor>& videos,
+                           const std::vector<VideoMetadata>& videos_metadata = {},
+                           const std::optional<std::string>& prompt = std::nullopt);
+
     ~EmbeddingPipeline();
 
 private:

@@ -252,6 +252,27 @@ public:
         return extract_multimodal(text, images, videos, videos_metadata, prompt);
     }
 
+    void start_embed_async(const EmbeddingPipeline::TextInput& text,
+                           const std::vector<ov::Tensor>& images,
+                           const std::vector<ov::Tensor>& videos,
+                           const std::vector<VideoMetadata>& videos_metadata,
+                           const std::optional<std::string>& prompt) {
+        const bool is_single_text = std::holds_alternative<std::string>(text);
+        if (m_mode == Mode::TEXT_ONLY) {
+            OPENVINO_ASSERT(images.empty() && videos.empty(),
+                            "TextEmbeddingPipeline fallback is active and does not support image/video input");
+            OPENVINO_ASSERT(videos_metadata.empty(),
+                            "TextEmbeddingPipeline fallback is active and does not support video metadata input");
+            start_embed_async(text, prompt);
+            return;
+        }
+        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
+        m_embed_future = std::async(std::launch::async, [this, text, images, videos, videos_metadata, prompt]() {
+            return extract_multimodal(text, images, videos, videos_metadata, prompt);
+        });
+        m_async_request_type = is_single_text ? AsyncRequestType::SINGLE : AsyncRequestType::BATCH;
+    }
+
 private:
     enum class Mode {
         MULTIMODAL,
@@ -454,6 +475,14 @@ ov::Tensor EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text,
                                     const std::vector<VideoMetadata>& videos_metadata,
                                     const std::optional<std::string>& prompt) {
     return m_impl->embed(text, images, videos, videos_metadata, prompt);
+}
+
+void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const std::optional<std::string>& prompt) {
+    return m_impl->start_embed_async(text, images, videos, videos_metadata, prompt);
 }
 
 EmbeddingPipeline::~EmbeddingPipeline() = default;

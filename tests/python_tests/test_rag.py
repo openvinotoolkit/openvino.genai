@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import gc
 from pathlib import Path
+import openvino as ov
 import openvino_genai
 from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
 from utils.hugging_face import download_and_convert_model, download_and_convert_model_class, OVConvertedModelSchema
@@ -168,6 +169,9 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
 
     with pytest.raises(RuntimeError, match="Prompt is supported only by multimodal EmbeddingPipeline"):
         pipeline.start_embed_async("What is OpenVINO?", prompt="Represent the user's input.")
+
+    with pytest.raises(RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"):
+        pipeline.start_embed_async("What is OpenVINO?", images=[ov.Tensor(np.zeros((1, 1, 1, 1), dtype=np.float32))])
 
 
 def run_text_embedding_langchain(
