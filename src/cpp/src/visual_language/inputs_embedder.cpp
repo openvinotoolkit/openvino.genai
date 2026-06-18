@@ -522,6 +522,10 @@ void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
     return m_impl->set_apply_chat_template_status(apply_chat_template);
 }
 
+void InputsEmbedder::set_add_special_tokens(bool add_special_tokens) {
+    return m_impl->set_add_special_tokens(add_special_tokens);
+}
+
 void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
 }

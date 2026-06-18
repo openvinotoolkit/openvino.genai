@@ -3897,23 +3897,19 @@ class EmbeddingPipeline:
         kwargs: Plugin and/or config properties.
         """
     @typing.overload
-    def embed(self, text: str) -> list[float]:
+    def embed(self, text: str, prompt: str | None = None) -> list[float]:
         """
         Computes an embedding vector for text.
         """
     @typing.overload
-    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor]) -> list[float]:
+    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], prompt: str | None = None) -> list[float]:
         """
         Computes an embedding vector for text and images.
         """
     @typing.overload
-    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata] = []) -> list[float]:
+    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> list[float]:
         """
         Computes an embedding vector for text, images and videos.
-        """
-    def embed_document(self, text: str) -> list[float]:
-        """
-        Computes a document embedding vector for text.
         """
     def embed_documents(self, texts: collections.abc.Sequence[str]) -> list[list[float]]:
         """
@@ -3927,7 +3923,7 @@ class EmbeddingPipeline:
         """
         Waits for asynchronous document embeddings and returns results.
         """
-    def start_embed_async(self, text: str) -> None:
+    def start_embed_async(self, text: str, prompt: str | None = None) -> None:
         """
         Asynchronously computes an embedding vector for text.
         """

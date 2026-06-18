@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -49,12 +50,7 @@ public:
     /**
      * @brief Computes an embedding vector for text.
      */
-    std::vector<float> embed(const std::string& text);
-
-    /**
-     * @brief Computes a document embedding vector for text.
-     */
-    std::vector<float> embed_document(const std::string& text);
+    std::vector<float> embed(const std::string& text, const std::optional<std::string>& prompt = std::nullopt);
 
     /**
      * @brief Computes document embedding vectors for a batch of texts.
@@ -74,7 +70,7 @@ public:
     /**
      * @brief Starts asynchronous embedding computation for text.
      */
-    void start_embed_async(const std::string& text);
+    void start_embed_async(const std::string& text, const std::optional<std::string>& prompt = std::nullopt);
 
     /**
      * @brief Waits for asynchronous embedding computation and returns result.
@@ -84,7 +80,9 @@ public:
     /**
      * @brief Computes an embedding vector for text and images.
      */
-    std::vector<float> embed(const std::string& text, const std::vector<ov::Tensor>& images);
+    std::vector<float> embed(const std::string& text,
+                             const std::vector<ov::Tensor>& images,
+                             const std::optional<std::string>& prompt = std::nullopt);
 
     /**
      * @brief Computes an embedding vector for text, images and videos.
@@ -92,7 +90,8 @@ public:
     std::vector<float> embed(const std::string& text,
                              const std::vector<ov::Tensor>& images,
                              const std::vector<ov::Tensor>& videos,
-                             const std::vector<VideoMetadata>& videos_metadata = {});
+                             const std::vector<VideoMetadata>& videos_metadata = {},
+                             const std::optional<std::string>& prompt = std::nullopt);
 
     ~EmbeddingPipeline();
 
