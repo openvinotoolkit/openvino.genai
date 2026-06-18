@@ -43,6 +43,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _is_vlm_export(model_dir):
+    model_path = Path(model_dir)
+    return (
+        model_path.is_dir()
+        and (model_path / "openvino_text_embeddings_model.xml").exists()
+        and any(model_path.glob("openvino_vision_embeddings*_model.xml"))
+    )
+
+
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
     import openvino_genai
 
@@ -146,9 +155,12 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if kwargs.get('gguf_file'):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
 
+    is_vlm_export = _is_vlm_export(model_dir)
+
     adapter_config = _create_genai_adapter_config(
         adapters=kwargs.get("adapters"),
         alphas=kwargs.get("alphas", None),
+        none_if_empty=is_vlm_export,
     )
 
     draft_model_path = kwargs.get("draft_model", '')
@@ -163,6 +175,21 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
+
+    if is_vlm_export:
+        pipeline_kwargs = {
+            "device": device,
+            **ov_config,
+        }
+        if adapter_config is not None:
+            pipeline_kwargs["adapters"] = adapter_config
+        if is_continuous_batching:
+            logger.info("Using OpenVINO GenAI Continuous Batching API")
+            pipeline_kwargs["scheduler_config"] = get_scheduler_config_genai(kwargs["cb_config"])
+            pipeline_kwargs["ATTENTION_BACKEND"] = "PA"
+        logger.info("Using OpenVINO GenAI VLMPipeline API for text generation")
+        pipeline = openvino_genai.VLMPipeline(model_dir, **pipeline_kwargs)
+        return GenAIModelWrapper(pipeline, model_dir, "text")
 
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
@@ -186,7 +213,10 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     model_kwargs = {}
     if n_ctx is not None:
         model_kwargs["n_ctx"] = int(n_ctx)
-    model = Llama(model_dir, **model_kwargs)
+    model_path = model_dir
+    if kwargs.get("gguf_file"):
+        model_path = os.path.join(model_dir, kwargs["gguf_file"])
+    model = Llama(model_path, **model_kwargs)
     return model
 
 
@@ -240,6 +270,9 @@ def load_text_model(
     elif use_llamacpp:
         logger.info("Using llama.cpp API")
         model = load_text_llamacpp_pipeline(model_id, **kwargs)
+    elif _is_vlm_export(model_id):
+        logger.info("Detected VLM model structure, using Optimum Visual Causal LM API for text generation")
+        model = load_visual_text_model(model_id, device, ov_config, use_hf=False, use_genai=False, **kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM

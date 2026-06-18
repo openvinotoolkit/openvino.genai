@@ -584,7 +584,7 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, us
         import openvino_genai
         kwargs["adapters"] = openvino_genai.AdapterConfig()
 
-    return model.generate(
+    answer = model.generate(
         question,
         do_sample=False,
         max_new_tokens=max_new_tokens,
@@ -593,6 +593,11 @@ def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, us
         assistant_confidence_threshold=assistant_confidence_threshold,
         **kwargs,
     )
+    if hasattr(answer, "texts") and len(answer.texts) == 1:
+        return answer.texts[0]
+    if isinstance(answer, list) and len(answer) == 1 and isinstance(answer[0], str):
+        return answer[0]
+    return answer
 
 
 def genai_gen_chat_text(
