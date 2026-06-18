@@ -77,6 +77,7 @@ IMAGE_GEN_MODELS = {
     "tiny-random-flux": "optimum-intel-internal-testing/tiny-random-flux",
     "tiny-random-sdxl": "echarlaix/tiny-random-stable-diffusion-xl",
     "tiny-random-sd3": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
+    "tiny-random-flux.2-klein": "optimum-intel-internal-testing/tiny-random-flux.2-klein-4b",
 }
 
 DEFAULT_IMAGE_GEN_MODEL_ID = "tiny-random-latent-consistency"

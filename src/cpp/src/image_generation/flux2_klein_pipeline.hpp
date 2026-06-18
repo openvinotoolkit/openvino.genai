@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2026 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -153,7 +153,7 @@ inline ov::Tensor flux2_unpack_latents_with_ids(const ov::Tensor& latents,
 }
 
 // Prepare latent IDs for Flux2: (H*W, 4) with format (T=0, H, W, L=0)
-inline ov::Tensor flux2_prepare_latent_ids(size_t batch_size, size_t height, size_t width) {
+inline ov::Tensor flux2_prepare_latent_ids(size_t height, size_t width) {
     const size_t seq_len = height * width;
     ov::Tensor latent_ids(ov::element::f32, {seq_len, 4});
     float* data = latent_ids.data<float>();
@@ -172,7 +172,7 @@ inline ov::Tensor flux2_prepare_latent_ids(size_t batch_size, size_t height, siz
 }
 
 // Prepare text IDs for Flux2: (text_seq_len, 4) with format (T=0, H=0, W=0, L=0..seq_len-1)
-inline ov::Tensor flux2_prepare_text_ids(size_t batch_size, size_t text_seq_len) {
+inline ov::Tensor flux2_prepare_text_ids(size_t text_seq_len) {
     ov::Tensor text_ids(ov::element::f32, {text_seq_len, 4});
     float* data = text_ids.data<float>();
 
@@ -417,7 +417,7 @@ public:
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
 
         const size_t text_seq_len = prompt_embeds.get_shape()[1];
-        ov::Tensor text_ids = flux2_prepare_text_ids(generation_config.num_images_per_prompt, text_seq_len);
+        ov::Tensor text_ids = flux2_prepare_text_ids(text_seq_len);
 
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("txt_ids", text_ids);
@@ -429,7 +429,7 @@ public:
         const size_t latent_height = generation_config.height / vae_scale_factor / 2;
         const size_t latent_width = generation_config.width / vae_scale_factor / 2;
 
-        ov::Tensor latent_image_ids = flux2_prepare_latent_ids(generation_config.num_images_per_prompt, latent_height, latent_width);
+        ov::Tensor latent_image_ids = flux2_prepare_latent_ids(latent_height, latent_width);
 
         if (!m_ref_image_ids) {
             // Text2Image: only latent IDs
@@ -623,7 +623,7 @@ public:
         std::cerr << "[DEBUG] denoising loop done" << std::endl;
 
         // Unpack latents: (B, seq_len, C) -> (B, C, H/2, W/2) using position IDs
-        ov::Tensor latent_ids = flux2_prepare_latent_ids(m_custom_generation_config.num_images_per_prompt, latent_height, latent_width);
+        ov::Tensor latent_ids = flux2_prepare_latent_ids(latent_height, latent_width);
         ov::Tensor unpacked_latents = flux2_unpack_latents_with_ids(latents, latent_ids, latent_height, latent_width);
         std::cerr << "[DEBUG] unpacked_latents shape=" << unpacked_latents.get_shape() << std::endl;
 
@@ -654,7 +654,7 @@ public:
         const size_t latent_height = m_custom_generation_config.height / vae_scale_factor / 2;
         const size_t latent_width = m_custom_generation_config.width / vae_scale_factor / 2;
 
-        ov::Tensor latent_ids = flux2_prepare_latent_ids(m_custom_generation_config.num_images_per_prompt, latent_height, latent_width);
+        ov::Tensor latent_ids = flux2_prepare_latent_ids(latent_height, latent_width);
         ov::Tensor unpacked_latents = flux2_unpack_latents_with_ids(latent, latent_ids, latent_height, latent_width);
         apply_bn_denormalize(unpacked_latents);
         ov::Tensor final_latents = flux2_unpatchify_latents(unpacked_latents);
