@@ -1,7 +1,6 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from enum import auto
 from typing import Any, Union
 
 import os
@@ -149,6 +148,7 @@ class ChatTextEvaluator(TextEvaluator):
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
         self.empty_adapters = empty_adapters
+        self.full_chat = device == "NPU"
 
         self.gt_dir = os.path.dirname(gt_data or "")
         if base_model:
@@ -165,8 +165,6 @@ class ChatTextEvaluator(TextEvaluator):
             self.divergency = TextDivergency(tokenizer)
 
         self.last_cmp = None
-
-        self.full_chat = device == "NPU"
 
     def get_generation_fn(self):
         return self.generation_fn
@@ -244,7 +242,10 @@ class ChatTextEvaluator(TextEvaluator):
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
-        kv_axes_pos = get_kv_axes_pos(model)
+        # applicable for ov model only, 2 is just a default value
+        kv_axes_pos = 2
+        if "optimum" in str(type(model)):
+            kv_axes_pos = get_kv_axes_pos(model.model)
 
         if self.test_data:
             if isinstance(self.test_data, str):
@@ -284,7 +285,8 @@ class ChatTextEvaluator(TextEvaluator):
                 self.empty_adapters,
                 self.num_assistant_tokens,
                 self.assistant_confidence_threshold,
-                kv_axes_pos=kv_axes_pos,
+                self.full_chat,
+                kv_axes_pos,
             )
 
             result_path = os.path.join(result_dir, f"chat_output_{i}.json")
