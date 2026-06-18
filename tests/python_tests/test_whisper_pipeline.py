@@ -372,7 +372,7 @@ def get_model_pipeline_pair_params(model_pipeline_pairs=MODEL_PIPELINE_PAIRS):
     ]
 
 
-@pytest.fixture(params=get_model_pipeline_pair_params())
+@pytest.fixture
 def pipelines_fixture(request):
     model_id, pipeline_type = request.param[:2]
     options = request.param[2] if len(request.param) > 2 else {}
