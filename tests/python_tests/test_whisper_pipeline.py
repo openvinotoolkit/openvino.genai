@@ -31,7 +31,7 @@ from typing import Any, Literal
 from difflib import SequenceMatcher
 
 from utils.dataset_utils import load_dataset_via_snapshot
-from utils.qwen3_asr import Qwen3ASROptimumPipeline
+from utils.qwen3_asr import Qwen3ASROptimumPipeline, skip_if_qwen3_asr_package_is_unavailable
 
 
 class PipelineType(enum.Enum):
@@ -94,6 +94,8 @@ QWEN3_ASR_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-asr"
 @functools.lru_cache()
 def read_asr_model(params, word_timestamps=False, pipeline_type=PipelineType.WHISPER):
     model_id, path = params
+    if model_id == QWEN3_ASR_MODEL_ID:
+        skip_if_qwen3_asr_package_is_unavailable()
 
     manager = AtomicDownloadManager(path)
     if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():

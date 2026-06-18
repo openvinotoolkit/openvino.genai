@@ -434,11 +434,17 @@ jobs:
       fail-fast: false
       matrix:
         test:
-          - name: 'Whisper'
+          - name: 'ASR'
             # TODO: skip some tests temporary until https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5" -k "not test_smoke and not test_asr_constructors and not test_max_new_tokens and not test_language_mode and not test_task_mode and not test_language_autodetect and not test_asr_config_constructor and not test_initial_prompt_hotwords and not test_random_sampling"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 120
+          - name: 'ASR (Qwen3-ASR)'
+            cmd: |
+              python -m pip install transformers==4.57.6 qwen-asr==0.0.6
+              python -m pytest -s -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
+            timeout: 30
           # Only supported on X64 or ARM with SVE support
           # - name: 'Cacheopt E2E (Part 1)'
           #   cmd: 'python -m pytest -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'

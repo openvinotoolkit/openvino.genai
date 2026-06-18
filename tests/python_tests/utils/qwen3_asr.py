@@ -1,5 +1,6 @@
 import re
 
+import pytest
 from optimum.intel import OVModelForSpeechSeq2Seq
 from transformers import AutoProcessor
 
@@ -13,6 +14,13 @@ def check_qwen3_asr_package():
             "The 'qwen-asr' package is required for Qwen3-ASR inference. "
             "Please install it using 'pip install qwen-asr'."
         )
+
+
+def skip_if_qwen3_asr_package_is_unavailable():
+    try:
+        check_qwen3_asr_package()
+    except ImportError as exception:
+        pytest.skip(str(exception))
 
 
 class Qwen3ASROptimumPipeline:
