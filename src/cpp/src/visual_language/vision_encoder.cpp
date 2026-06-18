@@ -5,6 +5,7 @@
 
 #include "vision_encoder.hpp"
 
+#include "json_utils.hpp"
 #include "utils.hpp"
 #include "logger.hpp"
 
@@ -25,6 +26,54 @@
 #include "visual_language/videochat_flash/classes.hpp"
 
 namespace ov::genai {
+
+namespace {
+
+nlohmann::json read_json_if_exists(const std::filesystem::path& json_path) {
+    if (!std::filesystem::exists(json_path)) {
+        return {};
+    }
+
+    std::ifstream stream(json_path);
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "'");
+    return nlohmann::json::parse(stream);
+}
+
+template <typename ConfigValue>
+void read_json_param_if_missing(const nlohmann::json& parsed,
+                                const nlohmann::json& fallback,
+                                const std::string& param_name,
+                                ConfigValue& value) {
+    if (parsed.contains(param_name)) {
+        return;
+    }
+
+    using ov::genai::utils::read_json_param;
+    read_json_param(fallback, param_name, value);
+}
+
+template <typename Config>
+void apply_missing_qwen_processor_params(Config& config,
+                                         const nlohmann::json& parsed,
+                                         const nlohmann::json& fallback) {
+    read_json_param_if_missing(parsed, fallback, "patch_size", config.patch_size);
+    read_json_param_if_missing(parsed, fallback, "temporal_patch_size", config.temporal_patch_size);
+    read_json_param_if_missing(parsed, fallback, "merge_size", config.merge_size);
+
+    if (!parsed.contains("min_pixels") && !parsed.contains("max_pixels") && !parsed.contains("size")) {
+        using ov::genai::utils::read_json_param;
+        read_json_param(fallback, "min_pixels", config.min_pixels);
+        read_json_param(fallback, "max_pixels", config.max_pixels);
+
+        if ((!fallback.contains("min_pixels") && !fallback.contains("max_pixels")) ||
+            (fallback["min_pixels"].is_null() && fallback["max_pixels"].is_null())) {
+            read_json_param(fallback, "size.shortest_edge", config.min_pixels);
+            read_json_param(fallback, "size.longest_edge", config.max_pixels);
+        }
+    }
+}
+
+}  // namespace
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
     auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, properties);
@@ -70,6 +119,17 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
         if (parsed_processor_config.contains("image_processor") && parsed_processor_config.contains("video_processor")) {
             m_processor_config = ProcessorConfig(parsed_processor_config.at("image_processor"));
             m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("video_processor"));
+
+            const auto parsed_preprocessor_config = read_json_if_exists(config_dir_path / preprocessor_config_filename);
+            apply_missing_qwen_processor_params(m_processor_config,
+                                                parsed_processor_config.at("image_processor"),
+                                                parsed_preprocessor_config);
+
+            const auto parsed_video_preprocessor_config = read_json_if_exists(config_dir_path / video_preprocessor_config_filename);
+            apply_missing_qwen_processor_params(m_video_processor_config,
+                                                parsed_processor_config.at("video_processor"),
+                                                parsed_video_preprocessor_config.empty() ? parsed_preprocessor_config
+                                                                                        : parsed_video_preprocessor_config);
             return;
         }
     }
@@ -77,7 +137,10 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
     GENAI_INFO("Combined " + processor_config_filename + " not found in '" + config_dir_path.string() + "' or missing image and video processor keys." +
         " Falling back to " + preprocessor_config_filename + " and " + video_preprocessor_config_filename + ".");
 
-    m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, preprocessor_config_filename.c_str());
+    const auto preprocessor_config_path = config_dir_path / preprocessor_config_filename;
+    m_processor_config = std::filesystem::exists(preprocessor_config_path) ?
+        ProcessorConfig(preprocessor_config_path) :
+        utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "config.json");
 
     const auto video_config_path = config_dir_path / video_preprocessor_config_filename;
     if (std::filesystem::exists(video_config_path)) {
@@ -85,7 +148,9 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
     } else {
         GENAI_INFO(video_preprocessor_config_filename + " not found in '" + config_dir_path.string() +
             "'. Falling back to " + preprocessor_config_filename + " for video processing configuration.");
-        m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, preprocessor_config_filename.c_str());
+        m_video_processor_config = std::filesystem::exists(preprocessor_config_path) ?
+            VideoProcessorConfig(preprocessor_config_path) :
+            utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "config.json");
     }
 }
 
