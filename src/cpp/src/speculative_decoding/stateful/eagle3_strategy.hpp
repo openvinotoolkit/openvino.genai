@@ -396,13 +396,13 @@ private:
     // ---- Speculative iteration sub-steps ----
 
     /// @brief Runs a complete speculative iteration (draft + validate + sync).
-    SpeculativeResult run_speculative_iteration(size_t token_count, int64_t eos_token_id);
+    SpeculativeResult run_speculative_iteration(size_t token_count, int64_t eos_token_id, size_t draft_iterations);
 
     /// @brief Step 1: Generates the first draft tree level using target hidden states.
     InferResult generate_initial_draft(size_t input_token_count, size_t past_accepted_token_count);
 
-    /// @brief Step 2: Expands the draft tree for (m_draft_iterations - 1) more levels.
-    void expand_draft_tree(size_t past_accepted_token_count);
+    /// @brief Step 2: Expands the draft tree for (draft_iterations - 1) more levels.
+    void expand_draft_tree(size_t past_accepted_token_count, size_t draft_iterations);
 
     /// @brief Step 3: Validates draft candidates with the target model.
     ValidationResult validate_draft_with_target();
