@@ -4,7 +4,6 @@
 from typing import Any, Union
 
 import os
-import re
 import yaml
 import pandas as pd
 from tqdm import tqdm
@@ -16,11 +15,6 @@ import inspect
 
 PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
-THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", flags=re.IGNORECASE | re.DOTALL)
-THINKING_PREAMBLE_RE = re.compile(
-    r"^\s*(?:here(?:[' ]?s| is)\s+(?:a\s+)?thinking\s+process\s*:|let\s*[' ]?s\s+think\s+step\s+by\s+step\s*:|reasoning\s*:)",
-    flags=re.IGNORECASE,
-)
 
 
 @register_evaluator(
@@ -46,7 +40,6 @@ class TextEvaluator(BaseEvaluator):
         use_chat_template=None,
         long_prompt=True,
         empty_adapters=False,
-        strip_think_blocks=False,
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0
     ) -> None:
@@ -65,7 +58,6 @@ class TextEvaluator(BaseEvaluator):
         self.seqs_per_request = seqs_per_request
         self.generation_fn = gen_answer_fn
         self.use_chat_template = use_chat_template
-        self.strip_think_blocks = strip_think_blocks
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
         if self.generation_config is not None:
@@ -150,25 +142,6 @@ class TextEvaluator(BaseEvaluator):
 
         return res
 
-    def _strip_reasoning_blocks(self, text: str) -> str:
-        cleaned = THINK_BLOCK_RE.sub("", text).strip()
-
-        # Heuristic for models emitting free-form reasoning preambles.
-        if THINKING_PREAMBLE_RE.match(cleaned):
-            code_fence_idx = cleaned.find("```")
-            if code_fence_idx != -1:
-                return cleaned[code_fence_idx:].strip()
-
-            def_idx = cleaned.find("\ndef ")
-            if def_idx != -1:
-                return cleaned[def_idx + 1:].strip()
-
-            answer_idx = cleaned.lower().find("\nanswer:")
-            if answer_idx != -1:
-                return cleaned[answer_idx + len("\nanswer:"):].strip()
-
-        return cleaned
-
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, empty_adapters=False,
                                num_assistant_tokens=0, assistant_confidence_threshold=0.0):
@@ -237,8 +210,6 @@ class TextEvaluator(BaseEvaluator):
                         self.assistant_confidence_threshold
                     )
                 )
-                if self.strip_think_blocks:
-                    answers[-1] = self._strip_reasoning_blocks(answers[-1])
         else:
             with tqdm(total=len(prompt_data.values)) as progress_bar:
                 batch = []

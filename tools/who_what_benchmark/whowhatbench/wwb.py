@@ -213,8 +213,8 @@ def parse_args():
     parser.add_argument(
         "--llamacpp-n-ctx",
         type=positive_integer,
-        default=None,
-        help="Context window size for llama.cpp backend in model-type 'text' (for example, 4096 or 8192).",
+        default=8192,
+        help="Context window size for llama.cpp backend in model-type 'text' (default: 8192).",
     )
     parser.add_argument(
         "--image-size",
@@ -408,11 +408,6 @@ def parse_args():
         default=128,
         required=False,
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
-    )
-    parser.add_argument(
-        "--strip-think-blocks",
-        action="store_true",
-        help="Strip think/reasoning blocks from generated text before scoring.",
     )
 
     return parser.parse_args()
@@ -879,6 +874,9 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
+            if args.llamacpp_chat and not args.llamacpp:
+                 raise ValueError("--llamacpp-chat requires --llamacpp")
+
             if args.llamacpp:
                 use_chat_template = args.llamacpp_chat and not args.omit_chat_template
             else:
@@ -896,7 +894,6 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
-                strip_think_blocks=args.strip_think_blocks,
                 long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
                     int(args.num_assistant_tokens)
@@ -1259,6 +1256,8 @@ def main():
         kwargs["vocoder_path"] = args.vocoder_path
 
     if args.llamacpp_n_ctx is not None:
+        if not args.llamacpp:
+            raise ValueError("--llamacpp-n-ctx requires --llamacpp")
         kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
 
     if args.base_model is not None:
