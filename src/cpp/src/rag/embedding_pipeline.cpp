@@ -191,10 +191,9 @@ public:
     ov::Tensor embed(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
-            if (const auto* single_text = std::get_if<std::string>(&text)) {
-                return embedding_result_to_tensor(m_text_embedding_pipeline->embed_query(*single_text));
-            }
-            return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(std::get<std::vector<std::string>>(text)));
+            const std::vector<std::string> texts = std::holds_alternative<std::string>(text) ? std::vector<std::string>{std::get<std::string>(text)}
+                                                                                          : std::get<std::vector<std::string>>(text);
+            return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
         }
         return extract_multimodal(text, {}, {}, {}, prompt);
     }
@@ -203,13 +202,10 @@ public:
         const bool is_single_text = std::holds_alternative<std::string>(text);
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
-            if (is_single_text) {
-                m_text_embedding_pipeline->start_embed_query_async(std::get<std::string>(text));
-                m_async_request_type = AsyncRequestType::SINGLE;
-            } else {
-                m_text_embedding_pipeline->start_embed_documents_async(std::get<std::vector<std::string>>(text));
-                m_async_request_type = AsyncRequestType::BATCH;
-            }
+            const std::vector<std::string> texts = is_single_text ? std::vector<std::string>{std::get<std::string>(text)}
+                                                          : std::get<std::vector<std::string>>(text);
+            m_text_embedding_pipeline->start_embed_documents_async(texts);
+            m_async_request_type = AsyncRequestType::BATCH;
             return;
         }
         OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
@@ -223,11 +219,7 @@ public:
         OPENVINO_ASSERT(m_async_request_type != AsyncRequestType::NONE,
                         "Asynchronous embed request was not started");
         if (m_mode == Mode::TEXT_ONLY) {
-            const AsyncRequestType async_request_type = m_async_request_type;
             m_async_request_type = AsyncRequestType::NONE;
-            if (async_request_type == AsyncRequestType::SINGLE) {
-                return embedding_result_to_tensor(m_text_embedding_pipeline->wait_embed_query());
-            }
             return embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents());
         }
         OPENVINO_ASSERT(m_embed_future.valid(), "Asynchronous embed request was not started");

@@ -1,13 +1,12 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
 import numpy as np
 import pytest
 import gc
 from pathlib import Path
 import openvino as ov
 import openvino_genai
-from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
+from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline, VideoMetadata
 from utils.hugging_face import download_and_convert_model, download_and_convert_model_class, OVConvertedModelSchema
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
@@ -16,6 +15,7 @@ from typing import Literal
 import sys
 import platform
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
+from optimum.intel.openvino import OVModelForVisualCausalLM
 from torch import Tensor
 import torch
 from utils.constants import NPUW_CPU_PROPERTIES
@@ -25,6 +25,10 @@ from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_rera
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
     "mixedbread-ai/mxbai-embed-xsmall-v1",
+]
+
+MULTIMODAL_EMBEDDINGS_TEST_MODELS = [
+    "Qwen/Qwen3-VL-Embedding-2B",
 ]
 
 RERANK_TEST_MODELS = [
@@ -72,13 +76,8 @@ def test_embedding_pipeline_public_api():
     assert hasattr(openvino_genai, "EmbeddingPipeline")
     assert EmbeddingPipeline.__name__ == "EmbeddingPipeline"
     assert hasattr(EmbeddingPipeline, "embed")
-    assert not hasattr(EmbeddingPipeline, "embed_document")
-    assert not hasattr(EmbeddingPipeline, "embed_documents")
-    assert not hasattr(EmbeddingPipeline, "start_embed_documents_async")
-    assert not hasattr(EmbeddingPipeline, "wait_embed_documents")
     assert hasattr(EmbeddingPipeline, "start_embed_async")
     assert hasattr(EmbeddingPipeline, "wait")
-    assert not hasattr(EmbeddingPipeline, "wait_embed")
     assert "prompt" in EmbeddingPipeline.embed.__doc__
     assert "prompt" in EmbeddingPipeline.start_embed_async.__doc__
 
@@ -93,6 +92,12 @@ def rerank_model(request) -> OVConvertedModelSchema:
 def emb_model(request) -> OVConvertedModelSchema:
     model_id = request.param
     return download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(scope="module")
+def multimodal_emb_model(request) -> OVConvertedModelSchema:
+    model_id = request.param
+    return download_and_convert_model_class(model_id, OVModelForVisualCausalLM)
 
 
 @pytest.fixture(scope="module")
@@ -144,6 +149,26 @@ def run_text_embedding_genai(
         return pipeline.embed_query(documents[0])
 
 
+def make_embedding_test_image() -> ov.Tensor:
+    return ov.Tensor(np.zeros((77, 100, 3), dtype=np.uint8))
+
+
+def make_embedding_test_video() -> ov.Tensor:
+    return ov.Tensor(np.zeros((4, 132, 176, 3), dtype=np.uint8))
+
+
+def make_embedding_video_metadata() -> VideoMetadata:
+    video_metadata = VideoMetadata()
+    video_metadata.frames_indices = [0, 1, 2, 3]
+    return video_metadata
+
+
+def assert_embedding_tensor(result: ov.Tensor, batch_size: int):
+    assert isinstance(result, ov.Tensor)
+    assert result.shape[0] == batch_size
+    assert result.shape[1] > 0
+
+
 @pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
 def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
     pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
@@ -172,6 +197,80 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
 
     with pytest.raises(RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"):
         pipeline.start_embed_async("What is OpenVINO?", images=[ov.Tensor(np.zeros((1, 1, 1, 1), dtype=np.float32))])
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+
+    result = pipeline.embed("What is OpenVINO?", prompt="Represent the user's input.")
+    assert_embedding_tensor(result, 1)
+
+    pipeline.start_embed_async("What is OpenVINO?", prompt="Represent the user's input.")
+    async_result = pipeline.wait()
+    assert async_result.shape == result.shape
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    image = make_embedding_test_image()
+
+    result = pipeline.embed("Represent this image.", images=[image])
+    assert_embedding_tensor(result, 1)
+
+    pipeline.start_embed_async("Represent this image.", images=[image])
+    async_result = pipeline.wait()
+    assert async_result.shape == result.shape
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    video = make_embedding_test_video()
+    video_metadata = make_embedding_video_metadata()
+
+    result = pipeline.embed("Represent this video.", videos=[video], videos_metadata=[video_metadata])
+    assert_embedding_tensor(result, 1)
+
+    pipeline.start_embed_async("Represent this video.", videos=[video], videos_metadata=[video_metadata])
+    async_result = pipeline.wait()
+    assert async_result.shape == result.shape
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_three_texts_image_and_video(multimodal_emb_model):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    image = make_embedding_test_image()
+    video = make_embedding_test_video()
+    video_metadata = make_embedding_video_metadata()
+    texts = ["Represent OpenVINO.", "Represent this image.", "Represent this video."]
+
+    result = pipeline.embed(
+        texts,
+        images=[image],
+        videos=[video],
+        videos_metadata=[video_metadata],
+        prompt="Represent the user's input.",
+    )
+    assert_embedding_tensor(result, len(texts))
+
+
+@pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
+def test_embedding_pipeline_matches_text_embedding_pipeline(emb_model):
+    text = "What is OpenVINO?"
+    embedding_pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
+    text_embedding_pipeline = TextEmbeddingPipeline(emb_model.models_path, "CPU")
+
+    embedding_result = embedding_pipeline.embed(text)
+    text_embedding_result = text_embedding_pipeline.embed_documents([text])
+
+    np.testing.assert_allclose(
+        embedding_result.data,
+        np.asarray(text_embedding_result, dtype=np.float32),
+        atol=MAX_EMBEDDING_ERROR,
+        rtol=0,
+    )
 
 
 def run_text_embedding_langchain(
@@ -874,7 +973,6 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     )
 
     assert_rerank_results(opt_result, genai_result)
-
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
