@@ -585,6 +585,8 @@ jobs:
             timeout: 45
           - name: 'ASR (Qwen3-ASR)'
             cmd: |
+              # optimum intel PR with encoder fixes for Qwen3-ASR
+              python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@50c15911f4ab82d94c334e3f177dea6d7b75ecc8"
               python -m pip install transformers==4.57.6 qwen-asr==0.0.6
               python -m pytest -s -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}

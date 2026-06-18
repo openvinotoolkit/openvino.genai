@@ -33,18 +33,22 @@ class Qwen3ASROptimumPipeline:
         check_qwen3_asr_package()
 
     def generate(self, sample, **kwargs):
+        generate_kwargs = kwargs.get("generate_kwargs", {})
+        language = generate_kwargs.get("language") or kwargs.get("language")
+
         messages = [
             {"role": "system", "content": ""},
             {"role": "user", "content": [{"type": "audio", "audio": ""}]},
         ]
         text_prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        if language:
+            text_prompt += f"language {language}<asr_text>"
         inputs = self.processor(text=text_prompt, audio=sample, sampling_rate=self.SAMPLE_RATE, return_tensors="pt")
 
         config = {
             "max_new_tokens": kwargs.get("max_new_tokens", 1000),
         }
-        if "generate_kwargs" in kwargs:
-            config["max_new_tokens"] = kwargs["generate_kwargs"].get("max_new_tokens", config["max_new_tokens"])
+        config["max_new_tokens"] = generate_kwargs.get("max_new_tokens", config["max_new_tokens"])
 
         output_ids = self.model.generate(
             input_features=inputs["input_features"],
@@ -56,6 +60,9 @@ class Qwen3ASROptimumPipeline:
         prompt_len = inputs["input_ids"].shape[1]
         generated_only = output_ids[:, prompt_len:]
         full_text = self.processor.batch_decode(generated_only, skip_special_tokens=False)[0]
+        if language:
+            return {"text": full_text.strip(), "language": language}
+
         parsed_output = self.parse_asr_output(full_text)
         return {"text": parsed_output["text"], "language": parsed_output["language"]}
 
