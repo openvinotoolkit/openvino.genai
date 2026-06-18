@@ -88,67 +88,34 @@ void init_rag_pipelines(py::module_& m) {
         .def(
             "embed",
             [](EmbeddingPipeline& pipe,
-               const std::string& text,
+               const EmbeddingPipeline::TextInput& text,
                const std::optional<std::string>& prompt) -> ov::Tensor {
                 py::gil_scoped_release rel;
                 return pipe.embed(text, prompt);
             },
             py::arg("text"),
             py::arg("prompt") = std::nullopt,
-            "Computes an embedding vector for text.")
-        .def(
-            "embed",
-            [](EmbeddingPipeline& pipe,
-               const std::vector<std::string>& texts,
-               const std::optional<std::string>& prompt) -> ov::Tensor {
-                py::gil_scoped_release rel;
-                return pipe.embed(texts, prompt);
-            },
-            py::arg("texts"),
-            py::arg("prompt") = std::nullopt,
-            "Computes embedding vectors for a batch of texts.")
+            "Computes embedding vectors for text or a batch of texts.")
         .def(
             "start_embed_async",
-            [](EmbeddingPipeline& pipe, const std::string& text, const std::optional<std::string>& prompt) -> void {
+            [](EmbeddingPipeline& pipe, const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) -> void {
                 py::gil_scoped_release rel;
                 pipe.start_embed_async(text, prompt);
             },
             py::arg("text"),
             py::arg("prompt") = std::nullopt,
-            "Asynchronously computes an embedding vector for text.")
+            "Asynchronously computes embedding vectors for text or a batch of texts.")
         .def(
-            "start_embed_async",
-            [](EmbeddingPipeline& pipe, const std::vector<std::string>& texts, const std::optional<std::string>& prompt) -> void {
-                py::gil_scoped_release rel;
-                pipe.start_embed_async(texts, prompt);
-            },
-            py::arg("texts"),
-            py::arg("prompt") = std::nullopt,
-            "Asynchronously computes embedding vectors for a batch of texts.")
-        .def(
-            "wait_embed",
+            "wait",
             [](EmbeddingPipeline& pipe) -> ov::Tensor {
                 py::gil_scoped_release rel;
-                return pipe.wait_embed();
+                return pipe.wait();
             },
             "Waits for asynchronous text embedding and returns result.")
         .def(
             "embed",
             [](EmbeddingPipeline& pipe,
-               const std::string& text,
-               const std::vector<ov::Tensor>& images,
-               const std::optional<std::string>& prompt) -> ov::Tensor {
-                py::gil_scoped_release rel;
-                return pipe.embed(text, images, prompt);
-            },
-            py::arg("text"),
-            py::arg("images"),
-            py::arg("prompt") = std::nullopt,
-            "Computes an embedding vector for text and images.")
-        .def(
-            "embed",
-            [](EmbeddingPipeline& pipe,
-               const std::string& text,
+               const EmbeddingPipeline::TextInput& text,
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
@@ -157,11 +124,11 @@ void init_rag_pipelines(py::module_& m) {
                 return pipe.embed(text, images, videos, videos_metadata, prompt);
             },
             py::arg("text"),
-            py::arg("images"),
-            py::arg("videos"),
+            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
             py::arg("prompt") = std::nullopt,
-            "Computes an embedding vector for text, images and videos.");
+            "Computes embedding vectors for text or a batch of texts with images and videos.");
 
     auto text_embedding_pipeline =
         py::class_<TextEmbeddingPipeline>(m, "TextEmbeddingPipeline", "Text embedding pipeline")

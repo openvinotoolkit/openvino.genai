@@ -3907,14 +3907,14 @@ class EmbeddingPipeline:
         Computes embedding vectors for a batch of texts.
         """
     @typing.overload
-    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
-        """
-        Computes an embedding vector for text and images.
-        """
-    @typing.overload
-    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
+    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
         """
         Computes an embedding vector for text, images and videos.
+        """
+    @typing.overload
+    def embed(self, texts: collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
+        """
+        Computes embedding vectors for a batch of texts, images and videos.
         """
     @typing.overload
     def start_embed_async(self, text: str, prompt: str | None = None) -> None:
@@ -3926,7 +3926,7 @@ class EmbeddingPipeline:
         """
         Asynchronously computes embedding vectors for a batch of texts.
         """
-    def wait_embed(self) -> openvino._pyopenvino.Tensor:
+    def wait(self) -> openvino._pyopenvino.Tensor:
         """
         Waits for asynchronous text embedding and returns result.
         """

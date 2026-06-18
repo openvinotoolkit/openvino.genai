@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include "openvino/genai/visibility.hpp"
@@ -22,6 +23,8 @@ namespace genai {
  */
 class OPENVINO_GENAI_EXPORTS EmbeddingPipeline {
 public:
+    using TextInput = std::variant<std::string, std::vector<std::string>>;
+
     /**
      * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
      *
@@ -34,41 +37,24 @@ public:
                       const ov::AnyMap& properties = {});
 
     /**
-     * @brief Computes an embedding vector for text.
+    * @brief Computes embedding vectors for text or a batch of texts.
      */
-    ov::Tensor embed(const std::string& text, const std::optional<std::string>& prompt = std::nullopt);
+    ov::Tensor embed(const TextInput& text, const std::optional<std::string>& prompt = std::nullopt);
 
     /**
-     * @brief Computes embedding vectors for a batch of texts.
+    * @brief Starts asynchronous embedding computation for text or a batch of texts.
      */
-    ov::Tensor embed(const std::vector<std::string>& texts, const std::optional<std::string>& prompt = std::nullopt);
+    void start_embed_async(const TextInput& text, const std::optional<std::string>& prompt = std::nullopt);
 
     /**
-     * @brief Starts asynchronous embedding computation for text.
+    * @brief Waits for asynchronous embedding computation and returns result.
      */
-    void start_embed_async(const std::string& text, const std::optional<std::string>& prompt = std::nullopt);
+    ov::Tensor wait();
 
     /**
-     * @brief Starts asynchronous embedding computation for a batch of texts.
+    * @brief Computes embedding vectors for text or a batch of texts with images and videos.
      */
-    void start_embed_async(const std::vector<std::string>& texts, const std::optional<std::string>& prompt = std::nullopt);
-
-    /**
-     * @brief Waits for asynchronous embedding computation and returns result.
-     */
-    ov::Tensor wait_embed();
-
-    /**
-     * @brief Computes an embedding vector for text and images.
-     */
-    ov::Tensor embed(const std::string& text,
-                     const std::vector<ov::Tensor>& images,
-                     const std::optional<std::string>& prompt = std::nullopt);
-
-    /**
-     * @brief Computes an embedding vector for text, images and videos.
-     */
-    ov::Tensor embed(const std::string& text,
+    ov::Tensor embed(const TextInput& text,
                      const std::vector<ov::Tensor>& images,
                      const std::vector<ov::Tensor>& videos,
                      const std::vector<VideoMetadata>& videos_metadata = {},
