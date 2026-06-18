@@ -13,11 +13,11 @@ from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
 from typing import Literal
 import sys
-import platform
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
-from optimum.intel.openvino import OVModelForVisualCausalLM
+from PIL import Image
 from torch import Tensor
 import torch
+from transformers import AutoModel, AutoProcessor
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
@@ -72,6 +72,7 @@ performance per watt as compared to Intel’s previous\
 mobile processor offering.2\
 "
 
+
 def test_embedding_pipeline_public_api():
     assert hasattr(openvino_genai, "EmbeddingPipeline")
     assert EmbeddingPipeline.__name__ == "EmbeddingPipeline"
@@ -97,7 +98,14 @@ def emb_model(request) -> OVConvertedModelSchema:
 @pytest.fixture(scope="module")
 def multimodal_emb_model(request) -> OVConvertedModelSchema:
     model_id = request.param
-    return download_and_convert_model_class(model_id, OVModelForVisualCausalLM)
+    return download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(scope="module")
+def multimodal_emb_hf_components(multimodal_emb_model: OVConvertedModelSchema):
+    processor = AutoProcessor.from_pretrained(multimodal_emb_model.model_id, trust_remote_code=True)
+    model = AutoModel.from_pretrained(multimodal_emb_model.model_id, trust_remote_code=True).eval()
+    return processor, model
 
 
 @pytest.fixture(scope="module")
@@ -149,12 +157,35 @@ def run_text_embedding_genai(
         return pipeline.embed_query(documents[0])
 
 
+def make_embedding_test_image_array() -> np.ndarray:
+    height = 77
+    width = 100
+    y_coords, x_coords = np.indices((height, width))
+    image = np.stack(
+        [
+            (x_coords * 255 // (width - 1)),
+            (y_coords * 255 // (height - 1)),
+            ((x_coords + y_coords) * 255 // (height + width - 2)),
+        ],
+        axis=-1,
+    ).astype(np.uint8)
+    image[18:46, 28:72, 0] = 245
+    image[18:46, 28:72, 1] = 120
+    image[18:46, 28:72, 2] = 30
+    return image
+
+
 def make_embedding_test_image() -> ov.Tensor:
-    return ov.Tensor(np.zeros((77, 100, 3), dtype=np.uint8))
+    return ov.Tensor(make_embedding_test_image_array())
+
+
+def make_embedding_test_video_array() -> np.ndarray:
+    image = make_embedding_test_image_array()
+    return np.stack([image] * 4, axis=0)
 
 
 def make_embedding_test_video() -> ov.Tensor:
-    return ov.Tensor(np.zeros((4, 132, 176, 3), dtype=np.uint8))
+    return ov.Tensor(make_embedding_test_video_array())
 
 
 def make_embedding_video_metadata() -> VideoMetadata:
@@ -167,6 +198,42 @@ def assert_embedding_tensor(result: ov.Tensor, batch_size: int):
     assert isinstance(result, ov.Tensor)
     assert result.shape[0] == batch_size
     assert result.shape[1] > 0
+
+
+def run_multimodal_embedding_hf(
+    hf_processor,
+    hf_model,
+    text: str,
+    image: np.ndarray | None = None,
+) -> np.ndarray:
+    kwargs = {"text": [text], "return_tensors": "pt", "padding": True}
+    if image is not None:
+        kwargs["images"] = [Image.fromarray(image)]
+
+    with torch.no_grad():
+        inputs = hf_processor(**kwargs)
+        outputs = hf_model(**inputs)
+
+    hidden = outputs.last_hidden_state
+    pooled = hidden.mean(dim=1) if hidden.dim() == 3 else hidden
+    return pooled[0].to(torch.float32).detach().cpu().numpy().reshape(1, -1)
+
+
+def assert_embedding_matches_hf_cosine(result: ov.Tensor, reference: np.ndarray, max_cosine_diff: float):
+    actual = np.array(result.data, dtype=np.float32).reshape(result.shape)
+    actual_norm = np.linalg.norm(actual)
+    reference_norm = np.linalg.norm(reference)
+    cosine_similarity = float(actual.flatten() @ reference.flatten() / (actual_norm * reference_norm))
+    cosine_difference = 1.0 - cosine_similarity
+    message = (
+        f"EmbeddingPipeline output does not match HF reference by cosine\n"
+        f"actual shape: {actual.shape}, reference shape: {reference.shape}\n"
+        f"cosine similarity: {cosine_similarity}\n"
+        f"cosine difference: {cosine_difference}\n"
+        f"actual first 8: {actual.flatten()[:8].tolist()}\n"
+        f"reference first 8: {reference.flatten()[:8].tolist()}"
+    )
+    assert cosine_difference < max_cosine_diff, message
 
 
 @pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
@@ -195,31 +262,40 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
     with pytest.raises(RuntimeError, match="Prompt is supported only by multimodal EmbeddingPipeline"):
         pipeline.start_embed_async("What is OpenVINO?", prompt="Represent the user's input.")
 
-    with pytest.raises(RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"):
+    with pytest.raises(
+        RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"
+    ):
         pipeline.start_embed_async("What is OpenVINO?", images=[ov.Tensor(np.zeros((1, 1, 1, 1), dtype=np.float32))])
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    text = "What is OpenVINO?"
+    prompt = "Represent the user's input."
 
-    result = pipeline.embed("What is OpenVINO?", prompt="Represent the user's input.")
+    result = pipeline.embed(text, prompt=prompt)
     assert_embedding_tensor(result, 1)
 
-    pipeline.start_embed_async("What is OpenVINO?", prompt="Represent the user's input.")
+    pipeline.start_embed_async(text, prompt=prompt)
     async_result = pipeline.wait()
     assert async_result.shape == result.shape
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
-def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model):
+def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_hf_components):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    image_array = make_embedding_test_image_array()
     image = make_embedding_test_image()
+    image_text_prompt = "<|vision_start|><|image_pad|><|vision_end|> A woman playing with her dog on a beach at sunset."
+    hf_processor, hf_model = multimodal_emb_hf_components
 
-    result = pipeline.embed("Represent this image.", images=[image])
+    result = pipeline.embed(image_text_prompt, images=[image])
     assert_embedding_tensor(result, 1)
+    hf_result = run_multimodal_embedding_hf(hf_processor, hf_model, image_text_prompt, image=image_array)
+    assert_embedding_matches_hf_cosine(result, hf_result, max_cosine_diff=0.05)
 
-    pipeline.start_embed_async("Represent this image.", images=[image])
+    pipeline.start_embed_async(image_text_prompt, images=[image])
     async_result = pipeline.wait()
     assert async_result.shape == result.shape
 
@@ -229,11 +305,12 @@ def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
     video = make_embedding_test_video()
     video_metadata = make_embedding_video_metadata()
+    text = "Represent this video."
 
-    result = pipeline.embed("Represent this video.", videos=[video], videos_metadata=[video_metadata])
+    result = pipeline.embed(text, videos=[video], videos_metadata=[video_metadata])
     assert_embedding_tensor(result, 1)
 
-    pipeline.start_embed_async("Represent this video.", videos=[video], videos_metadata=[video_metadata])
+    pipeline.start_embed_async(text, videos=[video], videos_metadata=[video_metadata])
     async_result = pipeline.wait()
     assert async_result.shape == result.shape
 

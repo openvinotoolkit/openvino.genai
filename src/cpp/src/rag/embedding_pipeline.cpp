@@ -4,6 +4,7 @@
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
 #include <future>
+#include <numeric>
 #include <optional>
 #include <unordered_set>
 
@@ -65,7 +66,7 @@ ov::Tensor get_tensor_as_f32(const ov::Tensor& tensor) {
     return result;
 }
 
-ov::Tensor mean_pool_embeddings(const ov::Tensor& tensor) {
+ov::Tensor pool_embeddings(const ov::Tensor& tensor) {
     const ov::Shape shape = tensor.get_shape();
     OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
                     "Expected embedding tensor rank 2 or 3, got rank ",
@@ -98,6 +99,19 @@ ov::Tensor mean_pool_embeddings(const ov::Tensor& tensor) {
     }
 
     OPENVINO_THROW("Unsupported embedding element type: ", element_type);
+}
+
+ov::Tensor pool_text_embeddings(const ov::Tensor& tensor) {
+    return pool_embeddings(tensor);
+}
+
+ov::Tensor make_text_position_ids(size_t sequence_length) {
+    ov::Tensor position_ids(ov::element::i64, {3, 1, sequence_length});
+    for (size_t dim_idx = 0; dim_idx < 3; ++dim_idx) {
+        int64_t* data = position_ids.data<int64_t>() + dim_idx * sequence_length;
+        std::iota(data, data + sequence_length, 0);
+    }
+    return position_ids;
 }
 
 ov::Tensor stack_tensors(const std::vector<ov::Tensor>& tensors) {
@@ -282,6 +296,7 @@ private:
                          const ov::AnyMap& properties) {
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties);
         m_inputs_embedder->set_apply_chat_template_status(false);
+        m_inputs_embedder->set_add_special_tokens(false);
 
         ov::Core core;
         std::shared_ptr<ov::Model> language_model =
@@ -389,7 +404,11 @@ private:
 
         std::optional<ov::Tensor> position_ids;
         std::optional<int64_t> rope_delta;
-        std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(input_sequence_length, 0);
+        if (images.empty() && videos.empty() && has_lm_input("visual_pos_masks")) {
+            position_ids = make_text_position_ids(input_sequence_length);
+        } else {
+            std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(input_sequence_length, 0);
+        }
         if (position_ids.has_value() && has_lm_input("position_ids")) {
             m_language_model_request.set_tensor("position_ids", *position_ids);
         }
@@ -410,7 +429,10 @@ private:
         m_language_model_request.infer();
 
         const ov::Tensor hidden_or_logits = m_language_model_request.get_tensor(m_embedding_output_name);
-        return mean_pool_embeddings(hidden_or_logits);
+        if (images.empty() && videos.empty()) {
+            return pool_text_embeddings(hidden_or_logits);
+        }
+        return pool_embeddings(hidden_or_logits);
     }
 
 private:
@@ -423,12 +445,41 @@ private:
     }
 
     std::string format_prompt(const std::string& text, const std::optional<std::string>& prompt) const {
+        Tokenizer tokenizer = m_inputs_embedder->get_tokenizer();
         if (!prompt.has_value()) {
-            return text;
+            return append_added_special_tokens(tokenizer, text);
         }
         ChatHistory history({{{"role", "system"}, {"content", *prompt}}, {{"role", "user"}, {"content", text}}});
         constexpr bool add_generation_prompt = true;
-        return m_inputs_embedder->get_tokenizer().apply_chat_template(history, add_generation_prompt);
+        return append_added_special_tokens(tokenizer, tokenizer.apply_chat_template(history, add_generation_prompt));
+    }
+
+    std::string append_added_special_tokens(Tokenizer& tokenizer, const std::string& text) const {
+        const ov::Tensor with_special_tokens = tokenizer.encode(text, ov::genai::add_special_tokens(true)).input_ids;
+        const ov::Tensor without_special_tokens = tokenizer.encode(text, ov::genai::add_special_tokens(false)).input_ids;
+        const ov::Shape with_shape = with_special_tokens.get_shape();
+        const ov::Shape without_shape = without_special_tokens.get_shape();
+        OPENVINO_ASSERT(with_shape.size() == 2 && without_shape.size() == 2,
+                        "Expected rank-2 tokenized prompt tensors");
+        OPENVINO_ASSERT(with_shape[0] == 1 && without_shape[0] == 1,
+                        "Expected single tokenized prompt");
+        OPENVINO_ASSERT(with_shape[1] >= without_shape[1],
+                        "Tokenizer with special tokens returned fewer tokens than tokenizer without special tokens");
+
+        const size_t added_tokens_num = with_shape[1] - without_shape[1];
+        if (added_tokens_num == 0) {
+            return text;
+        }
+
+        const int64_t* with_data = with_special_tokens.data<const int64_t>();
+        const int64_t* without_data = without_special_tokens.data<const int64_t>();
+        for (size_t idx = 0; idx < without_shape[1]; ++idx) {
+            OPENVINO_ASSERT(with_data[idx] == without_data[idx],
+                            "Tokenizer special tokens are expected only at the end of the prompt");
+        }
+
+        std::vector<int64_t> added_tokens(with_data + without_shape[1], with_data + with_shape[1]);
+        return text + tokenizer.decode(added_tokens, ov::genai::skip_special_tokens(false));
     }
 
     Mode m_mode = Mode::MULTIMODAL;
