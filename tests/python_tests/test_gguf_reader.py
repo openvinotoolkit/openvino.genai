@@ -122,6 +122,7 @@ def test_pipelines_with_gguf_generate(
     ids=["regular_prompt", "only_special_tokens", "multiple_special_tokens", "special_tokens_with_text"],
 )
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
+@pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 @pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725")
 def test_full_gguf_pipeline(
@@ -130,8 +131,6 @@ def test_full_gguf_pipeline(
     enable_save_ov_model: bool,
     prompt: str,
 ):
-    if sys.platform == 'darwin':
-        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_gguf.gguf_model_id
     gguf_full_path = model_gguf.gguf_full_path
     opt_model = model_gguf.opt_model
@@ -197,7 +196,7 @@ def test_full_gguf_pipeline(
         }
     ]
 )
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
+@pytest.mark.xfail(sys.platform == "darwin", reason="CVS-172335")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
