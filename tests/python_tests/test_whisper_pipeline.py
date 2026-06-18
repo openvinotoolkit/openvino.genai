@@ -384,7 +384,7 @@ def pipelines_fixture(request):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 def test_asr_config_constructor(model_descr, pipeline_type):
-    model_id, path = model_descr
+    model_id, path, _, _ = read_asr_model(model_descr, pipeline_type=pipeline_type)
 
     config_cls = get_config_cls(pipeline_type)
     config = config_cls(path / "generation_config.json")
