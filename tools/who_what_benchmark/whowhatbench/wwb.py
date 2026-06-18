@@ -628,7 +628,7 @@ def llamacpp_gen_text(
     tokenizer,
     question,
     max_new_tokens,
-   skip_question,
+    skip_question,
     use_chat_template=False,
     empty_adapters=False,
     num_assistant_tokens=0,
@@ -875,7 +875,7 @@ def create_evaluator(base_model, args):
                 gen_answer_fn = None
 
             if args.llamacpp_chat and not args.llamacpp:
-                 raise ValueError("--llamacpp-chat requires --llamacpp")
+                raise ValueError("--llamacpp-chat requires --llamacpp")
 
             if args.llamacpp:
                 use_chat_template = args.llamacpp_chat and not args.omit_chat_template
