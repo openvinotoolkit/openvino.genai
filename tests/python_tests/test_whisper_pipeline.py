@@ -419,6 +419,7 @@ def test_asr_config_constructor(model_descr, pipeline_type):
     assert config.lang_to_id["<|_ru|>"] == 42
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
@@ -436,6 +437,7 @@ def test_asr_constructors(model_descr, sample_from_dataset, pipeline_type):
     assert genai_result.texts[0] == expected
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
@@ -453,6 +455,7 @@ def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
     compare_results(expected, genai_result)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
 def test_language_mode(model_descr, language, pipeline_type):
@@ -476,6 +479,7 @@ def test_language_mode(model_descr, language, pipeline_type):
     compare_results(expected, genai_result)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr"], indirect=True)
 def test_task_mode(model_descr, sample_from_multilingual_dataset, pipeline_type):
@@ -520,6 +524,7 @@ def test_task_mode(model_descr, sample_from_multilingual_dataset, pipeline_type)
     compare_results(expected, genai_result)
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["fr", "de", "es"], indirect=True)
 def test_language_autodetect(model_descr, sample_from_multilingual_dataset, pipeline_type):
@@ -655,7 +660,9 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
     ),
     indirect=True,
 )
-@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
+@pytest.mark.parametrize(
+    "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True
+)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio(pipelines_fixture, sample_from_dataset):
     hf_pipe, genai_pipe, model_id, pipeline_type = pipelines_fixture
@@ -814,7 +821,9 @@ def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_data
 
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
+@pytest.mark.parametrize(
+    "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True
+)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_beam_search(model_descr, sample_from_dataset, pipeline_type):
     # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
@@ -851,6 +860,7 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset, pipeline_type
     assert "Quilter" not in result.texts[0]
 
 
+@pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
 def test_random_sampling(model_descr, sample_from_dataset, pipeline_type):
