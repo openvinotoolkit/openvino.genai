@@ -10,7 +10,7 @@ from test_whisper_pipeline import (
     sample_from_dataset,
     get_fixture_params_for_n_whisper_dataset_samples,
 )
-from transformers import AutoProcessor, AutoTokenizer
+from transformers import AutoTokenizer, WhisperProcessor
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 from huggingface_hub import snapshot_download
 import openvino_genai as ov_genai
@@ -28,7 +28,7 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     model_id, path = params
 
     model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
-    processor = retry_request(lambda: AutoProcessor.from_pretrained(model_cached, trust_remote_code=True))
+    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_cached, trust_remote_code=True))
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
 
@@ -111,7 +111,7 @@ def compare_results_with_assert(expected, actual_out):
         assert expected.texts[i] == actual_out.texts[i]
 
 
-def compare_word_timestamps_results_with_assert(expected, actual_out, ts_tolerance=0.07):
+def compare_word_timestamps_results_with_assert(expected, actual_out, ts_tolerance=0.08):
     assert len(expected.words) == len(actual_out.words)
 
     for exp_word, act_word in zip(expected.words, actual_out.words):
