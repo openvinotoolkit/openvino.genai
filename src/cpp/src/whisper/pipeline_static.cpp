@@ -469,7 +469,9 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
             const auto kAttnMaskPort = 3;
             for (const auto &node : model->get_ops()) {
                 if (ov::is_type<ov::op::v13::ScaledDotProductAttention>(node)) {
-                    if (node->inputs().size() > kAttnMaskPort && ov::is_type<v8::Slice>(node->input(kAttnMaskPort).get_source_output().get_node())) {
+                    if (node->inputs().size() > kAttnMaskPort &&
+                        (ov::is_type<v8::Slice>(node->input(kAttnMaskPort).get_source_output().get_node()) ||
+                         ov::is_type<v1::Select>(node->input(kAttnMaskPort).get_source_output().get_node()))) {
                         self_attn_nodes.push_back(node);
                     } else {
                         cross_attn_nodes.push_back(node);
