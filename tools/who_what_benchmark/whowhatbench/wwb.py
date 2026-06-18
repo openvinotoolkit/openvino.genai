@@ -213,8 +213,8 @@ def parse_args():
     parser.add_argument(
         "--llamacpp-n-ctx",
         type=positive_integer,
-        default=8192,
-        help="Context window size for llama.cpp backend in model-type 'text' (default: 8192).",
+        default=None,
+        help="Context window size for llama.cpp backend in model-type 'text' (default: 8192 with --llamacpp).",
     )
     parser.add_argument(
         "--image-size",
@@ -1255,10 +1255,10 @@ def main():
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
-    if args.llamacpp_n_ctx is not None:
-        if not args.llamacpp:
-            raise ValueError("--llamacpp-n-ctx requires --llamacpp")
-        kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
+    if args.llamacpp:
+        kwargs["llamacpp_n_ctx"] = 8192 if args.llamacpp_n_ctx is None else args.llamacpp_n_ctx
+    elif args.llamacpp_n_ctx is not None:
+        raise ValueError("--llamacpp-n-ctx requires --llamacpp")
 
     if args.base_model is not None:
         base_model = load_model(
