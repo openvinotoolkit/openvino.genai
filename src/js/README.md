@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai/blob/master/site/static/img/openvino-genai-logo-gradient.svg)
+![OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai/blob/master/site/static/img/openvino-genai-logo-gradient.svg?raw=1)
 
 [<b>Getting Started</b>](#getting-started) •
 [<b>Quick install</b>](#quick-install) •
@@ -15,7 +15,7 @@
 [![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_macOS-blue)](#supported-platforms)
 [![NPM License](https://img.shields.io/npm/l/openvino-genai-node)](#license)
 
-![](https://github.com/openvinotoolkit/openvino.genai/blob/master/site/static/img/openvino-genai-workflow.svg)
+![](https://github.com/openvinotoolkit/openvino.genai/blob/master/site/static/img/openvino-genai-workflow.svg?raw=1)
 
 </div>
 
@@ -24,7 +24,7 @@
 This library is friendly to PC and laptop execution, and optimized for resource consumption. Prebuilt native addons, the OpenVINO runtime and tokenization are fetched during `npm install`. You do not need a separate OpenVINO SDK install for typical use.
 
 ## Key Features and Benefits:
- - 📦 Pre-built Generative AI Pipelines: Ready-to-use pipelines for text generation (LLMs), visual language models (VLMs), image generation (Diffuser-based), speech recognition (Whisper), and speech generation (SpeechT5). See all supported [AI scenarios](#supported-generative-ai-scenarios).
+ - 📦 Pre-built Generative AI Pipelines: Ready-to-use pipelines for text generation (LLMs), visual language models (VLMs), image generation (Diffusers), speech recognition (Whisper), and speech generation (SpeechT5). See all supported [AI scenarios](#supported-generative-ai-scenarios).
  - 👣 Minimal Footprint: Smaller binary size and reduced memory footprint compared to other frameworks.
  - 📥 Plug-and-play install: Prebuilt native addons and OpenVINO runtime are downloaded on `npm install` — no manual OpenVINO installation for typical use.
  - 🖥️ In-process inference: Run models directly from Node.js in your application process — no separate inference service or access tokens.
