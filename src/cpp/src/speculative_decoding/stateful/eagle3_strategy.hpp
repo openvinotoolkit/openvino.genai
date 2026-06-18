@@ -14,6 +14,8 @@
 #include "utils.hpp"
 #include "model_desc.hpp"
 
+class ManualTimer;  // Forward declaration for build_results()
+
 namespace ov {
 namespace genai {
 
@@ -56,6 +58,15 @@ struct ValidationResult {
     size_t accepted_count = 0;              ///< Number of accepted draft tokens (excludes bonus)
     size_t num_candidates = 0;              ///< Total candidates submitted (N+1)
     InferenceOutput output;                 ///< Raw target model outputs
+};
+
+/// @brief Result from a single speculative iteration (draft + validate + sync).
+struct SpeculativeResult {
+    size_t accepted_tokens_count = 0;
+    size_t num_draft_tokens = 0;
+    size_t next_window_size = 0;
+    bool eos_reached = false;
+    std::vector<int64_t> validated_tokens;
 };
 
 // ---------------------------------------------------------------------------
@@ -155,11 +166,9 @@ public:
     /// For the draft wrapper this returns the generated ids of sequence 0 only,
     /// which is sufficient for history-length queries and debug logging.
     const std::vector<int64_t>& get_generated_tokens() const {
-        static const std::vector<int64_t> empty;
-        if (const auto seq = get_sequence(0)) {
-            return seq->get_generated_ids();
-        }
-        return empty;
+        const auto seq = get_sequence(0);
+        OPENVINO_ASSERT(seq, "No sequence available — get_generated_tokens called before initialize_sequence");
+        return seq->get_generated_ids();
     }
 
     SequenceGroup::Ptr get_sequence_group() const {
@@ -333,8 +342,8 @@ private:
     ov::Tensor gather_logits_for_sampling(const InferenceOutput& output, const InferContext& ctx);
 
     // Pre-allocated buffers (initialized by allocate_buffers).
-    ov::Tensor m_logits_gather_buf;  ///< {1, max_sequences, vocab_size} for logit gathering
-    ov::Tensor m_hidden_concat_buf;  ///< {1, max_sequences * max_depth, hidden_size} for concat
+    ov::Tensor m_logits_gather_buf;                 ///< {1, max_sequences, vocab_size} for logit gathering
+    ov::Tensor m_hidden_concat_buf;                 ///< {1, max_sequences * max_depth, hidden_size} for concat
     std::vector<ov::Tensor> m_per_seq_hidden_bufs;  ///< {1, max_depth, hidden_size} per sequence
     size_t m_max_sequences = 0;
     size_t m_max_depth = 0;
@@ -385,14 +394,6 @@ protected:
                                    StreamerVariant streamer) override;
 
 private:
-    struct SpeculativeResult {
-        size_t accepted_tokens_count = 0;
-        size_t num_draft_tokens = 0;
-        size_t next_window_size = 0;
-        bool eos_reached = false;
-        std::vector<int64_t> validated_tokens;
-    };
-
     // ---- Speculative iteration sub-steps ----
 
     /// @brief Runs a complete speculative iteration (draft + validate + sync).
@@ -413,14 +414,39 @@ private:
     /// @brief Step 5: Gathers accepted hidden states for the next iteration.
     void gather_accepted_hidden_states(const ValidationResult& validation);
 
+    /// @brief Runs initial prompt processing (prefill) and returns the first generated token.
+    int64_t run_prefill(const GenerationConfig& config);
+
+    /// @brief Builds final EncodedResults with performance metrics after generation completes.
+    EncodedResults build_results(ManualTimer& generate_timer,
+                                 size_t generated_tokens,
+                                 size_t total_draft_accepted,
+                                 size_t total_draft_generated);
+
     /// @brief Applies default tree search parameters if the user did not set them.
     static void ensure_tree_params_is_set(GenerationConfig& config);
+
+    // ---- Constructor sub-steps ----
+
+    /// @brief Validates device constraints, model presence, and required properties.
+    void validate_construction_params(const ModelDesc& target_model_desc, const ModelDesc& draft_model_desc);
+
+    /// @brief Applies Eagle3-specific graph transformations (vocabulary sharing, hidden state wiring, etc.).
+    void apply_graph_transforms(const ModelDesc& target_model_desc, const ModelDesc& draft_model_desc);
+
+    /// @brief Computes validation windows, configures NPU properties, and creates draft/target model wrappers.
+    void configure_and_create_models(const ModelDesc& target_model_desc, const ModelDesc& draft_model_desc);
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;
 
-    size_t m_draft_iterations = 5;
+    std::shared_ptr<ov::op::v0::Constant>
+        m_d2t_mapping;  ///< Draft-to-target token mapping (extracted during graph transforms)
+    size_t m_max_draft_depth =
+        5;  ///< Maximum draft tree depth for buffer pre-allocation; runtime uses config.tree_depth.
     size_t m_prompt_length = 0;
+    ov::Tensor
+        m_accepted_hidden_buf;  ///< Pre-allocated buffer for gather_accepted_hidden_states (reused each iteration).
 };
 
 }  // namespace genai
