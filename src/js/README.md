@@ -7,7 +7,7 @@
 [<b>Getting Started</b>](#getting-started) •
 [<b>Quick install</b>](#quick-install) •
 [<b>AI Scenarios</b>](#supported-generative-ai-scenarios) •
-[<b>Documentation</b>](https://openvinotoolkit.github.io/openvino.genai/docs/bindings/node-js) •
+[<b>Documentation</b>](https://openvinotoolkit.github.io/openvino.genai/docs/bindings/node-js/) •
 [<b>Supported Models</b>](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 
 [![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
@@ -46,8 +46,8 @@ Node.js **≥ 21**. Refer to the [supported platforms](#supported-platforms) for
 
 ## Supported platforms
 
-| **OS** | **x86** | **ARM** |
-| ------ | ------- | ------- |
+| **OS** | **x64** | **arm64** |
+| ------ | ------- | --------- |
 | **Windows** | ✅ | ❌ |
 | **Linux** | ✅ | ✅ |
 | **macOS** | ❌ | ✅ |
