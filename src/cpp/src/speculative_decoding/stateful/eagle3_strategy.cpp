@@ -1009,9 +1009,30 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     // generate() time via the user-provided GenerationConfig.
     ensure_tree_params_is_set(m_generation_config);
 
+    m_compile_config = build_compile_config(draft_model_desc);
+
     validate_construction_params(target_model_desc, draft_model_desc);
     apply_graph_transforms(target_model_desc, draft_model_desc);
     configure_and_create_models(target_model_desc, draft_model_desc);
+}
+
+Eagle3CompileConfig StatefulEagle3LLMPipeline::build_compile_config(const ModelDesc& draft_model_desc) {
+    // Priority: explicit property > m_generation_config (already resolved by ensure_tree_params_is_set).
+    const auto& props = draft_model_desc.properties;
+
+    auto get_or = [&](const char* prop_key, size_t resolved_val) -> size_t {
+        auto it = props.find(prop_key);
+        if (it != props.end()) {
+            return it->second.as<size_t>();
+        }
+        return resolved_val;
+    };
+
+    Eagle3CompileConfig cfg;
+    cfg.max_tree_depth = get_or("MAX_TREE_DEPTH", m_generation_config.tree_depth);
+    cfg.max_branching_factor = get_or("MAX_BRANCHING_FACTOR", m_generation_config.branching_factor);
+    cfg.max_assistant_tokens = get_or("MAX_ASSISTANT_TOKENS", m_generation_config.num_assistant_tokens);
+    return cfg;
 }
 
 void StatefulEagle3LLMPipeline::validate_construction_params(const ModelDesc& target_model_desc,
@@ -1056,16 +1077,15 @@ void StatefulEagle3LLMPipeline::apply_graph_transforms(const ModelDesc& target_m
     utils::eagle3::transform_hidden_state(draft_model, {-1});
 }
 
-// Computes static input shapes for NPU compilation and creates model wrappers.
+// Configures NPU properties using m_compile_config shape limits and creates model wrappers.
 //
 // NPUW requires the maximum generation token length at compile time:
-//   - Target: num_assistant_tokens + 1 (all tree candidates including root).
-//   - Draft:  tree_depth * branching_factor (worst-case flat batch at deepest level).
+//   - Target: max_assistant_tokens + 1 (all tree candidates including root).
+//   - Draft:  max_tree_depth * max_branching_factor (worst-case flat batch at deepest level).
 void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& target_model_desc,
                                                             const ModelDesc& draft_model_desc) {
-    const size_t target_validation_window = m_generation_config.num_assistant_tokens + 1;
-    m_max_draft_depth = m_generation_config.tree_depth;
-    const size_t draft_validation_window = m_max_draft_depth * m_generation_config.branching_factor;
+    const size_t target_validation_window = m_compile_config.target_max_gen_tokens();
+    const size_t draft_validation_window = m_compile_config.draft_max_gen_tokens();
 
     // --- Configure and create draft model ---
     auto draft_desc = draft_model_desc;
@@ -1073,7 +1093,6 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
         draft_desc.properties[NPUW_EAGLE] = "TRUE";
         draft_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = draft_validation_window;
         draft_desc.properties[NPUW_ONLINE_PIPELINE] = "NONE";  // Disable NPUW online pipeline optimization.
-        draft_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     m_draft = std::make_unique<Eagle3DraftWrapper>(draft_desc);
     m_draft->set_draft_target_mapping(m_d2t_mapping);
@@ -1084,7 +1103,6 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
         target_desc.properties[NPUW_EAGLE] = "TRUE";
         target_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = target_validation_window;
         target_desc.properties[NPUW_SLICE_OUT] = "NO";
-        target_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 }
@@ -1108,6 +1126,27 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
     OPENVINO_ASSERT(!config.do_sample, "Eagle3 speculative decoding requires greedy sampling (do_sample=false)");
     ensure_tree_params_is_set(config);
+
+    // Validate runtime params do not exceed NPU compile-time shape limits.
+    OPENVINO_ASSERT(config.tree_depth <= m_compile_config.max_tree_depth,
+                    "tree_depth (",
+                    config.tree_depth,
+                    ") exceeds compile-time limit (",
+                    m_compile_config.max_tree_depth,
+                    "). Set MAX_TREE_DEPTH in draft_model properties to increase.");
+    OPENVINO_ASSERT(config.branching_factor <= m_compile_config.max_branching_factor,
+                    "branching_factor (",
+                    config.branching_factor,
+                    ") exceeds compile-time limit (",
+                    m_compile_config.max_branching_factor,
+                    "). Set MAX_BRANCHING_FACTOR in draft_model properties to increase.");
+    OPENVINO_ASSERT(config.num_assistant_tokens <= m_compile_config.max_assistant_tokens,
+                    "num_assistant_tokens (",
+                    config.num_assistant_tokens,
+                    ") exceeds compile-time limit (",
+                    m_compile_config.max_assistant_tokens,
+                    "). Set MAX_ASSISTANT_TOKENS in draft_model properties to increase.");
+
     return config;
 }
 
@@ -1131,11 +1170,14 @@ int64_t StatefulEagle3LLMPipeline::run_prefill(const GenerationConfig& config) {
         OPENVINO_ASSERT(l_shape.size() == 3, "logits must be rank-3, got rank ", l_shape.size());
         const size_t vocab_size = l_shape[2];
 
-        m_draft->allocate_buffers(m_generation_config.branching_factor, m_max_draft_depth, hidden_size, vocab_size);
+        m_draft->allocate_buffers(m_compile_config.max_branching_factor,
+                                  m_compile_config.max_tree_depth,
+                                  hidden_size,
+                                  vocab_size);
 
         // Pre-allocate accepted hidden state buffer for gather_accepted_hidden_states().
-        // Max tokens per iteration = num_assistant_tokens + 1.
-        const size_t max_accepted = m_generation_config.num_assistant_tokens + 1;
+        // Sized to compile-time max to handle any valid runtime config.
+        const size_t max_accepted = m_compile_config.max_assistant_tokens + 1;
         m_accepted_hidden_buf = ov::Tensor(ov::element::f32, {1, max_accepted, hidden_size});
     }
 

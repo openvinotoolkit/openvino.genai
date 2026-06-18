@@ -4,7 +4,6 @@
 
 import argparse
 import openvino_genai
-import queue
 
 def streamer(subword):
     print(subword, end='', flush=True)
@@ -24,10 +23,6 @@ def main():
     main_device = 'CPU'
     draft_device = 'CPU'
 
-    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
-
-    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
-    
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
     # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
@@ -41,6 +36,11 @@ def main():
     # NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
     # config.assistant_confidence_threshold = 0.4
 
+    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
+
+    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
+
+    # For Eagle3 tree-based speculative decoding, replace the FastDraft block above with:
     # Tree search parameters (for Eagle3 tree-based speculative decoding):
     # `branching_factor` is the number of top-k candidates selected per tree node and kept globally per tree layer.
     # `tree_depth` is the lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
@@ -50,9 +50,21 @@ def main():
     # selected from the tree for verification.
     # For tree search, `num_assistant_tokens` serves as the overall number of candidate (non-root) tokens submitted to
     # the target model for verification; total tree nodes = `num_assistant_tokens + 1` (including root).
-    # config.branching_factor = 2
-    # config.tree_depth = 4
-    # config.num_assistant_tokens = 8
+    # branching_factor = 2
+    # tree_depth = 3
+    # num_assistant_tokens = 7
+    # config.branching_factor = branching_factor
+    # config.tree_depth = tree_depth
+    # config.num_assistant_tokens = num_assistant_tokens
+    # On NPU, compile-time shape upper bounds must be passed to draft_model().
+    # The runtime GenerationConfig values above must not exceed these limits.
+    # draft_model = openvino_genai.draft_model(
+    #     args.draft_model_dir, 'NPU',
+    #     MAX_TREE_DEPTH=tree_depth,
+    #     MAX_BRANCHING_FACTOR=branching_factor,
+    #     MAX_ASSISTANT_TOKENS=num_assistant_tokens
+    # )
+    # pipe = openvino_genai.LLMPipeline(args.model_dir, 'NPU', draft_model=draft_model)
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.

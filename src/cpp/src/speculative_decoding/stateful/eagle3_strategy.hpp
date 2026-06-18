@@ -359,6 +359,27 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// Eagle3CompileConfig — NPU compile-time shape constraints
+// ---------------------------------------------------------------------------
+
+/// Compile-time shape constraints for NPU static allocation. Immutable after construction.
+/// These values represent upper bounds; runtime GenerationConfig values must not exceed them.
+struct Eagle3CompileConfig {
+    size_t max_tree_depth;
+    size_t max_branching_factor;
+    size_t max_assistant_tokens;
+
+    /// Maximum tokens the draft model processes in one generation step.
+    size_t draft_max_gen_tokens() const {
+        return max_tree_depth * max_branching_factor;
+    }
+    /// Maximum tokens the target model processes in one validation step.
+    size_t target_max_gen_tokens() const {
+        return max_assistant_tokens + 1;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // StatefulEagle3LLMPipeline — top-level pipeline
 // ---------------------------------------------------------------------------
 
@@ -437,13 +458,15 @@ private:
     /// @brief Computes validation windows, configures NPU properties, and creates draft/target model wrappers.
     void configure_and_create_models(const ModelDesc& target_model_desc, const ModelDesc& draft_model_desc);
 
+    /// @brief Determines compile-time shape constraints from model desc properties and m_generation_config.
+    Eagle3CompileConfig build_compile_config(const ModelDesc& draft_model_desc);
+
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;
 
     std::shared_ptr<ov::op::v0::Constant>
-        m_d2t_mapping;  ///< Draft-to-target token mapping (extracted during graph transforms)
-    size_t m_max_draft_depth =
-        5;  ///< Maximum draft tree depth for buffer pre-allocation; runtime uses config.tree_depth.
+        m_d2t_mapping;                     ///< Draft-to-target token mapping (extracted during graph transforms)
+    Eagle3CompileConfig m_compile_config;  ///< NPU compile-time shape limits (immutable after construction).
     size_t m_prompt_length = 0;
     ov::Tensor
         m_accepted_hidden_buf;  ///< Pre-allocated buffer for gather_accepted_hidden_states (reused each iteration).
