@@ -169,7 +169,8 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
     }
 
     auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
-    auto compiled = utils::singleton_core().compile_model(per_layer_model_path, device, device_config);
+    auto compiled = utils::singleton_core().compile_model(
+        per_layer_model_path, device, utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
@@ -194,7 +195,8 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
 
     OPENVINO_ASSERT(it != models_map.end(), "Per-layer text embeddings model not found in models map");
     const auto& [model_str, weights] = it->second;
-    auto compiled = utils::singleton_core().compile_model(model_str, weights, device, device_config);
+    auto compiled = utils::singleton_core().compile_model(
+        model_str, weights, device, utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
@@ -312,7 +314,9 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_t
 }
 
 bool InputsEmbedderGemma4::has_token_type_ids() const {
-    return m_vlm_config.enable_moe_block;
+    // Optimum-intel exports `token_type_ids` as an LM input when
+    // `text_config.use_bidirectional_attention == "vision"` (see Gemma4OpenVINOConfig.with_behavior).
+    return m_vlm_config.use_bidirectional_attention == "vision";
 }
 
 ov::Tensor InputsEmbedderGemma4::get_token_type_ids(const ov::Tensor& input_ids) {

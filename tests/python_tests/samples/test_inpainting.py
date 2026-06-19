@@ -5,7 +5,7 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, download_test_content
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR, download_test_content
 from test_utils import run_sample
 
 download_mask_image = download_test_content
@@ -41,3 +41,8 @@ class TestInpainting:
         cpp_sample = SAMPLES_CPP_DIR / 'inpainting'
         cpp_command = [cpp_sample, download_model, "'" + prompt + "'", download_test_content, download_mask_image]
         run_sample(cpp_command)
+
+        # Run JS sample
+        js_sample = SAMPLES_JS_DIR / "image_generation" / "inpainting.js"
+        js_command = ["node", js_sample, download_model, "'" + prompt + "'", download_test_content, download_mask_image]
+        run_sample(js_command)

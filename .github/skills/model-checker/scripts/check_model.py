@@ -5,7 +5,7 @@
 """End-to-end validation of a HuggingFace model with OpenVINO GenAI."""
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 import re
@@ -43,7 +43,6 @@ def log_header(args: argparse.Namespace, bench_task: str, wwb_task: str, work_di
     logger.info("  device:      %s", args.device)
     logger.info("  bench_task:  %s", bench_task)
     logger.info("  wwb_type:    %s", wwb_task)
-    logger.info("  wwb_base:    %s", args.wwb_base)
     logger.info("  work_dir:    %s", work_dir)
     logger.info("  log_file:    %s", log_file)
     logger.info("Python: %s", sys.version)
@@ -67,6 +66,28 @@ class ToolResult:
     def raise_if_failed(self) -> None:
         if not self.success and self.err_msg:
             raise RuntimeError(self.err_msg)
+
+
+@dataclass
+class ToolResultCollector:
+    results: list[ToolResult] = field(default_factory=list)
+    failures: list[ToolResult] = field(default_factory=list)
+
+    def add_result(self, new_result: ToolResult) -> None:
+        self.results.append(new_result)
+        if not new_result.success:
+            self.failures.append(new_result)
+
+    def raise_if_any_failed(self) -> None:
+        if not self.failures:
+            return
+
+        full_err_msg = ""
+        for result in self.failures:
+            full_err_msg += f"FAILED: {result.name} "
+            full_err_msg += f"\n{result.err_msg}\n" if result.err_msg else "\n"
+
+        raise RuntimeError(full_err_msg)
 
 
 class ToolWrapper:
@@ -147,7 +168,7 @@ class OptimumExportTool(ToolWrapper):
         super().__init__(name="optimum_export", commands_list=cmd, work_dir=work_dir)
 
 
-class LlmBenchTool(ToolWrapper):
+class GenAILlmBenchTool(ToolWrapper):
     def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path):
         llm_bench_script_path = Path("tools/llm_bench/benchmark.py")
 
@@ -165,7 +186,36 @@ class LlmBenchTool(ToolWrapper):
             "--task",
             task,
         ]
-        super().__init__(name="llm_bench", commands_list=cmd, work_dir=work_dir)
+        super().__init__(name="llm_bench_genai", commands_list=cmd, work_dir=work_dir)
+
+    def _post_run_hook(self, result):
+        if result.returncode != 0:
+            return super()._post_run_hook(result)
+        last_llm_bench_line = result.stdout[-1]
+        logger.info(f"{self.logger_prefix}: llm_bench metrics: {last_llm_bench_line}")
+        return ToolResult(name=self.name, success=True)
+
+
+class OptimumLlmBenchTool(ToolWrapper):
+    def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path):
+        llm_bench_script_path = Path("tools/llm_bench/benchmark.py")
+
+        if not llm_bench_script_path.is_file():
+            raise FileNotFoundError(f"llm_bench script not found: {llm_bench_script_path}")
+        cmd = [
+            sys.executable,
+            str(llm_bench_script_path),
+            "-m",
+            str(model_dir),
+            "-d",
+            device,
+            "-n",
+            "1",
+            "--task",
+            task,
+            "--optimum",
+        ]
+        super().__init__(name="llm_bench_optimum", commands_list=cmd, work_dir=work_dir)
 
     def _post_run_hook(self, result):
         if result.returncode != 0:
@@ -210,30 +260,6 @@ class HFWWBGroundTruthTool(ToolWrapper):
         return tool_result
 
 
-class OptimumWWBGroundTruthTool(ToolWrapper):
-    def __init__(self, model_dir: Path, task: str, work_dir: Path, num_samples: int, device: str):
-        cmd = [
-            "wwb",
-            "--base-model",
-            str(model_dir),
-            "--gt-data",
-            str(work_dir / "gt.csv"),
-            "--model-type",
-            task,
-            "--device",
-            device,
-            "--num-samples",
-            str(num_samples),
-            # Optimum backend used by default (no --hf flag)
-        ]
-        super().__init__(name="wwb_optimum_ground_truth", commands_list=cmd, work_dir=work_dir)
-
-    def _post_run_hook(self, result: subprocess.CompletedProcess) -> ToolResult:
-        tool_result = super()._post_run_hook(result)
-        _log_csv_listing(self.logger_prefix, self.work_dir)
-        return tool_result
-
-
 def parse_wwb_metrics_value(stdout: list[str]) -> float | None:
     # example output, parse similarity
     # INFO:whowhatbench.wwb:Metrics for model: model-check/model_ir
@@ -259,7 +285,6 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
             device,
             "--num-samples",
             str(num_samples),
-            # Optimum backend used by default
             "--output",
             str(work_dir / "optimum"),
         ]
@@ -425,17 +450,6 @@ def _get_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--skip-llm-bench", action="store_true", help="Skip llm_bench inference test")
     parser.add_argument("--skip-wwb", action="store_true", help="Skip who-what-benchmark accuracy check")
-    parser.add_argument(
-        "--wwb-base",
-        choices=["hf", "optimum"],
-        default="optimum",
-        help=(
-            "Ground truth baseline for WWB accuracy check. "
-            "'optimum': use Optimum model as base, evaluate GenAI (default). "
-            "'hf': use HuggingFace PyTorch model as base, evaluate both Optimum and GenAI. "
-            "'hf' requires a HuggingFace model ID (not a local path)."
-        ),
-    )
     parser.add_argument("--num-samples", type=int, default=4, help="Number of WWB samples")
     return parser.parse_args()
 
@@ -470,52 +484,38 @@ def main():
         result = OptimumExportTool(args.model_id, args.task, model_dir, optimum_export_work_dir).run()
         result.raise_if_failed()
 
+    tools_results = ToolResultCollector()
+
     # Step 2: Inference test
     if args.skip_llm_bench:
         logger.info("Skipping llm_bench test")
     else:
         llm_bench_work_dir = work_dir / "llm_bench"
-        result = LlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
-        result.raise_if_failed()
+        genai_llm_bench_result = GenAILlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        tools_results.add_result(genai_llm_bench_result)
+
+        optimum_llm_bench_result = OptimumLlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        tools_results.add_result(optimum_llm_bench_result)
 
     # Step 3: WWB accuracy
     if args.skip_wwb or wwb_task is None:
         logger.info("Skipping wwb accuracy check")
     else:
         wwb_work_dir = work_dir / "wwb"
-        is_local_model = Path(args.model_id).is_dir()
+        hf_gt_result = HFWWBGroundTruthTool(args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device).run()
+        tools_results.add_result(hf_gt_result)
 
-        if args.wwb_base == "hf":
-            if is_local_model:
-                raise RuntimeError(
-                    "--wwb-base=hf requires a HuggingFace model ID for ground truth generation, "
-                    "but --model-id is a local path. Use --wwb-base=optimum (default) for local models."
-                )
-            hf_gt_result = HFWWBGroundTruthTool(
-                args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device
-            ).run()
-            hf_gt_result.raise_if_failed()
+        optimum_result = OptimumWWBTargetEvaluationTool(
+            model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
+        ).run()
+        tools_results.add_result(optimum_result)
 
-            optimum_result = OptimumWWBTargetEvaluationTool(
-                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
-            ).run()
-            optimum_result.raise_if_failed()
+        genai_result = GenAIWWBTargetEvaluationTool(
+            model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
+        ).run()
+        tools_results.add_result(genai_result)
 
-            genai_result = GenAIWWBTargetEvaluationTool(
-                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
-            ).run()
-            genai_result.raise_if_failed()
-        else:
-            # wwb_base == "optimum": use Optimum model as ground truth, evaluate GenAI only
-            optimum_gt_result = OptimumWWBGroundTruthTool(
-                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
-            ).run()
-            optimum_gt_result.raise_if_failed()
-
-            genai_result = GenAIWWBTargetEvaluationTool(
-                model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
-            ).run()
-            genai_result.raise_if_failed()
+    tools_results.raise_if_any_failed()
 
 
 if __name__ == "__main__":

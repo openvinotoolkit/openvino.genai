@@ -11,8 +11,13 @@
 #include <map>
 #include <algorithm>
 #include <cmath>
+#include <numeric>
+#include <optional>
+#include <queue>
 #include <random>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "openvino/runtime/tensor.hpp"
 
@@ -70,7 +75,51 @@ struct SequenceGroupSamplingInfo {
     }
 };
 
+// Tree of draft token candidates for speculative decoding.
+// Stores token IDs and cumulative scores without Sequence references.
+class CandidateGraph {
+public:
+    struct Node {
+        int64_t token_id = -1;
+        float score = -std::numeric_limits<float>::infinity();
+        size_t tree_layer = 0;
+        std::vector<std::shared_ptr<Node>> children;
+        std::weak_ptr<Node> parent;
+    };
+    using NodePtr = std::shared_ptr<Node>;
+
+    CandidateGraph(int64_t root_token_id, float root_score, size_t max_tokens, size_t max_depth);
+
+    // Adds a child of parent. Returns the new node.
+    // Precondition: the parent must not be at max_depth (check with can_expand first).
+    NodePtr add_node(int64_t token_id, float score, const NodePtr& parent);
+
+    // Returns true if node can accept children (its tree_layer < max_depth).
+    bool can_expand(const NodePtr& node) const;
+
+    // Returns at most (max_candidate_nodes + 1) top-scoring nodes (root always included), sorted by tree layer.
+    std::vector<NodePtr> select_candidate_nodes() const;
+
+    // From a set of nodes, returns those with no children present in the set (leaf nodes).
+    std::vector<NodePtr> get_leaf_nodes(const std::vector<NodePtr>& selected) const;
+
+    // Returns the path from root to node as a sequence of NodePtrs (root first).
+    std::vector<NodePtr> get_path_to_node(const NodePtr& node) const;
+
+    // Returns true if ancestor is an ancestor of node (self-inclusive).
+    bool is_ancestor(const NodePtr& ancestor, const NodePtr& node) const;
+
+    NodePtr get_root() const { return m_root; }
+
+private:
+    NodePtr m_root;
+    size_t m_max_candidate_nodes = 0;
+    size_t m_max_depth = 0;
+};
+
 class Sampler {
+    class Searcher;
+    class TreeSearcher;
     class GroupBeamSearcher;
 
     // Bundles all per-request sampler state that needs to be accessed during sampling. 
@@ -95,21 +144,33 @@ class Sampler {
                             bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,
                             std::mt19937& rng_engine);
 
+    // Verify the candidate tree against target-model logits: greedily accept the longest
+    // matching prefix across all tree paths, then append a bonus token.
+    // Returns accepted_steps = number of accepted draft tokens + 1 (for the bonus token).
+    size_t verify_draft_tree(Sequence::Ptr& sequence,
+                             const ov::Tensor& sequence_group_logits,
+                             LogitProcessor& logit_processor,
+                             size_t num_tokens_to_validate);
+
     SequenceGroupSamplingInfo sample_from_sequence_group(SequenceGroup::Ptr sequence_group, ov::Tensor sequence_group_logits,
                                                         RequestSamplerContext& context,
                                                         bool is_validation_mode_enabled);
 
     // request ID => beam search tracking information (kept separate — has its own mutex)
     std::map<uint64_t, GroupBeamSearcher> m_beam_search_info;
-    std::mutex m_beam_search_info_mutex;
 
+    // request ID => tree search tracking information
+    std::map<uint64_t, std::shared_ptr<TreeSearcher>> m_tree_search_info;
+
+    // protects m_beam_search_info and m_tree_search_info
+    std::mutex m_search_info_mutex;
     std::map<uint64_t, RequestSamplerContext> m_request_contexts;
     size_t m_default_seed = std::mt19937::default_seed;  // kept for set_seed/get_seed API compat
 
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-    std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping; // Tensor to store draft_id_to_target_id mapping for eagle model, adding offsets to draft tokens after sampling
+    std::shared_ptr<ov::op::v0::Constant> m_d2t_mapping;  // vocab index offset from draft to target token space (EAGLE)
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -141,7 +202,8 @@ public:
     };
 };
 
-class Sampler::GroupBeamSearcher {
+class Sampler::Searcher {
+public:
     struct Beam {
         Sequence::Ptr m_sequence;
         size_t m_global_beam_idx = 0;
@@ -149,7 +211,6 @@ class Sampler::GroupBeamSearcher {
         // beam is made on top of sequence
         float m_log_prob = 0.0f;
         int64_t m_token_id = -1;
-
         // cumulative log probabilities
         float m_score = -std::numeric_limits<float>::infinity();
 
@@ -165,6 +226,61 @@ class Sampler::GroupBeamSearcher {
         return left.m_score > right.m_score;
     }
 
+protected:
+    SequenceGroup::Ptr m_sequence_group;
+    ov::genai::GenerationConfig m_parameters;
+    Tokenizer m_tokenizer;
+
+    explicit Searcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
+        : m_sequence_group(std::move(sequence_group)),
+          m_parameters{m_sequence_group->get_sampling_parameters()},
+          m_tokenizer(std::move(tokenizer)) {}
+
+    explicit Searcher(SequenceGroup::Ptr sequence_group)
+        : m_sequence_group(std::move(sequence_group)),
+          m_parameters{m_sequence_group->get_sampling_parameters()} {}
+};
+
+class Sampler::TreeSearcher : public Sampler::Searcher {
+    // A branch in the current draft frontier: tracks which sequence is executing which graph node.
+    struct DraftBeam {
+        CandidateGraph::NodePtr node;
+        Sequence::Ptr m_sequence;
+        float score = 0.0f;  // cumulative log-probability
+    };
+
+    // A newly sampled child candidate, carrying all information needed for forking.
+    struct CandidateBeam {
+        CandidateGraph::NodePtr node;
+        Sequence::Ptr parent_sequence;
+        int64_t token_id;
+        float log_prob;
+        float score;
+    };
+
+    enum class Phase { IDLE, DRAFTING };
+
+    Phase m_phase = Phase::IDLE;
+    std::optional<CandidateGraph> m_candidate_graph;
+    std::vector<DraftBeam> m_frontier;
+    size_t m_current_draft_layer = 0;
+    size_t m_pre_draft_generated_len = 0;
+    uint64_t m_original_grouped_id = 0;
+    ov::Tensor m_d2t_tensor;  // keeps draft-to-target vocab offset tensor alive
+
+    void tree_reset();
+    auto build_top_k_frontier(const ov::Tensor& logits) -> std::vector<CandidateBeam>;
+    void advance_draft_layer(const std::vector<CandidateBeam>& candidates, SamplerOutput& sampler_output);
+    void finalize_tree(SamplerOutput& sampler_output, LogitProcessor& logit_processor);
+
+public:
+    explicit TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tensor d2t);
+
+    void advance_draft_step(const ov::Tensor& logits, SamplerOutput& sampler_output, LogitProcessor& logit_processor);
+};
+
+class Sampler::GroupBeamSearcher : public Sampler::Searcher {
+    using Sampler::Searcher::Beam;
     struct Group {
         std::vector<Beam> ongoing;  // Best beams in front
         std::vector<Beam> min_heap;  // The worst of the best completed beams is the first
@@ -174,10 +290,8 @@ class Sampler::GroupBeamSearcher {
         void is_done();
     };
 
-    SequenceGroup::Ptr m_sequence_group;
-    ov::genai::GenerationConfig m_parameters;
     std::vector<Group> m_groups;
-    Tokenizer m_tokenizer;
+
 public:
     explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer);
 

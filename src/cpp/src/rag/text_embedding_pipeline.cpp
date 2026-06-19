@@ -25,6 +25,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
 
     properties_copy.erase(max_length.name());
     properties_copy.erase(pad_to_max_length.name());
+    properties_copy.erase(truncation.name());
     properties_copy.erase(batch_size.name());
     properties_copy.erase(pooling_type.name());
     properties_copy.erase(normalize.name());
@@ -97,6 +98,8 @@ public:
         auto model = core.read_model(models_path / "openvino_model.xml", {}, std::as_const(properties));
 
         bool is_seq_len_fixed = true;
+        m_tokenization_params.insert({truncation.name(), true});
+
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
         } else {

@@ -37,6 +37,7 @@ install(DIRECTORY
 install(DIRECTORY
             python/text_generation
             python/image_generation
+            python/video_generation
             python/speech_generation
             python/visual_language_chat
             python/whisper_speech_recognition
@@ -45,6 +46,7 @@ install(DIRECTORY
         USE_SOURCE_PERMISSIONS)
 
 install(DIRECTORY
+        c/common
         c/text_generation
         c/whisper_speech_recognition
         c/visual_language_chat

@@ -538,13 +538,23 @@ export type ImageGenerationConfig = {
 
 export type Text2ImagePipelineProperties = Record<string, unknown>;
 
+export type Image2ImagePipelineProperties = Record<string, unknown>;
+
+export type InpaintingPipelineProperties = Record<string, unknown>;
+
 /**
- * Callback for Text2Image generation, called once per denoising step.
+ * Callback for image generation, called once per denoising step.
  *
  * @param step       Current step index (0-based).
  * @param numSteps   Total number of denoising steps.
  * @returns `true` to stop generation early, `false` to continue.
  */
-export type Text2ImageCallback = (step: number, numSteps: number) => boolean;
+export type ImageGenerationCallback = (step: number, numSteps: number) => boolean;
+/**
+ * Callback for text-to-image generation, called once per denoising step.
+ *
+ * @deprecated Use `ImageGenerationCallback` instead, as text-to-image pipelines now support the same callback signature as other image generation pipelines.
+ */
+export type Text2ImageCallback = ImageGenerationCallback;
 
 export type Text2SpeechPipelineProperties = Record<string, unknown>;
