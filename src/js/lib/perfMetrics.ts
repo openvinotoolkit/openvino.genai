@@ -173,9 +173,9 @@ export type RawImageGenerationPerfMetrics = {
 };
 
 /**
- * Holds performance metrics for each Text2Image generate call.
+ * Holds performance metrics for each image generate call.
  */
-export interface Text2ImagePerfMetrics {
+export interface ImageGenerationPerfMetrics {
   /** Returns model load time in milliseconds. */
   getLoadTime(): number;
   /** Returns total generate call duration in milliseconds. */
@@ -197,3 +197,8 @@ export interface Text2ImagePerfMetrics {
   /** Raw image-generation-specific metrics. */
   rawMetrics: RawImageGenerationPerfMetrics;
 }
+
+/**
+ * @deprecated Use `ImageGenerationPerfMetrics` instead.
+ */
+export type Text2ImagePerfMetrics = ImageGenerationPerfMetrics;

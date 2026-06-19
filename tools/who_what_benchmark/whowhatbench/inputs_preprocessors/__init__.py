@@ -7,6 +7,7 @@ from .phi4 import Phi4MMInputsPreprocessor
 from .qwen2 import Qwen2VLInputsPreprocessor
 from .qwen3 import Qwen3VLInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
+from .gemma4 import Gemma4UnifiedInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen3_vl": Qwen3VLInputsPreprocessor,
@@ -16,6 +17,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen2_5_vl_text": Qwen2VLInputsPreprocessor,
     "llava": LLAVAInputsPreprocessor,
     "gemma3": Gemma3InputsPreprocessor,
+    "gemma4_unified": Gemma4UnifiedInputsPreprocessor,
     "phi4mm": Phi4MMInputsPreprocessor,
     "phi4_multimodal": Phi4MMInputsPreprocessor,
     "phi3_v": Phi3MMInputsPreprocessor,
