@@ -27,6 +27,32 @@ void log_paged_attention_fallback(const ov::Exception& exception) {
     GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
 }
 
+std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
+    auto it = properties.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
+    if (it == properties.end()) {
+        return nullptr;
+    }
+    return it->second.as<ov::genai::ModelDesc>().model;
+}
+
+bool should_use_stateful_pipeline(bool is_npu_requested,
+                                  bool has_draft_model,
+                                  const std::string& attention_backend,
+                                  const std::shared_ptr<ov::Model>& main_model,
+                                  const ov::AnyMap& properties) {
+    if (is_npu_requested) {
+        return true;
+    }
+    if (has_draft_model && attention_backend == ov::genai::SDPA_BACKEND) {
+        OPENVINO_ASSERT(ov::genai::is_gemma4_mtp_model_pair(main_model, peek_draft_model(properties)),
+                        "Speculative decoding with the SDPA attention backend on non-NPU devices is only "
+                        "supported for Gemma4 MTP model pairs. For other model pairs use the Paged Attention "
+                        "backend (ATTENTION_BACKEND=\"PA\") or run on NPU.");
+        return true;
+    }
+    return false;
+}
+
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
@@ -224,7 +250,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (is_npu_requested || (has_draft_model && attention_backend == SDPA_BACKEND)) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -269,7 +295,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     const Tokenizer tokenizer(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (is_npu_requested || (has_draft_model && attention_backend == SDPA_BACKEND)) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -315,7 +341,7 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
-    if (is_npu_requested || (has_draft_model && attention_backend == SDPA_BACKEND)) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(
             model,
             tokenizer,
