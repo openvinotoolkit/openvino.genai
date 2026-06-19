@@ -291,7 +291,7 @@ def generate_and_save_gemma4_mtp_assistant_model(target_models_path: Path) -> Pa
     from optimum.intel import OVAssistantForCausalLM
 
     assistant_models_path = target_models_path.parent / f"{target_models_path.name}_assistant"
-    if assistant_models_path.exists():
+    if (assistant_models_path / OV_MODEL_FILENAME).exists():
         return assistant_models_path
 
     assistant_models_path.mkdir(parents=True, exist_ok=True)
