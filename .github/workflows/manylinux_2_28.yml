@@ -587,7 +587,7 @@ jobs:
           - name: 'Gemma4 MTP speculative decoding tests'
             cmd: |
               python -m pip install transformers==5.8.0
-              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "gemma4_mtp"
+              python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "gemma4_mtp"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
           - name: 'WWB tests (nanollava)'
