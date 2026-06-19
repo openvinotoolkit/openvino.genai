@@ -38,8 +38,18 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
+        content = []
         if image is not None:
-            image_token = getattr(processor, "image_token", "<|image|>")
-            text = f"{image_token}{text}"
+            if not isinstance(image, list):
+                image = [image]
+            content.extend({"type": "image", "image": img} for img in image)
+        content.append({"type": "text", "text": text})
 
-        return processor(images=image, text=text, return_tensors="pt")
+        messages = [{"role": "user", "content": content}]
+        return processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        )

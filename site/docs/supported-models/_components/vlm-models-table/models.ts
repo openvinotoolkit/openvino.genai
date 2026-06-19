@@ -238,4 +238,15 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Gemma4UnifiedForConditionalGeneration',
+    models: [
+      {
+        name: 'gemma4_unified',
+        links: [
+          'https://huggingface.co/google/gemma-4-12B-it',
+        ],
+      },
+    ],
+  },
 ];
