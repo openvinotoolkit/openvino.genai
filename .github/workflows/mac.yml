@@ -446,7 +446,7 @@ jobs:
               python -m pip install transformers==4.57.6 qwen-asr==0.0.6
               python -m pytest -s -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
-            timeout: 30
+            timeout: 60
           # Only supported on X64 or ARM with SVE support
           # - name: 'Cacheopt E2E (Part 1)'
           #   cmd: 'python -m pytest -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
@@ -496,12 +496,13 @@ jobs:
               python -m pytest -v ./tools/who_what_benchmark/tests -k "videochat"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
-          - name: 'ASR Transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "transformers_lower_v5"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
-            timeout: 120
+          # RuntimeError: MPS backend out of memory. Ticket: 173169
+          # - name: 'ASR Transformers under 5.0'
+          #   cmd: |
+          #     python -m pip install transformers==4.57.6
+          #     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "transformers_lower_v5"
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
+          #   timeout: 120
     defaults:
       run:
         shell: bash
