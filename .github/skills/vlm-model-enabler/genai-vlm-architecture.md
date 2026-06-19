@@ -4,41 +4,66 @@ Quick reference for the GenAI Visual Language Model pipeline: key interfaces, da
 
 ## Pipeline Data Flow
 
+The diagram below follows the `ChatHistory` generation path, which is the most complete VLM use case.
 The pipeline has two execution paths selected at construction time (see **Attention Backend** below).
-The front-end (vision encoding, prompt normalization, embedding merge) is shared; only the LLM inference backend differs.
+Both paths use the same front-end sequence: vision encoding, history normalization, chat templating, tokenization, and embedding merge.
+For SDPA this sequence runs in `VLMPipelineImpl`; for PA/CB it runs after `VLMContinuousBatchingAdapter` forwards the request to `ContinuousBatchingPipeline`.
 
 ```
-User Input (prompt + images/videos)
-       │
-       ▼
- VLMPipeline::generate()
-       │
-       ▼
+User Input (ChatHistory + images/videos + optional video metadata)
+     │
+     ▼
+ VLMPipeline::generate(history, ...)
+     │
+     ├──────────────────────────────────────────────┐
+     ▼ SDPA path (VLMPipelineImpl)                  ▼ PA/CB path (VLMContinuousBatchingAdapter)
+  Setup GenerationConfig and VLM options       Forward request to ContinuousBatchingPipeline
+     │
+     ▼
  VLMChatContext::process()
-  ├── Register images/videos in VisionRegistry
-  ├── Normalize prompt (model-specific placeholder tokens)
-  └── Determine vision sequences (which images go where)
-       │
-       ▼
- InputsEmbedder::get_inputs_embeds()
-  ├── VisionEncoder::encode()          ← model-specific image encoding
-  │     └── Image preprocessing (resize, normalize, tile)
-  │     └── Vision model inference → EncodedImage
-  ├── Tokenize prompt text
+    ├── Synchronize ChatHistoryInternalState with the provided history
+    ├── Register new images/videos in VisionRegistry
+    ├── InputsEmbedder::encode_images()/encode_videos() for uncached vision inputs
+    │     └── VisionEncoder::encode()/encode_frames() → EncodedImage/EncodedVideo embeddings
+    ├── Normalize user messages with InputsEmbedder::normalize_prompt()
+    │     └── Convert multipart content and model-specific vision placeholders
+    ├── Build normalized_history
+    ├── Resolve full-history and new-message vision sequences
+    └── Report whether the SDPA KV cache must be reset
+     │
+     ▼
+ Tokenizer::apply_chat_template(normalized_history, add_generation_prompt=true)
+     │
+     ▼
+ Select embeddings input set
+  ├── SDPA: choose full-history or new-message vision inputs
+  └── PA/CB: use full-history vision inputs for the batch request
+     │
+     ▼
+ InputsEmbedder::get_inputs_embeds() or get_inputs_embeds_with_token_type_ids()
+  ├── Tokenize templated text
   ├── EmbeddingsModel::infer()         ← text token → embedding lookup
-  └── Merge image + text embeddings    ← model-specific merge logic
-       │
-       ├─────────────────────────────────────────────┐
-       ▼ SDPA path (VLMPipelineImpl)                 ▼ PA/CB path (VLMContinuousBatchingAdapter)
+  └── Merge vision + text embeddings   ← model-specific merge logic
+     │
+     ├─────────────────────────────────────────────┐
+     ▼ SDPA path (VLMPipelineImpl)                 ▼ PA/CB path (VLMContinuousBatchingAdapter)
   LLM with SDPA attention                     ContinuousBatchingPipeline
+  ├── prepare_inputs_and_generate()            ├── Batched input_embeds request
   ├── Manual KV-cache (CacheState)             ├── Paged KV-cache (scheduler)
   ├── Token-by-token sampler loop              ├── Batch-oriented generation
   └── slice_before_matmul transform            └── SDPAToPagedAttention transform
-       │                                             │
-       └──────────────┬──────────────────────────────┘
-                      ▼
-        Sampling → Detokenization → VLMDecodedResults
+     │                                             │
+     └──────────────┬──────────────────────────────┘
+                ▼
+      Sampling → Detokenization → VLMDecodedResults
+                │
+                ▼
+      Update embedder chat history; rollback VLMChatContext on cancellation
 ```
+
+For `ChatHistory` input, the chat template is applied after `VLMChatContext::process()` has produced a normalized history and before `InputsEmbedder::get_inputs_embeds()` tokenizes text and merges embeddings. This ordering is used in both SDPA and PA/CB paths. It matters because the template must see model-normalized message content, while embedding merge still needs the resolved vision sequences from the same processing step.
+
+`VisionRegistry` owns copied original image/video tensors in ref-counted entries and caches their encoded `EncodedImage` / `EncodedVideo` embeddings. For the `ChatHistory` API, image/video encoding happens in `VLMChatContext::process()` through `InputsEmbedder::encode_images()` / `encode_videos()`. `InputsEmbedder::get_inputs_embeds()` receives already encoded image/video embeddings, not raw image/video tensors.
 
 ## Source Layout
 
@@ -49,9 +74,9 @@ All VLM sources are under `src/cpp/src/visual_language/`:
 | `pipeline.cpp`, `pipeline_base.hpp` | Public `VLMPipeline` and internal `VLMPipelineBase` / `VLMPipelineImpl` |
 | `inputs_embedder.hpp/.cpp` | `InputsEmbedder` (public) and `IInputsEmbedder` (model-specific interface) |
 | `vision_encoder.hpp/.cpp` | `VisionEncoder` base class and factory |
-| `vision_registry.hpp` | `VisionRegistry` — caches encoded images/videos by ID |
+| `vision_registry.hpp` | `VisionRegistry` — owns copied original image/video tensors and caches encoded vision embeddings by ID |
 | `vlm_config.hpp` | `VLMConfig` — loaded from `config.json`, includes `VLMModelType` enum |
-| `processor_config.hpp` | `ProcessorConfig` — image preprocessing params from `preprocessor_config.json` |
+| `processor_config.hpp` | `ProcessorConfig` — image preprocessing params |
 | `video_processor_config.hpp` | `VideoProcessorConfig` — video preprocessing params |
 | `embedding_model.hpp` | `EmbeddingsModel` — text token → embedding lookup |
 | `vlm_chat_context.hpp` | `VLMChatContext` — chat history and vision data management |
@@ -70,7 +95,7 @@ To see the current list of supported types, read `vlm_config.hpp` and look for t
 
 ### VisionEncoder (vision_encoder.hpp)
 
-Abstract base for image/video encoding. One subclass per model type.
+Abstract base for image/video embedding extraction. One subclass per model type.
 
 ```cpp
 class VisionEncoder {
@@ -83,25 +108,26 @@ public:
                       const std::string& device,
                       const ov::AnyMap properties = {});
 
-    // Encode a single image → EncodedImage
+    // Encode a single image → EncodedImage embeddings
     virtual EncodedImage encode(const ov::Tensor& image,
                                 const ov::AnyMap& config_map = {}) = 0;
 
-    // Encode video frames (optional, throws by default)
-    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames,
-                                       const ov::AnyMap& config_map = {});
+    // Encode video frames → EncodedVideo embeddings (optional, throws by default)
+    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames);
 
     ProcessorConfig get_processor_config() const;
+    VideoProcessorConfig get_video_processor_config() const;
 
 protected:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_encoder;
     ProcessorConfig m_processor_config;
+    VideoProcessorConfig m_video_processor_config;
 };
 ```
 
 ### EncodedImage (vision_encoder.hpp)
 
-Output of `VisionEncoder::encode()`. Not all fields are used by every model.
+Image embedding output of `VisionEncoder::encode()`. Not all fields are used by every model.
 
 ```cpp
 struct EncodedImage {
@@ -116,14 +142,28 @@ struct EncodedImage {
 };
 ```
 
+### EncodedVideo (vision_encoder.hpp)
+
+Video embedding output of `VisionEncoder::encode_frames()`. Used by models with video input support.
+
+```cpp
+struct EncodedVideo {
+    ov::Tensor video_features;          // Video embeddings after preprocessing and projection/resampling
+    size_t num_video_tokens;            // Token count for prompt expansion
+    ImageSize resized_source_size;      // H/patch, W/patch
+    size_t frame_num;                   // Number of encoded frames
+    VideoMetadata metadata;             // Metadata used for processing and prompt normalization
+};
+```
+
 ### IInputsEmbedder (inputs_embedder.hpp)
 
-Model-specific interface for prompt normalization and embedding merge. One subclass per model type.
+Model-specific interface for prompt normalization and embedding merge. One subclass per model type. Public `InputsEmbedder::encode_images()` / `encode_videos()` prepare encoded vision embeddings before `get_inputs_embeds()`: the default image path calls `VisionEncoder::encode()`, and video-capable embedders call `VisionEncoder::encode_frames()` after any sampling or metadata preparation.
 
 ```cpp
 class InputsEmbedder::IInputsEmbedder {
 public:
-    // Merge text + vision embeddings into a single tensor for the LLM
+    // Merge text + encoded image embeddings into a single tensor for the LLM
     virtual ov::Tensor get_inputs_embeds(
         const std::string& prompt,
         const std::vector<EncodedImage>& images,
@@ -131,15 +171,48 @@ public:
         bool recalculate_merged_embeddings = true,
         const std::vector<size_t>& image_sequence = {}) = 0;
 
-    // Encode raw images via the VisionEncoder
+    // Complete image/video overload; default implementation falls back to the image-only method
+    virtual ov::Tensor get_inputs_embeds(
+        const std::string& prompt,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos,
+        VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& video_sequence = {},
+        const std::vector<std::pair<size_t, size_t>>& history_vision_count = {});
+
+    virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+        const std::string& prompt,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos,
+        VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& video_sequence = {},
+        const std::vector<std::pair<size_t, size_t>>& history_vision_count = {});
+
+    // Encode raw images/videos before get_inputs_embeds()
     virtual std::vector<EncodedImage> encode_images(
-        const std::vector<ov::Tensor>& images) = 0;
+        const std::vector<ov::Tensor>& images);
+
+    virtual std::vector<EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {});
 
     // Normalize prompt: insert model-specific image placeholder tokens
     virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images) const = 0;
+
+    // Complete image/video overload; default implementation falls back to the image-only method
+    virtual NormalizedPrompt normalize_prompt(
+        const std::string& prompt,
+        size_t base_image_id,
+        size_t base_video_id,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos) const;
 
     // Chat lifecycle
     virtual void start_chat(const std::string& system_message);
@@ -169,9 +242,17 @@ Model configuration loaded from `config.json`. Key fields:
 | `image_newline` | `std::vector<float>` | LLaVA-Next newline embedding |
 | `sub_GN` / `glb_GN` | `std::vector<float>` | Phi3/Phi4 separator embeddings |
 
+This table is not exhaustive. `VLMConfig` also carries model-specific fields needed by individual embedders.
+
 ### ProcessorConfig (processor_config.hpp)
 
-Image preprocessing parameters loaded from `preprocessor_config.json`:
+Image preprocessing parameters. `VideoProcessorConfig` extends this for video-specific settings.
+
+Processor config loading priority in `VisionEncoder::resolve_processor_configs()`:
+
+1. Combined `processor_config.json` with `image_processor` and `video_processor` sections.
+2. Fallback to `preprocessor_config.json` and `video_preprocessor_config.json`.
+3. If `video_preprocessor_config.json` is absent, build `VideoProcessorConfig` from `preprocessor_config.json`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -182,6 +263,8 @@ Image preprocessing parameters loaded from `preprocessor_config.json`:
 | `min_pixels` / `max_pixels` | `size_t` | Qwen2VL dynamic resolution bounds |
 | `scale_resolution` | `size_t` | MiniCPM scale target |
 | `max_slice_nums` | `size_t` | Max image tiles |
+
+This table lists common fields only. Image and video configs can include additional model-specific preprocessing parameters.
 
 ### Preprocessing Utilities (clip.hpp / clip.cpp)
 
@@ -202,13 +285,15 @@ Note: GenAI's Pillow-style bicubic and bilinear resize implementations may diffe
 
 ## Model Directory Structure
 
-Expected layout of an exported model directory:
+Expected layout of an exported model directory. Processor config files depend on the exporter version; newer exports use combined `processor_config.json`, while older exports use the fallback files.
 
 ```
 model_dir/
 ├── config.json                              # VLMConfig (model_type, tokens, hidden_size)
 ├── generation_config.json                   # GenerationConfig (temperature, top_k, etc.)
-├── preprocessor_config.json                 # ProcessorConfig (image sizes, normalization)
+├── processor_config.json                    # Combined image/video processor config (new exports)
+├── preprocessor_config.json                 # Fallback ProcessorConfig for image preprocessing
+├── video_preprocessor_config.json           # Optional fallback VideoProcessorConfig
 ├── openvino_language_model.xml/.bin         # Language model (required)
 ├── openvino_vision_embeddings_model.xml/.bin # Vision encoder (required)
 ├── openvino_text_embeddings_model.xml/.bin  # Text embedding lookup (required)
@@ -218,13 +303,13 @@ model_dir/
 
 ## Attention Backend: SDPA vs PA/CB
 
-The VLM pipeline supports two LLM inference backends. The front-end (vision encoding, embedding merge) is identical for both.
+The VLM pipeline supports two LLM inference backends. The front-end ordering (vision encoding, history/prompt normalization, chat templating where applicable, tokenization, and embedding merge) is shared; backend-specific code starts at LLM generation.
 
 ### Class Hierarchy
 
 ```
 VLMPipelineBase (abstract)
-├── VLMPipelineImpl                    ← SDPA path (default)
+├── VLMPipelineImpl                    ← SDPA path / fallback
 └── VLMContinuousBatchingAdapter       ← PA/CB path
     └── wraps ContinuousBatchingPipeline
 ```
@@ -247,16 +332,14 @@ VLMPipelineBase (abstract)
 ### Backend Selection Logic (in `VLMPipeline` constructor)
 
 1. **NPU** → always SDPA
-2. **Linear attention models** (SSM, convolution states) → forced SDPA (PA does not support these)
-3. **Explicit PA request** (user sets `scheduler_config`, `ATTENTION_BACKEND="PA"`, draft model, or prompt lookup) → PA/CB
-4. **Auto-detect** → PA/CB if architecture supports it and model does not require SDPA
-5. **Fallback** → SDPA if PA/CB construction fails
+2. **Explicit PA request** (user sets `scheduler_config`, `ATTENTION_BACKEND="PA"`, draft model, or prompt lookup) → PA/CB construction is attempted and errors are re-thrown
+3. **Default PA attempt** (`extract_attention_backend()` defaults to `PA`) → PA/CB if architecture supports it and `requires_sdpa()` is false
+4. **Fallback** → SDPA if PA/CB construction fails or is not selected
 
 ### Implications for New Model Enablement
 
 - Model-specific code (`VisionEncoder`, `IInputsEmbedder`) works with **both** backends — no backend-specific logic needed there.
-- If the new model uses non-standard attention (e.g., linear attention, SSM), it will be forced to SDPA. Check `apply_linear_attention_backend_constraints()` in `pipeline.cpp`.
-- If the new model is incompatible with PA for other reasons, add a `requires_sdpa()` check similar to the existing Gemma3 check.
+- If the new model is incompatible with PA, add a `requires_sdpa()` check similar to the existing Gemma3/Gemma4 checks.
 
 ## Adding a New Model — Checklist
 
@@ -292,13 +375,17 @@ public:
 
     EncodedImage encode(const ov::Tensor& image,
                         const ov::AnyMap& config_map) override;
+
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;  // if video is supported
 };
 ```
 
 Responsibilities:
-- Image preprocessing (resize, normalize, tile/slice)
-- Run vision encoder IR model
-- Pack results into `EncodedImage`
+- Image/video preprocessing (resize, normalize, tile/slice, sample frames when applicable)
+- Run vision encoder IR model and any model-specific projection/resampler models
+- Pack resulting vision embeddings into `EncodedImage` / `EncodedVideo`
+
+Implement `encode_frames()` only for models with video input support.
 
 ### 4. Implement IInputsEmbedder subclass
 
@@ -317,21 +404,44 @@ public:
         bool recalculate_merged_embeddings,
         const std::vector<size_t>& image_sequence) override;
 
-    std::vector<EncodedImage> encode_images(
+    ov::Tensor get_inputs_embeds(
+        const std::string& prompt,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos,
+        VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings,
+        const std::vector<size_t>& image_sequence,
+        const std::vector<size_t>& video_sequence,
+        const std::vector<std::pair<size_t, size_t>>& history_vision_count) override;
+
+    std::vector<EncodedImage> encode_images(  // override only if default image encoding is insufficient
         const std::vector<ov::Tensor>& images) override;
+
+    std::vector<EncodedVideo> encode_videos(  // if video is supported
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata) override;
 
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images) const override;
+
+    NormalizedPrompt normalize_prompt(
+        const std::string& prompt,
+        size_t base_image_id,
+        size_t base_video_id,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos) const override;
 };
 ```
 
 Responsibilities:
-- Normalize prompt: insert model-specific image placeholder tokens
+- Normalize prompt: insert model-specific image/video placeholder tokens
 - Tokenize text, get text embeddings via `EmbeddingsModel`
-- Merge vision embeddings into the text embedding sequence at placeholder positions
+- Merge encoded image/video embeddings into the text embedding sequence at placeholder positions
 - Return combined embedding tensor for the LLM
+
+`InputsEmbedder::get_inputs_embeds()` receives encoded image/video embeddings. Raw image/video tensors are converted earlier by `InputsEmbedder::encode_images()` / `encode_videos()`. The image-only `get_inputs_embeds()` and `normalize_prompt()` overloads are required. Implement the image/video overloads only when the model supports video or needs custom video-aware behavior. The base `encode_images()` implementation calls `VisionEncoder::encode()`; override it only for model-specific image preparation. Video-capable embedders override `encode_videos()` and call `VisionEncoder::encode_frames()` after sampling and metadata preparation.
 
 ### 5. Register in factories
 
@@ -354,9 +464,9 @@ Include the new header in both files:
 #include "visual_language/new_model/classes.hpp"
 ```
 
-### 6. Update VLMConfig/ProcessorConfig (if needed)
+### 6. Update VLMConfig/ProcessorConfig/VideoProcessorConfig (if needed)
 
-Add model-specific fields to `VLMConfig` or `ProcessorConfig` and their JSON deserialization.
+Add model-specific fields to `VLMConfig`, `ProcessorConfig`, or `VideoProcessorConfig` and their JSON deserialization.
 
 ## Supported Models
 
@@ -374,7 +484,7 @@ To discover the current set, inspect:
 | **Pimpl** | `VLMPipeline` → `VLMPipelineBase` → `VLMPipelineImpl` | Hide implementation from public API |
 | **Strategy** | `IInputsEmbedder` subclasses | Each model implements its own embedding merge strategy |
 | **Adapter** | `VLMContinuousBatchingAdapter` | Adapts VLM single-request API to batch `ContinuousBatchingPipeline` |
-| **Registry** | `VisionRegistry` | Cache encoded images/videos, avoid re-encoding |
+| **Registry** | `VisionRegistry` | Own copied original vision tensors and cache encoded vision embeddings, avoid re-encoding |
 
 ## Maintaining This Document
 
