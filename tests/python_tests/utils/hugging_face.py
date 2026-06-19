@@ -12,12 +12,10 @@ from transformers import (
     AutoConfig,
     AutoTokenizer,
     AutoModelForCausalLM,
-    Gemma4AssistantConfig,
-    Gemma4AssistantForCausalLM,
 )
 from transformers import GenerationConfig as HFGenerationConfig
 
-from optimum.intel import OVAssistantForCausalLM, OVModelForCausalLM
+from optimum.intel import OVModelForCausalLM
 from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -289,6 +287,9 @@ def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConverted
 
 
 def generate_and_save_gemma4_mtp_assistant_model(target_models_path: Path) -> Path:
+    from transformers import Gemma4AssistantConfig, Gemma4AssistantForCausalLM
+    from optimum.intel import OVAssistantForCausalLM
+
     assistant_models_path = target_models_path.parent / f"{target_models_path.name}_assistant"
     if assistant_models_path.exists():
         return assistant_models_path
