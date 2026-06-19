@@ -178,6 +178,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
         "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
         "optimum-intel-internal-testing/tiny-random-gemma4-31B",
         *VIDEO_MODEL_IDS,
@@ -204,6 +205,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
@@ -263,6 +265,7 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
 }
@@ -271,7 +274,20 @@ DEFAULT_NPUW_PROPERTIES = {
     "DEVICE_PROPERTIES": {"NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}}
 }
 
+MODELS_WITHOUT_CHAT_TEMPLATE = {
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified",
+}
+
 NPU_SUPPORTED_MODELS = [id for id in MODEL_IDS if id not in NPU_UNSUPPORTED_MODELS and id not in VIDEO_MODEL_IDS]
+
+
+def _get_prompt(ov_pipe_model: VlmModelInfo, prompt: str, num_images: int = 0) -> str:
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        image_tags = "".join(ov_pipe_model.image_tag(idx) for idx in range(num_images))
+        return image_tags + prompt
+
+    return prompt
+
 
 def _setup_generation_config(
     pipeline: VLMPipeline,
@@ -297,6 +313,13 @@ def _setup_generation_config(
         generation_config.ignore_eos = True
 
     return generation_config
+
+
+def _disable_chat_template_for_native_tag_model(
+    ov_pipe_model: VlmModelInfo, generation_config: GenerationConfig
+) -> None:
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        generation_config.apply_chat_template = False
 
 
 def is_optimum_intel_version_for_videochat_flash_qwen():
@@ -334,6 +357,7 @@ def _get_ov_model(model_id: str) -> str:
         )
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
         "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     ] and is_transformers_version("<", "5.5.0"):
@@ -721,13 +745,15 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         return False
 
     generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
+    _disable_chat_template_for_native_tag_model(ov_pipe_model, generation_config)
 
     res = ov_pipe.generate(
-        PROMPTS[0],
+        _get_prompt(ov_pipe_model, PROMPTS[0], len(test_images)),
         images=test_images,
         generation_config=generation_config,
         streamer=streamer,
     )
+
     assert res.texts[0] == "".join(result_from_streamer)
 
 
