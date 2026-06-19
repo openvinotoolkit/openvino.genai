@@ -1,6 +1,6 @@
 ---
 description: "Read-only static analysis of a HuggingFace or OpenVINO IR model. Use when: understanding model architecture, inspecting IR sub-models, comparing transformers/optimum-intel implementations, scoping enablement work. For reference inference or tensor dumps use debug-vlm-accuracy. For pass/fail validation use model-checker."
-tools: [read, search, execute, todo]
+tools: [read, edit, search, execute, todo]
 argument-hint: "<model_id_or_ir_path> [task]  e.g. google/gemma-3-4b-it image-text-to-text"
 ---
 
@@ -36,6 +36,7 @@ python -c "import transformers, optimum.intel; print(transformers.__path__[0]); 
 Use the printed paths with `read_file` and `grep_search`. Treat them as read-only.
 
 If the model's `model_type` is not present in the installed `transformers` version (i.e. the model is newer than the release), stop and report this to the caller with two suggested remedies:
+
 1. `pip install -U git+https://github.com/huggingface/transformers` (and the same for `optimum-intel` if needed), then re-invoke the agent.
 2. For one-off lookups, fetch specific files via the GitHub MCP tool (`mcp_io_github_git_get_file_contents`) on `huggingface/transformers` or `huggingface/optimum-intel`.
 
@@ -76,6 +77,7 @@ Capture the table of {file, role, inputs, outputs}.
 ### Step 3 — Inspect transformers source
 
 In `<transformers_path>/models/<model_type>/`:
+
 - Identify the `modeling_*.py` class matching the architecture from Step 1.
 - Record the `forward()` signature for each sub-model (text, vision, projector, audio, etc.).
 - Record image / audio / video preprocessing entry points (`processing_*.py`, `image_processing_*.py`).
@@ -84,6 +86,7 @@ In `<transformers_path>/models/<model_type>/`:
 ### Step 4 — Inspect optimum-intel source
 
 In `<optimum_intel_path>/openvino/`:
+
 - For VLM: `modeling_visual_language.py` — find the class for this model type and record the sub-model → `InferRequest` mapping.
 - For LLM: `modeling_decoder.py` / `modeling_base.py`.
 - For diffusion: `modeling_diffusion.py`.

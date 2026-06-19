@@ -19,7 +19,7 @@ All intermediate assets go in `.model_enabler/`. Create it if it does not exist.
 
 ## Rules
 
-- Create `.py` files for all experiments — never use inline bash/python snippets.
+- Create `.py` files for all experiments — avoid inline multi-line Python snippets; keep shell commands minimal and only for build/run steps.
 - After each step, verify **all checkpoint files** exist before proceeding. If any are missing, create them.
 - Use the todo list tool to track step progress.
 
