@@ -58,13 +58,6 @@ When `--model-id` is a path to an existing directory, the script treats it as a 
 
 Run `python3 .github/skills/model-checker/scripts/check_model.py --help` for the full argument reference including defaults. The `--work-dir` is where all intermediate files, logs, and outputs will be stored. Do not pipe with any additional logging or redirection — the script handles its own logging.
 
-#### WWB baseline mode (`--wwb-base`)
-
-Controls what model serves as the ground truth baseline for accuracy checks:
-
-- `--wwb-base optimum` (default) — uses the Optimum (OpenVINO IR) model as ground truth, evaluates GenAI only. Works with both HuggingFace model IDs and local paths.
-- `--wwb-base hf` — uses the HuggingFace PyTorch model as ground truth, evaluates both Optimum and GenAI. Requires a HuggingFace model ID (errors if `--model-id` is a local path).
-
 #### Skip flags (for re-runs after a fix)
 
 When a previous run already passed some steps (e.g. export succeeded but inference test failed), use skip flags to avoid repeating expensive passed steps:
@@ -72,6 +65,7 @@ When a previous run already passed some steps (e.g. export succeeded but inferen
 - `--skip-export` — reuse existing IR in `<work-dir>/model_ir` instead of re-exporting (avoids re-downloading weights). When `--model-id` is a local path, export is bypassed automatically and that directory is used directly instead of `<work-dir>/model_ir`.
 - `--skip-llm-bench` — skip the llm_bench inference test
 - `--skip-wwb` — skip the who-what-benchmark accuracy check
+- `--skip-wwb-ground-truth` — skip WWB ground-truth collection and reuse `<work-dir>/wwb/gt.csv`; useful when iterating on GenAI target evaluation after ground truth was already collected
 
 Do **not** use skip flags on the first run. Only use them when retrying after a targeted fix.
 

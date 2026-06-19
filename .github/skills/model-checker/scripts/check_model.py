@@ -241,6 +241,17 @@ def _log_csv_listing(logger_prefix: str, directory: Path) -> None:
         logger.info("%s: No CSV files found in %s", logger_prefix, directory)
 
 
+def _validate_wwb_ground_truth_file(gt_data_path: Path) -> None:
+    if not gt_data_path.is_file():
+        raise FileNotFoundError(
+            f"Cannot reuse WWB ground truth: {gt_data_path} does not exist. Run without --skip-wwb-ground-truth first."
+        )
+    if gt_data_path.stat().st_size == 0:
+        raise RuntimeError(
+            f"Cannot reuse WWB ground truth: {gt_data_path} is empty. Run without --skip-wwb-ground-truth first."
+        )
+
+
 class HFWWBGroundTruthTool(ToolWrapper):
     def __init__(self, model_id: str, task: str, work_dir: Path, num_samples: int, device: str):
         cmd = [
@@ -431,7 +442,12 @@ def _get_arguments() -> argparse.Namespace:
             "  python check_model.py \\\n"
             "      --model-id tencent/HY-MT1.5-1.8B \\\n"
             "      --task text-generation-with-past \\\n"
-            "      --skip-export --skip-wwb"
+            "      --skip-export --skip-wwb\n\n"
+            "  # Reuse existing IR and WWB ground truth, rerun target evaluation:\n"
+            "  python check_model.py \\\n"
+            "      --model-id tencent/HY-MT1.5-1.8B \\\n"
+            "      --task text-generation-with-past \\\n"
+            "      --skip-export --skip-llm-bench --skip-wwb-ground-truth"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -455,6 +471,11 @@ def _get_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--skip-llm-bench", action="store_true", help="Skip llm_bench inference test")
     parser.add_argument("--skip-wwb", action="store_true", help="Skip who-what-benchmark accuracy check")
+    parser.add_argument(
+        "--skip-wwb-ground-truth",
+        action="store_true",
+        help="Skip WWB ground-truth generation and reuse <work-dir>/wwb/gt.csv",
+    )
     parser.add_argument("--num-samples", type=int, default=4, help="Number of WWB samples")
     return parser.parse_args()
 
@@ -467,6 +488,9 @@ def main():
     work_dir = Path(args.work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
 
+    log_file = work_dir / "check_model.log"
+    _setup_logging(log_file)
+
     # Detect local model path: auto-skip export and use it as model_dir
     model_path = Path(args.model_id)
     if model_path.is_dir() and not _is_huggingface_model_id(args.model_id):
@@ -475,9 +499,6 @@ def main():
         logger.info("Local model path detected: %s. Skipping export.", model_dir)
     else:
         model_dir = work_dir / "model_ir"
-
-    log_file = work_dir / "check_model.log"
-    _setup_logging(log_file)
 
     log_header(args, bench_task, wwb_task, work_dir, log_file)
 
@@ -507,8 +528,16 @@ def main():
         logger.info("Skipping wwb accuracy check")
     else:
         wwb_work_dir = work_dir / "wwb"
-        hf_gt_result = HFWWBGroundTruthTool(args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device).run()
-        tools_results.add_result(hf_gt_result)
+        wwb_gt_data_path = wwb_work_dir / "gt.csv"
+        if args.skip_wwb_ground_truth:
+            _validate_wwb_ground_truth_file(wwb_gt_data_path)
+            logger.info("Skipping WWB ground-truth generation. Reusing existing GT data: %s", wwb_gt_data_path)
+            _log_csv_listing("[wwb_hf_ground_truth]", wwb_work_dir)
+        else:
+            hf_gt_result = HFWWBGroundTruthTool(
+                args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device
+            ).run()
+            tools_results.add_result(hf_gt_result)
 
         optimum_result = OptimumWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device

@@ -64,6 +64,11 @@ Select the enablement skill based on the task:
 - **`image-text-to-text`** → Read and follow the **vlm-model-enabler** skill. Pass the `model_id` and `task` as input. The skill will read the analysis report from Step 2.
 - Other tasks → Proceed with implementation based on the failure analysis and the analysis report from Step 2.
 
+Before modifying shared model code, check backward compatibility:
+
+- Infer affected existing models from the code: shared implementations, enum mappings, preprocessors, loaders, benchmark paths, tests, and docs tables.
+- Preserve existing behavior. Prefer branching on explicit code-visible capabilities or model contracts instead of broad model-family checks.
+
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
 If model-checker passes, proceed to Step 4.
 
