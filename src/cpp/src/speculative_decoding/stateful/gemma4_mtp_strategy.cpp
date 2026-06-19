@@ -216,6 +216,12 @@ void Gemma4MTPAssistantWrapper::update_inference_time(uint64_t inference_time_us
     m_raw_perf_metrics.m_batch_sizes.emplace_back(1u);
 }
 
+void Gemma4MTPAssistantWrapper::reset_state() {
+    m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
+    m_raw_perf_metrics.m_durations.clear();
+    m_raw_perf_metrics.m_batch_sizes.clear();
+}
+
 void Gemma4MTPAssistantWrapper::release_memory() {
     m_request.get_compiled_model().release_memory();
 }
@@ -313,6 +319,9 @@ ov::Tensor StatefulGemma4MTPLLMPipeline::concatenate_embedding_and_hidden(const 
                     "Gemma4 assistant input tensors must be rank 3.");
     OPENVINO_ASSERT(embedding_shape[0] == hidden_shape[0] && embedding_shape[1] == hidden_shape[1],
                     "Gemma4 embedding and hidden state shape mismatch.");
+    OPENVINO_ASSERT(embedding.get_element_type() == ov::element::f32 && hidden_state.get_element_type() == ov::element::f32,
+                    "Gemma4 assistant input tensors must be f32, got embedding=",
+                    embedding.get_element_type(), ", hidden_state=", hidden_state.get_element_type(), ".");
 
     const ov::Shape inputs_embeds_shape = {embedding_shape[0], embedding_shape[1], embedding_shape[2] + hidden_shape[2]};
     if (!m_inputs_embeds_buffer || m_inputs_embeds_buffer.get_shape() != inputs_embeds_shape) {
@@ -327,6 +336,8 @@ ov::Tensor StatefulGemma4MTPLLMPipeline::concatenate_embedding_and_hidden(const 
 std::vector<int64_t> StatefulGemma4MTPLLMPipeline::sample_greedy_tokens(const ov::Tensor& logits, size_t token_count) const {
     const ov::Shape shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && token_count <= shape[1], "Invalid Gemma4 logits shape.");
+    OPENVINO_ASSERT(logits.get_element_type() == ov::element::f32,
+                    "Gemma4 logits must be f32, got ", logits.get_element_type(), ".");
     const size_t vocab_size = shape[2];
     const float* data = logits.data<const float>();
     std::vector<int64_t> tokens;
@@ -411,6 +422,7 @@ EncodedResults StatefulGemma4MTPLLMPipeline::generate_tokens(const EncodedInputs
     StreamingStatus streaming_status = StreamingStatus::RUNNING;
 
     m_target->reset_state();
+    m_assistant->reset_state();
     ov::Tensor position_ids(ov::element::i64, input_shape);
     utils::initialize_position_ids(position_ids, attention_mask);
     Gemma4MTPOutput target_output = m_target->infer(input_ids, attention_mask, position_ids);

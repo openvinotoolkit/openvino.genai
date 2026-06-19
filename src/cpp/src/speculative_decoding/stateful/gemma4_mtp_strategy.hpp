@@ -75,6 +75,7 @@ class Gemma4MTPAssistantWrapper {
 public:
     explicit Gemma4MTPAssistantWrapper(const ov::genai::ModelDesc& model_desc);
 
+    void reset_state();
     void release_memory();
 
     Gemma4MTPOutput infer(const ov::Tensor& inputs_embeds,

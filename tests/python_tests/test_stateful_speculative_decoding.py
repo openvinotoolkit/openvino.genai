@@ -337,29 +337,44 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
         num_assistant_tokens=3,
     )
 
-    results = gemma4_mtp_pipeline.generate([prompt], generation_config)
-    extended_perf_metrics = results.extended_perf_metrics
+    def generate_and_validate():
+        extended_perf_metrics = gemma4_mtp_pipeline.generate([prompt], generation_config).extended_perf_metrics
 
-    assert extended_perf_metrics is not None
-    assert extended_perf_metrics.main_model_metrics is not None
-    assert extended_perf_metrics.draft_model_metrics is not None
+        assert extended_perf_metrics is not None
+        assert extended_perf_metrics.main_model_metrics is not None
+        assert extended_perf_metrics.draft_model_metrics is not None
 
-    num_main_generated = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
-    num_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
-    assert num_main_generated > 0 and num_main_generated <= generation_config.max_new_tokens
-    assert num_draft_generated >= 0
+        num_main_generated = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
+        num_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+        assert num_main_generated > 0 and num_main_generated <= generation_config.max_new_tokens
+        assert num_draft_generated >= 0
 
-    num_accepted = extended_perf_metrics.get_num_accepted_tokens()
-    assert num_accepted >= 0
-    assert num_accepted <= num_draft_generated, (
-        "Inconsistent extended perf metrics: accepted tokens exceed draft-generated tokens "
-        f"(accepted={num_accepted}, draft_generated={num_draft_generated})"
+        num_accepted = extended_perf_metrics.get_num_accepted_tokens()
+        assert num_accepted >= 0
+        assert num_accepted <= num_draft_generated, (
+            "Inconsistent extended perf metrics: accepted tokens exceed draft-generated tokens "
+            f"(accepted={num_accepted}, draft_generated={num_draft_generated})"
+        )
+
+        target_iterations = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
+        draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
+        assert target_iterations > 0 and target_iterations <= generation_config.max_new_tokens
+        assert draft_iterations > 0
+
+        return {
+            "main_iterations": target_iterations,
+            "draft_iterations": draft_iterations,
+            "main_generated": num_main_generated,
+            "draft_generated": num_draft_generated,
+            "accepted": num_accepted,
+        }
+
+    first = generate_and_validate()
+    second = generate_and_validate()
+    assert second == first, (
+        "Per-model perf metrics accumulate across generate() calls instead of being reset. "
+        f"first={first}, second={second}"
     )
-
-    target_iterations = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
-    draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
-    assert target_iterations > 0 and target_iterations <= generation_config.max_new_tokens
-    assert draft_iterations > 0
 
 
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
