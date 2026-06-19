@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'EmbeddingPipeline', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -772,6 +772,44 @@ class DeepSeekR1ReasoningIncrementalParser(IncrementalParser):
 class DeepSeekR1ReasoningParser(ReasoningParser):
     def __init__(self) -> None:
         ...
+class EmbeddingPipeline:
+    """
+    
+    Embedding pipeline.
+    
+    Computes a single embedding vector for:
+    - text only
+    - text + images
+    - text + images + videos
+    """
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+        Plugin and/or config properties
+        """
+    @typing.overload
+    def embed(self, text: str | collections.abc.Sequence[str], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
+        """
+        Computes embedding vectors for text or a batch of texts.
+        """
+    @typing.overload
+    def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
+        """
+        Computes embedding vectors for text or a batch of texts with images and videos.
+        """
+    @typing.overload
+    def start_embed_async(self, text: str | collections.abc.Sequence[str], prompt: str | None = None) -> None:
+        """
+        Asynchronously computes embedding vectors for text or a batch of texts.
+        """
+    @typing.overload
+    def start_embed_async(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
+        """
+        Asynchronously computes embedding vectors for text or a batch of texts with images and videos.
+        """
+    def wait(self) -> openvino._pyopenvino.Tensor:
+        """
+        Waits for asynchronous text embedding and returns result.
+        """
 class EncodedGenerationResult:
     """
     
@@ -3885,61 +3923,6 @@ class Text2VideoPipeline:
         ...
     def set_generation_config(self, config: VideoGenerationConfig) -> None:
         ...
-class EmbeddingPipeline:
-    """
-    Multimodal embedding pipeline.
-    """
-    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
-        """
-        Constructs a pipeline from xml/bin files, tokenizer and configuration in the same dir.
-        models_path (os.PathLike): Path to the directory containing model xml/bin files and tokenizer.
-        device (str): Device to run the model on (e.g., CPU, GPU).
-        kwargs: Plugin and/or config properties.
-        """
-    @typing.overload
-    def embed(self, text: str, prompt: str | None = None) -> openvino._pyopenvino.Tensor:
-        """
-        Computes an embedding vector for text.
-        """
-    @typing.overload
-    def embed(self, texts: collections.abc.Sequence[str], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
-        """
-        Computes embedding vectors for a batch of texts.
-        """
-    @typing.overload
-    def embed(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
-        """
-        Computes an embedding vector for text, images and videos.
-        """
-    @typing.overload
-    def embed(self, texts: collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
-        """
-        Computes embedding vectors for a batch of texts, images and videos.
-        """
-    @typing.overload
-    def start_embed_async(self, text: str, prompt: str | None = None) -> None:
-        """
-        Asynchronously computes an embedding vector for text.
-        """
-    @typing.overload
-    def start_embed_async(self, texts: collections.abc.Sequence[str], prompt: str | None = None) -> None:
-        """
-        Asynchronously computes embedding vectors for a batch of texts.
-        """
-    @typing.overload
-    def start_embed_async(self, text: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
-        """
-        Asynchronously computes an embedding vector for text, images and videos.
-        """
-    @typing.overload
-    def start_embed_async(self, texts: collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
-        """
-        Asynchronously computes embedding vectors for a batch of texts, images and videos.
-        """
-    def wait(self) -> openvino._pyopenvino.Tensor:
-        """
-        Waits for asynchronous text embedding and returns result.
-        """
 class TextEmbeddingPipeline:
     """
     Text embedding pipeline
