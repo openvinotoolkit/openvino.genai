@@ -34,6 +34,11 @@ TASK_MAPPING = {
 
 
 WWB_SIMILARITY_THRESHOLD = 0.95
+HF_MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
+
+
+def _is_huggingface_model_id(model_id: str) -> bool:
+    return HF_MODEL_ID_PATTERN.match(model_id) is not None
 
 
 def log_header(args: argparse.Namespace, bench_task: str, wwb_task: str, work_dir: str, log_file: str) -> None:
@@ -387,8 +392,7 @@ def _setup_logging(log_file: Path) -> None:
 
 def _get_arguments() -> argparse.Namespace:
     def model_id_validator(model_id: str) -> str:
-        MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
-        if MODEL_ID_PATTERN.match(model_id):
+        if _is_huggingface_model_id(model_id):
             return model_id
         # Accept a path to an existing directory with OpenVINO IR model
         if Path(model_id).is_dir():
@@ -422,6 +426,7 @@ def _get_arguments() -> argparse.Namespace:
             "  python check_model.py \\\n"
             "      --model-id /path/to/model_ir \\\n"
             "      --task text-generation-with-past\n\n"
+            "  # Local paths shaped like org/model must be passed as ./org/model or absolute paths.\n\n"
             "  # Reuse existing IR, skip accuracy check:\n"
             "  python check_model.py \\\n"
             "      --model-id tencent/HY-MT1.5-1.8B \\\n"
@@ -464,7 +469,7 @@ def main():
 
     # Detect local model path: auto-skip export and use it as model_dir
     model_path = Path(args.model_id)
-    if model_path.is_dir():
+    if model_path.is_dir() and not _is_huggingface_model_id(args.model_id):
         model_dir = model_path.resolve()
         args.skip_export = True
         logger.info("Local model path detected: %s. Skipping export.", model_dir)

@@ -72,6 +72,7 @@ Append a `## GenAI Enablement Design` section to `.model_analysis/<model_type>_a
 ### 2.1 Implement C++ changes
 
 Follow the checklist in [genai-vlm-architecture.md](genai-vlm-architecture.md) "Adding a New Model":
+
 1. Add enum to `vlm_config.hpp`, string mapping to `vlm_config.cpp`
 2. Create `<model_type>/classes.hpp` and `<model_type>/classes.cpp`
 3. Register in `vision_encoder.cpp` and `inputs_embedder.cpp` factories
@@ -107,6 +108,7 @@ Create and run `.model_enabler/test_text_only_compare.py` — compare GenAI vs o
 ### 3.1 Implement vision preprocessing + encoding
 
 Replace the VisionEncoder stub. Key references:
+
 - `preprocessor_config.json` for resize/normalization params
 - `clip.hpp`/`clip.cpp` for available resize utilities (`bilinear_resize`, `bicubic_resize`, etc.)
 - The closest model implementation identified in Step 1
@@ -118,6 +120,7 @@ Update `get_inputs_embeds()` to handle the non-empty images case: insert vision 
 ### 3.3 Build and verify
 
 Rebuild, then create and run:
+
 - `.model_enabler/test_image_text_compare.py` — compare GenAI vs optimum-intel on 3 image prompts
 
 ### Checkpoint
@@ -130,5 +133,6 @@ Rebuild, then create and run:
 ## Final Deliverables
 
 Before declaring the model enabled:
+
 - [ ] `.model_analysis/<model_type>_analysis.md` exists with the `## GenAI Enablement Design` section
 - [ ] All test scripts exist and pass in `.model_enabler/`

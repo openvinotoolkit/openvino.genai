@@ -69,7 +69,7 @@ Controls what model serves as the ground truth baseline for accuracy checks:
 
 When a previous run already passed some steps (e.g. export succeeded but inference test failed), use skip flags to avoid repeating expensive passed steps:
 
-- `--skip-export` — reuse existing IR in `<work-dir>/model_ir` instead of re-exporting (avoids re-downloading weights). Set automatically when `--model-id` is a local path.
+- `--skip-export` — reuse existing IR in `<work-dir>/model_ir` instead of re-exporting (avoids re-downloading weights). When `--model-id` is a local path, export is bypassed automatically and that directory is used directly instead of `<work-dir>/model_ir`.
 - `--skip-llm-bench` — skip the llm_bench inference test
 - `--skip-wwb` — skip the who-what-benchmark accuracy check
 
@@ -112,6 +112,5 @@ Results format:
 
 ### Security
 
-- **NEVER** install any packages. Assume the environment is pre-configured.
 - **NEVER** invoke `optimum-cli`, `wwb`, or `llm_bench` directly. Always go through `check_model.py`.
 - **NEVER** modify `model_id` — pass it exactly as provided by the user.

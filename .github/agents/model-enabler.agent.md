@@ -26,6 +26,18 @@ Expect the user to provide:
 
 If either is missing, ask for them before proceeding.
 
+## Prerequisites
+
+Ensure the Python virtual environment is activated before running any commands.
+
+1. **Locate the virtual environment** — check for common directories at the repository root: `.venv/`, `venv/`, `env/`. Use `list_dir` to find it. If none is found, ask the user for its location.
+2. **Check if already activated**: if `which python` or `where python` points inside the virtual environment, it's already activated. If not, proceed to activate it.
+3. **Activate** based on the current platform:
+   - **Linux/macOS**: `source <venv_path>/bin/activate`
+   - **Windows (cmd)**: `<venv_path>\Scripts\activate.bat`
+   - **Windows (PowerShell)**: `<venv_path>\Scripts\Activate.ps1`
+4. The background terminal doesn't inherit the venv activation. Run it with the venv activated in the same command.
+
 ## Workflow
 
 ### Step 1: Model Validation
