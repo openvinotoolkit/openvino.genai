@@ -11,6 +11,7 @@ from .gemma4 import Gemma4UnifiedInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen3_vl": Qwen3VLInputsPreprocessor,
+    "qwen3_omni_moe_thinker": Qwen3VLInputsPreprocessor,
     "qwen2_vl_text": Qwen2VLInputsPreprocessor,
     "qwen2_vl": Qwen2VLInputsPreprocessor,
     "qwen2_5_vl": Qwen2VLInputsPreprocessor,

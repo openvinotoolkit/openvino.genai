@@ -186,9 +186,31 @@ def load_text_llamacpp_pipeline(model_dir):
     return model
 
 
+# Qwen3-Omni is a multimodal model that is not registered
+# in AutoModelForCausalLM. Its text response is produced by the "thinker" submodule.
+OMNI_MODEL_TYPES = {
+    "qwen3_omni_moe",
+}
+
+
+def load_text_hf_omni_pipeline(model_id, device, trust_remote_code):
+    from transformers import AutoModelForTextToWaveform
+
+    device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
+    omni_model = AutoModelForTextToWaveform.from_pretrained(
+        model_id, trust_remote_code=trust_remote_code, device_map=device_map, dtype="auto"
+    )
+    thinker = getattr(omni_model, "thinker", None)
+    if thinker is None:
+        raise ValueError(f"Model {model_id} does not expose a 'thinker' submodule required for text generation.")
+    thinker.eval()
+    return thinker
+
+
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
     trust_remote_code = False
+    config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
@@ -197,6 +219,9 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
+
+    if config is not None and getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
+        return load_text_hf_omni_pipeline(model_id, device, trust_remote_code)
 
     if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
@@ -396,6 +421,10 @@ def load_visual_text_model(
             from transformers import AutoImageProcessor
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
+
+        # Omni models expose image/video-text understanding via the "thinker" submodule.
+        if config.model_type in OMNI_MODEL_TYPES:
+            return load_text_hf_omni_pipeline(model_id, device, trust_remote_code)
 
         model_kwargs = {"trust_remote_code": trust_remote_code}
         try:

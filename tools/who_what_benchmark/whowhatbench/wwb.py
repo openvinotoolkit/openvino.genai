@@ -990,11 +990,18 @@ def create_evaluator(base_model, args):
             tokenizer = load_tokenizer(args)
 
             if tokenizer is not None and tokenizer.chat_template is None:
-                raise ValueError(
-                    "Tokenizer for model type 'text-chat' has no 'chat_template' defined. "
-                    "WWB can't start an evaluation in text-chat mode, "
-                    "please, specify chat_template or use --model-type text. "
-                )
+                # Some multimodal models (e.g. Qwen3-Omni) ship the chat template with the
+                # processor instead of the tokenizer. Reuse it so text-chat can run.
+                processor, _ = load_processor(args)
+                processor_chat_template = getattr(processor, "chat_template", None)
+                if processor_chat_template is None:
+                    raise ValueError(
+                        "Tokenizer for model type 'text-chat' has no 'chat_template' defined. "
+                        "WWB can't start an evaluation in text-chat mode, "
+                        "please, specify chat_template or use --model-type text. "
+                    )
+                logger.info("Tokenizer has no chat_template; reusing the processor's chat_template for text-chat.")
+                tokenizer.chat_template = processor_chat_template
 
             if args.genai:
                 gen_answer_fn = genai_gen_chat_text
