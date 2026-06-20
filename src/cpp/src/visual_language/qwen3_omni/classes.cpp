@@ -10,7 +10,61 @@
 #include "visual_language/clip.hpp"
 #include "visual_language/vl_sdpa_transformations.hpp"
 
+#include "openvino/core/model.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/parameter.hpp"
+#include "openvino/op/reshape.hpp"
+#include "openvino/op/result.hpp"
+#include "openvino/op/transpose.hpp"
+
 namespace ov::genai {
+
+namespace {
+
+// Build a small standalone model that performs the patch reshape/transpose/flatten
+// (bit-identical to qwen2_vl_utils::reshape_image_patches + transpose_image_patches),
+// so this pure data-movement step runs on the accelerator instead of the host CPU.
+//   Input  : "tiled_patches" f32 NCHW {temporal_patch_size, channel, H, W} (already resized+normalized)
+//   Inputs : "reshape_shape8d"/"reshape_shape4d"/"reshape_shape2d" i64 target shapes (per image)
+//   Output : "patches_2d" f32 {grid_t*grid_h*grid_w, channel*temporal_patch_size*patch*patch}
+// The 8D/4D transpose decomposition mirrors the validated qwen2vl in-graph preprocessing.
+std::shared_ptr<ov::Model> build_patch_rearrange_model() {
+    auto patches = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{-1, -1, -1, -1});
+    patches->set_friendly_name("tiled_patches");
+    patches->output(0).get_tensor().set_names({"tiled_patches"});
+
+    auto reshape_shape8d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{8});
+    reshape_shape8d->set_friendly_name("reshape_shape8d");
+    reshape_shape8d->output(0).get_tensor().set_names({"reshape_shape8d"});
+
+    auto reshape_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
+    reshape_shape4d->set_friendly_name("reshape_shape4d");
+    reshape_shape4d->output(0).get_tensor().set_names({"reshape_shape4d"});
+
+    auto reshape_shape2d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+    reshape_shape2d->set_friendly_name("reshape_shape2d");
+    reshape_shape2d->output(0).get_tensor().set_names({"reshape_shape2d"});
+
+    auto reshaped8d = std::make_shared<ov::op::v1::Reshape>(patches, reshape_shape8d, true);
+    auto perm8 =
+        ov::op::v0::Constant::create(ov::element::i32, ov::Shape{8}, std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7});
+    auto transposed8d = std::make_shared<ov::op::v1::Transpose>(reshaped8d, perm8);
+
+    auto reshaped4d = std::make_shared<ov::op::v1::Reshape>(transposed8d, reshape_shape4d, true);
+    auto perm4 = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{4}, std::vector<int32_t>{0, 2, 1, 3});
+    auto transposed4d = std::make_shared<ov::op::v1::Transpose>(reshaped4d, perm4);
+
+    auto flattened = std::make_shared<ov::op::v1::Reshape>(transposed4d, reshape_shape2d, true);
+    auto result = std::make_shared<ov::op::v0::Result>(flattened);
+    result->output(0).get_tensor().set_names({"patches_2d"});
+
+    return std::make_shared<ov::Model>(
+        ov::ResultVector{result},
+        ov::ParameterVector{patches, reshape_shape8d, reshape_shape4d, reshape_shape2d},
+        "qwen3_omni_patch_rearrange");
+}
+
+}  // namespace
 
 // --- VisionEncoderQwen3Omni ---
 
@@ -18,7 +72,12 @@ VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const std::filesystem::path& mode
                                                const std::string& device,
                                                const ov::AnyMap properties)
     : VisionEncoderQwen3VL(model_dir, ConfigOnlyTag{}) {
-    // Unused: Qwen3Omni vision encoder only preprocesses, no inference (merged model handles vision inference)
+    // Vision encoder runs no transformer inference, but a tiny rearrange model offloads the
+    // patch reshape/transpose/flatten (pure data movement) from the host CPU to `device`.
+    auto compiled = utils::singleton_core().compile_model(build_patch_rearrange_model(), device, properties);
+    m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
 }
 
 VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const ModelsMap& models_map,
@@ -26,7 +85,12 @@ VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const ModelsMap& models_map,
                                                const std::string& device,
                                                const ov::AnyMap properties)
     : VisionEncoderQwen3VL(models_map, config_dir_path, ConfigOnlyTag{}) {
-    // Unused: Qwen3Omni vision encoder only preprocesses, no inference (merged model handles vision inference)
+    // Vision encoder runs no transformer inference, but a tiny rearrange model offloads the
+    // patch reshape/transpose/flatten (pure data movement) from the host CPU to `device`.
+    auto compiled = utils::singleton_core().compile_model(build_patch_rearrange_model(), device, properties);
+    m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
 }
 
 void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>& images,
@@ -69,21 +133,42 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
     const auto grid_t = tiled_patches.get_shape().at(0) / config.temporal_patch_size;
     const auto grid_h = target_image_size.height / config.patch_size;
     const auto grid_w = target_image_size.width / config.patch_size;
+    const auto merge = config.merge_size;
+    const auto patch = config.patch_size;
+    const auto tps = config.temporal_patch_size;
 
-    auto reshaped = qwen2_vl_utils::reshape_image_patches(tiled_patches,
-                                                          grid_t,
-                                                          grid_h,
-                                                          grid_w,
-                                                          channel,
-                                                          config.temporal_patch_size,
-                                                          config.patch_size,
-                                                          config.merge_size);
-    auto transposed = qwen2_vl_utils::transpose_image_patches(reshaped);
+    // Reshape/transpose/flatten offloaded to GPU (bit-identical to the CPU
+    // reshape_image_patches + transpose_image_patches + flatten path). The target shapes mirror
+    // the validated qwen2vl in-graph decomposition (8D transpose, 4D transpose, 2D flatten).
+    int64_t shape8d[8] = {static_cast<int64_t>(grid_t),
+                          static_cast<int64_t>(tps * channel),
+                          static_cast<int64_t>(grid_h / merge),
+                          static_cast<int64_t>(merge),
+                          static_cast<int64_t>(patch),
+                          static_cast<int64_t>(grid_w / merge),
+                          static_cast<int64_t>(merge),
+                          static_cast<int64_t>(patch)};
+    int64_t shape4d[4] = {static_cast<int64_t>(grid_t * (grid_h / merge) * (grid_w / merge) * (merge * merge)),
+                          static_cast<int64_t>(tps),
+                          static_cast<int64_t>(channel),
+                          static_cast<int64_t>(patch * patch)};
+    int64_t shape2d[2] = {static_cast<int64_t>(grid_t * grid_h * grid_w),
+                          static_cast<int64_t>(channel * tps * patch * patch)};
 
-    ov::Shape flat_shape{grid_t * grid_h * grid_w,
-                         channel * config.temporal_patch_size * config.patch_size * config.patch_size};
-    ov::Tensor flattened(transposed.get_element_type(), flat_shape);
-    std::memcpy(flattened.data(), transposed.data(), transposed.get_byte_size());
+    ov::Tensor flattened;
+    {
+        CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue_patch_rearrange.get());
+        auto& ireq = guard.get();
+        ireq.set_tensor("tiled_patches", tiled_patches);
+        ireq.set_tensor("reshape_shape8d", ov::Tensor(ov::element::i64, ov::Shape{8}, shape8d));
+        ireq.set_tensor("reshape_shape4d", ov::Tensor(ov::element::i64, ov::Shape{4}, shape4d));
+        ireq.set_tensor("reshape_shape2d", ov::Tensor(ov::element::i64, ov::Shape{2}, shape2d));
+        ireq.infer();
+        const auto& out = ireq.get_tensor("patches_2d");
+        flattened = ov::Tensor(out.get_element_type(), out.get_shape());
+        std::memcpy(flattened.data(), out.data(), out.get_byte_size());
+    }
+    const ov::Shape flat_shape = flattened.get_shape();
 
     // Accumulate into output tensor (same pattern as VisionEncoderQwen2VL)
     if (frame_id == 0u) {

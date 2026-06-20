@@ -34,6 +34,11 @@ private:
                                ImageSize& out_rsz_size,
                                size_t frame_num,
                                size_t frame_id);
+
+    // GPU-offloaded patch reshape/transpose/flatten (Stage 1). Bit-identical to the CPU
+    // reshape_image_patches + transpose_image_patches path; runs the pure data-movement step
+    // on the accelerator instead of the host CPU.
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_patch_rearrange;
 };
 
 /// @brief InputsEmbedder for Qwen3-Omni. Extends Qwen3-VL with audio encoding support.
