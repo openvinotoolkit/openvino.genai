@@ -38,6 +38,8 @@ private:
     // GPU-offloaded patch reshape/transpose/flatten (Stage 1). Bit-identical to the CPU
     // reshape_image_patches + transpose_image_patches path; runs the pure data-movement step
     // on the accelerator instead of the host CPU.
+    // Disabled (falls back to the CPU path) when the env var VISION_PREPROCESS=CPP is set.
+    bool m_use_gpu_patch_rearrange = true;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_patch_rearrange;
 };
 

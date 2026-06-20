@@ -4,7 +4,9 @@
 #include "visual_language/qwen3_omni/classes.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
@@ -20,6 +22,13 @@
 namespace ov::genai {
 
 namespace {
+
+// GPU patch rearrange is used by default; set VISION_PREPROCESS=CPP to fall back to the
+// host CPU reshape/transpose path (mirrors the qwen2vl / phi3-vision env toggle).
+bool use_gpu_patch_rearrange_env() {
+    const char* env = std::getenv("VISION_PREPROCESS");
+    return !(env && std::string(env) == "CPP");
+}
 
 // Build a small standalone model that performs the patch reshape/transpose/flatten
 // (bit-identical to qwen2_vl_utils::reshape_image_patches + transpose_image_patches),
@@ -74,10 +83,14 @@ VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const std::filesystem::path& mode
     : VisionEncoderQwen3VL(model_dir, ConfigOnlyTag{}) {
     // Vision encoder runs no transformer inference, but a tiny rearrange model offloads the
     // patch reshape/transpose/flatten (pure data movement) from the host CPU to `device`.
-    auto compiled = utils::singleton_core().compile_model(build_patch_rearrange_model(), device, properties);
-    m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
+    // Skipped when VISION_PREPROCESS=CPP selects the host fallback.
+    m_use_gpu_patch_rearrange = use_gpu_patch_rearrange_env();
+    if (m_use_gpu_patch_rearrange) {
+        auto compiled = utils::singleton_core().compile_model(build_patch_rearrange_model(), device, properties);
+        m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
+    }
 }
 
 VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const ModelsMap& models_map,
@@ -87,10 +100,14 @@ VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const ModelsMap& models_map,
     : VisionEncoderQwen3VL(models_map, config_dir_path, ConfigOnlyTag{}) {
     // Vision encoder runs no transformer inference, but a tiny rearrange model offloads the
     // patch reshape/transpose/flatten (pure data movement) from the host CPU to `device`.
-    auto compiled = utils::singleton_core().compile_model(build_patch_rearrange_model(), device, properties);
-    m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
+    // Skipped when VISION_PREPROCESS=CPP selects the host fallback.
+    m_use_gpu_patch_rearrange = use_gpu_patch_rearrange_env();
+    if (m_use_gpu_patch_rearrange) {
+        auto compiled = utils::singleton_core().compile_model(build_patch_rearrange_model(), device, properties);
+        m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
+    }
 }
 
 void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>& images,
@@ -137,26 +154,27 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
     const auto patch = config.patch_size;
     const auto tps = config.temporal_patch_size;
 
-    // Reshape/transpose/flatten offloaded to GPU (bit-identical to the CPU
-    // reshape_image_patches + transpose_image_patches + flatten path). The target shapes mirror
-    // the validated qwen2vl in-graph decomposition (8D transpose, 4D transpose, 2D flatten).
-    int64_t shape8d[8] = {static_cast<int64_t>(grid_t),
-                          static_cast<int64_t>(tps * channel),
-                          static_cast<int64_t>(grid_h / merge),
-                          static_cast<int64_t>(merge),
-                          static_cast<int64_t>(patch),
-                          static_cast<int64_t>(grid_w / merge),
-                          static_cast<int64_t>(merge),
-                          static_cast<int64_t>(patch)};
-    int64_t shape4d[4] = {static_cast<int64_t>(grid_t * (grid_h / merge) * (grid_w / merge) * (merge * merge)),
-                          static_cast<int64_t>(tps),
-                          static_cast<int64_t>(channel),
-                          static_cast<int64_t>(patch * patch)};
-    int64_t shape2d[2] = {static_cast<int64_t>(grid_t * grid_h * grid_w),
-                          static_cast<int64_t>(channel * tps * patch * patch)};
-
+    // Reshape/transpose/flatten: GPU offload by default (bit-identical to the CPU
+    // reshape_image_patches + transpose_image_patches + flatten path), or the host CPU path
+    // when VISION_PREPROCESS=CPP is set. The GPU target shapes mirror the validated qwen2vl
+    // in-graph decomposition (8D transpose, 4D transpose, 2D flatten).
     ov::Tensor flattened;
-    {
+    if (m_use_gpu_patch_rearrange) {
+        int64_t shape8d[8] = {static_cast<int64_t>(grid_t),
+                              static_cast<int64_t>(tps * channel),
+                              static_cast<int64_t>(grid_h / merge),
+                              static_cast<int64_t>(merge),
+                              static_cast<int64_t>(patch),
+                              static_cast<int64_t>(grid_w / merge),
+                              static_cast<int64_t>(merge),
+                              static_cast<int64_t>(patch)};
+        int64_t shape4d[4] = {static_cast<int64_t>(grid_t * (grid_h / merge) * (grid_w / merge) * (merge * merge)),
+                              static_cast<int64_t>(tps),
+                              static_cast<int64_t>(channel),
+                              static_cast<int64_t>(patch * patch)};
+        int64_t shape2d[2] = {static_cast<int64_t>(grid_t * grid_h * grid_w),
+                              static_cast<int64_t>(channel * tps * patch * patch)};
+
         CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue_patch_rearrange.get());
         auto& ireq = guard.get();
         ireq.set_tensor("tiled_patches", tiled_patches);
@@ -167,6 +185,19 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
         const auto& out = ireq.get_tensor("patches_2d");
         flattened = ov::Tensor(out.get_element_type(), out.get_shape());
         std::memcpy(flattened.data(), out.data(), out.get_byte_size());
+    } else {
+        auto reshaped = qwen2_vl_utils::reshape_image_patches(tiled_patches,
+                                                              grid_t,
+                                                              grid_h,
+                                                              grid_w,
+                                                              channel,
+                                                              tps,
+                                                              patch,
+                                                              merge);
+        auto transposed = qwen2_vl_utils::transpose_image_patches(reshaped);
+        ov::Shape cpu_flat_shape{grid_t * grid_h * grid_w, channel * tps * patch * patch};
+        flattened = ov::Tensor(transposed.get_element_type(), cpu_flat_shape);
+        std::memcpy(flattened.data(), transposed.data(), transposed.get_byte_size());
     }
     const ov::Shape flat_shape = flattened.get_shape();
 
