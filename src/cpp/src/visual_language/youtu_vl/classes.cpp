@@ -189,8 +189,8 @@ EncodedImage VisionEncoderYoutuVL::encode(const ov::Tensor& image, const ov::Any
 
     // 6. Build pixel_attention_mask [1, N_ph*N_pw] — all ones (no padding for single image)
     const size_t N_patches = N_ph * N_pw;
-    ov::Tensor pixel_attention_mask(ov::element::i32, {1, N_patches});
-    std::fill_n(pixel_attention_mask.data<int32_t>(), N_patches, 1);
+    ov::Tensor pixel_attention_mask(ov::element::i64, {1, N_patches});
+    std::fill_n(pixel_attention_mask.data<int64_t>(), N_patches, 1);
 
     // 7. Build spatial_shapes [1, 2] — [[N_ph, N_pw]]
     ov::Tensor spatial_shapes(ov::element::i64, {1, 2});
