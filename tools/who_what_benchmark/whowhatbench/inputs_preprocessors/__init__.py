@@ -1,4 +1,5 @@
 from .llava import LLAVAInputsPreprocessor, NanoLlavaInputsPreprocessor
+from .youtu_vl import YoutuVLInputsPreprocessor
 from .minicpmv import MiniCPMVInputsPreprocessor
 from .minicpmo import MiniCPMOInputsPreprocessor
 from .internvl import InternVLInputsPreprocessor
@@ -24,6 +25,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "llava_next": LLAVAInputsPreprocessor,
     "llava-qwen2": NanoLlavaInputsPreprocessor,
     "internvl_chat": InternVLInputsPreprocessor,
+    "youtu_vl": YoutuVLInputsPreprocessor,
 }
 
 __all__ = [
