@@ -28,7 +28,7 @@ EMBEDDINGS_TEST_MODELS = [
 ]
 
 MULTIMODAL_EMBEDDINGS_TEST_MODELS = [
-    "Qwen/Qwen3-VL-Embedding-2B",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding"
 ]
 
 RERANK_TEST_MODELS = [
@@ -158,21 +158,8 @@ def run_text_embedding_genai(
 
 
 def make_embedding_test_image_array() -> np.ndarray:
-    height = 77
-    width = 100
-    y_coords, x_coords = np.indices((height, width))
-    image = np.stack(
-        [
-            (x_coords * 255 // (width - 1)),
-            (y_coords * 255 // (height - 1)),
-            ((x_coords + y_coords) * 255 // (height + width - 2)),
-        ],
-        axis=-1,
-    ).astype(np.uint8)
-    image[18:46, 28:72, 0] = 245
-    image[18:46, 28:72, 1] = 120
-    image[18:46, 28:72, 2] = 30
-    return image
+    image_path = Path(__file__).resolve().parents[2] / "images" / "cat.png"
+    return np.asarray(Image.open(image_path).convert("RGB"), dtype=np.uint8)
 
 
 def make_embedding_test_image() -> ov.Tensor:
