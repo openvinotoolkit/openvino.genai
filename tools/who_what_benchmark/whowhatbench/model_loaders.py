@@ -926,9 +926,7 @@ def load_model(
     if model_type == "text" or model_type == "text-chat":
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
-        return load_text2image_model(
-            model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs
-        )
+        return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
