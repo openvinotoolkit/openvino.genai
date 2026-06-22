@@ -1427,7 +1427,6 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
         draft_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = draft_validation_window;
         draft_desc.properties[NPUW_ONLINE_PIPELINE] = "NONE";  // Disable NPUW online pipeline optimization.
         draft_desc.properties["NPUW_DEVICES"] = "CPU";
-        draft_desc.properties["NPUW_CACHE_DIR"] = "/home/shig/Github/openvino.genai/samples/python/text_generation/blob_cache_drafter";
     }
     m_draft = std::make_unique<Eagle3DraftWrapper>(draft_desc);
     m_draft->set_draft_target_mapping(m_d2t_mapping);
@@ -1439,7 +1438,6 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
         target_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = target_validation_window;
         target_desc.properties[NPUW_SLICE_OUT] = "NO";
         target_desc.properties["NPUW_DEVICES"] = "CPU";
-        target_desc.properties["NPUW_CACHE_DIR"] = "/home/shig/Github/openvino.genai/samples/python/text_generation/blob_cache_main";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 }
@@ -1453,8 +1451,6 @@ void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& conf
     if (!config.is_tree_search()) {
         config.branching_factor = DEFAULT_EAGLE_BRANCHING_FACTOR;
         config.tree_depth = DEFAULT_EAGLE_TREE_DEPTH;
-    }
-    if (config.num_assistant_tokens == 0) {
         config.num_assistant_tokens = DEFAULT_EAGLE_NUM_ASSISTANT_TOKENS;
     }
 }
