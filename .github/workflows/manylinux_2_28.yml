@@ -690,7 +690,8 @@ jobs:
 
       - name: Install llama-cpp-python for WWB
         if: ${{ matrix.test.run_condition && startsWith(matrix.test.name, 'WWB') }}
-        run: python -m pip install llama-cpp-python
+          continue-on-error: true
+          run: python -m pip install --prefer-binary llama-cpp-python
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
