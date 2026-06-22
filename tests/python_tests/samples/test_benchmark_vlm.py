@@ -82,114 +82,29 @@ class TestBenchmarkVLM:
 
     @pytest.mark.vlm
     @pytest.mark.samples
-    def test_sample_benchmark_vlm_fails(self):
-        # Validation of negative dimensions causes the Python sample subprocess to fail
+    def test_sample_benchmark_vlm_invalid_resize(self):
+        # Validation of invalid resize dimensions causes the Python sample subprocess to fail
         # before any image or model is loaded, so this test observes CalledProcessError.
         benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
-
-        with pytest.raises(subprocess.CalledProcessError):
-            run_sample(
-                [
-                    sys.executable,
-                    benchmark_script,
-                    "-m",
-                    "fake_model",
-                    "-i",
-                    "fake_image.jpg",
-                    "-H",
-                    "-1",
-                    "-W",
-                    "224",
-                ]
-            )
-
-        with pytest.raises(subprocess.CalledProcessError):
-            run_sample(
-                [
-                    sys.executable,
-                    benchmark_script,
-                    "-m",
-                    "fake_model",
-                    "-i",
-                    "fake_image.jpg",
-                    "-H",
-                    "224",
-                    "-W",
-                    "-1",
-                ]
-            )
         
-        with pytest.raises(subprocess.CalledProcessError):
-            run_sample(
-                [
-                    sys.executable,
-                    benchmark_script,
-                    "-m",
-                    "fake_model",
-                    "-i",
-                    "fake_image.jpg",
-                    "-W",
-                    "224",
-                ]
-            )
+        invalid_sizes = [
+            (-1, 224),
+            (224, -1),
+            (0, 224),
+            (224, 0),
+            (0, 0),
+            (None, 224),
+            (224, None)
+        ]
         
-        with pytest.raises(subprocess.CalledProcessError):
-            run_sample(
-                [
-                    sys.executable,
-                    benchmark_script,
-                    "-m",
-                    "fake_model",
-                    "-i",
-                    "fake_image.jpg",
-                    "-H",
-                    "224",
-                ]
-            )
+        for height, width in invalid_sizes:
+            command = [sys.executable, benchmark_script, "-m", "fake_model", "-i", "fake_image.jpg",]
+            
+            if height is not None:
+                command.extend(["-H", height])
+            
+            if width is not None:
+                command.extend(["-W", width])
 
-        with pytest.raises(subprocess.CalledProcessError):
-            run_sample(
-                [
-                    sys.executable,
-                    benchmark_script,
-                    "-m",
-                    "fake_model",
-                    "-i",
-                    "fake_image.jpg",
-                    "-H",
-                    "0",
-                    "-W",
-                    "224",
-                ]
-            )
-        with pytest.raises(subprocess.CalledProcessError):
-            run_sample(
-                [
-                    sys.executable,
-                    benchmark_script,
-                    "-m",
-                    "fake_model",
-                    "-i",
-                    "fake_image.jpg",
-                    "-H",
-                    "224",
-                    "-W",
-                    "0",
-                ]
-            )
-
-        with pytest.raises(subprocess.CalledProcessError):
-            run_sample(
-                [
-                    sys.executable,
-                    benchmark_script,
-                    "-m",
-                    "fake_model",
-                    "-i",
-                    "fake_image.jpg",
-                    "-H",
-                    "0",
-                    "-W",
-                    "0",
-                ]
-            )
+            with pytest.raises(subprocess.CalledProcessError):
+                run_sample(command)
