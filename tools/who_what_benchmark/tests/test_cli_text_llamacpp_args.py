@@ -3,10 +3,14 @@
 
 import subprocess  # nosec B404
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 
 from conftest import run_wwb
+from ov_utils import download_hf_files_to_cache
+from ov_utils import get_ov_cache_dir
+from whowhatbench import model_loaders
 from whowhatbench import wwb
 
 
@@ -35,18 +39,18 @@ def test_text_llamacpp_chat_requires_llamacpp(tmp_path):
     )
 
 
-def test_text_llamacpp_n_ctx_requires_llamacpp(tmp_path):
-    _assert_wwb_cli_error(
-        [
-            "--gt-data",
-            str(tmp_path / "gt.csv"),
-            "--model-type",
+def test_text_llamacpp_n_ctx_requires_llamacpp():
+    with pytest.raises(ValueError, match="--llamacpp-n-ctx requires --llamacpp"):
+        model_loaders.load_model(
             "text",
-            "--llamacpp-n-ctx",
-            "4096",
-        ],
-        "--llamacpp-n-ctx requires --llamacpp",
-    )
+            "dummy_model",
+            "CPU",
+            None,
+            False,
+            False,
+            False,
+            llamacpp_n_ctx=4096,
+        )
 
 
 def test_text_non_llamacpp_run_not_blocked_by_n_ctx_default(tmp_path):
@@ -139,10 +143,10 @@ def test_text_base_model_load_passes_llamacpp_flag(monkeypatch):
     assert len(calls) == 1
     load_args, load_kwargs = calls[0]
     assert load_args[6] is True
-    assert load_kwargs["llamacpp_n_ctx"] == 8192
+    assert load_kwargs["llamacpp_n_ctx"] is None
 
 
-def test_text_base_model_load_strips_llamacpp_kwargs_for_hf(monkeypatch):
+def test_text_base_model_load_forwards_llamacpp_kwargs_for_loader_sanitization(monkeypatch):
     calls = []
 
     args = Namespace(
@@ -217,4 +221,91 @@ def test_text_base_model_load_strips_llamacpp_kwargs_for_hf(monkeypatch):
 
     assert len(calls) == 1
     _, load_kwargs = calls[0]
-    assert "llamacpp_n_ctx" not in load_kwargs
+    assert load_kwargs["llamacpp_n_ctx"] == 4096
+
+
+def test_loader_strips_llamacpp_n_ctx_for_hf_text_backend(monkeypatch):
+    captured = {}
+
+    def fake_load_text_hf_pipeline(model_id, device, **kwargs):
+        captured["model_id"] = model_id
+        captured["device"] = device
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(model_loaders, "load_text_hf_pipeline", fake_load_text_hf_pipeline)
+
+    model_loaders.load_model(
+        "text",
+        "dummy_model",
+        "CPU",
+        None,
+        True,
+        False,
+        True,
+        llamacpp_n_ctx=4096,
+    )
+
+    assert captured["kwargs"].get("llamacpp_n_ctx") is None
+
+
+def test_loader_sets_llamacpp_n_ctx_default_for_llamacpp_backend(monkeypatch):
+    captured = {}
+
+    def fake_load_text_llamacpp_pipeline(model_dir, **kwargs):
+        captured["model_dir"] = model_dir
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(model_loaders, "load_text_llamacpp_pipeline", fake_load_text_llamacpp_pipeline)
+
+    model_loaders.load_model(
+        "text",
+        "dummy_model",
+        "CPU",
+        None,
+        False,
+        False,
+        True,
+        llamacpp_n_ctx=None,
+    )
+
+    assert captured["kwargs"]["llamacpp_n_ctx"] == 8192
+
+
+def _get_tiny_llamacpp_model() -> Path:
+    repo_id = "afrideva/Tinystories-gpt-0.1-3m-GGUF"
+    gguf_file = "tinystories-gpt-0.1-3m.Q2_K.gguf"
+    cache_dir = get_ov_cache_dir() / "test_data" / "wwb_tinystories_gpt_0_1_3m_gguf"
+    model_dir = download_hf_files_to_cache(repo_id, cache_dir, [gguf_file])
+    return model_dir / gguf_file
+
+
+def test_text_llamacpp_real_gguf_logs_backend_and_n_ctx(tmp_path):
+    pytest.importorskip("llama_cpp")
+
+    gguf_path = _get_tiny_llamacpp_model()
+    gt_data = tmp_path / "llamacpp_gt.csv"
+    n_ctx = 2048
+
+    output = run_wwb(
+        [
+            "--base-model",
+            str(gguf_path),
+            "--llamacpp",
+            "--llamacpp-n-ctx",
+            str(n_ctx),
+            "--model-type",
+            "text",
+            "--gt-data",
+            str(gt_data),
+            "--num-samples",
+            "1",
+            "--max_new_tokens",
+            "8",
+        ]
+    )
+
+    assert "Using llama.cpp API" in output
+    assert f"Using llama.cpp API (n_ctx={n_ctx})" in output
+    assert gt_data.exists()

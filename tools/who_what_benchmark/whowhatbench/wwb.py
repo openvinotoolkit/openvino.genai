@@ -1258,16 +1258,9 @@ def main():
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
-    if args.llamacpp:
-        kwargs["llamacpp_n_ctx"] = 8192 if args.llamacpp_n_ctx is None else args.llamacpp_n_ctx
-    elif args.llamacpp_n_ctx is not None:
-        raise ValueError("--llamacpp-n-ctx requires --llamacpp")
+    kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
 
     if args.base_model is not None:
-        base_model_kwargs = dict(kwargs)
-        if not (args.model_type in ["text", "text-chat"] and args.llamacpp and not args.hf and not args.genai):
-            base_model_kwargs.pop("llamacpp_n_ctx", None)
-
         base_model = load_model(
             args.model_type,
             args.base_model,
@@ -1276,7 +1269,7 @@ def main():
             args.hf,
             args.genai,
             args.llamacpp,
-            **base_model_kwargs,
+            **kwargs,
         )
 
         # Set TaylorSeer config via generation config if applicable
