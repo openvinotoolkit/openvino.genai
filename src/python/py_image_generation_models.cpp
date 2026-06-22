@@ -938,12 +938,12 @@ void init_autoencoder_kl(py::module_& m) {
         ) {
             return std::make_unique<ov::genai::AutoencoderKL>(vae_decoder_blob_tensor, vae_decoder_config, device, pyutils::kwargs_to_any_map(kwargs));
         }),
-        py::arg("vae_decoder_blob_tensor"), "Pre-read VAE decoder model blob tensor",
+        py::arg("vae_decoder_blob_tensor"), "Pre-read compiled VAE decoder model blob tensor",
         py::arg("vae_decoder_config"), "VAE decoder config",
         py::arg("device"), "Device on which inference will be done",
         R"(
             AutoencoderKL class initialized only with decoder model from blob tensor.
-            vae_decoder_blob_tensor (ov.Tensor): Pre-read VAE decoder model blob tensor.
+            vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
             vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
@@ -957,14 +957,14 @@ void init_autoencoder_kl(py::module_& m) {
         ) {
             return std::make_unique<ov::genai::AutoencoderKL>(vae_encoder_blob_tensor, vae_decoder_blob_tensor, vae_decoder_config, device, pyutils::kwargs_to_any_map(kwargs));
         }),
-        py::arg("vae_encoder_blob_tensor"), "Pre-read VAE encoder model blob tensor",
-        py::arg("vae_decoder_blob_tensor"), "Pre-read VAE decoder model blob tensor",
+        py::arg("vae_encoder_blob_tensor"), "Pre-read compiled VAE encoder model blob tensor",
+        py::arg("vae_decoder_blob_tensor"), "Pre-read compiled VAE decoder model blob tensor",
         py::arg("vae_decoder_config"), "VAE decoder config",
         py::arg("device"), "Device on which inference will be done",
         R"(
             AutoencoderKL class initialized with both encoder and decoder models from blob tensors.
-            vae_encoder_blob_tensor (ov.Tensor): Pre-read VAE encoder model blob tensor.
-            vae_decoder_blob_tensor (ov.Tensor): Pre-read VAE decoder model blob tensor.
+            vae_encoder_blob_tensor (ov.Tensor): Pre-read compiled VAE encoder model blob tensor.
+            vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
             vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
