@@ -431,6 +431,12 @@ def load_visual_text_model(
                         config.audio_processor["config"]["activation_checkpointing"] = ""
                     config._attn_implementation = "sdpa"
                     from_pretrained_kwargs = {"config": config}
+                elif config.model_type == "youtu_vl":
+                    # YoutuVLForConditionalGeneration.__init__ only accepts `config`;
+                    # the legacy `use_flash_attention_2` kwarg is forwarded to the
+                    # constructor and raises TypeError. `_attn_implementation="eager"`
+                    # already disables flash attention, so pass only that.
+                    from_pretrained_kwargs = {"_attn_implementation": "eager"}
                 else:
                     from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
 

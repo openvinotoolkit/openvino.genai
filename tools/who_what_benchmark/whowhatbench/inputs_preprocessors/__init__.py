@@ -15,6 +15,10 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen2_vl": Qwen2VLInputsPreprocessor,
     "qwen2_5_vl": Qwen2VLInputsPreprocessor,
     "qwen2_5_vl_text": Qwen2VLInputsPreprocessor,
+    # Youtu-VL uses a Qwen2-VL-style processor: content-list chat template with
+    # <|vision_start|><|image_pad|><|vision_end|> markers and a
+    # processor(text=..., images=...) call, so the Qwen2-VL preprocessor applies.
+    "youtu_vl": Qwen2VLInputsPreprocessor,
     "llava": LLAVAInputsPreprocessor,
     "gemma3": Gemma3InputsPreprocessor,
     "gemma4_unified": Gemma4UnifiedInputsPreprocessor,
