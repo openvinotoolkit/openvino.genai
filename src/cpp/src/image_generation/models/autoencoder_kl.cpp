@@ -207,7 +207,7 @@ AutoencoderKL::AutoencoderKL(const Tensor& vae_encoder_blob_tensor,
                              const std::string& device,
                              const ov::AnyMap& properties)
     : m_config(vae_decoder_config) {
-    import_model(vae_decoder_blob_tensor, vae_encoder_blob_tensor, device, properties);
+    import_model(vae_encoder_blob_tensor, vae_decoder_blob_tensor, device, properties);
 }
 
 AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
