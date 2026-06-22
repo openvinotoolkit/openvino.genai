@@ -6,13 +6,144 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <iostream>
 #include <limits>
 #include <numeric>
+#include <sstream>
 
 #include "continuous_batching/timer.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
+
+// ============ DEBUG LOGGING (remove after debugging) ============
+#define EAGLE3_DEBUG 1
+
+#if EAGLE3_DEBUG
+#define EAGLE3_LOG(msg) do { std::cerr << "[EAGLE3-DBG] " << msg << std::endl; } while(0)
+#else
+#define EAGLE3_LOG(msg) do {} while(0)
+#endif
+
+namespace {
+
+static size_t g_spec_iter_count = 0;  // global speculative iteration counter
+
+inline std::string shape_str(const ov::Tensor& t) {
+    if (!t) return "<null>";
+    const auto& s = t.get_shape();
+    std::ostringstream os;
+    os << "[";
+    for (size_t i = 0; i < s.size(); ++i) { if (i) os << ","; os << s[i]; }
+    os << "]";
+    return os.str();
+}
+
+inline std::string dump_i64(const ov::Tensor& t, size_t max_elems = 16) {
+    if (!t || t.get_element_type() != ov::element::i64) return "<n/a>";
+    const int64_t* p = t.data<const int64_t>();
+    const size_t n = t.get_size();
+    std::ostringstream os;
+    os << "[";
+    for (size_t i = 0; i < std::min(n, max_elems); ++i) {
+        if (i) os << ",";
+        os << p[i];
+    }
+    if (n > max_elems) os << ",...(" << n << " total)";
+    os << "]";
+    return os.str();
+}
+
+inline std::string dump_f32_brief(const ov::Tensor& t, size_t head = 4, size_t tail = 4) {
+    if (!t || t.get_element_type() != ov::element::f32) return "<n/a>";
+    const float* p = t.data<const float>();
+    const size_t n = t.get_size();
+    std::ostringstream os;
+    os << "[";
+    size_t show = std::min(n, head);
+    for (size_t i = 0; i < show; ++i) { if (i) os << ","; os << p[i]; }
+    if (n > head + tail) {
+        os << ",...";
+        for (size_t i = n - tail; i < n; ++i) { os << "," << p[i]; }
+    } else if (n > head) {
+        for (size_t i = head; i < n; ++i) { os << "," << p[i]; }
+    }
+    os << "] (" << n << " elems)";
+    return os.str();
+}
+
+inline void dump_tree_mask_2d(const char* label, const float* data, size_t rows, size_t cols) {
+    if (rows > 32 || cols > 64) {
+        EAGLE3_LOG(label << ": too large (" << rows << "x" << cols << "), skipping full dump");
+        return;
+    }
+    std::cerr << "[EAGLE3-DBG] " << label << " (" << rows << "x" << cols << "):" << std::endl;
+    for (size_t r = 0; r < rows; ++r) {
+        std::cerr << "[EAGLE3-DBG]   row" << r << ": ";
+        for (size_t c = 0; c < cols; ++c) {
+            float v = data[r * cols + c];
+            if (std::isinf(v) && v < 0) std::cerr << "-I ";
+            else std::cerr << v << " ";
+        }
+        std::cerr << std::endl;
+    }
+}
+
+// Check tensor for NaN/Inf values, return count
+inline size_t count_nan_inf(const ov::Tensor& t) {
+    if (!t || t.get_element_type() != ov::element::f32) return 0;
+    const float* p = t.data<const float>();
+    const size_t n = t.get_size();
+    size_t count = 0;
+    for (size_t i = 0; i < n; ++i) {
+        if (std::isnan(p[i]) || std::isinf(p[i])) ++count;
+    }
+    return count;
+}
+
+// Find first NaN position in tensor
+inline size_t find_first_nan(const ov::Tensor& t) {
+    if (!t || t.get_element_type() != ov::element::f32) return SIZE_MAX;
+    const float* p = t.data<const float>();
+    const size_t n = t.get_size();
+    for (size_t i = 0; i < n; ++i) {
+        if (std::isnan(p[i])) return i;
+    }
+    return SIZE_MAX;
+}
+
+// Dump KV cache states for NaN (checks first few layers)
+inline void check_kv_states_for_nan(ov::InferRequest& request, const char* label) {
+    auto states = request.query_state();
+    size_t nan_states = 0;
+    for (auto& state : states) {
+        const auto& name = state.get_name();
+        // Only check KV-related states (skip sampling result etc)
+        if (name.find("key") == std::string::npos && name.find("value") == std::string::npos)
+            continue;
+        auto tensor = state.get_state();
+        if (tensor.get_element_type() != ov::element::f32) continue;
+        size_t nan_count = count_nan_inf(tensor);
+        if (nan_count > 0) {
+            if (nan_states == 0) {
+                EAGLE3_LOG("  !!!NaN in KV states (" << label << ")!!!");
+            }
+            EAGLE3_LOG("    state '" << name << "' shape=" << shape_str(tensor)
+                      << " has " << nan_count << " NaN/Inf values");
+            nan_states++;
+            if (nan_states >= 4) {
+                EAGLE3_LOG("    ... (more NaN states omitted)");
+                break;
+            }
+        }
+    }
+    if (nan_states == 0) {
+        EAGLE3_LOG("  KV states OK (no NaN) [" << label << "]");
+    }
+}
+
+}  // anonymous namespace (debug helpers)
+// ============ END DEBUG LOGGING ============
 
 namespace {
 
@@ -95,6 +226,15 @@ InputTensors Eagle3InputBuilder::build_target_prefill_inputs() const {
     result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, 1, 1});
     result.eagle_tree_mask.data<float>()[0] = 0.0f;
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("=== TARGET_PREFILL inputs ===");
+    EAGLE3_LOG("  prompt_len=" << prompt_len);
+    EAGLE3_LOG("  input_ids " << shape_str(result.input_ids) << ": " << dump_i64(result.input_ids));
+    EAGLE3_LOG("  position_ids " << shape_str(result.position_ids) << ": " << dump_i64(result.position_ids));
+    EAGLE3_LOG("  attention_mask " << shape_str(result.attention_mask));
+    EAGLE3_LOG("  eagle_tree_mask " << shape_str(result.eagle_tree_mask) << " (trivial)");
+#endif
+
     return result;
 }
 
@@ -165,6 +305,21 @@ InputTensors Eagle3InputBuilder::build_draft_initial_inputs(size_t input_token_c
             std::fill_n(row + start_pos, i + 1, 0.0f);
         }
     }
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("=== DRAFT_INITIAL inputs ===");
+    EAGLE3_LOG("  input_token_count=" << input_token_count << " start_pos=" << start_pos << " total_len=" << total_len);
+    EAGLE3_LOG("  input_ids " << shape_str(result.input_ids) << ": " << dump_i64(result.input_ids));
+    EAGLE3_LOG("  position_ids " << shape_str(result.position_ids) << ": " << dump_i64(result.position_ids)
+              << " [CRITICAL: pos[0]=" << result.position_ids.data<int64_t>()[0] << " controls NPU KV trim]");
+    EAGLE3_LOG("  attention_mask " << shape_str(result.attention_mask));
+    EAGLE3_LOG("  eagle_tree_mask " << shape_str(result.eagle_tree_mask)
+              << (start_pos == 0 || input_token_count == 1 ? " (trivial)" : " (causal)"));
+    if (start_pos > 0 && input_token_count > 1) {
+        dump_tree_mask_2d("DRAFT_INITIAL eagle_tree_mask",
+                          result.eagle_tree_mask.data<float>(), input_token_count, total_len);
+    }
+#endif
 
     return result;
 }
@@ -253,6 +408,19 @@ InputTensors Eagle3InputBuilder::build_draft_iteration_inputs(size_t past_accept
         }
     }
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("=== DRAFT_ITERATION inputs ===");
+    EAGLE3_LOG("  num_seqs=" << num_seqs << " branch_len=" << branch_len
+              << " total_tokens=" << total_tokens << " history_len=" << history_len
+              << " attn_len=" << attn_len);
+    EAGLE3_LOG("  input_ids " << shape_str(result.input_ids) << ": " << dump_i64(result.input_ids));
+    EAGLE3_LOG("  position_ids " << shape_str(result.position_ids) << ": " << dump_i64(result.position_ids)
+              << " [CRITICAL: pos[0]=" << result.position_ids.data<int64_t>()[0] << " controls NPU KV trim]");
+    EAGLE3_LOG("  attention_mask " << shape_str(result.attention_mask));
+    EAGLE3_LOG("  eagle_tree_mask " << shape_str(result.eagle_tree_mask));
+    dump_tree_mask_2d("DRAFT_ITER eagle_tree_mask", mask_ptr, total_tokens, attn_len);
+#endif
+
     return result;
 }
 
@@ -339,6 +507,33 @@ InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
             row[context_len + j] = (tree_mask_bin[i][j] == 1) ? 0.0f : neg_inf;
         }
     }
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("=== TARGET_VALIDATION inputs ===");
+    EAGLE3_LOG("  num_candidates=" << num_candidates << " context_len=" << context_len << " attn_len=" << attn_len);
+    EAGLE3_LOG("  input_ids " << shape_str(result.input_ids) << ": " << dump_i64(result.input_ids));
+    EAGLE3_LOG("  position_ids " << shape_str(result.position_ids) << ": " << dump_i64(result.position_ids));
+    EAGLE3_LOG("  attention_mask " << shape_str(result.attention_mask));
+    // Print binary tree_mask from metadata
+    {
+        std::cerr << "[EAGLE3-DBG]   tree_mask_bin (" << num_candidates << "x" << num_candidates << "):" << std::endl;
+        for (size_t i = 0; i < num_candidates; ++i) {
+            std::cerr << "[EAGLE3-DBG]     row" << i << ": ";
+            for (size_t j = 0; j < num_candidates; ++j) std::cerr << static_cast<int>(tree_mask_bin[i][j]) << " ";
+            std::cerr << std::endl;
+        }
+    }
+    EAGLE3_LOG("  tree_position_ids: ");
+    {
+        std::ostringstream os;
+        os << "[";
+        for (size_t i = 0; i < tree_pos_ids.size(); ++i) { if (i) os << ","; os << tree_pos_ids[i]; }
+        os << "]";
+        EAGLE3_LOG("    " << os.str());
+    }
+    EAGLE3_LOG("  eagle_tree_mask " << shape_str(result.eagle_tree_mask));
+    dump_tree_mask_2d("TARGET_VALIDATE eagle_tree_mask", mask_ptr, num_candidates, attn_len);
+#endif
 
     return result;
 }
@@ -616,14 +811,26 @@ ov::Tensor Eagle3InferWrapperBase::get_hidden_features(size_t actual_seq_len) co
         actual_seq_len = m_request.get_tensor("input_ids").get_shape()[1];
     }
 
-    if (output_seq_len == actual_seq_len)
+    if (output_seq_len == actual_seq_len) {
+#if EAGLE3_DEBUG
+        EAGLE3_LOG("  get_hidden_features: raw_shape=[1," << output_seq_len << "," << shape[2]
+                  << "] no slice needed (actual_seq_len==output_seq_len=" << actual_seq_len << ")");
+#endif
         return hidden_state;
+    }
 
     OPENVINO_ASSERT(actual_seq_len <= output_seq_len,
                     "Sequence length mismatch: actual=",
                     actual_seq_len,
                     ", output=",
                     output_seq_len);
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("  get_hidden_features: raw_shape=[1," << output_seq_len << "," << shape[2]
+              << "] slice=[" << (output_seq_len - actual_seq_len) << "," << output_seq_len
+              << ") -> taking last " << actual_seq_len << " positions");
+#endif
+
     auto [start_coord, end_coord] =
         ov::genai::utils::make_roi(shape, 1, output_seq_len - actual_seq_len, output_seq_len);
     return ov::Tensor(hidden_state, start_coord, end_coord);
@@ -635,8 +842,13 @@ ov::Tensor Eagle3InferWrapperBase::trim_tensor_tail(const ov::Tensor& tensor, si
                     "trim_tensor_tail expects shape [1, seq_len, dim], got: ",
                     shape);
     const size_t output_len = shape[1];
-    if (output_len == useful_len)
+    if (output_len == useful_len) {
+#if EAGLE3_DEBUG
+        EAGLE3_LOG("  trim_tensor_tail: shape=[1," << output_len << "," << shape[2]
+                  << "] no trim needed (useful_len==output_len=" << useful_len << ")");
+#endif
         return tensor;
+    }
 
     OPENVINO_ASSERT(useful_len > 0 && useful_len <= output_len,
                     "useful_len (",
@@ -644,6 +856,13 @@ ov::Tensor Eagle3InferWrapperBase::trim_tensor_tail(const ov::Tensor& tensor, si
                     ") out of range [1, ",
                     output_len,
                     "]");
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("  trim_tensor_tail: shape=[1," << output_len << "," << shape[2]
+              << "] slice=[" << (output_len - useful_len) << "," << output_len
+              << ") -> taking last " << useful_len << " positions");
+#endif
+
     auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 1, output_len - useful_len, output_len);
     return ov::Tensor(tensor, start_coord, end_coord);
 }
@@ -695,10 +914,24 @@ InferenceOutput Eagle3TargetWrapper::infer(const InputTensors& inputs) {
     m_request.set_tensor("position_ids", inputs.position_ids);
     m_request.set_tensor("eagle_tree_mask", inputs.eagle_tree_mask);
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("--- TARGET infer() BEFORE ---");
+    EAGLE3_LOG("  input_ids " << shape_str(inputs.input_ids)
+              << " pos_ids " << shape_str(inputs.position_ids)
+              << " attn_mask " << shape_str(inputs.attention_mask)
+              << " tree_mask " << shape_str(inputs.eagle_tree_mask));
+#endif
+
     const uint64_t time_us = execute_inference();
     update_inference_time(time_us);
 
     auto result = InferenceOutput{get_logits(), get_hidden_features(input_len)};
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("--- TARGET infer() AFTER (" << time_us << " us) ---");
+    EAGLE3_LOG("  logits " << shape_str(result.logits) << " hidden " << shape_str(result.hidden_features));
+#endif
+
     return result;
 }
 
@@ -712,14 +945,35 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
     const InputTensors inputs =
         is_validation ? builder.build_target_validation_inputs() : builder.build_target_prefill_inputs();
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG(">>> TARGET forward() mode=" << (is_validation ? "VALIDATION" : "PREFILL")
+              << " input_token_count=" << ctx.input_token_count
+              << " num_tokens_to_validate=" << ctx.num_tokens_to_validate);
+#endif
+
     auto output = infer(inputs);
 
     // Strip NPU output padding: prefill uses last 1 position, validation uses all candidates.
     const size_t num_candidates = is_validation ? inputs.input_ids.get_shape()[1] : 1;
     output.logits = trim_tensor_tail(output.logits, num_candidates);
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("  TARGET logits after trim: " << shape_str(output.logits)
+              << " num_candidates=" << num_candidates);
+#endif
+
     const std::vector<int64_t> sampled =
         sample_and_validate(output.logits, ctx.input_token_count, num_candidates, ctx.num_tokens_to_validate);
+
+#if EAGLE3_DEBUG
+    {
+        std::ostringstream os;
+        os << "[";
+        for (size_t i = 0; i < sampled.size(); ++i) { if (i) os << ","; os << sampled[i]; }
+        os << "]";
+        EAGLE3_LOG("  TARGET sampled tokens (" << sampled.size() << "): " << os.str());
+    }
+#endif
 
     get_current_sequence()->update_hidden_state(output.hidden_features);
 
@@ -783,10 +1037,62 @@ InferenceOutput Eagle3DraftWrapper::infer(const InputTensors& inputs, const ov::
     OPENVINO_ASSERT(hs_shape.size() == 3, "Invalid hidden states shape: ", hs_shape);
     m_request.set_tensor("hidden_states", hidden_states);
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("--- DRAFT infer() BEFORE ---");
+    EAGLE3_LOG("  input_ids " << shape_str(inputs.input_ids)
+              << " pos_ids " << shape_str(inputs.position_ids)
+              << " attn_mask " << shape_str(inputs.attention_mask)
+              << " tree_mask " << shape_str(inputs.eagle_tree_mask)
+              << " hidden " << shape_str(hidden_states));
+    EAGLE3_LOG("  hidden_states values: " << dump_f32_brief(hidden_states));
+    // Check KV cache for NaN BEFORE inference
+    check_kv_states_for_nan(m_request, "DRAFT pre-infer");
+#endif
+
     const uint64_t time_us = execute_inference();
     update_inference_time(time_us);
 
     auto result = InferenceOutput{get_logits(), get_hidden_features(input_token_count)};
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("--- DRAFT infer() AFTER (" << time_us << " us) ---");
+    EAGLE3_LOG("  logits " << shape_str(result.logits) << " hidden " << shape_str(result.hidden_features));
+    EAGLE3_LOG("  logits values: " << dump_f32_brief(result.logits));
+    EAGLE3_LOG("  hidden_features values: " << dump_f32_brief(result.hidden_features));
+    // NaN watchdog
+    {
+        size_t logits_nan = count_nan_inf(result.logits);
+        size_t hidden_nan = count_nan_inf(result.hidden_features);
+        if (logits_nan > 0 || hidden_nan > 0) {
+            EAGLE3_LOG("  !!!WARNING!!! NaN detected in DRAFT output!"
+                      << " logits_nan=" << logits_nan << "/" << result.logits.get_size()
+                      << " hidden_nan=" << hidden_nan << "/" << result.hidden_features.get_size());
+            // Also check raw (untrimmed) logits and hidden
+            auto raw_logits = m_request.get_tensor("logits");
+            auto raw_hidden = m_request.get_tensor("last_hidden_state");
+            EAGLE3_LOG("  raw logits " << shape_str(raw_logits) << " nan=" << count_nan_inf(raw_logits));
+            EAGLE3_LOG("  raw hidden " << shape_str(raw_hidden) << " nan=" << count_nan_inf(raw_hidden));
+            // Print per-position NaN status for raw logits: which positions have NaN?
+            {
+                const auto& ls = raw_logits.get_shape(); // [1, seq, vocab]
+                const float* lp = raw_logits.data<const float>();
+                const size_t seq = ls[1], vocab = ls[2];
+                std::cerr << "[EAGLE3-DBG]   per-position NaN check (raw logits [1," << seq << "," << vocab << "]):";
+                for (size_t s = 0; s < seq; ++s) {
+                    size_t pos_nan = 0;
+                    for (size_t v = 0; v < vocab; ++v) {
+                        if (std::isnan(lp[s * vocab + v])) ++pos_nan;
+                    }
+                    std::cerr << " pos" << s << "=" << pos_nan;
+                }
+                std::cerr << std::endl;
+            }
+            // Check KV after inference
+            check_kv_states_for_nan(m_request, "DRAFT post-infer");
+        }
+    }
+#endif
+
     return result;
 }
 
@@ -978,6 +1284,13 @@ ov::Tensor Eagle3DraftWrapper::gather_logits_for_sampling(const InferenceOutput&
 InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
     Eagle3InputBuilder builder(m_sequence_group);
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG(">>> DRAFT forward() mode=" << (ctx.use_target_hidden ? "DRAFT_INITIAL" : "DRAFT_ITERATION")
+              << " input_token_count=" << ctx.input_token_count
+              << " past_accepted=" << ctx.past_accepted_token_count
+              << " running_seqs=" << m_sequence_group->get_running_sequences().size());
+#endif
+
     const InputTensors inputs = ctx.use_target_hidden
                                     ? builder.build_draft_initial_inputs(ctx.input_token_count)
                                     : builder.build_draft_iteration_inputs(ctx.past_accepted_token_count);
@@ -989,10 +1302,25 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
     const size_t useful_logits_len = ctx.use_target_hidden ? 1 : inputs.input_ids.get_shape()[1];
     output.logits = trim_tensor_tail(output.logits, useful_logits_len);
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("  DRAFT logits after trim: " << shape_str(output.logits) << " useful_len=" << useful_logits_len);
+#endif
+
     update_hidden_states(output, ctx);
 
     const ov::Tensor logits = gather_logits_for_sampling(output, ctx);
     auto sampled = sample_next_tokens(logits, ctx.input_token_count);
+
+#if EAGLE3_DEBUG
+    {
+        std::ostringstream os;
+        os << "[";
+        for (size_t i = 0; i < sampled.size(); ++i) { if (i) os << ","; os << sampled[i]; }
+        os << "]";
+        EAGLE3_LOG("  DRAFT sampled tokens (" << sampled.size() << "): " << os.str()
+                  << " running_seqs_after=" << m_sequence_group->get_running_sequences().size());
+    }
+#endif
 
     return InferResult{std::move(output), std::move(sampled)};
 }
@@ -1032,6 +1360,9 @@ Eagle3CompileConfig StatefulEagle3LLMPipeline::build_compile_config(const ModelD
     cfg.max_tree_depth = get_or("MAX_TREE_DEPTH", m_generation_config.tree_depth);
     cfg.max_branching_factor = get_or("MAX_BRANCHING_FACTOR", m_generation_config.branching_factor);
     cfg.max_assistant_tokens = get_or("MAX_ASSISTANT_TOKENS", m_generation_config.num_assistant_tokens);
+    std::cout << "StatefulEagle3LLMPipeline: compile-time limits: max_tree_depth=" << cfg.max_tree_depth
+              << ", max_branching_factor=" << cfg.max_branching_factor
+              << ", max_assistant_tokens=" << cfg.max_assistant_tokens << std::endl;
     return cfg;
 }
 
@@ -1086,6 +1417,8 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
                                                             const ModelDesc& draft_model_desc) {
     const size_t target_validation_window = m_compile_config.target_max_gen_tokens();
     const size_t draft_validation_window = m_compile_config.draft_max_gen_tokens();
+    std::cout << "StatefulEagle3LLMPipeline: NPU validation windows: target=" << target_validation_window
+              << ", draft=" << draft_validation_window << std::endl;
 
     // --- Configure and create draft model ---
     auto draft_desc = draft_model_desc;
@@ -1093,6 +1426,8 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
         draft_desc.properties[NPUW_EAGLE] = "TRUE";
         draft_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = draft_validation_window;
         draft_desc.properties[NPUW_ONLINE_PIPELINE] = "NONE";  // Disable NPUW online pipeline optimization.
+        draft_desc.properties["NPUW_DEVICES"] = "CPU";
+        draft_desc.properties["NPUW_CACHE_DIR"] = "/home/shig/Github/openvino.genai/samples/python/text_generation/blob_cache_drafter";
     }
     m_draft = std::make_unique<Eagle3DraftWrapper>(draft_desc);
     m_draft->set_draft_target_mapping(m_d2t_mapping);
@@ -1103,6 +1438,8 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
         target_desc.properties[NPUW_EAGLE] = "TRUE";
         target_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = target_validation_window;
         target_desc.properties[NPUW_SLICE_OUT] = "NO";
+        target_desc.properties["NPUW_DEVICES"] = "CPU";
+        target_desc.properties["NPUW_CACHE_DIR"] = "/home/shig/Github/openvino.genai/samples/python/text_generation/blob_cache_main";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 }
@@ -1151,11 +1488,20 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
 }
 
 int64_t StatefulEagle3LLMPipeline::run_prefill(const GenerationConfig& config) {
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("============ PREFILL START (prompt_len=" << m_prompt_length << ") ============");
+#endif
     InferContext prefill_ctx;
     prefill_ctx.input_token_count = m_prompt_length;
     const auto prefill_result = m_target->forward(prefill_ctx);
     OPENVINO_ASSERT(prefill_result.sampled_tokens.size() == 1, "Expected single token from prefill");
     const int64_t initial_token = prefill_result.sampled_tokens[0];
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("  PREFILL initial_token=" << initial_token
+              << " hidden " << shape_str(prefill_result.output.hidden_features)
+              << " logits " << shape_str(prefill_result.output.logits));
+#endif
 
     m_draft->append_tokens({initial_token});
 
@@ -1278,6 +1624,14 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     while (!eos_reached && generated_tokens < config.max_new_tokens &&
            m_target->get_sequence_length() < m_prompt_length + config.max_new_tokens &&
            streaming_status == ov::genai::StreamingStatus::RUNNING) {
+#if EAGLE3_DEBUG
+        EAGLE3_LOG("\n============ SPEC LOOP iter=" << g_spec_iter_count
+                  << " generated=" << generated_tokens
+                  << " input_token_count=" << input_token_count
+                  << " target_seq_len=" << m_target->get_sequence_length()
+                  << " draft_seq_len=" << m_draft->get_sequence_length()
+                  << " ============");
+#endif
         auto result =
             run_speculative_iteration(input_token_count, static_cast<int64_t>(config.eos_token_id), draft_iterations);
 
@@ -1349,6 +1703,34 @@ ValidationResult StatefulEagle3LLMPipeline::validate_draft_with_target() {
                     num_candidates);
     const size_t num_tree_nodes = num_candidates - 1;
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("=== validate_draft_with_target ===");
+    EAGLE3_LOG("  num_candidates=" << num_candidates << " num_tree_nodes=" << num_tree_nodes
+              << " draft_gen_ids.size()=" << draft_gen_ids.size());
+    {
+        const size_t tail_off = draft_gen_ids.size() - num_candidates;
+        std::ostringstream os;
+        os << "  candidate_tokens: [";
+        for (size_t i = 0; i < num_candidates; ++i) {
+            if (i) os << ",";
+            os << draft_gen_ids[tail_off + i];
+        }
+        os << "]";
+        EAGLE3_LOG(os.str());
+    }
+    // Print tree_position_ids
+    {
+        std::ostringstream os;
+        os << "  tree_position_ids: [";
+        for (size_t i = 0; i < draft_metadata.tree_position_ids.size(); ++i) {
+            if (i) os << ",";
+            os << draft_metadata.tree_position_ids[i];
+        }
+        os << "]";
+        EAGLE3_LOG(os.str());
+    }
+#endif
+
     // Sync TreeMetaData and candidate tokens from DRAFT -> TARGET.
     m_target->get_current_sequence()->set_tree_metadata(draft_metadata);
 
@@ -1390,6 +1772,24 @@ void StatefulEagle3LLMPipeline::synchronize_after_validation(const ValidationRes
     const size_t total_accepted_tokens = validation.validated_tokens.size();
     const size_t tokens_to_remove = validation.num_candidates - total_accepted_tokens;
 
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("=== synchronize_after_validation ===");
+    EAGLE3_LOG("  total_accepted=" << total_accepted_tokens
+              << " tokens_to_remove=" << tokens_to_remove
+              << " num_candidates=" << validation.num_candidates
+              << " pre_draft_token_len=" << pre_draft_token_len);
+    {
+        std::ostringstream os;
+        os << "  validated_tokens: [";
+        for (size_t i = 0; i < validation.validated_tokens.size(); ++i) {
+            if (i) os << ",";
+            os << validation.validated_tokens[i];
+        }
+        os << "]";
+        EAGLE3_LOG(os.str());
+    }
+#endif
+
     // Sync draft model's sequence.
     m_draft->truncate_sequence(pre_draft_token_len);
     m_draft->append_tokens(validation.validated_tokens);
@@ -1408,6 +1808,18 @@ void StatefulEagle3LLMPipeline::synchronize_after_validation(const ValidationRes
     // Kept for future multi-device support.
     if (m_target->device() == "NPU") {
         const auto& validated_indices = m_target->get_current_sequence()->get_tree_metadata().validated_indices;
+#if EAGLE3_DEBUG
+        {
+            std::ostringstream os;
+            os << "  NPU sampling result: validated_indices=[";
+            for (size_t i = 0; i < validated_indices.size(); ++i) {
+                if (i) os << ",";
+                os << validated_indices[i];
+            }
+            os << "] num_candidates=" << validation.num_candidates;
+            EAGLE3_LOG(os.str());
+        }
+#endif
         m_target->set_npu_sampling_result(validation.num_candidates, validated_indices);
     } else if (tokens_to_remove > 0) {
         m_target->trim_kv_cache(tokens_to_remove);
@@ -1457,6 +1869,19 @@ void StatefulEagle3LLMPipeline::gather_accepted_hidden_states(const ValidationRe
         std::copy_n(src + row * hidden_size, hidden_size, dst + i * hidden_size);
     }
     m_target->get_current_sequence()->update_hidden_state(m_accepted_hidden_buf);
+
+#if EAGLE3_DEBUG
+    {
+        std::ostringstream os;
+        os << "  gather_accepted_hidden: indices=[";
+        for (size_t i = 0; i < validated_indices.size(); ++i) {
+            if (i) os << ",";
+            os << validated_indices[i];
+        }
+        os << "] -> gathered " << shape_str(m_accepted_hidden_buf);
+        EAGLE3_LOG(os.str());
+    }
+#endif
 }
 
 SpeculativeResult StatefulEagle3LLMPipeline::run_speculative_iteration(size_t input_token_count,
@@ -1471,6 +1896,15 @@ SpeculativeResult StatefulEagle3LLMPipeline::run_speculative_iteration(size_t in
 
     const size_t pre_draft_token_len = m_draft->get_sequence_length();
     const size_t past_accepted_token_count = m_target->get_current_sequence()->get_generated_ids().size();
+
+#if EAGLE3_DEBUG
+    EAGLE3_LOG("------ run_speculative_iteration #" << g_spec_iter_count++ << " ------");
+    EAGLE3_LOG("  input_token_count=" << input_token_count
+              << " pre_draft_token_len=" << pre_draft_token_len
+              << " past_accepted_token_count=" << past_accepted_token_count
+              << " draft_iterations=" << draft_iterations);
+    EAGLE3_LOG("  target_hidden " << shape_str(target_hidden));
+#endif
 
     // Clear stale TreeMetaData from the previous iteration.
     m_draft->get_current_sequence()->set_tree_metadata({});
@@ -1498,6 +1932,26 @@ SpeculativeResult StatefulEagle3LLMPipeline::run_speculative_iteration(size_t in
     result.next_window_size = validation.accepted_count + 1;
     result.validated_tokens = std::move(validation.validated_tokens);
     result.eos_reached = (target_predicted_token == eos_token_id);
+
+#if EAGLE3_DEBUG
+    {
+        std::ostringstream os;
+        os << "  SPEC RESULT: accepted=" << result.accepted_tokens_count
+           << " draft_tokens=" << result.num_draft_tokens
+           << " next_window=" << result.next_window_size
+           << " eos=" << result.eos_reached
+           << " validated=[";
+        for (size_t i = 0; i < result.validated_tokens.size(); ++i) {
+            if (i) os << ",";
+            os << result.validated_tokens[i];
+        }
+        os << "]";
+        EAGLE3_LOG(os.str());
+        EAGLE3_LOG("  draft_seq_len_after=" << m_draft->get_sequence_length()
+                  << " target_seq_len_after=" << m_target->get_sequence_length());
+    }
+#endif
+
     return result;
 }
 
