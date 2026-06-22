@@ -15,8 +15,10 @@ from typing import Literal
 import sys
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
 from PIL import Image
+from sentence_transformers import SentenceTransformer
 from torch import Tensor
 import torch
+import torch.nn.functional as F
 from transformers import AutoModel, AutoProcessor
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
@@ -28,7 +30,8 @@ EMBEDDINGS_TEST_MODELS = [
 ]
 
 MULTIMODAL_EMBEDDINGS_TEST_MODELS = [
-    "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding"
+    "Qwen/Qwen3-VL-Embedding-2B",
+    # "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding"
 ]
 
 RERANK_TEST_MODELS = [
@@ -206,6 +209,53 @@ def run_multimodal_embedding_hf(
     return pooled[0].to(torch.float32).detach().cpu().numpy().reshape(1, -1)
 
 
+def run_multimodal_embedding_sentence_transformers(
+    model_id: str,
+    text: str,
+    image: np.ndarray | None = None,
+    prompt: str | None = None,
+) -> np.ndarray:
+    model = SentenceTransformer(model_id)
+    model_input = {"text": text}
+    if image is not None:
+        model_input["image"] = Image.fromarray(image)
+
+    return model.encode([model_input], prompt=prompt, convert_to_numpy=True).astype(np.float32)
+
+
+def run_multimodal_embedding_transformers(
+    model_id: str,
+    text: str,
+    image: np.ndarray | None = None,
+    prompt: str = "Represent the user's input.",
+) -> np.ndarray:
+    processor = AutoProcessor.from_pretrained(model_id, padding_side="right")
+    model = AutoModel.from_pretrained(model_id)
+
+    content = [{"type": "text", "text": text}]
+    if image is not None:
+        content.append({"type": "image", "image": Image.fromarray(image)})
+    conversation = [
+        {"role": "system", "content": [{"type": "text", "text": prompt}]},
+        {"role": "user", "content": content},
+    ]
+    templated_text = processor.apply_chat_template(conversation, add_generation_prompt=False, tokenize=False)
+    inputs = processor(
+        text=[templated_text],
+        images=[Image.fromarray(image)] if image is not None else None,
+        padding=True,
+        return_tensors="pt",
+    )
+    print(inputs)
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    sequence_lengths = inputs["attention_mask"].sum(dim=1) - 1
+    pooled = outputs.last_hidden_state[torch.arange(outputs.last_hidden_state.shape[0]), sequence_lengths]
+    return F.normalize(pooled.to(torch.float32), p=2, dim=-1).cpu().numpy()
+
+
 def assert_embedding_matches_hf_cosine(result: ov.Tensor, reference: np.ndarray, max_cosine_diff: float):
     actual = np.array(result.data, dtype=np.float32).reshape(result.shape)
     actual_norm = np.linalg.norm(actual)
@@ -274,7 +324,7 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
     image_array = make_embedding_test_image_array()
     image = make_embedding_test_image()
-    image_text_prompt = "<|vision_start|><|image_pad|><|vision_end|> A woman playing with her dog on a beach at sunset."
+    image_text_prompt = " المرأ playing with her dog on a beach at sunset."
     hf_processor, hf_model = multimodal_emb_hf_components
 
     result = pipeline.embed(image_text_prompt, images=[image])
@@ -285,6 +335,51 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
     pipeline.start_embed_async(image_text_prompt, images=[image])
     async_result = pipeline.wait()
     assert async_result.shape == result.shape
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_image_sentence_transformers(multimodal_emb_model):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    image_array = make_embedding_test_image_array()
+    image = make_embedding_test_image()
+    text = "A woman playing with her dog on a beach at sunset."
+    prompt = "Represent the user's input."
+    # prompt = ""
+
+    result = pipeline.embed(text, images=[image], prompt=prompt)
+    assert_embedding_tensor(result, 1)
+    sentence_transformers_result = run_multimodal_embedding_sentence_transformers(
+        multimodal_emb_model.model_id,
+        text,
+        image=image_array,
+        prompt=prompt,
+    )
+    assert_embedding_matches_hf_cosine(result, sentence_transformers_result, max_cosine_diff=0.05)
+
+
+@pytest.mark.parametrize("model_id", MULTIMODAL_EMBEDDINGS_TEST_MODELS)
+def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(model_id):
+    image_array = make_embedding_test_image_array()
+    text = "A woman"
+    prompt = "hi"
+
+    sentence_transformers_result = run_multimodal_embedding_sentence_transformers(
+        model_id,
+        text,
+        image=image_array,
+        prompt=prompt,
+    )
+    transformers_result = run_multimodal_embedding_transformers(
+        model_id,
+        text,
+        image=image_array,
+        prompt=prompt,
+    )
+    assert_embedding_matches_hf_cosine(
+        ov.Tensor(sentence_transformers_result),
+        transformers_result,
+        max_cosine_diff=0.05,
+    )
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
