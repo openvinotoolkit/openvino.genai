@@ -1255,6 +1255,9 @@ def main():
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
+    if args.llamacpp and args.model_type != "text":
+        raise ValueError("--llamacpp is supported only with --model-type text")
+
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
