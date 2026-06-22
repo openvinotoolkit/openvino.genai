@@ -14,6 +14,12 @@ namespace ov::genai {
 /// The merged vision model is loaded and used by InputsEmbedderQwen3Omni.
 class VisionEncoderQwen3Omni : public VisionEncoderQwen3VL {
 public:
+    // Patch preprocessing offload mode, selected by the VISION_PREPROCESS env var:
+    //   unset / "GPU"  -> GpuFull      : resize + normalize + reshape/transpose/flatten on GPU (Stage 2)
+    //   "GPU_REARRANGE"-> GpuRearrange : CPU resize+normalize, GPU reshape/transpose/flatten (Stage 1, bit-identical)
+    //   "CPP"          -> Cpu          : full host CPU path (reference)
+    enum class PatchPreprocMode { Cpu, GpuRearrange, GpuFull };
+
     explicit VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,
                                     const std::string& device,
                                     const ov::AnyMap properties);
@@ -35,11 +41,7 @@ private:
                                size_t frame_num,
                                size_t frame_id);
 
-    // GPU-offloaded patch reshape/transpose/flatten (Stage 1). Bit-identical to the CPU
-    // reshape_image_patches + transpose_image_patches path; runs the pure data-movement step
-    // on the accelerator instead of the host CPU.
-    // Disabled (falls back to the CPU path) when the env var VISION_PREPROCESS=CPP is set.
-    bool m_use_gpu_patch_rearrange = true;
+    PatchPreprocMode m_preproc_mode = PatchPreprocMode::GpuFull;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_patch_rearrange;
 };
 
