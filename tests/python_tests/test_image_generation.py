@@ -262,6 +262,7 @@ class TestImageGenerationWithBlobTensorModels:
 
     def _read_blob_tensor(self, blob_dir, model_folder):
         from pathlib import Path
+
         blob_path = Path(blob_dir) / model_folder / "openvino_model.blob"
         try:
             with open(blob_path, "rb") as file:
