@@ -634,10 +634,6 @@ def llamacpp_gen_text(
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
 ):
-    _ = tokenizer
-    _ = empty_adapters
-    _ = num_assistant_tokens
-    _ = assistant_confidence_threshold
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         return output["choices"][0]["message"]["content"]
@@ -1254,6 +1250,9 @@ def main():
 
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
+
+    if args.llamacpp and args.model_type != "text":
+        raise ValueError("--llamacpp is supported only with --model-type text")
 
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
