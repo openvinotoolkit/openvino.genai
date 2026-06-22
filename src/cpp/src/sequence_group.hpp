@@ -444,7 +444,11 @@ public:
                     } else if (input_name == "visual_pos_masks") {
                         m_visual_pos_masks = std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
                     } else if (input_name == "per_layer_inputs") {
-                        m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), tensor.get_shape());
+                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "per_layer_inputs must have element type f32");
+                        const auto& shape = tensor.get_shape();
+                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1,
+                            "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
+                        m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
                         tensor.copy_to(m_per_layer_inputs);
                     } else {
                         OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);

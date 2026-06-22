@@ -213,12 +213,22 @@ struct PerLayerInputsContext {
         const ov::Tensor& initial_per_layer_inputs,
         const std::function<ov::Tensor(const ov::Tensor&)>& per_layer_embeddings_callback
     ) {
-        if (!initial_per_layer_inputs || !per_layer_embeddings_callback) {
+        if (!initial_per_layer_inputs) {
             return;
         }
-        const auto& shape = initial_per_layer_inputs.get_shape();
-        num_hidden_layers = shape.at(2);
-        hidden_size = shape.at(3);
+
+        OPENVINO_ASSERT(per_layer_embeddings_callback,
+            "per_layer_embeddings_callback is not set while per_layer_inputs is provided");
+        OPENVINO_ASSERT(initial_per_layer_inputs.get_element_type() == ov::element::f32,
+            "per_layer_inputs must have element type f32");
+
+        const auto& initial_per_layer_inputs_shape = initial_per_layer_inputs.get_shape();
+
+        OPENVINO_ASSERT(initial_per_layer_inputs_shape.size() == 4 && initial_per_layer_inputs_shape[0] == 1,
+            "initial_per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
+
+        num_hidden_layers = initial_per_layer_inputs_shape.at(2);
+        hidden_size = initial_per_layer_inputs_shape.at(3);
         per_token_size = num_hidden_layers * hidden_size;
         embeds_callback = per_layer_embeddings_callback;
         has_per_layer_inputs = true;
@@ -240,6 +250,10 @@ struct PerLayerInputsContext {
             // prompt phase: copy from stored per_layer_inputs
             const auto& initial_per_layer_inputs = sequence_group->get_per_layer_inputs();
             OPENVINO_ASSERT(initial_per_layer_inputs, "per_layer_inputs not stored for sequence group in prompt phase");
+            OPENVINO_ASSERT(initial_per_layer_inputs.get_element_type() == ov::element::f32,
+                "per_layer_inputs must have element type f32");
+            OPENVINO_ASSERT(initial_per_layer_inputs.get_size() >= (num_processed_tokens + num_scheduled_tokens) * per_token_size,
+                "stored per_layer_inputs is smaller than required scheduled window");
             const float* src = initial_per_layer_inputs.data<const float>() + num_processed_tokens * per_token_size;
             std::memcpy(dst, src, bytes_to_copy);
         } else {
@@ -251,6 +265,10 @@ struct PerLayerInputsContext {
                 input_ids_data[i] = generated_ids[num_processed_tokens + i - prompt_len];
             }
             const ov::Tensor per_layer_embeds = embeds_callback(input_ids);
+            OPENVINO_ASSERT(per_layer_embeds.get_element_type() == ov::element::f32,
+                "per_layer_embeddings_callback must return a tensor with element type f32");
+             OPENVINO_ASSERT(per_layer_embeds.get_size() >= num_scheduled_tokens * per_token_size,
+                "per-layer embeddings tensor is smaller than required scheduled window");
             const float* src = per_layer_embeds.data<const float>();
             std::memcpy(dst, src, bytes_to_copy);
         }
