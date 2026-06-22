@@ -1,0 +1,18 @@
+--- a/gguflib.c
++++ b/gguflib.c
+@@ -324,6 +324,15 @@
+     uint32_t *num_dim = (uint32_t*) (ctx->data+ctx->off);
+     ctx->off += 4;  // Skip number of dimensions.
+     tensor->ndim = *num_dim;
++    /* Security hardening (OpenVINO GenAI): reject a tensor whose declared
++     * dimension count exceeds the fixed-size dim[] array. The assert() below
++     * is compiled out under NDEBUG (release builds, shipped wheels), so without
++     * this hard runtime check a crafted .gguf with ndim > GGUF_TENSOR_MAX_DIM
++     * overflows the caller's stack-allocated gguf_tensor. Fail the read instead. */
++    if (tensor->ndim > GGUF_TENSOR_MAX_DIM) {
++        tensor->name = NULL;
++        return 0;
++    }
+     assert(tensor->ndim <= GGUF_TENSOR_MAX_DIM);
+ 
+     /* Read the dimentions: all the unused dimensions are set to 1. */
