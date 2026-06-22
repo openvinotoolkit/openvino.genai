@@ -322,6 +322,18 @@ def _disable_chat_template_for_native_tag_model(
         generation_config.apply_chat_template = False
 
 
+def _get_generate_kwargs_for_native_tag_model(ov_pipe_model: VlmModelInfo) -> dict[str, bool]:
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        return {"apply_chat_template": False}
+
+    return {}
+
+
+def _skip_chat_template_required_test_for_native_tag_model(ov_pipe_model: VlmModelInfo) -> None:
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip(f"{ov_pipe_model.model_id} does not provide chat_template for chat-mode tests.")
+
+
 def is_optimum_intel_version_for_videochat_flash_qwen():
     """
     Return True when optimum-intel exposes public support for
@@ -752,6 +764,7 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         images=test_images,
         generation_config=generation_config,
         streamer=streamer,
+        **_get_generate_kwargs_for_native_tag_model(ov_pipe_model),
     )
 
     assert res.texts[0] == "".join(result_from_streamer)
@@ -1005,6 +1018,8 @@ def test_vlm_pipeline_chat(
     system_message: str,
     iteration_images: list[list[PIL.Image]],
 ):
+    _skip_chat_template_required_test_for_native_tag_model(ov_pipe_model)
+
     ov_pipe = ov_pipe_model.pipeline
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -1047,6 +1062,8 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
+    _skip_chat_template_required_test_for_native_tag_model(ov_pipe_model)
+
     if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
         pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
@@ -1472,6 +1489,8 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
+    _skip_chat_template_required_test_for_native_tag_model(ov_pipe_model)
+
     if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
         pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
@@ -1607,6 +1626,8 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     ov_pipe_model: VlmModelInfo,
     image_sequence: list[openvino.Tensor],
 ):
+    _skip_chat_template_required_test_for_native_tag_model(ov_pipe_model)
+
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
 
