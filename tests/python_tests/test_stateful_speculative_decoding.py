@@ -388,15 +388,34 @@ def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_de
     target_model_path = target_model_schema.models_path
     draft_model_path = download_and_convert_model(draft_model).models_path
 
+    # Eagle3 tree search parameters:
+    branching_factor = 4
+    tree_depth = 2
+    num_assistant_tokens = 7
+
     # Create OpenVINO GenAI Eagle3 pipeline:
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    if draft_device == "NPU":
+        draft_config.update(
+            {
+                "MAX_TREE_DEPTH": tree_depth,
+                "MAX_BRANCHING_FACTOR": branching_factor,
+                "MAX_ASSISTANT_TOKENS": num_assistant_tokens,
+            }
+        )
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
     target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
 
     # Run reference HF model:
-    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=30, do_sample=False)
+    ov_generation_config = ov_genai.GenerationConfig(
+        max_new_tokens=30,
+        do_sample=False,
+        branching_factor=branching_factor,
+        tree_depth=tree_depth,
+        num_assistant_tokens=num_assistant_tokens,
+    )
     target_hf_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
     ref_gen_results = run_hugging_face(target_opt_model, target_hf_tokenizer, [prompt], ov_generation_config)
 
@@ -424,19 +443,36 @@ def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_dev
     target_model_path = download_and_convert_model(target_model).models_path
     draft_model_path = download_and_convert_model(draft_model).models_path
 
+    # Eagle3 tree search parameters:
+    branching_factor = 4
+    tree_depth = 2
+    num_assistant_tokens = 7
+
     # Create OpenVINO GenAI Eagle3 pipeline:
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    if draft_device == "NPU":
+        draft_config.update(
+            {
+                "MAX_TREE_DEPTH": tree_depth,
+                "MAX_BRANCHING_FACTOR": branching_factor,
+                "MAX_ASSISTANT_TOKENS": num_assistant_tokens,
+            }
+        )
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
     target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
     generation_config = ov_genai.GenerationConfig(
-        do_sample=False, max_new_tokens=30, ignore_eos=True, num_assistant_tokens=5
+        do_sample=False,
+        max_new_tokens=30,
+        ignore_eos=True,
+        branching_factor=branching_factor,
+        tree_depth=tree_depth,
+        num_assistant_tokens=num_assistant_tokens,
     )
 
     # Generate and collect both basic and extended performance metrics
     results = ov_pipe.generate([prompt], generation_config)
-    perf_metrics = results.perf_metrics
     extended_perf_metrics = results.extended_perf_metrics
 
     # Verify extended metrics exist (proves Eagle3 speculative decoding is enabled)

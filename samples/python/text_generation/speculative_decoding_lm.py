@@ -7,7 +7,7 @@ import openvino_genai
 
 def streamer(subword):
     print(subword, end='', flush=True)
-    # Return flag corresponds whether generation should be stopped. 
+    # Return flag corresponds whether generation should be stopped.
     return openvino_genai.StreamingStatus.RUNNING
 
 def main():
@@ -23,58 +23,62 @@ def main():
     main_device = 'CPU'
     draft_device = 'CPU'
 
+    # Select speculative decoding approach:
+    #   'fast_draft' - sequential candidate generation with a smaller draft model
+    #   'eagle3'     - Eagle3 tree-based candidate generation
+    speculative_mode = "fast_draft"
+
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
-    # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
-    # Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
-    # NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
-    # value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both
-    # backends.
-    config.num_assistant_tokens = 4
-    # Add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than
-    # `assistant_confidence_threshold`.
-    # NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
-    # config.assistant_confidence_threshold = 0.4
 
-    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
+    draft_properties = {}
 
+    if speculative_mode == "fast_draft":
+        # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold`
+        # are mutually exclusive.
+        # `num_assistant_tokens` controls how many candidates the draft model generates per iteration.
+        # NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses it as initial
+        # value and adjusts based on recent number of accepted tokens. Defaults to `5` for both backends.
+        config.num_assistant_tokens = 4
+        # `assistant_confidence_threshold` generates candidates while probability exceeds the threshold.
+        # NOTE: supported only by ContinuousBatching backend.
+        # config.assistant_confidence_threshold = 0.4
+
+    elif speculative_mode == "eagle3":
+        # Eagle3 tree-based speculative decoding parameters:
+        # `branching_factor` - number of top-k candidates selected per tree node and kept globally per tree layer.
+        # `tree_depth` - lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+        # `num_assistant_tokens` - number of candidate (non-root) tokens submitted to the target model for
+        #   verification; total tree nodes = `num_assistant_tokens + 1` (including root).
+        # NOTE: The total draft tokens produced by the tree is:
+        #   total_draft_tokens = branching_factor^2 * (tree_depth - 1) + branching_factor
+        # Constraint: total_draft_tokens >= num_assistant_tokens must hold.
+        config.branching_factor = 4
+        config.tree_depth = 2
+        config.num_assistant_tokens = 7
+
+        # NPU requires static tensor shapes at model compilation time, so compile-time upper bounds
+        # for tree search dimensions must be specified. Runtime values must not exceed these limits.
+        # On CPU/GPU these properties are ignored and can be omitted.
+        if draft_device == "NPU":
+            draft_properties = dict(
+                MAX_TREE_DEPTH=config.tree_depth,
+                MAX_BRANCHING_FACTOR=config.branching_factor,
+                MAX_ASSISTANT_TOKENS=config.num_assistant_tokens,
+            )
+
+    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, **draft_properties)
     pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
 
-    # For Eagle3 tree-based speculative decoding, replace the FastDraft block above with:
-    # Tree search parameters (for Eagle3 tree-based speculative decoding):
-    # `branching_factor` is the number of top-k candidates selected per tree node and kept globally per tree layer.
-    # `tree_depth` is the lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
-    # NOTE: The total number of draft tokens produced by the tree is
-    # `total_draft_tokens = branching_factor^2 * (tree_depth - 1) + branching_factor`.
-    # `total_draft_tokens >= num_assistant_tokens` must hold. The top `num_assistant_tokens` candidates (by score) are
-    # selected from the tree for verification.
-    # For tree search, `num_assistant_tokens` serves as the overall number of candidate (non-root) tokens submitted to
-    # the target model for verification; total tree nodes = `num_assistant_tokens + 1` (including root).
-    # branching_factor = 2
-    # tree_depth = 3
-    # num_assistant_tokens = 7
-    # config.branching_factor = branching_factor
-    # config.tree_depth = tree_depth
-    # config.num_assistant_tokens = num_assistant_tokens
-    # On NPU, compile-time shape upper bounds must be passed to draft_model().
-    # The runtime GenerationConfig values above must not exceed these limits.
-    # draft_model = openvino_genai.draft_model(
-    #     args.draft_model_dir, 'NPU',
-    #     MAX_TREE_DEPTH=tree_depth,
-    #     MAX_BRANCHING_FACTOR=branching_factor,
-    #     MAX_ASSISTANT_TOKENS=num_assistant_tokens
-    # )
-    # pipe = openvino_genai.LLMPipeline(args.model_dir, 'NPU', draft_model=draft_model)
-
-    # Since the streamer is set, the results will be printed 
+    # Since the streamer is set, the results will be printed
     # every time a new token is generated and put into the streamer queue.
     res = pipe.generate([args.prompt], config, streamer)
     print()
     if (res.extended_perf_metrics):
         main_model_metrics = res.extended_perf_metrics.main_model_metrics
-        print(f"MAIN MODEL")
-        print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms" )
-        print(f"  TTFT: {main_model_metrics.get_ttft().mean:.2f} ± {main_model_metrics.get_ttft().std:.2f} ms" )
+        print("MAIN MODEL")
+        print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms")
+        print(f"  TTFT: {main_model_metrics.get_ttft().mean:.2f} ± {main_model_metrics.get_ttft().std:.2f} ms")
         print(f"  TTST: {main_model_metrics.get_ttst().mean:.2f} ± {main_model_metrics.get_ttst().std:.2f} ms/token")
         print(f"  TPOT: {main_model_metrics.get_tpot().mean:.2f} ± {main_model_metrics.get_tpot().std:.2f} ms/iteration")
         print(f"  AVG Latency: {main_model_metrics.get_latency().mean:.2f} ± {main_model_metrics.get_latency().std:.2f} ms/token")
@@ -83,8 +87,8 @@ def main():
         print(f"  Num accepted token: {res.extended_perf_metrics.get_num_accepted_tokens()} tokens")
 
         draft_model_metrics = res.extended_perf_metrics.draft_model_metrics
-        print(f"DRAFT MODEL" )
-        print(f"  Generate time: {draft_model_metrics.get_generate_duration().mean:.2f} ms" )
+        print("DRAFT MODEL")
+        print(f"  Generate time: {draft_model_metrics.get_generate_duration().mean:.2f} ms")
         print(f"  TTFT: {draft_model_metrics.get_ttft().mean:.2f} ms")
         print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f} ms/token")
         print(f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f} ± {draft_model_metrics.get_tpot().std:.2f} ms/token")
