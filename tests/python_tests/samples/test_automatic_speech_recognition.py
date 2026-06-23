@@ -25,19 +25,19 @@ def filter_word_level_timestamps(text: str) -> str:
     return filtered_text
 
 
-class TestWhisperSpeechRecognition:
-    @pytest.mark.whisper
+class TestAutomaticSpeechRecognition:
+    @pytest.mark.automatic_speech_recognition
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
-    def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):
+    def test_sample_automatic_speech_recognition(self, convert_model, download_test_content):
         # Run C++ sample
-        cpp_sample = SAMPLES_CPP_DIR / "whisper_speech_recognition"
+        cpp_sample = SAMPLES_CPP_DIR / "automatic_speech_recognition"
         cpp_command = [cpp_sample, convert_model, download_test_content]
         cpp_result = run_sample(cpp_command)
 
         # Run Python sample
-        py_script = SAMPLES_PY_DIR / "whisper_speech_recognition/whisper_speech_recognition.py"
+        py_script = SAMPLES_PY_DIR / "automatic_speech_recognition/automatic_speech_recognition.py"
         py_command = [sys.executable, py_script, convert_model, download_test_content]
         py_result = run_sample(py_command)
 
