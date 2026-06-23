@@ -150,7 +150,11 @@ class VisualTextEvaluator(TextEvaluator):
                 # Some models return a decoded output, like miniCPM-o
                 # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
                 return tokens[0][0]
-            if crop_question:
+            if (
+                crop_question
+                and tokens.shape[-1] > input_ids_len
+                and (tokens[:, :input_ids_len] == inputs["input_ids"]).all()
+            ):
                 tokens = tokens[:, input_ids_len:]
 
             answer = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]

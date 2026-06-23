@@ -831,7 +831,7 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 def is_model_with_automatic_crop(config):
     return (
         "internvl" in config.model_type
-        or "minicpmv" in config.model_type
+        or ("minicpmv" in config.model_type and config.model_type != "minicpmv4_6")
         or "videochat_flash_qwen" in config.model_type
     )
 
