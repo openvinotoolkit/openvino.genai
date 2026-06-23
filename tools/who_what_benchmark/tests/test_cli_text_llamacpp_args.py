@@ -399,8 +399,9 @@ def test_check_args_allows_llamacpp_for_text_chat(monkeypatch):
 
     monkeypatch.setattr(wwb, "parse_args", lambda: args)
     monkeypatch.setattr(wwb, "load_model", lambda *a, **k: object())
-    monkeypatch.setattr(wwb, "create_evaluator", lambda *_: type("DummyEvaluator", (), {"dump_gt": lambda self, _: None})())
-
+    monkeypatch.setattr(
+        wwb, "create_evaluator", lambda *_: type("DummyEvaluator", (), {"dump_gt": lambda self, _: None})()
+    )
     wwb.main()
 
 
