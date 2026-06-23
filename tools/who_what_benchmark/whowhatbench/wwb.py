@@ -856,6 +856,19 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
+            if tokenizer is not None and tokenizer.chat_template is None and not args.omit_chat_template:
+                # Some multimodal models (e.g. Qwen3-Omni) ship the chat template with the
+                # processor instead of the tokenizer. Reuse it so the reference and target models
+                # are prompted identically regardless of where the template is stored.
+                try:
+                    processor, _ = load_processor(args)
+                except Exception:
+                    processor = None
+                processor_chat_template = getattr(processor, "chat_template", None)
+                if processor_chat_template is not None:
+                    logger.info("Tokenizer has no chat_template; reusing the processor's chat_template.")
+                    tokenizer.chat_template = processor_chat_template
+
             use_chat_template = (
                 tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
             )

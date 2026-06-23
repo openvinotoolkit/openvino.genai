@@ -190,6 +190,7 @@ def load_text_llamacpp_pipeline(model_dir):
 # in AutoModelForCausalLM. Its text response is produced by the "thinker" submodule.
 OMNI_MODEL_TYPES = {
     "qwen3_omni_moe",
+    "qwen3_omni",
 }
 
 
@@ -205,6 +206,26 @@ def load_text_hf_omni_pipeline(model_id, device, trust_remote_code):
         raise ValueError(f"Model {model_id} does not expose a 'thinker' submodule required for text generation.")
     thinker.eval()
     return thinker
+
+
+def load_text_optimum_omni_pipeline(model_id, device, ov_config):
+    # Omni models are exported as multi-component IR (openvino_language_model.xml, ...),
+    # so they are loaded via OVModelForVisualCausalLM instead of OVModelForCausalLM.
+    from optimum.intel.openvino import OVModelForVisualCausalLM
+
+    try:
+        model = OVModelForVisualCausalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
+    except ValueError:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        model = OVModelForVisualCausalLM.from_pretrained(
+            model_id,
+            config=config,
+            trust_remote_code=True,
+            use_cache=True,
+            device=device,
+            ov_config=ov_config,
+        )
+    return model
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
@@ -264,6 +285,14 @@ def load_text_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM
+
+        try:
+            config = AutoConfig.from_pretrained(model_id)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
+            return load_text_optimum_omni_pipeline(model_id, device, ov_config)
+
         try:
             model = OVModelForCausalLM.from_pretrained(
                 model_id, device=device, ov_config=ov_config, **kwargs
