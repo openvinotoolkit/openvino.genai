@@ -47,7 +47,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@7b32f06bcaa24fc319a253251395c2061bbbdc0a
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@b0f640ad8270d06d36caf5549a091dc972625a15
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
