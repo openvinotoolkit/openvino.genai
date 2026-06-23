@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from conftest import run_wwb
-from ov_utils import download_hf_files_to_cache
-from ov_utils import get_ov_cache_dir
+from huggingface_hub import hf_hub_download
 from whowhatbench import model_loaders
 from whowhatbench import wwb
 
@@ -274,11 +273,10 @@ def test_loader_sets_llamacpp_n_ctx_default_for_llamacpp_backend(monkeypatch):
 
 
 def _get_tiny_llamacpp_model() -> Path:
-    repo_id = "afrideva/Tinystories-gpt-0.1-3m-GGUF"
-    gguf_file = "tinystories-gpt-0.1-3m.Q2_K.gguf"
-    cache_dir = get_ov_cache_dir() / "test_data" / "wwb_tinystories_gpt_0_1_3m_gguf"
-    model_dir = download_hf_files_to_cache(repo_id, cache_dir, [gguf_file])
-    return model_dir / gguf_file
+    return Path(hf_hub_download(
+        repo_id="afrideva/Tinystories-gpt-0.1-3m-GGUF",
+        filename="tinystories-gpt-0.1-3m.Q2_K.gguf",
+    ))
 
 
 def test_text_llamacpp_real_gguf_logs_backend_and_n_ctx(tmp_path):
