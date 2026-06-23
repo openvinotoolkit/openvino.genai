@@ -208,9 +208,9 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     try:
         from llama_cpp import Llama
     except ImportError as exc:
-         raise ModuleNotFoundError(
-             "Failed to import llama_cpp. Please install llama-cpp-python to use --llamacpp."
-         ) from exc
+        raise ModuleNotFoundError(
+            "Failed to import llama_cpp. Please install llama-cpp-python to use --llamacpp."
+        ) from exc
     n_ctx = kwargs.get("llamacpp_n_ctx", None)
     model_kwargs = {}
     if n_ctx is not None:
