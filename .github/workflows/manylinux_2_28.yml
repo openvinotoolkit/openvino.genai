@@ -693,7 +693,7 @@ jobs:
         env:
           CMAKE_CXX_COMPILER_LAUNCHER: ""
           CMAKE_C_COMPILER_LAUNCHER: ""
-        run: python -m pip install --prefer-binary llama-cpp-python
+        run: python -m pip install --prefer-binary -c "${{ env.SRC_DIR }}/tests/python_tests/constraints-wwb.txt" llama-cpp-python
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}

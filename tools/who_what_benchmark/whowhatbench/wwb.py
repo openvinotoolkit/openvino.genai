@@ -432,6 +432,19 @@ def check_args(args):
     if args.output is not None and os.path.isfile(args.output):
         raise ValueError(f"--output must be a directory path, not a file: '{args.output}'")
 
+    backend_flags = [args.hf, args.genai, args.llamacpp]
+    if sum(bool(flag) for flag in backend_flags) > 1:
+        raise ValueError("Options --hf, --genai and --llamacpp are mutually exclusive")
+
+    if args.llamacpp and args.model_type != "text":
+        raise ValueError("--llamacpp is supported only with --model-type text")
+
+    if args.llamacpp_n_ctx is not None and not args.llamacpp:
+        raise ValueError("--llamacpp-n-ctx requires --llamacpp")
+
+    if args.llamacpp_chat and not args.llamacpp:
+        raise ValueError("--llamacpp-chat requires --llamacpp")
+
 
 def load_prompts(args):
     if args.dataset is None:
@@ -870,9 +883,6 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
-            if args.llamacpp_chat and not args.llamacpp:
-                raise ValueError("--llamacpp-chat requires --llamacpp")
-
             if args.llamacpp:
                 use_chat_template = args.llamacpp_chat and not args.omit_chat_template
             else:
@@ -1250,12 +1260,6 @@ def main():
 
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
-
-    if args.llamacpp and args.model_type != "text":
-        raise ValueError("--llamacpp is supported only with --model-type text")
-
-    if args.llamacpp_chat and not args.llamacpp:
-        raise ValueError("--llamacpp-chat requires --llamacpp")
 
     kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
 

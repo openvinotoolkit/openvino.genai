@@ -45,10 +45,6 @@ logger = logging.getLogger(__name__)
 
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
-
-    if "llamacpp_n_ctx" not in sanitized_kwargs:
-        return sanitized_kwargs
-
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
     is_text_task = model_type in ("text", "text-chat")
     is_llamacpp_text_backend = is_text_task and use_llamacpp and not use_hf and not use_genai
@@ -60,8 +56,17 @@ def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
         return sanitized_kwargs
 
     if is_llamacpp_text_backend:
-        sanitized_kwargs["llamacpp_n_ctx"] = 8192 if n_ctx is None else int(n_ctx)
+        if n_ctx is None:
+            sanitized_kwargs["llamacpp_n_ctx"] = 8192
+        else:
+            n_ctx_int = int(n_ctx)
+            if n_ctx_int <= 0:
+                raise ValueError("--llamacpp-n-ctx must be a positive integer")
+            sanitized_kwargs["llamacpp_n_ctx"] = n_ctx_int
         return sanitized_kwargs
+
+    if n_ctx is not None:
+        raise ValueError("--llamacpp-n-ctx is supported only when llama.cpp is the selected text backend")
 
     sanitized_kwargs.pop("llamacpp_n_ctx", None)
     return sanitized_kwargs
@@ -202,10 +207,10 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
 def load_text_llamacpp_pipeline(model_dir, **kwargs):
     try:
         from llama_cpp import Llama
-    except ImportError:
-        logger.error(
-            "Failed to import llama_cpp package. Please install llama-cpp-python.")
-        exit(-1)
+    except ImportError as exc:
+         raise ModuleNotFoundError(
+             "Failed to import llama_cpp. Please install llama-cpp-python to use --llamacpp."
+         ) from exc
     n_ctx = kwargs.get("llamacpp_n_ctx", None)
     model_kwargs = {}
     if n_ctx is not None:
