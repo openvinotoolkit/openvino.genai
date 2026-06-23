@@ -488,6 +488,17 @@ def load_tokenizer(args):
     return tokenizer
 
 
+def get_processor_chat_template(args):
+    # Some multimodal models (e.g. Qwen3-Omni) ship the chat template with the
+    # processor instead of the tokenizer. Loading the processor may fail for
+    # non-multimodal models, in which case there is no processor chat template.
+    try:
+        processor, _ = load_processor(args)
+    except Exception:
+        processor = None
+    return getattr(processor, "chat_template", None)
+
+
 def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
@@ -857,14 +868,9 @@ def create_evaluator(base_model, args):
                 gen_answer_fn = None
 
             if tokenizer is not None and tokenizer.chat_template is None and not args.omit_chat_template:
-                # Some multimodal models (e.g. Qwen3-Omni) ship the chat template with the
-                # processor instead of the tokenizer. Reuse it so the reference and target models
+                # Reuse the processor's chat template so the reference and target models
                 # are prompted identically regardless of where the template is stored.
-                try:
-                    processor, _ = load_processor(args)
-                except Exception:
-                    processor = None
-                processor_chat_template = getattr(processor, "chat_template", None)
+                processor_chat_template = get_processor_chat_template(args)
                 if processor_chat_template is not None:
                     logger.info("Tokenizer has no chat_template; reusing the processor's chat_template.")
                     tokenizer.chat_template = processor_chat_template
@@ -1003,10 +1009,9 @@ def create_evaluator(base_model, args):
             tokenizer = load_tokenizer(args)
 
             if tokenizer is not None and tokenizer.chat_template is None:
-                # Some multimodal models (e.g. Qwen3-Omni) ship the chat template with the
-                # processor instead of the tokenizer. Reuse it so text-chat can run.
-                processor, _ = load_processor(args)
-                processor_chat_template = getattr(processor, "chat_template", None)
+                # Reuse the processor's chat template (e.g. Qwen3-Omni stores it there) so
+                # text-chat can run. Fall back to the user-facing error if none is available.
+                processor_chat_template = get_processor_chat_template(args)
                 if processor_chat_template is None:
                     raise ValueError(
                         "Tokenizer for model type 'text-chat' has no 'chat_template' defined. "

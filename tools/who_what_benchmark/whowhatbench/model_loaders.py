@@ -198,7 +198,14 @@ OMNI_MODEL_TYPES = {
 def load_text_hf_omni_pipeline(model_id, device, trust_remote_code, model_type):
     import transformers
 
-    model_cls = getattr(transformers, OMNI_MODEL_TYPES[model_type])
+    model_cls_name = OMNI_MODEL_TYPES[model_type]
+    model_cls = getattr(transformers, model_cls_name, None)
+    if model_cls is None:
+        raise ValueError(
+            f"The installed transformers version does not expose '{model_cls_name}' "
+            f"required to load model type '{model_type}'. "
+            "Please upgrade transformers to a version that supports this model."
+        )
 
     device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
     omni_model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
