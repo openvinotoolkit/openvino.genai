@@ -3,6 +3,7 @@
 
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
+#include <cmath>
 #include <future>
 #include <numeric>
 #include <optional>
@@ -20,7 +21,7 @@
 namespace {
 
 template <typename ElementType>
-ov::Tensor mean_pool_embeddings_impl(const ov::Tensor& tensor) {
+ov::Tensor last_token_pool_embeddings_impl(const ov::Tensor& tensor) {
     const ov::Shape shape = tensor.get_shape();
     OPENVINO_ASSERT(shape.size() == 3, "Expected embedding tensor rank 3, got rank ", shape.size());
     OPENVINO_ASSERT(shape[0] == 1, "Expected batch size 1, got ", shape[0]);
@@ -32,17 +33,9 @@ ov::Tensor mean_pool_embeddings_impl(const ov::Tensor& tensor) {
 
     ov::Tensor pooled_tensor(ov::element::f32, {1, hidden_size});
     float* pooled = pooled_tensor.data<float>();
-    std::fill_n(pooled, hidden_size, 0.0f);
-    for (size_t token_idx = 0; token_idx < sequence_length; ++token_idx) {
-        const size_t token_offset = token_idx * hidden_size;
-        for (size_t hidden_idx = 0; hidden_idx < hidden_size; ++hidden_idx) {
-            pooled[hidden_idx] += static_cast<float>(embeddings[token_offset + hidden_idx]);
-        }
-    }
-
-    const float inv_sequence = 1.0f / static_cast<float>(sequence_length);
+    const size_t token_offset = (sequence_length - 1) * hidden_size;
     for (size_t hidden_idx = 0; hidden_idx < hidden_size; ++hidden_idx) {
-        pooled[hidden_idx] *= inv_sequence;
+        pooled[hidden_idx] = static_cast<float>(embeddings[token_offset + hidden_idx]);
     }
 
     return pooled_tensor;
@@ -87,18 +80,45 @@ ov::Tensor pool_embeddings(const ov::Tensor& tensor) {
         }
     }
 
-    // Rank-3 tensor needs mean pooling over sequence: [1, seq_len, hidden_size].
+    // Rank-3 tensor needs last-token pooling over sequence: [1, seq_len, hidden_size].
     if (element_type == ov::element::f32) {
-        return mean_pool_embeddings_impl<float>(tensor);
+        return last_token_pool_embeddings_impl<float>(tensor);
     }
     if (element_type == ov::element::f16) {
-        return mean_pool_embeddings_impl<ov::float16>(tensor);
+        return last_token_pool_embeddings_impl<ov::float16>(tensor);
     }
     if (element_type == ov::element::bf16) {
-        return mean_pool_embeddings_impl<ov::bfloat16>(tensor);
+        return last_token_pool_embeddings_impl<ov::bfloat16>(tensor);
     }
 
     OPENVINO_THROW("Unsupported embedding element type: ", element_type);
+}
+
+ov::Tensor normalize_embeddings(const ov::Tensor& tensor) {
+    const ov::Shape shape = tensor.get_shape();
+    OPENVINO_ASSERT(shape.size() == 2, "Expected embedding tensor rank 2, got rank ", shape.size());
+    OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32,
+                    "Expected f32 embedding tensor, got ",
+                    tensor.get_element_type());
+
+    const float* embeddings = tensor.data<const float>();
+    float squared_norm = 0.0f;
+    for (size_t idx = 0; idx < tensor.get_size(); ++idx) {
+        squared_norm += embeddings[idx] * embeddings[idx];
+    }
+
+    ov::Tensor normalized(ov::element::f32, shape);
+    float* normalized_data = normalized.data<float>();
+    const float norm = std::sqrt(squared_norm);
+    if (norm == 0.0f) {
+        std::copy_n(embeddings, tensor.get_size(), normalized_data);
+        return normalized;
+    }
+
+    for (size_t idx = 0; idx < tensor.get_size(); ++idx) {
+        normalized_data[idx] = embeddings[idx] / norm;
+    }
+    return normalized;
 }
 
 ov::Tensor pool_text_embeddings(const ov::Tensor& tensor) {
@@ -173,6 +193,28 @@ ov::Tensor embedding_results_to_tensor(const ov::genai::EmbeddingResults& embedd
 
         return result;
     }, embedding_results);
+}
+
+bool has_visual_tag(const std::string& text) {
+    return text.find("<ov_genai_image_") != std::string::npos ||
+           text.find("<ov_genai_video_") != std::string::npos ||
+           text.find("<|vision_start|><|image_pad|><|vision_end|>") != std::string::npos ||
+           text.find("<|vision_start|><|video_pad|><|vision_end|>") != std::string::npos;
+}
+
+std::string append_visual_tags(const std::string& text, size_t image_count, size_t video_count) {
+    if ((image_count == 0 && video_count == 0) || has_visual_tag(text)) {
+        return text;
+    }
+
+    std::string result = text;
+    for (size_t image_idx = 0; image_idx < image_count; ++image_idx) {
+        result += "<ov_genai_image_" + std::to_string(image_idx) + ">";
+    }
+    for (size_t video_idx = 0; video_idx < video_count; ++video_idx) {
+        result += "<ov_genai_video_" + std::to_string(video_idx) + ">";
+    }
+    return result;
 }
 
 }  // namespace
@@ -360,9 +402,16 @@ private:
         std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
         std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
 
+        const std::string formatted_text = prompt.has_value() ?
+            append_visual_tags(text, encoded_images.size(), encoded_videos.size()) :
+            text;
         const NormalizedPrompt normalized_prompt =
-            m_inputs_embedder->normalize_prompt(format_prompt(text, prompt), 0, 0, encoded_images, encoded_videos);
+            m_inputs_embedder->normalize_prompt(format_prompt(formatted_text, prompt), 0, 0, encoded_images, encoded_videos);
         m_inputs_embedder->set_add_special_tokens(!prompt.has_value());
+
+        Tokenizer tokenizer = m_inputs_embedder->get_tokenizer();
+        const ov::Tensor input_ids = tokenizer.encode(normalized_prompt.unified_prompt,
+                                                      ov::genai::add_special_tokens(false)).input_ids;
 
         VLMPerfMetrics metrics;
         ov::Tensor inputs_embeds;
@@ -432,7 +481,7 @@ private:
         if (images.empty() && videos.empty()) {
             return pool_text_embeddings(hidden_or_logits);
         }
-        return pool_embeddings(hidden_or_logits);
+        return normalize_embeddings(pool_embeddings(hidden_or_logits));
     }
 
 private:
@@ -450,8 +499,8 @@ private:
             return append_added_special_tokens(tokenizer, text);
         }
         ChatHistory history({{{"role", "system"}, {"content", *prompt}}, {{"role", "user"}, {"content", text}}});
-        constexpr bool add_generation_prompt = true;
-        return append_added_special_tokens(tokenizer, tokenizer.apply_chat_template(history, add_generation_prompt));
+        constexpr bool add_generation_prompt = false;
+        return append_added_special_tokens(tokenizer, tokenizer.apply_chat_template(history, add_generation_prompt));;
     }
 
     std::string append_added_special_tokens(Tokenizer& tokenizer, const std::string& text) const {
