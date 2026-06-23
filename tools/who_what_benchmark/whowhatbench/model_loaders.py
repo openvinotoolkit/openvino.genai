@@ -201,9 +201,7 @@ def load_text_hf_omni_pipeline(model_id, device, trust_remote_code, model_type):
     model_cls = getattr(transformers, OMNI_MODEL_TYPES[model_type])
 
     device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
-    omni_model = model_cls.from_pretrained(
-        model_id, trust_remote_code=trust_remote_code, device_map=device_map, dtype="auto"
-    )
+    omni_model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
     thinker = getattr(omni_model, "thinker", None)
     if thinker is None:
         raise ValueError(f"Model {model_id} does not expose a 'thinker' submodule required for text generation.")
