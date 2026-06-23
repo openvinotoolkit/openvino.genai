@@ -227,9 +227,9 @@ eagle3_devices = [("NPU", "NPU")]
 # Tree search parameter configurations: (branching_factor, tree_depth, num_assistant_tokens)
 # (0, 0, 0) means "use pipeline defaults" — do not set tree params in GenerationConfig.
 eagle3_tree_params = [
-    (0, 0, 0),   # default: pipeline uses ensure_tree_params_is_set() defaults (bf=2, td=4, nat=7)
-    (4, 2, 7),   # topk: wide and shallow tree
-    (1, 4, 4),   # top-1: linear chain, no branching
+    (0, 0, 0),  # default: pipeline uses ensure_tree_params_is_set() defaults (bf=2, td=4, nat=7)
+    (4, 2, 7),  # topk: wide and shallow tree
+    (1, 4, 4),  # top-1: linear chain, no branching
 ]
 
 # assistant model is randomly generated from the target model
@@ -388,8 +388,9 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
 @pytest.mark.parametrize("branching_factor,tree_depth,num_assistant_tokens", eagle3_tree_params)
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
 @pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
-def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_device, prompt,
-                              branching_factor, tree_depth, num_assistant_tokens):
+def test_eagle3_string_inputs(
+    target_model, target_device, draft_model, draft_device, prompt, branching_factor, tree_depth, num_assistant_tokens
+):
     """Test Eagle3 pipeline with string inputs on different device combinations"""
     # Download and convert models:
     target_model_schema = download_and_convert_model(target_model)
@@ -399,7 +400,7 @@ def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_de
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI Eagle3 pipeline:
-    use_default_tree_params = (branching_factor == 0)
+    use_default_tree_params = branching_factor == 0
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
     if draft_device == "NPU" and not use_default_tree_params:
         draft_config.update(
@@ -450,15 +451,16 @@ def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_de
 @pytest.mark.parametrize("branching_factor,tree_depth,num_assistant_tokens", eagle3_tree_params)
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
 @pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
-def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_device, prompt,
-                             branching_factor, tree_depth, num_assistant_tokens):
+def test_eagle3_perf_metrics(
+    target_model, target_device, draft_model, draft_device, prompt, branching_factor, tree_depth, num_assistant_tokens
+):
     """Test Eagle3 pipeline performance metrics to verify speculative decoding is actually working"""
     # Download and convert models:
     target_model_path = download_and_convert_model(target_model).models_path
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI Eagle3 pipeline:
-    use_default_tree_params = (branching_factor == 0)
+    use_default_tree_params = branching_factor == 0
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
     if draft_device == "NPU" and not use_default_tree_params:
         draft_config.update(
