@@ -28,6 +28,14 @@ struct ImageSliceResult {
     ImageSize target_size;
 };
 
+struct MiniCPMV46ImagePatches {
+    ov::Tensor pixel_values;
+    ov::Tensor target_sizes;
+    std::vector<ImageSize> patch_grid_sizes;
+    size_t slice_rows = 0;
+    size_t slice_cols = 0;
+};
+
 
 int ensure_divide(int length, int patch_size) {
     return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
@@ -418,6 +426,141 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
     return {{std::move(resized_source), resized_source_size}, std::move(image_slice_result)};
 }
 
+std::pair<int, int> find_best_resize_v46(const ImageSize& original_size, int scale_resolution, int patch_size, bool allow_upscale=false) {
+    int height = static_cast<int>(original_size.height);
+    int width = static_cast<int>(original_size.width);
+    if ((width * height > scale_resolution * scale_resolution) || allow_upscale) {
+        float ratio = static_cast<float>(width) / height;
+        height = static_cast<int>(scale_resolution / std::sqrt(ratio));
+        width = static_cast<int>(height * ratio);
+    }
+    const int divisor = patch_size * 4;
+    int best_width = ensure_divide(width, divisor);
+    int best_height = ensure_divide(height, divisor);
+    return std::make_pair(best_width, best_height);
+}
+
+std::pair<int, int> get_refine_size_v46(const ImageSize& original_size, std::pair<int, int> grid, int scale_resolution, int patch_size, bool allow_upscale) {
+    int grid_cols, grid_rows;
+    std::tie(grid_cols, grid_rows) = grid;
+    int refine_width = ensure_divide(static_cast<int>(original_size.width), grid_cols);
+    int refine_height = ensure_divide(static_cast<int>(original_size.height), grid_rows);
+    auto best_grid_size = find_best_resize_v46({static_cast<size_t>(refine_height / grid_rows), static_cast<size_t>(refine_width / grid_cols)}, scale_resolution, patch_size, allow_upscale);
+    return std::make_pair(best_grid_size.first * grid_cols, best_grid_size.second * grid_rows);
+}
+
+std::pair<int, int> get_sliced_grid_v46(const clip_image_u8& image, int max_slice_nums, int scale_resolution) {
+    const int original_width = image.nx;
+    const int original_height = image.ny;
+    const float log_ratio = logf(1.0f * original_width / original_height);
+    const float ratio = 1.0f * original_width * original_height / (scale_resolution * scale_resolution);
+    const int multiple = std::min(int(ceil(ratio)), max_slice_nums);
+    if (multiple <= 1) {
+        return {0, 0};
+    }
+
+    std::pair<int, int> best_grid{1, 1};
+    float min_error = std::numeric_limits<float>::infinity();
+    for (int split_grids_nums : {multiple - 1, multiple, multiple + 1}) {
+        if (split_grids_nums == 1 || split_grids_nums > max_slice_nums) {
+            continue;
+        }
+        for (int cols = 1; cols <= split_grids_nums; ++cols) {
+            if (split_grids_nums % cols == 0) {
+                int rows = split_grids_nums / cols;
+                float error = std::abs(log_ratio - std::log(1.0f * cols / rows));
+                if (error < min_error) {
+                    best_grid = {cols, rows};
+                    min_error = error;
+                }
+            }
+        }
+    }
+    return best_grid;
+}
+
+void append_minicpmv46_patch(
+    clip_ctx& ctx_clip,
+    const clip_image_u8& image,
+    size_t patch_size,
+    std::vector<clip_image_f32>& processed_patches,
+    std::vector<ImageSize>& patch_grid_sizes) {
+    clip_image_f32 processed = clip_image_preprocess(ctx_clip, image);
+    patch_grid_sizes.push_back({static_cast<size_t>(processed.ny) / patch_size, static_cast<size_t>(processed.nx) / patch_size});
+    processed_patches.push_back(std::move(processed));
+}
+
+MiniCPMV46ImagePatches prepare_minicpmv46_patches(clip_ctx& ctx_clip, const ov::Tensor& image, const ProcessorConfig& config) {
+    clip_image_u8 source = tensor_to_clip_image_u8(image);
+    std::vector<clip_image_f32> processed_patches;
+    std::vector<ImageSize> patch_grid_sizes;
+
+    const auto grid = get_sliced_grid_v46(source, static_cast<int>(config.max_slice_nums), static_cast<int>(config.scale_resolution));
+    const bool has_slices = grid.first > 0 && grid.second > 0;
+    auto source_size = find_best_resize_v46({static_cast<size_t>(source.ny), static_cast<size_t>(source.nx)}, static_cast<int>(config.scale_resolution), static_cast<int>(config.patch_size), !has_slices);
+    clip_image_u8 resized_source;
+    bicubic_resize(source, resized_source, source_size.first, source_size.second);
+    append_minicpmv46_patch(ctx_clip, resized_source, config.patch_size, processed_patches, patch_grid_sizes);
+
+    if (has_slices) {
+        auto refine_size = get_refine_size_v46({static_cast<size_t>(source.ny), static_cast<size_t>(source.nx)}, grid, static_cast<int>(config.scale_resolution), static_cast<int>(config.patch_size), true);
+        clip_image_u8 refine_image;
+        bicubic_resize(source, refine_image, refine_size.first, refine_size.second);
+        const int patch_width = refine_image.nx / grid.first;
+        const int patch_height = refine_image.ny / grid.second;
+        for (int row = 0; row < grid.second; ++row) {
+            for (int col = 0; col < grid.first; ++col) {
+                clip_image_u8 patch;
+                patch.nx = patch_width;
+                patch.ny = patch_height;
+                patch.buf.resize(3 * patch.nx * patch.ny);
+                for (int y = 0; y < patch_height; ++y) {
+                    for (int x = 0; x < patch_width; ++x) {
+                        const int src_idx = 3 * ((row * patch_height + y) * refine_image.nx + col * patch_width + x);
+                        const int dst_idx = 3 * (y * patch.nx + x);
+                        patch.buf[dst_idx] = refine_image.buf[src_idx];
+                        patch.buf[dst_idx + 1] = refine_image.buf[src_idx + 1];
+                        patch.buf[dst_idx + 2] = refine_image.buf[src_idx + 2];
+                    }
+                }
+                append_minicpmv46_patch(ctx_clip, patch, config.patch_size, processed_patches, patch_grid_sizes);
+            }
+        }
+    }
+
+    size_t total_width = 0;
+    for (const auto& processed_patch : processed_patches) {
+        total_width += static_cast<size_t>(processed_patch.ny) * static_cast<size_t>(processed_patch.nx) / config.patch_size;
+    }
+
+    ov::Tensor pixel_values{ov::element::f32, {1, 3, config.patch_size, total_width}};
+    float* pixel_values_data = pixel_values.data<float>();
+    for (const auto& processed_patch : processed_patches) {
+        ov::Tensor patch_tensor{ov::element::f32, {1, 3, static_cast<size_t>(processed_patch.ny), static_cast<size_t>(processed_patch.nx)}, const_cast<float*>(processed_patch.buf.data())};
+        ov::Tensor patch_pixel_values = preprocess_for_encoder(patch_tensor, config.patch_size);
+        std::copy_n(patch_pixel_values.data<float>(), patch_pixel_values.get_size(), pixel_values_data);
+        pixel_values_data += patch_pixel_values.get_size();
+    }
+
+    ov::Tensor target_sizes{ov::element::i32, {patch_grid_sizes.size(), 2}};
+    int32_t* target_sizes_data = target_sizes.data<int32_t>();
+    for (const ImageSize& patch_grid_size : patch_grid_sizes) {
+        *target_sizes_data++ = static_cast<int32_t>(patch_grid_size.height);
+        *target_sizes_data++ = static_cast<int32_t>(patch_grid_size.width);
+    }
+
+    return {std::move(pixel_values), std::move(target_sizes), std::move(patch_grid_sizes), static_cast<size_t>(grid.second), static_cast<size_t>(grid.first)};
+}
+
+std::string repeat_token(const std::string& token, size_t count) {
+    std::string result;
+    result.reserve(token.size() * count);
+    for (size_t idx = 0; idx < count; ++idx) {
+        result += token;
+    }
+    return result;
+}
+
 } // namespace
 
 EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -802,5 +945,239 @@ InputsEmbedderMiniCPM::InputsEmbedderMiniCPM(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+
+VisionEncoderMiniCPMV46::VisionEncoderMiniCPMV46(
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties} {
+    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
+    auto compiled_model = utils::singleton_core().compile_model(
+        model_dir / "openvino_merger_model.xml", device,
+        utils::get_model_properties(properties, "merger", device));
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM merger model");
+    m_ireq_queue_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
+
+VisionEncoderMiniCPMV46::VisionEncoderMiniCPMV46(
+        const ModelsMap& models_map,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config) : VisionEncoder{models_map, config_dir_path, device, device_config} {
+    m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+    const auto& merger_model = utils::get_model_weights_pair(models_map, "merger").first;
+    const auto& merger_weights = utils::get_model_weights_pair(models_map, "merger").second;
+    auto compiled_model = utils::singleton_core().compile_model(
+        merger_model, merger_weights, device,
+        utils::get_model_properties(device_config, "merger", device));
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM merger model");
+    m_ireq_queue_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+}
+
+EncodedImage VisionEncoderMiniCPMV46::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
+    clip_ctx ctx_clip;
+    ctx_clip.image_size = config.image_size;
+    std::copy(config.image_mean.begin(), config.image_mean.end(), ctx_clip.image_mean);
+    std::copy(config.image_std.begin(), config.image_std.end(), ctx_clip.image_std);
+
+    MiniCPMV46ImagePatches patches = prepare_minicpmv46_patches(ctx_clip, image, config);
+
+    const int32_t* target_sizes_data = patches.target_sizes.data<const int32_t>();
+    const size_t merge_h = m_vlm_config.merge_kernel_size.at(0);
+    const size_t merge_w = m_vlm_config.merge_kernel_size.at(1);
+    std::vector<ov::Tensor> merged_patches;
+    size_t pixel_values_offset = 0;
+    for (size_t patch_idx = 0; patch_idx < patches.patch_grid_sizes.size(); ++patch_idx) {
+        const size_t patch_width = patches.patch_grid_sizes.at(patch_idx).height * patches.patch_grid_sizes.at(patch_idx).width * config.patch_size;
+        ov::Tensor patch_pixel_values{ov::element::f32, {1, 3, config.patch_size, patch_width}};
+        const size_t patch_pixel_values_size = patch_pixel_values.get_size();
+        std::copy_n(patches.pixel_values.data<const float>() + pixel_values_offset, patch_pixel_values_size, patch_pixel_values.data<float>());
+        pixel_values_offset += patch_pixel_values_size;
+
+        ov::Tensor patch_target_sizes{ov::element::i32, {1, 2}};
+        patch_target_sizes.data<int32_t>()[0] = target_sizes_data[2 * patch_idx];
+        patch_target_sizes.data<int32_t>()[1] = target_sizes_data[2 * patch_idx + 1];
+
+        CircularBufferQueueElementGuard<ov::InferRequest> vision_infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+        ov::InferRequest& encoder = vision_infer_request_guard.get();
+        encoder.set_tensor("pixel_values", patch_pixel_values);
+        encoder.set_tensor("target_sizes", patch_target_sizes);
+        encoder.infer();
+        const ov::Tensor& image_features = encoder.get_output_tensor();
+
+        ov::Tensor merger_target_sizes{ov::element::i32, {1, 2}};
+        merger_target_sizes.data<int32_t>()[0] = patch_target_sizes.data<int32_t>()[0] / static_cast<int32_t>(merge_h);
+        merger_target_sizes.data<int32_t>()[1] = patch_target_sizes.data<int32_t>()[1] / static_cast<int32_t>(merge_w);
+
+        CircularBufferQueueElementGuard<ov::InferRequest> merger_infer_request_guard(this->m_ireq_queue_merger.get());
+        ov::InferRequest& merger = merger_infer_request_guard.get();
+        merger.set_tensor("image_feature", image_features);
+        merger.set_tensor("target_sizes", merger_target_sizes);
+        merger.infer();
+        const ov::Tensor& merger_output = merger.get_output_tensor();
+        ov::Tensor patch_features{merger_output.get_element_type(), merger_output.get_shape()};
+        std::memcpy(patch_features.data(), merger_output.data(), merger_output.get_byte_size());
+        merged_patches.push_back(std::move(patch_features));
+    }
+
+    EncodedImage encoded_image;
+    encoded_image.resized_source_size = patches.patch_grid_sizes.front();
+    encoded_image.resampled_image.vision_embed_tensors.resize(patches.slice_rows);
+    size_t total_tokens = 0;
+    for (size_t patch_idx = 0; patch_idx < patches.patch_grid_sizes.size(); ++patch_idx) {
+        ov::Tensor patch_features = std::move(merged_patches.at(patch_idx));
+        const size_t token_count = patch_features.get_shape().at(1);
+        total_tokens += token_count;
+        if (patch_idx == 0) {
+            encoded_image.resized_source = patch_features;
+            encoded_image.resampled_image.resampled_source = patch_features;
+        } else {
+            const size_t slice_idx = patch_idx - 1;
+            const size_t row = slice_idx / patches.slice_cols;
+            const size_t col = slice_idx % patches.slice_cols;
+            if (encoded_image.resampled_image.vision_embed_tensors.at(row).empty()) {
+                encoded_image.resampled_image.vision_embed_tensors.at(row).resize(patches.slice_cols);
+            }
+            encoded_image.resampled_image.vision_embed_tensors.at(row).at(col) = std::move(patch_features);
+        }
+    }
+    if (patches.slice_rows > 0 && patches.slice_cols > 0) {
+        encoded_image.slices_shape = {patches.slice_rows, patches.slice_cols};
+    }
+    encoded_image.num_image_tokens = total_tokens;
+    return encoded_image;
+}
+
+InputsEmbedderMiniCPMV46::InputsEmbedderMiniCPMV46(
+    const VLMConfig& vlm_config,
+    const std::filesystem::path& model_dir,
+    const std::string& device,
+    const ov::AnyMap device_config) :
+    InputsEmbedderMiniCPM(vlm_config, model_dir, device, device_config) {}
+
+InputsEmbedderMiniCPMV46::InputsEmbedderMiniCPMV46(
+    const VLMConfig& vlm_config,
+    const ModelsMap& models_map,
+    const Tokenizer& tokenizer,
+    const std::filesystem::path& config_dir_path,
+    const std::string& device,
+    const ov::AnyMap device_config) :
+    InputsEmbedderMiniCPM(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+
+NormalizedPrompt InputsEmbedderMiniCPMV46::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+    auto [unified_prompt, image_sequence] = normalize(
+        prompt,
+        NATIVE_TAG,
+        NATIVE_TAG + '\n',
+        base_id,
+        images.size()
+    );
+
+    for (size_t new_image_id : image_sequence) {
+        const EncodedImage& encoded_image = images.at(new_image_id - base_id);
+        std::string expanded_tag;
+        if (m_vlm_config.use_image_id) {
+            expanded_tag += m_vlm_config.im_id_start + std::to_string(new_image_id - base_id) + m_vlm_config.im_id_end;
+        }
+        expanded_tag += m_vlm_config.im_start;
+        expanded_tag += repeat_token(m_vlm_config.unk, encoded_image.resampled_image.resampled_source.get_shape().at(1));
+        expanded_tag += m_vlm_config.im_end;
+
+        const ov::Shape& slices_shape = encoded_image.slices_shape;
+        if (slices_shape.size()) {
+            for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
+                for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
+                    const ov::Tensor& slice = encoded_image.resampled_image.vision_embed_tensors.at(row_idx).at(col_idx);
+                    expanded_tag += m_vlm_config.slice_start;
+                    expanded_tag += repeat_token(m_vlm_config.unk, slice.get_shape().at(1));
+                    expanded_tag += m_vlm_config.slice_end;
+                }
+                expanded_tag += '\n';
+            }
+            expanded_tag.pop_back();
+        }
+        unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
+    }
+
+    return {std::move(unified_prompt), std::move(image_sequence), {}};
+}
+
+ov::Tensor InputsEmbedderMiniCPMV46::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
+    ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
+
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor inputs_embeds = m_embedding->infer(req, encoded_input);
+
+    OPENVINO_ASSERT(m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2), "Unexpected embedding size");
+
+    auto start_tokenizer_time = std::chrono::steady_clock::now();
+    ov::Tensor special_tokens = m_tokenizer.encode(
+        m_vlm_config.im_start
+        + m_vlm_config.im_end
+        + m_vlm_config.slice_start
+        + m_vlm_config.slice_end,
+        ov::genai::add_special_tokens(false)
+    ).input_ids;
+    auto end_tokenizer_time = std::chrono::steady_clock::now();
+    OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
+    metrics.raw_metrics.tokenization_durations.back() += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+    OPENVINO_ASSERT(4 == special_tokens.get_shape().at(1), "Every special token must be represented with a single int.");
+    const int64_t im_start_id = special_tokens.data<int64_t>()[0];
+    const int64_t slice_start_id = special_tokens.data<int64_t>()[2];
+
+    int64_t* begin = encoded_input.data<int64_t>();
+    int64_t* ids = begin;
+    int64_t* end = begin + encoded_input.get_size();
+    float* inputs_embeds_data = inputs_embeds.data<float>();
+    for (size_t image_id : images_sequence) {
+        const EncodedImage& encoded_image = images.at(image_id);
+        const ov::Tensor& source = encoded_image.resampled_image.resampled_source;
+        ids = std::find(ids, end, im_start_id);
+        OPENVINO_ASSERT(end != ids);
+        ++ids;
+        std::copy_n(source.data<float>(), source.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
+        ids += source.get_shape().at(1);
+
+        const ov::Shape& slices_shape = encoded_image.slices_shape;
+        if (slices_shape.size()) {
+            for (size_t row_idx = 0; row_idx < slices_shape.at(0); ++row_idx) {
+                for (size_t col_idx = 0; col_idx < slices_shape.at(1); ++col_idx) {
+                    const ov::Tensor& slice = encoded_image.resampled_image.vision_embed_tensors.at(row_idx).at(col_idx);
+                    ids = std::find(ids, end, slice_start_id);
+                    OPENVINO_ASSERT(end != ids);
+                    ++ids;
+                    std::copy_n(slice.data<float>(), slice.get_size(), inputs_embeds_data + std::distance(begin, ids) * m_vlm_config.hidden_size);
+                    ids += slice.get_shape().at(1);
+                }
+            }
+        }
+    }
+
+    ov::Tensor inputs_embeds_copy(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
+    std::memcpy(inputs_embeds_copy.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
+    return inputs_embeds_copy;
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderMiniCPMV46::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
+    ov::Tensor position_ids{ov::element::i64, {4, 1, inputs_embeds_size}};
+    for (size_t dim = 0; dim < 4; ++dim) {
+        int64_t* pos_data = position_ids.data<int64_t>() + dim * inputs_embeds_size;
+        std::iota(pos_data, pos_data + inputs_embeds_size, static_cast<int64_t>(history_size));
+    }
+    return {position_ids, 0};
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderMiniCPMV46::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
+    return get_position_ids(inputs_embeds_size, history_size);
+}
 
 } // namespace ov::genai

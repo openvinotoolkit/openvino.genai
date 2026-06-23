@@ -72,3 +72,60 @@ class MiniCPMVInputsPreprocessor(VLMInputsPreprocessor):
         inputs = processor(prompt, [self.images] if self.images is None else self.images, return_tensors="pt")
         inputs.pop("image_sizes", None)
         return inputs
+
+
+class MiniCPMV46InputsPreprocessor(MiniCPMVInputsPreprocessor):
+    def preprocess_inputs(
+        self,
+        text: str,
+        image: Optional[Union["Image", list["Image"]]] = None,
+        processor: Optional[AutoImageProcessor] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
+        config: Optional[PretrainedConfig] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
+        audio: Optional[np.ndarray] = None,
+    ):
+        if processor is None:
+            raise ValueError("Processor is required.")
+        if video is not None:
+            raise ValueError("Video input is not supported")
+        if audio is not None:
+            raise ValueError("Audio input is not supported")
+
+        self.update_images(image)
+        im_suffix = ""
+        if image is not None:
+            if not isinstance(image, list):
+                image = [image]
+            im_suffix = "\n".join(["<|image_pad|>"] * len(image)) + "\n"
+
+        apply_chat_template_func = None
+        if getattr(processor, "chat_template", None) is not None:
+            apply_chat_template_func = processor.apply_chat_template
+        elif getattr(processor.tokenizer, "chat_template", None) is not None:
+            apply_chat_template_func = processor.tokenizer.apply_chat_template
+
+        if apply_chat_template_func is not None:
+            if image is not None:
+                message_content = [{"type": "image"} for _ in image]
+                message_content.append({"type": "text", "text": text})
+            else:
+                message_content = text
+            new_message = {"role": "user", "content": message_content}
+            if self.chat_mode:
+                self.chat_history.append(new_message)
+                messages = self.chat_history
+            else:
+                messages = [new_message]
+
+            prompt = apply_chat_template_func(messages, tokenize=False, add_generation_prompt=True)
+        else:
+            if self.chat_mode:
+                raise ValueError("Chat mode is not supported when there is no chat_template in processor or tokenizer.")
+            prompt = (
+                f"<|im_start|>user\n{im_suffix}{text}<|im_end|>\n<|im_start|>assistant\n" if image is not None else text
+            )
+
+        inputs = processor(images=self.images, text=prompt, return_tensors="pt")
+        inputs.pop("image_sizes", None)
+        return inputs

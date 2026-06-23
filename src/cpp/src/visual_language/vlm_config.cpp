@@ -15,6 +15,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
     static const std::unordered_map<std::string, VLMModelType> model_types_map = {
         {"minicpmv", VLMModelType::MINICPM},
         {"minicpmo", VLMModelType::MINICPM},
+        {"minicpmv4_6", VLMModelType::MINICPMV4_6},
         {"llava", VLMModelType::LLAVA},
         {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
@@ -54,9 +55,17 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     using ov::genai::utils::read_json_param;
     model_type = to_vlm_model_type(parsed.at("model_type"));
     read_json_param(parsed, "hidden_size", hidden_size);
+    read_json_param(parsed, "text_config.hidden_size", hidden_size);
     read_json_param(parsed, "scale_emb", scale_emb);
     read_json_param(parsed, "query_num", query_num);
     read_json_param(parsed, "use_image_id", use_image_id);
+    read_json_param(parsed, "image_token_id", image_token_id);
+    read_json_param(parsed, "video_token_id", video_token_id);
+    read_json_param(parsed, "merge_kernel_size", merge_kernel_size);
+    read_json_param(parsed, "downsample_mode", downsample_mode);
+    if (model_type == VLMModelType::MINICPMV4_6) {
+        unk = "<|image_pad|>";
+    }
 
     // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);

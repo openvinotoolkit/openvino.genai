@@ -12,6 +12,7 @@ namespace ov::genai {
 
 enum class VLMModelType {
     MINICPM,
+    MINICPMV4_6,
     LLAVA,
     NANOLLAVA,
     LLAVA_NEXT,
@@ -64,6 +65,14 @@ public:
     std::string im_id_end = "</image_id>";
     /// @brief A placeholder for image embeddings in text.
     std::string unk = "<unk>";
+
+    /// @brief MiniCPM-V 4.6 image/video token ids.
+    int64_t image_token_id = -1;
+    int64_t video_token_id = -1;
+
+    /// @brief MiniCPM-V 4.6 merger kernel.
+    std::vector<size_t> merge_kernel_size{2, 2};
+    std::string downsample_mode = "16x";
 
     // llava_next specific config params
     std::vector<float> image_newline;

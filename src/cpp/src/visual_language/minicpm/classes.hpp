@@ -42,6 +42,25 @@ public:
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
 
+class VisionEncoderMiniCPMV46 : public VisionEncoder {
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_merger;
+    VLMConfig m_vlm_config;
+
+public:
+    VisionEncoderMiniCPMV46(
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap properties);
+
+    VisionEncoderMiniCPMV46(
+        const ModelsMap& models_map,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config);
+
+    EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+};
+
 class InputsEmbedderMiniCPM : public InputsEmbedder::IInputsEmbedder {
 
 public:
@@ -67,6 +86,42 @@ public:
         const std::vector<EncodedImage>& images
     ) const override;
 
+};
+
+class InputsEmbedderMiniCPMV46 : public InputsEmbedderMiniCPM {
+public:
+    InputsEmbedderMiniCPMV46(
+        const VLMConfig& vlm_config,
+        const std::filesystem::path& model_dir,
+        const std::string& device,
+        const ov::AnyMap device_config);
+
+    InputsEmbedderMiniCPMV46(
+        const VLMConfig& vlm_config,
+        const ModelsMap& models_map,
+        const Tokenizer& tokenizer,
+        const std::filesystem::path& config_dir_path,
+        const std::string& device,
+        const ov::AnyMap device_config);
+
+    ov::Tensor get_inputs_embeds(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {}) override;
+
+    NormalizedPrompt normalize_prompt(
+        const std::string& prompt,
+        size_t base_id,
+        const std::vector<EncodedImage>& images) const override;
+
+    std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
+
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(
+        const size_t inputs_embeds_size,
+        const size_t history_size,
+        int64_t rope_delta) override;
 };
 
 } // namespace ov::genai

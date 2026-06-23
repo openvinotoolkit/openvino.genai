@@ -111,6 +111,15 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'MiniCPMV4_6ForConditionalGeneration',
+    models: [
+      {
+        name: 'MiniCPM-V-4.6',
+        links: ['https://huggingface.co/openbmb/MiniCPM-V-4.6'],
+      },
+    ],
+  },
+  {
     architecture: 'Phi3VForCausalLM',
     models: [
       {
