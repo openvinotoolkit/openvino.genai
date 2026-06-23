@@ -3,8 +3,6 @@
 
 import types
 
-import pytest
-
 from whowhatbench import wwb
 
 
