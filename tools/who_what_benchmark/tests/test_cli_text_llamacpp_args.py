@@ -340,7 +340,7 @@ def test_loader_sets_llamacpp_n_ctx_default_when_key_omitted(monkeypatch):
     assert captured["kwargs"]["llamacpp_n_ctx"] == 8192
 
 
-def test_check_args_allows_llamacpp_for_text_chat(monkeypatch):
+def test_check_args_rejects_llamacpp_for_text_chat(monkeypatch):
     args = Namespace(
         base_model="dummy_base_model",
         target_model=None,
@@ -402,7 +402,8 @@ def test_check_args_allows_llamacpp_for_text_chat(monkeypatch):
     monkeypatch.setattr(
         wwb, "create_evaluator", lambda *_: type("DummyEvaluator", (), {"dump_gt": lambda self, _: None})()
     )
-    wwb.main()
+    with pytest.raises(ValueError, match="--llamacpp is supported only with --model-type text"):
+        wwb.main()
 
 
 def _get_tiny_llamacpp_model() -> Path:
