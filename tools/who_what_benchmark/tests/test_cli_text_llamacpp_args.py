@@ -273,10 +273,12 @@ def test_loader_sets_llamacpp_n_ctx_default_for_llamacpp_backend(monkeypatch):
 
 
 def _get_tiny_llamacpp_model() -> Path:
-    return Path(hf_hub_download(
-        repo_id="afrideva/Tinystories-gpt-0.1-3m-GGUF",
-        filename="tinystories-gpt-0.1-3m.Q2_K.gguf",
-    ))
+    return Path(
+        hf_hub_download(
+            repo_id="afrideva/Tinystories-gpt-0.1-3m-GGUF",
+            filename="tinystories-gpt-0.1-3m.Q2_K.gguf",
+        )
+    )
 
 
 def test_text_llamacpp_real_gguf_logs_backend_and_n_ctx(tmp_path):
