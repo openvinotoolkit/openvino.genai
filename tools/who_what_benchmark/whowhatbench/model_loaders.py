@@ -188,17 +188,20 @@ def load_text_llamacpp_pipeline(model_dir):
 
 # Qwen3-Omni is a multimodal model that is not registered
 # in AutoModelForCausalLM. Its text response is produced by the "thinker" submodule.
+# Each model_type maps to its explicit ForConditionalGeneration class.
 OMNI_MODEL_TYPES = {
-    "qwen3_omni_moe",
-    "qwen3_omni",
+    "qwen3_omni_moe": "Qwen3OmniMoeForConditionalGeneration",
+    "qwen3_omni": "Qwen3OmniForConditionalGeneration",
 }
 
 
-def load_text_hf_omni_pipeline(model_id, device, trust_remote_code):
-    from transformers import AutoModelForTextToWaveform
+def load_text_hf_omni_pipeline(model_id, device, trust_remote_code, model_type):
+    import transformers
+
+    model_cls = getattr(transformers, OMNI_MODEL_TYPES[model_type])
 
     device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
-    omni_model = AutoModelForTextToWaveform.from_pretrained(
+    omni_model = model_cls.from_pretrained(
         model_id, trust_remote_code=trust_remote_code, device_map=device_map, dtype="auto"
     )
     thinker = getattr(omni_model, "thinker", None)
@@ -210,14 +213,14 @@ def load_text_hf_omni_pipeline(model_id, device, trust_remote_code):
 
 def load_text_optimum_omni_pipeline(model_id, device, ov_config):
     # Omni models are exported as multi-component IR (openvino_language_model.xml, ...),
-    # so they are loaded via OVModelForVisualCausalLM instead of OVModelForCausalLM.
-    from optimum.intel.openvino import OVModelForVisualCausalLM
+    # so they are loaded via OVModelForMultimodalLM instead of OVModelForCausalLM.
+    from optimum.intel.openvino import OVModelForMultimodalLM
 
     try:
-        model = OVModelForVisualCausalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
+        model = OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
     except ValueError:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        model = OVModelForVisualCausalLM.from_pretrained(
+        model = OVModelForMultimodalLM.from_pretrained(
             model_id,
             config=config,
             trust_remote_code=True,
@@ -242,7 +245,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             trust_remote_code = True
 
     if config is not None and getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
-        return load_text_hf_omni_pipeline(model_id, device, trust_remote_code)
+        return load_text_hf_omni_pipeline(model_id, device, trust_remote_code, config.model_type)
 
     if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
@@ -453,7 +456,7 @@ def load_visual_text_model(
 
         # Omni models expose image/video-text understanding via the "thinker" submodule.
         if config.model_type in OMNI_MODEL_TYPES:
-            return load_text_hf_omni_pipeline(model_id, device, trust_remote_code)
+            return load_text_hf_omni_pipeline(model_id, device, trust_remote_code, config.model_type)
 
         model_kwargs = {"trust_remote_code": trust_remote_code}
         try:
