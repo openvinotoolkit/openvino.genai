@@ -34,7 +34,7 @@ struct PruningContext {
 
     // Per-modality merged embeddings in merger order [N, D]. Either may be left
     // default-constructed (empty) when the corresponding modality is absent.
-    // Tensor copy is shallow (shared impl), so passing values is cheap.
+    // Tensor copy is shallow; passing values is cheap.
     ov::Tensor image_embeddings;
     ov::Tensor video_embeddings;
 

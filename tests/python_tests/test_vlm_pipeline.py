@@ -2748,10 +2748,12 @@ def test_cdpruner_continuous_batching_chat_mode(
     baseline_config.do_sample = False
     baseline_config.pruning_ratio = 0
     ov_continuous_batching_pipe_qwen2vl.start_chat("You are a helpful assistant.")
-    baseline_result = ov_continuous_batching_pipe_qwen2vl.generate(
-        ["What is in this image?"], images=[[cat_tensor]], generation_config=[baseline_config]
-    )[0]
-    ov_continuous_batching_pipe_qwen2vl.finish_chat()
+    try:
+        baseline_result = ov_continuous_batching_pipe_qwen2vl.generate(
+            ["What is in this image?"], images=[[cat_tensor]], generation_config=[baseline_config]
+        )[0]
+    finally:
+        ov_continuous_batching_pipe_qwen2vl.finish_chat()
     assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
     baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
@@ -2761,19 +2763,19 @@ def test_cdpruner_continuous_batching_chat_mode(
     generation_config.pruning_ratio = 30
 
     ov_continuous_batching_pipe_qwen2vl.start_chat("You are a helpful assistant.")
-
-    result1_obj = ov_continuous_batching_pipe_qwen2vl.generate(
-        ["What is in this image?"], images=[[cat_tensor]], generation_config=[generation_config]
-    )[0]
-    result1 = result1_obj.texts[0]
-    result2 = ov_continuous_batching_pipe_qwen2vl.generate(
-        ["Now describe this one."], images=[[car_tensor]], generation_config=[generation_config]
-    )[0].texts[0]
-    result3 = ov_continuous_batching_pipe_qwen2vl.generate(
-        ["What did you see in total?"], generation_config=[generation_config]
-    )[0].m_generation_ids[0]
-
-    ov_continuous_batching_pipe_qwen2vl.finish_chat()
+    try:
+        result1_obj = ov_continuous_batching_pipe_qwen2vl.generate(
+            ["What is in this image?"], images=[[cat_tensor]], generation_config=[generation_config]
+        )[0]
+        result1 = result1_obj.texts[0]
+        result2 = ov_continuous_batching_pipe_qwen2vl.generate(
+            ["Now describe this one."], images=[[car_tensor]], generation_config=[generation_config]
+        )[0].texts[0]
+        result3 = ov_continuous_batching_pipe_qwen2vl.generate(
+            ["What did you see in total?"], generation_config=[generation_config]
+        )[0].m_generation_ids[0]
+    finally:
+        ov_continuous_batching_pipe_qwen2vl.finish_chat()
 
     assert len(result1) > 0, "CDPruner chat turn 1 should produce non-empty output"
     assert len(result2) > 0, "CDPruner chat turn 2 should produce non-empty output"

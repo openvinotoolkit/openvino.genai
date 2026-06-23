@@ -692,8 +692,6 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
             run_video_image_embeddings_merger(images, images_sequence, videos, videos_sequence);
     }
 
-    // CDPruner: prune video and image vision tokens together. The pruning pipeline
-    // handles prompt-order gather/scatter and merger-order deepstack pruning internally.
     if ((!images.empty() || !videos.empty()) && is_cdpruner_active()) {
         std::vector<std::array<size_t, 3>> video_grids_per_frame;
         for (size_t vid_id : videos_sequence) {

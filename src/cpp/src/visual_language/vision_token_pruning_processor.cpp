@@ -797,8 +797,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     auto pruning_start = std::chrono::high_resolution_clock::now();
 
     // ---- Validate inputs ----
-    // Placeholder fields may be default-constructed ov::Tensor (no _impl);
-    // use operator bool() before calling any accessors.
+    // Placeholder fields may be default-constructed; use operator bool() before accessing.
     const bool has_images = static_cast<bool>(context.image_embeddings);
     const bool has_videos = static_cast<bool>(context.video_embeddings);
     if (has_images) {
@@ -838,11 +837,10 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                     "video_embeddings must be f32 for CDPruner, got: ",
                     context.video_embeddings.get_element_type());
 
-    // ---- Determine hidden dim / element type from the non-empty modality ----
+    // ---- Determine hidden dim from the non-empty modality ----
     const size_t hidden_dim =
         (video_token_count > 0) ? context.video_embeddings.get_shape()[1] : context.image_embeddings.get_shape()[1];
-    const auto embed_element_type = (video_token_count > 0) ? context.video_embeddings.get_element_type()
-                                                            : context.image_embeddings.get_element_type();
+    constexpr auto embed_element_type = ov::element::f32;
     if (image_token_count > 0 && video_token_count > 0) {
         OPENVINO_ASSERT(context.image_embeddings.get_shape()[1] == context.video_embeddings.get_shape()[1],
                         "Image and video embedding widths must match");
@@ -1135,19 +1133,21 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     if (context.deepstack_visual_embeds && *context.deepstack_visual_embeds &&
         context.deepstack_visual_embeds->get_size() > 0) {
         const auto deepstack_shape = context.deepstack_visual_embeds->get_shape();
-        if (deepstack_shape.size() == 3 && result.pruned_visual_tokens < deepstack_shape[1]) {
+        OPENVINO_ASSERT(deepstack_shape.size() == 3,
+                        "deepstack_visual_embeds must be rank-3 [num_layers, tokens, hidden_dim], got rank: ",
+                        deepstack_shape.size());
+        OPENVINO_ASSERT(deepstack_shape[1] == total_tokens,
+                        "Deepstack token count (",
+                        deepstack_shape[1],
+                        ") != merged vision tokens (",
+                        total_tokens,
+                        ")");
+        if (result.pruned_visual_tokens < deepstack_shape[1]) {
             const size_t num_layers = deepstack_shape[0];
             const size_t original_tokens = deepstack_shape[1];
             const size_t ds_hidden_size = deepstack_shape[2];
             const auto ds_elem_type = context.deepstack_visual_embeds->get_element_type();
             const size_t ds_token_bytes = ds_hidden_size * ds_elem_type.size();
-
-            OPENVINO_ASSERT(original_tokens == total_tokens,
-                            "Deepstack token count (",
-                            original_tokens,
-                            ") != merged vision tokens (",
-                            total_tokens,
-                            ")");
 
             std::vector<size_t> sorted_indices = kept_merger_indices;
             std::sort(sorted_indices.begin(), sorted_indices.end());
