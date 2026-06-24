@@ -30,6 +30,14 @@ enum class SequenceGroupType {
 
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
+
+struct TreeMetaData {
+    std::vector<std::vector<uint8_t>> tree_mask;
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    std::vector<int64_t> tree_position_ids;
+    std::vector<size_t> validated_indices;
+};
+
 class SequenceGroup;
 
 class Sequence {
@@ -56,6 +64,7 @@ class Sequence {
     size_t m_hidden_size;
     std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
+    TreeMetaData m_tree_metadata;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -80,7 +89,8 @@ class Sequence {
         m_prefix_hashes(seq.m_prefix_hashes),
         m_generated_ids_embeds(seq.m_generated_ids_embeds),
         m_position_ids_list(seq.m_position_ids_list),
-        m_rope_delta(seq.m_rope_delta)
+        m_rope_delta(seq.m_rope_delta),
+        m_tree_metadata(seq.m_tree_metadata)
          {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
@@ -152,18 +162,33 @@ public:
         return m_hidden_state;
     }
 
+    void set_tree_metadata(TreeMetaData metadata) {
+        m_tree_metadata = std::move(metadata);
+    }
+
+    const TreeMetaData& get_tree_metadata() const {
+        return m_tree_metadata;
+    }
+
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(n >= 0, "Number of tokens to remove must be greater than or equal to 0");
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
-            if (m_type == SequenceGroupType::EMBEDDINGS) {
-                m_generated_ids_embeds.pop_back();
-                m_position_ids_list.pop_back();
-            }
+        }
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            const size_t tokens_to_remove = static_cast<size_t>(n);
+            const size_t embeds_to_remove = tokens_to_remove;
+            const size_t position_ids_to_remove = tokens_to_remove;
+            OPENVINO_ASSERT(embeds_to_remove <= m_generated_ids_embeds.size(), "Cannot remove more embeds than has been generated in embeddings");
+            OPENVINO_ASSERT(position_ids_to_remove <= m_position_ids_list.size(), "Cannot remove more position ids than has been generated in position_ids");
+
+            truncate_generated_ids_embeds(embeds_to_remove);
+            truncate_position_ids(position_ids_to_remove);
         }
     }
 
@@ -242,6 +267,21 @@ public:
             std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
 
         }
+    }
+    void truncate_generated_ids_embeds(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
+        // remove the last num_tokens embeddings
+        if (num_tokens > 0)
+            m_generated_ids_embeds.resize(m_generated_ids_embeds.size() - num_tokens);
+    }
+
+    void truncate_position_ids(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
+        // remove the last num_tokens position ids
+        if (num_tokens > 0)
+            m_position_ids_list.resize(m_position_ids_list.size() - num_tokens);
     }
 
     void append_position_ids(const ov::Tensor& position_ids) {

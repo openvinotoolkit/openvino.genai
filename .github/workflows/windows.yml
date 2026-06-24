@@ -47,7 +47,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@f62a7a911154a4add1d30fd06aa75ae82351a90b
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@b0f640ad8270d06d36caf5549a091dc972625a15
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -663,13 +663,14 @@ jobs:
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
             cmd: |
-              python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+              python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not test_smoke and not test_asr_constructors and not test_max_new_tokens and not test_language_mode and not test_task_mode and not test_language_autodetect and not test_asr_config_constructor and not test_initial_prompt_hotwords and not test_random_sampling"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 120
           - name: 'Whisper Transformers under 5.0'
             cmd: |
               python -m pip install transformers==4.57.6
               python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 120
           - name: 'Cacheopt E2E (Part 1)'
             cmd: 'python -m pytest -s -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
@@ -698,24 +699,22 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat and not eagle3" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
-          - name: 'VLM with transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.55.4 diffusers==0.37.1
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
-              python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 90
+
           - name: 'Video Generation'
             cmd: 'python -m pytest -s -v tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
             timeout: 60
+          - name: 'Kokoro TTS'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
+            timeout: 60
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -s -v tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 360
+            timeout: 60
           - name: 'Tokenizer tests'
             cmd: 'python -m pytest -s -v tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -724,13 +723,7 @@ jobs:
             cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
-          - name: 'API tests transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.55.4 diffusers==0.37.1
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
-              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
-            timeout: 60
+
           - name: 'Rag tests'
             cmd: 'python -m pytest -s -v tests/python_tests/test_rag.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
@@ -748,7 +741,6 @@ jobs:
           - name: 'EAGLE3 speculative decoding tests'
             cmd: |
               python -m pip install transformers==4.57.6
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
               python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
@@ -760,10 +752,7 @@ jobs:
             timeout: 90
           - name: 'WWB tests (videochat)'
             cmd: |
-              # Temporary pin: depends on upstream PR #1637 (not merged yet).
-              # TODO: replace with official release once available.
               python -m pip install transformers==4.57.6
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@0d632c6afbb4d885625d5cb3f7c41ffa5f7bd3f0
               python -m pytest -v ./tools/who_what_benchmark/tests -k "videochat"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
@@ -775,35 +764,41 @@ jobs:
             timeout: 60
           - name: 'VLM (videochat)'
             cmd: |
-              # Temporary pin: depends on upstream PR #1637 (not merged yet).
-              # TODO: replace with official release once available.
               python -m pip install transformers==4.57.6
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@cba3f3157d18f309f87e3f50f47741582ee645d3
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM (qwen3-vl and qwen3-next)'
             cmd: |
-              python -m pip install transformers==4.57.6 git+https://github.com/huggingface/optimum-intel.git@0566b76f094d4c3084e06d29a248b39a1bff3fa4
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl"
+              python -m pip install transformers==4.57.6
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl or eagle3"
               python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test  || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 60
           - name: 'VLM (qwen3.5)'
             cmd: |
-              # TODO: replace with official release once available.
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@c656558f8288d44fe7ce0dd7c98753af0c740b15 # PR 1689
               python -m pip install transformers==5.2.0
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
           - name: 'VLM (gemma4)'
             cmd: |
-              python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@39121884e050a32f9ded590f8597760d7e7ac205 # master with gemma4 support
               python -m pip install transformers==5.5.0
               pip show transformers optimum-intel openvino_tokenizers openvino_genai
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 60
+          - name: 'VLM with transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.55.4 diffusers==0.37.1
+              python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 90
+          - name: 'API tests transformers under 5.0'
+            cmd: |
+              python -m pip install transformers==4.55.4 diffusers==0.37.1
+              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
     defaults:
       run:
@@ -851,6 +846,50 @@ jobs:
         run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
+  genai_misaki_parity:
+    name: Misaki C++ Parity (Windows)
+    needs: [ smart_ci ]
+    if: ${{ needs.smart_ci.outputs.skip_workflow != 'True' && fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    runs-on: aks-win-8-cores-16gb-build
+    env:
+      SRC_DIR: ${{ github.workspace }}/src
+      BUILD_DIR: ${{ github.workspace }}/build
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Configure Developer Command Prompt for Microsoft Visual C++
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          toolset: 14.42 # v2022
+
+      - name: Install Misaki parity dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest kokoro==0.9.4
+
+      - name: Build and run Misaki parity tests
+        working-directory: ${{ env.SRC_DIR }}
+        run: |
+          cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build_misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON
+          cmake --build ./build_misaki_cpp_ci --config Release --parallel
+          $env:PYTHONPATH = "$(Get-Location)/build_misaki_cpp_ci/Release;$env:PYTHONPATH"
+          python -m pytest -q src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
+
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
     strategy:
@@ -863,16 +902,10 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
             runner: 'aks-win-16-cores-32gb-test'
-          - name: 'LLM with transformers under 5.0'
-            extra_cmd: 'python -m pip install transformers==4.55.4 diffusers==0.37.1 && python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76'
-            marker: 'llm and (transformers_dependent or transformers_lower_v5)'
+          - name: 'Automatic Speech Recognition'
+            marker: 'automatic_speech_recognition'
             cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
-            runner: 'aks-win-16-cores-32gb-test'
-          - name: 'Whisper'
-            marker: 'whisper'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition_samples.test }}
             runner: 'aks-win-4-cores-8gb-test'
           - name: 'dreamlike_anime_1_0'
             marker: 'dreamlike_anime_1_0'
@@ -881,6 +914,11 @@ jobs:
             runner: 'aks-win-8-cores-32gb-test'
           - name: 'LCM_Dreamshaper_v7_int8_ov'
             marker: 'LCM_Dreamshaper_v7_int8_ov'
+            cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
+            runner: 'aks-win-8-cores-16gb-test'
+          - name: 'tiny_random_latent_consistency'
+            marker: 'tiny_random_latent_consistency'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
             runner: 'aks-win-8-cores-16gb-test'
@@ -894,6 +932,12 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-4-cores-8gb-test'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
+          - name: 'LLM with transformers under 5.0'
+            extra_cmd: 'python -m pip install transformers==4.55.4 diffusers==0.37.1'
+            marker: 'llm and (transformers_dependent or transformers_lower_v5)'
+            cmd: 'tests/python_tests/samples'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
+            runner: 'aks-win-16-cores-32gb-test'
 
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
@@ -1136,7 +1180,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_windows
-    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests, genai_build_nodejs, genai_nodejs_tests]
+    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_tests_wheel, genai_misaki_parity, genai_tools_tests, genai_samples_tests, genai_build_nodejs, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
