@@ -14,7 +14,6 @@
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
-#include "openvino/pass/pattern/op/optional.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 
 namespace opp = ov::pass::pattern;
@@ -23,7 +22,8 @@ namespace {
 
 bool insert_slice_before_matmul(const ov::Output<ov::Node>& matched_matmul_out, int64_t slice_gather_dim) {
     auto matmul = matched_matmul_out.get_node_shared_ptr();
-    if (matmul->input(0).get_partial_shape().rank().get_length() != 3) {
+    const auto& rank = matmul->input(0).get_partial_shape().rank();
+    if (rank.is_dynamic() || rank.get_length() != 3) {
         return false;
     }
     auto start = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
@@ -38,7 +38,8 @@ bool insert_slice_before_matmul(const ov::Output<ov::Node>& matched_matmul_out, 
 bool insert_gather_before_matmul(const ov::Output<ov::Node>& matched_matmul_out, int64_t slice_gather_dim,
                                 const std::shared_ptr<ov::Model>& model) {
     auto matmul = matched_matmul_out.get_node_shared_ptr();
-    if (matmul->input(0).get_partial_shape().rank().get_length() != 3) {
+    const auto& rank = matmul->input(0).get_partial_shape().rank();
+    if (rank.is_dynamic() || rank.get_length() != 3) {
         return false;
     }
     auto indices = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1});
@@ -95,6 +96,7 @@ SliceLastMatmulTranspose::SliceLastMatmulTranspose(bool pa_based_model) {
         auto order_const = ov::as_type_ptr<ov::op::v0::Constant>(matched_transpose->input_value(1).get_node_shared_ptr());
         if (!order_const) return false;
         auto order = order_const->get_axis_vector_val();
+        if (order.size() <= static_cast<size_t>(base_dim)) return false;
         int64_t dim = static_cast<int64_t>(order[base_dim]);
         return insert_slice_before_matmul(node_to_output.at(matmul), dim);
     };
@@ -155,6 +157,7 @@ GatherLastMatmulTranspose::GatherLastMatmulTranspose(std::shared_ptr<ov::Model> 
         auto order_const = ov::as_type_ptr<ov::op::v0::Constant>(matched_transpose->input_value(1).get_node_shared_ptr());
         if (!order_const) return false;
         auto order = order_const->get_axis_vector_val();
+        if (order.size() <= static_cast<size_t>(base_dim)) return false;
         int64_t dim = static_cast<int64_t>(order[base_dim]);
         return insert_gather_before_matmul(node_to_output.at(matmul), dim, model);
     };
