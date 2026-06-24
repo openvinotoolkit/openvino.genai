@@ -318,7 +318,7 @@ class TestImageGenerationWithBlobTensorModels:
         unet = ov_genai.UNet2DConditionModel(
             unet_blob_tensor,
             ov_genai.UNet2DConditionModel.Config(image_generation_model / "unet" / "config.json"),
-            vae.get_scale_factor(),
+            vae.get_vae_scale_factor(),
             "CPU",
         )
 
