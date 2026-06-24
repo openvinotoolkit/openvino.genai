@@ -60,6 +60,32 @@ def pipeline_type(request):
     return request.param
 
 
+class PipelineType(enum.Enum):
+    WHISPER = "whisper"
+    ASR = "asr"
+
+
+def get_pipeline_cls(pipeline_type: PipelineType):
+    return ov_genai.ASRPipeline if pipeline_type == PipelineType.ASR else ov_genai.WhisperPipeline
+
+
+def get_config_cls(pipeline_type: PipelineType):
+    return ov_genai.ASRGenerationConfig if pipeline_type == PipelineType.ASR else ov_genai.WhisperGenerationConfig
+
+
+def get_word_text(word, pipeline_type: PipelineType):
+    return word.text if pipeline_type == PipelineType.ASR else word.word
+
+
+def get_raw_metrics(perf_metrics, pipeline_type: PipelineType):
+    return perf_metrics.asr_raw_metrics if pipeline_type == PipelineType.ASR else perf_metrics.whisper_raw_metrics
+
+
+@pytest.fixture(params=[PipelineType.WHISPER, PipelineType.ASR])
+def pipeline_type(request):
+    return request.param
+
+
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
     """
