@@ -15,7 +15,6 @@ from typing import Literal
 import sys
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
 from PIL import Image
-from sentence_transformers import SentenceTransformer
 from torch import Tensor
 import torch
 import torch.nn.functional as F
@@ -225,18 +224,27 @@ def run_multimodal_embedding_hf(
     return F.normalize(pooled.to(torch.float32), p=2, dim=-1).cpu().numpy()
 
 
-def run_multimodal_embedding_sentence_transformers(
-    model_id: str,
-    text: str,
-    image: np.ndarray | None = None,
-    prompt: str | None = None,
-) -> np.ndarray:
-    model = SentenceTransformer(model_id)
-    model_input = {"text": text}
-    if image is not None:
-        model_input["image"] = Image.fromarray(image)
+@pytest.fixture
+def run_multimodal_embedding_sentence_transformers():
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        pytest.skip("sentence_transformers is not installed")
 
-    return model.encode([model_input], prompt=prompt, convert_to_numpy=True).astype(np.float32)
+    def run(
+        model_id: str,
+        text: str,
+        image: np.ndarray | None = None,
+        prompt: str | None = None,
+    ) -> np.ndarray:
+        model = SentenceTransformer(model_id)
+        model_input = {"text": text}
+        if image is not None:
+            model_input["image"] = Image.fromarray(image)
+
+        return model.encode([model_input], prompt=prompt, convert_to_numpy=True).astype(np.float32)
+
+    return run
 
 
 def run_multimodal_embedding_transformers(
@@ -355,7 +363,10 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
-def test_qwen3_vl_embedding_text_and_image_sentence_transformers(multimodal_emb_model):
+def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
+    multimodal_emb_model,
+    run_multimodal_embedding_sentence_transformers,
+):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
     image_array = make_embedding_test_image_array()
     image = make_embedding_test_image()
@@ -376,7 +387,10 @@ def test_qwen3_vl_embedding_text_and_image_sentence_transformers(multimodal_emb_
 
 
 @pytest.mark.parametrize("model_id", MULTIMODAL_EMBEDDINGS_TEST_MODELS)
-def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(model_id):
+def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
+    model_id,
+    run_multimodal_embedding_sentence_transformers,
+):
     image_array = make_embedding_test_image_array()
     text = "A woman"
     prompt = "hi"
