@@ -73,7 +73,7 @@ Text2ImagePipeline::Text2ImagePipeline(const Image2ImagePipeline& pipe) {
     } else if (auto flux2_klein = std::dynamic_pointer_cast<Flux2KleinPipeline>(pipe.m_impl); flux2_klein != nullptr) {
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, *flux2_klein);
     } else {
-        OPENVINO_ASSERT("Cannot convert specified Image2ImagePipeline to Text2ImagePipeline");
+        OPENVINO_THROW("Cannot convert specified Image2ImagePipeline to Text2ImagePipeline");
     }
     m_impl->save_load_time(start_time);
 }
@@ -91,7 +91,7 @@ Text2ImagePipeline::Text2ImagePipeline(const InpaintingPipeline& pipe) {
     } else if (auto flux2_klein = std::dynamic_pointer_cast<Flux2KleinPipeline>(pipe.m_impl); flux2_klein != nullptr) {
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, *flux2_klein);
     } else {
-        OPENVINO_ASSERT("Cannot convert specified InpaintingPipeline to Text2ImagePipeline");
+        OPENVINO_THROW("Cannot convert specified InpaintingPipeline to Text2ImagePipeline");
     }
      m_impl->save_load_time(start_time);
 }

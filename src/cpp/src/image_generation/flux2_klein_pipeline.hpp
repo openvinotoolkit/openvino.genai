@@ -419,6 +419,12 @@ public:
         const size_t text_seq_len = prompt_embeds.get_shape()[1];
         ov::Tensor text_ids = flux2_prepare_text_ids(text_seq_len);
 
+        if (m_transformer->get_config().guidance_embeds) {
+            ov::Tensor guidance(ov::element::f32, {generation_config.num_images_per_prompt});
+            std::fill_n(guidance.data<float>(), guidance.get_size(), static_cast<float>(generation_config.guidance_scale));
+            m_transformer->set_hidden_states("guidance", guidance);
+        }
+
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("txt_ids", text_ids);
     }
@@ -696,6 +702,9 @@ protected:
 
         OPENVINO_ASSERT(generation_config.prompt_2 == std::nullopt, "Prompt 2 is not used by Flux2KleinPipeline");
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by Flux2KleinPipeline");
+        OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by Flux2KleinPipeline");
+        OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by Flux2KleinPipeline");
+        OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by Flux2KleinPipeline");
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE && initial_image) {
             OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,

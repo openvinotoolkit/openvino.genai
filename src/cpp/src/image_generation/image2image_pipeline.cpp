@@ -71,7 +71,7 @@ Image2ImagePipeline::Image2ImagePipeline(const InpaintingPipeline& pipe) {
     } else if (auto stable_diffusion_3 = std::dynamic_pointer_cast<StableDiffusion3Pipeline>(pipe.m_impl); stable_diffusion_3 != nullptr) {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, *stable_diffusion_3);
     } else {
-        OPENVINO_ASSERT("Cannot convert specified InpaintingPipeline to Image2ImagePipeline");
+        OPENVINO_THROW("Cannot convert specified InpaintingPipeline to Image2ImagePipeline");
     }
     m_impl->save_load_time(start_time);
 }
