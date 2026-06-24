@@ -8,6 +8,7 @@
 
 #include "audio_chunk.hpp"
 #include "streamer.hpp"
+#include "utils.hpp"
 
 namespace {
 
@@ -50,9 +51,16 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
-    const std::vector<AudioChunk> chunks = split_audio_into_chunks({std::get<std::vector<float>>(audio_inputs)},
-                                                                   m_feature_extractor.sampling_rate,
-                                                                   MAX_ASR_INPUT_SECONDS);
+    const std::vector<float>& audio = std::visit(
+        ov::genai::utils::overloaded{
+            [](const std::vector<float>& input) -> const std::vector<float>& {
+                return input;
+            },
+        },
+        audio_inputs);
+
+    const std::vector<AudioChunk> chunks =
+        split_audio_into_chunks({audio}, m_feature_extractor.sampling_rate, MAX_ASR_INPUT_SECONDS);
 
     const auto infer_results = infer(chunks, config, results.perf_metrics, streamer);
     if (streamer) {

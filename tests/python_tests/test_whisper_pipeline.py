@@ -6,6 +6,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
+# ruff: noqa: E402
 import openvino_genai as ov_genai
 import functools
 import pytest
@@ -32,32 +33,6 @@ from difflib import SequenceMatcher
 
 from utils.dataset_utils import load_dataset_via_snapshot
 from utils.qwen3_asr import Qwen3ASROptimumPipeline, skip_if_qwen3_asr_package_is_unavailable
-
-
-class PipelineType(enum.Enum):
-    WHISPER = "whisper"
-    ASR = "asr"
-
-
-def get_pipeline_cls(pipeline_type: PipelineType):
-    return ov_genai.ASRPipeline if pipeline_type == PipelineType.ASR else ov_genai.WhisperPipeline
-
-
-def get_config_cls(pipeline_type: PipelineType):
-    return ov_genai.ASRGenerationConfig if pipeline_type == PipelineType.ASR else ov_genai.WhisperGenerationConfig
-
-
-def get_word_text(word, pipeline_type: PipelineType):
-    return word.text if pipeline_type == PipelineType.ASR else word.word
-
-
-def get_raw_metrics(perf_metrics, pipeline_type: PipelineType):
-    return perf_metrics.asr_raw_metrics if pipeline_type == PipelineType.ASR else perf_metrics.whisper_raw_metrics
-
-
-@pytest.fixture(params=[PipelineType.WHISPER, PipelineType.ASR])
-def pipeline_type(request):
-    return request.param
 
 
 class PipelineType(enum.Enum):
@@ -699,8 +674,8 @@ def test_longform_audio(pipelines_fixture, sample_from_dataset):
 
     config = {}
     if model_id == QWEN3_ASR_MODEL_ID:
-        # tiny random model used for Qwen3-ASR tesing.
-        # it cannot predict language so we have to force it to prevent streamer autodetection prefix suppresion
+        # tiny random model used for Qwen3-ASR testing.
+        # it cannot predict language so we have to force it to prevent streamer autodetection prefix suppression
         # also max_new_tokens have to be set as model cannot stop at eos token
         config = {"language": "English", "max_new_tokens": 200}
 
