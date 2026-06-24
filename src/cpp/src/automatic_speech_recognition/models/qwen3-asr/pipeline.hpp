@@ -25,10 +25,10 @@ public:
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 
 private:
-    Qwen3ASREncoder m_encoder;
-    Qwen3ASRDecoder m_decoder;
     WhisperFeatureExtractor m_feature_extractor;
     const int64_t m_asr_text_token_id;
+    std::unique_ptr<Qwen3ASREncoder> m_encoder;
+    std::unique_ptr<Qwen3ASRDecoder> m_decoder;
 
     static constexpr size_t MAX_ASR_INPUT_SECONDS = 1200;
 
@@ -48,6 +48,8 @@ private:
                                                  const std::vector<size_t>& audio_lengths);
 
     ASRGenerationConfig resolve_generation_config(std::optional<ASRGenerationConfig> generation_config) const;
+
+    void validate_generation_config(const ASRGenerationConfig& config) const;
 };
 
 }  // namespace ov::genai

@@ -79,8 +79,9 @@ auto asr_generation_config_docstring = R"(
 
     Common parameters:
 
-    :param language: Language token to use for generation in the form of <|en|>.
-                     Can be set for multilingual models only.
+    :param language: Language token to use for generation.
+                     In the form of <|en|> for Whisper models. Can be set for multilingual models only.
+                     In the form of English for Qwen3-ASR models.
     :type language: Optional[str]
 
     :param return_timestamps: Whether to return segment-level timestamps.

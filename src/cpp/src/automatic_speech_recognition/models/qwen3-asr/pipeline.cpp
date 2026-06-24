@@ -25,14 +25,17 @@ namespace ov::genai {
 Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
     : ASRPipelineImplBase(models_path, properties),
       m_feature_extractor{models_path / "preprocessor_config.json"},
-      m_encoder{models_path, device, properties},
-      m_decoder{models_path, device, properties},
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")} {
+    ov::AnyMap properties_copy = properties;
+    erase_allowed_asr_ctor_properties(properties_copy);
+    m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
+    m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy);
+
     // Qwen3-ASR EOS tokens: <|endoftext|>=151643, <|im_end|>=151645
     // The exported model has no generation_config.json. Qwen3-ASR original implementation hardcodes them as well.
     m_generation_config.set_eos_token_id(151643);
     m_generation_config.stop_token_ids.insert(151645);
-    m_decoder.set_seed(m_generation_config.rng_seed);
+    m_decoder->set_seed(m_generation_config.rng_seed);
 }
 
 ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
@@ -41,7 +44,7 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     auto start_time = std::chrono::steady_clock::now();
 
     const ASRGenerationConfig config = resolve_generation_config(generation_config);
-    m_decoder.set_seed(config.rng_seed);
+    m_decoder->set_seed(config.rng_seed);
 
     ASRDecodedResults results;
     results.perf_metrics.load_time = m_load_time_ms;
@@ -197,7 +200,7 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
     for (size_t batch = 0; batch < batch_size; ++batch) {
         const std::string prompt = prompts[batch];
         const auto encoder_start_time = std::chrono::steady_clock::now();
-        const ov::Tensor encoder_hidden_states = m_encoder.encode(features[batch]);
+        const ov::Tensor encoder_hidden_states = m_encoder->encode(features[batch]);
         const auto encoder_stop_time = std::chrono::steady_clock::now();
         const auto encoder_infer_ms = PerfMetrics::get_microsec(encoder_stop_time - encoder_start_time);
         perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(encoder_infer_ms);
@@ -219,12 +222,12 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
                 ? std::make_shared<Qwen3ASRStreamer>(streamer_ptr, m_asr_text_token_id, true)
                 : streamer_ptr;
 
-        const auto encoded_results = m_decoder.generate(input_ids,
-                                                        encoder_hidden_states,
-                                                        config,
-                                                        perf_metrics.raw_metrics,
-                                                        perf_metrics.asr_raw_metrics,
-                                                        decoder_streamer);
+        const auto encoded_results = m_decoder->generate(input_ids,
+                                                         encoder_hidden_states,
+                                                         config,
+                                                         perf_metrics.raw_metrics,
+                                                         perf_metrics.asr_raw_metrics,
+                                                         decoder_streamer);
 
         const auto detokenization_start_time = std::chrono::steady_clock::now();
         const auto text = m_tokenizer.decode(encoded_results.tokens[0]);
@@ -247,8 +250,14 @@ ASRGenerationConfig Qwen3ASR::resolve_generation_config(std::optional<ASRGenerat
         config.set_eos_token_id(m_generation_config.eos_token_id);
     }
 
-    config.validate();
+    validate_generation_config(config);
     return config;
+}
+
+void Qwen3ASR::validate_generation_config(const ASRGenerationConfig& config) const {
+    config.validate();
+
+    OPENVINO_ASSERT(!config.is_beam_search(), "Qwen3-ASR does not support beam search decoding");
 }
 
 }  // namespace ov::genai
