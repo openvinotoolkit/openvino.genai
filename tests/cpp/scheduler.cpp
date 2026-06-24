@@ -2434,7 +2434,7 @@ TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
     scheduler_config.dynamic_split_fuse = true;
     scheduler_config.max_num_seqs = 5;
 
-    std::vector<uint64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     const uint64_t request_id = 42;
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
         request_id,
@@ -2466,7 +2466,7 @@ TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_t
     scheduler_config.dynamic_split_fuse = true;
     scheduler_config.max_num_seqs = 5;
 
-    std::vector<uint64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     const uint64_t request_id = 43;
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
         request_id,
@@ -2497,7 +2497,7 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     scheduler_config.dynamic_split_fuse = true;
     scheduler_config.max_num_seqs = 5;
 
-    std::vector<uint64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     const uint64_t request_id = 44;
     SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
         request_id,
