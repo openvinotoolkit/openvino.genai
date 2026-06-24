@@ -3,7 +3,6 @@
 
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
-#include <cmath>
 #include <future>
 #include <mutex>
 #include <numeric>
@@ -11,115 +10,20 @@
 #include <unordered_set>
 
 #include "openvino/core/except.hpp"
-#include "openvino/core/type/bfloat16.hpp"
-#include "openvino/core/type/float16.hpp"
 #include "openvino/genai/chat_history.hpp"
-#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
+#include "text_embedding_utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 
 namespace {
 
-template <typename ElementType>
-ov::Tensor last_token_pool_embeddings_impl(const ov::Tensor& tensor) {
-    const ov::Shape shape = tensor.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3, "Expected embedding tensor rank 3, got rank ", shape.size());
-    OPENVINO_ASSERT(shape[0] == 1, "Expected batch size 1, got ", shape[0]);
-    OPENVINO_ASSERT(shape[1] > 0, "Sequence length must be greater than 0");
-
-    const size_t sequence_length = shape[1];
-    const size_t hidden_size = shape[2];
-    const ElementType* embeddings = tensor.data<const ElementType>();
-
-    ov::Tensor pooled_tensor(ov::element::f32, {1, hidden_size});
-    float* pooled = pooled_tensor.data<float>();
-    const size_t token_offset = (sequence_length - 1) * hidden_size;
-    for (size_t hidden_idx = 0; hidden_idx < hidden_size; ++hidden_idx) {
-        pooled[hidden_idx] = static_cast<float>(embeddings[token_offset + hidden_idx]);
+ov::genai::TextEmbeddingPipeline::Config get_multimodal_config(const ov::AnyMap& properties) {
+    ov::genai::TextEmbeddingPipeline::Config config(properties);
+    if (!properties.count(ov::genai::pooling_type.name())) {
+        config.pooling_type = ov::genai::TextEmbeddingPipeline::PoolingType::LAST_TOKEN;
     }
-
-    return pooled_tensor;
-}
-
-template <typename ElementType>
-ov::Tensor get_tensor_as_f32(const ov::Tensor& tensor) {
-    const ov::Shape shape = tensor.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2, "Expected embedding tensor rank 2, got rank ", shape.size());
-    OPENVINO_ASSERT(shape[0] == 1, "Expected batch size 1, got ", shape[0]);
-    OPENVINO_ASSERT(shape[1] > 0, "Embedding size must be greater than 0");
-
-    const size_t embedding_size = shape[1];
-    const ElementType* embeddings = tensor.data<const ElementType>();
-
-    ov::Tensor result(ov::element::f32, {1, embedding_size});
-    float* result_data = result.data<float>();
-    for (size_t i = 0; i < embedding_size; ++i) {
-        result_data[i] = static_cast<float>(embeddings[i]);
-    }
-    return result;
-}
-
-ov::Tensor pool_embeddings(const ov::Tensor& tensor) {
-    const ov::Shape shape = tensor.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
-                    "Expected embedding tensor rank 2 or 3, got rank ",
-                    shape.size());
-
-    const auto element_type = tensor.get_element_type();
-
-    // Rank-2 tensor is already pooled: [1, hidden_size].
-    if (shape.size() == 2) {
-        if (element_type == ov::element::f32) {
-            return tensor;
-        }
-        if (element_type == ov::element::f16) {
-            return get_tensor_as_f32<ov::float16>(tensor);
-        }
-        if (element_type == ov::element::bf16) {
-            return get_tensor_as_f32<ov::bfloat16>(tensor);
-        }
-    }
-
-    // Rank-3 tensor needs last-token pooling over sequence: [1, seq_len, hidden_size].
-    if (element_type == ov::element::f32) {
-        return last_token_pool_embeddings_impl<float>(tensor);
-    }
-    if (element_type == ov::element::f16) {
-        return last_token_pool_embeddings_impl<ov::float16>(tensor);
-    }
-    if (element_type == ov::element::bf16) {
-        return last_token_pool_embeddings_impl<ov::bfloat16>(tensor);
-    }
-
-    OPENVINO_THROW("Unsupported embedding element type: ", element_type);
-}
-
-ov::Tensor normalize_embeddings(const ov::Tensor& tensor) {
-    const ov::Shape shape = tensor.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2, "Expected embedding tensor rank 2, got rank ", shape.size());
-    OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32,
-                    "Expected f32 embedding tensor, got ",
-                    tensor.get_element_type());
-
-    const float* embeddings = tensor.data<const float>();
-    float squared_norm = 0.0f;
-    for (size_t idx = 0; idx < tensor.get_size(); ++idx) {
-        squared_norm += embeddings[idx] * embeddings[idx];
-    }
-
-    ov::Tensor normalized(ov::element::f32, shape);
-    float* normalized_data = normalized.data<float>();
-    const float norm = std::sqrt(squared_norm);
-    if (norm == 0.0f) {
-        std::copy_n(embeddings, tensor.get_size(), normalized_data);
-        return normalized;
-    }
-
-    for (size_t idx = 0; idx < tensor.get_size(); ++idx) {
-        normalized_data[idx] = embeddings[idx] / norm;
-    }
-    return normalized;
+    return config;
 }
 
 ov::Tensor make_text_position_ids(size_t sequence_length) {
@@ -223,13 +127,46 @@ class EmbeddingPipeline::EmbeddingPipelineImpl {
 public:
     EmbeddingPipelineImpl(const std::filesystem::path& models_path,
                           const std::string& device,
-                          const ov::AnyMap& properties) {
+                          const EmbeddingPipeline::Config& config,
+                          const ov::AnyMap& properties)
+        : m_config{config} {
+        m_config.validate();
+        const ov::AnyMap plugin_properties = utils::remove_config_properties(properties);
         try {
-            init_multimodal(models_path, device, properties);
+            init_multimodal(models_path, device, plugin_properties);
             m_mode = Mode::MULTIMODAL;
         } catch (const std::exception& multimodal_error) {
             try {
-                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path, device, properties);
+                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path,
+                                                                                   device,
+                                                                                   m_config,
+                                                                                   plugin_properties);
+                m_mode = Mode::TEXT_ONLY;
+            } catch (const std::exception& text_error) {
+                OPENVINO_THROW("EmbeddingPipeline initialization failed. "
+                               "Multimodal initialization error: ",
+                               multimodal_error.what(),
+                               ". TextEmbeddingPipeline fallback error: ",
+                               text_error.what());
+            }
+        }
+    }
+
+    EmbeddingPipelineImpl(const std::filesystem::path& models_path,
+                          const std::string& device,
+                          const ov::AnyMap& properties)
+        : m_config{get_multimodal_config(properties)} {
+        m_config.validate();
+        const ov::AnyMap plugin_properties = utils::remove_config_properties(properties);
+        try {
+            init_multimodal(models_path, device, plugin_properties);
+            m_mode = Mode::MULTIMODAL;
+        } catch (const std::exception& multimodal_error) {
+            try {
+                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path,
+                                                                                   device,
+                                                                                   TextEmbeddingPipeline::Config(properties),
+                                                                                   plugin_properties);
                 m_mode = Mode::TEXT_ONLY;
             } catch (const std::exception& text_error) {
                 OPENVINO_THROW("EmbeddingPipeline initialization failed. "
@@ -364,6 +301,7 @@ private:
         ov::Core core;
         std::shared_ptr<ov::Model> language_model =
             core.read_model(models_path / "openvino_language_model.xml");
+        language_model = utils::apply_postprocessing(language_model, m_config);
         m_compiled_language_model = core.compile_model(language_model, device, properties);
         m_language_model_request = m_compiled_language_model.create_infer_request();
 
@@ -482,9 +420,9 @@ private:
         m_language_model_request.set_tensor("inputs_embeds", inputs_embeds);
 
         const size_t input_sequence_length = inputs_embeds.get_shape().at(1);
+        ov::Tensor attention_mask(ov::element::i64, {1, input_sequence_length});
+        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
         if (has_lm_input("attention_mask")) {
-            ov::Tensor attention_mask(ov::element::i64, {1, input_sequence_length});
-            std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
             m_language_model_request.set_tensor("attention_mask", attention_mask);
         }
 
@@ -518,11 +456,7 @@ private:
 
         m_language_model_request.infer();
 
-        const ov::Tensor hidden_or_logits = m_language_model_request.get_tensor(m_embedding_output_name);
-        if (encoded_images.empty() && encoded_videos.empty()) {
-            return pool_embeddings(hidden_or_logits);
-        }
-        return normalize_embeddings(pool_embeddings(hidden_or_logits));
+        return m_language_model_request.get_tensor(m_embedding_output_name);
     }
 
 private:
@@ -575,6 +509,7 @@ private:
     Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
+    EmbeddingPipeline::Config m_config;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
     std::mutex m_request_mutex;
@@ -585,6 +520,12 @@ private:
     std::future<ov::Tensor> m_embed_future;
     AsyncRequestType m_async_request_type = AsyncRequestType::NONE;
 };
+
+EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
+                                     const std::string& device,
+                                     const Config& config,
+                                     const ov::AnyMap& properties)
+    : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, config, properties)) {}
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const std::string& device,

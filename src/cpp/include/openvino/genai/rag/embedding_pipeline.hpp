@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
@@ -24,6 +25,21 @@ namespace genai {
 class OPENVINO_GENAI_EXPORTS EmbeddingPipeline {
 public:
     using TextInput = std::variant<std::string, std::vector<std::string>>;
+    using PoolingType = TextEmbeddingPipeline::PoolingType;
+    using Config = TextEmbeddingPipeline::Config;
+
+    /**
+     * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
+     *
+     * @param models_path Path to the directory containing model xml/bin files and tokenizer.
+     * @param device Device.
+     * @param config Pipeline configuration.
+     * @param properties Optional plugin properties to pass to ov::Core::compile_model().
+     */
+    EmbeddingPipeline(const std::filesystem::path& models_path,
+                      const std::string& device,
+                      const Config& config,
+                      const ov::AnyMap& properties = {});
 
     /**
      * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.

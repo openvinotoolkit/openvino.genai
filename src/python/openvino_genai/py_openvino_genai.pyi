@@ -782,7 +782,7 @@ class EmbeddingPipeline:
     - text + images
     - text + images + videos
     """
-    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: ... | None = None, **kwargs) -> None:
         """
         Plugin and/or config properties
         """

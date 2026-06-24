@@ -75,15 +75,27 @@ Computes a single embedding vector for:
 void init_rag_pipelines(py::module_& m) {
     py::class_<EmbeddingPipeline>(m, "EmbeddingPipeline", embedding_pipeline_docstring)
         .def(
-            py::init([](const std::filesystem::path& models_path, const std::string& device, const py::kwargs& kwargs) {
+            py::init([](const std::filesystem::path& models_path,
+                        const std::string& device,
+                        const std::optional<TextEmbeddingPipeline::Config>& config,
+                        const py::kwargs& kwargs) {
                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                return std::make_unique<EmbeddingPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
+                if (config.has_value()) {
+                    return std::make_unique<EmbeddingPipeline>(models_path,
+                                                               device,
+                                                               *config,
+                                                               properties);
+                }
+                return std::make_unique<EmbeddingPipeline>(models_path, device, properties);
             }),
             py::arg("models_path"),
             "Path to the directory containing model xml/bin files and tokenizer",
             py::arg("device"),
             "Device to run the model on (e.g., CPU, GPU)",
+            py::arg("config") = std::nullopt,
+            "Optional pipeline configuration",
             "Plugin and/or config properties")
         .def(
             "embed",

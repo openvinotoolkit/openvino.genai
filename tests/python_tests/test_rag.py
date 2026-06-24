@@ -931,6 +931,28 @@ def test_embedding_constructors(emb_model):
         PERFORMANCE_HINT_NUM_REQUESTS=2,
     )
 
+    EmbeddingPipeline(models_path, "CPU")
+    EmbeddingPipeline(models_path, "CPU", TextEmbeddingPipeline.Config())
+    EmbeddingPipeline(
+        models_path,
+        "CPU",
+        TextEmbeddingPipeline.Config(),
+        PERFORMANCE_HINT_NUM_REQUESTS=2,
+    )
+    EmbeddingPipeline(
+        models_path,
+        "CPU",
+        normalize=True,
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+    )
+    EmbeddingPipeline(
+        models_path,
+        "CPU",
+        normalize=True,
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+        PERFORMANCE_HINT_NUM_REQUESTS=2,
+    )
+
 
 @pytest.mark.parametrize("emb_model", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
