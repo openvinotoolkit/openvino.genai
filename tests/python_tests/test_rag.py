@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import gc
 from pathlib import Path
+import urllib.request
 import openvino as ov
 import openvino_genai
 from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline, VideoMetadata
@@ -22,6 +23,7 @@ from transformers import AutoModel, AutoProcessor
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
+from samples.conftest import TEST_FILES
 
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
@@ -159,22 +161,29 @@ def run_text_embedding_genai(
         return pipeline.embed_query(documents[0])
 
 
-def make_embedding_test_image_array() -> np.ndarray:
-    image_path = Path(__file__).resolve().parents[2] / "images" / "cat.png"
+@pytest.fixture(scope="module")
+def cat_image_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    image_path = tmp_path_factory.mktemp("rag_test_data") / "cat"
+    if not image_path.exists():
+        urllib.request.urlretrieve(TEST_FILES["cat"], image_path)
+    return image_path
+
+
+def make_embedding_test_image_array(image_path: Path) -> np.ndarray:
     return np.asarray(Image.open(image_path).convert("RGB"), dtype=np.uint8)
 
 
-def make_embedding_test_image() -> ov.Tensor:
-    return ov.Tensor(make_embedding_test_image_array())
+def make_embedding_test_image(image_path: Path) -> ov.Tensor:
+    return ov.Tensor(make_embedding_test_image_array(image_path))
 
 
-def make_embedding_test_video_array() -> np.ndarray:
-    image = make_embedding_test_image_array()
+def make_embedding_test_video_array(image_path: Path) -> np.ndarray:
+    image = make_embedding_test_image_array(image_path)
     return np.stack([image] * 4, axis=0)
 
 
-def make_embedding_test_video() -> ov.Tensor:
-    return ov.Tensor(make_embedding_test_video_array())
+def make_embedding_test_video(image_path: Path) -> ov.Tensor:
+    return ov.Tensor(make_embedding_test_video_array(image_path))
 
 
 def make_embedding_video_metadata() -> VideoMetadata:
@@ -226,10 +235,7 @@ def run_multimodal_embedding_hf(
 
 @pytest.fixture
 def run_multimodal_embedding_sentence_transformers():
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        pytest.skip("sentence_transformers is not installed")
+    import sentence_transformers
 
     def run(
         model_id: str,
@@ -237,7 +243,7 @@ def run_multimodal_embedding_sentence_transformers():
         image: np.ndarray | None = None,
         prompt: str | None = None,
     ) -> np.ndarray:
-        model = SentenceTransformer(model_id)
+        model = sentence_transformers.SentenceTransformer(model_id)
         model_input = {"text": text}
         if image is not None:
             model_input["image"] = Image.fromarray(image)
@@ -344,10 +350,10 @@ def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
-def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_hf_components):
+def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_hf_components, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    image_array = make_embedding_test_image_array()
-    image = make_embedding_test_image()
+    image_array = make_embedding_test_image_array(cat_image_path)
+    image = make_embedding_test_image(cat_image_path)
     image_text_prompt = " المرأ playing with her dog on a beach at sunset."
     prompt = "Represent the user's input."
     hf_processor, hf_model = multimodal_emb_hf_components
@@ -366,10 +372,11 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
 def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
     multimodal_emb_model,
     run_multimodal_embedding_sentence_transformers,
+    cat_image_path,
 ):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    image_array = make_embedding_test_image_array()
-    image = make_embedding_test_image()
+    image_array = make_embedding_test_image_array(cat_image_path)
+    image = make_embedding_test_image(cat_image_path)
     text = "A woman playing with her dog on a beach at sunset."
     prompt = "Represent the user's input."
     # prompt = ""
@@ -390,8 +397,9 @@ def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
 def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
     model_id,
     run_multimodal_embedding_sentence_transformers,
+    cat_image_path,
 ):
-    image_array = make_embedding_test_image_array()
+    image_array = make_embedding_test_image_array(cat_image_path)
     text = "A woman"
     prompt = "hi"
 
@@ -415,9 +423,9 @@ def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
-def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model):
+def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    video = make_embedding_test_video()
+    video = make_embedding_test_video(cat_image_path)
     video_metadata = make_embedding_video_metadata()
     text = "Represent this video."
 
@@ -430,10 +438,10 @@ def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model):
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
-def test_qwen3_vl_embedding_three_texts_image_and_video(multimodal_emb_model):
+def test_qwen3_vl_embedding_three_texts_image_and_video(multimodal_emb_model, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    image = make_embedding_test_image()
-    video = make_embedding_test_video()
+    image = make_embedding_test_image(cat_image_path)
+    video = make_embedding_test_video(cat_image_path)
     video_metadata = make_embedding_video_metadata()
     texts = ["Represent OpenVINO.", "Represent this image.", "Represent this video."]
 
