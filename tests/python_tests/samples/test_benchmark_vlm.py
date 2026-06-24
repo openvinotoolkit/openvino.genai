@@ -101,10 +101,10 @@ class TestBenchmarkVLM:
             command = [sys.executable, benchmark_script, "-m", "fake_model", "-i", "fake_image.jpg",]
             
             if height is not None:
-                command.extend(["-H", height])
+                command.extend(["-H", str(height)])
             
             if width is not None:
-                command.extend(["-W", width])
+                command.extend(["-W", str(width)])
 
             with pytest.raises(subprocess.CalledProcessError):
                 run_sample(command)
