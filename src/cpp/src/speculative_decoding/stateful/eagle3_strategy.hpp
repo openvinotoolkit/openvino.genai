@@ -12,6 +12,7 @@
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "stateful_pipeline_base.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 
 namespace ov {
 namespace genai {

@@ -5,7 +5,412 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EmbeddingPipeline', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+class ASRDecodedResultChunk:
+    """
+    
+        Structure to store decoded text with corresponding timestamps
+    
+        :param start_ts chunk start time in seconds
+        :param end_ts   chunk end time in seconds
+        :param text     chunk text
+        :param token_ids token ids corresponding to the chunk text
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def end_ts(self) -> float:
+        ...
+    @property
+    def start_ts(self) -> float:
+        ...
+    @property
+    def text(self) -> str:
+        ...
+    @property
+    def token_ids(self) -> list[int]:
+        ...
+class ASRDecodedResults:
+    """
+    
+        Structure to store resulting text outputs and scores.
+    
+        Parameters:
+        texts:              vector of resulting sequences.
+        scores:             scores for each sequence.
+        languages:          detected languages for the input audio(s), e.g. ["en"].
+        perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
+        chunks:             optional chunks of resulting sequences with timestamps
+        words:              optional chunks of resulting words with timestamps
+    """
+    def __repr__(self) -> str:
+        ...
+    @property
+    def chunks(self) -> list[list[ASRDecodedResultChunk]] | None:
+        ...
+    @property
+    def languages(self) -> list[str]:
+        ...
+    @property
+    def perf_metrics(self) -> ASRPerfMetrics:
+        ...
+    @property
+    def scores(self) -> list[float]:
+        ...
+    @property
+    def texts(self) -> list[str]:
+        ...
+    @property
+    def words(self) -> list[list[ASRDecodedResultChunk]] | None:
+        ...
+class ASRGenerationConfig(GenerationConfig):
+    """
+    
+        ASRGenerationConfig
+    
+        Common parameters:
+    
+        :param language: Language token to use for generation in the form of <|en|>.
+                         Can be set for multilingual models only.
+        :type language: Optional[str]
+    
+        :param return_timestamps: Whether to return segment-level timestamps.
+        :type return_timestamps: bool
+    
+        Whisper parameters:
+    
+        :param decoder_start_token_id: Corresponds to the "<|startoftranscript|>" token.
+        :type decoder_start_token_id: int
+    
+        :param pad_token_id: Padding token id.
+        :type pad_token_id: int
+    
+        :param translate_token_id: Translate token id.
+        :type translate_token_id: int
+    
+        :param transcribe_token_id: Transcribe token id.
+        :type transcribe_token_id: int
+    
+        :param prev_sot_token_id: Corresponds to the "<|startofprev|>" token.
+        :type prev_sot_token_id: int
+    
+        :param no_timestamps_token_id: No timestamps token id.
+        :type no_timestamps_token_id: int
+    
+        :param begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
+        :type begin_suppress_tokens: list[int]
+    
+        :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
+        :type suppress_tokens: list[int]
+    
+        :param max_initial_timestamp_index: Maximum initial timestamp index.
+        :type max_initial_timestamp_index: int
+    
+        :param is_multilingual: Whether the model is multilingual.
+        :type is_multilingual: bool
+    
+        :param task: Task to use for generation, either "translate" or "transcribe".
+                     Can be set for multilingual models only.
+        :type task: Optional[str]
+    
+        :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
+        :type lang_to_id: dict[str, int]
+    
+        :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                                When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
+                                ASRPipeline("model_path", "CPU", word_timestamps=True)
+        :type word_timestamps: bool
+    
+        :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
+                                Each pair represents (layer_index, head_index).
+        :type alignment_heads: list[tuple[int, int]]
+    
+        :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+                               window. Can be used to steer the model to use particular spellings or styles.
+    
+                               Example::
+    
+                                 result = pipeline.generate(raw_speech)
+                                 #  He has gone and gone for good answered Paul Icrom who...
+    
+                                 result = pipeline.generate(raw_speech, initial_prompt="Polychrome")
+                                 #  He has gone and gone for good answered Polychrome who...
+        :type initial_prompt: Optional[str]
+    
+        :param hotwords: Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to all processing windows.
+                         Can be used to steer the model to use particular spellings or styles.
+    
+                         Example::
+    
+                           result = pipeline.generate(raw_speech)
+                           #  He has gone and gone for good answered Paul Icrom who...
+    
+                           result = pipeline.generate(raw_speech, hotwords="Polychrome")
+                           #  He has gone and gone for good answered Polychrome who...
+        :type hotwords: Optional[str]
+    
+        For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
+        see GenerationConfig documentation.
+    """
+    hotwords: str | None
+    initial_prompt: str | None
+    is_multilingual: bool
+    language: str | None
+    return_timestamps: bool
+    task: str | None
+    word_timestamps: bool
+    @typing.overload
+    def __init__(self, json_path: os.PathLike | str | bytes) -> None:
+        """
+        path where generation_config.json is stored
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        ...
+    def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def alignment_heads(self) -> list[tuple[int, int]]:
+        ...
+    @alignment_heads.setter
+    def alignment_heads(self, arg0: collections.abc.Sequence[tuple[typing.SupportsInt, typing.SupportsInt]]) -> None:
+        ...
+    @property
+    def begin_suppress_tokens(self) -> list[int]:
+        ...
+    @begin_suppress_tokens.setter
+    def begin_suppress_tokens(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def decoder_start_token_id(self) -> int:
+        ...
+    @decoder_start_token_id.setter
+    def decoder_start_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def lang_to_id(self) -> dict[str, int]:
+        ...
+    @lang_to_id.setter
+    def lang_to_id(self, arg0: collections.abc.Mapping[str, typing.SupportsInt]) -> None:
+        ...
+    @property
+    def max_initial_timestamp_index(self) -> int:
+        ...
+    @max_initial_timestamp_index.setter
+    def max_initial_timestamp_index(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def no_timestamps_token_id(self) -> int:
+        ...
+    @no_timestamps_token_id.setter
+    def no_timestamps_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def pad_token_id(self) -> int:
+        ...
+    @pad_token_id.setter
+    def pad_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def prev_sot_token_id(self) -> int:
+        ...
+    @prev_sot_token_id.setter
+    def prev_sot_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def suppress_tokens(self) -> list[int]:
+        ...
+    @suppress_tokens.setter
+    def suppress_tokens(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def transcribe_token_id(self) -> int:
+        ...
+    @transcribe_token_id.setter
+    def transcribe_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def translate_token_id(self) -> int:
+        ...
+    @translate_token_id.setter
+    def translate_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+class ASRPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
+        :type get_features_extraction_duration: MeanStdPair
+    
+        :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
+        :type get_word_level_timestamps_processing_duration: MeanStdPair
+    
+        :param asr_raw_metrics: ASR specific raw metrics
+        :type ASRRawPerfMetrics:
+    """
+    def __init__(self) -> None:
+        ...
+    def get_decode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_encode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_features_extraction_duration(self) -> MeanStdPair:
+        ...
+    def get_word_level_timestamps_processing_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def asr_raw_metrics(self) -> ASRRawPerfMetrics:
+        ...
+class ASRPipeline:
+    """
+    Automatic speech recognition pipeline
+    """
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                    ASRPipeline class constructor.
+                    models_path (os.PathLike): Path to the model file.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+        """
+    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
+        """
+            High level generate that receives raw speech as a vector of floats and returns decoded output.
+        
+            :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+            :type audio_inputs: list[float]
+        
+            :param generation_config: generation_config
+            :type generation_config: ASRGenerationConfig
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
+                             Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: ASRDecodedResults
+         
+         
+            ASRGenerationConfig
+        
+            Common parameters:
+        
+            :param language: Language token to use for generation in the form of <|en|>.
+                             Can be set for multilingual models only.
+            :type language: Optional[str]
+        
+            :param return_timestamps: Whether to return segment-level timestamps.
+            :type return_timestamps: bool
+        
+            Whisper parameters:
+        
+            :param decoder_start_token_id: Corresponds to the "<|startoftranscript|>" token.
+            :type decoder_start_token_id: int
+        
+            :param pad_token_id: Padding token id.
+            :type pad_token_id: int
+        
+            :param translate_token_id: Translate token id.
+            :type translate_token_id: int
+        
+            :param transcribe_token_id: Transcribe token id.
+            :type transcribe_token_id: int
+        
+            :param prev_sot_token_id: Corresponds to the "<|startofprev|>" token.
+            :type prev_sot_token_id: int
+        
+            :param no_timestamps_token_id: No timestamps token id.
+            :type no_timestamps_token_id: int
+        
+            :param begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
+            :type begin_suppress_tokens: list[int]
+        
+            :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
+            :type suppress_tokens: list[int]
+        
+            :param max_initial_timestamp_index: Maximum initial timestamp index.
+            :type max_initial_timestamp_index: int
+        
+            :param is_multilingual: Whether the model is multilingual.
+            :type is_multilingual: bool
+        
+            :param task: Task to use for generation, either "translate" or "transcribe".
+                         Can be set for multilingual models only.
+            :type task: Optional[str]
+        
+            :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
+            :type lang_to_id: dict[str, int]
+        
+            :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                                    When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
+                                    ASRPipeline("model_path", "CPU", word_timestamps=True)
+            :type word_timestamps: bool
+        
+            :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
+                                    Each pair represents (layer_index, head_index).
+            :type alignment_heads: list[tuple[int, int]]
+        
+            :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+                                   window. Can be used to steer the model to use particular spellings or styles.
+        
+                                   Example::
+        
+                                     result = pipeline.generate(raw_speech)
+                                     #  He has gone and gone for good answered Paul Icrom who...
+        
+                                     result = pipeline.generate(raw_speech, initial_prompt="Polychrome")
+                                     #  He has gone and gone for good answered Polychrome who...
+            :type initial_prompt: Optional[str]
+        
+            :param hotwords: Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to all processing windows.
+                             Can be used to steer the model to use particular spellings or styles.
+        
+                             Example::
+        
+                               result = pipeline.generate(raw_speech)
+                               #  He has gone and gone for good answered Paul Icrom who...
+        
+                               result = pipeline.generate(raw_speech, hotwords="Polychrome")
+                               #  He has gone and gone for good answered Polychrome who...
+            :type hotwords: Optional[str]
+        
+            For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
+            see GenerationConfig documentation.
+        """
+    def get_generation_config(self) -> ASRGenerationConfig:
+        ...
+    def get_tokenizer(self) -> Tokenizer:
+        ...
+    def set_generation_config(self, config: ASRGenerationConfig) -> None:
+        ...
+class ASRRawPerfMetrics:
+    """
+    
+        Structure with ASR specific raw performance metrics for each generation before any statistics are calculated.
+    
+        :param features_extraction_durations: Duration for each features extraction call.
+        :type features_extraction_durations: list[MicroSeconds]
+    
+        :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
+        :type word_level_timestamps_processing_durations: list[MicroSeconds]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def features_extraction_durations(self) -> list[float]:
+        ...
+    @property
+    def word_level_timestamps_processing_durations(self) -> list[float]:
+        ...
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
