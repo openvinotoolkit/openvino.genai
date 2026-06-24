@@ -370,6 +370,7 @@ class TestImageGenerationWithBlobTensorModels:
     def test_image2image_pipeline_with_blob_tensor_models(self, image_generation_model, tmp_path):
         blob_dir = tmp_path / "blob_model"
         generation_args = self._get_generation_args()
+        generation_args["image"] = get_random_image(height=generation_args["height"], width=generation_args["width"])
 
         general_pipe = self._construct_reshaped(image_generation_model)
         general_image = general_pipe.generate(**generation_args)
