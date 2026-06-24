@@ -852,7 +852,18 @@ void init_qwen3_text_encoder(py::module_& m) {
         R"(
             Qwen3TextEncoder class
             model (Qwen3TextEncoder): Qwen3TextEncoder model
-        )")
+        )");
+
+    py::class_<ov::genai::Qwen3TextEncoder::Config>(qwen3_text_encoder, "Config", "This class is used for storing Qwen3TextEncoder config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Qwen3TextEncoder::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("hidden_size", &ov::genai::Qwen3TextEncoder::Config::hidden_size)
+        .def_readwrite("num_hidden_layers", &ov::genai::Qwen3TextEncoder::Config::num_hidden_layers)
+        .def_readwrite("hidden_states_layers", &ov::genai::Qwen3TextEncoder::Config::hidden_states_layers);
+
+    qwen3_text_encoder
         .def("reshape", &ov::genai::Qwen3TextEncoder::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
         .def("infer",
             [](ov::genai::Qwen3TextEncoder& self,
@@ -883,15 +894,6 @@ void init_qwen3_text_encoder(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )");
-
-    py::class_<ov::genai::Qwen3TextEncoder::Config>(qwen3_text_encoder, "Config", "This class is used for storing Qwen3TextEncoder config.")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::Qwen3TextEncoder::Config>(config_path);
-        }),
-        py::arg("config_path"))
-        .def_readwrite("hidden_size", &ov::genai::Qwen3TextEncoder::Config::hidden_size)
-        .def_readwrite("num_hidden_layers", &ov::genai::Qwen3TextEncoder::Config::num_hidden_layers)
-        .def_readwrite("hidden_states_layers", &ov::genai::Qwen3TextEncoder::Config::hidden_states_layers);
 }
 
 void init_autoencoder_kl(py::module_& m) {
