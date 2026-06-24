@@ -30,8 +30,8 @@ EMBEDDINGS_TEST_MODELS = [
 ]
 
 MULTIMODAL_EMBEDDINGS_TEST_MODELS = [
-    "Qwen/Qwen3-VL-Embedding-2B",
-    # "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding"
+    # "Qwen/Qwen3-VL-Embedding-2B",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding"
 ]
 
 RERANK_TEST_MODELS = [

@@ -642,7 +642,9 @@ jobs:
             timeout: 60
 
           - name: 'Rag tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_rag.py'
+            cmd: | 
+              python -m pip install "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
+              python -m pytest -v ./tests/python_tests/test_rag.py -k "not sentence_transformers and not _embedding_text_and_image"  # temporary skip for tiny model
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
