@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <algorithm>
+
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "update_request_structs.hpp"
@@ -49,6 +51,17 @@ public:
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
 
     RawPerfMetrics raw_perf_metrics;
+
+    ov::Any get_model_property(const std::string& name) {
+        OPENVINO_ASSERT(m_model_runner, "get_model_property('", name, "') called before model runner is initialized");
+        auto compiled_model = m_model_runner->get_infer_request().get_compiled_model();
+        const auto supported = compiled_model.get_property(ov::supported_properties);
+        OPENVINO_ASSERT(std::find(supported.begin(), supported.end(), name) != supported.end(),
+                        "Compiled model does not support property '",
+                        name,
+                        "'");
+        return compiled_model.get_property(name);
+    }
 
 protected:
     void finish_request(SequenceGroup::Ptr request);
@@ -154,6 +167,17 @@ public:
         if (m_model_runner) {
             m_model_runner->enable_hidden_state_internal(is_needed);
         }
+    }
+
+    void collect_block_update_info(const GeneratedRequests& main_generated_requests,
+                                   std::vector<int32_t>& block_update_indices,
+                                   std::vector<int32_t>& block_update_begins) const;
+
+    ov::Tensor get_tensor_by_name(const std::string& name) {
+        if (m_model_runner) {
+            return m_model_runner->get_infer_request().get_tensor(name);
+        }
+        return {};
     }
 };
 }
