@@ -547,7 +547,12 @@ def load_visual_text_model(
             raise ValueError("Adapters are not supported for OVModelForVisualCausalLM.")
 
         # Omni models are exported as multi-component IR loaded via OVModelForMultimodalLM.
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        trust_remote_code = False
+        try:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            trust_remote_code = True
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
             return load_text_optimum_omni_pipeline(model_id, device, ov_config)
 
@@ -559,7 +564,7 @@ def load_visual_text_model(
             model = OVModelForVisualCausalLM.from_pretrained(
                 model_id,
                 config=config,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code,
                 use_cache=True,
                 device=device,
                 ov_config=ov_config,
