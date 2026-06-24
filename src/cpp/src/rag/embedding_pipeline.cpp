@@ -402,8 +402,21 @@ private:
         const std::vector<std::string>& texts = std::get<std::vector<std::string>>(text);
         std::vector<ov::Tensor> out;
         out.reserve(texts.size());
+        if (texts.empty()) {
+            return stack_tensors(out);
+        }
+
+        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                        "videos_metadata size (",
+                        videos_metadata.size(),
+                        ") must be equal to videos size (",
+                        videos.size(),
+                        ") or empty");
+
+        std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
+        std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         for (const std::string& batch_text : texts) {
-            out.push_back(extract_multimodal(batch_text, images, videos, videos_metadata, prompt));
+            out.push_back(extract_multimodal(batch_text, encoded_images, encoded_videos, prompt));
         }
         return stack_tensors(out);
     }
@@ -423,6 +436,13 @@ private:
         std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
         std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
 
+        return extract_multimodal(text, encoded_images, encoded_videos, prompt);
+    }
+
+    ov::Tensor extract_multimodal(const std::string& text,
+                                  const std::vector<EncodedImage>& encoded_images,
+                                  const std::vector<EncodedVideo>& encoded_videos,
+                                  const std::optional<std::string>& prompt) {
         const std::string formatted_text = prompt.has_value() ?
             append_visual_tags(text, encoded_images.size(), encoded_videos.size()) :
             text;
@@ -474,7 +494,7 @@ private:
 
         std::optional<ov::Tensor> position_ids;
         std::optional<int64_t> rope_delta;
-        if (images.empty() && videos.empty() && has_lm_input("visual_pos_masks")) {
+        if (encoded_images.empty() && encoded_videos.empty() && has_lm_input("visual_pos_masks")) {
             position_ids = make_text_position_ids(input_sequence_length);
         } else {
             std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(input_sequence_length, 0);
@@ -499,7 +519,7 @@ private:
         m_language_model_request.infer();
 
         const ov::Tensor hidden_or_logits = m_language_model_request.get_tensor(m_embedding_output_name);
-        if (images.empty() && videos.empty()) {
+        if (encoded_images.empty() && encoded_videos.empty()) {
             return pool_embeddings(hidden_or_logits);
         }
         return normalize_embeddings(pool_embeddings(hidden_or_logits));
