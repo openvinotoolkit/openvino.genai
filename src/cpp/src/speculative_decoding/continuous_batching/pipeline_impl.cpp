@@ -511,6 +511,35 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl:
     return m_batch_size;
 }
 
+bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::rewind_awaiting_request_prefix(
+    uint64_t request_id,
+    size_t processed_tokens) {
+    std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
+
+    for (auto& request : m_awaiting_requests) {
+        if (request->get_request_id() != request_id) {
+            continue;
+        }
+
+        const size_t current_processed_tokens = request->get_num_processed_tokens();
+        OPENVINO_ASSERT(processed_tokens <= current_processed_tokens,
+                        "Cannot rewind awaiting request forward, request_id=",
+                        request_id,
+                        ", current_processed_tokens=",
+                        current_processed_tokens,
+                        ", target_processed_tokens=",
+                        processed_tokens);
+        if (processed_tokens < current_processed_tokens) {
+            request->update_processed_tokens_num(processed_tokens);
+            std::vector<SequenceGroup::Ptr> requests_to_cleanup{request};
+            m_scheduler->clean_empty_blocks(requests_to_cleanup);
+        }
+        return true;
+    }
+
+    return false;
+}
+
 void
 ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::pull_awaiting_requests(bool is_pause_request) {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
