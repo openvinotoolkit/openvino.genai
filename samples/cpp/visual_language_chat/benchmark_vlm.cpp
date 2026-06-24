@@ -100,7 +100,7 @@ int main(int argc, char* argv[]) try {
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
-    std::cout << "Number of images: " << images.size() << ", prompt token size: " << prompt_token_size << std::endl;
+    std::cout << "Number of images: " << images.size() << ", Prompt token size: " << prompt_token_size << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
         pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));

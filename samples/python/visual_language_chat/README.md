@@ -105,7 +105,7 @@ python benchmark_vlm.py [OPTIONS]
 ### Options
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: `None`): The prompt to generate text. If without `p, --prompt`, and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
+- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p, --prompt`, and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file`: Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
 - `-H, --image_height` (default: `None`): Target image height for resizing. Must be a positive value and provided together with `-W, --image_width`.
@@ -133,7 +133,7 @@ Tokenization time: 16.46 ± 0.08 ms
 Detokenization time: 0.24 ± 0.02 ms
 Embeddings preparation time: 143.88 ± 0.00 ms
 TTFT: 229.26 ± 7.68 ms
-TPOT: 13.52 ± 3.03 ms
+TPOT: 13.52 ± 3.03 ms/token
 Throughput: 73.97 ± 16.59 tokens/s
 ```
 
@@ -154,7 +154,7 @@ Throughput: 73.97 ± 16.59 tokens/s
 	Detokenization time: 0.24 ± 0.01 ms
 	Embeddings preparation time: 36.70 ± 0.00 ms
 	TTFT: 72.10 ± 4.37 ms
-	TPOT: 13.21 ± 3.34 ms
+	TPOT: 13.21 ± 3.34 ms/token
 	Throughput: 75.69 ± 19.10 tokens/s
 	```
 
