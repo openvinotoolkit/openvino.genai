@@ -279,8 +279,8 @@ class TestImageGenerationWithBlobTensorModels:
             raise RuntimeError(f"Failed to read tokenizer from {tokenizer_path}: {e}")
 
     @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
-    def test_text2image_pipeline_with_blob_tensor_models(self, image_generation_model):
-        blob_dir = "tmp_blob_model"
+    def test_text2image_pipeline_with_blob_tensor_models(self, image_generation_model, tmp_path):
+        blob_dir = tmp_path / "blob_model"
         generation_args = self._get_generation_args()
 
         general_pipe = self._construct_reshaped(image_generation_model)
