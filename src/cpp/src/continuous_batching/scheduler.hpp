@@ -74,6 +74,8 @@ public:
             std::vector<int32_t> block_indices;
             int32_t past_length = 0;
             int32_t cache_interval = 0;
+            bool is_speculative = false;
+            size_t num_processed_tokens_before = 0;
         };
 
         // IDs of scheduled groups
@@ -258,6 +260,24 @@ public:
 
     size_t get_block_size(CacheType type) const {
         return m_cache_orchestrator->get_block_size(type);
+    }
+
+    bool has_linear_attention_cache() const {
+        return m_cache_orchestrator->has_linear_attention_cache();
+    }
+
+    size_t get_linear_attention_live_block(uint64_t seq_id) const {
+        return m_cache_orchestrator->get_linear_attention_live_block(seq_id);
+    }
+
+    void set_linear_attention_live_block(uint64_t seq_id, size_t physical_block_index) {
+        m_cache_orchestrator->set_linear_attention_live_block(seq_id, physical_block_index);
+    }
+
+    /// @brief Raises the linear-attention fixed blocks-per-sequence reservation (eager
+    ///        reservation at admission). See CacheOrchestrator for gating and semantics.
+    bool ensure_linear_attention_fixed_blocks_per_sequence(size_t fixed_blocks_per_sequence) {
+        return m_cache_orchestrator->ensure_linear_attention_fixed_blocks_per_sequence(fixed_blocks_per_sequence);
     }
 
     size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
@@ -470,6 +490,25 @@ private:
                 // Note: current function can return more than 1 token even for generation phase in case of some tokens
                 // of current sequence group were evicted before
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
+
+                // Speculative LA validation requires the whole window (N candidates + 1 base token)
+                // in one step: a partial window desyncs the paging index map and the sampler. So
+                // schedule all N+1 atomically or defer. Scoped to the speculative LA path.
+                const bool is_speculative_linear_attention_window =
+                    m_cache_orchestrator->has_linear_attention_cache() &&
+                    !m_config.enable_prefix_caching &&
+                    sequence_group->get_num_tokens_to_validate() > 0;
+                if (is_speculative_linear_attention_window) {
+                    OPENVINO_ASSERT(m_config.max_num_batched_tokens >= num_available_tokens_per_seq,
+                                    "max_num_batched_tokens (", m_config.max_num_batched_tokens,
+                                    ") is too small to ever schedule the speculative linear-attention validation window of ",
+                                    num_available_tokens_per_seq, " tokens for sequence group ", sequence_group->get_request_id(),
+                                    "; increase max_num_batched_tokens to at least the validation window size");
+                    if (available_tokens_per_seq_in_megabatch < num_available_tokens_per_seq) {
+                        // Remaining megabatch budget cannot fit the full window: defer to a later step without scheduling
+                        continue;
+                    }
+                }
 
                 size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
@@ -690,10 +729,51 @@ private:
 
         paging_data.past_length = checked_size_to_int32(num_processed_tokens, "past length", seq_id);
         if (!m_config.enable_prefix_caching) {
-            const int32_t block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
-            paging_data.block_indices.push_back(block_index);
-            paging_data.block_indices.push_back(block_index);
-            paging_data.cache_interval = 0;
+            // Live-block registry is the single source of truth for the non-prefix path; do not
+            // hardcode la_blocks[0] so that interleaved speculative/non-speculative steps share one
+            // notion of "live".
+            const int32_t live_block = checked_size_to_int32(get_linear_attention_live_block(seq_id), "live block index", seq_id);
+            const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
+            if (num_tokens_to_validate == 0) {
+                // Non-speculative step: read and write the single live state row (read aliases first write).
+                paging_data.block_indices.push_back(live_block);
+                paging_data.block_indices.push_back(live_block);
+                paging_data.cache_interval = 0;
+                paging_data.is_speculative = false;
+                scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
+                return;
+            }
+
+            // Speculative step: page as [live, live, scratch_1, ..., scratch_N] with one snapshot per
+            // consumed input. block_indices[0] reads the committed state (aliased to first write);
+            // block_indices[2..] are pure writes into reserved scratch rows. The whole validation window
+            // (N candidates + 1 base token) must have been scheduled atomically by the generate-phase
+            // scheduler; a partial window would desynchronize this index mapping from the sampler.
+            OPENVINO_ASSERT(num_scheduled_tokens == num_tokens_to_validate + 1,
+                            "Speculative linear-attention validation window was not scheduled atomically for sequence ", seq_id,
+                            ": scheduled ", num_scheduled_tokens, " tokens, expected ", num_tokens_to_validate + 1,
+                            " (", num_tokens_to_validate, " candidates + 1 base token)");
+            // Build [live, live, scratch_1, ..., scratch_N] directly from the owned block table: the
+            // scratch rows are simply the owned rows other than the live one, in table order. Block
+            // tables hold distinct physical blocks, so scratch rows are inherently unique.
+            paging_data.block_indices.reserve(num_tokens_to_validate + 2);
+            paging_data.block_indices.push_back(live_block);
+            paging_data.block_indices.push_back(live_block);
+            for (const auto& block : la_blocks) {
+                if (paging_data.block_indices.size() == num_tokens_to_validate + 2) {
+                    break;
+                }
+                const int32_t scratch_block = checked_block_index_to_int32(block->get_index(), seq_id);
+                if (scratch_block != live_block) {
+                    paging_data.block_indices.push_back(scratch_block);
+                }
+            }
+            OPENVINO_ASSERT(paging_data.block_indices.size() == num_tokens_to_validate + 2,
+                            "Linear attention scratch rows insufficient for speculative validation of sequence ", seq_id,
+                            ": need ", num_tokens_to_validate, " scratch rows beyond the live row, owned table has ", la_blocks.size());
+            paging_data.cache_interval = 1;
+            paging_data.is_speculative = true;
+            paging_data.num_processed_tokens_before = num_processed_tokens;
             scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
             return;
         }

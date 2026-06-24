@@ -14,6 +14,7 @@
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/pipeline_impl.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
 #include "helper.hpp"
@@ -538,6 +539,167 @@ TEST(TestCacheOrchestratorHybrid, TotalCacheBytes_IncludesAll) {
     EXPECT_EQ(actual_total, expected_total);
 }
 
+/// Helper: Provision a sequence group's KV + LA workspace through the orchestrator and
+/// return the live sequence id. The owned LA set is established by allocate_tokens.
+namespace {
+uint64_t provision_single_sequence(const std::shared_ptr<CacheOrchestrator>& orchestrator,
+                                   uint64_t request_id) {
+    auto seq_group = create_sequence_group(request_id, /*num_sequences=*/1);
+    auto seq = seq_group->get_running_sequences()[0];
+    orchestrator->allocate_tokens(seq, seq_group, 1, seq_group->get_prompt_len());
+    return seq->get_id();
+}
+
+// The owned linear-attention rows that are not the current live one (scratch rows), derived from
+// the public registry accessors.
+std::vector<size_t> linear_attention_scratch_blocks(const std::shared_ptr<CacheOrchestrator>& orchestrator,
+                                                    uint64_t seq_id) {
+    const size_t live_block = orchestrator->get_linear_attention_live_block(seq_id);
+    std::vector<size_t> scratch_blocks;
+    for (const auto& block : orchestrator->get_linear_attention_block_table(seq_id)) {
+        const size_t physical_index = block->get_index();
+        if (physical_index != live_block) {
+            scratch_blocks.push_back(physical_index);
+        }
+    }
+    return scratch_blocks;
+}
+}  // namespace
+
+/// @test LinearAttentionWorkspace_ReservesOnePlusN
+/// Admission reserves exactly 1 + num_assistant_tokens LA rows per sequence (non-prefix).
+/// With N = 0 the footprint is a single row (unchanged from plain continuous batching).
+TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ReservesOnePlusN) {
+    for (size_t n : {size_t{0}, size_t{1}, size_t{3}}) {
+        const size_t fixed_blocks = 1 + n;
+        auto orchestrator = create_hybrid_orchestrator(
+            /*num_kv_blocks=*/16,
+            /*num_la_blocks=*/fixed_blocks,
+            TEST_BLOCK_SIZE,
+            /*num_layers=*/1,
+            /*la_fixed_blocks_per_seq=*/fixed_blocks);
+
+        const auto& la_bm = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        EXPECT_EQ(la_bm.get_fixed_blocks_per_sequence(), fixed_blocks);
+
+        const uint64_t seq_id = provision_single_sequence(orchestrator, 400 + n);
+
+        const auto& owned = orchestrator->get_linear_attention_block_table(seq_id);
+        EXPECT_EQ(owned.size(), fixed_blocks);
+
+        orchestrator->free_sequence(seq_id);
+    }
+}
+
+/// @test LinearAttentionWorkspace_LiveBlockDefaultsToBlockTableFront
+/// get_linear_attention_live_block(seq) initially equals block_table[0]'s physical index.
+/// @test LinearAttentionWorkspace_LiveBlockDefaultsToFrontAndRoundTrips
+/// The live block defaults to the prefill row (block_table[0]) on first query, and
+/// set_linear_attention_live_block then get_linear_attention_live_block round-trips.
+TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_LiveBlockDefaultsToFrontAndRoundTrips) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/4,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/4);
+
+    const uint64_t seq_id = provision_single_sequence(orchestrator, 410);
+    const auto& owned = orchestrator->get_linear_attention_block_table(seq_id);
+    ASSERT_GE(owned.size(), 2u);
+
+    // Default: live == prefill row.
+    EXPECT_EQ(orchestrator->get_linear_attention_live_block(seq_id), owned.front()->get_index());
+
+    // Round-trip: set then get returns the new owned live row.
+    const size_t new_live = owned[1]->get_index();
+    orchestrator->set_linear_attention_live_block(seq_id, new_live);
+    EXPECT_EQ(orchestrator->get_linear_attention_live_block(seq_id), new_live);
+
+    orchestrator->free_sequence(seq_id);
+}
+
+/// @test LinearAttentionWorkspace_ScratchBlocksAreOwnedSetMinusLive
+/// get_linear_attention_scratch_blocks returns exactly the N owned rows other than the
+/// current live one; after set_live to a scratch row the scratch set updates (old live
+/// becomes scratch-eligible).
+TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ScratchBlocksAreOwnedSetMinusLive) {
+    const size_t n = 3;
+    const size_t fixed_blocks = 1 + n;
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/fixed_blocks,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/fixed_blocks);
+
+    const uint64_t seq_id = provision_single_sequence(orchestrator, 430);
+
+    const auto& owned = orchestrator->get_linear_attention_block_table(seq_id);
+    std::set<size_t> owned_indices;
+    for (const auto& block : owned) {
+        owned_indices.insert(block->get_index());
+    }
+    ASSERT_EQ(owned_indices.size(), fixed_blocks);
+
+    const size_t initial_live = orchestrator->get_linear_attention_live_block(seq_id);
+    auto scratch = linear_attention_scratch_blocks(orchestrator, seq_id);
+    EXPECT_EQ(scratch.size(), n);
+
+    std::set<size_t> scratch_set(scratch.begin(), scratch.end());
+    EXPECT_EQ(scratch_set.count(initial_live), 0u);
+    std::set<size_t> reconstructed = scratch_set;
+    reconstructed.insert(initial_live);
+    EXPECT_EQ(reconstructed, owned_indices);
+
+    // Promote a scratch row to live; the old live must now be scratch-eligible.
+    const size_t promoted = *scratch_set.begin();
+    orchestrator->set_linear_attention_live_block(seq_id, promoted);
+    auto scratch_after = linear_attention_scratch_blocks(orchestrator, seq_id);
+    std::set<size_t> scratch_after_set(scratch_after.begin(), scratch_after.end());
+
+    EXPECT_EQ(scratch_after.size(), n);
+    EXPECT_EQ(scratch_after_set.count(promoted), 0u);
+    EXPECT_EQ(scratch_after_set.count(initial_live), 1u);
+
+    orchestrator->free_sequence(seq_id);
+}
+
+/// @test LinearAttentionWorkspace_OwnedSetNotReapedByCleanup
+/// The owned set is never reaped by free_empty_physical_blocks while the sequence runs,
+/// and the registry survives cleanup.
+TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_OwnedSetNotReapedByCleanup) {
+    const size_t fixed_blocks = 1 + 3;
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/fixed_blocks,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/fixed_blocks);
+
+    auto seq_group = create_sequence_group(440, /*num_sequences=*/1);
+    auto seq = seq_group->get_running_sequences()[0];
+    orchestrator->allocate_tokens(seq, seq_group, 1, seq_group->get_prompt_len());
+    const uint64_t seq_id = seq->get_id();
+
+    const auto owned_before = orchestrator->get_linear_attention_block_table(seq_id);
+    ASSERT_EQ(owned_before.size(), fixed_blocks);
+    const size_t promoted = owned_before[2]->get_index();
+    orchestrator->set_linear_attention_live_block(seq_id, promoted);
+
+    orchestrator->free_empty_physical_blocks(seq_group);
+
+    const auto& owned_after = orchestrator->get_linear_attention_block_table(seq_id);
+    EXPECT_EQ(owned_after.size(), fixed_blocks);
+    for (size_t i = 0; i < owned_after.size(); ++i) {
+        EXPECT_EQ(owned_after[i]->get_index(), owned_before[i]->get_index());
+    }
+    // Registry entry survives cleanup.
+    EXPECT_EQ(orchestrator->get_linear_attention_live_block(seq_id), promoted);
+
+    orchestrator->free_sequence(seq_id);
+}
+
 TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeTargetNeedsBlocks) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/8,
@@ -585,4 +747,64 @@ TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeVict
 
     orchestrator->free_sequence(victim_seq->get_id());
     orchestrator->free_sequence(target_seq->get_id());
+}
+
+/// @test LinearAttentionWorkspace_SetLiveBlockRejectsNonOwnedBlock
+/// The live-block setter is the single source of truth; recording an index outside the
+/// sequence's owned block table must fail loud rather than poison the next paging step.
+TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_SetLiveBlockRejectsNonOwnedBlock) {
+    const size_t fixed_blocks = 1 + 3;
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/fixed_blocks,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/fixed_blocks);
+
+    const uint64_t seq_id = provision_single_sequence(orchestrator, 450);
+
+    const auto& owned = orchestrator->get_linear_attention_block_table(seq_id);
+    std::set<size_t> owned_indices;
+    for (const auto& block : owned) {
+        owned_indices.insert(block->get_index());
+    }
+    // Pick an index that is definitely not owned by the sequence.
+    size_t non_owned = 0;
+    while (owned_indices.count(non_owned) != 0) {
+        ++non_owned;
+    }
+    EXPECT_THROW(orchestrator->set_linear_attention_live_block(seq_id, non_owned), ov::Exception);
+
+    // An owned index is accepted.
+    EXPECT_NO_THROW(orchestrator->set_linear_attention_live_block(seq_id, *owned_indices.begin()));
+
+    orchestrator->free_sequence(seq_id);
+}
+
+/// @test LinearAttentionWorkspace_ForkRejectedWhenLiveRowMovedOffPrefill
+/// Forking shares block tables KV-style, which is unsafe once a speculative live row has
+/// moved off the prefill row (the child would lazily pick the wrong row). A live row still
+/// at block_table[0] forks as before.
+TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ForkRejectedWhenLiveRowMovedOffPrefill) {
+    const size_t fixed_blocks = 1 + 3;
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/2 * fixed_blocks,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/fixed_blocks);
+
+    const uint64_t parent_id = provision_single_sequence(orchestrator, 460);
+    const auto& owned = orchestrator->get_linear_attention_block_table(parent_id);
+
+    // Live still at prefill row (block_table[0]) → fork is allowed.
+    EXPECT_EQ(orchestrator->get_linear_attention_live_block(parent_id), owned.front()->get_index());
+    EXPECT_NO_THROW(orchestrator->fork_sequence(parent_id, /*child_id=*/9001));
+    orchestrator->free_sequence(9001);
+
+    // Promote live off the prefill row → fork must now fail loud.
+    orchestrator->set_linear_attention_live_block(parent_id, owned.back()->get_index());
+    EXPECT_THROW(orchestrator->fork_sequence(parent_id, /*child_id=*/9002), ov::Exception);
+
+    orchestrator->free_sequence(parent_id);
 }

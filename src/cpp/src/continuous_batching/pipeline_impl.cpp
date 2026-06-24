@@ -352,11 +352,100 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
     return !m_awaiting_requests.empty() || !m_requests.empty();
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_validate_linear_verifier_constraints() const {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    for (const auto& sequence_group : m_requests) {
+        if (sequence_group->get_num_tokens_to_validate() == 0) {
+            continue;
+        }
+
+        OPENVINO_ASSERT(!m_scheduler->get_config().enable_prefix_caching,
+                        "Linear-attention verifier speculative decoding requires enable_prefix_caching=false (not yet supported).");
+
+        const auto& sampling_params = sequence_group->get_sampling_parameters();
+        OPENVINO_ASSERT(sampling_params.assistant_confidence_threshold == 0.f,
+                        "Linear-attention verifier speculative decoding supports a static candidate count only; assistant_confidence_threshold>0 (dynamic candidate count) is not yet supported.");
+        OPENVINO_ASSERT(sampling_params.num_return_sequences == 1,
+                        "Linear-attention verifier speculative decoding requires num_return_sequences=1; parallel sampling / fork is not yet supported.");
+    }
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reserve_linear_attention_scratch() {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    size_t max_num_assistant_tokens = 0;
+    for (const auto& sequence_group : m_requests) {
+        const auto& params = sequence_group->get_sampling_parameters();
+        if (params.is_prompt_lookup() || params.is_assisting_generation()) {
+            max_num_assistant_tokens = std::max(max_num_assistant_tokens, params.num_assistant_tokens);
+        }
+    }
+    if (max_num_assistant_tokens == 0) {
+        return;
+    }
+
+    // Reserve 1 live row + num_assistant_tokens scratch rows
+    m_scheduler->ensure_linear_attention_fixed_blocks_per_sequence(1 + max_num_assistant_tokens);
+}
+
+int32_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_select_linear_attention_live_block(
+    const Scheduler::Output::LinearAttentionPagingData& paging_data,
+    size_t processed_after) {
+    // block_indices = [live, live, scratch_1, ..., scratch_N] (size N+2).
+    // advance = how many scheduled inputs the committed state moved past after rejection.
+    OPENVINO_ASSERT(processed_after >= paging_data.num_processed_tokens_before,
+                    "Linear-attention promotion: processed tokens cannot decrease below the pre-forward count (processed_after=",
+                    processed_after, ", processed_before=", paging_data.num_processed_tokens_before, ").");
+    const size_t advance = processed_after - paging_data.num_processed_tokens_before;
+
+    OPENVINO_ASSERT(advance < paging_data.block_indices.size(),
+                    "Linear-attention promotion: advance ", advance, " out of range [0, ",
+                    paging_data.block_indices.size() - 1, "] for block_indices [live, live, scratch...].");
+
+    const int32_t new_live = paging_data.block_indices[advance];
+    OPENVINO_ASSERT(new_live >= 0,
+                    "Linear-attention promotion: selected physical block index must be non-negative, got ", new_live, ".");
+    return new_live;
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_update_linear_attention_live_blocks(
+    const Scheduler::Output& scheduler_output) {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
+        const size_t processed_after = sequence_group->get_num_processed_tokens();
+
+        for (const auto& sequence : sequence_group->get_running_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            if (!scheduler_output.has_linear_attention_paging_data(seq_id)) {
+                continue;
+            }
+            const auto& paging_data = scheduler_output.get_linear_attention_paging_data(seq_id);
+            if (!paging_data.is_speculative) {
+                continue;
+            }
+
+            const int32_t new_live = _select_linear_attention_live_block(paging_data, processed_after);
+            m_scheduler->set_linear_attention_live_block(seq_id, static_cast<size_t>(new_live));
+        }
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
 
     _pull_awaiting_requests();
+    _validate_linear_verifier_constraints();
+    _reserve_linear_attention_scratch();
 
     Scheduler::Output scheduler_output;
 
@@ -439,6 +528,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }
+
+    // Promote the committed linear-attention state to the correct physical row for any
+    // speculative sequence. Must run after sample() (which rewound get_num_processed_tokens()
+    // to the accepted prefix) and before the fork/free loop (which would free LA rows of
+    // sequences that accepted tokens and also hit EOS this step). No-op for pure-KV models.
+    _update_linear_attention_live_blocks(scheduler_output);
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
     {

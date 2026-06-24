@@ -225,9 +225,26 @@ public:
                 block_mgr->free_sequence(seq_id);
             }
         }
+        m_linear_attention_live_block.erase(seq_id);
     }
 
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
+        // Forking copies KV-style block tables (shared blocks). Linear-attention rows are
+        // destructively mutated in place: once a speculative parent's live row has moved off
+        // block_table[0], the child cannot safely share it (it would lazily pick block_table[0],
+        // the wrong row). LA-aware fork (copy live row + provision the child's own workspace) is
+        // deferred; fail loud. A live row still at block_table[0] (non-speculative, or never
+        // promoted) forks exactly as before this feature.
+        if (has_linear_attention_cache()) {
+            auto live_it = m_linear_attention_live_block.find(parent_id);
+            if (live_it != m_linear_attention_live_block.end()) {
+                const BlocksPerLayer& owned = get_linear_attention_block_table(parent_id);
+                OPENVINO_ASSERT(!owned.empty() && static_cast<size_t>(owned.front()->get_index()) == live_it->second,
+                                "Forking a sequence whose linear-attention live row has moved off the prefill "
+                                "row is not supported (speculative linear-attention rows cannot be shared); "
+                                "parent sequence ", parent_id);
+            }
+        }
         for (auto& [type, block_mgr] : m_block_managers) {
             block_mgr->fork_sequence(parent_id, child_id);
         }
@@ -563,6 +580,30 @@ public:
     }
 
     /**
+     * @brief Raises the linear-attention fixed blocks-per-sequence reservation to at least
+     *        @p fixed_blocks_per_sequence rows.
+     *
+     * Eager reservation at admission: a hybrid verifier's per-request workspace requirement
+     * (1 live + num_assistant_tokens scratch rows) is only known when the request is admitted,
+     * after orchestrator construction. This raises the reservation so admission control accounts
+     * for the full footprint up front; the pool growth and per-sequence top-up then happen through
+     * the existing fixed-size capacity / append paths before the speculative step runs.
+     *
+     * Strictly gated: only applies when a linear-attention cache is registered AND it is
+     * fixed-size-per-sequence (i.e. enable_prefix_caching == false). Prefix-caching linear
+     * attention is variable-size and is left untouched, as is any KV cache. No-op when the
+     * reservation already covers @p fixed_blocks_per_sequence.
+     * @return Whether the reservation was raised.
+     */
+    bool ensure_linear_attention_fixed_blocks_per_sequence(size_t fixed_blocks_per_sequence) {
+        auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (it == m_block_managers.end() || !it->second->is_fixed_size_per_sequence()) {
+            return false;
+        }
+        return it->second->ensure_fixed_blocks_per_sequence(fixed_blocks_per_sequence);
+    }
+
+    /**
      * @brief Ensures each fixed-size-per-sequence cache type has enough free blocks for
      *        the sequence group. Variable-size managers are skipped.
      * @return Whether any fixed-size block pool was grown.
@@ -655,6 +696,33 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_table_logical_start(seq_id);
     }
 
+    // -----------------------------------------------------------------------
+    //  Linear attention live/scratch block registry: single source of truth for which owned
+    //  state row holds a sequence's committed ("live") recurrent state. Owned set = the
+    //  sequence's LA block table (size 1 + num_assistant_tokens); live vs. scratch are index
+    //  roles within it. Live is provisioned lazily to block_table[0] (prefill row) on first query.
+    // -----------------------------------------------------------------------
+
+    /// @return Physical block index of the sequence's live linear-attention state row.
+    size_t get_linear_attention_live_block(uint64_t seq_id) const {
+        return const_cast<CacheOrchestrator*>(this)->provision_linear_attention_live_block(seq_id);
+    }
+
+    /// @brief Records which owned physical block is now the sequence's live state row.
+    void set_linear_attention_live_block(uint64_t seq_id, size_t physical_block_index) {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        // A non-owned index would poison the next paging step (scratch = owned minus live).
+        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
+        const bool is_owned = std::any_of(owned.begin(), owned.end(),
+            [physical_block_index](const auto& block) {
+                return static_cast<size_t>(block->get_index()) == physical_block_index;
+            });
+        OPENVINO_ASSERT(is_owned,
+                        "Linear attention live block ", physical_block_index,
+                        " is not in the owned block table for sequence ", seq_id);
+        m_linear_attention_live_block[seq_id] = physical_block_index;
+    }
+
     /// @return Number of KV attention layers only (excluding other cache types).
     size_t get_num_kv_layers() const {
         auto it = m_cache_managers.find(CacheType::KV_CACHE);
@@ -675,6 +743,21 @@ public:
 private:
     bool has_registered_types() const {
         return !m_cache_managers.empty();
+    }
+
+    /// @brief Returns the sequence's live linear-attention block, provisioning it to the
+    ///        prefill row (block_table[0]) on first access.
+    size_t provision_linear_attention_live_block(uint64_t seq_id) {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        auto it = m_linear_attention_live_block.find(seq_id);
+        if (it != m_linear_attention_live_block.end()) {
+            return it->second;
+        }
+        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
+        OPENVINO_ASSERT(!owned.empty(), "Linear attention block table empty for sequence ", seq_id);
+        const size_t live_block = owned.front()->get_index();
+        m_linear_attention_live_block[seq_id] = live_block;
+        return live_block;
     }
 
     /**
@@ -843,12 +926,15 @@ private:
                 0,
                 true);
         } else {
+            // One live state row per sequence. A hybrid verifier raises this to 1 + N scratch rows
+            // at admission via ensure_linear_attention_fixed_blocks_per_sequence, sized from the
+            // actual admitted request configs rather than the pipeline default.
             la_block_manager = std::make_unique<BlockManager>(
                 config.num_linear_attention_blocks,
                 false,
                 1,
                 1,
-                1);
+                /*fixed_blocks_per_sequence=*/1);
         }
 
         // Linear-attention state tensors are per physical layer/group, but share one logical block table.
@@ -859,6 +945,8 @@ private:
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
+    // seq_id -> physical block index of the live linear-attention state row.
+    std::map<uint64_t, size_t> m_linear_attention_live_block;
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,
