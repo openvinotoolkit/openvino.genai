@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <future>
+#include <mutex>
 #include <numeric>
 #include <optional>
 #include <unordered_set>
@@ -70,7 +71,7 @@ ov::Tensor pool_embeddings(const ov::Tensor& tensor) {
     // Rank-2 tensor is already pooled: [1, hidden_size].
     if (shape.size() == 2) {
         if (element_type == ov::element::f32) {
-            return get_tensor_as_f32<float>(tensor);
+            return tensor;
         }
         if (element_type == ov::element::f16) {
             return get_tensor_as_f32<ov::float16>(tensor);
@@ -119,10 +120,6 @@ ov::Tensor normalize_embeddings(const ov::Tensor& tensor) {
         normalized_data[idx] = embeddings[idx] / norm;
     }
     return normalized;
-}
-
-ov::Tensor pool_text_embeddings(const ov::Tensor& tensor) {
-    return pool_embeddings(tensor);
 }
 
 ov::Tensor make_text_position_ids(size_t sequence_length) {
@@ -246,38 +243,56 @@ public:
 
     ov::Tensor embed(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
+            std::lock_guard<std::mutex> async_lock(m_async_mutex);
+            OPENVINO_ASSERT(m_async_request_type == AsyncRequestType::NONE, "Previous asynchronous embed request is still pending");
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
+            std::lock_guard<std::mutex> request_lock(m_request_mutex);
             const std::vector<std::string> texts = std::holds_alternative<std::string>(text) ? std::vector<std::string>{std::get<std::string>(text)}
                                                                                           : std::get<std::vector<std::string>>(text);
             return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
         }
+        std::lock_guard<std::mutex> async_lock(m_async_mutex);
+        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
+        std::lock_guard<std::mutex> request_lock(m_request_mutex);
         return extract_multimodal(text, {}, {}, {}, prompt);
     }
 
     void start_embed_async(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
         const bool is_single_text = std::holds_alternative<std::string>(text);
         if (m_mode == Mode::TEXT_ONLY) {
+            std::lock_guard<std::mutex> async_lock(m_async_mutex);
+            OPENVINO_ASSERT(m_async_request_type == AsyncRequestType::NONE, "Previous asynchronous embed request is still pending");
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
-            const std::vector<std::string> texts = is_single_text ? std::vector<std::string>{std::get<std::string>(text)}
-                                                          : std::get<std::vector<std::string>>(text);
-            m_text_embedding_pipeline->start_embed_documents_async(texts);
+            std::lock_guard<std::mutex> request_lock(m_request_mutex);
+            if (is_single_text) {
+                const std::vector<std::string> texts{std::get<std::string>(text)};
+                m_text_embedding_pipeline->start_embed_documents_async(texts);
+            } else {
+                m_text_embedding_pipeline->start_embed_documents_async(std::get<std::vector<std::string>>(text));
+            }
             m_async_request_type = AsyncRequestType::BATCH;
             return;
         }
+        std::lock_guard<std::mutex> async_lock(m_async_mutex);
         OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
+        std::lock_guard<std::mutex> request_lock(m_request_mutex);
         m_embed_future = std::async(std::launch::async, [this, text, prompt]() {
+            std::lock_guard<std::mutex> lock(m_request_mutex);
             return extract_multimodal(text, {}, {}, {}, prompt);
         });
         m_async_request_type = is_single_text ? AsyncRequestType::SINGLE : AsyncRequestType::BATCH;
     }
 
     ov::Tensor wait() {
-        OPENVINO_ASSERT(m_async_request_type != AsyncRequestType::NONE,
-                        "Asynchronous embed request was not started");
         if (m_mode == Mode::TEXT_ONLY) {
+            std::lock_guard<std::mutex> async_lock(m_async_mutex);
+            OPENVINO_ASSERT(m_async_request_type != AsyncRequestType::NONE,
+                            "Asynchronous embed request was not started");
+            ov::Tensor result = embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents());
             m_async_request_type = AsyncRequestType::NONE;
-            return embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents());
+            return result;
         }
+        std::lock_guard<std::mutex> async_lock(m_async_mutex);
         OPENVINO_ASSERT(m_embed_future.valid(), "Asynchronous embed request was not started");
         ov::Tensor result = m_embed_future.get();
         m_async_request_type = AsyncRequestType::NONE;
@@ -297,6 +312,9 @@ public:
             OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
             return embed(text, prompt);
         }
+        std::lock_guard<std::mutex> async_lock(m_async_mutex);
+        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
+        std::lock_guard<std::mutex> request_lock(m_request_mutex);
         return extract_multimodal(text, images, videos, videos_metadata, prompt);
     }
 
@@ -314,8 +332,11 @@ public:
             start_embed_async(text, prompt);
             return;
         }
+        std::lock_guard<std::mutex> async_lock(m_async_mutex);
         OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
+        std::lock_guard<std::mutex> request_lock(m_request_mutex);
         m_embed_future = std::async(std::launch::async, [this, text, images, videos, videos_metadata, prompt]() {
+            std::lock_guard<std::mutex> lock(m_request_mutex);
             return extract_multimodal(text, images, videos, videos_metadata, prompt);
         });
         m_async_request_type = is_single_text ? AsyncRequestType::SINGLE : AsyncRequestType::BATCH;
@@ -479,7 +500,7 @@ private:
 
         const ov::Tensor hidden_or_logits = m_language_model_request.get_tensor(m_embedding_output_name);
         if (images.empty() && videos.empty()) {
-            return pool_text_embeddings(hidden_or_logits);
+            return pool_embeddings(hidden_or_logits);
         }
         return normalize_embeddings(pool_embeddings(hidden_or_logits));
     }
@@ -536,6 +557,8 @@ private:
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
+    std::mutex m_request_mutex;
+    std::mutex m_async_mutex;
     std::unordered_set<std::string> m_language_model_input_names;
     std::unordered_set<std::string> m_language_model_output_names;
     std::string m_embedding_output_name;
