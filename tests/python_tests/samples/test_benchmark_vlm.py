@@ -88,24 +88,23 @@ class TestBenchmarkVLM:
         benchmark_sample = SAMPLES_CPP_DIR / "benchmark_vlm"
         benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
 
-        invalid_sizes = [
-            (-1, 224),
-            (224, -1),
-            (0, 224),
-            (224, 0),
-            (0, 0),
-            (None, 224),
-            (224, None)
-        ]
+        invalid_sizes = [(-1, 224), (224, -1), (0, 224), (224, 0), (0, 0), (None, 224), (224, None)]
 
         for height, width in invalid_sizes:
             cpp_command = [benchmark_sample, "-m", "fake_model", "-i", "fake_image.jpg"]
-            py_command = [sys.executable, benchmark_script, "-m", "fake_model", "-i", "fake_image.jpg",]
-            
+            py_command = [
+                sys.executable,
+                benchmark_script,
+                "-m",
+                "fake_model",
+                "-i",
+                "fake_image.jpg",
+            ]
+
             if height is not None:
                 cpp_command.extend(["-H", str(height)])
                 py_command.extend(["--image_height", str(height)])
-            
+
             if width is not None:
                 cpp_command.extend(["-W", str(width)])
                 py_command.extend(["--image_width", str(width)])
