@@ -2837,8 +2837,8 @@ def test_cdpruner_continuous_batching_chat_history(
 
     history.append({"role": "user", "content": "What did you see in total?"})
     result3 = ov_continuous_batching_pipe_qwen2vl.generate(
-        [history], images=[[]], generation_config=[generation_config]
-    )[0].texts[0]
+        [history], generation_config=[generation_config]
+    )[0].m_generation_ids[0]
     history.append({"role": "assistant", "content": result3})
 
     # Reset pipeline state so subsequent tests start with a clean cache.
