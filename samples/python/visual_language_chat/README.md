@@ -105,11 +105,11 @@ python benchmark_vlm.py [OPTIONS]
 ### Options
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"What is on the image?"`
-- `-F, --prompt_file` Read prompt from file.
+- `-p, --prompt` (default: `None`): The prompt to generate text. If without `p, --prompt`, and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
+- `-F, --prompt_file`: Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
-- `-H, --image_height` (default: `None`): Target image height for resizing. Must be a positive value and provided together with `-iw, --image_width`.
-- `-W, --image_width` (default: `None`): Target image width for resizing. Must be a positive value and provided together with `-ih, --image_height`.
+- `-H, --image_height` (default: `None`): Target image height for resizing. Must be a positive value and provided together with `-W, --image_width`.
+- `-W, --image_width` (default: `None`): Target image width for resizing. Must be a positive value and provided together with `-H, --image_height`.
 - `-N, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `2`): Number of iterations.
@@ -140,7 +140,7 @@ Throughput: 73.97 ± 16.59 tokens/s
 * With different image size
 
 	```
-	python benchmark_vlm.py -m Qwen3-VL-2B-Instruct -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU -ih 224 -iw 224
+	python benchmark_vlm.py -m Qwen3-VL-2B-Instruct -i 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg -n 3 -d GPU -H 224 -W 224
 	```
 
 	```

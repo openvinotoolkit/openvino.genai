@@ -84,12 +84,12 @@ benchmark_vlm [OPTIONS]
 ### Options
 
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: ''): The prompt to generate text. If neither `-p` nor `--prompt_file` is provided, the default prompt is `"What is on the image?"`
+- `-p, --prompt` (default: ''): The prompt to generate text. If without `-p, --prompt` and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file` Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to the image.
 - `-H, --image_height`: Target image height for resizing. Must be a positive value and provided together with `-W, --image_width`.
 - `-W, --image_width`: Target image width for resizing. Must be a positive value and provided together with `-H, --image_height`.
-- `-N` (default: `1`): Number of warmup iterations.
+- `-N, --num_warmup` (default: `1`): Number of warmup iterations.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
