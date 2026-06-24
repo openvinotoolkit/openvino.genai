@@ -100,6 +100,26 @@ protected:
     void _prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size);
     void _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
+    void _validate_linear_verifier_constraints() const;
+
+    /**
+     * Eager reservation at admission: raises the linear-attention workspace to 1 live +
+     * num_assistant_tokens scratch rows before the first speculative step schedules.
+     */
+    void _reserve_linear_attention_scratch();
+
+    /**
+     * Post-sampling hook that promotes the committed linear-attention state to the correct
+     * physical row for every speculative sequence scheduled this step.
+     */
+    virtual void _update_linear_attention_live_blocks(const Scheduler::Output& scheduler_output);
+
+    /**
+     * Calculates the physical index of the live linear-attention state after verification
+     */
+    static int32_t _select_linear_attention_live_block(const Scheduler::Output::LinearAttentionPagingData& paging_data,
+                                                       size_t processed_after);
+
     virtual void drop_requests();
 
 public:
