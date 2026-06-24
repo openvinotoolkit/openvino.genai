@@ -258,7 +258,14 @@ class TestImageGenerationWithBlobTensorModels:
         return pipe
 
     def _get_generation_args(self):
-        return {"prompt": "Will Smith eating spaghetti", "num_inference_steps": 5, "rng_seed": 69}
+        return {
+            "prompt": "Will Smith eating spaghetti",
+            "num_inference_steps": 5,
+            "rng_seed": 69,
+            "width": 64,
+            "height": 64,
+            "num_images_per_prompt": 1
+        }
 
     def _read_blob_tensor(self, blob_dir, model_folder):
         from pathlib import Path
