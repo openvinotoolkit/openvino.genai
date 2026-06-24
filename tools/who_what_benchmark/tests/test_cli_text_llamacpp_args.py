@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import subprocess  # nosec B404
+import sys
 from argparse import Namespace
 from pathlib import Path
 
@@ -11,6 +12,9 @@ from conftest import run_wwb
 from huggingface_hub import hf_hub_download
 from whowhatbench import model_loaders
 from whowhatbench import wwb
+
+
+pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="llama.cpp tests run on Linux only")
 
 
 def _assert_wwb_cli_error(args: list[str], expected_message: str) -> str:
