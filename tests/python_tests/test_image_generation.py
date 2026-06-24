@@ -284,7 +284,7 @@ class TestImageGenerationWithBlobTensorModels:
             return ov_genai.Tokenizer(str(tokenizer_path))
         except Exception as e:
             raise RuntimeError(f"Failed to read tokenizer from {tokenizer_path}: {e}")
-    
+
     def _load_blob_pipeline(self, model_dir, blob_dir, pipe_type="image2image"):
         tokenizer = self._read_tokenizer(model_dir)
         tokenizer_2 = self._read_tokenizer(model_dir, tokenizer_name="tokenizer_2")
@@ -330,7 +330,7 @@ class TestImageGenerationWithBlobTensorModels:
             vae.get_vae_scale_factor(),
             "CPU",
         )
-        
+
         if pipe_type == "text2image":
             blob_pipe = ov_genai.Text2ImagePipeline.stable_diffusion_xl(
                 scheduler=ov_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
