@@ -545,7 +545,6 @@ public:
         }
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
-        std::cerr << "[DEBUG] compute_hidden_states done" << std::endl;
 
         // Compute image_seq_len for timestep scheduling
         const size_t latent_height = m_custom_generation_config.height / vae_scale_factor / 2;
@@ -554,7 +553,6 @@ public:
 
         const double mu = flux2_compute_empirical_mu(image_seq_len, m_custom_generation_config.num_inference_steps);
         m_scheduler->set_timesteps_with_mu(mu, m_custom_generation_config.num_inference_steps, 1.0f);
-        std::cerr << "[DEBUG] scheduler set_timesteps_with_mu done, timesteps count=" << m_scheduler->get_float_timesteps().size() << std::endl;
 
         // Prepare timesteps
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
@@ -562,11 +560,9 @@ public:
         // Prepare latent variables
         ov::Tensor latents, processed_image, image_latent, noise;
         std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
-        std::cerr << "[DEBUG] prepare_latents done, latents shape=" << latents.get_shape() << std::endl;
 
         // Set latent IDs (and image IDs if img2img)
         set_latent_and_image_ids(m_custom_generation_config);
-        std::cerr << "[DEBUG] set_latent_and_image_ids done" << std::endl;
 
         // Denoising loop
         ov::Tensor timestep(ov::element::f32, {m_custom_generation_config.num_images_per_prompt});
@@ -574,7 +570,6 @@ public:
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
-            std::cerr << "[DEBUG] Step " << inference_step << "/" << timesteps.size() << std::endl;
 
             // timestep / 1000 as per diffusers
             for (size_t i = 0; i < m_custom_generation_config.num_images_per_prompt; ++i) {
@@ -586,11 +581,9 @@ public:
             if (m_ref_image_latents) {
                 transformer_input = concat_along_seq_dim(latents, m_ref_image_latents);
             }
-            std::cerr << "[DEBUG] transformer_input shape=" << transformer_input.get_shape() << std::endl;
 
             auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred_tensor = m_transformer->infer(transformer_input, timestep);
-            std::cerr << "[DEBUG] transformer infer done, output shape=" << noise_pred_tensor.get_shape() << std::endl;
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
@@ -599,7 +592,6 @@ public:
 
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
-            std::cerr << "[DEBUG] scheduler step done, latents shape=" << latents.get_shape() << std::endl;
 
             if (callback_ptr && callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latents) == CallbackStatus::STOP) {
                 callback_ptr->end();
@@ -620,27 +612,22 @@ public:
         if (callback_ptr != nullptr) {
             callback_ptr->end();
         }
-        std::cerr << "[DEBUG] denoising loop done" << std::endl;
 
         // Unpack latents: (B, seq_len, C) -> (B, C, H/2, W/2) using position IDs
         ov::Tensor latent_ids = flux2_prepare_latent_ids(latent_height, latent_width);
         ov::Tensor unpacked_latents = flux2_unpack_latents_with_ids(latents, latent_ids, latent_height, latent_width);
-        std::cerr << "[DEBUG] unpacked_latents shape=" << unpacked_latents.get_shape() << std::endl;
 
         // Denormalize with batch norm: latents = latents * bn_std + bn_mean
         apply_bn_denormalize(unpacked_latents);
 
         // Unpatchify: (B, C*4, H/2, W/2) -> (B, C, H, W)
         ov::Tensor final_latents = flux2_unpatchify_latents(unpacked_latents);
-        std::cerr << "[DEBUG] final_latents shape=" << final_latents.get_shape() << std::endl;
 
         // Pre-apply VAE's scaling_factor so decode's internal division cancels out
         apply_vae_decode_scaling(final_latents);
 
         const auto decode_start = std::chrono::steady_clock::now();
-        std::cerr << "[DEBUG] calling vae->decode" << std::endl;
         auto image = m_vae->decode(final_latents);
-        std::cerr << "[DEBUG] vae decode done, image shape=" << image.get_shape() << std::endl;
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
