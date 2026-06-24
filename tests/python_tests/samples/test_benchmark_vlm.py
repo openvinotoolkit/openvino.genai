@@ -83,10 +83,11 @@ class TestBenchmarkVLM:
     @pytest.mark.vlm
     @pytest.mark.samples
     def test_sample_benchmark_vlm_invalid_resize(self):
-        # Validation of invalid resize dimensions causes the Python sample subprocess to fail
+        # Validation of invalid resize dimensions causes the C++ and Python sample subprocess to fail
         # before any image or model is loaded, so this test observes CalledProcessError.
+        benchmark_sample = SAMPLES_CPP_DIR / "benchmark_vlm"
         benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
-        
+
         invalid_sizes = [
             (-1, 224),
             (224, -1),
@@ -96,15 +97,19 @@ class TestBenchmarkVLM:
             (None, 224),
             (224, None)
         ]
-        
+
         for height, width in invalid_sizes:
-            command = [sys.executable, benchmark_script, "-m", "fake_model", "-i", "fake_image.jpg",]
+            cpp_command = [benchmark_sample, "-m", "fake_model", "-i", "fake_image.jpg"]
+            py_command = [sys.executable, benchmark_script, "-m", "fake_model", "-i", "fake_image.jpg",]
             
             if height is not None:
-                command.extend(["-H", str(height)])
+                cpp_command.extend(["-H", str(height)])
+                py_command.extend(["--image_height", str(height)])
             
             if width is not None:
-                command.extend(["-W", str(width)])
+                cpp_command.extend(["-W", str(width)])
+                py_command.extend(["--image_width", str(width)])
 
-            with pytest.raises(subprocess.CalledProcessError):
-                run_sample(command)
+            for command in [cpp_command, py_command]:
+                with pytest.raises(subprocess.CalledProcessError):
+                    run_sample(command)
