@@ -59,13 +59,13 @@ def read_video(path: str, num_frames: int) -> tuple[ov.Tensor, openvino_genai.Vi
 def embed_image(pipeline: openvino_genai.EmbeddingPipeline, path: str) -> np.ndarray:
     image = Image.open(path).convert("RGB")
     image_tensor = ov.Tensor(np.array(image))
-    return np.asarray(pipeline.embed("", images=[image_tensor]).data, dtype=np.float32)
+    return np.asarray(pipeline.embed(images=[image_tensor], prompt="sdf").data, dtype=np.float32)
 
 
 def embed_video(pipeline: openvino_genai.EmbeddingPipeline, path: str, num_video_frames: int) -> np.ndarray:
     video_tensor, video_metadata = read_video(path, num_video_frames)
     return np.asarray(
-        pipeline.embed("", videos=[video_tensor], videos_metadata=[video_metadata]).data,
+        pipeline.embed(videos=[video_tensor], videos_metadata=[video_metadata]).data,
         dtype=np.float32,
     )
 

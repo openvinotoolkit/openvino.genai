@@ -553,12 +553,26 @@ ov::Tensor EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text,
     return m_impl->embed(text, images, videos, videos_metadata, prompt);
 }
 
+ov::Tensor EmbeddingPipeline::embed(const std::vector<ov::Tensor>& images,
+                                    const std::vector<ov::Tensor>& videos,
+                                    const std::vector<VideoMetadata>& videos_metadata,
+                                    const std::optional<std::string>& prompt) {
+    return m_impl->embed(std::string{}, images, videos, videos_metadata, prompt);
+}
+
 void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
                                           const std::vector<ov::Tensor>& images,
                                           const std::vector<ov::Tensor>& videos,
                                           const std::vector<VideoMetadata>& videos_metadata,
                                           const std::optional<std::string>& prompt) {
     return m_impl->start_embed_async(text, images, videos, videos_metadata, prompt);
+}
+
+void EmbeddingPipeline::start_embed_async(const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<VideoMetadata>& videos_metadata,
+                                          const std::optional<std::string>& prompt) {
+    return m_impl->start_embed_async(std::string{}, images, videos, videos_metadata, prompt);
 }
 
 EmbeddingPipeline::~EmbeddingPipeline() = default;

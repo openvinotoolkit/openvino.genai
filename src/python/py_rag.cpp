@@ -142,6 +142,21 @@ void init_rag_pipelines(py::module_& m) {
             py::arg("prompt") = std::nullopt,
             "Computes embedding vectors for text or a batch of texts with images and videos.")
         .def(
+            "embed",
+            [](EmbeddingPipeline& pipe,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+               const std::optional<std::string>& prompt) -> ov::Tensor {
+                py::gil_scoped_release rel;
+                return pipe.embed(images, videos, videos_metadata, prompt);
+            },
+            py::arg("images"),
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+            py::arg("prompt") = std::nullopt,
+            "Computes embedding vectors for images and videos.")
+        .def(
             "start_embed_async",
             [](EmbeddingPipeline& pipe,
                const EmbeddingPipeline::TextInput& text,
@@ -157,7 +172,22 @@ void init_rag_pipelines(py::module_& m) {
             py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
             py::arg("prompt") = std::nullopt,
-            "Asynchronously computes embedding vectors for text or a batch of texts with images and videos.");
+            "Asynchronously computes embedding vectors for text or a batch of texts with images and videos.")
+        .def(
+            "start_embed_async",
+            [](EmbeddingPipeline& pipe,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+               const std::optional<std::string>& prompt) -> void {
+                py::gil_scoped_release rel;
+                pipe.start_embed_async(images, videos, videos_metadata, prompt);
+            },
+            py::arg("images"),
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+            py::arg("prompt") = std::nullopt,
+            "Asynchronously computes embedding vectors for images and videos.");
 
     auto text_embedding_pipeline =
         py::class_<TextEmbeddingPipeline>(m, "TextEmbeddingPipeline", "Text embedding pipeline")

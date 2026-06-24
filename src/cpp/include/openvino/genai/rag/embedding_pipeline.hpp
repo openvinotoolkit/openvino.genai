@@ -72,7 +72,15 @@ public:
      */
     ov::Tensor embed(const TextInput& text,
                      const std::vector<ov::Tensor>& images,
-                     const std::vector<ov::Tensor>& videos,
+                     const std::vector<ov::Tensor>& videos = {},
+                     const std::vector<VideoMetadata>& videos_metadata = {},
+                     const std::optional<std::string>& prompt = std::nullopt);
+
+    /**
+    * @brief Computes embedding vectors for images and videos.
+     */
+    ov::Tensor embed(const std::vector<ov::Tensor>& images,
+                     const std::vector<ov::Tensor>& videos = {},
                      const std::vector<VideoMetadata>& videos_metadata = {},
                      const std::optional<std::string>& prompt = std::nullopt);
 
@@ -81,7 +89,15 @@ public:
      */
     void start_embed_async(const TextInput& text,
                            const std::vector<ov::Tensor>& images,
-                           const std::vector<ov::Tensor>& videos,
+                           const std::vector<ov::Tensor>& videos = {},
+                           const std::vector<VideoMetadata>& videos_metadata = {},
+                           const std::optional<std::string>& prompt = std::nullopt);
+
+    /**
+    * @brief Starts asynchronous embedding computation for images and videos.
+     */
+    void start_embed_async(const std::vector<ov::Tensor>& images,
+                           const std::vector<ov::Tensor>& videos = {},
                            const std::vector<VideoMetadata>& videos_metadata = {},
                            const std::optional<std::string>& prompt = std::nullopt);
 
