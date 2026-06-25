@@ -898,7 +898,7 @@ public:
             if (has_finished()) {
                 push_outputs();
             }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
