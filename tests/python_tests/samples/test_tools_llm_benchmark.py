@@ -9,6 +9,9 @@ from pathlib import Path
 from test_utils import run_sample
 from data.models import GGUF_MODEL_LIST
 from utils.hugging_face import download_gguf_model
+from utils.constants import get_ov_cache_converted_models_dir
+from utils.kokoro_test_assets import prepare_tiny_kokoro_model_path
+from utils.kokoro_test_assets import prepare_tiny_kokoro_ov_path
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 
 convert_draft_model = convert_model
@@ -57,6 +60,21 @@ video_generation_json = [
         "frame_rate": 25,
     }
 ]
+
+
+@pytest.fixture(scope="module")
+def tiny_kokoro_ov_path() -> Path:
+    converted_models_dir = get_ov_cache_converted_models_dir()
+    tiny_kokoro_model_path = prepare_tiny_kokoro_model_path(converted_models_dir)
+    return prepare_tiny_kokoro_ov_path(converted_models_dir, tiny_kokoro_model_path)
+
+
+@pytest.fixture(scope="module")
+def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
+    voice_bin_path = tiny_kokoro_ov_path / "voices" / "tiny_voice.bin"
+    if not voice_bin_path.exists():
+        raise FileNotFoundError(f"Missing tiny Kokoro speaker embedding file at {voice_bin_path}")
+    return str(voice_bin_path)
 
 
 class TestBenchmarkLLM:
@@ -261,6 +279,69 @@ class TestBenchmarkLLM:
             "-m", convert_model,
             "--speaker_embeddings", download_test_content
         ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.parametrize(
+        "sample_args, use_explicit_speaker_embedding",
+        [
+            (
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--task",
+                    "text_to_speech",
+                    "--genai",
+                    "--speech_language",
+                    "en-us",
+                    "--prompt",
+                    "Why is the Sun yellow?",
+                ],
+                True,
+            ),
+            (
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--task",
+                    "text_to_speech",
+                    "--genai",
+                    "--speech_voice",
+                    "tiny_voice",
+                    "--speech_language",
+                    "en-us",
+                    "--prompt",
+                    "Why is the Sun yellow?",
+                ],
+                False,
+            ),
+        ],
+    )
+    def test_python_tool_llm_benchmark_tts_kokoro_genai(
+        self,
+        tiny_kokoro_ov_path: Path,
+        tiny_kokoro_speaker_embedding_file_path: str,
+        sample_args,
+        use_explicit_speaker_embedding,
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            str(tiny_kokoro_ov_path),
+        ]
+        if use_explicit_speaker_embedding:
+            benchmark_py_command += [
+                "--speaker_embeddings",
+                tiny_kokoro_speaker_embedding_file_path,
+            ]
+        benchmark_py_command += sample_args
         run_sample(benchmark_py_command)
 
 
