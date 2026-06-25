@@ -4443,25 +4443,25 @@ class TextEmbeddingPipeline:
         config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
         kwargs: Plugin and/or config properties
         """
-    def embed_documents(self, texts: collections.abc.Sequence[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
-        """
-        Computes embeddings for a vector of texts
-        """
     def embed(self, texts: collections.abc.Sequence[str], prompt: str) -> list[list[float]] | list[list[int]] | list[list[int]]:
         """
         Computes embeddings for a vector of texts prepended with a prompt
+        """
+    def embed_documents(self, texts: collections.abc.Sequence[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Computes embeddings for a vector of texts
         """
     def embed_query(self, text: str) -> list[float] | list[int] | list[int]:
         """
         Computes embeddings for a query
         """
-    def start_embed_documents_async(self, texts: collections.abc.Sequence[str]) -> None:
-        """
-        Asynchronously computes embeddings for a vector of texts
-        """
     def start_embed_async(self, texts: collections.abc.Sequence[str], prompt: str) -> None:
         """
         Asynchronously computes embeddings for a vector of texts prepended with a prompt
+        """
+    def start_embed_documents_async(self, texts: collections.abc.Sequence[str]) -> None:
+        """
+        Asynchronously computes embeddings for a vector of texts
         """
     def start_embed_query_async(self, text: str) -> None:
         """

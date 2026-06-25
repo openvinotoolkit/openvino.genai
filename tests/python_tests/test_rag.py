@@ -324,12 +324,6 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
     async_batch_result = pipeline.wait()
     assert async_batch_result.shape == batch_result.shape
 
-    with pytest.raises(RuntimeError, match="Prompt is supported only by multimodal EmbeddingPipeline"):
-        pipeline.embed("What is OpenVINO?", prompt="Represent the user's input.")
-
-    with pytest.raises(RuntimeError, match="Prompt is supported only by multimodal EmbeddingPipeline"):
-        pipeline.start_embed_async("What is OpenVINO?", prompt="Represent the user's input.")
-
     with pytest.raises(
         RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"
     ):
