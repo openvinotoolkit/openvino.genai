@@ -104,7 +104,7 @@ python benchmark_vlm.py [OPTIONS]
 
 ### Options
 
-- `-m, --model`(default: `None`): Path to the model and tokenizers base directory.
+- `-m, --model` (required): Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p, --prompt`, and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file`: Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to image. Can be a single image or a directory of images.

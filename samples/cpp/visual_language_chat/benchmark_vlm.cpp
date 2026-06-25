@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vlm", "Help command");
 
     options.add_options()
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value(""))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("F,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Path to image. Can be a single image or a directory of images.", cxxopts::value<std::string>()->default_value("image.jpg"))
@@ -58,7 +58,14 @@ int main(int argc, char* argv[]) try {
         return EXIT_FAILURE;
     } 
 
-    const std::string models_path = result["model"].as<std::string>();
+    std::string models_path;
+    if (result.count("model")) {
+        models_path = result["model"].as<std::string>();
+    } else {
+        std::cout << "Model path is not provided!" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();

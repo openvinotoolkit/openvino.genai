@@ -56,7 +56,7 @@ def weight_0_1(value):
 
 def main():
     parser = argparse.ArgumentParser(description="Help command")
-    parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
+    parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-F", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Path to image. Can be a single image or a directory of images. Default is 'image.jpg'.")
