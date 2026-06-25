@@ -1,34 +1,14 @@
-// Copyright (C) 2023-2026 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include <filesystem>
-#include <openvino/runtime/properties.hpp>
-
 #include "openvino/genai/visibility.hpp"
+#include "visual_language/vlm_model_type.hpp"
+#include <openvino/runtime/properties.hpp>
+#include <filesystem>
 
 namespace ov::genai {
-
-enum class VLMModelType {
-    MINICPM,
-    LLAVA,
-    NANOLLAVA,
-    LLAVA_NEXT,
-    LLAVA_NEXT_VIDEO,
-    INTERNVL_CHAT,
-    PHI3_V,
-    PHI4MM,
-    QWEN2_VL,
-    QWEN2_5_VL,
-    QWEN3_VL,
-    QWEN3_5,
-    QWEN3_5_MOE,
-    GEMMA3,
-    GEMMA4,
-    VIDEOCHAT_FLASH_QWEN,
-};
-
 /// @brief A Configuration class passed to VLMPipeline and used to
 /// change VLMPipeline's behavior. Corresponds to config.json.
 class VLMConfig {
@@ -67,7 +47,6 @@ public:
 
     // llava_next specific config params
     std::vector<float> image_newline;
-    size_t vision_config_patch_size = 14;
 
     /// @brief A string token denoting start of image embeddings for InternVL2 model.
     std::string image_start_token = "<img>";
@@ -75,54 +54,7 @@ public:
     std::string image_context_token = "<IMG_CONTEXT>";
     /// @brief A string token denoting end of image embeddings for InternVL2 model.
     std::string image_end_token = "</img>";
-    /// @brief phi3_v and phi4mm new line token embedding to separate images.
-    std::vector<float> sub_GN = std::vector(4096, 0.0f);
-    std::vector<float> glb_GN = std::vector(4096, 0.0f);
-
-    /// @brief A string token denoting start of vision embeddings for Qwen2VL model.
-    std::string vision_start_token = "<|vision_start|>";
-    /// @brief A placeholder for image embeddings in text for Qwen2VL model.
-    std::string image_pad_token = "<|image_pad|>";
-    std::string video_pad_token = "<|video_pad|>";
-    /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
-    std::string vision_end_token = "<|vision_end|>";
-
-    /// @brief A size of a window for Qwen2.5VL model, used in window attention.
-    size_t vision_config_window_size = 112;
-
-    /// @brief A token id per second for Qwen2.5VL model, used in calc position_ids.
-    size_t vision_config_tokens_per_second = 2;
-
-    /// @brief A string token denoting start of vision embeddings for gemma3-4b-it model.
-    std::string start_of_image = "<start_of_image>";
-    /// @brief A placeholder for image embeddings in text for gemma3-4b-it model.
-    std::string image_soft_token = "<image_soft_token>";
-    /// @brief A string token denoting end of vision embeddings for gemma3-4b-it model.
-    std::string end_of_image = "<end_of_image>";
-
-    /// @brief A string token denoting start of image embeddings for Gemma4 model.
-    std::string boi_token = "<|image>";
-    /// @brief A placeholder for image embeddings in text for Gemma4 model.
-    std::string image_token = "<|image|>";
-    /// @brief A string token denoting end of image embeddings for Gemma4 model.
-    std::string eoi_token = "<image|>";
-
-    /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
-    size_t hidden_size_per_layer_input = 0;
-
-    /// @brief Selects bidirectional attention scope for Gemma4 (e.g. "vision" enables
-    /// bidirectional masking for image tokens which requires `token_type_ids` as an LM input).
-    std::string use_bidirectional_attention;
-
-    /// @brief A string token denoting start of video embeddings
-    std::string video_start = "<video>";
-
-    // Qwen3-VL specific config
-    /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.
-    size_t vision_config_num_position_embeddings = 2304;
-    /// @brief DeepStack visual indexes for Qwen3-VL model.
-    std::vector<size_t> vision_config_deepstack_visual_indexes;
-
+    
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.
