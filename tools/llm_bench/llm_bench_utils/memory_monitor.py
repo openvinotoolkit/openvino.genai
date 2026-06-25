@@ -62,7 +62,7 @@ def drop_caches():
         with open(cache_path, "w") as f:
             f.write("3")
     except PermissionError:
-        os.stsem("sudo echo 3 > /proc/sys/vm/drop_caches")
+        os.system("sudo echo 3 > /proc/sys/vm/drop_caches")
 
 
 def malloc_trim() -> bool:
