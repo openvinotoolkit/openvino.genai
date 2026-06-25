@@ -82,16 +82,21 @@ class TestBenchmarkVLM:
 
     @pytest.mark.vlm
     @pytest.mark.samples
-    def test_sample_benchmark_vlm_invalid_resize(self):
+    @pytest.mark.parametrize(
+        "download_test_content",
+        [pytest.param("images/image.png")],
+        indirect=["download_test_content"],
+    )
+    def test_sample_benchmark_vlm_invalid_resize(self, download_test_content):
         # Validation of invalid resize dimensions causes the C++ and Python sample subprocess to fail
-        # before any image or model is loaded, so this test observes CalledProcessError.
+        # before any model is loaded, so this test observes CalledProcessError.
         benchmark_sample = SAMPLES_CPP_DIR / "benchmark_vlm"
         benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
 
         invalid_sizes = [(-1, 224), (224, -1), (0, 224), (224, 0), (0, 0), (None, 224), (224, None)]
 
         for height, width in invalid_sizes:
-            cpp_command = [benchmark_sample, "-m", "fake_model", "-i", "fake_image.jpg"]
+            cpp_command = [benchmark_sample, "-m", "fake_model", "-i", download_test_content]
             py_command = [
                 sys.executable,
                 benchmark_script,
