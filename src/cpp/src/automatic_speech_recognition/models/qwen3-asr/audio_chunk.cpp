@@ -115,7 +115,7 @@ std::vector<ov::genai::AudioChunk> split_audio_into_chunks(const std::vector<flo
     const size_t total_len = raw_speech.size();
 
     if (total_len <= max_len) {
-        chunks.push_back(make_audio_chunk(raw_speech, 0, total_len, sr, 0, 0, 0.0f));
+        chunks.push_back(make_audio_chunk(raw_speech, 0, total_len, sr, min_chunk_len, 0, 0.0f));
         return chunks;
     }
 
