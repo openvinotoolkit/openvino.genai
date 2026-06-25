@@ -442,6 +442,18 @@ def get_argparser():
     )
     parser.add_argument("--vocoder_path", type=str, default=None, help="Path to vocoder  for text to speech scenarios")
     parser.add_argument(
+        "--speech_language",
+        type=str,
+        default="",
+        help="Speech language for text-to-speech models. For Kokoro this can be one of en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, zh",
+    )
+    parser.add_argument(
+        "--speech_voice",
+        type=str,
+        default="",
+        help="Speech voice for text-to-speech models. For Kokoro defaults to af_heart",
+    )
+    parser.add_argument(
         "-vf",
         "--video_frames",
         type=int,
