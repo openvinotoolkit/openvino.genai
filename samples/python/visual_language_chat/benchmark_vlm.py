@@ -59,23 +59,23 @@ def main():
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-F", "--prompt_file", type=str, help="Read prompt from file")
-    parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
+    parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Path to image. Can be a single image or a directory of images. Default is 'image.jpg'.")
     parser.add_argument(
         "-H", "--image_height", type=int, default=None, help="Target image height (if resizing is needed)"
     )
     parser.add_argument(
         "-W", "--image_width", type=int, default=None, help="Target image width (if resizing is needed)"
     )
-    parser.add_argument("-N", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
-    parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
-    parser.add_argument("-M", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
-    parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
+    parser.add_argument("-N", "--num_warmup", type=int, default=1, help="Number of warmup iterations. Default is 1.")
+    parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations. Default is 2.")
+    parser.add_argument("-M", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens. Default is 20.")
+    parser.add_argument("-d", "--device", type=str, default="CPU", help="Device to run the model on. Default is 'CPU'.")
     parser.add_argument(
         "-P",
         "--pruning_ratio",
         type=ratio_type,
         default=0,
-        help="(optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
+        help="(optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled. Default is '0'",
     )
     parser.add_argument(
         "-R",

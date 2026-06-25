@@ -104,10 +104,10 @@ python benchmark_vlm.py [OPTIONS]
 
 ### Options
 
-- `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
+- `-m, --model`(default: `None`): Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p, --prompt`, and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file`: Read prompt from file.
-- `-i, --image` (default: `image.jpg`): Path to the image.
+- `-i, --image` (default: `image.jpg`): Path to image. Can be a single image or a directory of images.
 - `-H, --image_height` (default: `None`): Target image height for resizing. Must be a positive value and provided together with `-W, --image_width`.
 - `-W, --image_width` (default: `None`): Target image width for resizing. Must be a positive value and provided together with `-H, --image_height`.
 - `-N, --num_warmup` (default: `1`): Number of warmup iterations.

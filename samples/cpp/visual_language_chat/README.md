@@ -86,7 +86,7 @@ benchmark_vlm [OPTIONS]
 - `-m, --model`(default: `.`): Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: ''): The prompt to generate text. If without `-p, --prompt` and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file` Read prompt from file.
-- `-i, --image` (default: `image.jpg`): Path to the image.
+- `-i, --image` (default: `image.jpg`): Path to image. Can be a single image or a directory of images.
 - `-H, --image_height`: Target image height for resizing. Must be a positive value and provided together with `-W, --image_width`.
 - `-W, --image_width`: Target image width for resizing. Must be a positive value and provided together with `-H, --image_height`.
 - `-N, --num_warmup` (default: `1`): Number of warmup iterations.
