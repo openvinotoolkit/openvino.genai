@@ -44,7 +44,7 @@ ov::Tensor utils::load_image(const std::filesystem::path& image_path, std::optio
     }
     if (do_resize) {
         unsigned char* resized = static_cast<unsigned char*>(
-            malloc(size_t(target_size->width) * size_t(target_size->height) * desired_channels));
+            STBI_MALLOC(size_t(target_size->width) * size_t(target_size->height) * desired_channels));
         if (!resized) {
             stbi_image_free(image);
             throw std::runtime_error{"Failed to allocate memory for resized image."};
