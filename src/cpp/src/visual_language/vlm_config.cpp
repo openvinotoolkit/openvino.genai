@@ -1,55 +1,14 @@
-// Copyright (C) 2023-2026 Intel Corporation
+// Copyright (C) 2023-2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vlm_config.hpp"
+#include "json_utils.hpp"
 
 #include <fstream>
 
-#include "json_utils.hpp"
-
-namespace ov::genai {
-
-namespace {
-
-VLMModelType to_vlm_model_type(const std::string& value) {
-    static const std::unordered_map<std::string, VLMModelType> model_types_map = {
-        {"minicpmv", VLMModelType::MINICPM},
-        {"minicpmo", VLMModelType::MINICPM},
-        {"llava", VLMModelType::LLAVA},
-        {"llava-qwen2", VLMModelType::NANOLLAVA},
-        {"llava_next", VLMModelType::LLAVA_NEXT},
-        {"llava_next_video", VLMModelType::LLAVA_NEXT_VIDEO},
-        {"internvl_chat", VLMModelType::INTERNVL_CHAT},
-        {"phi3_v", VLMModelType::PHI3_V},
-        {"phi4mm", VLMModelType::PHI4MM},
-        {"qwen2_vl", VLMModelType::QWEN2_VL},
-        {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
-        {"qwen3_vl", VLMModelType::QWEN3_VL},
-        {"qwen3_5", VLMModelType::QWEN3_5},
-        {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
-        {"gemma3", VLMModelType::GEMMA3},
-        {"gemma4", VLMModelType::GEMMA4},
-        {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
-    };
-
-    auto it = model_types_map.find(value);
-    if (it != model_types_map.end()) {
-        return it->second;
-    }
-    OPENVINO_THROW("Unsupported '", value, "' VLM model type");
-}
-
-void assert_size(size_t size, VLMModelType model_type) {
-    if (model_type == VLMModelType::PHI3_V) {
-        OPENVINO_ASSERT(size == 4096, "Expected size 4096 for PHI3_V model type");
-    }
-}
-
-}  // namespace
-
-VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
+ov::genai::VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     std::ifstream stream(json_path);
-    OPENVINO_ASSERT(stream.is_open(), "Failed to open '", json_path, "' with processor config");
+    OPENVINO_ASSERT(stream.is_open(), "Failed to open '" + json_path.string() + "' with processor config");
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
     model_type = to_vlm_model_type(parsed.at("model_type"));
@@ -60,36 +19,4 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);
-    read_json_param(parsed, "vision_config.patch_size", vision_config_patch_size);
-
-    // phi3_v and phi4mm
-    if (parsed.contains("sub_GN") && parsed.at("sub_GN").is_array()) {
-        sub_GN = parsed.at("sub_GN").get<std::vector<std::vector<std::vector<std::vector<float>>>>>().at(0).at(0).at(0);
-    }
-    assert_size(sub_GN.size(), model_type);
-    if (parsed.contains("glb_GN") && parsed.at("glb_GN").is_array()) {
-        glb_GN = parsed.at("glb_GN").get<std::vector<std::vector<std::vector<float>>>>().at(0).at(0);
-    }
-    assert_size(glb_GN.size(), model_type);
-
-    // Qwen2.5VL
-    read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
-    read_json_param(parsed, "vision_config.tokens_per_second", vision_config_tokens_per_second);
-
-    // Qwen3-VL
-    read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
-    read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
-
-    // gemma4
-    read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
-    // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean
-    if (
-        parsed.contains("text_config")
-        && parsed.at("text_config").contains("use_bidirectional_attention")
-        && parsed.at("text_config").at("use_bidirectional_attention").is_string()
-    ) {
-        read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
-    }
 }
-
-}  // namespace ov::genai
