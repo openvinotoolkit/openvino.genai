@@ -386,11 +386,7 @@ private:
             text;
         const NormalizedPrompt normalized_prompt =
             m_inputs_embedder->normalize_prompt(format_prompt(formatted_text, prompt), 0, 0, encoded_images, encoded_videos);
-        m_inputs_embedder->set_add_special_tokens(!prompt.has_value());
-
-        Tokenizer tokenizer = m_inputs_embedder->get_tokenizer();
-        const ov::Tensor input_ids = tokenizer.encode(normalized_prompt.unified_prompt,
-                                                      ov::genai::add_special_tokens(false)).input_ids;
+        m_inputs_embedder->set_add_special_tokens(false);
 
         VLMPerfMetrics metrics;
         ov::Tensor inputs_embeds;

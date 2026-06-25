@@ -1191,7 +1191,7 @@ class EmbeddingPipeline:
         Plugin and/or config properties
         """
     @typing.overload
-    def embed(self, text: str | collections.abc.Sequence[str], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
+    def embed(self, text: str | collections.abc.Sequence[str], prompt: str | None) -> openvino._pyopenvino.Tensor:
         """
         Computes embedding vectors for text or a batch of texts.
         """

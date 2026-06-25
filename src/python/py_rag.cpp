@@ -106,7 +106,7 @@ void init_rag_pipelines(py::module_& m) {
                 return pipe.embed(text, prompt);
             },
             py::arg("text"),
-            py::arg("prompt") = std::nullopt,
+            py::arg("prompt"),
             "Computes embedding vectors for text or a batch of texts.")
         .def(
             "start_embed_async",
