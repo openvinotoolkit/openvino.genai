@@ -990,7 +990,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                     "lang_code": normalize_kokoro_lang_code(language),
                 }
                 if speaker_embeddings is not None:
-                    preprocess_kwargs["speaker_embedding"] = speaker_embeddings.numpy()
+                    preprocess_kwargs["speaker_embedding"] = speaker_embeddings.detach().cpu().numpy()
                 else:
                     selected_voice = voice.strip() if isinstance(voice, str) else ""
                     if not selected_voice:
