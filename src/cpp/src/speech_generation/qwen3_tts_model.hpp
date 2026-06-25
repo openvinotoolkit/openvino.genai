@@ -121,6 +121,7 @@ private:
 private:
     std::filesystem::path m_models_path;
     std::string m_device;
+    bool m_is_npu = false;
     Tokenizer m_tokenizer;
     QwenIds m_ids;
     std::string m_tts_model_type = "custom_voice";

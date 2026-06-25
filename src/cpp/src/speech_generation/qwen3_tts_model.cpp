@@ -44,6 +44,59 @@ constexpr int64_t DECODER_LEFT_CONTEXT = 25;
 constexpr int64_t DECODER_OFFSET = 555;
 constexpr float PI_F = 3.14159265358979323846f;
 
+// Component roles used for per-component device routing. Each Qwen3-TTS
+// submodel is a separate IR, so (mirroring the VLM pipeline) the pipeline can
+// place each one on a different device while still accepting a single primary
+// `device` argument.
+namespace roles {
+constexpr const char* TALKER = "talker";
+constexpr const char* TALKER_EMBEDDING = "talker_embedding";
+constexpr const char* TALKER_TEXT_EMBEDDING = "talker_text_embedding";
+constexpr const char* TALKER_TEXT_PROJECTION = "talker_text_projection";
+constexpr const char* CODE_PREDICTOR = "code_predictor";
+constexpr const char* CODE_PREDICTOR_EMBEDDING = "code_predictor_embedding";
+constexpr const char* SPEECH_TOKENIZER_DECODER = "speech_tokenizer_decoder";
+constexpr const char* SPEECH_TOKENIZER_ENCODER = "speech_tokenizer_encoder";
+constexpr const char* SPEAKER_ENCODER = "speaker_encoder";
+constexpr const char* MEL_PREPROCESS = "mel_preprocess";
+}  // namespace roles
+
+// Default device policy for a component. For non-NPU targets every component
+// stays on the requested device (preserving existing CPU/GPU behavior). On NPU
+// the components that are cheap, gather/projection-heavy, or run in a tight
+// inner loop (the code predictor) default to CPU, matching the measured
+// babelvox split where only the heavy transformer/codec models stay on NPU.
+std::string default_device_for_role(const std::string& base_device, bool is_npu, const std::string& role) {
+    if (!is_npu) {
+        return base_device;
+    }
+    if (role == roles::CODE_PREDICTOR || role == roles::CODE_PREDICTOR_EMBEDDING ||
+        role == roles::TALKER_EMBEDDING || role == roles::TALKER_TEXT_EMBEDDING ||
+        role == roles::TALKER_TEXT_PROJECTION || role == roles::MEL_PREPROCESS) {
+        return "CPU";
+    }
+    return base_device;
+}
+
+// Resolve the (device, properties) pair for a component following the VLM
+// `ov::device::properties` convention: when the caller supplies a per-device
+// property map each component picks up the sub-map for the device it actually
+// lands on; otherwise the same top-level properties are reused for every
+// component.
+std::pair<std::string, ov::AnyMap> resolve_component_target(const std::string& base_device,
+                                                            bool is_npu,
+                                                            const ov::AnyMap& device_properties,
+                                                            const ov::AnyMap& base_properties,
+                                                            const std::string& role) {
+    const std::string device = default_device_for_role(base_device, is_npu, role);
+    if (device_properties.empty()) {
+        return {device, base_properties};
+    }
+    auto it = device_properties.find(device);
+    ov::AnyMap properties = (it != device_properties.end()) ? it->second.as<ov::AnyMap>() : ov::AnyMap{};
+    return {device, properties};
+}
+
 std::string to_lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -353,34 +406,53 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
       m_tokenizer(tokenizer) {
     init_config(models_path);
 
-    m_talker = compile_request(models_path / TALKER_LANGUAGE_NAME, "qwen3_tts talker", device, properties);
-    m_talker_embedding = compile_request(models_path / TALKER_EMBEDDING_NAME, "qwen3_tts talker embedding", device, properties);
-    m_talker_text_embedding = compile_request(models_path / TALKER_TEXT_EMBEDDING_NAME, "qwen3_tts text embedding", device, properties);
-    m_talker_text_projection = compile_request(models_path / TALKER_TEXT_PROJECTION_NAME, "qwen3_tts text projection", device, properties);
-    m_talker_code_predictor = compile_request(models_path / TALKER_CODE_PREDICTOR_NAME, "qwen3_tts code predictor", device, properties);
-    m_talker_code_predictor_embedding = compile_request(models_path / TALKER_CODE_PREDICTOR_EMBEDDING_NAME,
-                                                        "qwen3_tts code predictor embedding",
-                                                        device,
-                                                        properties);
-    m_speech_tokenizer_decoder = compile_request(models_path / "speech_tokenizer" / SPEECH_TOKENIZER_DECODER_NAME,
-                                                 "qwen3_tts speech tokenizer decoder",
-                                                 device,
-                                                 properties);
+    m_is_npu = ov::genai::utils::is_npu_requested(device, properties);
+
+    // Split off the optional per-device property map (VLM `ov::device::properties`
+    // convention). The remaining top-level properties act as the default for
+    // every component when no per-device map is supplied.
+    ov::AnyMap base_properties = properties;
+    ov::AnyMap device_properties =
+        ov::genai::utils::pop_or_default<ov::AnyMap>(base_properties, ov::device::properties.name(), ov::AnyMap{});
+
+    auto compile_for = [&](const auto& model_source, const char* model_name, const std::string& role) {
+        auto [target_device, target_properties] =
+            resolve_component_target(device, m_is_npu, device_properties, base_properties, role);
+        return compile_request(model_source, model_name, target_device, target_properties);
+    };
+
+    m_talker = compile_for(models_path / TALKER_LANGUAGE_NAME, "qwen3_tts talker", roles::TALKER);
+    m_talker_embedding =
+        compile_for(models_path / TALKER_EMBEDDING_NAME, "qwen3_tts talker embedding", roles::TALKER_EMBEDDING);
+    m_talker_text_embedding =
+        compile_for(models_path / TALKER_TEXT_EMBEDDING_NAME, "qwen3_tts text embedding", roles::TALKER_TEXT_EMBEDDING);
+    m_talker_text_projection = compile_for(models_path / TALKER_TEXT_PROJECTION_NAME,
+                                           "qwen3_tts text projection",
+                                           roles::TALKER_TEXT_PROJECTION);
+    m_talker_code_predictor =
+        compile_for(models_path / TALKER_CODE_PREDICTOR_NAME, "qwen3_tts code predictor", roles::CODE_PREDICTOR);
+    m_talker_code_predictor_embedding = compile_for(models_path / TALKER_CODE_PREDICTOR_EMBEDDING_NAME,
+                                                    "qwen3_tts code predictor embedding",
+                                                    roles::CODE_PREDICTOR_EMBEDDING);
+    m_speech_tokenizer_decoder = compile_for(models_path / "speech_tokenizer" / SPEECH_TOKENIZER_DECODER_NAME,
+                                             "qwen3_tts speech tokenizer decoder",
+                                             roles::SPEECH_TOKENIZER_DECODER);
 
     const auto speaker_encoder_path = models_path / SPEAKER_ENCODER_NAME;
     if (std::filesystem::exists(speaker_encoder_path)) {
-        m_speaker_encoder = compile_request(speaker_encoder_path, "qwen3_tts speaker encoder", device, properties);
+        m_speaker_encoder = compile_for(speaker_encoder_path, "qwen3_tts speaker encoder", roles::SPEAKER_ENCODER);
         m_has_speaker_encoder = true;
 
         auto mel_model = build_qwen3_mel_preprocess_model(m_speaker_encoder_mel_dim);
-        m_qwen3_mel_preprocess = compile_request(mel_model, "qwen3_tts mel preprocess", device, properties);
+        m_qwen3_mel_preprocess = compile_for(mel_model, "qwen3_tts mel preprocess", roles::MEL_PREPROCESS);
         m_has_qwen3_mel_preprocess = true;
     }
 
     const auto speech_tokenizer_encoder_path = models_path / "speech_tokenizer" / SPEECH_TOKENIZER_ENCODER_NAME;
     if (std::filesystem::exists(speech_tokenizer_encoder_path)) {
-        m_speech_tokenizer_encoder =
-            compile_request(speech_tokenizer_encoder_path, "qwen3_tts speech tokenizer encoder", device, properties);
+        m_speech_tokenizer_encoder = compile_for(speech_tokenizer_encoder_path,
+                                                 "qwen3_tts speech tokenizer encoder",
+                                                 roles::SPEECH_TOKENIZER_ENCODER);
         m_has_speech_tokenizer_encoder = true;
     }
 
