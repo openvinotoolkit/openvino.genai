@@ -210,7 +210,13 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     if config is not None and getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
         import transformers
 
-        model_cls = getattr(transformers, OMNI_MODEL_TYPES[config.model_type])
+        model_cls_name = OMNI_MODEL_TYPES[config.model_type]
+        model_cls = getattr(transformers, model_cls_name, None)
+        if model_cls is None:
+            raise ValueError(
+                f"Qwen3-Omni model_type='{config.model_type}' requires '{model_cls_name}' to be available in transformers. "
+                "Please upgrade transformers to a version that provides this class."
+            )
         device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
         model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
         model.eval()
@@ -436,7 +442,7 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
-        if config.model_type in OMNI_MODEL_TYPES:
+        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
             return load_text_hf_pipeline(model_id, device, **kwargs)
 
         model_kwargs = {"trust_remote_code": trust_remote_code}
@@ -522,8 +528,11 @@ def load_visual_text_model(
         if "adapters" in kwargs and kwargs["adapters"] is not None:
             raise ValueError("Adapters are not supported for OVModelForVisualCausalLM.")
 
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        if config.model_type in OMNI_MODEL_TYPES:
+        try:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
             from optimum.intel.openvino import OVModelForMultimodalLM
 
             return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
