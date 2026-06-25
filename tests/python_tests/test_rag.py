@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import gc
 from pathlib import Path
-import urllib.request
+import requests
 import openvino as ov
 import openvino_genai
 from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline, VideoMetadata
@@ -165,7 +165,9 @@ def run_text_embedding_genai(
 def cat_image_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
     image_path = tmp_path_factory.mktemp("rag_test_data") / "cat"
     if not image_path.exists():
-        urllib.request.urlretrieve(TEST_FILES["cat"], image_path)
+        response = requests.get(TEST_FILES["cat"], timeout=30)
+        response.raise_for_status()
+        image_path.write_bytes(response.content)
     return image_path
 
 
