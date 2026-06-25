@@ -54,6 +54,7 @@ def _kokoro_generate_once(model, input_text, args, use_genai):
         generation_result = model.generate(
             input_text,
             speaker_embedding=ov.Tensor(speaker_embeddings.numpy()),
+            language=speech_language,
         )
         if hasattr(generation_result, "speeches"):
             return _extract_audio_array(generation_result.speeches[0].data)
