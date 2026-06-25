@@ -962,22 +962,12 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
             memory_data_collector.start()
         start = time.perf_counter()
         if is_kokoro_model:
-            try:
-                ov_model = model_class.from_pretrained(
-                    model_path,
-                    device=device,
-                    ov_config=ov_config,
-                    trust_remote_code=True,
-                )
-            except Exception as exp:
-                raise RuntimeError(
-                    "Failed to initialize Optimum Kokoro pipeline. "
-                    "Kokoro with Optimum requires a recent optimum-intel build and compatible dependencies. "
-                    "Recommended setup:\n"
-                    "1) pip install --no-deps git+https://github.com/huggingface/optimum-intel.git\n"
-                    "2) pip install kokoro misaki[en] -c constraints-kokoro-optimum.txt\n"
-                    f"Original error: {exp}"
-                )
+            ov_model = model_class.from_pretrained(
+                model_path,
+                device=device,
+                ov_config=ov_config,
+                trust_remote_code=True,
+            )
         else:
             ov_model = model_class.from_pretrained(
                 model_path, device=device, ov_config=ov_config, config=model_config, trust_remote_code=remote_code
