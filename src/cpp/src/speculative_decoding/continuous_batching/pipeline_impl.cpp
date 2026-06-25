@@ -492,7 +492,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;
-            bool should_pause_for_main_alignment =
+            const bool should_pause_for_main_alignment =
                 eagle_mode_enabled && candidates.begin()->second.num_processed_tokens == 0;
             if (generated_len >= max_new_tokens - 1 || (generated_len != 0 && result.inserted_tokens_cnt == 0) ||
                 should_pause_for_main_alignment) {
