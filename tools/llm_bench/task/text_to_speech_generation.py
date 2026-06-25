@@ -51,7 +51,11 @@ def _kokoro_generate_once(model, input_text, args, use_genai):
 
     if use_genai:
         # Note: For GenAI Kokoro model, the speaker embedding is passed here, even if user specified --speech_voice.
-        speaker_embedding_np = speaker_embeddings.detach().cpu().numpy() if hasattr(speaker_embeddings, "detach") else np.asarray(speaker_embeddings)
+        speaker_embedding_np = (
+            speaker_embeddings.detach().cpu().numpy()
+            if hasattr(speaker_embeddings, "detach")
+            else np.asarray(speaker_embeddings)
+        )
         generation_result = model.generate(
             input_text,
             speaker_embedding=ov.Tensor(speaker_embedding_np),
