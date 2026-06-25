@@ -29,13 +29,13 @@
 #include <fstream>
 
 // Forward-declare the rt_info helper from openvino's transformations library to avoid
-// pulling in the private header "transformations/rt_info/disable_fp16_compression.hpp"
+// pulling in the private header "transformations/rt_info/disable_precision_conversion.hpp"
 // (not on the genai include path). The symbol is exported via TRANSFORMATIONS_API and
 // resolves at link time against the openvino runtime that genai already depends on.
 namespace ov {
 class Node;
-void disable_fp16_compression(const std::shared_ptr<Node>& node);
-} // namespace ov
+void disable_conversion(const std::shared_ptr<Node>& node, const element::Type& to);
+}  // namespace ov
 
 namespace ov::genai {
 
@@ -111,7 +111,7 @@ std::shared_ptr<ov::Model> build_frame_preprocess_model(const std::array<float, 
     attrs.antialias = false;
     auto resize_axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
     auto resized = std::make_shared<ov::op::v11::Interpolate>(nchw, resize_target, resize_axes, attrs);
-    ov::disable_fp16_compression(resized);
+    ov::disable_conversion(resized, ov::element::f16);
 
     // Match legacy CPU uint8 staging:
     // bicubic_resize() produces uint8-like pixels before clip_image_preprocess().
@@ -798,7 +798,7 @@ void VisionEncoderVideoChatFlashQwen::initialize_runtime_config(const std::files
 void VisionEncoderVideoChatFlashQwen::initialize_preprocess_queue(const std::string& device, const ov::AnyMap& properties) {
     // Build the preprocess model (Convert + Transpose + Bicubic resize + Clamp + Normalize)
     // and compile it on the caller-requested device. The bicubic Interpolate inside the
-    // graph is tagged with ov::disable_fp16_compression so the GPU plugin keeps just that
+    // graph is tagged with ov::disable_conversion so the GPU plugin keeps just that
     // single op in f32 (see comment in build_frame_preprocess_model); the rest of the
     // graph still runs at the device's default precision and the caller's `properties`
     // are forwarded unchanged.
