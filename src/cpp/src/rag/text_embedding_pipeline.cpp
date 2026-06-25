@@ -124,8 +124,18 @@ public:
         return wait_embed_documents();
     };
 
+    EmbeddingResults embed(const std::vector<std::string>& texts, const std::string& prompt) {
+        start_embed_async(texts, prompt);
+        return wait_embed_documents();
+    };
+
     void start_embed_documents_async(const std::vector<std::string>& texts) {
         auto formatted_texts = format_texts(texts);
+        start_embed_async(formatted_texts);
+    };
+
+    void start_embed_async(const std::vector<std::string>& texts, const std::string& prompt) {
+        auto formatted_texts = format_texts(texts, prompt);
         start_embed_async(formatted_texts);
     };
 
@@ -252,6 +262,16 @@ private:
         return formatted;
     }
 
+    std::vector<std::string> format_texts(const std::vector<std::string>& texts, const std::string& prompt) {
+        std::vector<std::string> formatted;
+        formatted.reserve(texts.size());
+
+        for (const std::string& text : texts) {
+            formatted.emplace_back(prompt + text);
+        }
+        return formatted;
+    }
+
     std::string format_query(const std::string& text) {
         if (!m_config.query_instruction) {
             return text;
@@ -299,8 +319,16 @@ EmbeddingResults TextEmbeddingPipeline::embed_documents(const std::vector<std::s
     return m_impl->embed_documents(texts);
 }
 
+EmbeddingResults TextEmbeddingPipeline::embed(const std::vector<std::string>& texts, const std::string& prompt) {
+    return m_impl->embed(texts, prompt);
+}
+
 void TextEmbeddingPipeline::start_embed_documents_async(const std::vector<std::string>& texts) {
     return m_impl->start_embed_documents_async(texts);
+}
+
+void TextEmbeddingPipeline::start_embed_async(const std::vector<std::string>& texts, const std::string& prompt) {
+    return m_impl->start_embed_async(texts, prompt);
 }
 
 EmbeddingResults TextEmbeddingPipeline::wait_embed_documents() {

@@ -206,6 +206,23 @@ void init_rag_pipelines(py::module_& m) {
                 "List of texts ",
                 "Computes embeddings for a vector of texts")
             .def(
+                "embed",
+                [](TextEmbeddingPipeline& pipe,
+                   std::vector<std::string>& texts,
+                   std::string& prompt) -> py::typing::Union<EmbeddingResults> {
+                    EmbeddingResults res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.embed(texts, prompt);
+                    }
+                    return py::cast(res);
+                },
+                py::arg("texts"),
+                py::arg("prompt"),
+                "List of texts ",
+                "Prompt prepended to each text ",
+                "Computes embeddings for a vector of texts prepended with a prompt")
+            .def(
                 "start_embed_documents_async",
                 [](TextEmbeddingPipeline& pipe, std::vector<std::string>& texts) -> void {
                     py::gil_scoped_release rel;
@@ -214,6 +231,17 @@ void init_rag_pipelines(py::module_& m) {
                 py::arg("texts"),
                 "List of texts ",
                 "Asynchronously computes embeddings for a vector of texts")
+            .def(
+                "start_embed_async",
+                [](TextEmbeddingPipeline& pipe, std::vector<std::string>& texts, std::string& prompt) -> void {
+                    py::gil_scoped_release rel;
+                    pipe.start_embed_async(texts, prompt);
+                },
+                py::arg("texts"),
+                py::arg("prompt"),
+                "List of texts ",
+                "Prompt prepended to each text ",
+                "Asynchronously computes embeddings for a vector of texts prepended with a prompt")
             .def(
                 "wait_embed_documents",
                 [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResults> {

@@ -182,10 +182,12 @@ public:
         if (m_mode == Mode::TEXT_ONLY) {
             std::lock_guard<std::mutex> async_lock(m_async_mutex);
             OPENVINO_ASSERT(m_async_request_type == AsyncRequestType::NONE, "Previous asynchronous embed request is still pending");
-            OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
             std::lock_guard<std::mutex> request_lock(m_request_mutex);
             const std::vector<std::string> texts = std::holds_alternative<std::string>(text) ? std::vector<std::string>{std::get<std::string>(text)}
                                                                                           : std::get<std::vector<std::string>>(text);
+            if (prompt.has_value()) {
+                return embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt));
+            }
             return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
         }
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
@@ -199,8 +201,14 @@ public:
         if (m_mode == Mode::TEXT_ONLY) {
             std::lock_guard<std::mutex> async_lock(m_async_mutex);
             OPENVINO_ASSERT(m_async_request_type == AsyncRequestType::NONE, "Previous asynchronous embed request is still pending");
-            OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
             std::lock_guard<std::mutex> request_lock(m_request_mutex);
+            if (prompt.has_value()) {
+                const std::vector<std::string> texts = is_single_text ? std::vector<std::string>{std::get<std::string>(text)}
+                                                                      : std::get<std::vector<std::string>>(text);
+                m_text_embedding_pipeline->start_embed_async(texts, *prompt);
+                m_async_request_type = AsyncRequestType::BATCH;
+                return;
+            }
             if (is_single_text) {
                 const std::vector<std::string> texts{std::get<std::string>(text)};
                 m_text_embedding_pipeline->start_embed_documents_async(texts);
@@ -246,7 +254,6 @@ public:
                             "TextEmbeddingPipeline fallback is active and does not support image/video input");
             OPENVINO_ASSERT(videos_metadata.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support video metadata input");
-            OPENVINO_ASSERT(!prompt.has_value(), "Prompt is supported only by multimodal EmbeddingPipeline");
             return embed(text, prompt);
         }
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
