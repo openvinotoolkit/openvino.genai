@@ -196,7 +196,13 @@ def run_text_to_speech_generation_genai(
         tokenization_time = [0]
     else:
         additional_args = (
-            {"speaker_embeddings": ov.Tensor(args["speaker_embeddings"].numpy())}
+            {
+                "speaker_embedding": ov.Tensor(
+                    args["speaker_embeddings"].detach().cpu().numpy()
+                    if hasattr(args["speaker_embeddings"], "detach")
+                    else np.asarray(args["speaker_embeddings"], dtype=np.float32)
+                )
+            }
             if args.get("speaker_embeddings") is not None
             else {}
         )
