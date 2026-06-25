@@ -1222,6 +1222,19 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
     const std::string speaker = normalize_speaker(generation_config.speaker);
     const bool base_model = is_base_model();
 
+    if (m_tts_model_type == "voice_design") {
+        OPENVINO_ASSERT(generation_config.speaker.empty(),
+                        "Qwen3 VoiceDesign does not support 'speaker'. Remove speaker and use 'instruct'.");
+        OPENVINO_ASSERT(!speaker_embedding,
+                        "Qwen3 VoiceDesign does not accept external speaker_embedding. Use language/instruct only.");
+    }
+
+    if (!base_model &&
+        (!generation_config.qwen_ref_text.empty() || static_cast<bool>(generation_config.qwen_ref_audio) ||
+         static_cast<bool>(generation_config.qwen_ref_code))) {
+        OPENVINO_THROW("qwen_ref_text/qwen_ref_audio/qwen_ref_code are supported only for Qwen3 Base models");
+    }
+
     const bool has_qwen_voice_clone_props =
         base_model && (generation_config.qwen_x_vector_only_mode ||
                        !generation_config.qwen_ref_text.empty() ||
@@ -1317,6 +1330,10 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             auto spk_it = m_ids.spk_id.find(speaker);
             if (spk_it != m_ids.spk_id.end()) {
                 speaker_token_id = spk_it->second;
+            } else if (m_tts_model_type == "custom_voice") {
+                OPENVINO_THROW("Unsupported Qwen3 CustomVoice speaker '",
+                               generation_config.speaker,
+                               "'. Use a speaker id from the model config.");
             }
         }
         if (qwen_debug_enabled()) {
