@@ -186,54 +186,12 @@ def load_text_llamacpp_pipeline(model_dir):
     return model
 
 
-# Qwen3-Omni is a multimodal model that is not registered
-# in AutoModelForCausalLM. Its text response is produced by the "thinker" submodule.
-# Each model_type maps to its explicit ForConditionalGeneration class.
+# Qwen3-Omni multimodal models are loaded via their explicit ForConditionalGeneration
+# class (as optimum exports them); map each model_type to its class name.
 OMNI_MODEL_TYPES = {
     "qwen3_omni_moe": "Qwen3OmniMoeForConditionalGeneration",
     "qwen3_omni": "Qwen3OmniForConditionalGeneration",
 }
-
-
-def load_text_hf_omni_pipeline(model_id, device, trust_remote_code, model_type):
-    import transformers
-
-    model_cls_name = OMNI_MODEL_TYPES[model_type]
-    model_cls = getattr(transformers, model_cls_name, None)
-    if model_cls is None:
-        raise ValueError(
-            f"The installed transformers version does not expose '{model_cls_name}' "
-            f"required to load model type '{model_type}'. "
-            "Please upgrade transformers to a version that supports this model."
-        )
-
-    device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
-    omni_model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
-    thinker = getattr(omni_model, "thinker", None)
-    if thinker is None:
-        raise ValueError(f"Model {model_id} does not expose a 'thinker' submodule required for text generation.")
-    thinker.eval()
-    return thinker
-
-
-def load_text_optimum_omni_pipeline(model_id, device, ov_config):
-    # Omni models are exported as multi-component IR (openvino_language_model.xml, ...),
-    # so they are loaded via OVModelForMultimodalLM instead of OVModelForCausalLM.
-    from optimum.intel.openvino import OVModelForMultimodalLM
-
-    try:
-        model = OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
-    except ValueError:
-        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        model = OVModelForMultimodalLM.from_pretrained(
-            model_id,
-            config=config,
-            trust_remote_code=True,
-            use_cache=True,
-            device=device,
-            ov_config=ov_config,
-        )
-    return model
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
@@ -250,7 +208,24 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             trust_remote_code = True
 
     if config is not None and getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
-        return load_text_hf_omni_pipeline(model_id, device, trust_remote_code, config.model_type)
+        import transformers
+
+        model_cls = getattr(transformers, OMNI_MODEL_TYPES[config.model_type])
+        device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
+        model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
+        model.eval()
+        # Qwen3-Omni generate() returns a (text_ids, audio) tuple and uses thinker_max_new_tokens;
+        # adapt it to the plain-tensor, max_new_tokens interface wwb evaluators expect.
+        omni_generate = model.generate
+
+        def text_only_generate(*args, max_new_tokens=None, **kwargs):
+            if max_new_tokens is not None:
+                kwargs.setdefault("thinker_max_new_tokens", max_new_tokens)
+            kwargs["return_audio"] = False
+            return omni_generate(*args, **kwargs)[0]
+
+        model.generate = text_only_generate
+        return model
 
     if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
@@ -299,7 +274,9 @@ def load_text_model(
         except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
-            return load_text_optimum_omni_pipeline(model_id, device, ov_config)
+            from optimum.intel.openvino import OVModelForMultimodalLM
+
+            return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
 
         try:
             model = OVModelForCausalLM.from_pretrained(
@@ -459,9 +436,8 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
-        # Omni models expose image/video-text understanding via the "thinker" submodule.
         if config.model_type in OMNI_MODEL_TYPES:
-            return load_text_hf_omni_pipeline(model_id, device, trust_remote_code, config.model_type)
+            return load_text_hf_pipeline(model_id, device, **kwargs)
 
         model_kwargs = {"trust_remote_code": trust_remote_code}
         try:
@@ -546,15 +522,11 @@ def load_visual_text_model(
         if "adapters" in kwargs and kwargs["adapters"] is not None:
             raise ValueError("Adapters are not supported for OVModelForVisualCausalLM.")
 
-        # Omni models are exported as multi-component IR loaded via OVModelForMultimodalLM.
-        trust_remote_code = False
-        try:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
-        except Exception:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            trust_remote_code = True
-        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
-            return load_text_optimum_omni_pipeline(model_id, device, ov_config)
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        if config.model_type in OMNI_MODEL_TYPES:
+            from optimum.intel.openvino import OVModelForMultimodalLM
+
+            return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
 
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
@@ -564,7 +536,7 @@ def load_visual_text_model(
             model = OVModelForVisualCausalLM.from_pretrained(
                 model_id,
                 config=config,
-                trust_remote_code=trust_remote_code,
+                trust_remote_code=True,
                 use_cache=True,
                 device=device,
                 ov_config=ov_config,
