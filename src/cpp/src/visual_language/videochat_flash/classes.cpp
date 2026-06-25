@@ -175,10 +175,10 @@ ov::Tensor make_resize_target(ImageSize image_size) {
  * Output:
  *   - Tensor with shape [N, C, target_h, target_w], element type f32
  */
-ov::Tensor preprocess_cpu_loop(const ov::Tensor& input_nhwc_u8,
-                               ImageSize image_size,
-                               const std::array<float, 3>& image_mean,
-                               const std::array<float, 3>& image_std) {
+ov::Tensor preprocess_cpu(const ov::Tensor& input_nhwc_u8,
+                          ImageSize image_size,
+                          const std::array<float, 3>& image_mean,
+                          const std::array<float, 3>& image_std) {
     const ov::Shape& in_shape = input_nhwc_u8.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
     OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
@@ -958,7 +958,7 @@ VisionEncoderVideoChatFlashQwen::PreprocessFunc VisionEncoderVideoChatFlashQwen:
                       ImageSize target_size,
                       std::optional<CircularBufferQueueElementGuard<ov::InferRequest>>& /*preprocess_guard*/) -> ov::Tensor {
             // Legacy CPU per-frame loop owns its output buffer; no guard required.
-            return preprocess_cpu_loop(
+            return preprocess_cpu(
                 sampled_video, target_size,
                 this->m_processor_config.image_mean, this->m_processor_config.image_std);
         };
