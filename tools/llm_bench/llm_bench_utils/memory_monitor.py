@@ -57,12 +57,16 @@ _libc = _load_libc()
 
 def drop_caches():
     os.sync()
-    cache_path = "/proc/sys/vm/drop_caches"
+    if sys.platform != "linux":
+        return False
+
     try:
-        with open(cache_path, "w") as f:
+        cache_path = "/proc/sys/vm/drop_caches"
+        with open(cache_path, "w", encoding="utf-8") as f:
             f.write("3")
-    except PermissionError:
-        os.system("sudo echo 3 > /proc/sys/vm/drop_caches")
+        return True
+    except (FileNotFoundError, PermissionError, OSError):
+        return False
 
 
 def malloc_trim() -> bool:
@@ -138,7 +142,7 @@ class MonitorMode(Enum):
 
     @classmethod
     def from_code(cls, code: int):
-        """Create MonitorMode from integer code 0-5"""
+        """Create MonitorMode from integer code 0-4"""
         modes = [
             cls.NO_MONITORING,
             cls.THREAD_WARMUP,
@@ -1063,7 +1067,7 @@ class MemoryMarkerHandler:
         self.marker_queue = multiprocessing.Queue(maxsize=1000)
         self.s_event = multiprocessing.Event()
 
-        time.sleep(max(cooldown, 1))  # needed for some machines
+        time.sleep(max(cooldown or 0, 1))  # needed for some machines
         pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event
         self.background_process = mProcess(target=self.background_worker, args=pargs, daemon=True)
         self.background_process.start()
