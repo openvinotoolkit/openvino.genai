@@ -90,8 +90,9 @@ ov::Tensor Qwen3ASREncoder::chunk_mel_features(const WhisperFeatures& features) 
     return input_tensor;
 }
 
-size_t Qwen3ASREncoder::infer_output_frames(const size_t input_frames, const size_t full_chunk_output_frames) {
-    return (input_frames * full_chunk_output_frames + m_encoder_chunk_frames - 1) / m_encoder_chunk_frames;
+size_t Qwen3ASREncoder::get_remainder_output_tokens(const size_t remainder_frames, const size_t tokens_per_full_chunk) {
+    // Integer ceil of: remainder_frames * tokens_per_full_chunk / m_encoder_chunk_frames.
+    return (remainder_frames * tokens_per_full_chunk + m_encoder_chunk_frames - 1) / m_encoder_chunk_frames;
 }
 
 ov::Tensor Qwen3ASREncoder::merge_chunked_encoder_output(const ov::Tensor& chunked_output, size_t remainder_frames) {
@@ -103,8 +104,9 @@ ov::Tensor Qwen3ASREncoder::merge_chunked_encoder_output(const ov::Tensor& chunk
     const size_t hidden_dim = chunked_output_shape[2];
     const size_t num_full_chunks = (remainder_frames > 0) ? batch_size - 1 : batch_size;
 
-    const size_t last_chunk_tokens =
-        (remainder_frames > 0) ? infer_output_frames(remainder_frames, tokens_per_full_chunk) : tokens_per_full_chunk;
+    const size_t last_chunk_tokens = (remainder_frames > 0)
+                                         ? get_remainder_output_tokens(remainder_frames, tokens_per_full_chunk)
+                                         : tokens_per_full_chunk;
     const size_t total_tokens =
         num_full_chunks * tokens_per_full_chunk + (remainder_frames > 0 ? last_chunk_tokens : 0);
 

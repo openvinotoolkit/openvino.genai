@@ -26,7 +26,7 @@ private:
 
     ov::Tensor chunk_mel_features(const WhisperFeatures& features);
 
-    size_t infer_output_frames(const size_t input_frames, const size_t full_chunk_output_frames);
+    size_t get_remainder_output_tokens(const size_t remainder_frames, const size_t tokens_per_full_chunk);
 
     ov::Tensor merge_chunked_encoder_output(const ov::Tensor& chunked_output, const size_t remainder_frames);
 };
