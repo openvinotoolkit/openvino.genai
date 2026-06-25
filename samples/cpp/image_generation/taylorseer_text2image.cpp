@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <optional>
 
 int32_t main(int32_t argc, char* argv[]) try {
     if (argc != 3) {
@@ -28,6 +29,10 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     ov::genai::Text2ImagePipeline pipe(models_path, device);
     std::cout << "Generating baseline image without caching...\n";
+    auto generation_config = pipe.get_generation_config();
+    generation_config.taylorseer_config = std::nullopt;  // explicitly disable caching
+    pipe.set_generation_config(generation_config);
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
     ov::Tensor baseline_image = pipe.generate(prompt,
@@ -51,7 +56,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     ov::genai::TaylorSeerCacheConfig taylorseer_config{cache_interval, disable_before, disable_after};
     std::cout << taylorseer_config.to_string() << "\n";
-    auto generation_config = pipe.get_generation_config();
+    generation_config = pipe.get_generation_config();
     generation_config.taylorseer_config = taylorseer_config;
     pipe.set_generation_config(generation_config);
 

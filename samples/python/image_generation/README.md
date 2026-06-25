@@ -4,6 +4,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 
 There are several sample files:
  - [`text2image.py`](./text2image.py) demonstrates basic usage of the text to image pipeline
+ - [`denoising_process.py`](./denoising_process.py) demonstrates how to use the callback latent argument with `Text2ImagePipeline.decode()` to render an intermediate image per inference step and save the denoising trajectory as a video
  - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
  - [`taylorseer_text2image.py`](./taylorseer_text2image.py) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Flux and StableDiffusion3 models are supported.
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
@@ -90,6 +91,20 @@ image = pipe.generate(
 )
 ```
 
+## Visualize the text-to-image denoising trajectory as a video
+
+The `denoising_process.py` sample demonstrates how to capture the latent at every denoising step from the generation callback, decode it with `Text2ImagePipeline.decode()`, and write the full denoising trajectory as a video. It reuses the `save_video` helper from `samples/python/video_generation/`.
+
+The usage of this sample is:
+
+`python denoising_process.py <MODEL_DIR> '<PROMPT>'`
+
+For example:
+
+`python denoising_process.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'`
+
+The sample writes `denoising_process.avi` in the current working directory. Each video frame is the decoded image of the latent after a single denoising step, so the last frame approximates the final generated image.
+
 ## Run with optional LoRA adapters
 
 LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multiple adapter files with corresponding alpha parameters in command line. Check `lora_text2image.py` source code to learn how to enable adapters and specify them in each `generate` call.
@@ -126,7 +141,7 @@ With adapter | Without adapter
 
 ## Run text to image with TaylorSeer caching optimization
 
-The `taylorseer_text2image.py` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes.
+The `taylorseer_text2image.py` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes. TaylorSeer caching is **enabled by default** for Flux and StableDiffusion3 Text2Image pipelines.
 
 Run the sample with custom parameters:
 
@@ -134,9 +149,9 @@ Run the sample with custom parameters:
 python taylorseer_text2image.py ./flux.1-dev/FP16 "a beautiful sunset over mountains"
 ```
 
-The sample generates two images with and without TaylorSeer config applied using the same prompt:
-   - `taylorseer.bmp` with TaylorSeer config applied
-   - `taylorseer_baseline.bmp` without TaylorSeer config applied
+The sample generates two images using the same prompt:
+   - `taylorseer_baseline.bmp` without caching
+   - `taylorseer.bmp` with TaylorSeer caching applied
 
 Check the difference:
 

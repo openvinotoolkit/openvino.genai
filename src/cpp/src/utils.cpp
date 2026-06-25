@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+#include "model_desc.hpp"
 
+#include <algorithm>
 #include <variant>
 #include <fstream>
 #include <memory>
 
+#include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
@@ -106,6 +109,7 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_WHISPER", "YES"});
     rename_key(config, "WHISPER_EOS_TOKEN", "NPUW_WHISPER_EOS_TOKEN");
+    rename_key(config, "WHISPER_DECOMPOSE_SDPA", "NPUW_WHISPER_DECOMPOSE_SDPA");
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
     update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
@@ -224,39 +228,6 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return std::nullopt;
 }
 
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-) {
-    auto iter = config_map.find("processor_config");
-    ProcessorConfig extracted_config = config_map.end() != iter ?
-        iter->second.as<ProcessorConfig>() : initial;
-    using utils::read_anymap_param;
-    read_anymap_param(config_map, "patch_size", extracted_config.patch_size);
-    read_anymap_param(config_map, "scale_resolution", extracted_config.scale_resolution);
-    read_anymap_param(config_map, "max_slice_nums", extracted_config.max_slice_nums);
-    read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
-    read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
-    return extracted_config;
-}
-
-ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model;
-    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-    }
-    return draft_model;
-}
-
-ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model;
-    if (config.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(ov::genai::utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-        config.erase(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
-    }
-    return draft_model;
-}
-
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
     if (device == "NPU") {
         return true;
@@ -372,6 +343,55 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 }
 
 } // namespace
+
+const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
+
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
+    ov::AnyMap result;
+    for (const auto& property : properties) {
+        // Ignore MODEL_PROPERTIES as they are used only within this function
+        // to construct final properties map for a given model.
+        if (property.first == PER_MODEL_PROPERTIES) {
+            continue;
+        }
+        // When a concrete device is known, DEVICE_PROPERTIES[device] is
+        // flattened below so it must not be re-forwarded to the plugin
+        // (otherwise the plugin would re-overlay it on top of MODEL_PROPERTIES).
+        if (!device.empty() && property.first == ov::device::properties.name()) {
+            continue;
+        }
+        result.insert(property);
+    }
+
+    // Layer 2: DEVICE_PROPERTIES[device] over globals.
+    if (!device.empty()) {
+        auto dp_it = properties.find(ov::device::properties.name());
+        if (dp_it != properties.end()) {
+            const auto& dp_map = dp_it->second.as<ov::AnyMap>();
+            auto dev_it = dp_map.find(device);
+            if (dev_it != dp_map.end()) {
+                for (const auto& property : dev_it->second.as<ov::AnyMap>()) {
+                    result.insert_or_assign(property.first, property.second);
+                }
+            }
+        }
+    }
+
+    // Layer 3: MODEL_PROPERTIES[role] wins over everything else.
+    auto it = properties.find(PER_MODEL_PROPERTIES);
+    if (it == properties.end()) {
+        return result;
+    }
+    const auto& model_map = it->second.as<ov::AnyMap>();
+    auto role_it = model_map.find(model_role);
+    if (role_it == model_map.end()) {
+        return result;
+    }
+    for (const auto& property : role_it->second.as<ov::AnyMap>()) {
+        result.insert_or_assign(property.first, property.second);
+    }
+    return result;
+}
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
     bool enable_save_ov_model = false;
@@ -773,6 +793,35 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
 }
 
+void validate_vlm_model_properties(const ov::AnyMap& properties) {
+    static const std::vector<std::string> known_roles{
+        "vision_embeddings",
+        "text_embeddings",
+        "text_embeddings_per_layer",
+        "resampler",
+        "vision_embeddings_merger",
+        "vision_embeddings_pos",
+        "vision_projection",
+        "multi_modal_projector",
+        "language_model",
+    };
+    const auto it = properties.find(PER_MODEL_PROPERTIES);
+    if (it == properties.end()) {
+        return;
+    }
+    const auto& per_role = it->second.as<ov::AnyMap>();
+    for (const auto& [role, _] : per_role) {
+        OPENVINO_ASSERT(
+            std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
+            "Unknown sub-model role '", role, "' in MODEL_PROPERTIES. Known roles: ",
+            []() {
+                std::string s;
+                for (const auto& r : known_roles) { s += (s.empty() ? "" : ", "); s += r; }
+                return s;
+            }());
+    }
+}
+
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
     ov::AnyMap plugin_config = properties;
     auto it = plugin_config.find(ov::genai::scheduler_config.name());
@@ -783,6 +832,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
     } else if (default_config.has_value()) {
         scheduler_config = *default_config;
     }
+    scheduler_config.validate();
     return {plugin_config, scheduler_config};
 };
 
@@ -928,7 +978,7 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     return inputs_embeds;
 }
 
-size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
+size_t get_available_gpu_memory(const std::string& device, size_t num_cache_tensors) {
     OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
 
     ov::Core core = utils::singleton_core();
@@ -958,10 +1008,10 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     // max allocatable memory size on GPU
     auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
 
-    // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
-    auto max_allocatable_kv_cache = max_alloc_memory_size * num_decoder_layers * 2;
+    // Total cache size if each cache tensor is limited by 'device_max_alloc_mem_size' property.
+    auto max_allocatable_cache = max_alloc_memory_size * num_cache_tensors;
 
-    return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
+    return std::min(total_device_memory - used_device_mem, max_allocatable_cache);
 }
 
 std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {

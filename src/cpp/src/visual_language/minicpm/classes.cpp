@@ -423,7 +423,7 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
 EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     clip_ctx ctx_clip;
     ctx_clip.image_size = config.image_size;
@@ -754,7 +754,9 @@ VisionEncoderMiniCPM::VisionEncoderMiniCPM(
         const std::string& device,
         const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties} {
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_resampler_model.xml", device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(
+        model_dir / "openvino_resampler_model.xml", device,
+        utils::get_model_properties(properties, "resampler", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
     m_ireq_queue_resampler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -772,7 +774,9 @@ VisionEncoderMiniCPM::VisionEncoderMiniCPM(
     const auto& resampler_model = utils::get_model_weights_pair(models_map, "resampler").first;
     const auto& resampler_weights = utils::get_model_weights_pair(models_map, "resampler").second;
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
-    auto compiled_model = utils::singleton_core().compile_model(resampler_model, resampler_weights, device, device_config);
+    auto compiled_model = utils::singleton_core().compile_model(
+        resampler_model, resampler_weights, device,
+        utils::get_model_properties(device_config, "resampler", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
     m_ireq_queue_resampler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),

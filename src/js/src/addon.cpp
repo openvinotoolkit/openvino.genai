@@ -8,9 +8,13 @@
 #include <thread>
 
 #include "include/chat_history.hpp"
+#include "include/image2image_pipeline/pipeline_wrapper.hpp"
+#include "include/inpainting_pipeline/pipeline_wrapper.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
+#include "include/text2image_pipeline/perf_metrics.hpp"
+#include "include/text2image_pipeline/pipeline_wrapper.hpp"
 #include "include/text_embedding_pipeline/pipeline_wrapper.hpp"
 #include "include/text_rerank_pipeline/pipeline_wrapper.hpp"
 #include "include/tokenizer.hpp"
@@ -60,6 +64,21 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
 
     init_class(env, exports, "LLMPipeline", &LLMPipelineWrapper::get_class, addon_data->core);
     init_class(env, exports, "VLMPipeline", &VLMPipelineWrapper::get_class, addon_data->vlm_pipeline);
+    init_class(env,
+               exports,
+               "Text2ImagePipeline",
+               &Text2ImagePipelineWrapper::get_class,
+               addon_data->text2image_pipeline);
+    init_class(env,
+               exports,
+               "Image2ImagePipeline",
+               &Image2ImagePipelineWrapper::get_class,
+               addon_data->image2image_pipeline);
+    init_class(env,
+               exports,
+               "InpaintingPipeline",
+               &InpaintingPipelineWrapper::get_class,
+               addon_data->inpainting_pipeline);
     init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
     init_class(env,
                exports,
@@ -75,6 +94,11 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
                "WhisperPerfMetrics",
                &WhisperPerfMetricsWrapper::get_class,
                addon_data->whisper_perf_metrics);
+    init_class(env,
+               exports,
+               "Text2ImagePerfMetrics",
+               &Text2ImagePerfMetricsWrapper::get_class,
+               addon_data->text2image_perf_metrics);
     init_class(env,
                exports,
                "Text2SpeechPipeline",

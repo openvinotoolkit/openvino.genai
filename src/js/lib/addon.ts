@@ -17,18 +17,25 @@ import {
 } from "./parsers.js";
 import {
   GenerationConfig,
+  GenerationFinishReason,
   StreamingStatus,
   VLMPipelineProperties,
   LLMPipelineProperties,
   WhisperGenerationConfig,
   WhisperPipelineProperties,
   SpeechGenerationConfig,
+  ImageGenerationConfig,
+  ImageGenerationCallback,
+  Text2ImagePipelineProperties,
+  Image2ImagePipelineProperties,
+  InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
 import {
   VLMPerfMetrics,
   PerfMetrics,
   WhisperPerfMetrics,
+  ImageGenerationPerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
 import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
@@ -140,6 +147,7 @@ export interface LLMPipeline {
         scores: number[];
         perfMetrics: PerfMetrics;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;
@@ -199,6 +207,7 @@ export interface VLMPipeline {
         scores: number[];
         perfMetrics: VLMPerfMetrics;
         parsed: Record<string, unknown>[];
+        finishReasons: GenerationFinishReason[];
       },
     ) => void,
   ): void;
@@ -208,6 +217,66 @@ export interface VLMPipeline {
   setChatTemplate(template: string): void;
   setGenerationConfig(config: GenerationConfig): void;
   getGenerationConfig(): GenerationConfig;
+}
+
+export interface Text2ImagePipeline {
+  new (): Text2ImagePipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Text2ImagePipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    properties: ImageGenerationConfig,
+    streamer: ImageGenerationCallback | undefined,
+    callback: (err: Error | null, result: Tensor) => void,
+  ): void;
+  getPerformanceMetrics(): ImageGenerationPerfMetrics;
+  getGenerationConfig(): ImageGenerationConfig;
+  setGenerationConfig(config: ImageGenerationConfig): void;
+}
+
+export interface Image2ImagePipeline {
+  new (): Image2ImagePipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Image2ImagePipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    image: Tensor,
+    properties: ImageGenerationConfig,
+    streamer: ImageGenerationCallback | undefined,
+    callback: (err: Error | null, result: Tensor) => void,
+  ): void;
+  getPerformanceMetrics(): ImageGenerationPerfMetrics;
+  getGenerationConfig(): ImageGenerationConfig;
+  setGenerationConfig(config: ImageGenerationConfig): void;
+}
+
+export interface InpaintingPipeline {
+  new (): InpaintingPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: InpaintingPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    image: Tensor,
+    mask: Tensor,
+    properties: ImageGenerationConfig,
+    streamer: ImageGenerationCallback | undefined,
+    callback: (err: Error | null, result: Tensor) => void,
+  ): void;
+  getPerformanceMetrics(): ImageGenerationPerfMetrics;
+  getGenerationConfig(): ImageGenerationConfig;
+  setGenerationConfig(config: ImageGenerationConfig): void;
 }
 
 export interface Text2SpeechPipeline {
@@ -240,6 +309,9 @@ interface OpenVINOGenAIAddon {
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   WhisperPipeline: WhisperPipeline;
+  Text2ImagePipeline: Text2ImagePipeline;
+  Image2ImagePipeline: Image2ImagePipeline;
+  InpaintingPipeline: InpaintingPipeline;
   Text2SpeechPipeline: Text2SpeechPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
@@ -275,6 +347,9 @@ export const {
   LLMPipeline,
   VLMPipeline,
   WhisperPipeline,
+  Text2ImagePipeline,
+  Image2ImagePipeline,
+  InpaintingPipeline,
   Text2SpeechPipeline,
   ChatHistory,
   Tokenizer,

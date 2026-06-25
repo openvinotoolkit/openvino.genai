@@ -23,6 +23,7 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param generate_durations Durations for each generate call in microseconds.
  * @param tokenization_durations Durations for the tokenization process in microseconds.
  * @param detokenization_durations Durations for the detokenization process in microseconds.
+ * @param chat_template_durations Durations for the chat template application in microseconds.
  * @param m_times_to_first_token Times to the first token for each call in microseconds.
  * @param m_new_token_times Time points for each new token generated.
  * @param m_token_infer_durations Inference time for each token in microseconds.
@@ -30,11 +31,13 @@ using MicroSeconds = std::chrono::duration<float, std::ratio<1, 1000000>>;
  * @param m_durations Total durations for each generate call in microseconds.
  * @param m_inference_durations Total inference duration for each generate call in microseconds.
  * @param m_grammar_compile_times Time to compile the grammar in microseconds.
+ * @param m_sampling_durations Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call.
  */
 struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> generate_durations;
     std::vector<MicroSeconds> tokenization_durations;
     std::vector<MicroSeconds> detokenization_durations;
+    std::vector<MicroSeconds> chat_template_durations;
 
     std::vector<MicroSeconds> m_times_to_first_token;
     std::vector<TimePoint> m_new_token_times;
@@ -44,6 +47,8 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
     std::vector<MicroSeconds> m_inference_durations;
 
     std::vector<MicroSeconds> m_grammar_compile_times;
+
+    std::vector<MicroSeconds> m_sampling_durations;
 };
 
 /**
@@ -93,6 +98,7 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param get_generate_duration Returns the mean and standard deviation of generate duration.
  * @param get_tokenization_duration Returns the mean and standard deviation of tokenization duration.
  * @param get_detokenization_duration Returns the mean and standard deviation of detokenization duration.
+ * @param get_chat_template_duration Returns the mean and standard deviation of chat template application duration.
  * @param get_grammar_compiler_init_times Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
  * @param get_grammar_compile_time Returns the time to compile the grammar in milliseconds.
  * @param get_microsec Converts a duration to microseconds.
@@ -114,6 +120,7 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param generate_duration Mean and standard deviation of the total duration of generate calls in milliseconds.
  * @param tokenization_duration Mean and standard deviation of the tokenization duration in milliseconds.
  * @param detokenization_duration Mean and standard deviation of the detokenization duration in milliseconds.
+ * @param chat_template_duration Mean and standard deviation of the chat template application duration in milliseconds.
  * @param num_generated_tokens Number of generated tokens.
  * @param num_input_tokens Number of tokens in the input prompt.
  */
@@ -132,6 +139,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair inference_duration = {0, 0};
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
     MeanStdPair detokenization_duration = {-1.0f, -1.0f};
+    MeanStdPair chat_template_duration = {-1.0f, -1.0f};
+    MeanStdPair sampling_duration = {-1.0f, -1.0f};
 
     size_t num_generated_tokens = 0;
     size_t num_input_tokens = 0;
@@ -151,6 +160,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     MeanStdPair get_generate_duration();        // in ms
     MeanStdPair get_tokenization_duration();    // in ms
     MeanStdPair get_detokenization_duration();  // in ms
+    MeanStdPair get_chat_template_duration();   // in ms
+    MeanStdPair get_sampling_duration();        // in ms
 
     // Flag indicating if raw metrics were evaluated.
     // If false means current mean/std ttft, tpot, etc. are not actual

@@ -82,14 +82,15 @@
 - 'tests/python_tests/samples/test_react_sample.py'
 - 'tests/python_tests/samples/test_speculative_decoding_lm.py'
 
-'category: Whisper samples':
-- 'samples/cpp/whisper_speech_recognition/**/*'
-- 'samples/python/whisper_speech_recognition/**/*'
+'category: automatic speech recognition samples':
+- 'samples/cpp/automatic_speech_recognition/**/*'
+- 'samples/python/automatic_speech_recognition/**/*'
 
 'category: Image generation samples':
 - 'samples/cpp/image_generation/**/*'
 - 'samples/python/image_generation/**/*'
 - 'tests/python_tests/samples/test_benchmark_image_gen.py'
+- 'tests/python_tests/samples/test_denoising_process.py'
 - 'tests/python_tests/samples/test_heterogeneous_stable_diffusion.py'
 - 'tests/python_tests/samples/test_text2image.py'
 - 'tests/python_tests/samples/test_image2image.py'
@@ -110,14 +111,17 @@
 'category: structured output generation':
 - 'src/cpp/src/sampling/structured_output/*'
 
-'category: whisper':
+'category: automatic speech recognition':
+- 'src/cpp/include/openvino/genai/automatic_speech_recognition/**/*'
 - 'src/cpp/include/openvino/genai/whisper_generation_config.hpp'
 - 'src/cpp/include/openvino/genai/whisper_pipeline.hpp'
+- 'src/cpp/src/automatic_speech_recognition/**/*'
 - 'src/cpp/src/whisper/**/*'
+- 'src/python/py_asr_pipeline.cpp'
 - 'src/python/py_whisper_pipeline.cpp'
 - 'tests/python_tests/test_whisper_pipeline.py'
 - 'tests/python_tests/test_whisper_pipeline_static.py'
-- 'tests/python_tests/samples/test_whisper_speech_recognition.py'
+- 'tests/python_tests/samples/test_automatic_speech_recognition.py'
 
 'category: image generation':
 - 'src/include/openvino/genai/image_generation/**/*'
@@ -141,6 +145,7 @@
 - 'src/include/openvino/genai/speech_generation/**/*'
 - 'src/cpp/src/speech_generation/**/*'
 - 'src/python/py_speech_generation.cpp'
+- 'tests/python_tests/test_kokoro_pipeline.py'
 
 'category: Speech generation samples':
 - 'samples/cpp/speech_generation/**/*'

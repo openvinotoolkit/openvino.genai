@@ -29,6 +29,8 @@ public:
 
     SpeechGenerationPerfMetrics get_performance_metrics() override;
 
+    ov::Shape get_speaker_embedding_shape() const override;
+
 private:
     void init_model_config_params(const std::filesystem::path& root_dir);
 

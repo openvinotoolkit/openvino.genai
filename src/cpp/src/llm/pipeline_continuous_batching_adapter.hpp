@@ -4,6 +4,7 @@
 #pragma once
 
 #include "llm/pipeline_base.hpp"
+#include "utils.hpp"
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include <memory>
@@ -35,11 +36,28 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
         ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, mutable_plugin_config);
         m_generation_config = m_impl->get_config();
         }
+
+    ContinuousBatchingAdapter(
+        const std::shared_ptr<ov::Model>& model,
+        const Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& plugin_config,
+        const ov::genai::GenerationConfig& generation_config,
+        const std::filesystem::path& model_config_dir = {}
+        ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
+        auto mutable_plugin_config = plugin_config;
+        mutable_plugin_config["sampler_num_threads"] = 1;
+        m_impl.reset(new ContinuousBatchingPipeline(model, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config, model_config_dir));
+        m_generation_config = m_impl->get_config();
+    }
 
     ContinuousBatchingAdapter(
         const std::string& model_str,
@@ -50,6 +68,7 @@ public:
         const ov::AnyMap& plugin_config,
         const ov::genai::GenerationConfig& generation_config
     ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(model_str, weights_tensor, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config);
@@ -61,6 +80,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{Tokenizer(models_path, plugin_config), GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
@@ -91,10 +111,12 @@ public:
         );
         std::vector<std::string> plain_replies;
         std::vector<float> plain_scores;
+        std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+            std::move(res.m_finish_reasons.begin(), res.m_finish_reasons.end(), std::back_inserter(plain_finish_reasons));
         }
 
         PerfMetrics perf_metrics;
@@ -124,7 +146,13 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
+        DecodedResults result;
+        result.texts = std::move(plain_replies);
+        result.scores = std::move(plain_scores);
+        result.finish_reasons = std::move(plain_finish_reasons);
+        result.perf_metrics = std::move(perf_metrics);
+        result.extended_perf_metrics = generated[0].extended_perf_metrics;
+        return result;
     }
 
     DecodedResults generate(
@@ -142,10 +170,12 @@ public:
         // TODO Consider moving to method and reuse
         std::vector<std::string> plain_replies;
         std::vector<float> plain_scores;
+        std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+            std::move(res.m_finish_reasons.begin(), res.m_finish_reasons.end(), std::back_inserter(plain_finish_reasons));
         }
 
         PerfMetrics perf_metrics;
@@ -175,7 +205,13 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
+        DecodedResults result;
+        result.texts = std::move(plain_replies);
+        result.scores = std::move(plain_scores);
+        result.finish_reasons = std::move(plain_finish_reasons);
+        result.perf_metrics = std::move(perf_metrics);
+        result.extended_perf_metrics = generated[0].extended_perf_metrics;
+        return result;
     }
 
     EncodedResults generate(
@@ -236,10 +272,12 @@ public:
                
         std::vector<std::vector<int64_t>> plain_tokens;
         std::vector<float> plain_scores;
+        std::vector<GenerationFinishReason> plain_finish_reasons;
         for (EncodedGenerationResult& res : generated) {
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+            std::move(res.m_finish_reasons.begin(), res.m_finish_reasons.end(), std::back_inserter(plain_finish_reasons));
         }
         
         PerfMetrics perf_metrics;
@@ -255,7 +293,13 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
+        EncodedResults result;
+        result.tokens = std::move(plain_tokens);
+        result.scores = std::move(plain_scores);
+        result.finish_reasons = std::move(plain_finish_reasons);
+        result.perf_metrics = std::move(perf_metrics);
+        result.extended_perf_metrics = generated[0].extended_perf_metrics;
+        return result;
     }
 
     void start_chat(const std::string& system_message) override {
