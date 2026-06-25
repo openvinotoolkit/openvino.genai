@@ -220,15 +220,18 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
         model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
         model.eval()
-        # Qwen3-Omni generate() returns a (text_ids, audio) tuple and uses thinker_max_new_tokens;
-        # adapt it to the plain-tensor, max_new_tokens interface wwb evaluators expect.
+        # Qwen3-Omni generate() uses thinker_max_new_tokens; adapt it to the plain-tensor,
+        # max_new_tokens interface wwb evaluators expect.
         omni_generate = model.generate
 
         def text_only_generate(*args, max_new_tokens=None, **kwargs):
             if max_new_tokens is not None:
                 kwargs.setdefault("thinker_max_new_tokens", max_new_tokens)
             kwargs["return_audio"] = False
-            return omni_generate(*args, **kwargs)[0]
+            result = omni_generate(*args, **kwargs)
+            # transformers >= 4.58 return text_ids instead of a tuple (text_ids, audio)
+            # when return_audio=False.
+            return result[0] if isinstance(result, tuple) else result
 
         model.generate = text_only_generate
         return model
@@ -282,7 +285,7 @@ def load_text_model(
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
             from optimum.intel.openvino import OVModelForMultimodalLM
 
-            return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
+            return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
 
         try:
             model = OVModelForCausalLM.from_pretrained(
