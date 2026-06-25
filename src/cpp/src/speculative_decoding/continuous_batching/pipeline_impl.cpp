@@ -101,7 +101,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
             generated_request.insert({{sequence_id,
                                        {sequence->get_generated_ids(),
                                         sequence->get_generated_log_probs(),
-                                        num_processed_tokens,                                        
+                                        num_processed_tokens,
                                         sequence->get_hidden_state(),
                                         std::move(tree_metadata_snapshot)}}});
         }
