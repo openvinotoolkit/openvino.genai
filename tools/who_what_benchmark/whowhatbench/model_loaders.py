@@ -301,9 +301,9 @@ def load_text2image_model(
 
         logger.info("Using HF Transformers API")
         try:
-            model = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+            model = DiffusionPipeline.from_pretrained(model_id)
         except Exception:
-            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -517,7 +517,7 @@ def load_imagetext2image_model(
         from diffusers import AutoPipelineForImage2Image
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForImage2Image.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+        model = AutoPipelineForImage2Image.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_image2image_genai_pipeline(model_id, device, ov_config)
@@ -564,7 +564,7 @@ def load_inpainting_model(
         from diffusers import AutoPipelineForInpainting
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_inpainting_genai_pipeline(model_id, device, ov_config)
@@ -741,9 +741,9 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
 
         logger.info("Using HF Transformers API")
         try:
-            model = LTXPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+            model = LTXPipeline.from_pretrained(model_id)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
