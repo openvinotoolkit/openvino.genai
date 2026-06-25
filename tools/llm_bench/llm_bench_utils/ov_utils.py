@@ -891,9 +891,12 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
         # xml check (no openvino_tokenizer.xml is produced by its export) and processor load.
         pass
     else:
-        if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
+        if (
+            not (model_path / "openvino_tokenizer.xml").exists()
+            or not (model_path / "openvino_detokenizer.xml").exists()
+        ):
             convert_ov_tokenizer(model_path)
-        tokenizer_class = kwargs['use_case'].tokenizer_cls
+        tokenizer_class = kwargs["use_case"].tokenizer_cls
         processor = tokenizer_class.from_pretrained(model_path)
 
     if kwargs.get("mem_consumption"):
@@ -977,11 +980,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                 )
         else:
             ov_model = model_class.from_pretrained(
-                model_path,
-                device=device,
-                ov_config=ov_config,
-                config=model_config,
-                trust_remote_code=remote_code
+                model_path, device=device, ov_config=ov_config, config=model_config, trust_remote_code=remote_code
             )
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
@@ -990,6 +989,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     if is_kokoro_model:
+
         class KokoroOVModelWrapper:
             def __init__(self, model):
                 self._model = model

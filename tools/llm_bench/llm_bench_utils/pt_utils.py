@@ -193,7 +193,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
 
                 class KokoroPTModelWrapper:
                     def __init__(self, model_dir):
-                        self._lang_code = normalize_kokoro_lang_code(kwargs.get('speech_language', ''))
+                        self._lang_code = normalize_kokoro_lang_code(kwargs.get("speech_language", ""))
                         config_path = model_dir / "config.json"
                         if config_path.exists():
                             self._kmodel = KModel(config=str(config_path))
@@ -223,12 +223,12 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                 processor = None
                 vocoder = None
             else:
-                model_class = kwargs['use_case'].pt_cls
-                token_class = kwargs['use_case'].tokenizer_cls
+                model_class = kwargs["use_case"].pt_cls
+                token_class = kwargs["use_case"].tokenizer_cls
                 pipe = model_class.from_pretrained(model_path)
                 vocoder = None
-                if kwargs.get('vocoder_path'):
-                    vocoder = kwargs['use_case'].vocoder_cls
+                if kwargs.get("vocoder_path"):
+                    vocoder = kwargs["use_case"].vocoder_cls
                 pipe = set_bf16(pipe, device, **kwargs)
                 processor = token_class.from_pretrained(model_path)
             end = time.perf_counter()
