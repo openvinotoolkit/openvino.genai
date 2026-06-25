@@ -61,7 +61,7 @@ jobs:
       secret_verification_result: ${{ steps.validate-secret.outputs.verification_result }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@9441310fb463ae6c16e58a793e8cb1796c49d053 # v0.80.5
+        uses: github/gh-aw/actions/setup@a3624368c4e7d877586ff2784b61de73405e2cdd # v0.80.9
         with:
           destination: /opt/gh-aw/actions
       - name: Generate agentic run info
@@ -302,7 +302,7 @@ jobs:
       output_types: ${{ steps.collect_output.outputs.output_types }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@9441310fb463ae6c16e58a793e8cb1796c49d053 # v0.80.5
+        uses: github/gh-aw/actions/setup@a3624368c4e7d877586ff2784b61de73405e2cdd # v0.80.9
         with:
           destination: /opt/gh-aw/actions
       - name: Create gh-aw temp directory
@@ -312,7 +312,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       - name: Install Python requirements for CI Doctor
@@ -354,7 +354,7 @@ jobs:
       - name: Create cache-memory directory
         run: bash /opt/gh-aw/actions/create_cache_memory_dir.sh
       - name: Restore cache-memory file share data
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           key: memory-${{ env.GH_AW_WORKFLOW_ID_SANITIZED }}-${{ github.run_id }}
           path: /tmp/gh-aw/cache-memory
@@ -1255,7 +1255,7 @@ jobs:
       total_count: ${{ steps.missing_tool.outputs.total_count }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@9441310fb463ae6c16e58a793e8cb1796c49d053 # v0.80.5
+        uses: github/gh-aw/actions/setup@a3624368c4e7d877586ff2784b61de73405e2cdd # v0.80.9
         with:
           destination: /opt/gh-aw/actions
       - name: Download agent output artifact
@@ -1359,7 +1359,7 @@ jobs:
       matched_command: ''
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@9441310fb463ae6c16e58a793e8cb1796c49d053 # v0.80.5
+        uses: github/gh-aw/actions/setup@a3624368c4e7d877586ff2784b61de73405e2cdd # v0.80.9
         with:
           destination: /opt/gh-aw/actions
       - name: Check user rate limit
@@ -1411,7 +1411,7 @@ jobs:
       process_safe_outputs_temporary_id_map: ${{ steps.process_safe_outputs.outputs.temporary_id_map }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@9441310fb463ae6c16e58a793e8cb1796c49d053 # v0.80.5
+        uses: github/gh-aw/actions/setup@a3624368c4e7d877586ff2784b61de73405e2cdd # v0.80.9
         with:
           destination: /opt/gh-aw/actions
       - name: Download agent output artifact
@@ -1460,7 +1460,7 @@ jobs:
       GH_AW_WORKFLOW_ID_SANITIZED: cidoctor
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@9441310fb463ae6c16e58a793e8cb1796c49d053 # v0.80.5
+        uses: github/gh-aw/actions/setup@a3624368c4e7d877586ff2784b61de73405e2cdd # v0.80.9
         with:
           destination: /opt/gh-aw/actions
       - name: Download cache-memory artifact (default)
@@ -1481,7 +1481,7 @@ jobs:
           fi
       - name: Save cache-memory to cache (default)
         if: steps.check_cache_default.outputs.has_content == 'true'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           key: memory-${{ env.GH_AW_WORKFLOW_ID_SANITIZED }}-${{ github.run_id }}
           path: /tmp/gh-aw/cache-memory
