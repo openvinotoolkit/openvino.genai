@@ -278,7 +278,6 @@ def run_multimodal_embedding_transformers(
         padding=True,
         return_tensors="pt",
     )
-    print(inputs)
 
     with torch.no_grad():
         outputs = model(**inputs)
