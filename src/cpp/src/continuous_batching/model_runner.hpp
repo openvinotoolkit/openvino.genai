@@ -576,11 +576,7 @@ public:
                                     ", num_scheduled_tokens=", num_scheduled_tokens);
 
                     // fill the draft model hidden state input with the target hidden state
-                    if (stored_seq_len == total_num_tokens) {
-                        hidden_state_input = stored_hidden_state;
-                    } else {
-                        _copy_roi_between_tensors(stored_hidden_state, 0, stored_seq_len, hidden_state_input, current_token_idx);
-                    }
+                    _copy_roi_between_tensors(stored_hidden_state, 0, stored_seq_len, hidden_state_input, current_token_idx);
                 } else if (_is_hs_internal()) {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
