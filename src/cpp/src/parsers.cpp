@@ -304,27 +304,27 @@ public:
         std::string reasoning_content;
         std::string content = message["content"].get_string();
 
-        if (!m_expect_open_tag) {
-            const size_t end = content.find(m_close_tag);
-            if (end != std::string::npos) {
-                reasoning_content = content.substr(0, end);
+        if (m_expect_open_tag) {
+            const size_t start = content.find(m_open_tag);
+            const size_t close_position = content.find(m_close_tag);
+
+            if (start != std::string::npos && close_position != std::string::npos && close_position > start) {
+                reasoning_content = content.substr(start + m_open_tag.size(), close_position - (start + m_open_tag.size()));
                 if (!m_keep_original_content) {
-                    message["content"] = content.substr(end + m_close_tag.size());
+                    message["content"] = content.substr(0, start) + content.substr(close_position + m_close_tag.size());
+                }
+            }
+        } else {
+            const size_t close_position = content.find(m_close_tag);
+            if (close_position != std::string::npos) {
+                reasoning_content = content.substr(0, close_position);
+                if (!m_keep_original_content) {
+                    message["content"] = content.substr(close_position + m_close_tag.size());
                 }
             } else {
                 reasoning_content = content;
                 if (!m_keep_original_content) {
                     message["content"] = std::string{};
-                }
-            }
-        } else {
-            const size_t start = content.find(m_open_tag);
-            const size_t end = content.find(m_close_tag);
-
-            if (start != std::string::npos && end != std::string::npos && end > start) {
-                reasoning_content = content.substr(start + m_open_tag.size(), end - (start + m_open_tag.size()));
-                if (!m_keep_original_content) {
-                    message["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
                 }
             }
         }
