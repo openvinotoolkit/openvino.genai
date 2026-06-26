@@ -816,7 +816,14 @@ def test_reasoning_parser_expect_open_tag(expect_open_tag):
         assert message["reasoning_content"] == "reasoning text"
         assert message["content"] == "answer text"
     else:
+        # Case 1: close tag is present
         message = {"content": "reasoning text</think>answer text"}
         parser.parse(message)
         assert message["reasoning_content"] == "reasoning text"
         assert message["content"] == "answer text"
+
+        # Case 2: close tag is absent - entire content becomes reasoning_content
+        message = {"content": "reasoning text without close tag"}
+        parser.parse(message)
+        assert message["reasoning_content"] == "reasoning text without close tag"
+        assert message["content"] == ""

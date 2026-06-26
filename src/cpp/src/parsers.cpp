@@ -311,7 +311,7 @@ public:
             if (open_pos != std::string::npos && close_pos != std::string::npos && close_pos > open_pos) {
                 reasoning_content = content.substr(open_pos + m_open_tag.size(), close_pos - (open_pos + m_open_tag.size()));
                 if (!m_keep_original_content) {
-                    // Remove <think>...</think/> from content
+                     // Remove <think>...</think/> from content
                     message["content"] = content.substr(0, open_pos) + content.substr(close_pos + m_close_tag.size());
                 }
             }
@@ -320,7 +320,7 @@ public:
             if (close_pos != std::string::npos) {
                 reasoning_content = content.substr(0, close_pos);
                 if (!m_keep_original_content) {
-                    // Remove ...</think/> from content
+                     // Remove ...</think/> from content
                     message["content"] = content.substr(close_pos + m_close_tag.size());
                 }
             } else {
