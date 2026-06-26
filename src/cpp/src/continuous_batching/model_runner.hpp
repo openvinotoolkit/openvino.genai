@@ -622,7 +622,9 @@ public:
                         if (_is_hs_export_only() && !tree_pos_ids.empty()) {
                             OPENVINO_ASSERT(num_scheduled_tokens <= tree_pos_ids.size(),
                                            "num_scheduled_tokens (", num_scheduled_tokens,
-                                           ") exceeds tree_position_ids.size() (", tree_pos_ids.size(), ")");
+                                           ") exceeds tree_position_ids.size() (", tree_pos_ids.size(),
+                                           "); position_ids_idx=", position_ids_idx,
+                                           ", seq_id=", sequence->get_id());
                             effective_position_id = group_position_id + static_cast<size_t>(tree_pos_ids[token_id]);
                         }
                         const auto& position_ids_elem = sequence->get_position_ids_list()[effective_position_id];
