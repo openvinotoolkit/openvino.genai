@@ -35,9 +35,9 @@ def get_param_from_file(args, input_key):
     if args['prompt_file'] is None:
         if not isinstance(input_key, (list, tuple)):
             if args[input_key] is None:
-                if args['use_case'].task in ['text_gen', 'text_embed', 'text2speech']:
-                    data_list.append('What is OpenVINO?')
-                elif args['use_case'].task in ['text_rerank']:
+                if args["use_case"].task in ["text_gen", "text_gen_chat", "text_embed", "text2speech"]:
+                    data_list.append("What is OpenVINO?")
+                elif args["use_case"].task in ["text_rerank"]:
                     data_list.append("What are the main features of Intel Core Ultra processors?")
                 elif args["use_case"].task == "code_gen":
                     data_list.append("def print_hello_world():")
@@ -258,6 +258,14 @@ def analyze_args(args):
     model_args["vocoder_path"] = args.vocoder_path
     if model_args["vocoder_path"] and not Path(model_args["vocoder_path"]).exists():
         raise RuntimeError(f"==Failure FOUND==: Incorrect vocoder path:{model_args['vocoder_path']}")
+    if args.chat_iter is not None and args.prompt_file is not None:
+        log.warning(
+            "`--chat_iter` can't be combined with `--prompt_file`, llm_bench will ignore `--chat_iter` and take prompts from prompt_file for generation"
+        )
+        model_args["chat_iter"] = None
+    else:
+        model_args["chat_iter"] = args.chat_iter
+    model_args["full_chat_hist"] = model_args["devices"] == "NPU"
     return model_path, model_framework, model_args
 
 

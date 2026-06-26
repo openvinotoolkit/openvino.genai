@@ -81,6 +81,13 @@ class UseCaseTextGen(UseCase):
 
 
 @dataclass
+class UseCaseTextGenChat(UseCase):
+    task = "text_gen_chat"
+    ov_cls: type | None = OVModelForCausalLM
+    pt_cls: type | None = AutoModelForCausalLM
+
+
+@dataclass
 class UseCaseCodeGen(UseCase):
     task = "code_gen"
     ov_cls: type | None = OVModelForCausalLM
@@ -244,6 +251,13 @@ USE_CASES = {
         UseCaseTextGen(["mpt"], OVMPTModel),
         UseCaseTextGen(["blenderbot"], ov_cls=OVModelForSeq2SeqLM, pt_cls=BlenderbotForConditionalGeneration),
         UseCaseTextGen(["chatglm"], ov_cls=OVChatGLMModel, pt_cls=AutoModel),
+    ],
+    "text_gen_chat": [
+        UseCaseTextGenChat([]),
+        UseCaseTextGenChat(["t5"], ov_cls=OVModelForSeq2SeqLM, pt_cls=T5ForConditionalGeneration),
+        UseCaseTextGenChat(["mpt"], OVMPTModel),
+        UseCaseTextGenChat(["blenderbot"], ov_cls=OVModelForSeq2SeqLM, pt_cls=BlenderbotForConditionalGeneration),
+        UseCaseTextGenChat(["chatglm"], ov_cls=OVChatGLMModel, pt_cls=AutoModel),
     ],
     "ldm_super_resolution": [UseCaseLDMSuperResolution(["ldm-super-resolution"])],
     "text_embed": [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
