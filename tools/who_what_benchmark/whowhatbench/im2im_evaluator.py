@@ -79,9 +79,8 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
-        model_params = inspect.signature(model.__call__).parameters
-
         def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None):
+            model_params = inspect.signature(model.__call__).parameters
             kwargs = {
                 "prompt": prompt,
                 "image": image,
