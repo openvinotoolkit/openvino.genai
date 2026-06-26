@@ -297,7 +297,15 @@ def test_loader_raises_for_llamacpp_n_ctx_when_hf_backend_selected():
         )
 
 
-def test_loader_sets_llamacpp_n_ctx_default_for_llamacpp_backend(monkeypatch):
+@pytest.mark.parametrize(
+    "extra_kwargs",
+    [
+        {"llamacpp_n_ctx": None},
+        {},
+    ],
+    ids=["explicit_none", "key_omitted"],
+)
+def test_loader_sets_llamacpp_n_ctx_default_for_llamacpp_backend(monkeypatch, extra_kwargs):
     captured = {}
 
     def fake_load_text_llamacpp_pipeline(model_dir, **kwargs):
@@ -315,99 +323,26 @@ def test_loader_sets_llamacpp_n_ctx_default_for_llamacpp_backend(monkeypatch):
         False,
         False,
         True,
-        llamacpp_n_ctx=None,
+        **extra_kwargs,
     )
 
     assert captured["kwargs"]["llamacpp_n_ctx"] == 8192
 
 
-def test_loader_sets_llamacpp_n_ctx_default_when_key_omitted(monkeypatch):
-    captured = {}
+def test_cli_rejects_llamacpp_for_text_chat(tmp_path):
+    gt_data = tmp_path / "gt.csv"
+    gt_data.write_text("stub\n", encoding="utf-8")
 
-    def fake_load_text_llamacpp_pipeline(model_dir, **kwargs):
-        captured["model_dir"] = model_dir
-        captured["kwargs"] = kwargs
-        return object()
-
-    monkeypatch.setattr(model_loaders, "load_text_llamacpp_pipeline", fake_load_text_llamacpp_pipeline)
-
-    model_loaders.load_model(
-        "text",
-        "dummy_model",
-        "CPU",
-        None,
-        False,
-        False,
-        True,
+    _assert_wwb_cli_error(
+        [
+            "--gt-data",
+            str(gt_data),
+            "--model-type",
+            "text-chat",
+            "--llamacpp",
+        ],
+        "--llamacpp is supported only with --model-type text",
     )
-
-    assert captured["kwargs"]["llamacpp_n_ctx"] == 8192
-
-
-def test_check_args_rejects_llamacpp_for_text_chat(monkeypatch):
-    args = Namespace(
-        base_model="dummy_base_model",
-        target_model=None,
-        tokenizer=None,
-        omit_chat_template=False,
-        gt_data=None,
-        target_data=None,
-        model_type="text-chat",
-        data_encoder="sentence-transformers/all-mpnet-base-v2",
-        dataset=None,
-        dataset_field="text",
-        split=None,
-        output=None,
-        num_samples=None,
-        verbose=False,
-        device="CPU",
-        ov_config=None,
-        language="en",
-        hf=False,
-        genai=False,
-        cb_config=None,
-        llamacpp=True,
-        llamacpp_chat=False,
-        llamacpp_n_ctx=None,
-        image_size=None,
-        num_inference_steps=None,
-        seed=42,
-        taylorseer_config=None,
-        from_onnx=False,
-        adapters=None,
-        alphas=None,
-        long_prompt=False,
-        short_prompt=True,
-        empty_adapters=False,
-        embeds_pooling_type=None,
-        embeds_normalize=False,
-        embeds_padding_side=None,
-        embeds_batch_size=None,
-        rag_config=None,
-        gguf_file=None,
-        draft_model=None,
-        draft_device=None,
-        draft_cb_config=None,
-        num_assistant_tokens=None,
-        assistant_confidence_threshold=None,
-        video_frames_num=None,
-        speaker_embeddings=None,
-        speech_language="",
-        speech_voice="",
-        tts_eval_whisper_model="base.en",
-        vocoder_path=None,
-        pruning_ratio=None,
-        relevance_weight=None,
-        max_new_tokens=128,
-    )
-
-    monkeypatch.setattr(wwb, "parse_args", lambda: args)
-    monkeypatch.setattr(wwb, "load_model", lambda *a, **k: object())
-    monkeypatch.setattr(
-        wwb, "create_evaluator", lambda *_: type("DummyEvaluator", (), {"dump_gt": lambda self, _: None})()
-    )
-    with pytest.raises(ValueError, match="--llamacpp is supported only with --model-type text"):
-        wwb.main()
 
 
 def _get_tiny_llamacpp_model() -> Path:
