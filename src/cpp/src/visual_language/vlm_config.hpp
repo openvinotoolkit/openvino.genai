@@ -27,6 +27,7 @@ enum class VLMModelType {
     GEMMA3,
     GEMMA4,
     VIDEOCHAT_FLASH_QWEN,
+    YOUTU_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
