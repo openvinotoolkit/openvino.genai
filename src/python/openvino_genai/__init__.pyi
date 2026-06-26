@@ -46,10 +46,10 @@ from openvino_genai.py_openvino_genai import Parser
 from openvino_genai.py_openvino_genai import PerfMetrics
 from openvino_genai.py_openvino_genai import Phi4ReasoningIncrementalParser
 from openvino_genai.py_openvino_genai import Phi4ReasoningParser
+from openvino_genai.py_openvino_genai import Qwen3TextEncoder
 from openvino_genai.py_openvino_genai import RawImageGenerationPerfMetrics
 from openvino_genai.py_openvino_genai import RawPerfMetrics
 from openvino_genai.py_openvino_genai import ReasoningIncrementalParser
-from openvino_genai.py_openvino_genai import Qwen3TextEncoder
 from openvino_genai.py_openvino_genai import ReasoningParser
 from openvino_genai.py_openvino_genai import SD3Transformer2DModel
 from openvino_genai.py_openvino_genai import Scheduler
