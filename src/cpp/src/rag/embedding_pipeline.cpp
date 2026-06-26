@@ -3,10 +3,13 @@
 
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
+#include <algorithm>
 #include <future>
 #include <mutex>
 #include <numeric>
 #include <optional>
+#include <sstream>
+#include <tuple>
 #include <unordered_set>
 
 #include "openvino/core/except.hpp"
@@ -61,17 +64,6 @@ ov::Tensor stack_tensors(const std::vector<ov::Tensor>& tensors) {
     }
 
     return result;
-}
-
-ov::Tensor embedding_result_to_tensor(const ov::genai::EmbeddingResult& embedding_result) {
-    return std::visit([](const auto& values) {
-        ov::Tensor result(ov::element::f32, {1, values.size()});
-        float* result_data = result.data<float>();
-        for (size_t idx = 0; idx < values.size(); ++idx) {
-            result_data[idx] = static_cast<float>(values[idx]);
-        }
-        return result;
-    }, embedding_result);
 }
 
 ov::Tensor embedding_results_to_tensor(const ov::genai::EmbeddingResults& embedding_results) {
