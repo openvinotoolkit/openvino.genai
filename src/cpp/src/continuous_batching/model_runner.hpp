@@ -617,7 +617,15 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
+                        const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
+                        size_t effective_position_id = position_id;
+                        if (_is_hs_export_only() && !tree_pos_ids.empty()) {
+                            OPENVINO_ASSERT(num_scheduled_tokens <= tree_pos_ids.size(),
+                                           "num_scheduled_tokens (", num_scheduled_tokens,
+                                           ") exceeds tree_position_ids.size() (", tree_pos_ids.size(), ")");
+                            effective_position_id = group_position_id + static_cast<size_t>(tree_pos_ids[token_id]);
+                        }
+                        const auto& position_ids_elem = sequence->get_position_ids_list()[effective_position_id];
                         const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
 
                         ov::Tensor dst_roi(position_ids, begin, end);
