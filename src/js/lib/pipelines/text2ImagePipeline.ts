@@ -4,10 +4,10 @@
 import util from "node:util";
 import { Tensor } from "openvino-node";
 import { Text2ImagePipeline as Text2ImagePipelineWrapper } from "../addon.js";
-import { Text2ImagePerfMetrics } from "../perfMetrics.js";
+import { ImageGenerationPerfMetrics } from "../perfMetrics.js";
 import {
   ImageGenerationConfig,
-  Text2ImageCallback,
+  ImageGenerationCallback,
   Text2ImagePipelineProperties,
 } from "../utils.js";
 
@@ -16,7 +16,7 @@ export type Text2ImageGenerateOptions = ImageGenerationConfig & {
    * Callback invoked after each denoising step.
    * Return `true` to stop early, `false` to continue.
    */
-  callback?: Text2ImageCallback;
+  callback?: ImageGenerationCallback;
 };
 
 /**
@@ -65,7 +65,7 @@ export class Text2ImagePipeline {
   /**
    * Get performance metrics from the latest generate() call.
    */
-  getPerformanceMetrics(): Text2ImagePerfMetrics {
+  getPerformanceMetrics(): ImageGenerationPerfMetrics {
     if (!this.pipeline) throw new Error("Text2ImagePipeline is not initialized");
     return this.pipeline.getPerformanceMetrics();
   }
