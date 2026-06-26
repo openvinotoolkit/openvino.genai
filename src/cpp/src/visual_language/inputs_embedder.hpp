@@ -121,8 +121,6 @@ public:
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
 
-    void set_add_special_tokens(bool add_special_tokens);
-
     // finishes chat and clears a chat history
     void finish_chat();
 

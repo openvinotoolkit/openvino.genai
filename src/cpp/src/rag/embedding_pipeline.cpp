@@ -310,7 +310,6 @@ private:
                          const ov::AnyMap& properties) {
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties);
         m_inputs_embedder->set_apply_chat_template_status(false);
-        m_inputs_embedder->set_add_special_tokens(false);
 
         ov::AnyMap properties_copy = properties;
         utils::extract_extensions_to_core(properties_copy);
@@ -401,7 +400,6 @@ private:
             text;
         const NormalizedPrompt normalized_prompt =
             m_inputs_embedder->normalize_prompt(format_prompt(formatted_text, prompt), 0, 0, encoded_images, encoded_videos);
-        m_inputs_embedder->set_add_special_tokens(false);
 
         VLMPerfMetrics metrics;
         ov::Tensor inputs_embeds;
@@ -543,10 +541,6 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-ov::Tensor EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
-    return m_impl->embed(text, prompt);
-}
-
 void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
                                           const std::optional<std::string>& prompt) {
     return m_impl->start_embed_async(text, prompt);
@@ -564,13 +558,6 @@ ov::Tensor EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text,
     return m_impl->embed(text, images, videos, videos_metadata, prompt);
 }
 
-ov::Tensor EmbeddingPipeline::embed(const std::vector<ov::Tensor>& images,
-                                    const std::vector<ov::Tensor>& videos,
-                                    const std::vector<VideoMetadata>& videos_metadata,
-                                    const std::optional<std::string>& prompt) {
-    return m_impl->embed(std::string{}, images, videos, videos_metadata, prompt);
-}
-
 void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
                                           const std::vector<ov::Tensor>& images,
                                           const std::vector<ov::Tensor>& videos,
@@ -579,11 +566,32 @@ void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& te
     return m_impl->start_embed_async(text, images, videos, videos_metadata, prompt);
 }
 
-void EmbeddingPipeline::start_embed_async(const std::vector<ov::Tensor>& images,
-                                          const std::vector<ov::Tensor>& videos,
-                                          const std::vector<VideoMetadata>& videos_metadata,
-                                          const std::optional<std::string>& prompt) {
-    return m_impl->start_embed_async(std::string{}, images, videos, videos_metadata, prompt);
+ov::Tensor EmbeddingPipeline::embed(const ov::AnyMap& properties) {
+    std::vector<ov::Tensor> images_vec;
+    std::vector<ov::Tensor> videos_vec;
+    std::vector<VideoMetadata> videos_metadata_vec;
+    std::optional<std::string> prompt_val;
+
+    utils::read_anymap_param(properties, ov::genai::images.name(), images_vec);
+    utils::read_anymap_param(properties, ov::genai::videos.name(), videos_vec);
+    utils::read_anymap_param(properties, ov::genai::videos_metadata.name(), videos_metadata_vec);
+    utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt_val);
+
+    return m_impl->embed(std::string{}, images_vec, videos_vec, videos_metadata_vec, prompt_val);
+}
+
+void EmbeddingPipeline::start_embed_async(const ov::AnyMap& properties) {
+    std::vector<ov::Tensor> images_vec;
+    std::vector<ov::Tensor> videos_vec;
+    std::vector<VideoMetadata> videos_metadata_vec;
+    std::optional<std::string> prompt_val;
+
+    utils::read_anymap_param(properties, ov::genai::images.name(), images_vec);
+    utils::read_anymap_param(properties, ov::genai::videos.name(), videos_vec);
+    utils::read_anymap_param(properties, ov::genai::videos_metadata.name(), videos_metadata_vec);
+    utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt_val);
+
+    return m_impl->start_embed_async(std::string{}, images_vec, videos_vec, videos_metadata_vec, prompt_val);
 }
 
 EmbeddingPipeline::~EmbeddingPipeline() = default;

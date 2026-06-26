@@ -1191,34 +1191,29 @@ class EmbeddingPipeline:
         Plugin and/or config properties
         """
     @typing.overload
-    def embed(self, text: str | collections.abc.Sequence[str], prompt: str | None) -> openvino._pyopenvino.Tensor:
-        """
-        Computes embedding vectors for text or a batch of texts.
-        """
-    @typing.overload
-    def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
+    def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
         """
         Computes embedding vectors for text or a batch of texts with images and videos.
         """
     @typing.overload
-    def embed(self, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> openvino._pyopenvino.Tensor:
+    def embed(self, **kwargs) -> openvino._pyopenvino.Tensor:
         """
-        Computes embedding vectors for images and videos.
+        Computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).
         """
     @typing.overload
-    def start_embed_async(self, text: str | collections.abc.Sequence[str], prompt: str | None) -> None:
+    def start_embed_async(self, text: str | collections.abc.Sequence[str], prompt: str) -> None:
         """
         Asynchronously computes embedding vectors for text or a batch of texts.
         """
     @typing.overload
-    def start_embed_async(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
+    def start_embed_async(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
         """
         Asynchronously computes embedding vectors for text or a batch of texts with images and videos.
         """
     @typing.overload
-    def start_embed_async(self, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
+    def start_embed_async(self, **kwargs) -> None:
         """
-        Asynchronously computes embedding vectors for images and videos.
+        Asynchronously computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).
         """
     def wait(self) -> openvino._pyopenvino.Tensor:
         """

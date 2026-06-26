@@ -54,11 +54,6 @@ public:
                       const ov::AnyMap& properties = {});
 
     /**
-    * @brief Computes embedding vectors for text or a batch of texts.
-     */
-    ov::Tensor embed(const TextInput& text, const std::optional<std::string>& prompt = std::nullopt);
-
-    /**
     * @brief Starts asynchronous embedding computation for text or a batch of texts.
      */
     void start_embed_async(const TextInput& text, const std::optional<std::string>& prompt = std::nullopt);
@@ -70,37 +65,69 @@ public:
 
     /**
     * @brief Computes embedding vectors for text or a batch of texts with images and videos.
-     */
+    *
+    * @param text Text or a batch of texts for which embedding is computed.
+    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [channels, height, width].
+    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [num_frames, channels, height, width].
+    * @param videos_metadata Video metadata for the videos provided.
+    * @param prompt Prompt to use for embedding computation.
+    * @return Embedding tensor.
+    */
     ov::Tensor embed(const TextInput& text,
-                     const std::vector<ov::Tensor>& images,
+                     const std::vector<ov::Tensor>& images = {},
                      const std::vector<ov::Tensor>& videos = {},
                      const std::vector<VideoMetadata>& videos_metadata = {},
                      const std::optional<std::string>& prompt = std::nullopt);
 
+    ov::Tensor embed(const ov::AnyMap& properties);
+
     /**
-    * @brief Computes embedding vectors for images and videos.
-     */
-    ov::Tensor embed(const std::vector<ov::Tensor>& images,
-                     const std::vector<ov::Tensor>& videos = {},
-                     const std::vector<VideoMetadata>& videos_metadata = {},
-                     const std::optional<std::string>& prompt = std::nullopt);
+    * @brief Computes embedding vectors for text or a batch of texts with images and videos.
+    *
+    * @param text Text or a batch of texts for which embedding is computed.
+    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [channels, height, width].
+    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [num_frames, channels, height, width].
+    * @param videos_metadata Video metadata for the videos provided.
+    * @param prompt Prompt to use for embedding computation.
+    * @return Embedding tensor.
+    */
+     template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    ov::Tensor embed(Properties&&... properties) {
+        return embed(ov::AnyMap{std::forward<Properties>(properties)...});
+    }
 
     /**
     * @brief Starts asynchronous embedding computation for text or a batch of texts with images and videos.
-     */
+    * 
+    * @param text Text or a batch of texts for which embedding is computed.
+    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [channels, height, width].
+    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [num_frames, channels, height, width].
+    * @param videos_metadata Video metadata for the videos provided.
+    * @param prompt Prompt to use for embedding computation.
+    * @return Embedding tensor.
+    */
     void start_embed_async(const TextInput& text,
-                           const std::vector<ov::Tensor>& images,
+                           const std::vector<ov::Tensor>& images = {},
                            const std::vector<ov::Tensor>& videos = {},
                            const std::vector<VideoMetadata>& videos_metadata = {},
                            const std::optional<std::string>& prompt = std::nullopt);
 
+    void start_embed_async(const ov::AnyMap& properties);
+
     /**
     * @brief Starts asynchronous embedding computation for images and videos.
-     */
-    void start_embed_async(const std::vector<ov::Tensor>& images,
-                           const std::vector<ov::Tensor>& videos = {},
-                           const std::vector<VideoMetadata>& videos_metadata = {},
-                           const std::optional<std::string>& prompt = std::nullopt);
+    * 
+    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [channels, height, width].
+    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [num_frames, channels, height, width].
+    * @param videos_metadata Video metadata for the videos provided.
+    * @param prompt Prompt to use for embedding computation.
+    */
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    void start_embed_async(Properties&&... properties) {
+        start_embed_async(ov::AnyMap{std::forward<Properties>(properties)...});
+    }
 
     ~EmbeddingPipeline();
 
@@ -108,6 +135,11 @@ private:
     class EmbeddingPipelineImpl;
     std::unique_ptr<EmbeddingPipelineImpl> m_impl;
 };
+
+/**
+ * @brief Prompt to use for embedding computation.
+ */
+static constexpr ov::Property<std::string> prompt{"prompt"};
 
 }  // namespace genai
 }  // namespace ov
