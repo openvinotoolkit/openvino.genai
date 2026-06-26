@@ -122,7 +122,6 @@ TEST(DFlashCBHiddenDeltaBuffer, MergesChunksInOrder) {
 TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     auto model = make_annotated_hidden_state_model();
     model->set_rt_info(true, "dflash_mode");
-    model->set_rt_info(std::string("16"), {"dflash", "block_size"});
     model->set_rt_info(std::string("151669"), {"dflash", "mask_token_id"});
     model->set_rt_info(std::string("1,12,23,34,45"), {"dflash", "target_layer_ids"});
 
@@ -130,14 +129,12 @@ TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     ov::genai::utils::dflash::apply_dflash_rt_info(model, properties);
 
     ASSERT_TRUE(properties.at("dflash_mode").as<bool>());
-    ASSERT_EQ(properties.at("dflash_block_size").as<int64_t>(), 16);
     ASSERT_EQ(properties.at("dflash_mask_token_id").as<int64_t>(), 151669);
     ASSERT_EQ(properties.at("dflash_target_layer_ids").as<std::vector<int32_t>>(),
               (std::vector<int32_t>{1, 12, 23, 34, 45}));
 
     auto rt_info = ov::genai::utils::dflash::extract_dflash_info_from_config(properties);
     ASSERT_TRUE(rt_info.dflash_mode);
-    ASSERT_EQ(rt_info.block_size, 16);
     ASSERT_EQ(rt_info.mask_token_id, 151669);
     ASSERT_EQ(rt_info.target_layer_ids, (std::vector<int32_t>{1, 12, 23, 34, 45}));
     ASSERT_TRUE(properties.empty());

@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
 
-#include "openvino/runtime/core.hpp"
+#include "openvino/core/any.hpp"
+#include "openvino/core/model.hpp"
 
 namespace ov {
 namespace genai {
@@ -20,7 +20,6 @@ namespace dflash {
  */
 struct DFlashRTInfo {
     bool dflash_mode = false;
-    size_t block_size = 0;
     int64_t mask_token_id = -1;
     std::vector<int32_t> target_layer_ids;
 };

@@ -125,9 +125,6 @@ void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
     }
 
     properties["dflash_mode"] = true;
-    if (auto block_size = get_rt_info_value<std::string>(model, {"dflash", "block_size"})) {
-        properties["dflash_block_size"] = static_cast<int64_t>(std::stoll(*block_size));
-    }
     if (auto mask_token_id = get_rt_info_value<std::string>(model, {"dflash", "mask_token_id"})) {
         properties["dflash_mask_token_id"] = static_cast<int64_t>(std::stoll(*mask_token_id));
     }
@@ -145,11 +142,6 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
 
     info.dflash_mode = mode_it->second.as<bool>();
     config.erase(mode_it);
-
-    auto block_it = config.find("dflash_block_size");
-    OPENVINO_ASSERT(block_it != config.end(), "DFlash draft model is missing dflash/block_size RT info.");
-    info.block_size = static_cast<size_t>(block_it->second.as<int64_t>());
-    config.erase(block_it);
 
     auto mask_it = config.find("dflash_mask_token_id");
     OPENVINO_ASSERT(mask_it != config.end(), "DFlash draft model is missing dflash/mask_token_id RT info.");
