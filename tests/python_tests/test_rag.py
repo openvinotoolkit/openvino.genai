@@ -345,6 +345,29 @@ def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_batch_consistency(multimodal_emb_model):
+    """Test that batch processing gives same results as individual processing."""
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    texts = ["What is OpenVINO?", "How does deep learning work?"]
+    prompt = "Represent the user's input."
+
+    # Process individually
+    result1 = pipeline.embed(texts[0], prompt=prompt)
+    result2 = pipeline.embed(texts[1], prompt=prompt)
+
+    # Process as batch
+    result_batch = pipeline.embed(texts, prompt=prompt)
+
+    # Verify shapes
+    assert result_batch.shape == (2, result1.shape[1])
+
+    # Verify results match
+    batch_data = np.array(result_batch.data).reshape(result_batch.shape)
+    assert np.allclose(result1.data, batch_data[0], rtol=1e-4, atol=1e-4)
+    assert np.allclose(result2.data, batch_data[1], rtol=1e-4, atol=1e-4)
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_hf_components, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
     image_array = make_embedding_test_image_array(cat_image_path)

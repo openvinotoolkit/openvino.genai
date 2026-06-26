@@ -200,7 +200,14 @@ public:
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
         OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
         std::lock_guard<std::mutex> request_lock(m_request_mutex);
-        return extract_multimodal(text, {}, {}, {}, prompt);
+
+        std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+            ? std::vector<std::string>{std::get<std::string>(text)}
+            : std::get<std::vector<std::string>>(text);
+
+        std::vector<EncodedImage> encoded_images;
+        std::vector<EncodedVideo> encoded_videos;
+        return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
     }
 
     void start_embed_async(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
@@ -230,7 +237,12 @@ public:
         std::lock_guard<std::mutex> request_lock(m_request_mutex);
         m_embed_future = std::async(std::launch::async, [this, text, prompt]() {
             std::lock_guard<std::mutex> lock(m_request_mutex);
-            return extract_multimodal(text, {}, {}, {}, prompt);
+            std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+                ? std::vector<std::string>{std::get<std::string>(text)}
+                : std::get<std::vector<std::string>>(text);
+            std::vector<EncodedImage> encoded_images;
+            std::vector<EncodedVideo> encoded_videos;
+            return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
         });
         m_async_request_type = is_single_text ? AsyncRequestType::SINGLE : AsyncRequestType::BATCH;
     }
@@ -266,7 +278,22 @@ public:
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
         OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
         std::lock_guard<std::mutex> request_lock(m_request_mutex);
-        return extract_multimodal(text, images, videos, videos_metadata, prompt);
+
+        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                        "videos_metadata size (",
+                        videos_metadata.size(),
+                        ") must be equal to videos size (",
+                        videos.size(),
+                        ") or empty");
+
+        std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
+        std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+
+        std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+            ? std::vector<std::string>{std::get<std::string>(text)}
+            : std::get<std::vector<std::string>>(text);
+
+        return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
     }
 
     void start_embed_async(const EmbeddingPipeline::TextInput& text,
@@ -288,7 +315,22 @@ public:
         std::lock_guard<std::mutex> request_lock(m_request_mutex);
         m_embed_future = std::async(std::launch::async, [this, text, images, videos, videos_metadata, prompt]() {
             std::lock_guard<std::mutex> lock(m_request_mutex);
-            return extract_multimodal(text, images, videos, videos_metadata, prompt);
+
+            OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                            "videos_metadata size (",
+                            videos_metadata.size(),
+                            ") must be equal to videos size (",
+                            videos.size(),
+                            ") or empty");
+
+            std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
+            std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+
+            std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+                ? std::vector<std::string>{std::get<std::string>(text)}
+                : std::get<std::vector<std::string>>(text);
+
+            return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
         });
         m_async_request_type = is_single_text ? AsyncRequestType::SINGLE : AsyncRequestType::BATCH;
     }
@@ -342,117 +384,153 @@ private:
                         "Language model must expose 'inputs_embeds' input for EmbeddingPipeline");
     }
 
-    ov::Tensor extract_multimodal(const EmbeddingPipeline::TextInput& text,
-                                  const std::vector<ov::Tensor>& images,
-                                  const std::vector<ov::Tensor>& videos,
-                                  const std::vector<VideoMetadata>& videos_metadata,
-                                  const std::optional<std::string>& prompt) {
-        if (const auto* single_text = std::get_if<std::string>(&text)) {
-            return extract_multimodal(*single_text, images, videos, videos_metadata, prompt);
-        }
+    ov::Tensor extract_multimodal_batch(const std::vector<std::string>& texts,
+                                        const std::vector<EncodedImage>& encoded_images,
+                                        const std::vector<EncodedVideo>& encoded_videos,
+                                        const std::optional<std::string>& prompt) {
+        // Prepare all normalized prompts and get inputs_embeds for each
+        struct BatchItem {
+            ov::Tensor inputs_embeds;
+            std::optional<ov::Tensor> token_type_ids;
+            std::optional<ov::Tensor> position_ids;
+        };
 
-        const std::vector<std::string>& texts = std::get<std::vector<std::string>>(text);
-        std::vector<ov::Tensor> out;
-        out.reserve(texts.size());
-        if (texts.empty()) {
-            return stack_tensors(out);
-        }
-
-        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                        "videos_metadata size (",
-                        videos_metadata.size(),
-                        ") must be equal to videos size (",
-                        videos.size(),
-                        ") or empty");
-
-        std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
-        std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
-        for (const std::string& batch_text : texts) {
-            out.push_back(extract_multimodal(batch_text, encoded_images, encoded_videos, prompt));
-        }
-        return stack_tensors(out);
-    }
-
-    ov::Tensor extract_multimodal(const std::string& text,
-                                  const std::vector<ov::Tensor>& images,
-                                  const std::vector<ov::Tensor>& videos,
-                                  const std::vector<VideoMetadata>& videos_metadata,
-                                  const std::optional<std::string>& prompt) {
-        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                        "videos_metadata size (",
-                        videos_metadata.size(),
-                        ") must be equal to videos size (",
-                        videos.size(),
-                        ") or empty");
-
-        std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
-        std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
-
-        return extract_multimodal(text, encoded_images, encoded_videos, prompt);
-    }
-
-    ov::Tensor extract_multimodal(const std::string& text,
-                                  const std::vector<EncodedImage>& encoded_images,
-                                  const std::vector<EncodedVideo>& encoded_videos,
-                                  const std::optional<std::string>& prompt) {
-        const std::string formatted_text = prompt.has_value() ?
-            append_visual_tags(text, encoded_images.size(), encoded_videos.size()) :
-            text;
-        const NormalizedPrompt normalized_prompt =
-            m_inputs_embedder->normalize_prompt(format_prompt(formatted_text, prompt), 0, 0, encoded_images, encoded_videos);
+        std::vector<BatchItem> batch_items;
+        batch_items.reserve(texts.size());
+        size_t max_seq_length = 0;
 
         VLMPerfMetrics metrics;
-        ov::Tensor inputs_embeds;
-        std::optional<ov::Tensor> token_type_ids;
+        for (const std::string& batch_text : texts) {
+            const std::string formatted_text = prompt.has_value() ?
+                append_visual_tags(batch_text, encoded_images.size(), encoded_videos.size()) :
+                batch_text;
+            const NormalizedPrompt normalized_prompt =
+                m_inputs_embedder->normalize_prompt(format_prompt(formatted_text, prompt), 0, 0, encoded_images, encoded_videos);
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(normalized_prompt.unified_prompt,
-                                                                         encoded_images,
-                                                                         encoded_videos,
-                                                                         metrics,
-                                                                         true,
-                                                                         normalized_prompt.images_sequence,
-                                                                         normalized_prompt.videos_sequence);
-        } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(normalized_prompt.unified_prompt,
-                                                                 encoded_images,
-                                                                 encoded_videos,
-                                                                 metrics,
-                                                                 true,
-                                                                 normalized_prompt.images_sequence,
-                                                                 normalized_prompt.videos_sequence);
+            BatchItem item;
+            if (m_inputs_embedder->has_token_type_ids()) {
+                std::tie(item.inputs_embeds, item.token_type_ids) =
+                    m_inputs_embedder->get_inputs_embeds_with_token_type_ids(normalized_prompt.unified_prompt,
+                                                                             encoded_images,
+                                                                             encoded_videos,
+                                                                             metrics,
+                                                                             true,
+                                                                             normalized_prompt.images_sequence,
+                                                                             normalized_prompt.videos_sequence);
+            } else {
+                item.inputs_embeds = m_inputs_embedder->get_inputs_embeds(normalized_prompt.unified_prompt,
+                                                                          encoded_images,
+                                                                          encoded_videos,
+                                                                          metrics,
+                                                                          true,
+                                                                          normalized_prompt.images_sequence,
+                                                                          normalized_prompt.videos_sequence);
+            }
+
+            const size_t seq_length = item.inputs_embeds.get_shape().at(1);
+            max_seq_length = std::max(max_seq_length, seq_length);
+
+            if (encoded_images.empty() && encoded_videos.empty() && has_lm_input("visual_pos_masks")) {
+                item.position_ids = make_text_position_ids(seq_length);
+            } else {
+                std::tie(item.position_ids, std::ignore) = m_inputs_embedder->get_position_ids(seq_length, 0);
+            }
+
+            batch_items.push_back(std::move(item));
+        }
+
+        // Stack and pad all tensors to max_seq_length
+        const size_t batch_size = texts.size();
+        const size_t embed_dim = batch_items[0].inputs_embeds.get_shape().at(2);
+
+        ov::Tensor batched_inputs_embeds(ov::element::f32, {batch_size, max_seq_length, embed_dim});
+        ov::Tensor batched_attention_mask(ov::element::i64, {batch_size, max_seq_length});
+        std::fill_n(batched_attention_mask.data<int64_t>(), batched_attention_mask.get_size(), 0);
+
+        std::optional<ov::Tensor> batched_token_type_ids;
+        if (batch_items[0].token_type_ids.has_value()) {
+            batched_token_type_ids = ov::Tensor(ov::element::i64, {batch_size, max_seq_length});
+            std::fill_n(batched_token_type_ids->data<int64_t>(), batched_token_type_ids->get_size(), 0);
+        }
+
+        std::optional<ov::Tensor> batched_position_ids;
+        if (batch_items[0].position_ids.has_value()) {
+            const auto& first_pos_shape = batch_items[0].position_ids->get_shape();
+            ov::Shape batched_pos_shape = first_pos_shape;
+            // For position_ids with shape [3, batch, seq] or [batch, seq], update the batch dimension
+            if (batched_pos_shape.size() == 3) {
+                batched_pos_shape[1] = batch_size;  // [3, 1, seq] -> [3, batch_size, seq]
+            } else if (batched_pos_shape.size() == 2) {
+                batched_pos_shape[0] = batch_size;  // [1, seq] -> [batch_size, seq]
+            }
+            batched_pos_shape.back() = max_seq_length;
+            batched_position_ids = ov::Tensor(ov::element::i64, batched_pos_shape);
+            std::fill_n(batched_position_ids->data<int64_t>(), batched_position_ids->get_size(), 0);
+        }
+
+        for (size_t i = 0; i < batch_size; ++i) {
+            const auto& item = batch_items[i];
+            const size_t seq_length = item.inputs_embeds.get_shape().at(1);
+
+            // Copy inputs_embeds
+            float* dst_embeds = batched_inputs_embeds.data<float>() + i * max_seq_length * embed_dim;
+            const float* src_embeds = item.inputs_embeds.data<const float>();
+            std::copy_n(src_embeds, seq_length * embed_dim, dst_embeds);
+
+            // Set attention mask (1 for valid tokens, 0 for padding)
+            int64_t* dst_mask = batched_attention_mask.data<int64_t>() + i * max_seq_length;
+            std::fill_n(dst_mask, seq_length, 1);
+
+            // Copy token_type_ids if present
+            if (item.token_type_ids.has_value()) {
+                int64_t* dst_tti = batched_token_type_ids->data<int64_t>() + i * max_seq_length;
+                const int64_t* src_tti = item.token_type_ids->data<const int64_t>();
+                std::copy_n(src_tti, seq_length, dst_tti);
+            }
+
+            // Copy position_ids if present
+            if (item.position_ids.has_value()) {
+                const auto& pos_shape = item.position_ids->get_shape();
+                const auto& batched_pos_shape = batched_position_ids->get_shape();
+                const int64_t* src_pos = item.position_ids->data<const int64_t>();
+
+                if (batched_pos_shape.size() == 3) {
+                    // Shape: [3, batch_size, max_seq_length]
+                    // For each of the 3 dimensions, copy the position values for this batch item
+                    const size_t num_dims = batched_pos_shape[0];
+                    for (size_t dim_idx = 0; dim_idx < num_dims; ++dim_idx) {
+                        int64_t* dst_pos = batched_position_ids->data<int64_t>() +
+                                          dim_idx * batch_size * max_seq_length +  // offset to dimension
+                                          i * max_seq_length;                        // offset to batch item
+                        const int64_t* src_dim = src_pos + dim_idx * seq_length;
+                        std::copy_n(src_dim, seq_length, dst_pos);
+                    }
+                } else {
+                    // Shape: [batch_size, max_seq_length]
+                    int64_t* dst_pos = batched_position_ids->data<int64_t>() + i * max_seq_length;
+                    std::copy_n(src_pos, seq_length, dst_pos);
+                }
+            }
         }
 
         m_language_model_request.reset_state();
+        m_language_model_request.set_tensor("inputs_embeds", batched_inputs_embeds);
 
-        m_language_model_request.set_tensor("inputs_embeds", inputs_embeds);
-
-        const size_t input_sequence_length = inputs_embeds.get_shape().at(1);
-        ov::Tensor attention_mask(ov::element::i64, {1, input_sequence_length});
-        std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
         if (has_lm_input("attention_mask")) {
-            m_language_model_request.set_tensor("attention_mask", attention_mask);
+            m_language_model_request.set_tensor("attention_mask", batched_attention_mask);
         }
 
-        if (token_type_ids.has_value() && has_lm_input("token_type_ids")) {
-            m_language_model_request.set_tensor("token_type_ids", *token_type_ids);
+        if (batched_token_type_ids.has_value() && has_lm_input("token_type_ids")) {
+            m_language_model_request.set_tensor("token_type_ids", *batched_token_type_ids);
         }
 
-        std::optional<ov::Tensor> position_ids;
-        std::optional<int64_t> rope_delta;
-        if (encoded_images.empty() && encoded_videos.empty() && has_lm_input("visual_pos_masks")) {
-            position_ids = make_text_position_ids(input_sequence_length);
-        } else {
-            std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(input_sequence_length, 0);
-        }
-        if (position_ids.has_value() && has_lm_input("position_ids")) {
-            m_language_model_request.set_tensor("position_ids", *position_ids);
+        if (batched_position_ids.has_value() && has_lm_input("position_ids")) {
+            m_language_model_request.set_tensor("position_ids", *batched_position_ids);
         }
 
         if (has_lm_input("beam_idx")) {
-            ov::Tensor beam_idx(ov::element::i32, {1});
-            beam_idx.data<int32_t>()[0] = 0;
+            ov::Tensor beam_idx(ov::element::i32, {batch_size});
+            std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
             m_language_model_request.set_tensor("beam_idx", beam_idx);
         }
 
@@ -465,7 +543,23 @@ private:
 
         m_language_model_request.infer();
 
-        return m_language_model_request.get_tensor(m_embedding_output_name);
+        ov::Tensor batched_output = m_language_model_request.get_tensor(m_embedding_output_name);
+
+        // Extract individual embeddings from batched output
+        const ov::Shape output_shape = batched_output.get_shape();
+        const size_t output_embed_dim = output_shape.back();
+        std::vector<ov::Tensor> outputs;
+        outputs.reserve(batch_size);
+
+        for (size_t i = 0; i < batch_size; ++i) {
+            ov::Tensor single_output(ov::element::f32, {1, output_embed_dim});
+            const float* src = batched_output.data<const float>() + i * output_embed_dim;
+            float* dst = single_output.data<float>();
+            std::copy_n(src, output_embed_dim, dst);
+            outputs.push_back(single_output);
+        }
+
+        return stack_tensors(outputs);
     }
 
 private:
