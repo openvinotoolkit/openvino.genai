@@ -8,8 +8,10 @@ from .qwen2 import Qwen2VLInputsPreprocessor
 from .qwen3 import Qwen3VLInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
 from .gemma4 import Gemma4UnifiedInputsPreprocessor
+from .youtu_vl import YoutuVLInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
+    "youtu_vl": YoutuVLInputsPreprocessor,
     "qwen3_vl": Qwen3VLInputsPreprocessor,
     "qwen2_vl_text": Qwen2VLInputsPreprocessor,
     "qwen2_vl": Qwen2VLInputsPreprocessor,
