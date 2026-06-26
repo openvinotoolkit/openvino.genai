@@ -48,7 +48,7 @@ User Input (ChatHistory + images/videos + optional video metadata)
      ├─────────────────────────────────────────────┐
      ▼ SDPA path (VLMPipelineImpl)                 ▼ PA/CB path (VLMContinuousBatchingAdapter)
   LLM with SDPA attention                     ContinuousBatchingPipeline
-  ├── prepare_inputs_and_generate()            ├── Batched input_embeds request
+  ├── prepare_inputs_and_generate()            ├── Batched input_embeds request (and other model-specific LM inputs if any)
   ├── Manual KV-cache (CacheState)             ├── Paged KV-cache (scheduler)
   ├── Token-by-token sampler loop              ├── Batch-oriented generation
   └── slice_before_matmul transform            └── SDPAToPagedAttention transform
@@ -441,6 +441,7 @@ Responsibilities:
 - Merge encoded image/video embeddings into the text embedding sequence at placeholder positions
 - Return combined embedding tensor for the LLM
 
+`InputsEmbedder::IInputsEmbedder` can be previous model version class, usefull for logic sharing in case of similar models.
 `InputsEmbedder::get_inputs_embeds()` receives encoded image/video embeddings. Raw image/video tensors are converted earlier by `InputsEmbedder::encode_images()` / `encode_videos()`. The image-only `get_inputs_embeds()` and `normalize_prompt()` overloads are required. Implement the image/video overloads only when the model supports video or needs custom video-aware behavior. The base `encode_images()` implementation calls `VisionEncoder::encode()`; override it only for model-specific image preparation. Video-capable embedders override `encode_videos()` and call `VisionEncoder::encode_frames()` after sampling and metadata preparation.
 
 ### 5. Register in factories
