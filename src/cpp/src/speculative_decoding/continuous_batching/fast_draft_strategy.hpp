@@ -180,11 +180,9 @@ protected:
     std::map<uint64_t, GenerationHandle> m_draft_generations;
 
     void reset_generate_metrics() {
-        m_sd_metrics = SpeculativeDecodingMetrics();
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-        RawPerfMetrics draft_metrics;
-        draft_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
-        m_draft_pipeline->raw_perf_metrics = std::move(draft_metrics);
+        m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
+        m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
     }
 
     void drop_requests();
