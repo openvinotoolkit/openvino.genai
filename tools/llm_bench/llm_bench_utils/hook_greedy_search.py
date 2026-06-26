@@ -19,11 +19,13 @@ from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 import llm_bench_utils.llm_hook_sample.hook_sample as hook_sample
 from packaging import version
+from dataclasses import dataclass
 
 
 logger = log.getLogger(__name__)
 
 
+@dataclass
 class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -33,6 +35,7 @@ class GenerateDecoderOnlyOutput(ModelOutput):
     past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
+@dataclass
 class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None

@@ -21,11 +21,13 @@ from transformers.generation.utils import (
 )
 from transformers.utils import ModelOutput
 import llm_bench_utils.hook_beam_search as hook_beam
+from dataclasses import dataclass
 
 
 logger = log.getLogger(__name__)
 
 
+@dataclass
 class GenerateBeamDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     sequences_scores: Optional[torch.FloatTensor] = None
@@ -37,6 +39,7 @@ class GenerateBeamDecoderOnlyOutput(ModelOutput):
     past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
+@dataclass
 class GenerateBeamEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     sequences_scores: Optional[torch.FloatTensor] = None
