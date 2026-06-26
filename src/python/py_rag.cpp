@@ -115,7 +115,7 @@ void init_rag_pipelines(py::module_& m) {
                 pipe.start_embed_async(text, prompt);
             },
             py::arg("text"),
-            py::arg("prompt") = std::nullopt,
+            py::arg("prompt"),
             "Asynchronously computes embedding vectors for text or a batch of texts.")
         .def(
             "wait",
@@ -123,7 +123,7 @@ void init_rag_pipelines(py::module_& m) {
                 py::gil_scoped_release rel;
                 return pipe.wait();
             },
-            "Waits for asynchronous text embedding and returns result.")
+            "Waits for asynchronous embedding computation and returns result.")
         .def(
             "embed",
             [](EmbeddingPipeline& pipe,
@@ -136,7 +136,7 @@ void init_rag_pipelines(py::module_& m) {
                 return pipe.embed(text, images, videos, videos_metadata, prompt);
             },
             py::arg("text"),
-            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("images"),
             py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
             py::arg("prompt") = std::nullopt,
@@ -168,7 +168,7 @@ void init_rag_pipelines(py::module_& m) {
                 pipe.start_embed_async(text, images, videos, videos_metadata, prompt);
             },
             py::arg("text"),
-            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("images"),
             py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
             py::arg("prompt") = std::nullopt,

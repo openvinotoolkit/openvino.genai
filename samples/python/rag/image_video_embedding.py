@@ -35,13 +35,17 @@ def read_video(path: str, num_frames: int) -> tuple[ov.Tensor, openvino_genai.Vi
     sampled_set = set(sampled_indices.tolist())
 
     frames: list[np.ndarray] = []
+    actual_indices: list[int] = []
     frame_idx = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
         if frame_idx in sampled_set:
-            frames.append(frame)
+            # Convert BGR to RGB
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(frame_rgb)
+            actual_indices.append(frame_idx)
         frame_idx += 1
 
     cap.release()
@@ -51,7 +55,7 @@ def read_video(path: str, num_frames: int) -> tuple[ov.Tensor, openvino_genai.Vi
 
     video_metadata = openvino_genai.VideoMetadata()
     video_metadata.fps = fps
-    video_metadata.frames_indices = list(range(len(frames)))
+    video_metadata.frames_indices = actual_indices
 
     return ov.Tensor(np.stack(frames, axis=0)), video_metadata
 

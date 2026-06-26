@@ -183,12 +183,19 @@ public:
             std::lock_guard<std::mutex> async_lock(m_async_mutex);
             OPENVINO_ASSERT(m_async_request_type == AsyncRequestType::NONE, "Previous asynchronous embed request is still pending");
             std::lock_guard<std::mutex> request_lock(m_request_mutex);
-            const std::vector<std::string> texts = std::holds_alternative<std::string>(text) ? std::vector<std::string>{std::get<std::string>(text)}
-                                                                                          : std::get<std::vector<std::string>>(text);
-            if (prompt.has_value()) {
-                return embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt));
+            if (std::holds_alternative<std::string>(text)) {
+                const std::vector<std::string> texts{std::get<std::string>(text)};
+                if (prompt.has_value()) {
+                    return embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt));
+                }
+                return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
+            } else {
+                const std::vector<std::string>& texts = std::get<std::vector<std::string>>(text);
+                if (prompt.has_value()) {
+                    return embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt));
+                }
+                return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
             }
-            return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
         }
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
         OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
@@ -305,11 +312,12 @@ private:
         m_inputs_embedder->set_apply_chat_template_status(false);
         m_inputs_embedder->set_add_special_tokens(false);
 
-        ov::Core core;
+        ov::AnyMap properties_copy = properties;
+        utils::extract_extensions_to_core(properties_copy);
         std::shared_ptr<ov::Model> language_model =
-            core.read_model(models_path / "openvino_language_model.xml");
+            utils::singleton_core().read_model(models_path / "openvino_language_model.xml");
         language_model = utils::apply_postprocessing(language_model, m_config);
-        m_compiled_language_model = core.compile_model(language_model, device, properties);
+        m_compiled_language_model = utils::singleton_core().compile_model(language_model, device, properties_copy);
         m_language_model_request = m_compiled_language_model.create_infer_request();
 
         for (const auto& input : m_compiled_language_model.inputs()) {

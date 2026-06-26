@@ -56,17 +56,42 @@ template <typename Config>
 void apply_missing_qwen_processor_params(Config& config,
                                          const nlohmann::json& parsed,
                                          const nlohmann::json& fallback) {
-    read_json_param_if_missing(parsed, fallback, "patch_size", config.patch_size);
-    read_json_param_if_missing(parsed, fallback, "temporal_patch_size", config.temporal_patch_size);
-    read_json_param_if_missing(parsed, fallback, "merge_size", config.merge_size);
+    // Check both flat keys and nested vision_config keys
+    const bool parsed_has_patch_size = parsed.contains("patch_size") ||
+        (parsed.contains("vision_config") && parsed.at("vision_config").contains("patch_size"));
+    const bool parsed_has_temporal_patch_size = parsed.contains("temporal_patch_size") ||
+        (parsed.contains("vision_config") && parsed.at("vision_config").contains("temporal_patch_size"));
+    const bool parsed_has_merge_size = parsed.contains("merge_size") ||
+        (parsed.contains("vision_config") && parsed.at("vision_config").contains("merge_size"));
 
-    if (!parsed.contains("min_pixels") && !parsed.contains("max_pixels") && !parsed.contains("size")) {
+    if (!parsed_has_patch_size) {
+        using ov::genai::utils::read_json_param;
+        read_json_param(fallback, "patch_size", config.patch_size);
+    }
+    if (!parsed_has_temporal_patch_size) {
+        using ov::genai::utils::read_json_param;
+        read_json_param(fallback, "temporal_patch_size", config.temporal_patch_size);
+    }
+    if (!parsed_has_merge_size) {
+        using ov::genai::utils::read_json_param;
+        read_json_param(fallback, "merge_size", config.merge_size);
+    }
+
+    const bool parsed_has_min_pixels = parsed.contains("min_pixels") ||
+        (parsed.contains("vision_config") && parsed.at("vision_config").contains("min_pixels"));
+    const bool parsed_has_max_pixels = parsed.contains("max_pixels") ||
+        (parsed.contains("vision_config") && parsed.at("vision_config").contains("max_pixels"));
+    const bool parsed_has_size = parsed.contains("size") ||
+        (parsed.contains("vision_config") && parsed.at("vision_config").contains("size"));
+
+    if (!parsed_has_min_pixels && !parsed_has_max_pixels && !parsed_has_size) {
         using ov::genai::utils::read_json_param;
         read_json_param(fallback, "min_pixels", config.min_pixels);
         read_json_param(fallback, "max_pixels", config.max_pixels);
 
-        if ((!fallback.contains("min_pixels") && !fallback.contains("max_pixels")) ||
-            (fallback["min_pixels"].is_null() && fallback["max_pixels"].is_null())) {
+        const bool fallback_has_min_pixels = fallback.contains("min_pixels") && !fallback.at("min_pixels").is_null();
+        const bool fallback_has_max_pixels = fallback.contains("max_pixels") && !fallback.at("max_pixels").is_null();
+        if (!fallback_has_min_pixels && !fallback_has_max_pixels) {
             read_json_param(fallback, "size.shortest_edge", config.min_pixels);
             read_json_param(fallback, "size.longest_edge", config.max_pixels);
         }

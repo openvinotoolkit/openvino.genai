@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include "openvino/core/any.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/tensor.hpp"
