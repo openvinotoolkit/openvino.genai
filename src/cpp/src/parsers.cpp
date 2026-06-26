@@ -305,26 +305,28 @@ public:
         std::string content = message["content"].get_string();
 
         if (m_expect_open_tag) {
-            const size_t start = content.find(m_open_tag);
-            const size_t close_position = content.find(m_close_tag);
+            const size_t open_pos = content.find(m_open_tag);
+            const size_t close_pos = content.find(m_close_tag);
 
-            if (start != std::string::npos && close_position != std::string::npos && close_position > start) {
-                reasoning_content = content.substr(start + m_open_tag.size(), close_position - (start + m_open_tag.size()));
+            if (open_pos != std::string::npos && close_pos != std::string::npos && close_pos > open_pos) {
+                reasoning_content = content.substr(open_pos + m_open_tag.size(), close_pos - (open_pos + m_open_tag.size()));
                 if (!m_keep_original_content) {
-                    message["content"] = content.substr(0, start) + content.substr(close_position + m_close_tag.size());
+                    // Remove <think>...</think/> from content
+                    message["content"] = content.substr(0, open_pos) + content.substr(close_pos + m_close_tag.size());
                 }
             }
         } else {
-            const size_t close_position = content.find(m_close_tag);
-            if (close_position != std::string::npos) {
-                reasoning_content = content.substr(0, close_position);
+            const size_t close_pos = content.find(m_close_tag);
+            if (close_pos != std::string::npos) {
+                reasoning_content = content.substr(0, close_pos);
                 if (!m_keep_original_content) {
-                    message["content"] = content.substr(close_position + m_close_tag.size());
+                    // Remove ...</think/> from content
+                    message["content"] = content.substr(close_pos + m_close_tag.size());
                 }
             } else {
                 reasoning_content = content;
                 if (!m_keep_original_content) {
-                    message["content"] = std::string{};
+                    message["content"] = "";
                 }
             }
         }

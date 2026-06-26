@@ -17,6 +17,7 @@ from openvino_genai import (
     DeepSeekR1ReasoningIncrementalParser,
     GenerationConfig,
     ReasoningIncrementalParser,
+    ReasoningParser,
 )
 from transformers import AutoTokenizer
 from huggingface_hub import snapshot_download
@@ -803,3 +804,19 @@ def test_batched_generate_returns_finish_reason_for_each_sequence(tmp_path, mode
 
     assert len(res.texts) == len(prompts)
     assert res.finish_reasons == [GenerationFinishReason.STOP, GenerationFinishReason.LENGTH]
+
+
+@pytest.mark.parametrize("expect_open_tag", [True, False])
+def test_reasoning_parser_expect_open_tag(expect_open_tag):
+    parser = ReasoningParser(expect_open_tag=expect_open_tag, keep_original_content=False)
+
+    if expect_open_tag:
+        message = {"content": "<think>reasoning text</think>answer text"}
+        parser.parse(message)
+        assert message["reasoning_content"] == "reasoning text"
+        assert message["content"] == "answer text"
+    else:
+        message = {"content": "reasoning text</think>answer text"}
+        parser.parse(message)
+        assert message["reasoning_content"] == "reasoning text"
+        assert message["content"] == "answer text"
