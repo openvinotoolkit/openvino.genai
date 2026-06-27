@@ -54,7 +54,6 @@ def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=Fa
     for adapter, alpha in zip(adapters, alphas):
         ov_adapter = openvino_genai.Adapter(adapter)
         adapter_config.add(ov_adapter, alpha)
-
     return adapter_config
 
 
@@ -204,6 +203,8 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
             f"Qwen3-Omni model_type='{config.model_type}' requires '{model_cls_name}' to be available in transformers. "
             "Please upgrade transformers to a version that provides this class."
         )
+    if device.lower() == "gpu":
+        device = "cuda"
     device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
     model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
 
