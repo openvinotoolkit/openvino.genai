@@ -138,14 +138,27 @@ class VisualTextEvaluator(TextEvaluator):
             # videochat_flash_qwen expects "inputs" instead of "input_ids" and requires "modalities" field to be set
             if model.config.model_type == "videochat_flash_qwen":
                 inputs["inputs"] = inputs.pop("input_ids")
-            tokens = model.generate(
+            generate_kwargs = dict(
                 **inputs,
                 **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
                 do_sample=False,
-                max_new_tokens=max_new_tokens,
                 tokenizer=tokenizer,
                 **get_ignore_parameters_flag()
             )
+            from .model_loaders import OMNI_MODEL_TYPES
+
+            is_hf_omni = model.config.model_type in OMNI_MODEL_TYPES and "transformers" in str(type(model))
+            if is_hf_omni:
+                # Qwen3-Omni's generate() bounds text output via thinker_max_new_tokens
+                # and would synthesize audio unless return_audio is disabled.
+                generate_kwargs["thinker_max_new_tokens"] = max_new_tokens
+                generate_kwargs["return_audio"] = False
+            else:
+                generate_kwargs["max_new_tokens"] = max_new_tokens
+            tokens = model.generate(**generate_kwargs)
+            if is_hf_omni and isinstance(tokens, tuple):
+                # (text_ids, audio) is returned when return_audio=False on transformers < 4.58
+                tokens = tokens[0]
             if isinstance(tokens, tuple) and isinstance(tokens[0], list) and isinstance(tokens[0][0], str):
                 # Some models return a decoded output, like miniCPM-o
                 # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
