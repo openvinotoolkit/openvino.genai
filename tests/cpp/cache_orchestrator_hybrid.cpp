@@ -306,6 +306,31 @@ TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalMultiplierForHybridM
                                               }));
 }
 
+TEST(TestCacheOrchestratorHybrid, AdaptiveCacheIntervalMultiplierScalesWithStateSize) {
+    using ov::genai::CacheOrchestrator;
+    // Small LA state relative to a KV block keeps the default multiplier (fine-grained reuse).
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/1024, /*kv=*/4096),
+              DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/4096, /*kv=*/4096),
+              DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+
+    // Large recurrent state (e.g. hybrid SSM): multiplier grows ~ la/kv so one LA
+    // checkpoint costs about one KV block, instead of exhausting the cache budget.
+    // 51 MiB LA state vs 512 KiB KV block -> ratio ~102.
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/size_t(51) * 1024 * 1024,
+                                                                    /*kv=*/size_t(512) * 1024),
+              102u);
+
+    // Clamped to the upper bound for very large states.
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/size_t(4096) * 1024 * 1024,
+                                                                    /*kv=*/size_t(64) * 1024),
+              CacheOrchestrator::MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER);
+
+    // Degenerate kv block size falls back to the default multiplier (no divide-by-zero).
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/1024, /*kv=*/0),
+              DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+}
+
 TEST(TestCacheOrchestratorHybrid, CreateIgnoresCacheIntervalMultiplierWithoutLinearAttentionCache) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, /*num_layers=*/3))

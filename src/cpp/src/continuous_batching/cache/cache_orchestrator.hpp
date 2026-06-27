@@ -672,6 +672,29 @@ public:
         return m_use_per_layer_kv_block_indices;
     }
 
+    // Upper bound for the auto-derived linear-attention checkpoint multiplier.
+    // Caps how coarse prefix-cache reuse can get for very large recurrent states.
+    static constexpr size_t MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER = 256;
+
+    // Derive the linear-attention checkpoint multiplier used when the user did not set one.
+    //
+    // A linear-attention checkpoint stores the full recurrent state (tens of MiB for large
+    // hybrid SSM models). Checkpointing every block_size tokens (multiplier 1) makes the LA
+    // state cache dwarf the KV cache and exhaust the cache budget on long prompts, which in
+    // turn makes long-prompt requests unschedulable. Size the interval so one LA checkpoint
+    // costs roughly one KV block (multiplier ~= la_block_bytes / kv_block_bytes), keeping
+    // LA-state overhead comparable to the KV cache regardless of model. Clamp to
+    // [default, MAX] so small-state models keep fine-grained prefix reuse and huge-state
+    // models do not get an unbounded interval.
+    static size_t adaptive_cache_interval_multiplier(size_t la_block_bytes, size_t kv_block_bytes) {
+        size_t multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
+        if (kv_block_bytes > 0) {
+            const size_t ratio = (la_block_bytes + kv_block_bytes - 1) / kv_block_bytes;  // ceil
+            multiplier = std::max(multiplier, ratio);
+        }
+        return std::min(multiplier, MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER);
+    }
+
 private:
     bool has_registered_types() const {
         return !m_cache_managers.empty();
@@ -710,7 +733,16 @@ private:
         }
         OPENVINO_ASSERT(kv_manager,
                         "SchedulerConfig cache_interval_multiplier requires KV cache inputs when prefix caching is enabled");
-        return config.get_cache_interval(kv_manager->get_block_size());
+        const size_t kv_block_size = kv_manager->get_block_size();
+
+        // An explicit user multiplier is always honoured.
+        if (config.cache_interval_multiplier.has_value()) {
+            return config.get_cache_interval(kv_block_size);
+        }
+
+        const size_t multiplier = adaptive_cache_interval_multiplier(la_manager->get_block_size_in_bytes(),
+                                                                     kv_manager->get_block_size_in_bytes());
+        return kv_block_size * multiplier;
     }
 
     /**
