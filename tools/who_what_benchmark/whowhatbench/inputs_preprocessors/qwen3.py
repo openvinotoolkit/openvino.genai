@@ -55,3 +55,78 @@ class Qwen3VLInputsPreprocessor(VLMInputsPreprocessor):
             conversation, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt"
         )
         return inputs
+
+
+class Qwen3OmniInputsPreprocessor(VLMInputsPreprocessor):
+    def __init__(self, chat_mode: bool = False):
+        super().__init__(chat_mode)
+
+    def update_chat_history_with_answer(self, answer):
+        self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
+
+    def preprocess_inputs(
+        self,
+        text: str,
+        image: Optional[Union["Image", list["Image"]]] = None,
+        processor: Optional[AutoImageProcessor] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
+        config: Optional[PretrainedConfig] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
+        audio: Optional[np.ndarray] = None,
+    ):
+        if processor is None:
+            raise ValueError("Processor is required.")
+
+        if isinstance(audio, (list, tuple)) and len(audio) == 1:
+            audio = audio[0]
+        if isinstance(audio, tuple) and len(audio) == 2:
+            # Preserve sampling rate from (samples, rate) tuple format
+            audio_array, sampling_rate = audio
+            audio = {"array": audio_array, "sampling_rate": sampling_rate}
+
+        self.update_images(image)
+        media = []
+        if image is not None:
+            if not isinstance(image, list):
+                image = [image]
+            media += [{"type": "image", "image": img} for img in image]
+
+        if video is not None:
+            if not isinstance(video, list):
+                video = [video]
+            media += [{"type": "video", "video": v} for v in video]
+
+            if self.chat_mode:
+                if self.videos is None:
+                    self.videos = []
+                self.videos.extend(video)
+            else:
+                self.videos = video
+        elif not self.chat_mode:
+            self.videos = None
+
+        if audio is not None:
+            media += [{"type": "audio", "audio": audio}]
+
+        new_message = {"role": "user", "content": media + [{"type": "text", "text": text}]}
+        if self.chat_mode:
+            self.chat_history.append(new_message)
+            conversation = self.chat_history
+        else:
+            conversation = [new_message]
+
+        text_prompt = processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=False,
+        )
+
+        inputs = processor(
+            images=self.images,
+            text=text_prompt,
+            videos=self.videos,
+            audio=audio,
+            return_tensors="pt",
+        )
+
+        return inputs

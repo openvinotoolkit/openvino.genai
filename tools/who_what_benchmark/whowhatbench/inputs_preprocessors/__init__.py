@@ -5,14 +5,14 @@ from .internvl import InternVLInputsPreprocessor
 from .phi3 import Phi3MMInputsPreprocessor
 from .phi4 import Phi4MMInputsPreprocessor
 from .qwen2 import Qwen2VLInputsPreprocessor
-from .qwen3 import Qwen3VLInputsPreprocessor
+from .qwen3 import Qwen3VLInputsPreprocessor, Qwen3OmniInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
 from .gemma4 import Gemma4UnifiedInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen3_vl": Qwen3VLInputsPreprocessor,
-    "qwen3_omni_moe": Qwen3VLInputsPreprocessor,
-    "qwen3_omni": Qwen3VLInputsPreprocessor,
+    "qwen3_omni_moe": Qwen3OmniInputsPreprocessor,
+    "qwen3_omni": Qwen3OmniInputsPreprocessor,
     "qwen2_vl_text": Qwen2VLInputsPreprocessor,
     "qwen2_vl": Qwen2VLInputsPreprocessor,
     "qwen2_5_vl": Qwen2VLInputsPreprocessor,
