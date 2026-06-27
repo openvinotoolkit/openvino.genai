@@ -22,6 +22,7 @@
 
 #include "json_utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "qwen3_tts_npu.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -63,19 +64,33 @@ constexpr const char* MEL_PREPROCESS = "mel_preprocess";
 
 // Default device policy for a component. For non-NPU targets every component
 // stays on the requested device (preserving existing CPU/GPU behavior). On NPU
-// the components that are cheap, gather/projection-heavy, or run in a tight
-// inner loop (the code predictor) default to CPU, matching the measured
-// babelvox split where only the heavy transformer/codec models stay on NPU.
+// only the talker language model and the speech-tokenizer decoder run on the
+// accelerator:
+//   * the talker uses the dedicated NPUW static-reshape path
+//     (compile_talker_for_npu);
+//   * the decoder is always fed fixed-size code chunks (DECODER_TRACE_LEN
+//     frames -- decode_speech_tokenizer zero-pads shorter chunks), so it can be
+//     trivially reshaped to a single static shape.
+// Every other component is fed data-dependent input shapes -- the
+// embedding/projection models see variable-length token sequences and the
+// speaker/speech-tokenizer encoders and mel preprocessing depend on the
+// reference-audio length -- so they cannot be reshaped to one static shape and
+// default to CPU. Callers can still override any component through the
+// per-device `ov::device::properties` map.
 std::string default_device_for_role(const std::string& base_device, bool is_npu, const std::string& role) {
     if (!is_npu) {
         return base_device;
     }
-    if (role == roles::CODE_PREDICTOR || role == roles::CODE_PREDICTOR_EMBEDDING ||
-        role == roles::TALKER_EMBEDDING || role == roles::TALKER_TEXT_EMBEDDING ||
-        role == roles::TALKER_TEXT_PROJECTION || role == roles::MEL_PREPROCESS) {
-        return "CPU";
+    #if 0
+    if (role == roles::TALKER || role == roles::SPEECH_TOKENIZER_DECODER) {
+        return base_device;
     }
-    return base_device;
+    #else
+    if (role == roles::TALKER) {
+        return base_device;
+    }
+    #endif
+    return "CPU";
 }
 
 // Resolve the (device, properties) pair for a component following the VLM
@@ -421,7 +436,22 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         return compile_request(model_source, model_name, target_device, target_properties);
     };
 
-    m_talker = compile_for(models_path / TALKER_LANGUAGE_NAME, "qwen3_tts talker", roles::TALKER);
+    // The talker stays on the requested device. On NPU it needs the dedicated
+    // NPUW LLM compile path (stateful decoder -> static), so route it through
+    // compile_talker_for_npu; every other device keeps the generic path.
+    {
+        auto [talker_device, talker_properties] =
+            resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::TALKER);
+        if (m_is_npu) {
+            m_talker = compile_talker_for_npu(ov::genai::utils::singleton_core(),
+                                              models_path / TALKER_LANGUAGE_NAME,
+                                              talker_properties);
+        } else {
+            m_talker =
+                compile_request(models_path / TALKER_LANGUAGE_NAME, "qwen3_tts talker", talker_device, talker_properties);
+        }
+    }
+
     m_talker_embedding =
         compile_for(models_path / TALKER_EMBEDDING_NAME, "qwen3_tts talker embedding", roles::TALKER_EMBEDDING);
     m_talker_text_embedding =
@@ -434,9 +464,32 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     m_talker_code_predictor_embedding = compile_for(models_path / TALKER_CODE_PREDICTOR_EMBEDDING_NAME,
                                                     "qwen3_tts code predictor embedding",
                                                     roles::CODE_PREDICTOR_EMBEDDING);
-    m_speech_tokenizer_decoder = compile_for(models_path / "speech_tokenizer" / SPEECH_TOKENIZER_DECODER_NAME,
-                                             "qwen3_tts speech tokenizer decoder",
-                                             roles::SPEECH_TOKENIZER_DECODER);
+    {
+        // The speech-tokenizer decoder is always fed fixed-size [1, DECODER_TRACE_LEN,
+        // num_quantizers] code chunks (decode_speech_tokenizer zero-pads shorter
+        // chunks up to DECODER_TRACE_LEN), so on accelerators that require static
+        // shapes (e.g. NPU) we reshape it before compiling. CPU/GPU keep the model
+        // as exported.
+        auto [decoder_device, decoder_properties] =
+            resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::SPEECH_TOKENIZER_DECODER);
+        const auto decoder_path = models_path / "speech_tokenizer" / SPEECH_TOKENIZER_DECODER_NAME;
+        if (decoder_device.find("NPU") != std::string::npos) {
+            auto decoder_model = ov::genai::utils::singleton_core().read_model(decoder_path);
+            const ov::PartialShape static_codes{1,
+                                                static_cast<int64_t>(DECODER_TRACE_LEN),
+                                                static_cast<int64_t>(m_decoder_num_quantizers)};
+            decoder_model->reshape({{"audio_codes", static_codes}});
+            m_speech_tokenizer_decoder = compile_request(decoder_model,
+                                                         "qwen3_tts speech tokenizer decoder",
+                                                         decoder_device,
+                                                         decoder_properties);
+        } else {
+            m_speech_tokenizer_decoder = compile_request(decoder_path,
+                                                         "qwen3_tts speech tokenizer decoder",
+                                                         decoder_device,
+                                                         decoder_properties);
+        }
+    }
 
     const auto speaker_encoder_path = models_path / SPEAKER_ENCODER_NAME;
     if (std::filesystem::exists(speaker_encoder_path)) {
@@ -1097,27 +1150,13 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         }
         generated_main.push_back(token);
 
+        // TODO, we can use slice here I think.
         ov::Tensor past_hidden(ov::element::f32, ov::Shape{1, 1, hidden_states.get_shape()[2]});
         const float* hs_ptr = hidden_states.data<const float>();
         const size_t hs_len = hidden_states.get_shape()[1];
         std::copy_n(hs_ptr + (hs_len - 1) * hidden_states.get_shape()[2], hidden_states.get_shape()[2], past_hidden.data<float>());
 
         auto groups = generate_codec_groups(past_hidden, token, generation_config, rng);
-        if (qwen_debug_enabled() && step < 3) {
-            std::cout << "[QWEN_DEBUG] step=" << step << " main_token=" << token
-                      << " codec_group0=" << groups.front()
-                      << " codec_group_last=" << groups.back() << std::endl;
-            if (step == 0) {
-                std::cout << "[QWEN_DEBUG] step=0 codec_row=";
-                for (size_t i = 0; i < groups.size(); ++i) {
-                    if (i > 0) {
-                        std::cout << ",";
-                    }
-                    std::cout << groups[i];
-                }
-                std::cout << std::endl;
-            }
-        }
         all_codes.insert(all_codes.end(), groups.begin(), groups.end());
 
         auto token_embed = infer_embedding(m_talker_embedding, groups[0]);

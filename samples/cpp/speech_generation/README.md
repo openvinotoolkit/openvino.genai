@@ -20,8 +20,9 @@ This folder contains C++ examples for `ov::genai::Text2SpeechPipeline`.
 		- `pt-br` (Portuguese, Brazil)
 	- Not yet supported for end-to-end text generation in this flow: `ja` (Japanese), `zh` (Chinese/Mandarin).
 - **Qwen3-TTS**
-	- Supports both `custom_voice` and `base` variants.
+	- Supports `custom_voice`, `voice_design`, and `base` variants.
 	- `custom_voice`: pass `--speaker <name>` with one of the predefined speaker ids.
+	- `voice_design`: pass `--instruct <text>` with natural language voice description.
 	- `base`: pass an external speaker embedding `.bin` file as the positional speaker embedding argument
 	  or with `--speaker_embedding_file_path <PATH>`.
 	  Expected shape is returned by `pipe.get_speaker_embedding_shape()`.
@@ -100,6 +101,11 @@ text2speech ov_Kokoro-82M "Hello from OpenVINO GenAI with a faster speaking rate
 Qwen3-TTS CustomVoice:
 ```
 text2speech qwen3_tts_customvoice_ov "Hello from Qwen3 CustomVoice" --speaker ryan --language english --instruct "speak in a calm style"
+```
+
+Qwen3-TTS VoiceDesign:
+```
+text2speech qwen3_tts_voicedesign_ov "Hello from Qwen3 VoiceDesign" --language english --instruct "A male voice with a thick french accent."
 ```
 
 Qwen3-TTS Base (x-vector style voice clone):
@@ -192,6 +198,11 @@ gen_speech = pipe.generate(prompt,
 gen_speech = pipe.generate(prompt,
 						   ov::Tensor(),
 						   ov::AnyMap{{"speaker", "ryan"}, {"language", "english"}});
+
+// Qwen3 VoiceDesign generation (no external embedding required)
+gen_speech = pipe.generate(prompt,
+						   ov::Tensor(),
+						   ov::AnyMap{{"language", "english"}, {"instruct", "A warm, deep male narrator voice"}});
 
 auto speech = gen_speech.speeches[0];
 // speech tensor contains the waveform of the spoken phrase

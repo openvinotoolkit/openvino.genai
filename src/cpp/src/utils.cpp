@@ -746,8 +746,14 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::sha
             get_npu_model_config(properties, kv_pos, kv_desc, false);
             break;
         }
-
+        std::cout << "okay, actually compiling model with properties: " << std::endl;
+        for (const auto& [key, value] : properties) {
+            std::cout << key << ": ";
+            value.print(std::cout);
+            std::cout << std::endl;
+        }
         compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
+        std::cout << "back from compile!!!" << std::endl;
         // Also export compiled model if required
         if (export_blob) {
             if (blob_path.empty()) {
