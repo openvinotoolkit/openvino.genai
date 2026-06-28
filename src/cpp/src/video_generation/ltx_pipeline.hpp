@@ -277,16 +277,6 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
 
 
 
-inline ov::AnyMap transformer_compile_properties(const std::string& device, ov::AnyMap properties) {
-    if (device.find("CPU") != std::string::npos &&
-        properties.find(ov::hint::inference_precision.name()) == properties.end()) {
-        GENAI_WARN("LTX-Video transformer: CPU bf16 produces grey/static output over multiple denoising steps. "
-                   "Forcing inference_precision=f32. Pass inference_precision explicitly to override.");
-        properties[ov::hint::inference_precision.name()] = ov::element::f32;
-    }
-    return properties;
-}
-
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
@@ -561,7 +551,7 @@ public:
                 std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now())
         : m_scheduler{cast_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"))},
           m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
-          m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, transformer_compile_properties(device, properties))},
+          m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, properties)},
           m_generation_config{LTX_VIDEO_DEFAULT_CONFIG},
           m_pipeline_type{pipeline_type} {
         if (pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
@@ -1161,7 +1151,7 @@ public:
         m_t5_text_encoder->compile(text_encode_device, properties);
         m_vae->compile(vae_device, properties);
 
-        m_transformer->compile(denoise_device, transformer_compile_properties(denoise_device, properties));
+        m_transformer->compile(denoise_device, properties);
         m_text_encode_device = text_encode_device;
         m_denoise_device = denoise_device;
         m_vae_device = vae_device;
