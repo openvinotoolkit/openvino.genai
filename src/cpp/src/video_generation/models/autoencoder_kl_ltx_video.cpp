@@ -194,16 +194,7 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
     auto filtered_properties = extract_adapters_from_properties(properties, &unused);
 
     if (m_encoder_model) {
-        // Default the VAE encoder to fp32 on CPU. Its output (image_latent for I2V) propagates
-        // through all 50 transformer steps as conditioning; bf16 noise here corrupts the anchor.
-        // VAE decoder stays on bf16 default (single end-of-pipeline decode, no error compounding,
-        // and fp32 decoder OOMs for video output).
-        ov::AnyMap encoder_properties = *filtered_properties;
-        if (device.find("CPU") != std::string::npos &&
-            encoder_properties.find(ov::hint::inference_precision.name()) == encoder_properties.end()) {
-            encoder_properties[ov::hint::inference_precision.name()] = ov::element::f32;
-        }
-        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, encoder_properties));
+        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, *filtered_properties));
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL LTX video encoder model");
         OPENVINO_ASSERT(encoder_compiled_model.outputs().size() == 1, "AutoencoderKLLTXVideo encoder model is expected to have a single output");
         m_encoder_request = encoder_compiled_model.create_infer_request();
