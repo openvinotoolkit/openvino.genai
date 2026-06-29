@@ -624,7 +624,6 @@ Sampler::TreeSearcher::TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tenso
       m_d2t_tensor(std::move(d2t)) {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1,
                     "TreeSearcher must be initialized with exactly one running sequence");
-    // m_original_grouped_id is set authoritatively in tree_reset() at the start of each draft round.
 }
 
 void Sampler::TreeSearcher::tree_reset() {
@@ -636,7 +635,6 @@ void Sampler::TreeSearcher::tree_reset() {
     const std::vector<Sequence::Ptr> running = m_sequence_group->get_running_sequences();
     OPENVINO_ASSERT(!running.empty(), "tree_reset: sequence group has no running sequences");
     Sequence::Ptr root_seq = running[0];
-    m_original_grouped_id = root_seq->get_grouped_id();
     m_frontier = {{m_candidate_graph->get_root(), std::move(root_seq), 0.0f}};
 }
 
@@ -781,17 +779,11 @@ void Sampler::TreeSearcher::advance_draft_layer(const std::vector<CandidateBeam>
         next_frontier.push_back({cand.node, std::move(seq), cand.score});
     }
 
-    // Retire frontier sequences with no selected children (remaining == 0).
     for (const DraftBeam& beam : m_frontier) {
         if (children_per_parent[beam.m_sequence->get_id()] != 0)
             continue;
-        if (beam.m_sequence->get_grouped_id() != m_original_grouped_id) {
-            sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
-            m_sequence_group->remove_sequence(beam.m_sequence->get_id());
-        } else {
-            // Anchor sequence got no children at this layer
-            beam.m_sequence->set_status(SequenceStatus::WAITING);
-        }
+        sampler_output.m_dropped_sequences.push_back(beam.m_sequence->get_id());
+        m_sequence_group->remove_sequence(beam.m_sequence->get_id());
     }
 
     m_frontier = std::move(next_frontier);
@@ -843,19 +835,10 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
         tree_mask.push_back(std::move(row));
     }
 
-    // The anchor sequence may be WAITING if its branch was pruned during tree expansion;
-    // search all sequences (not just running) to locate it by grouped_id.
-    Sequence::Ptr sequence = nullptr;
-    for (const Sequence::Ptr& seq : m_sequence_group->get_sequences()) {
-        if (seq->get_grouped_id() == m_original_grouped_id) {
-            sequence = seq;
-            break;
-        }
-    }
-    OPENVINO_ASSERT(sequence != nullptr,
-                    "finalize_tree: sequence with grouped_id ",
-                    m_original_grouped_id,
-                    " not found");
+    // Pick any surviving frontier sequence as the survivor that carries the flattened tree
+    // forward to the verifier.
+    OPENVINO_ASSERT(!m_frontier.empty(), "finalize_tree: frontier is empty; expected at least one surviving beam");
+    Sequence::Ptr sequence = m_frontier.front().m_sequence;
 
     // Roll back draft tokens, then re-apply the selected tree nodes (skipping root at index 0).
     OPENVINO_ASSERT(sequence->get_generated_len() >= m_pre_draft_generated_len,
@@ -886,9 +869,10 @@ void Sampler::TreeSearcher::finalize_tree(SamplerOutput& sampler_output, LogitPr
     sequence->set_tree_metadata({tree_mask, retrieve_indices, position_ids});
     sequence->set_status(SequenceStatus::RUNNING);
 
-    // Drop all forked draft sequences; only the main sequence proceeds to verification.
+    // Drop every other sequence in the group; only the survivor proceeds to verification.
+    const uint64_t survivor_id = sequence->get_id();
     for (const Sequence::Ptr& seq : m_sequence_group->get_running_sequences()) {
-        if (seq->get_grouped_id() == m_original_grouped_id)
+        if (seq->get_id() == survivor_id)
             continue;
         sampler_output.m_dropped_sequences.push_back(seq->get_id());
         m_sequence_group->remove_sequence(seq->get_id());

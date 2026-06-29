@@ -136,6 +136,28 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     }
 }
 
+TEST(TestBlockManager, CannotFreeLogicalBlockPastTableEnd) {
+    constexpr size_t block_size = 2;
+    constexpr size_t num_layers = 3;
+    ov::genai::BlockManager block_manager = ov::genai::BlockManager(8, false, block_size, num_layers);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4};
+    ov::genai::SequenceGroup::Ptr sequence_group =
+        std::make_shared<ov::genai::SequenceGroup>(0,
+                                                   ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+                                                   ov::genai::utils::get_beam_search_config());
+    sequence_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(sequence_group);
+
+    const size_t seq_id = sequence_group->get_sequences()[0]->get_id();
+    ASSERT_EQ(block_manager.get_block_table(seq_id, 0).size(), 3);
+    EXPECT_THROW(block_manager.free_blocks_from_sequence(seq_id, {{3}, {3}, {3}}), ov::Exception);
+
+    for (auto& sequence : sequence_group->get_sequences()) {
+        block_manager.free_sequence(sequence->get_id());
+    }
+}
+
 // Linear Attention with fixed-size blocks tests
 
 TEST(TestBlockManager, FixedSizeCanAllocateCumulativeDeficitFails) {
@@ -391,4 +413,168 @@ TEST(TestBlockManager, PrefixCachingIncompleteCheckpointUsesCopyOnWritePerSequen
 
     block_manager.free_sequence(first_seq_id);
     block_manager.free_sequence(second_seq_id);
+}
+
+TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLatestBlockWithLogicalOffset) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(
+        /*num_blocks=*/8,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        /*num_layers=*/1,
+        /*fixed_blocks_per_sequence=*/0,
+        /*restore_latest_prefix_block_only=*/true);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer_group = create_sequence_group(tokens, 26);
+    producer_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+
+    const auto producer_seq_id = producer_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(producer_seq_id, 0).size(), 2);
+    const auto older_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(0);
+    const auto latest_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
+    const auto latest_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(1);
+    block_manager.free_sequence(producer_seq_id);
+
+    auto consumer_group = create_sequence_group(tokens, 27);
+    block_manager.restore_cached_blocks(consumer_group);
+
+    const auto consumer_seq = consumer_group->get_running_sequences().at(0);
+    const auto consumer_seq_id = consumer_seq->get_id();
+    ASSERT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 2);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(1)->get_index(), latest_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 0);
+    EXPECT_EQ(older_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
+
+    consumer_seq->append_token(8, 0.9f);
+    consumer_group->update_processed_tokens_num(tokens.size());
+    consumer_group->schedule_tokens(1);
+    block_manager.append_slots(consumer_group);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 3);
+    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 0);
+
+    block_manager.free_sequence(consumer_seq_id);
+}
+
+TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLogicalOffsetWhenOlderBlocksAreMissing) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager block_manager(
+        /*num_blocks=*/2,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        /*num_layers=*/1,
+        /*fixed_blocks_per_sequence=*/0,
+        /*restore_latest_prefix_block_only=*/true);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer_group = create_sequence_group(tokens, 28);
+    producer_group->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer_group);
+    producer_group->finish_iteration();
+
+    const auto producer_seq_id = producer_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(producer_seq_id, 0).size(), 2);
+    const auto older_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(0);
+    const auto latest_checkpoint = block_manager.get_block_table(producer_seq_id, 0).at(1);
+    const auto older_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(0)->get_index();
+    const auto latest_checkpoint_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
+    block_manager.free_sequence(producer_seq_id);
+
+    std::vector<int64_t> pressure_tokens = {10, 11, 12, 13};
+    auto pressure_group = create_sequence_group(pressure_tokens, 29);
+    pressure_group->schedule_tokens(pressure_tokens.size());
+    block_manager.append_slots(pressure_group);
+    const auto pressure_seq_id = pressure_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(pressure_seq_id, 0).at(0)->get_index(), older_checkpoint_idx);
+
+    auto consumer_group = create_sequence_group(tokens, 30);
+    block_manager.restore_cached_blocks(consumer_group);
+
+    const auto consumer_seq_id = consumer_group->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 1);
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).at(0)->get_index(), latest_checkpoint_idx);
+    EXPECT_EQ(block_manager.get_block_table_logical_start(consumer_seq_id), 1);
+    EXPECT_EQ(older_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
+
+    block_manager.free_sequence(pressure_seq_id);
+    block_manager.free_sequence(consumer_seq_id);
+}
+
+TEST(TestBlockManager, PrefixRestorePlanningCapsFullRestoreToLatestStateRestore) {
+    constexpr size_t block_size = 4;
+    ov::genai::BlockManager kv_block_manager(
+        /*num_blocks=*/8,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        /*num_layers=*/1);
+    ov::genai::BlockManager state_block_manager(
+        /*num_blocks=*/8,
+        /*enable_prefix_caching=*/true,
+        block_size,
+        /*num_layers=*/1,
+        /*fixed_blocks_per_sequence=*/0,
+        /*restore_latest_prefix_block_only=*/true);
+
+    std::vector<int64_t> full_prefix_tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto kv_producer_group = create_sequence_group(full_prefix_tokens, 28);
+    kv_producer_group->schedule_tokens(full_prefix_tokens.size());
+    kv_block_manager.append_slots(kv_producer_group);
+    kv_producer_group->finish_iteration();
+    const auto kv_producer_seq_id = kv_producer_group->get_running_sequences().at(0)->get_id();
+    kv_block_manager.free_sequence(kv_producer_seq_id);
+
+    std::vector<int64_t> state_prefix_tokens = {0, 1, 2, 3};
+    auto state_producer_group = create_sequence_group(state_prefix_tokens, 29);
+    state_producer_group->schedule_tokens(state_prefix_tokens.size());
+    state_block_manager.append_slots(state_producer_group);
+    state_producer_group->finish_iteration();
+    const auto state_producer_seq_id = state_producer_group->get_running_sequences().at(0)->get_id();
+    state_block_manager.free_sequence(state_producer_seq_id);
+
+    auto consumer_group = create_sequence_group(full_prefix_tokens, 30);
+    const auto kv_full_plan = kv_block_manager.get_prefix_restore_plan(consumer_group);
+    ASSERT_EQ(kv_full_plan.cache_token_position, full_prefix_tokens.size());
+    ASSERT_EQ(kv_full_plan.block_content_lengths.size(), 2);
+
+    const auto state_plan = state_block_manager.get_prefix_restore_plan(consumer_group, kv_full_plan.cache_token_position);
+    ASSERT_EQ(state_plan.cache_token_position, state_prefix_tokens.size());
+    ASSERT_EQ(state_plan.block_content_lengths.size(), 1);
+
+    const auto kv_common_plan = kv_block_manager.get_prefix_restore_plan(consumer_group, state_plan.cache_token_position);
+    ASSERT_EQ(kv_common_plan.cache_token_position, state_prefix_tokens.size());
+    ASSERT_EQ(kv_common_plan.block_content_lengths.size(), 1);
+
+    kv_block_manager.restore_cached_blocks(consumer_group, kv_common_plan);
+    state_block_manager.restore_cached_blocks(consumer_group, state_plan);
+
+    const auto consumer_seq_id = consumer_group->get_running_sequences().at(0)->get_id();
+    EXPECT_EQ(kv_block_manager.get_block_table(consumer_seq_id, 0).size(), 1);
+    EXPECT_EQ(state_block_manager.get_block_table(consumer_seq_id, 0).size(), 1);
+    EXPECT_EQ(state_block_manager.get_block_table_logical_start(consumer_seq_id), 0);
+    EXPECT_EQ(consumer_group->get_num_processed_tokens(), state_prefix_tokens.size());
+
+    kv_block_manager.free_sequence(consumer_seq_id);
+    state_block_manager.free_sequence(consumer_seq_id);
+}
+
+TEST(TestBlockManager, PrefixRestoreStalePlanReturnsFalseWithoutRestoring) {
+    const size_t block_size = 4;
+    ov::genai::BlockManager block_manager(/*num_blocks=*/1, /*enable_prefix_caching=*/true, block_size);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3};
+    auto consumer_group = create_sequence_group(tokens, 31);
+
+    ov::genai::BlockManager::PrefixRestorePlan stale_plan;
+    stale_plan.block_content_lengths = {tokens.size()};
+    stale_plan.cache_token_position = tokens.size();
+    stale_plan.processed_tokens = tokens.size() - 1;
+
+    EXPECT_FALSE(block_manager.restore_cached_blocks(consumer_group, stale_plan));
+    EXPECT_FALSE(block_manager.has_block_table(consumer_group->get_running_sequences().at(0)->get_id()));
 }
