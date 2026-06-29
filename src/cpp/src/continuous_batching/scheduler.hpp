@@ -275,8 +275,7 @@ public:
         m_cache_orchestrator->set_linear_attention_live_block(seq_id, physical_block_index);
     }
 
-    /// @brief Raises the linear-attention fixed blocks-per-sequence reservation (eager
-    ///        reservation at admission). See CacheOrchestrator for gating and semantics.
+    /// @brief Raises non-prefix linear-attention rows per sequence.
     bool ensure_linear_attention_fixed_blocks_per_sequence(size_t fixed_blocks_per_sequence) {
         return m_cache_orchestrator->ensure_linear_attention_fixed_blocks_per_sequence(fixed_blocks_per_sequence);
     }
@@ -518,9 +517,7 @@ private:
                 // of current sequence group were evicted before
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
 
-                // Speculative LA validation requires the whole window (N candidates + 1 base token)
-                // in one step: a partial window desyncs the paging index map and the sampler. So
-                // schedule all N+1 atomically or defer. Scoped to the speculative LA path.
+                // Speculative LA paging requires the whole validation window in one step.
                 const bool is_speculative_linear_attention_window =
                     m_cache_orchestrator->has_linear_attention_cache() &&
                     !m_config.enable_prefix_caching &&
@@ -756,13 +753,11 @@ private:
 
         paging_data.past_length = checked_size_to_int32(num_processed_tokens, "past length", seq_id);
         if (!m_config.enable_prefix_caching) {
-            // Live-block registry is the single source of truth for the non-prefix path; do not
-            // hardcode la_blocks[0] so that interleaved speculative/non-speculative steps share one
-            // notion of "live".
+            // Non-prefix LA uses the live-block registry instead of assuming block_table[0].
             const int32_t live_block = checked_size_to_int32(get_linear_attention_live_block(seq_id), "live block index", seq_id);
             const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
             if (num_tokens_to_validate == 0) {
-                // Non-speculative step: read and write the single live state row (read aliases first write).
+                // Non-speculative step: read and write the live row.
                 paging_data.block_indices.push_back(live_block);
                 paging_data.block_indices.push_back(live_block);
                 paging_data.cache_interval = 0;
@@ -771,18 +766,12 @@ private:
                 return;
             }
 
-            // Speculative step: page as [live, live, scratch_1, ..., scratch_N] with one snapshot per
-            // consumed input. block_indices[0] reads the committed state (aliased to first write);
-            // block_indices[2..] are pure writes into reserved scratch rows. The whole validation window
-            // (N candidates + 1 base token) must have been scheduled atomically by the generate-phase
-            // scheduler; a partial window would desynchronize this index mapping from the sampler.
+            // Speculative step: [live, live, scratch_1, ..., scratch_N].
             OPENVINO_ASSERT(num_scheduled_tokens == num_tokens_to_validate + 1,
                             "Speculative linear-attention validation window was not scheduled atomically for sequence ", seq_id,
                             ": scheduled ", num_scheduled_tokens, " tokens, expected ", num_tokens_to_validate + 1,
                             " (", num_tokens_to_validate, " candidates + 1 base token)");
-            // Build [live, live, scratch_1, ..., scratch_N] directly from the owned block table: the
-            // scratch rows are simply the owned rows other than the live one, in table order. Block
-            // tables hold distinct physical blocks, so scratch rows are inherently unique.
+            // Scratch rows are owned LA rows other than the live one.
             paging_data.block_indices.reserve(num_tokens_to_validate + 2);
             paging_data.block_indices.push_back(live_block);
             paging_data.block_indices.push_back(live_block);

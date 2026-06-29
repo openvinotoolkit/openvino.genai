@@ -863,14 +863,7 @@ public:
     }
 
     /**
-     * @brief Raises the fixed blocks-per-sequence reservation to at least @p num_blocks.
-     *
-     * Used to grow a fixed-size cache's per-sequence footprint when the actual per-request
-     * requirement (e.g. 1 + num_assistant_tokens linear-attention rows for a speculative
-     * verifier) is only known at request admission, after construction. The value never
-     * shrinks. Sequences whose block tables predate the raise are topped up to the new count
-     * on their next append_slots; the pool itself is grown via ensure_sequence_capacity /
-     * grow_fixed_size_capacity. No-op when @p num_blocks does not exceed the current value.
+     * @brief Raises fixed blocks per sequence; never shrinks.
      * @return Whether the reservation was raised.
      */
     bool ensure_fixed_blocks_per_sequence(size_t num_blocks) {

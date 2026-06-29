@@ -229,12 +229,7 @@ public:
     }
 
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
-        // Forking copies KV-style block tables (shared blocks). Linear-attention rows are
-        // destructively mutated in place: once a speculative parent's live row has moved off
-        // block_table[0], the child cannot safely share it (it would lazily pick block_table[0],
-        // the wrong row). LA-aware fork (copy live row + provision the child's own workspace) is
-        // deferred; fail loud. A live row still at block_table[0] (non-speculative, or never
-        // promoted) forks exactly as before this feature.
+        // LA rows are mutated in place; fork only while live row remains the prefill row.
         if (has_linear_attention_cache()) {
             auto live_it = m_linear_attention_live_block.find(parent_id);
             if (live_it != m_linear_attention_live_block.end()) {
@@ -580,19 +575,7 @@ public:
     }
 
     /**
-     * @brief Raises the linear-attention fixed blocks-per-sequence reservation to at least
-     *        @p fixed_blocks_per_sequence rows.
-     *
-     * Eager reservation at admission: a hybrid verifier's per-request workspace requirement
-     * (1 live + num_assistant_tokens scratch rows) is only known when the request is admitted,
-     * after orchestrator construction. This raises the reservation so admission control accounts
-     * for the full footprint up front; the pool growth and per-sequence top-up then happen through
-     * the existing fixed-size capacity / append paths before the speculative step runs.
-     *
-     * Strictly gated: only applies when a linear-attention cache is registered AND it is
-     * fixed-size-per-sequence (i.e. enable_prefix_caching == false). Prefix-caching linear
-     * attention is variable-size and is left untouched, as is any KV cache. No-op when the
-     * reservation already covers @p fixed_blocks_per_sequence.
+     * @brief Raises non-prefix linear-attention rows per sequence.
      * @return Whether the reservation was raised.
      */
     bool ensure_linear_attention_fixed_blocks_per_sequence(size_t fixed_blocks_per_sequence) {
