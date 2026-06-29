@@ -320,11 +320,8 @@ class LTXPipeline {
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr;
     std::shared_ptr<ImageProcessor> m_image_processor = nullptr;
 
-    // Builds the initial packed latent noise fed to the transformer.
-    //  - Text-to-video: returns pure Gaussian noise (image_latent_packed left empty).
-    //  - Image-to-video: pass the packed, encoded conditioning image; its first-frame
-    //    tokens overwrite the noise's first-frame tokens, anchoring generation to the
-    //    input image while the remaining frames stay noise.
+    // Builds the initial packed latent noise. For image-to-video, pass the encoded
+    // conditioning image to anchor the first frame; leave empty for text-to-video.
     ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config,
                                size_t num_channels_latents,
                                size_t transformer_spatial_patch_size,
