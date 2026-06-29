@@ -352,16 +352,19 @@ def run_text_generation_genai(
             gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
         if args.get('assistant_confidence_threshold', None):
             gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
-        # generation_config JSON overrides cmdline params
+        # sd_generation_config JSON overrides cmdline params for speculative decoding
         if args.get("sd_generation_config"):
             from llm_bench_utils.model_utils import get_config
 
             extra_cfg = get_config(args["sd_generation_config"])
             if not isinstance(extra_cfg, dict):
                 raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
-            _skip_keys = {"max_new_tokens", "do_sample", "max_length", "ignore_eos"}
+            _supported_keys = {
+                "num_assistant_tokens", "assistant_confidence_threshold",
+                "branching_factor", "tree_depth",
+            }
             for k, v in extra_cfg.items():
-                if k in _skip_keys:
+                if k not in _supported_keys:
                     log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
                     continue
                 if hasattr(gen_config, k):
@@ -541,16 +544,19 @@ def run_text_generation_genai_with_stream(
             gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
         if args.get("assistant_confidence_threshold", None):
             gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
-        # generation_config JSON overrides cmdline params
+        # sd_generation_config JSON overrides cmdline params for speculative decoding
         if args.get("sd_generation_config"):
             from llm_bench_utils.model_utils import get_config
 
             extra_cfg = get_config(args["sd_generation_config"])
             if not isinstance(extra_cfg, dict):
                 raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
-            _skip_keys = {"max_new_tokens", "do_sample", "max_length", "ignore_eos"}
+            _supported_keys = {
+                "num_assistant_tokens", "assistant_confidence_threshold",
+                "branching_factor", "tree_depth",
+            }
             for k, v in extra_cfg.items():
-                if k in _skip_keys:
+                if k not in _supported_keys:
                     log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
                     continue
                 if hasattr(gen_config, k):

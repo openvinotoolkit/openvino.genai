@@ -1216,22 +1216,21 @@ def main():
         if not isinstance(gen_cfg, dict):
             raise ValueError(f"--sd-generation-config must be a JSON object, got {type(gen_cfg).__name__}")
         logger.info(f"sd_generation_config: {gen_cfg}")
+        _supported_keys = {
+            "num_assistant_tokens", "assistant_confidence_threshold",
+            "branching_factor", "tree_depth",
+        }
+        for k in gen_cfg:
+            if k not in _supported_keys:
+                logger.warning(f"Key '{k}' in --sd-generation-config is not supported, skipping")
         if "num_assistant_tokens" in gen_cfg:
             args.num_assistant_tokens = int(gen_cfg["num_assistant_tokens"])
         if "assistant_confidence_threshold" in gen_cfg:
             args.assistant_confidence_threshold = float(gen_cfg["assistant_confidence_threshold"])
-        # Store extra keys (branching_factor, tree_depth, etc.) for generate() call
-        # Filter out keys that are already handled above or conflict with generate() kwargs
-        _handled_keys = {"num_assistant_tokens", "assistant_confidence_threshold"}
-        _conflicting_keys = {"do_sample", "apply_chat_template", "max_new_tokens"}
-        args.generation_config_extra = {}
-        for k, v in gen_cfg.items():
-            if k in _handled_keys:
-                continue
-            if k in _conflicting_keys:
-                logger.warning(f"Key '{k}' in --sd-generation-config is not supported, skipping")
-                continue
-            args.generation_config_extra[k] = v
+        args.generation_config_extra = {
+            k: v for k, v in gen_cfg.items()
+            if k in _supported_keys and k not in ("num_assistant_tokens", "assistant_confidence_threshold")
+        }
     else:
         args.generation_config_extra = {}
 
