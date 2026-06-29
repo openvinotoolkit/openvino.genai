@@ -148,6 +148,7 @@ class ChatTextEvaluator(TextEvaluator):
             _empty_adapters=False,
             _num_assistant_tokens=0,
             _assistant_confidence_threshold=0.0,
+            _generation_config_extra=None,
         ):
             is_awq = getattr(model, "is_awq", None) is not None
             device = "cpu"

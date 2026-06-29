@@ -587,8 +587,7 @@ def genai_gen_text(
     if empty_adapters:
         kwargs["adapters"] = openvino_genai.AdapterConfig()
     if generation_config_extra:
-        for k, v in generation_config_extra.items():
-            kwargs[k] = v
+        kwargs.update(generation_config_extra)
 
     return model.generate(
         question,
@@ -1221,14 +1220,20 @@ def main():
             args.num_assistant_tokens = gen_cfg["num_assistant_tokens"]
         if "assistant_confidence_threshold" in gen_cfg:
             args.assistant_confidence_threshold = gen_cfg["assistant_confidence_threshold"]
-        # Store extra keys (branching_factor, tree_depth, etc.) for generate() call
-        args.generation_config_extra = {
-            k: v
-            for k, v in gen_cfg.items()
-            if k not in ("num_assistant_tokens", "assistant_confidence_threshold", "max_new_tokens")
-        }
         if "max_new_tokens" in gen_cfg:
-            args.max_new_tokens = gen_cfg["max_new_tokens"]
+            args.max_new_tokens = int(gen_cfg["max_new_tokens"])
+        # Store extra keys (branching_factor, tree_depth, etc.) for generate() call
+        # Filter out keys that are already handled above or conflict with generate() kwargs
+        _handled_keys = {"num_assistant_tokens", "assistant_confidence_threshold", "max_new_tokens"}
+        _conflicting_keys = {"do_sample", "apply_chat_template"}
+        args.generation_config_extra = {}
+        for k, v in gen_cfg.items():
+            if k in _handled_keys:
+                continue
+            if k in _conflicting_keys:
+                logger.warning(f"Key '{k}' in --generation-config conflicts with generate() arguments, skipping")
+                continue
+            args.generation_config_extra[k] = v
     else:
         args.generation_config_extra = {}
 
