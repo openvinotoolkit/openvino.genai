@@ -496,6 +496,14 @@ private:
                     !m_config.enable_prefix_caching &&
                     sequence_group->get_num_tokens_to_validate() > 0;
                 if (is_speculative_linear_attention_window) {
+                    // LA validation must fit one base token plus all candidates.
+                    const size_t validation_window = sequence_group->get_num_tokens_to_validate() + 1;
+                    OPENVINO_ASSERT(num_available_tokens_per_seq == validation_window,
+                                    "Speculative linear-attention validation window must be scheduled atomically as ",
+                                    validation_window, " tokens (1 base + ", sequence_group->get_num_tokens_to_validate(),
+                                    " candidates) for sequence group ", sequence_group->get_request_id(), ", but ",
+                                    num_available_tokens_per_seq, " tokens are pending; recompute/eviction of a validating "
+                                    "sequence is not supported with linear-attention speculative decoding");
                     OPENVINO_ASSERT(m_config.max_num_batched_tokens >= num_available_tokens_per_seq,
                                     "max_num_batched_tokens (", m_config.max_num_batched_tokens,
                                     ") is too small to ever schedule the speculative linear-attention validation window of ",

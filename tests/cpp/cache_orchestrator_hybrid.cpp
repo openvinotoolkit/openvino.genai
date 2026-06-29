@@ -14,7 +14,6 @@
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/scheduler.hpp"
-#include "continuous_batching/pipeline_impl.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
 #include "helper.hpp"
