@@ -399,11 +399,11 @@ def parse_args():
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
     parser.add_argument(
-        "--generation-config",
+        "--sd-generation-config",
         type=str,
         default=None,
-        help="Path to JSON file or JSON string with generation config parameters for EAGLE3 Top-K speculative decoding. "
-        "Supported keys: 'max_new_tokens', 'num_assistant_tokens', 'assistant_confidence_threshold', 'branching_factor', 'tree_depth'. "
+        help="Path to JSON file or JSON string with speculative decoding generation config parameters. "
+        "Supported keys: 'num_assistant_tokens', 'assistant_confidence_threshold', 'branching_factor', 'tree_depth'. "
         'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
 
@@ -1210,31 +1210,26 @@ def main():
     args = parse_args()
     check_args(args)
 
-    # Parse --generation-config and override cmdline params if specified
-    if args.generation_config is not None:
-        gen_cfg = get_json_config(args.generation_config)
+    # Parse --sd-generation-config and override cmdline params if specified
+    if args.sd_generation_config is not None:
+        gen_cfg = get_json_config(args.sd_generation_config)
         if not isinstance(gen_cfg, dict):
-            raise ValueError(f"--generation-config must be a JSON object, got {type(gen_cfg).__name__}")
-        logger.info(f"generation_config: {gen_cfg}")
+            raise ValueError(f"--sd-generation-config must be a JSON object, got {type(gen_cfg).__name__}")
+        logger.info(f"sd_generation_config: {gen_cfg}")
         if "num_assistant_tokens" in gen_cfg:
             args.num_assistant_tokens = int(gen_cfg["num_assistant_tokens"])
         if "assistant_confidence_threshold" in gen_cfg:
             args.assistant_confidence_threshold = float(gen_cfg["assistant_confidence_threshold"])
-        if "max_new_tokens" in gen_cfg:
-            val = int(gen_cfg["max_new_tokens"])
-            if val < 1:
-                raise ValueError(f"max_new_tokens in --generation-config must be >= 1, got {val}")
-            args.max_new_tokens = val
         # Store extra keys (branching_factor, tree_depth, etc.) for generate() call
         # Filter out keys that are already handled above or conflict with generate() kwargs
-        _handled_keys = {"num_assistant_tokens", "assistant_confidence_threshold", "max_new_tokens"}
-        _conflicting_keys = {"do_sample", "apply_chat_template"}
+        _handled_keys = {"num_assistant_tokens", "assistant_confidence_threshold"}
+        _conflicting_keys = {"do_sample", "apply_chat_template", "max_new_tokens"}
         args.generation_config_extra = {}
         for k, v in gen_cfg.items():
             if k in _handled_keys:
                 continue
             if k in _conflicting_keys:
-                logger.warning(f"Key '{k}' in --generation-config conflicts with generate() arguments, skipping")
+                logger.warning(f"Key '{k}' in --sd-generation-config is not supported, skipping")
                 continue
             args.generation_config_extra[k] = v
     else:
