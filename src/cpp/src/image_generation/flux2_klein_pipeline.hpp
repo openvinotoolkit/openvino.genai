@@ -408,6 +408,10 @@ public:
         return pipeline;
     }
 
+    bool do_classifier_free_guidance(const ImageGenerationConfig& generation_config) const {
+        return generation_config.guidance_scale > 1.0f;
+    }
+
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
         auto infer_start = std::chrono::steady_clock::now();
         ov::Tensor prompt_embeds = m_text_encoder->infer(positive_prompt, generation_config.max_sequence_length);
@@ -427,6 +431,21 @@ public:
 
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("txt_ids", text_ids);
+
+        // Store positive prompt embeddings for CFG restoration after negative prompt inference
+        m_positive_prompt_embeds = prompt_embeds;
+        m_positive_text_ids = text_ids;
+
+        // Encode negative prompt for classifier-free guidance
+        if (do_classifier_free_guidance(generation_config)) {
+            m_negative_prompt_embeds = m_text_encoder->infer("", generation_config.max_sequence_length);
+            m_negative_prompt_embeds = numpy_utils::repeat(m_negative_prompt_embeds, generation_config.num_images_per_prompt);
+            const size_t neg_text_seq_len = m_negative_prompt_embeds.get_shape()[1];
+            m_negative_text_ids = flux2_prepare_text_ids(neg_text_seq_len);
+        } else {
+            m_negative_prompt_embeds = ov::Tensor();
+            m_negative_text_ids = ov::Tensor();
+        }
     }
 
     // Prepare and set image IDs (latent_ids only for text2image, latent_ids + image_ids for img2img)
@@ -595,6 +614,31 @@ public:
 
             // Trim output to latent sequence length (discard reference tokens if any)
             noise_pred_tensor = trim_to_latent_seq_len(noise_pred_tensor, latents);
+
+            // Classifier-free guidance: run transformer with negative prompt and combine
+            if (do_classifier_free_guidance(m_custom_generation_config)) {
+                m_transformer->set_hidden_states("encoder_hidden_states", m_negative_prompt_embeds);
+                m_transformer->set_hidden_states("txt_ids", m_negative_text_ids);
+
+                auto neg_infer_start = std::chrono::steady_clock::now();
+                ov::Tensor neg_noise_pred = m_transformer->infer(transformer_input, timestep);
+                auto neg_infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - neg_infer_start);
+                m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(neg_infer_duration));
+
+                neg_noise_pred = trim_to_latent_seq_len(neg_noise_pred, latents);
+
+                // noise_pred = neg_noise_pred + guidance_scale * (noise_pred - neg_noise_pred)
+                const float guidance_scale = m_custom_generation_config.guidance_scale;
+                float* pred_data = noise_pred_tensor.data<float>();
+                const float* neg_data = neg_noise_pred.data<float>();
+                for (size_t i = 0; i < noise_pred_tensor.get_size(); ++i) {
+                    pred_data[i] = neg_data[i] + guidance_scale * (pred_data[i] - neg_data[i]);
+                }
+
+                // Restore positive prompt embeddings for the next step
+                m_transformer->set_hidden_states("encoder_hidden_states", m_positive_prompt_embeds);
+                m_transformer->set_hidden_states("txt_ids", m_positive_text_ids);
+            }
 
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
@@ -931,6 +975,12 @@ private:
     // Reference image conditioning for img2img
     ov::Tensor m_ref_image_latents;  // Packed image latents: (B, img_seq_len, C)
     ov::Tensor m_ref_image_ids;      // Image position IDs: (img_seq_len, 4)
+
+    // Classifier-free guidance: positive and negative prompt embeddings
+    ov::Tensor m_positive_prompt_embeds;
+    ov::Tensor m_positive_text_ids;
+    ov::Tensor m_negative_prompt_embeds;
+    ov::Tensor m_negative_text_ids;
 
     // Batch norm parameters for VAE latent normalization
     std::vector<float> m_bn_mean;

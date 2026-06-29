@@ -115,9 +115,10 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, int max_sequence_l
     int64_t* ids_data = input_ids.data<int64_t>();
     int64_t* mask_data = attention_mask.data<int64_t>();
 
-    // Zero-fill (pad tokens)
-    std::fill(ids_data, ids_data + seq_len, 0);
-    std::fill(mask_data, mask_data + seq_len, 0);
+    // Fill with pad_token_id (e.g. 151643 for Qwen3's <|endoftext|>)
+    const int64_t pad_token_id = m_tokenizer.get_pad_token_id();
+    std::fill(ids_data, ids_data + seq_len, pad_token_id);
+    std::fill(mask_data, mask_data + seq_len, static_cast<int64_t>(0));
 
     // Copy actual tokens
     const int64_t* src_ids = input_ids_token.data<int64_t>();
