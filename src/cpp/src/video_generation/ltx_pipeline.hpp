@@ -275,8 +275,6 @@ ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
-
-
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
@@ -322,10 +320,16 @@ class LTXPipeline {
     std::shared_ptr<ImageResizer> m_image_resizer = nullptr;
     std::shared_ptr<ImageProcessor> m_image_processor = nullptr;
 
+    // Builds the initial packed latent noise fed to the transformer.
+    //  - Text-to-video: returns pure Gaussian noise (image_latent_packed left empty).
+    //  - Image-to-video: pass the packed, encoded conditioning image; its first-frame
+    //    tokens overwrite the noise's first-frame tokens, anchoring generation to the
+    //    input image while the remaining frames stay noise.
     ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config,
                                size_t num_channels_latents,
                                size_t transformer_spatial_patch_size,
-                               size_t transformer_temporal_patch_size) {
+                               size_t transformer_temporal_patch_size,
+                               const ov::Tensor& image_latent_packed = ov::Tensor()) {
         OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
                         "Latent sizes must be > 0 (got num_frames=",
                         m_latent_num_frames,
@@ -340,39 +344,20 @@ class LTXPipeline {
                         m_latent_num_frames,
                         m_latent_height,
                         m_latent_width};
-        ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-        return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
-    }
+        ov::Tensor noise = generation_config.generator->randn_tensor(shape);
+        ov::Tensor latents = pack_latents(noise, transformer_spatial_patch_size, transformer_temporal_patch_size);
 
-    ov::Tensor prepare_latents(const ov::Tensor& image_latent_packed,
-                               const VideoGenerationConfig& config,
-                               size_t num_channels_latents,
-                               size_t ps,
-                               size_t ps_t) {
-        OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
-                        "Latent sizes must be > 0 (got num_frames=",
-                        m_latent_num_frames,
-                        ", height=",
-                        m_latent_height,
-                        ", width=",
-                        m_latent_width,
-                        ").");
-
-        ov::Shape shape{config.num_videos_per_prompt,
-                        num_channels_latents,
-                        m_latent_num_frames,
-                        m_latent_height,
-                        m_latent_width};
-        ov::Tensor noise = config.generator->randn_tensor(shape);
-        ov::Tensor latents = pack_latents(noise, ps, ps_t);
-
-        const size_t tokens_per_frame = (m_latent_height / ps) * (m_latent_width / ps);
-        const size_t S = latents.get_shape()[1];
-        const size_t D = latents.get_shape()[2];
-        for (size_t b = 0; b < config.num_videos_per_prompt; ++b) {
-            float* dst       = latents.data<float>()             + b * S * D;
-            const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
-            std::memcpy(dst, src, tokens_per_frame * D * sizeof(float));
+        // Image-to-video: pin the first-frame tokens to the encoded conditioning image.
+        if (image_latent_packed) {
+            const size_t tokens_per_frame =
+                (m_latent_height / transformer_spatial_patch_size) * (m_latent_width / transformer_spatial_patch_size);
+            const size_t S = latents.get_shape()[1];
+            const size_t D = latents.get_shape()[2];
+            for (size_t b = 0; b < generation_config.num_videos_per_prompt; ++b) {
+                float* dst       = latents.data<float>()             + b * S * D;
+                const float* src = image_latent_packed.data<float>() + b * tokens_per_frame * D;
+                std::memcpy(dst, src, tokens_per_frame * D * sizeof(float));
+            }
         }
         return latents;
     }
@@ -491,8 +476,8 @@ public:
         return m_perf_metrics;
     }
 
-    LTXPipeline(const std::filesystem::path& root_dir,
-                VideoPipelineType pipeline_type = VideoPipelineType::TEXT_2_VIDEO,
+    LTXPipeline(VideoPipelineType pipeline_type,
+                const std::filesystem::path& root_dir,
                 std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now()) {
         m_models_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
@@ -544,10 +529,10 @@ public:
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
-    LTXPipeline(const std::filesystem::path& models_dir,
+    LTXPipeline(VideoPipelineType pipeline_type,
+                const std::filesystem::path& models_dir,
                 const std::string& device,
                 const ov::AnyMap& properties,
-                VideoPipelineType pipeline_type = VideoPipelineType::TEXT_2_VIDEO,
                 std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now())
         : m_scheduler{cast_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"))},
           m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
@@ -715,11 +700,11 @@ public:
 
         ov::Tensor image_latent_packed = preprocess_and_encode_image(image, merged_generation_config);
 
-        ov::Tensor latent = prepare_latents(image_latent_packed,
-                                            merged_generation_config,
+        ov::Tensor latent = prepare_latents(merged_generation_config,
                                             num_channels_latents,
                                             transformer_spatial_patch_size,
-                                            transformer_temporal_patch_size);
+                                            transformer_temporal_patch_size,
+                                            image_latent_packed);
 
         const size_t video_sequence_length = latent.get_shape().at(1);
         m_scheduler->set_timesteps(video_sequence_length,

@@ -11,7 +11,7 @@ Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& model_path
                     "Image2VideoPipeline requires a 'vae_encoder' directory in ",
                     model_path,
                     ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_unique<Impl>(model_path, VideoPipelineType::IMAGE_2_VIDEO);
+    m_impl = std::make_unique<Impl>(VideoPipelineType::IMAGE_2_VIDEO, model_path);
 }
 
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& models_path,
@@ -21,7 +21,7 @@ Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& models_pat
                     "Image2VideoPipeline requires a 'vae_encoder' directory in ",
                     models_path,
                     ". For text-to-video generation without image conditioning, use Text2VideoPipeline.");
-    m_impl = std::make_unique<Impl>(models_path, device, properties, VideoPipelineType::IMAGE_2_VIDEO);
+    m_impl = std::make_unique<Impl>(VideoPipelineType::IMAGE_2_VIDEO, models_path, device, properties);
 }
 
 Image2VideoPipeline::Image2VideoPipeline(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
