@@ -339,15 +339,16 @@ TEST(TestCacheOrchestratorHybrid, AdaptiveCacheIntervalMultiplierScalesWithState
 // The OOM-drop (GenerationStatus::IGNORED) surfaces an actionable error at the call sites that
 // would otherwise discard the status (CB adapter overloads and the VLM result conversion).
 TEST(TestCacheOrchestratorHybrid, AssertRequestWasScheduledThrowsOnIgnored) {
+    constexpr uint64_t request_id = 7;
     // IGNORED == request dropped by the scheduler (out of cache budget) -> must throw.
-    EXPECT_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::IGNORED),
+    EXPECT_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::IGNORED, request_id),
                  ov::Exception);
 
     // All terminal/active states that represent real results must pass through untouched.
-    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::FINISHED));
-    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::STOP));
-    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::CANCEL));
-    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::RUNNING));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::FINISHED, request_id));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::STOP, request_id));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::CANCEL, request_id));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::RUNNING, request_id));
 }
 
 TEST(TestCacheOrchestratorHybrid, CreateIgnoresCacheIntervalMultiplierWithoutLinearAttentionCache) {
