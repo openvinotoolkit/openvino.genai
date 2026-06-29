@@ -246,6 +246,8 @@ struct PerLayerInputsContext {
         float* dst = per_layer_inputs.data<float>() + filled_tokens_offset * per_token_size;
         const size_t bytes_to_copy = num_scheduled_tokens * per_token_size * sizeof(float);
 
+        // Initial per_layer_inputs and per_layer_inputs_callback output have shape [1, total_num_tokens, num_hidden_layers, hidden_size].
+        // PA model expects [total_num_tokens, 1, num_hidden_layers, hidden_size] input shape.
         if (num_processed_tokens < prompt_len) {
             // prompt phase: copy from stored per_layer_inputs
             const auto& initial_per_layer_inputs = sequence_group->get_per_layer_inputs();
@@ -561,6 +563,7 @@ public:
             }
 
             if (per_layer_inputs_context.has_per_layer_inputs) {
+                // PA model expects [total_num_tokens, 1, num_hidden_layers, hidden_size] input shape
                 per_layer_inputs = _get_or_resize_tensor(m_cached_per_layer_inputs, "per_layer_inputs",
                     {total_num_tokens, 1, per_layer_inputs_context.num_hidden_layers, per_layer_inputs_context.hidden_size},
                     ov::element::f32);
