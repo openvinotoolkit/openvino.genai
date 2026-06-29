@@ -327,6 +327,7 @@ class LTXPipeline {
                                size_t transformer_spatial_patch_size,
                                size_t transformer_temporal_patch_size,
                                const ov::Tensor& image_latent_packed = ov::Tensor()) {
+        OPENVINO_ASSERT(generation_config.generator, "Generator must not be null");
         OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
                         "Latent sizes must be > 0 (got num_frames=",
                         m_latent_num_frames,
@@ -386,6 +387,9 @@ class LTXPipeline {
 
         const size_t ps   = m_transformer->get_config().patch_size;
         const size_t ps_t = m_transformer->get_config().patch_size_t;
+        OPENVINO_ASSERT(ps_t == 1,
+                        "Image2VideoPipeline requires patch_size_t=1; the conditioning latent has a single frame "
+                        "and cannot be temporally packed with patch_size_t=", ps_t);
         ov::Tensor packed = pack_latents(latent, ps, ps_t);
 
         if (config.num_videos_per_prompt > 1)
@@ -565,6 +569,7 @@ public:
         static_assert(std::is_base_of_v<LTXPipeline, T>, "T must derive from LTXPipeline");
         OPENVINO_ASSERT(m_is_compiled, "Cannot clone an uncompiled LTXPipeline");
         auto cloned = std::make_unique<T>(static_cast<const LTXPipeline&>(*this));
+        cloned->m_generation_config.generator.reset();
         cloned->m_scheduler = cast_scheduler(Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
         cloned->m_t5_text_encoder = m_t5_text_encoder->clone();
         cloned->m_transformer = std::make_shared<LTXVideoTransformer3DModel>(m_transformer->clone());

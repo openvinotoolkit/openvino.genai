@@ -161,8 +161,9 @@ ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
             }
         }
     }
-    OPENVINO_THROW("LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
-                   "The model may be corrupted or exported incorrectly.");
+    OPENVINO_ASSERT(false,
+                    "LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
+                    "The model may be corrupted or exported incorrectly.");
 }
 
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
