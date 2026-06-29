@@ -11,6 +11,7 @@
 
 #include "continuous_batching/timer.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "sampling/sampler.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 
@@ -437,7 +438,13 @@ void Eagle3InferWrapperBase::set_npu_sampling_result(size_t num_candidates,
         // for variable-length candidate sets. set_state() copies into a fixed 514-element
         // internal buffer, so any tensor up to that size is safe.
         static constexpr size_t kSamplingStateHeaderSize = 2;  // [num_candidates, num_accepted]
+        static constexpr size_t kSamplingStateCapacity = 514;
         const size_t tensor_size = kSamplingStateHeaderSize + num_candidates;
+        OPENVINO_ASSERT(tensor_size <= kSamplingStateCapacity,
+                        "npuw_eagle3_sampling_result requires tensor_size <= ",
+                        kSamplingStateCapacity,
+                        ", but got ",
+                        tensor_size);
         ov::Tensor tensor(ov::element::i64, ov::Shape{tensor_size});
 
         int64_t* data = tensor.data<int64_t>();
@@ -1125,11 +1132,15 @@ StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
 }
 
 void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& config) {
-    if (!config.is_tree_search()) {
-        config.branching_factor = DEFAULT_EAGLE_BRANCHING_FACTOR;
-        config.tree_depth = DEFAULT_EAGLE_TREE_DEPTH;
-        config.num_assistant_tokens = DEFAULT_EAGLE_NUM_ASSISTANT_TOKENS;
+    if (config.is_tree_search()) {
+        OPENVINO_ASSERT(config.branching_factor > 0, "branching_factor must be > 0 for Eagle3 tree search");
+        OPENVINO_ASSERT(config.num_assistant_tokens > 0, "num_assistant_tokens must be > 0 for Eagle3 tree search");
+        return;
     }
+
+    config.branching_factor = DEFAULT_EAGLE_BRANCHING_FACTOR;
+    config.tree_depth = DEFAULT_EAGLE_TREE_DEPTH;
+    config.num_assistant_tokens = DEFAULT_EAGLE_NUM_ASSISTANT_TOKENS;
 }
 
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
@@ -1160,7 +1171,7 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
     return config;
 }
 
-int64_t StatefulEagle3LLMPipeline::run_prefill(const GenerationConfig& config) {
+int64_t StatefulEagle3LLMPipeline::run_prefill() {
     InferContext prefill_ctx;
     prefill_ctx.input_token_count = m_prompt_length;
     const auto prefill_result = m_target->forward(prefill_ctx);
@@ -1174,6 +1185,9 @@ int64_t StatefulEagle3LLMPipeline::run_prefill(const GenerationConfig& config) {
     if (!m_draft->buffers_allocated()) {
         const auto& h_shape = prefill_result.output.hidden_features.get_shape();
         OPENVINO_ASSERT(h_shape.size() == 3, "hidden_features must be rank-3, got rank ", h_shape.size());
+        OPENVINO_ASSERT(prefill_result.output.hidden_features.get_element_type() == ov::element::f32,
+                        "Eagle3 pipeline requires f32 hidden states, got ",
+                        prefill_result.output.hidden_features.get_element_type());
         const size_t hidden_size = h_shape[2];
 
         const auto& l_shape = prefill_result.output.logits.get_shape();
@@ -1199,7 +1213,11 @@ EncodedResults StatefulEagle3LLMPipeline::build_results(ManualTimer& generate_ti
                                                         size_t total_draft_accepted,
                                                         size_t total_draft_generated) {
     EncodedResults results;
-    results.tokens = {m_target->get_generated_tokens()};
+    auto tokens = m_target->get_generated_tokens();
+    if (tokens.size() > generated_tokens) {
+        tokens.resize(generated_tokens);
+    }
+    results.tokens = {std::move(tokens)};
     results.scores = {0.0f};
 
     generate_timer.end();
@@ -1260,17 +1278,11 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     m_target->reset_state();
     m_draft->reset_state();
 
-    // Prepare sampling config with extended max_new_tokens to prevent premature termination
-    // during draft generation. Actual length control is in the generation loop.
-    // +tree_depth for draft overshoot + 1 root + 1 safety margin.
-    auto sampling_config = config;
-    sampling_config.max_new_tokens = config.max_new_tokens + config.tree_depth + 2;
-
-    m_draft->initialize_sequence(input_ids, sampling_config);
-    m_target->initialize_sequence(input_ids, sampling_config);
+    m_draft->initialize_sequence(input_ids, config);
+    m_target->initialize_sequence(input_ids, config);
 
     // --- Phase 1: Initial Prompt Processing (Prefill) ---
-    const int64_t initial_token = run_prefill(config);
+    const int64_t initial_token = run_prefill();
     auto streaming_status = stream_generated_tokens(streamer_ptr, {initial_token});
 
     // --- Phase 2: Speculative Decoding Loop ---
@@ -1286,10 +1298,9 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     size_t input_token_count = m_draft->get_sequence_length();
 
     while (!eos_reached && generated_tokens < config.max_new_tokens &&
-           m_target->get_sequence_length() < m_prompt_length + config.max_new_tokens &&
            streaming_status == ov::genai::StreamingStatus::RUNNING) {
         auto result =
-            run_speculative_iteration(input_token_count, static_cast<int64_t>(config.eos_token_id), draft_iterations);
+            run_speculative_iteration(input_token_count, config.stop_token_ids, draft_iterations);
 
         // Truncate validated tokens if they would exceed max_new_tokens.
         const size_t remaining_budget = config.max_new_tokens - generated_tokens;
@@ -1471,7 +1482,7 @@ void StatefulEagle3LLMPipeline::gather_accepted_hidden_states(const ValidationRe
 }
 
 SpeculativeResult StatefulEagle3LLMPipeline::run_speculative_iteration(size_t input_token_count,
-                                                                       int64_t eos_token_id,
+                                                                       const std::set<int64_t>& stop_token_ids,
                                                                        size_t draft_iterations) {
     OPENVINO_ASSERT(m_target->get_sequence_group() && m_draft->get_sequence_group(),
                     "Eagle3 speculative iteration requires initialized sequence groups");
@@ -1508,7 +1519,7 @@ SpeculativeResult StatefulEagle3LLMPipeline::run_speculative_iteration(size_t in
     result.num_draft_tokens = validation.num_candidates - 1;  // tree nodes excluding root
     result.next_window_size = validation.accepted_count + 1;
     result.validated_tokens = std::move(validation.validated_tokens);
-    result.eos_reached = (target_predicted_token == eos_token_id);
+    result.eos_reached = is_stop_token_id_hit(target_predicted_token, stop_token_ids);
 
     return result;
 }

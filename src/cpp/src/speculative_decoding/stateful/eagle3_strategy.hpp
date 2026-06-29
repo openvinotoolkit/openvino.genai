@@ -418,7 +418,9 @@ private:
     // ---- Speculative iteration sub-steps ----
 
     /// @brief Runs a complete speculative iteration (draft + validate + sync).
-    SpeculativeResult run_speculative_iteration(size_t token_count, int64_t eos_token_id, size_t draft_iterations);
+    SpeculativeResult run_speculative_iteration(size_t token_count,
+                                                 const std::set<int64_t>& stop_token_ids,
+                                                 size_t draft_iterations);
 
     /// @brief Step 1: Generates the first draft tree level using target hidden states.
     InferResult generate_initial_draft(size_t input_token_count, size_t past_accepted_token_count);
@@ -436,7 +438,7 @@ private:
     void gather_accepted_hidden_states(const ValidationResult& validation);
 
     /// @brief Runs initial prompt processing (prefill) and returns the first generated token.
-    int64_t run_prefill(const GenerationConfig& config);
+    int64_t run_prefill();
 
     /// @brief Builds final EncodedResults with performance metrics after generation completes.
     EncodedResults build_results(ManualTimer& generate_timer,
