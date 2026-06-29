@@ -709,6 +709,14 @@ def _is_voice_pack_enabled_model(model):
 
 
 def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
+    from whowhatbench.speech_generation_evaluator import GenAIOmniSpeechWrapper
+
+    if isinstance(model, GenAIOmniSpeechWrapper):
+        result = model.generate(prompt, speaker_embedding, language=language, voice=voice)
+        speech = np.array(result.speeches[0].data).reshape(-1)
+        sample_rate = int(getattr(result, "output_sample_rate", 16000))
+        return speech, sample_rate
+
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
