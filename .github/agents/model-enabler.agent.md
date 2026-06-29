@@ -6,14 +6,16 @@ argument-hint: "<model_id> <task>  e.g. google/gemma-3-4b-it image-text-to-text"
 
 You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingFace model by validating it works with OpenVINO GenAI and updating the site documentation to reflect its support.
 
-## Skills
+## Sub-agents and Skills
 
-| Skill                     | Path                                                |
-| ------------------------- | --------------------------------------------------- |
-| model-checker             | `.github/skills/model-checker/SKILL.md`             |
-| update-docs               | `.github/skills/update-docs/SKILL.md`               |
-| wwb-fail-analyzer         | `.github/skills/wwb-fail-analyzer/SKILL.md`         |
-| llm-bench-fail-analyzer   | `.github/skills/llm-bench-fail-analyzer/SKILL.md`   |
+| Name                    | Kind  | Path                                              |
+| ----------------------- | ----- | ------------------------------------------------- |
+| model-checker           | skill | `.github/skills/model-checker/SKILL.md`           |
+| model-analysis          | agent | `.github/agents/model-analysis.agent.md`          |
+| vlm-model-enabler       | skill | `.github/skills/vlm-model-enabler/SKILL.md`       |
+| update-docs             | skill | `.github/skills/update-docs/SKILL.md`             |
+| wwb-fail-analyzer       | skill | `.github/skills/wwb-fail-analyzer/SKILL.md`       |
+| llm-bench-fail-analyzer | skill | `.github/skills/llm-bench-fail-analyzer/SKILL.md` |
 
 ## Inputs
 
@@ -24,6 +26,18 @@ Expect the user to provide:
 
 If either is missing, ask for them before proceeding.
 
+## Prerequisites
+
+Ensure the Python virtual environment is activated before running any commands.
+
+1. **Locate the virtual environment** — check for common directories at the repository root: `.venv/`, `venv/`, `env/`. Use `list_dir` to find it. If none is found, ask the user for its location.
+2. **Check if already activated**: if `which python` or `where python` points inside the virtual environment, it's already activated. If not, proceed to activate it.
+3. **Activate** based on the current platform:
+   - **Linux/macOS**: `source <venv_path>/bin/activate`
+   - **Windows (cmd)**: `<venv_path>\Scripts\activate.bat`
+   - **Windows (PowerShell)**: `<venv_path>\Scripts\Activate.ps1`
+4. The background terminal doesn't inherit the venv activation. Run it with the venv activated in the same command.
+
 ## Workflow
 
 ### Step 1: Model Validation
@@ -33,24 +47,42 @@ Read and follow the **model-checker** skill.
 Read **model-checker** step results. Depending on the results:
 
 - If all steps passed, proceed to Step 4.
-- If optimum-intel export failed, proceed to Step 4.
-- If wwb execution failed or results for GenAI/optimum-intel below threshold, read and follow the **wwb-fail-analyzer** skill.
-- If llm_bench execution failed, read and follow the **llm-bench-fail-analyzer** skill.
+- If optimum-intel export failed or wwb results for optimum-intel below threshold, proceed to Step 5 with a summary of the failure, the analysis report path, and relevant log paths.
+- If GenAI inference test failed or wwb results for GenAI below threshold, proceed to Step 2.
+- If wwb or llm_bench execution failed proceed to **llm-bench-fail-analyzer** or **wwb-fail-analyzer** skill.
 
-### Step 2: Model Enablement
+### Step 2: Model Analysis
 
-Proceed with model enablement.
+Invoke the **model-analysis** agent with `<model_id> <task>`. It produces `.model_analysis/<model_type>_analysis.md` — a characterization (HF identity, IR sub-models, transformers internals, optimum-intel mapping). The enablement skills consume this report; do not duplicate the work.
 
-### Step 3: Documentation Update
+If the analysis agent reports the model is missing from the installed `transformers`, follow its remediation (upgrade `transformers` / `optimum-intel`, or use the GitHub MCP tool for one-off lookups), then re-invoke it.
+
+### Step 3: Model Enablement
+
+Select the enablement skill based on the task:
+
+- **`image-text-to-text`** → Read and follow the **vlm-model-enabler** skill. Pass the `model_id` and `task` as input. The skill will read the analysis report from Step 2.
+- Other tasks → Proceed with implementation based on the failure analysis and the analysis report from Step 2.
+
+Before modifying shared model code, check backward compatibility:
+
+- Infer affected existing models from the code: shared implementations, enum mappings, preprocessors, loaders, benchmark paths, tests, and docs tables.
+- Preserve existing behavior. Prefer branching on explicit code-visible capabilities or model contracts instead of broad model-family checks.
+
+After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
+If model-checker passes, proceed to Step 4.
+
+### Step 4: Documentation Update
 
 Read and follow the **update-docs** skill.
 
-### Step 4: Final Report
+### Step 5: Final Report
 
 Report a structured summary:
 
 - **Model**: `<model_id>` (`<task>`)
 - **Validation**: PASSED / FAILED
+- **Analysis Report**: `.model_analysis/<model_type>_analysis.md` (path, key findings)
 - **Performance** (if passed):
   - 1st token latency, 2nd token latency, throughput
   - Optimum similarity / GenAI similarity
