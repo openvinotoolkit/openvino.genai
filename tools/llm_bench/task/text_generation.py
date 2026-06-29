@@ -357,6 +357,8 @@ def run_text_generation_genai(
             from llm_bench_utils.model_utils import get_config
 
             extra_cfg = get_config(args["generation_config"])
+            if not isinstance(extra_cfg, dict):
+                raise ValueError(f"--generation_config must be a JSON object, got {type(extra_cfg).__name__}")
             for k, v in extra_cfg.items():
                 if hasattr(gen_config, k):
                     setattr(gen_config, k, v)
@@ -540,6 +542,8 @@ def run_text_generation_genai_with_stream(
             from llm_bench_utils.model_utils import get_config
 
             extra_cfg = get_config(args["generation_config"])
+            if not isinstance(extra_cfg, dict):
+                raise ValueError(f"--generation_config must be a JSON object, got {type(extra_cfg).__name__}")
             for k, v in extra_cfg.items():
                 if hasattr(gen_config, k):
                     setattr(gen_config, k, v)

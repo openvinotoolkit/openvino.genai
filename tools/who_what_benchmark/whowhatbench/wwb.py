@@ -403,7 +403,7 @@ def parse_args():
         type=str,
         default=None,
         help="Path to JSON file or JSON string with generation config parameters for EAGLE3 Top-K speculative decoding. "
-        "Supported keys: 'num_assistant_tokens', 'assistant_confidence_threshold', 'branching_factor', 'tree_depth'. "
+        "Supported keys: 'max_new_tokens', 'num_assistant_tokens', 'assistant_confidence_threshold', 'branching_factor', 'tree_depth'. "
         'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
 
@@ -1217,11 +1217,14 @@ def main():
             raise ValueError(f"--generation-config must be a JSON object, got {type(gen_cfg).__name__}")
         logger.info(f"generation_config: {gen_cfg}")
         if "num_assistant_tokens" in gen_cfg:
-            args.num_assistant_tokens = gen_cfg["num_assistant_tokens"]
+            args.num_assistant_tokens = int(gen_cfg["num_assistant_tokens"])
         if "assistant_confidence_threshold" in gen_cfg:
-            args.assistant_confidence_threshold = gen_cfg["assistant_confidence_threshold"]
+            args.assistant_confidence_threshold = float(gen_cfg["assistant_confidence_threshold"])
         if "max_new_tokens" in gen_cfg:
-            args.max_new_tokens = int(gen_cfg["max_new_tokens"])
+            val = int(gen_cfg["max_new_tokens"])
+            if val < 1:
+                raise ValueError(f"max_new_tokens in --generation-config must be >= 1, got {val}")
+            args.max_new_tokens = val
         # Store extra keys (branching_factor, tree_depth, etc.) for generate() call
         # Filter out keys that are already handled above or conflict with generate() kwargs
         _handled_keys = {"num_assistant_tokens", "assistant_confidence_threshold", "max_new_tokens"}
