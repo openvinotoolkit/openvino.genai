@@ -58,6 +58,7 @@ from openvino_genai import (
     GenerationFinishReason,
     ChatHistory,
     VideoMetadata,
+    draft_model,
 )
 
 from utils.network import retry_request
@@ -69,9 +70,11 @@ from utils.generation_config import (
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.custom_op import assert_ir_contains_op_type, get_extension_model, get_extension_lib_path, CustomAdd
+from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,6 +99,7 @@ class VlmModelInfo:
 
 def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
+
 
 VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
 
@@ -134,11 +138,7 @@ class _VlmPipelineUnsupportedImageInputGuard:
         return getattr(self._pipeline, name)
 
 
-PROMPTS: list[str] = [
-    "What is in the image?",
-    "What is special about this image?",
-    "Describe the image"
-]
+PROMPTS: list[str] = ["What is in the image?", "What is special about this image?", "Describe the image"]
 
 VIDEO_MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -185,10 +185,7 @@ else:
     ]
 
 
-ADD_REQUEST_MODEL_IDS = [
-    MODEL_IDS[0],
-    *VIDEO_MODEL_IDS
-]
+ADD_REQUEST_MODEL_IDS = [MODEL_IDS[0], *VIDEO_MODEL_IDS]
 
 
 IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
@@ -256,9 +253,9 @@ RETRY_BASE_DELAY_SEC = 0.1
 RETRY_MAX_DELAY_SEC = 2.0
 
 TEST_IMAGE_URLS = {
-    'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
-    'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
-    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
+    "cat": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11",
+    "car": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
+    "handwritten": "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350",
 }
 
 NPU_UNSUPPORTED_MODELS = {
@@ -287,6 +284,59 @@ def _get_prompt(ov_pipe_model: VlmModelInfo, prompt: str, num_images: int = 0) -
         return image_tags + prompt
 
     return prompt
+
+
+VLM_EAGLE3_MAIN_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-vl-layer10"
+VLM_EAGLE3_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3"
+
+
+def _maybe_skip_unsupported_model_export(model_id: str) -> None:
+    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4"
+        )
+    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
+        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
+    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
+        ">", "4.51.3"
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+    if "qwen3-vl" in model_id and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
+        )
+    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
+        )
+    if model_id in [
+        "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
+    ] and is_transformers_version("<", "5.5.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
+        )
+    if model_id in [
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified",
+    ] and is_transformers_version("<", "5.10.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.10.0."
+        )
+    if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
+        pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
+
+
+def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
+    _maybe_skip_unsupported_model_export(VLM_EAGLE3_MAIN_MODEL_ID)
+    _maybe_skip_unsupported_model_export(VLM_EAGLE3_DRAFT_MODEL_ID)
+    draft_model_path = download_and_convert_model(
+        VLM_EAGLE3_DRAFT_MODEL_ID,
+        model_kwargs={"task": "image-text-to-text"},
+    ).models_path
+    return Path(_get_ov_model(VLM_EAGLE3_MAIN_MODEL_ID)), draft_model_path
 
 
 def _setup_generation_config(
@@ -349,35 +399,7 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
 
 
 def _get_ov_model(model_id: str) -> str:
-    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
-        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
-    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
-        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
-        ">", "4.51.3"
-    ):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
-        )
-    if "optimum-intel-internal-testing/tiny-random-qwen3-vl" == model_id and is_transformers_version("<", "4.57.0"):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
-        )
-    if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
-        )
-    if model_id in [
-        "optimum-intel-internal-testing/tiny-random-gemma4",
-        "optimum-intel-internal-testing/tiny-random-gemma4-unified",
-        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
-        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
-    ] and is_transformers_version("<", "5.5.0"):
-        pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
-        )
-    if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
-        pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
+    _maybe_skip_unsupported_model_export(model_id)
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
@@ -404,7 +426,8 @@ def _get_ov_model(model_id: str) -> str:
                 device="CPU",
                 export=True,
                 load_in_8bit=False,
-                trust_remote_code=model_id in {
+                trust_remote_code=model_id
+                in {
                     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
                     "optimum-intel-internal-testing/tiny-random-internvl2",
                     "optimum-intel-internal-testing/tiny-random-phi3-vision",
@@ -426,9 +449,7 @@ def _get_ov_model(model_id: str) -> str:
             if tokenizer.chat_template is None:
                 tokenizer.chat_template = processor.chat_template
         tokenizer.save_pretrained(temp_dir)
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer, with_detokenizer=True
-        )
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, temp_dir / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, temp_dir / "openvino_detokenizer.xml")
 
@@ -453,6 +474,7 @@ def _get_ov_model(model_id: str) -> str:
 
     manager.execute(convert_to_temp)
     return model_dir
+
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
@@ -505,6 +527,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         pipeline,
         ov_prompt_lookup,
     )
+
 
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
@@ -649,12 +672,13 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
             image = download_image(link)
             image.save(image_path)
         return image
+
     return retry(implementation, PIL.UnidentifiedImageError)
 
 
 @pytest.fixture(scope="module")
 def cat_image(pytestconfig: pytest.Config):
-    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['cat'], "cat.jpg")
+    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS["cat"], "cat.jpg")
 
 
 def resize_video(video, shape):
@@ -684,7 +708,7 @@ def synthetic_video(pytestconfig):
         for x in range(0, width):
             for y in range(0, height):
                 # shift previous frame
-                new_frame[y, x] = frames[i-1][y, (x - shift + width) % width]
+                new_frame[y, x] = frames[i - 1][y, (x - shift + width) % width]
         frames.append(new_frame)
 
     return frames
@@ -722,7 +746,7 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 
 @pytest.fixture(scope="module")
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
-    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
+    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS["car"], "car.jpg"))
 
 
 @pytest.fixture(scope="module")
@@ -732,14 +756,17 @@ def synthetic_video_32x32_tensor(synthetic_video_32x32):
 
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
-    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
+    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS["handwritten"], "handwritten.png"))
 
 
-@pytest.fixture(scope="function", params=[
-    pytest.param([], id="no_images"),
-    pytest.param(["cat_tensor"], id="single_image"),
-    pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images"),
-])
+@pytest.fixture(
+    scope="function",
+    params=[
+        pytest.param([], id="no_images"),
+        pytest.param(["cat_tensor"], id="single_image"),
+        pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images"),
+    ],
+)
 def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
@@ -751,6 +778,7 @@ def test_images(request: pytest.FixtureRequest):
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -791,7 +819,7 @@ def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32)
     [
         pytest.param(get_greedy(), id="greedy"),
         pytest.param(get_beam_search(), id="beam_search"),
-    ]
+    ],
 )
 @parametrize_one_model_pa
 def test_vlm_continuous_batching_generate_vs_add_request(
@@ -799,7 +827,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     ov_continuous_batching_pipe: ContinuousBatchingPipeline,
     config: GenerationConfig,
     request: pytest.FixtureRequest,
-    cat_tensor: openvino.Tensor
+    cat_tensor: openvino.Tensor,
 ):
     ov_pipe = ov_pipe_model.pipeline
     generation_config = config
@@ -855,7 +883,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     [
         pytest.param(get_greedy(), id="greedy"),
         pytest.param(get_beam_search(), id="beam_search"),
-    ]
+    ],
 )
 @pytest.mark.transformers_lower_v5(
     reason="CSVS-186059: gemma3 fails with: 'Eltwise shape infer input shapes dim index: 1 mismatch' with transformers 5.0"
@@ -870,9 +898,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
     tokenizer = ov_cb_pipe.get_tokenizer()
 
     for idx, images in enumerate(image_links_list):
-        handle = ov_cb_pipe.add_request(
-            idx, PROMPTS[0], images, config
-        )
+        handle = ov_cb_pipe.add_request(idx, PROMPTS[0], images, config)
         while handle.get_status() != GenerationStatus.FINISHED:
             ov_cb_pipe.step()
         outputs = handle.read_all()
@@ -891,7 +917,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
     [
         pytest.param(get_greedy(), id="greedy"),
         pytest.param(get_beam_search(), id="beam_search"),
-    ]
+    ],
 )
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful(
@@ -912,14 +938,10 @@ def test_vlm_continuous_batching_vs_stateful(
         )
 
     for idx, images in enumerate(image_links_list):
-        res_stateful = ov_pipe.generate(
-            PROMPTS[0], images=images, generation_config=generation_config
-        )
+        res_stateful = ov_pipe.generate(PROMPTS[0], images=images, generation_config=generation_config)
         for out_idx, text in enumerate(res_stateful.texts):
             assert text == res_cb[idx][0].texts[out_idx]
-            assert (
-                abs(res_stateful.scores[out_idx] - res_cb[idx][0].scores[out_idx]) < DEFAULT_SCORE_EPSILON
-            )
+            assert abs(res_stateful.scores[out_idx] - res_cb[idx][0].scores[out_idx]) < DEFAULT_SCORE_EPSILON
 
 
 @parametrize_one_model_sdpa
@@ -968,39 +990,45 @@ def test_vlm_continuous_batching_vs_stateful_chat_history(
                 assert abs(result_stateful.scores[out_idx] - results_cb[q_i][i].scores[out_idx]) < DEFAULT_SCORE_EPSILON
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param([[], []], id="generation with text input only"),
-    pytest.param(
-        [[], ["cat_tensor", "car_tensor", "handwritten_tensor"], []],
-        id="combination of generations with text input and text + image input, empty image first"
-    ),
-    pytest.param(
-        [["cat_tensor", "car_tensor", "handwritten_tensor"], ["cat_tensor"]],
-        id="generation with text + image input"
-    ),
-    pytest.param(
-        [["cat_tensor", "car_tensor", "handwritten_tensor"], [], ["cat_tensor"]],
-        id="combination of generations with text input and text + image input, image input first"
-    ),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param([[], []], id="generation with text input only"),
+        pytest.param(
+            [[], ["cat_tensor", "car_tensor", "handwritten_tensor"], []],
+            id="combination of generations with text input and text + image input, empty image first",
+        ),
+        pytest.param(
+            [["cat_tensor", "car_tensor", "handwritten_tensor"], ["cat_tensor"]],
+            id="generation with text + image input",
+        ),
+        pytest.param(
+            [["cat_tensor", "car_tensor", "handwritten_tensor"], [], ["cat_tensor"]],
+            id="combination of generations with text input and text + image input, image input first",
+        ),
+    ],
+)
 def iteration_images(request) -> list[list[PIL.Image]]:
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param(
-        [[[], [], []], [[], [ "synthetic_video_32x32_tensor"], []]],
-        id="Video on second iteration"
-    ),
-    pytest.param(
-        [[["cat_tensor"], [], []], [["synthetic_video_32x32_tensor"], [], ["synthetic_video_32x32_tensor"]]],
-        id="Image + video on first iteration, image on third iteration"
-    ),
-    pytest.param(
-        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor", "synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
-        id="3 images + 2 videos on first iteration, video on second iteration"
-    ),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param([[[], [], []], [[], ["synthetic_video_32x32_tensor"], []]], id="Video on second iteration"),
+        pytest.param(
+            [[["cat_tensor"], [], []], [["synthetic_video_32x32_tensor"], [], ["synthetic_video_32x32_tensor"]]],
+            id="Image + video on first iteration, image on third iteration",
+        ),
+        pytest.param(
+            [
+                [["cat_tensor", "car_tensor", "handwritten_tensor"], []],
+                [["synthetic_video_32x32_tensor", "synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]],
+            ],
+            id="3 images + 2 videos on first iteration, video on second iteration",
+        ),
+    ],
+)
 def iteration_images_and_videos(request):
     params = []
     for param in request.param:
@@ -1021,6 +1049,7 @@ def test_vlm_pipeline_chat(
     _skip_chat_template_required_test_for_native_tag_model(ov_pipe_model)
 
     ov_pipe = ov_pipe_model.pipeline
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -1180,21 +1209,21 @@ def test_vlm_pipeline_chat_history_multipart_content(
         )
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param([[], []], id="generation with text input only"),
-    pytest.param(
-        [[], ["cat_tensor"], ["car_tensor"], ["handwritten_tensor"], []],
-        id="combination of generations with text input and text + image input, empty image first"
-    ),
-    pytest.param(
-        [["cat_tensor"], ["car_tensor"], ["handwritten_tensor"]],
-        id="generation with text + image input"
-    ),
-    pytest.param(
-        [["cat_tensor"], ["car_tensor"], [], ["handwritten_tensor"]],
-        id="combination of generations with text input and text + image input, image input first"
-    ),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param([[], []], id="generation with text input only"),
+        pytest.param(
+            [[], ["cat_tensor"], ["car_tensor"], ["handwritten_tensor"], []],
+            id="combination of generations with text input and text + image input, empty image first",
+        ),
+        pytest.param([["cat_tensor"], ["car_tensor"], ["handwritten_tensor"]], id="generation with text + image input"),
+        pytest.param(
+            [["cat_tensor"], ["car_tensor"], [], ["handwritten_tensor"]],
+            id="combination of generations with text input and text + image input, image input first",
+        ),
+    ],
+)
 def iteration_images_npu(request):
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
@@ -1208,6 +1237,7 @@ def iteration_images_npu(request):
 def test_vlm_pipeline_chat_npu(ov_npu_pipe_model: VlmModelInfo, system_message, iteration_images_npu):
     def run_chat(ov_pipe, system_message, iteration_images):
         result_from_streamer = []
+
         def streamer(word: str) -> bool:
             result_from_streamer.append(word)
             return False
@@ -1368,9 +1398,7 @@ def test_perf_metrics(
     assert 0 <= perf_metrics.get_generate_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_tokenization_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_detokenization_duration().std < squared_generate_time
-    assert (
-        0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
-    )
+    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
@@ -1412,9 +1440,7 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
     generation_config = _setup_generation_config(ov_pipe)
 
-    ov_pipe.generate(
-        PROMPTS[0], generation_config=generation_config
-    )
+    ov_pipe.generate(PROMPTS[0], generation_config=generation_config)
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
@@ -1507,11 +1533,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     def streamer(subword):
         nonlocal current_iter
         current_iter += 1
-        return (
-            StreamingStatus.CANCEL
-            if current_iter == num_iters
-            else StreamingStatus.RUNNING
-        )
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
 
     generation_config = _setup_generation_config(
         ov_pipe,
@@ -1544,24 +1566,24 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
 
     results = ""
     ov_pipe.start_chat()
-    results += ov_pipe.generate(
-        callback_questions[0], **images_and_videos, generation_config=generation_config
-    ).texts[0]
-    results += ov_pipe.generate(
-        callback_questions[2], **images_and_videos, generation_config=generation_config
-    ).texts[0]
+    results += ov_pipe.generate(callback_questions[0], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
+    results += ov_pipe.generate(callback_questions[2], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
     ov_pipe.finish_chat()
 
     assert results_with_cancel == results
 
     results = ""
     ov_pipe.start_chat()
-    results += ov_pipe.generate(
-        callback_questions[0], **images_and_videos, generation_config=generation_config
-    ).texts[0]
-    results += ov_pipe.generate(
-        callback_questions[2], **images_and_videos, generation_config=generation_config
-    ).texts[0]
+    results += ov_pipe.generate(callback_questions[0], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
+    results += ov_pipe.generate(callback_questions[2], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
     ov_pipe.finish_chat()
 
     assert results_with_cancel == results
@@ -1573,9 +1595,7 @@ def test_start_chat_clears_history(
     image_sequence: list[openvino.Tensor],
 ):
     ov_pipe = ov_pipe_model.pipeline
-    callback_questions = [
-        "Why is the Sun yellow?"
-    ]
+    callback_questions = ["Why is the Sun yellow?"]
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
 
@@ -1596,9 +1616,7 @@ def test_start_chat_clears_history(
 def test_start_chat_clears_history_cb_api(
     ov_continuous_batching_pipe: ContinuousBatchingPipeline, image_sequence: list[openvino.Tensor]
 ):
-    callback_questions = [
-        "Why is the Sun yellow?"
-    ]
+    callback_questions = ["Why is the Sun yellow?"]
     generation_config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS)
 
     results_first_generate = ""
@@ -1650,11 +1668,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 
         current_iter += 1
         streamer_generation_result += subword
-        return (
-            StreamingStatus.CANCEL
-            if current_iter == num_iters
-            else StreamingStatus.RUNNING
-        )
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
 
     generation_config = _setup_generation_config(
         ov_pipe,
@@ -1955,7 +1969,7 @@ def test_model_tags_prepend_universal(
         universal_tags1 = ov_pipe.generate(
             get_universal_tag(vision_type, 1) + get_universal_tag(vision_type, 2) + conversation_requests[1][0],
             **get_vision_inputs_kwargs(conversation_requests[1][1], vision_type),
-            do_sample=False
+            do_sample=False,
         )
         assert universal_tags1.texts == answers[1].texts
         assert universal_tags1.scores == answers[1].scores
@@ -2009,7 +2023,7 @@ def test_model_tags_append(
         universal_tags1 = ov_pipe.generate(
             conversation_requests[1][0] + get_universal_tag(vision_type, 1) + get_universal_tag(vision_type, 2),
             **get_vision_inputs_kwargs(conversation_requests[1][1], vision_type),
-            do_sample=False
+            do_sample=False,
         )
         assert universal_tags1.texts == native_tags1.texts
         assert universal_tags1.scores == native_tags1.scores
@@ -2896,6 +2910,81 @@ def test_vlm_pipeline_add_extension(cat_tensor, tmp_path: Path) -> None:
     )
     assert result_extension_obj.texts[0].strip() == result_ref.texts[0].strip(), (
         "Result should be the same for model with extension 'CustomAdd' and reference model."
+    )
+
+
+def test_vlm_eagle3(cat_tensor):
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    ov_pipe = VLMPipeline(model_path, "CPU")
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    result_without_draft = ov_pipe.generate(PROMPTS[2], images=[cat_tensor], generation_config=generation_config)
+
+    ov_draft = draft_model(draft_model_path, "CPU")
+    ov_pipe_with_draft = VLMPipeline(
+        model_path,
+        "CPU",
+        draft_model=ov_draft,
+    )
+    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    result_with_draft = ov_pipe_with_draft.generate(
+        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
+    )
+
+    assert result_without_draft.texts[0].strip() == result_with_draft.texts[0].strip(), (
+        "Result should be the same when Eagle3 draft model is enabled and disabled."
+    )
+
+
+def test_vlm_eagle3_chat_with_videos(
+    cat_tensor: openvino.Tensor,
+    synthetic_video_32x32_tensor: openvino.Tensor,
+):
+    model_path, draft_model_path = _get_vlm_eagle3_model_paths()
+
+    prompts = [
+        "Describe the image and the video together.",
+        "What did you see across both inputs?",
+    ]
+
+    def run_two_round_chat(pipe: VLMPipeline, generation_config: GenerationConfig) -> list[str]:
+        history = ChatHistory()
+        results = []
+
+        for round_idx, prompt in enumerate(prompts):
+            history.append({"role": "user", "content": prompt})
+            generate_kwargs = {"generation_config": generation_config}
+            if round_idx == 0:
+                generate_kwargs["images"] = [cat_tensor]
+                generate_kwargs["videos"] = [synthetic_video_32x32_tensor]
+
+            result = pipe.generate(
+                history,
+                **generate_kwargs,
+            )
+            results.append(result.texts[0].strip())
+            history.append({"role": "assistant", "content": result.texts[0]})
+
+        return results
+
+    ov_pipe = VLMPipeline(model_path, "CPU")
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    results_without_draft = run_two_round_chat(ov_pipe, generation_config)
+
+    ov_draft = draft_model(draft_model_path, "CPU")
+    ov_pipe_with_draft = VLMPipeline(
+        model_path,
+        "CPU",
+        draft_model=ov_draft,
+    )
+    generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
+
+    assert results_without_draft[0] == results_with_draft[0], (
+        "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
+    )
+    assert results_without_draft[1] == results_with_draft[1], (
+        "Second mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
     )
 
 

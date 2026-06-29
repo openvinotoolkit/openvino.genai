@@ -35,6 +35,8 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+  HF_TOKEN_PATH_LIN: /secrets/huggingface/token-primary
+  HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-primary"
 
 jobs:
   smart_ci:
@@ -53,7 +55,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@65855d31e3e61c308e56454c16c0c3f411a5029f
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@b0f640ad8270d06d36caf5549a091dc972625a15
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -574,14 +576,14 @@ jobs:
         test:
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
-            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not test_smoke and not test_asr_constructors and not test_max_new_tokens and not test_language_mode and not test_task_mode and not test_language_autodetect and not test_asr_config_constructor and not test_initial_prompt_hotwords and not test_random_sampling"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 45
           - name: 'Whisper Transformers under 5.0'
             cmd: |
               python -m pip install transformers==4.57.6
               python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 45
           - name: 'Cacheopt E2E (Part 1)'
             cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
@@ -605,7 +607,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat and not eagle3" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
 
@@ -688,7 +690,7 @@ jobs:
           - name: 'VLM (qwen3-vl and qwen3-next)'
             cmd: |
               python -m pip install transformers==4.57.6
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl"
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl or eagle3"
               python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test  || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 60
@@ -739,8 +741,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -749,6 +751,10 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -790,11 +796,10 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
-
-          - name: 'Whisper'
-            marker: 'whisper'
+          - name: 'Automatic Speech Recognition'
+            marker: 'automatic_speech_recognition'
             cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
           - name: 'dreamlike_anime_1_0'
             marker: 'dreamlike_anime_1_0'
@@ -848,8 +853,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -859,6 +864,10 @@ jobs:
       OPENVINO_LOG_LEVEL: 1
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -948,8 +957,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/ov
@@ -957,6 +966,10 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -1045,8 +1058,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -1056,6 +1069,10 @@ jobs:
       NODE_VERSION: 21
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
