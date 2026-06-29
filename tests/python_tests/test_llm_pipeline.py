@@ -28,6 +28,7 @@ from utils.tokenizers import (
 from utils.ov_genai_pipelines import (
     ALL_PIPELINE_TYPES,
     LINEAR_ATTENTION_PIPELINE_TYPES,
+    LINEAR_ATTENTION_SPECULATIVE_PIPELINE_TYPES,
     create_ov_pipeline,
     generate_and_compare,
     MAIN_PIPELINE_TYPES,
@@ -373,6 +374,43 @@ def test_linear_model_deterministic(
     result1 = ov_pipe.generate(prompt, generation_config=config)
     result2 = ov_pipe.generate(prompt, generation_config=config)
     assert result1 == result2
+
+
+LINEAR_ATTENTION_SPECULATIVE_PROMPTS = [
+    "Repeat this text exactly: the quick brown fox jumps. "
+    "the quick brown fox jumps. the quick brown fox jumps. the quick brown fox jumps.",
+    "one two three four one two three four one two three four one two three four one two three four",
+]
+
+
+@pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_SPECULATIVE_PIPELINE_TYPES)
+@pytest.mark.parametrize("prompt", LINEAR_ATTENTION_SPECULATIVE_PROMPTS)
+def test_linear_attention_prompt_lookup_matches_non_speculative(
+    llm_model: OVConvertedModelSchema,
+    pipeline_type: PipelineType,
+    prompt: str,
+) -> None:
+    prompts = [prompt]
+    config = ov_genai.GenerationConfig(max_new_tokens=64, apply_chat_template=False, do_sample=False)
+
+    speculative_config = ov_genai.GenerationConfig(
+        max_new_tokens=64, apply_chat_template=False, do_sample=False, num_assistant_tokens=5, max_ngram_size=3
+    )
+    speculative_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=pipeline_type)
+    speculative_result = speculative_pipe.generate(prompts, generation_config=speculative_config)
+    del speculative_pipe
+
+    non_speculative_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.PAGED_ATTENTION)
+    non_speculative_result = non_speculative_pipe.generate(prompts, generation_config=config)
+    del non_speculative_pipe
+
+    assert speculative_result.texts == non_speculative_result.texts, (
+        f"Prompt-lookup (speculative) output differs from non-speculative output.\n"
+        f"Prompt: {prompt}\n"
+        f"Speculative texts:     {speculative_result.texts}\n"
+        f"Non-speculative texts: {non_speculative_result.texts}"
+    )
 
 
 @pytest.mark.transformers_dependent(
