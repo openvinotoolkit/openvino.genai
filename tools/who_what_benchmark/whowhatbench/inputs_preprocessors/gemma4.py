@@ -21,6 +21,17 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
     def update_chat_history_with_answer(self, answer):
         pass
 
+    def _preprocess_non_chat_template(
+        self,
+        text: str,
+        image: Optional[Union["Image", list["Image"]]] = None,
+        processor: Optional[AutoImageProcessor] = None,
+    ):
+        if image is not None:
+            image_token = getattr(processor, "image_token", "<|image|>")
+            text = f"{image_token}This image shows"
+        return processor(images=image, text=text, return_tensors="pt")
+
     def preprocess_inputs(
         self,
         text: str,
@@ -37,6 +48,9 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
             raise ValueError("Video input is not supported")
         if audio is not None:
             raise ValueError("Audio input is not supported")
+
+        if processor.chat_template is None:
+            return self._preprocess_non_chat_template(text, image, processor)
 
         content = []
         if image is not None:
