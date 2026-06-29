@@ -581,10 +581,10 @@ def genai_gen_text(
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
 ):
-    import openvino_genai
-
     kwargs = {}
     if empty_adapters:
+        import openvino_genai
+
         kwargs["adapters"] = openvino_genai.AdapterConfig()
     if generation_config_extra:
         kwargs.update(generation_config_extra)

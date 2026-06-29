@@ -20,6 +20,44 @@ from llm_bench_utils.prompt_utils import get_text_prompt
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
+_SD_SUPPORTED_KEYS = {
+    "num_assistant_tokens",
+    "assistant_confidence_threshold",
+    "branching_factor",
+    "tree_depth",
+}
+
+
+def apply_sd_generation_config(args, gen_config):
+    """Apply speculative decoding config from cmdline args and --sd_generation_config JSON."""
+    if args.get("num_assistant_tokens", None):
+        gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
+    if args.get("assistant_confidence_threshold", None):
+        gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
+    if args.get("sd_generation_config"):
+        from llm_bench_utils.model_utils import get_config
+
+        extra_cfg = get_config(args["sd_generation_config"])
+        if not isinstance(extra_cfg, dict):
+            raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
+        for k, v in extra_cfg.items():
+            if k not in _SD_SUPPORTED_KEYS:
+                log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
+                continue
+            if hasattr(gen_config, k):
+                setattr(gen_config, k, v)
+            else:
+                log.warning(f"GenerationConfig has no attribute '{k}', skipping")
+    config_info = "Speculative decoding config:"
+    config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
+    if gen_config.assistant_confidence_threshold > 0:
+        config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
+    if hasattr(gen_config, "branching_factor") and gen_config.branching_factor > 1:
+        config_info += f" branching_factor {gen_config.branching_factor}"
+    if hasattr(gen_config, "tree_depth") and gen_config.tree_depth > 0:
+        config_info += f" tree_depth {gen_config.tree_depth}"
+    log.info(config_info)
+
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 
@@ -347,40 +385,7 @@ def run_text_generation_genai(
     if hasattr(gen_config, 'apply_chat_template'):
         gen_config.apply_chat_template = False
     if args.get('draft_model', ''):
-        config_info = "Speculative decoding config:"
-        if args.get('num_assistant_tokens', None):
-            gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
-        if args.get('assistant_confidence_threshold', None):
-            gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
-        # sd_generation_config JSON overrides cmdline params for speculative decoding
-        if args.get("sd_generation_config"):
-            from llm_bench_utils.model_utils import get_config
-
-            extra_cfg = get_config(args["sd_generation_config"])
-            if not isinstance(extra_cfg, dict):
-                raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
-            _supported_keys = {
-                "num_assistant_tokens",
-                "assistant_confidence_threshold",
-                "branching_factor",
-                "tree_depth",
-            }
-            for k, v in extra_cfg.items():
-                if k not in _supported_keys:
-                    log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
-                    continue
-                if hasattr(gen_config, k):
-                    setattr(gen_config, k, v)
-                else:
-                    log.warning(f"GenerationConfig has no attribute '{k}', skipping")
-        config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
-        if gen_config.assistant_confidence_threshold > 0:
-            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
-        if hasattr(gen_config, "branching_factor") and gen_config.branching_factor > 1:
-            config_info += f" branching_factor {gen_config.branching_factor}"
-        if hasattr(gen_config, "tree_depth") and gen_config.tree_depth > 0:
-            config_info += f" tree_depth {gen_config.tree_depth}"
-        log.info(config_info)
+        apply_sd_generation_config(args, gen_config)
     if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
         config_info = "Prompt Lookup decoding config: "
         gen_config.max_ngram_size = int(args['max_ngram_size'])
@@ -541,40 +546,7 @@ def run_text_generation_genai_with_stream(
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
     if args.get('draft_model', ''):
-        config_info = "Speculative decoding config:"
-        if args.get("num_assistant_tokens", None):
-            gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
-        if args.get("assistant_confidence_threshold", None):
-            gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
-        # sd_generation_config JSON overrides cmdline params for speculative decoding
-        if args.get("sd_generation_config"):
-            from llm_bench_utils.model_utils import get_config
-
-            extra_cfg = get_config(args["sd_generation_config"])
-            if not isinstance(extra_cfg, dict):
-                raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
-            _supported_keys = {
-                "num_assistant_tokens",
-                "assistant_confidence_threshold",
-                "branching_factor",
-                "tree_depth",
-            }
-            for k, v in extra_cfg.items():
-                if k not in _supported_keys:
-                    log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
-                    continue
-                if hasattr(gen_config, k):
-                    setattr(gen_config, k, v)
-                else:
-                    log.warning(f"GenerationConfig has no attribute '{k}', skipping")
-        config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
-        if gen_config.assistant_confidence_threshold > 0:
-            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
-        if hasattr(gen_config, "branching_factor") and gen_config.branching_factor > 1:
-            config_info += f" branching_factor {gen_config.branching_factor}"
-        if hasattr(gen_config, "tree_depth") and gen_config.tree_depth > 0:
-            config_info += f" tree_depth {gen_config.tree_depth}"
-        log.info(config_info)
+        apply_sd_generation_config(args, gen_config)
     if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
         config_info = "Prompt Lookup decoding config: "
         gen_config.max_ngram_size = int(args['max_ngram_size'])

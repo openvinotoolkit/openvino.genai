@@ -197,40 +197,9 @@ def run_visual_language_generation_genai(
     if args["relevance_weight"] is not None:
         gen_config.relevance_weight = args["relevance_weight"]
     if args.get("draft_model", ""):
-        config_info = "Speculative decoding config:"
-        if args.get("num_assistant_tokens", None):
-            gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
-        if args.get("assistant_confidence_threshold", None):
-            gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
-        # sd_generation_config JSON overrides cmdline params for speculative decoding
-        if args.get("sd_generation_config"):
-            from llm_bench_utils.model_utils import get_config
+        from task.text_generation import apply_sd_generation_config
 
-            extra_cfg = get_config(args["sd_generation_config"])
-            if not isinstance(extra_cfg, dict):
-                raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
-            _supported_keys = {
-                "num_assistant_tokens",
-                "assistant_confidence_threshold",
-                "branching_factor",
-                "tree_depth",
-            }
-            for k, v in extra_cfg.items():
-                if k not in _supported_keys:
-                    log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
-                    continue
-                if hasattr(gen_config, k):
-                    setattr(gen_config, k, v)
-                else:
-                    log.warning(f"GenerationConfig has no attribute '{k}', skipping")
-        config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
-        if gen_config.assistant_confidence_threshold > 0:
-            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
-        if hasattr(gen_config, "branching_factor") and gen_config.branching_factor > 1:
-            config_info += f" branching_factor {gen_config.branching_factor}"
-        if hasattr(gen_config, "tree_depth") and gen_config.tree_depth > 0:
-            config_info += f" tree_depth {gen_config.tree_depth}"
-        log.info(config_info)
+        apply_sd_generation_config(args, gen_config)
     kwargs = {}
     prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
     log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
