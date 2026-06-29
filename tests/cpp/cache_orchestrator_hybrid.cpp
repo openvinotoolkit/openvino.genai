@@ -329,6 +329,25 @@ TEST(TestCacheOrchestratorHybrid, AdaptiveCacheIntervalMultiplierScalesWithState
     // Degenerate kv block size falls back to the default multiplier (no divide-by-zero).
     EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/1024, /*kv=*/0),
               DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+
+    // A near-max LA block size must not overflow the ceil-division and still clamps to MAX.
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(
+                  /*la=*/std::numeric_limits<size_t>::max(), /*kv=*/4096),
+              CacheOrchestrator::MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER);
+}
+
+// The OOM-drop (GenerationStatus::IGNORED) surfaces an actionable error at the call sites that
+// would otherwise discard the status (CB adapter overloads and the VLM result conversion).
+TEST(TestCacheOrchestratorHybrid, AssertRequestWasScheduledThrowsOnIgnored) {
+    // IGNORED == request dropped by the scheduler (out of cache budget) -> must throw.
+    EXPECT_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::IGNORED),
+                 ov::Exception);
+
+    // All terminal/active states that represent real results must pass through untouched.
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::FINISHED));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::STOP));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::CANCEL));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::RUNNING));
 }
 
 TEST(TestCacheOrchestratorHybrid, CreateIgnoresCacheIntervalMultiplierWithoutLinearAttentionCache) {
