@@ -97,7 +97,7 @@ size_t get_static_pixel_values_patch_dim(ov::InferRequest& encoder) {
 }
 
 enum class PatchExtractionMode {
-    TeacherPatches,
+    UnmergedPatches,
     MergedPatches,
 };
 
@@ -120,9 +120,10 @@ PatchExtractionConfig get_patch_extraction_config(const ov::genai::ProcessorConf
                     " or merged patch dimension ",
                     patch_dim_for_model_patch_size);
 
-    const size_t max_teacher_patches = config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
     if (patch_dim == patch_dim_for_patch_size) {
-        return {PatchExtractionMode::TeacherPatches, config.patch_size, max_teacher_patches, patch_dim};
+        const size_t max_unmerged_patches =
+            config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
+        return {PatchExtractionMode::UnmergedPatches, config.patch_size, max_unmerged_patches, patch_dim};
     }
     return {PatchExtractionMode::MergedPatches, model_patch_size, config.max_soft_tokens, patch_dim};
 }
@@ -131,7 +132,7 @@ size_t get_num_valid_soft_tokens(const PatchExtractionConfig& patch_config,
                                  size_t output_tokens,
                                  size_t num_patches_h,
                                  size_t num_patches_w) {
-    if (patch_config.mode == PatchExtractionMode::TeacherPatches) {
+    if (patch_config.mode == PatchExtractionMode::UnmergedPatches) {
         return output_tokens;
     }
     return num_patches_h * num_patches_w;
@@ -148,11 +149,12 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     // 2. Compute aspect-ratio-preserving target size
-    const size_t max_teacher_patches = config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
+    const size_t max_unmerged_patches =
+        config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
     const auto [target_height, target_width] = get_aspect_ratio_preserving_size(static_cast<size_t>(input_image.ny),
                                                                                 static_cast<size_t>(input_image.nx),
                                                                                 config.patch_size,
-                                                                                max_teacher_patches,
+                                                                                max_unmerged_patches,
                                                                                 config.pooling_kernel_size);
 
     // 3. Bicubic resize
