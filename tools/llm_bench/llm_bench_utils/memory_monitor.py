@@ -1166,9 +1166,18 @@ class MemorySampler5(MemorySampler):
 
 class MemoryMarkerMonitor(list):
     def __init__(self, marker_queue, process_id, sampling_interval, path_prefix):
-        log.info("Memory worker: MemorySampler5 init...")
-        ### self.sampler = MemorySampler5(process_id)
-        self.sampler = MemorySamplerW(process_id)
+        # Select the platform-appropriate sampler:
+        #   - Windows: MemorySamplerW uses GetProcessMemoryInfo (psapi.dll) directly,
+        #              providing WorkingSet, PrivateBytes and PagefileUsage natively.
+        #   - Linux / macOS: MemorySampler5 uses psutil.memory_full_info() which
+        #              provides RSS, USS and Private bytes via /proc (Linux) or
+        #              task_info() (macOS).
+        if sys.platform == "win32":
+            log.info("Memory worker: MemorySamplerW (Windows native GetProcessMemoryInfo) init...")
+            self.sampler = MemorySamplerW(process_id)
+        else:
+            log.info("Memory worker: MemorySampler5 (psutil cross-platform) init...")
+            self.sampler = MemorySampler5(process_id)
         self.sampling_interval = float(sampling_interval)
         self.process_id = int(process_id)
         self.last_ts = time.perf_counter()
