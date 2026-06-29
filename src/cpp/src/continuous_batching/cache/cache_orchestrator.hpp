@@ -688,7 +688,7 @@ public:
 
     /// @return Physical block index of the sequence's live linear-attention state row.
     size_t get_linear_attention_live_block(uint64_t seq_id) const {
-        return const_cast<CacheOrchestrator*>(this)->provision_linear_attention_live_block(seq_id);
+        return provision_linear_attention_live_block(seq_id);
     }
 
     /// @brief Records which owned physical block is now the sequence's live state row.
@@ -758,7 +758,7 @@ private:
 
     /// @brief Returns the sequence's live linear-attention block, provisioning it to the
     ///        prefill row (block_table[0]) on first access.
-    size_t provision_linear_attention_live_block(uint64_t seq_id) {
+    size_t provision_linear_attention_live_block(uint64_t seq_id) const {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
         auto it = m_linear_attention_live_block.find(seq_id);
         if (it != m_linear_attention_live_block.end()) {
@@ -971,7 +971,7 @@ private:
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
     // seq_id -> physical block index of the live linear-attention state row.
-    std::map<uint64_t, size_t> m_linear_attention_live_block;
+    mutable std::map<uint64_t, size_t> m_linear_attention_live_block;
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,
