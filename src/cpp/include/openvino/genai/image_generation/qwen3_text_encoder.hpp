@@ -22,7 +22,7 @@ namespace genai {
 
 class OPENVINO_GENAI_EXPORTS Qwen3TextEncoder {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t hidden_size = 2560;
         size_t num_hidden_layers = 36;
         std::vector<size_t> hidden_states_layers = {9, 18, 27};
