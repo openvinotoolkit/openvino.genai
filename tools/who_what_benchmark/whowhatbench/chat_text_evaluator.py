@@ -34,6 +34,7 @@ class ChatTextEvaluator(TextEvaluator):
         empty_adapters=False,
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
+        generation_config_extra=None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
@@ -47,6 +48,7 @@ class ChatTextEvaluator(TextEvaluator):
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
         self.empty_adapters = empty_adapters
+        self.generation_config_extra = generation_config_extra or {}
 
         self.gt_dir = os.path.dirname(gt_data or "")
         if base_model:
@@ -222,6 +224,7 @@ class ChatTextEvaluator(TextEvaluator):
                 self.empty_adapters,
                 self.num_assistant_tokens,
                 self.assistant_confidence_threshold,
+                self.generation_config_extra,
             )
 
             result_path = os.path.join(result_dir, f"chat_output_{i}.json")

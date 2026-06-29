@@ -398,6 +398,14 @@ def parse_args():
         required=False,
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
+    parser.add_argument(
+        "--generation-config",
+        type=str,
+        default=None,
+        help="Path to JSON file or JSON string with generation config parameters for EAGLE3 Top-K speculative decoding. "
+        "Supported keys: 'num_assistant_tokens', 'assistant_confidence_threshold', 'branching_factor', 'tree_depth'. "
+        "Example: '{\"num_assistant_tokens\": 10, \"branching_factor\": 4, \"tree_depth\": 3}'",
+    )
 
     return parser.parse_args()
 
@@ -562,11 +570,15 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 
 
 def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
-                   num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+                   num_assistant_tokens=0, assistant_confidence_threshold=0.0, generation_config_extra=None):
+    import openvino_genai
+
     kwargs = {}
     if empty_adapters:
-        import openvino_genai
         kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if generation_config_extra:
+        for k, v in generation_config_extra.items():
+            kwargs[k] = v
 
     return model.generate(
         question,
@@ -587,12 +599,15 @@ def genai_gen_chat_text(
     empty_adapters=False,
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
 ):
     import openvino_genai
 
     kwargs = {}
     if empty_adapters:
         kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if generation_config_extra:
+        kwargs.update(generation_config_extra)
 
     answers = []
     chat_history = openvino_genai.ChatHistory()
@@ -613,7 +628,7 @@ def genai_gen_chat_text(
 
 
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
-                      assistant_confidence_threshold=0.0):
+                      assistant_confidence_threshold=0.0, generation_config_extra=None):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -879,6 +894,7 @@ def create_evaluator(base_model, args):
                     float(args.assistant_confidence_threshold)
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
+                generation_config_extra=args.generation_config_extra,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -1017,6 +1033,7 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None
                     else 0.0
                 ),
+                generation_config_extra=args.generation_config_extra,
             )
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
@@ -1174,6 +1191,26 @@ def print_speech_results(evaluator):
 def main():
     args = parse_args()
     check_args(args)
+
+    # Parse --generation-config and override cmdline params if specified
+    if args.generation_config is not None:
+        gen_cfg = get_json_config(args.generation_config)
+        if not isinstance(gen_cfg, dict):
+            raise ValueError(f"--generation-config must be a JSON object, got {type(gen_cfg).__name__}")
+        logger.info(f"generation_config: {gen_cfg}")
+        if "num_assistant_tokens" in gen_cfg:
+            args.num_assistant_tokens = gen_cfg["num_assistant_tokens"]
+        if "assistant_confidence_threshold" in gen_cfg:
+            args.assistant_confidence_threshold = gen_cfg["assistant_confidence_threshold"]
+        # Store extra keys (branching_factor, tree_depth, etc.) for generate() call
+        args.generation_config_extra = {
+            k: v for k, v in gen_cfg.items()
+            if k not in ("num_assistant_tokens", "assistant_confidence_threshold", "max_new_tokens")
+        }
+        if "max_new_tokens" in gen_cfg:
+            args.max_new_tokens = gen_cfg["max_new_tokens"]
+    else:
+        args.generation_config_extra = {}
 
     version_str = f'openvino runtime version: {ov.get_version()}'
     if args.genai:

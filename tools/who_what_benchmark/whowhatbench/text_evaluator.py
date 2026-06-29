@@ -41,7 +41,8 @@ class TextEvaluator(BaseEvaluator):
         long_prompt=True,
         empty_adapters=False,
         num_assistant_tokens=0,
-        assistant_confidence_threshold=0.0
+        assistant_confidence_threshold=0.0,
+        generation_config_extra=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -60,6 +61,7 @@ class TextEvaluator(BaseEvaluator):
         self.use_chat_template = use_chat_template
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
+        self.generation_config_extra = generation_config_extra or {}
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
         self.empty_adapters = empty_adapters
@@ -206,7 +208,8 @@ class TextEvaluator(BaseEvaluator):
                         self.use_chat_template,
                         self.empty_adapters,
                         self.num_assistant_tokens,
-                        self.assistant_confidence_threshold
+                        self.assistant_confidence_threshold,
+                        self.generation_config_extra,
                     )
                 )
         else:
