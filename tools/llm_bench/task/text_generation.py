@@ -58,6 +58,7 @@ def apply_sd_generation_config(args, gen_config):
         config_info += f" tree_depth {gen_config.tree_depth}"
     log.info(config_info)
 
+
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
 
 
