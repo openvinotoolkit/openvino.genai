@@ -123,9 +123,12 @@ def get_argparser():
         "--load_config",
         default=None,
         required=False,
-        help="path to JSON file to load customized configurations.\n"
+        help="path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n"
         'Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}.\n'
-        'Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings.\n',
+        'Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}\n'
+        'Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings.\n'
+        'Example of setting option via sting in Linux/Windows cmd: "{"ATTENTION_BACKEND": "SDPA"}"\n'
+        'Example of setting option via sting in PowerShell: \'{"ATTENTION_BACKEND": "SDPA"}\'',
     )
     parser.add_argument(
         "-mc",

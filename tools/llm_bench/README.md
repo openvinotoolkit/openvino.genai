@@ -94,10 +94,16 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 - `-rj`: Report in JSON format.
 - `-f`: Framework (default: ov).
 - `-p`: Interactive prompt text.
-- `-pf`: Path to a JSONL file containing prompts.
+- `-pf`: Path to a JSONL file containing prompts. Examples of prompt files can be found in the folder openvino.genai/tools/llm_bench/prompts.
 - `-n`: Number of iterations (default: 0, the first iteration is excluded).
 - `-ic`: Limit the output token size (default: 512) for text generation and code generation models.
-- `-lc`: Path to JSON file to load customized configurations.
+- `-lc`: Path to JSON file or string in JSON format to load customized configurations.
+      Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}
+      Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}
+      Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings
+      Example of setting option via sting in Linux/Windows cmd: "{\"PERFORMANCE_HINT\": \"LATENCY\"}"
+      Example of setting option via sting in PowerShell: '{\"PERFORMANCE_HINT\": \"LATENCY\"}'
+      More information about properies, please, find [OpenVINO documentation](https://docs.openvino.ai/2025/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
 - `--optimum`: Use Optimum Intel pipelines for benchmarking.
 - `--from_onnx`: Allow initialize Optimum OpenVINO model using ONNX.
 - `--pruning_ratio`: Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.

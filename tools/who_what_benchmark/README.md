@@ -58,6 +58,13 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 
 > **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
 > **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode
+> **NOTE**: use `--ov-config` to customize OpenVINO Runtime configuration
+Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}
+Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}
+Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings
+Example of setting option via sting in Linux/Windows cmd: "{\"PERFORMANCE_HINT\": \"LATENCY\"}"
+Example of setting option via sting in PowerShell: '{\"PERFORMANCE_HINT\": \"LATENCY\"}'
+More information about properies, please, find [OpenVINO documentation](https://docs.openvino.ai/2025/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
