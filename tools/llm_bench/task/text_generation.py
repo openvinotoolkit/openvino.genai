@@ -44,6 +44,10 @@ def apply_sd_generation_config(args, gen_config):
             if k not in _SD_SUPPORTED_KEYS:
                 log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
                 continue
+            if k == "num_assistant_tokens":
+                v = int(v)
+            elif k == "assistant_confidence_threshold":
+                v = float(v)
             if hasattr(gen_config, k):
                 setattr(gen_config, k, v)
             else:
