@@ -65,14 +65,12 @@ MAIN_PIPELINE_TYPES = (
     PipelineType.PROMPT_LOOKUP_DECODING,
 )
 
+LINEAR_ATTENTION_PIPELINE_TYPES = (
+    PipelineType.STATEFUL,
+    PipelineType.PAGED_ATTENTION,
+)
 
-if is_transformers_version("<", "4.57") or is_transformers_version(">=", "5.0"):
-    LINEAR_ATTENTION_PIPELINE_TYPES = (PipelineType.STATEFUL,)
-else:  # transformers==4.57.*
-    LINEAR_ATTENTION_PIPELINE_TYPES = (
-        PipelineType.STATEFUL,
-        PipelineType.PAGED_ATTENTION,
-    )
+LINEAR_ATTENTION_SPECULATIVE_PIPELINE_TYPES = (PipelineType.PROMPT_LOOKUP_DECODING,)
 
 ALL_PIPELINE_TYPES = (
     *MAIN_PIPELINE_TYPES,
