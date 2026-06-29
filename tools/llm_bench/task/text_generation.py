@@ -360,8 +360,10 @@ def run_text_generation_genai(
             if not isinstance(extra_cfg, dict):
                 raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
             _supported_keys = {
-                "num_assistant_tokens", "assistant_confidence_threshold",
-                "branching_factor", "tree_depth",
+                "num_assistant_tokens",
+                "assistant_confidence_threshold",
+                "branching_factor",
+                "tree_depth",
             }
             for k, v in extra_cfg.items():
                 if k not in _supported_keys:
@@ -552,8 +554,10 @@ def run_text_generation_genai_with_stream(
             if not isinstance(extra_cfg, dict):
                 raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
             _supported_keys = {
-                "num_assistant_tokens", "assistant_confidence_threshold",
-                "branching_factor", "tree_depth",
+                "num_assistant_tokens",
+                "assistant_confidence_threshold",
+                "branching_factor",
+                "tree_depth",
             }
             for k, v in extra_cfg.items():
                 if k not in _supported_keys:

@@ -1217,8 +1217,10 @@ def main():
             raise ValueError(f"--sd-generation-config must be a JSON object, got {type(gen_cfg).__name__}")
         logger.info(f"sd_generation_config: {gen_cfg}")
         _supported_keys = {
-            "num_assistant_tokens", "assistant_confidence_threshold",
-            "branching_factor", "tree_depth",
+            "num_assistant_tokens",
+            "assistant_confidence_threshold",
+            "branching_factor",
+            "tree_depth",
         }
         for k in gen_cfg:
             if k not in _supported_keys:
@@ -1228,7 +1230,8 @@ def main():
         if "assistant_confidence_threshold" in gen_cfg:
             args.assistant_confidence_threshold = float(gen_cfg["assistant_confidence_threshold"])
         args.generation_config_extra = {
-            k: v for k, v in gen_cfg.items()
+            k: v
+            for k, v in gen_cfg.items()
             if k in _supported_keys and k not in ("num_assistant_tokens", "assistant_confidence_threshold")
         }
     else:
