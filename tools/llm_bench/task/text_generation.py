@@ -354,6 +354,16 @@ def run_text_generation_genai(
         if args.get('assistant_confidence_threshold', None):
             gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
             config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
+        if args.get('generation_config'):
+            from llm_bench_utils.model_utils import get_config
+            extra_cfg = get_config(args['generation_config'])
+            for k, v in extra_cfg.items():
+                if k not in ('num_assistant_tokens', 'assistant_confidence_threshold', 'max_new_tokens'):
+                    if hasattr(gen_config, k):
+                        setattr(gen_config, k, v)
+                        config_info += f" {k} {v}"
+                    else:
+                        log.warning(f"GenerationConfig has no attribute '{k}', skipping")
         log.info(config_info)
     if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
         config_info = "Prompt Lookup decoding config: "
@@ -522,6 +532,16 @@ def run_text_generation_genai_with_stream(
         if args.get("assistant_confidence_threshold", None):
             gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
             config_info += f'assistant_confidence_threshold {args["assistant_confidence_threshold"]}'
+        if args.get('generation_config'):
+            from llm_bench_utils.model_utils import get_config
+            extra_cfg = get_config(args['generation_config'])
+            for k, v in extra_cfg.items():
+                if k not in ('num_assistant_tokens', 'assistant_confidence_threshold', 'max_new_tokens'):
+                    if hasattr(gen_config, k):
+                        setattr(gen_config, k, v)
+                        config_info += f" {k} {v}"
+                    else:
+                        log.warning(f"GenerationConfig has no attribute '{k}', skipping")
         log.info(config_info)
     if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
         config_info = "Prompt Lookup decoding config: "

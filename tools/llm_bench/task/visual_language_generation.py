@@ -196,6 +196,25 @@ def run_visual_language_generation_genai(
         gen_config.pruning_ratio = args["pruning_ratio"]
     if args["relevance_weight"] is not None:
         gen_config.relevance_weight = args["relevance_weight"]
+    if args.get('draft_model', ''):
+        config_info = "Speculative decoding config:"
+        if args.get('num_assistant_tokens', None):
+            gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
+            config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
+        if args.get('assistant_confidence_threshold', None):
+            gen_config.assistant_confidence_threshold = float(args['assistant_confidence_threshold'])
+            config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
+        if args.get('generation_config'):
+            from llm_bench_utils.model_utils import get_config
+            extra_cfg = get_config(args['generation_config'])
+            for k, v in extra_cfg.items():
+                if k not in ('num_assistant_tokens', 'assistant_confidence_threshold', 'max_new_tokens'):
+                    if hasattr(gen_config, k):
+                        setattr(gen_config, k, v)
+                        config_info += f" {k} {v}"
+                    else:
+                        log.warning(f"GenerationConfig has no attribute '{k}', skipping")
+        log.info(config_info)
     kwargs = {}
     prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
     log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')

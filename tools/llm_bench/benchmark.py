@@ -285,6 +285,12 @@ def get_argparser():
         type=float,
     )
     parser.add_argument(
+        "--generation_config",
+        required=False,
+        default=None,
+        help="Path to JSON file or JSON string with extra generation config parameters (e.g. branching_factor, tree_depth for EAGLE3 Top-K).",
+    )
+    parser.add_argument(
         "--max_ngram_size",
         required=False,
         default=None,
