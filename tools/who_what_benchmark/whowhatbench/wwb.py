@@ -404,7 +404,7 @@ def parse_args():
         default=None,
         help="Path to JSON file or JSON string with generation config parameters for EAGLE3 Top-K speculative decoding. "
         "Supported keys: 'num_assistant_tokens', 'assistant_confidence_threshold', 'branching_factor', 'tree_depth'. "
-        "Example: '{\"num_assistant_tokens\": 10, \"branching_factor\": 4, \"tree_depth\": 3}'",
+        'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
 
     return parser.parse_args()
@@ -569,8 +569,18 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
-                   num_assistant_tokens=0, assistant_confidence_threshold=0.0, generation_config_extra=None):
+def genai_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
+):
     import openvino_genai
 
     kwargs = {}
@@ -627,8 +637,17 @@ def genai_gen_chat_text(
     return answers
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
-                      assistant_confidence_threshold=0.0, generation_config_extra=None):
+def llamacpp_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
+):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -1204,7 +1223,8 @@ def main():
             args.assistant_confidence_threshold = gen_cfg["assistant_confidence_threshold"]
         # Store extra keys (branching_factor, tree_depth, etc.) for generate() call
         args.generation_config_extra = {
-            k: v for k, v in gen_cfg.items()
+            k: v
+            for k, v in gen_cfg.items()
             if k not in ("num_assistant_tokens", "assistant_confidence_threshold", "max_new_tokens")
         }
         if "max_new_tokens" in gen_cfg:
