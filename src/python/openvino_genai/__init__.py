@@ -69,8 +69,14 @@ from .py_openvino_genai import ChatHistory
 # Tokenizers
 from .py_openvino_genai import TokenizedInputs, Tokenizer
 
-# Whisper
+# ASR pipeline
 from .py_openvino_genai import (
+    ASRDecodedResultChunk,
+    ASRDecodedResults,
+    ASRGenerationConfig,
+    ASRPerfMetrics,
+    ASRPipeline,
+    ASRRawPerfMetrics,
     WhisperGenerationConfig,
     WhisperPipeline,
     WhisperRawPerfMetrics,

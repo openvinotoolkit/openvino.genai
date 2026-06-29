@@ -14,7 +14,7 @@ def read_wav(filepath):
 
 def get_config_for_cache():
     config_cache = dict()
-    config_cache["CACHE_DIR"] = "whisper_cache"
+    config_cache["CACHE_DIR"] = "asr_cache"
     return config_cache
 
 
@@ -35,7 +35,7 @@ def main():
     # so word_timestamps must be passed to the pipeline constructor (not just in generation config)
     ov_config["word_timestamps"] = True
 
-    pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device, **ov_config)
+    pipe = openvino_genai.ASRPipeline(args.model_dir, args.device, **ov_config)
 
     config = pipe.get_generation_config()
     # 'task' and 'language' parameters are supported for multilingual models only
@@ -51,12 +51,12 @@ def main():
     print(result)
 
     if result.chunks:
-        for chunk in result.chunks:
+        for chunk in result.chunks[0]:
             print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
 
     if result.words:
-        for word in result.words:
-            print(f"[{word.start_ts:.2f}, {word.end_ts:.2f}]: {word.word}")
+        for word in result.words[0]:
+            print(f"[{word.start_ts:.2f}, {word.end_ts:.2f}]: {word.text}")
 
 
 if "__main__" == __name__:

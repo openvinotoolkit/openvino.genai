@@ -351,6 +351,9 @@ install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
         ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
         RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
         INCLUDES DESTINATION runtime/include)
+if(OpenVINODeveloperPackage_FOUND AND COMMAND ov_install_pdb)
+    ov_install_pdb(${TARGET_NAME})
+endif()
 
 # development files do not need to be built for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")

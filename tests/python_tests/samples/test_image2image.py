@@ -4,16 +4,20 @@
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample
 
 class TestImage2Image:
     @pytest.mark.samples
     @pytest.mark.LCM_Dreamshaper_v7_int8_ov
-    @pytest.mark.parametrize("executable", [
-        [SAMPLES_CPP_DIR / "image2image"],
-        [sys.executable, SAMPLES_PY_DIR / "image_generation/image2image.py"],
-    ])
+    @pytest.mark.parametrize(
+        "executable",
+        [
+            [SAMPLES_CPP_DIR / "image2image"],
+            [sys.executable, SAMPLES_PY_DIR / "image_generation/image2image.py"],
+            ["node", SAMPLES_JS_DIR / "image_generation" / "image2image.js"],
+        ],
+    )
     @pytest.mark.parametrize(
         "download_model, prompt",
         [
