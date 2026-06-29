@@ -29,7 +29,7 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
     ):
         if image is not None:
             image_token = getattr(processor, "image_token", "<|image|>")
-            text = f"{image_token}This image shows"
+            text = f"{image_token}{text}"
         return processor(images=image, text=text, return_tensors="pt")
 
     def preprocess_inputs(
@@ -49,7 +49,7 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
-        if processor.chat_template is None:
+        if getattr(processor, "chat_template", None) is None:
             return self._preprocess_non_chat_template(text, image, processor)
 
         content = []

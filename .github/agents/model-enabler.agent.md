@@ -81,7 +81,7 @@ For `image-text-to-text` models:
 1. **Find the tiny-random model id**:
    - First infer it from the optimum-intel model description, tests, or release notes when available.
    - If it is not documented there, look it up directly on HuggingFace Hub.
-   - Matching the `optimum-intel-internal-testing/tiny-random-*` prefix, for example `optimum-intel-internal-testing/tiny-random-gemma4-unified`.
+   - Matching the `optimum-intel-internal-testing/tiny-random-*` prefix, for example `optimum-intel-internal-testing/tiny-random-gemma4-unified-it`.
 2. **Add the model to VLM Python tests**:
    - Prefer extending `tests/python_tests/test_vlm_pipeline.py` with the tiny-random model id, prompt image tag, video tag if applicable, resolution, and any targeted skip/xfail entry required by an already-tracked issue.
    - Add a dedicated `tests/python_tests/test_<model_type>_*.py` only when the new model requires behavior that does not fit the shared VLM pipeline suite.
