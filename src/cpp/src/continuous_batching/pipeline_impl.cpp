@@ -641,17 +641,6 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
         result.m_status = generations[request_id]->get_status();
 
-        // A request whose prompt cannot fit the cache is dropped by the scheduler and finishes
-        // with GenerationStatus::IGNORED (out of memory). Returning an empty result silently
-        // hides this from the caller; surface it as an actionable error instead.
-        OPENVINO_ASSERT(result.m_status != GenerationStatus::IGNORED,
-                        "Request ", request_id, " was dropped because its prompt (",
-                        request->get_prompt_len(),
-                        " tokens) does not fit in the available cache (out of memory). "
-                        "Increase cache_size / num_kv_blocks, reduce the prompt length, or for "
-                        "hybrid (linear-attention) models raise cache_interval_multiplier to lower "
-                        "per-token cache usage.");
-
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
         perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));

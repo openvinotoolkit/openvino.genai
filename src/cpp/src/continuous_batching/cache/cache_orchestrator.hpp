@@ -689,7 +689,12 @@ public:
     static size_t adaptive_cache_interval_multiplier(size_t la_block_bytes, size_t kv_block_bytes) {
         size_t multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
         if (kv_block_bytes > 0) {
-            const size_t ratio = (la_block_bytes + kv_block_bytes - 1) / kv_block_bytes;  // ceil
+            // ceil(la_block_bytes / kv_block_bytes) computed via division + remainder to avoid
+            // the intermediate-addition overflow of (la_block_bytes + kv_block_bytes - 1).
+            size_t ratio = la_block_bytes / kv_block_bytes;
+            if (la_block_bytes % kv_block_bytes != 0) {
+                ++ratio;
+            }
             multiplier = std::max(multiplier, ratio);
         }
         return std::min(multiplier, MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER);
@@ -742,6 +747,11 @@ private:
 
         const size_t multiplier = adaptive_cache_interval_multiplier(la_manager->get_block_size_in_bytes(),
                                                                      kv_manager->get_block_size_in_bytes());
+        // Keep the same overflow guard as SchedulerConfig::get_cache_interval() for consistency.
+        OPENVINO_ASSERT(multiplier == 0 ||
+                            kv_block_size <= std::numeric_limits<std::size_t>::max() / multiplier,
+                        "Derived cache_interval_multiplier is too large for KV cache block size. multiplier: ",
+                        multiplier, ", kv_block_size: ", kv_block_size);
         return kv_block_size * multiplier;
     }
 
