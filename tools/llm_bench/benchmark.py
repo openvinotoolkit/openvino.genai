@@ -54,10 +54,16 @@ def relevance_weight_type(value: str) -> float:
     return fvalue
 
 
+class NewlineHelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
+    def _split_lines(self, text, width):
+        lines = []
+        for line in text.splitlines():
+            lines.extend(super()._split_lines(line, width))
+        return lines
+
+
 def get_argparser():
-    parser = argparse.ArgumentParser(
-        "LLM benchmarking tool", add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
+    parser = argparse.ArgumentParser("LLM benchmarking tool", add_help=True, formatter_class=NewlineHelpFormatter)
     parser.add_argument(
         "-m",
         "--model",
@@ -123,12 +129,12 @@ def get_argparser():
         "--load_config",
         default=None,
         required=False,
-        help="path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n"
-        'Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}.\n'
-        'Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}\n'
-        'Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings.\n'
-        'Example of setting option via sting in Linux/Windows cmd: "{"ATTENTION_BACKEND": "SDPA"}"\n'
-        'Example of setting option via sting in PowerShell: \'{"ATTENTION_BACKEND": "SDPA"}\'',
+        help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n
+        Example for OpenVINO: {"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}\n
+        Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}\n
+        Example for PyTorch: {"PREC_BF16":true}. PyTorch currently only supports bf16 settings.\n
+        Example of setting option via string in Linux/Windows cmd: "{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}" \n
+        Example of setting option via string in PowerShell: '{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}' """,
     )
     parser.add_argument(
         "-mc",
@@ -136,10 +142,13 @@ def get_argparser():
         default=0,
         required=False,
         type=int,
-        help="Enables memory usage monitoring mode. 0 = off (default). "
-        "1 = thread, warm-up only; 2 = thread, all iterations; "
-        "3 = separate process, warm-up only; 4 = separate process, all iterations. "
-        "Warning: concurrent memory and performance benchmarking is not recommended. "
+        help="Enables memory usage monitoring mode. \n"
+        "0 = off (default). \n"
+        "1 = thread, compilation and warm-up(creats on compilation and on warm-up separately); \n"
+        "2 = thread, compilation and all iterations(creats on compilation and on each iteration separately); \n"
+        "3 = separate process, compilation and warm-up; \n"
+        "4 = separate process, compilation and all iterations. \n"
+        "Warning: concurrent memory and performance benchmarking is not recommended. \n"
         "Performance impact can be reduced with longer --memory_consumption_cooldown "
         "and --memory_consumption_interval values, though some degradation is unavoidable.",
     )

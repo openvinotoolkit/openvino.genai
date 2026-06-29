@@ -97,12 +97,12 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 - `-pf`: Path to a JSONL file containing prompts. Examples of prompt files can be found in the folder openvino.genai/tools/llm_bench/prompts.
 - `-n`: Number of iterations (default: 0, the first iteration is excluded).
 - `-ic`: Limit the output token size (default: 512) for text generation and code generation models.
-- `-lc`: Path to JSON file or string in JSON format to load customized configurations.
-      Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}
-      Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}
-      Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings
-      Example of setting option via sting in Linux/Windows cmd: "{\"PERFORMANCE_HINT\": \"LATENCY\"}"
-      Example of setting option via sting in PowerShell: '{\"PERFORMANCE_HINT\": \"LATENCY\"}'
+- `-lc`: Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.<br>
+      Example for OpenVINO: `{"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}` <br>
+      Additional option for OpenVINO GenAI: `{"ATTENTION_BACKEND": "SDPA"}` <br>
+      Example for PyTorch: `{"PREC_BF16":true}`. PyTorch currently only supports bf16 settings<br>
+      Example of setting option via string in Linux/Windows cmd: `"{\"ATTENTION_BACKEND\": \"SDPA\"}"` <br>
+      Example of setting option via string in PowerShell: `'{\"ATTENTION_BACKEND\": \"SDPA\"}'` <br>
       More information about properies, please, find [OpenVINO documentation](https://docs.openvino.ai/2025/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
 - `--optimum`: Use Optimum Intel pipelines for benchmarking.
 - `--from_onnx`: Allow initialize Optimum OpenVINO model using ONNX.
