@@ -318,14 +318,20 @@ def _convert_draft(model_id, temp_path):
     export_tokenizer(tokenizer, temp_path)
 
 
-sd_main_model_path = convert_text_model(sd_main_model_id, "tiny-random-qwen3-layer10", _convert_base)
-sd_draft_model_path = convert_text_model(sd_draft_model_id, "tiny-random-qwen3-eagle3", _convert_draft)
+@pytest.fixture(scope="module")
+def sd_main_model_path():
+    return convert_text_model(sd_main_model_id, "tiny-random-qwen3-layer10", _convert_base)
+
+
+@pytest.fixture(scope="module")
+def sd_draft_model_path():
+    return convert_text_model(sd_draft_model_id, "tiny-random-qwen3-eagle3", _convert_draft)
 
 
 SD_SIMILARITY_THRESHOLD = 0.9
 
 
-def test_text_genai_sd_generation_config_json_string(tmp_path):
+def test_text_genai_sd_generation_config_json_string(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config with JSON string for speculative decoding."""
     temp_file_name = tmp_path / "gt.csv"
     sd_config_string = '{"num_assistant_tokens": 5}'
@@ -369,7 +375,7 @@ def test_text_genai_sd_generation_config_json_string(tmp_path):
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-def test_text_genai_sd_generation_config_json_file(tmp_path):
+def test_text_genai_sd_generation_config_json_file(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config with JSON file for speculative decoding."""
     temp_file_name = tmp_path / "gt.csv"
     config_path = tmp_path / "sd_config.json"
@@ -415,7 +421,7 @@ def test_text_genai_sd_generation_config_json_file(tmp_path):
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-def test_text_genai_sd_generation_config_unsupported_key(tmp_path):
+def test_text_genai_sd_generation_config_unsupported_key(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config warns on unsupported keys."""
     temp_file_name = tmp_path / "gt.csv"
     sd_config_string = '{"num_assistant_tokens": 5, "unsupported_key": 99}'
@@ -456,7 +462,7 @@ def test_text_genai_sd_generation_config_unsupported_key(tmp_path):
     assert "not supported" in output
 
 
-def test_text_genai_sd_generation_config_override(tmp_path):
+def test_text_genai_sd_generation_config_override(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config overrides --num-assistant-tokens from cmdline."""
     temp_file_name = tmp_path / "gt.csv"
     sd_config_string = '{"num_assistant_tokens": 7}'
@@ -503,7 +509,7 @@ def test_text_genai_sd_generation_config_override(tmp_path):
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-def test_text_genai_sd_generation_config_topk(tmp_path):
+def test_text_genai_sd_generation_config_topk(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config with EAGLE3 Top-K parameters."""
     temp_file_name = tmp_path / "gt.csv"
     sd_config_string = '{"num_assistant_tokens": 6, "branching_factor": 3, "tree_depth": 2}'
@@ -547,7 +553,7 @@ def test_text_genai_sd_generation_config_topk(tmp_path):
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-def test_text_genai_sd_generation_config_topk_file(tmp_path):
+def test_text_genai_sd_generation_config_topk_file(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config Top-K via JSON file."""
     temp_file_name = tmp_path / "gt.csv"
     config_path = tmp_path / "sd_topk_config.json"
