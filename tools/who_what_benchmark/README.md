@@ -50,7 +50,7 @@ Additional option for OpenVINO GenAI: `{"ATTENTION_BACKEND": "SDPA"}`<br>
 Example of setting option via string in Linux/Windows cmd: `"{\"ATTENTION_BACKEND\": \"SDPA\"}"`<br>
 Example of setting option via string in PowerShell: `'{\"ATTENTION_BACKEND\": \"SDPA\"}'`<br>
 
-More information about properies, please, find [OpenVINO documentation](https://docs.openvino.ai/2025/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).<br>
+More information about properties, please, find [OpenVINO documentation](https://docs.openvino.ai/2026/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).<br>
 
 
 ## Usage

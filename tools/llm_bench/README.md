@@ -103,7 +103,7 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
       Example for PyTorch: `{"PREC_BF16":true}`. PyTorch currently only supports bf16 settings<br>
       Example of setting option via string in Linux/Windows cmd: `"{\"ATTENTION_BACKEND\": \"SDPA\"}"` <br>
       Example of setting option via string in PowerShell: `'{\"ATTENTION_BACKEND\": \"SDPA\"}'` <br>
-      More information about properies, please, find [OpenVINO documentation](https://docs.openvino.ai/2025/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
+      More information about properties, please, find [OpenVINO documentation](https://docs.openvino.ai/2026/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
 - `--optimum`: Use Optimum Intel pipelines for benchmarking.
 - `--from_onnx`: Allow initialize Optimum OpenVINO model using ONNX.
 - `--pruning_ratio`: Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.
