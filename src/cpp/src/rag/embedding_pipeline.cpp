@@ -308,11 +308,11 @@ private:
     void init_multimodal(const std::filesystem::path& models_path,
                          const std::string& device,
                          const ov::AnyMap& properties) {
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties);
-        m_inputs_embedder->set_apply_chat_template_status(false);
-
         ov::AnyMap properties_copy = properties;
         utils::extract_extensions_to_core(properties_copy);
+
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_copy);
+        m_inputs_embedder->set_apply_chat_template_status(false);
         std::shared_ptr<ov::Model> language_model =
             utils::singleton_core().read_model(models_path / "openvino_language_model.xml");
         language_model = utils::apply_postprocessing(language_model, m_config);
@@ -359,9 +359,8 @@ private:
 
         VLMPerfMetrics metrics;
         for (const std::string& batch_text : texts) {
-            const std::string formatted_text = prompt.has_value() ?
-                append_visual_tags(batch_text, encoded_images.size(), encoded_videos.size()) :
-                batch_text;
+            const std::string formatted_text =
+                append_visual_tags(batch_text, encoded_images.size(), encoded_videos.size());
             const NormalizedPrompt normalized_prompt =
                 m_inputs_embedder->normalize_prompt(format_prompt(formatted_text, prompt), 0, 0, encoded_images, encoded_videos);
 
@@ -416,11 +415,9 @@ private:
             const auto& first_pos_shape = batch_items[0].position_ids->get_shape();
             ov::Shape batched_pos_shape = first_pos_shape;
             // For position_ids with shape [3, batch, seq] or [batch, seq], update the batch dimension
-            if (batched_pos_shape.size() == 3) {
-                batched_pos_shape[1] = batch_size;  // [3, 1, seq] -> [3, batch_size, seq]
-            } else if (batched_pos_shape.size() == 2) {
-                batched_pos_shape[0] = batch_size;  // [1, seq] -> [batch_size, seq]
-            }
+            
+            OPENVINO_ASSERT(batched_pos_shape.size() == 3, "Expected position_ids to have rank 3, got rank ", batched_pos_shape.size());
+            batched_pos_shape[1] = batch_size;  // [3, 1, seq] -> [3, batch_size, seq]
             batched_pos_shape.back() = max_seq_length;
             batched_position_ids = ov::Tensor(ov::element::i64, batched_pos_shape);
             std::fill_n(batched_position_ids->data<int64_t>(), batched_position_ids->get_size(), 0);
@@ -536,7 +533,7 @@ private:
         }
         ChatHistory history({{{"role", "system"}, {"content", *prompt}}, {{"role", "user"}, {"content", text}}});
         constexpr bool add_generation_prompt = false;
-        return append_added_special_tokens(tokenizer, tokenizer.apply_chat_template(history, add_generation_prompt));;
+        return append_added_special_tokens(tokenizer, tokenizer.apply_chat_template(history, add_generation_prompt));
     }
 
     std::string append_added_special_tokens(Tokenizer& tokenizer, const std::string& text) const {

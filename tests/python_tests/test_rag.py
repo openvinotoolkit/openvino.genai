@@ -173,24 +173,24 @@ def cat_image_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return image_path
 
 
-def make_embedding_test_image_array(image_path: Path) -> np.ndarray:
+def get_image_as_array(image_path: Path) -> np.ndarray:
     return np.asarray(Image.open(image_path).convert("RGB"), dtype=np.uint8)
 
 
-def make_embedding_test_image(image_path: Path) -> ov.Tensor:
-    return ov.Tensor(make_embedding_test_image_array(image_path))
+def get_image_tensor(image_path: Path) -> ov.Tensor:
+    return ov.Tensor(get_image_as_array(image_path))
 
 
-def make_embedding_test_video_array(image_path: Path) -> np.ndarray:
-    image = make_embedding_test_image_array(image_path)
+def get_video_as_array(image_path: Path) -> np.ndarray:
+    image = get_image_as_array(image_path)
     return np.stack([image] * 4, axis=0)
 
 
-def make_embedding_test_video(image_path: Path) -> ov.Tensor:
-    return ov.Tensor(make_embedding_test_video_array(image_path))
+def get_video_tensor(image_path: Path) -> ov.Tensor:
+    return ov.Tensor(get_video_as_array(image_path))
 
 
-def make_embedding_video_metadata() -> VideoMetadata:
+def get_video_metadata() -> VideoMetadata:
     video_metadata = VideoMetadata()
     video_metadata.frames_indices = [0, 1, 2, 3]
     return video_metadata
@@ -237,24 +237,19 @@ def run_multimodal_embedding_hf(
     return F.normalize(pooled.to(torch.float32), p=2, dim=-1).cpu().numpy()
 
 
-@pytest.fixture
-def run_multimodal_embedding_sentence_transformers():
+def run_multimodal_embedding_sentence_transformers(
+    model_id: str,
+    text: str,
+    image: np.ndarray | None = None,
+    prompt: str | None = None,
+) -> np.ndarray:
     import sentence_transformers
 
-    def run(
-        model_id: str,
-        text: str,
-        image: np.ndarray | None = None,
-        prompt: str | None = None,
-    ) -> np.ndarray:
-        model = sentence_transformers.SentenceTransformer(model_id)
-        model_input = {"text": text}
-        if image is not None:
-            model_input["image"] = Image.fromarray(image)
-
-        return model.encode([model_input], prompt=prompt, convert_to_numpy=True).astype(np.float32)
-
-    return run
+    model = sentence_transformers.SentenceTransformer(model_id)
+    model_input = {"text": text}
+    if image is not None:
+        model_input["image"] = Image.fromarray(image)
+    return model.encode([model_input], prompt=prompt, convert_to_numpy=True).astype(np.float32)
 
 
 def run_multimodal_embedding_transformers(
@@ -373,8 +368,8 @@ def test_qwen3_vl_embedding_text_batch_consistency(multimodal_emb_model):
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_hf_components, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    image_array = make_embedding_test_image_array(cat_image_path)
-    image = make_embedding_test_image(cat_image_path)
+    image_array = get_image_as_array(cat_image_path)
+    image = get_image_tensor(cat_image_path)
     image_text_prompt = " المرأ playing with her dog on a beach at sunset."
     prompt = "Represent the user's input."
     hf_processor, hf_model = multimodal_emb_hf_components
@@ -393,12 +388,11 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
     multimodal_emb_model,
-    run_multimodal_embedding_sentence_transformers,
     cat_image_path,
 ):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    image_array = make_embedding_test_image_array(cat_image_path)
-    image = make_embedding_test_image(cat_image_path)
+    image_array = get_image_as_array(cat_image_path)
+    image = get_image_tensor(cat_image_path)
     text = "A woman playing with her dog on a beach at sunset."
     prompt = "Represent the user's input."
     # prompt = ""
@@ -419,10 +413,9 @@ def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
 @pytest.mark.parametrize("model_id", MULTIMODAL_EMBEDDINGS_TEST_MODELS)
 def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
     model_id,
-    run_multimodal_embedding_sentence_transformers,
     cat_image_path,
 ):
-    image_array = make_embedding_test_image_array(cat_image_path)
+    image_array = get_image_as_array(cat_image_path)
     text = "A woman"
     prompt = "hi"
 
@@ -448,8 +441,8 @@ def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    video = make_embedding_test_video(cat_image_path)
-    video_metadata = make_embedding_video_metadata()
+    video = get_video_tensor(cat_image_path)
+    video_metadata = get_video_metadata()
     text = "Represent this video."
 
     result = pipeline.embed(text, videos=[video], videos_metadata=[video_metadata])
@@ -463,9 +456,9 @@ def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model, cat_image_path)
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_three_texts_image_and_video(multimodal_emb_model, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
-    image = make_embedding_test_image(cat_image_path)
-    video = make_embedding_test_video(cat_image_path)
-    video_metadata = make_embedding_video_metadata()
+    image = get_image_tensor(cat_image_path)
+    video = get_video_tensor(cat_image_path)
+    video_metadata = get_video_metadata()
     texts = ["Represent OpenVINO.", "Represent this image.", "Represent this video."]
 
     result = pipeline.embed(
@@ -485,6 +478,27 @@ def test_embedding_pipeline_matches_text_embedding_pipeline(emb_model):
     text_embedding_pipeline = TextEmbeddingPipeline(emb_model.models_path, "CPU")
 
     embedding_result = embedding_pipeline.embed(text)
+    text_embedding_result = text_embedding_pipeline.embed_documents([text])
+
+    np.testing.assert_allclose(
+        embedding_result.embeddings.data,
+        np.asarray(text_embedding_result, dtype=np.float32),
+        atol=MAX_EMBEDDING_ERROR,
+        rtol=0,
+    )
+
+
+@pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+def test_embedding_pipeline_prompt_matches_embed_instruction(emb_model):
+    text = "What is OpenVINO?"
+    prompt = "Represent this document for searching relevant passages: "
+
+    embedding_pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
+    text_embedding_pipeline = TextEmbeddingPipeline(
+        emb_model.models_path, "CPU", TextEmbeddingPipeline.Config(embed_instruction=prompt)
+    )
+
+    embedding_result = embedding_pipeline.embed(text, prompt=prompt)
     text_embedding_result = text_embedding_pipeline.embed_documents([text])
 
     np.testing.assert_allclose(
