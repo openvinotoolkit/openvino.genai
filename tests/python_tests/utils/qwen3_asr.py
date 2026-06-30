@@ -1,7 +1,7 @@
 import re
 
 import pytest
-from optimum.intel import OVModelForSpeechSeq2Seq
+from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 from transformers import AutoProcessor
 
 

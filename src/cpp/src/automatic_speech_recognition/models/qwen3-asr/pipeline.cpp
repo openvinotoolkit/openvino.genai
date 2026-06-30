@@ -24,7 +24,7 @@ int64_t get_required_token_id(const ov::genai::Tokenizer& tokenizer, const std::
 namespace ov::genai {
 
 Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
-    : ASRPipelineImplBase(models_path, properties),
+    : ASRPipelineImplBase(models_path),
       m_feature_extractor{models_path / "preprocessor_config.json"},
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")} {
     ov::AnyMap properties_copy = properties;

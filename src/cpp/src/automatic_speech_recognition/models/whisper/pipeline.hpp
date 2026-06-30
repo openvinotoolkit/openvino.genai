@@ -14,7 +14,7 @@ public:
     WhisperASRPipelineAdapter(const std::filesystem::path& models_path,
                               const std::string& device,
                               const ov::AnyMap& properties)
-        : ASRPipelineImplBase(models_path, properties),
+        : ASRPipelineImplBase(models_path),
           m_whisper_pipeline(models_path, device, properties) {}
 
     void set_generation_config(const ASRGenerationConfig& config) override {

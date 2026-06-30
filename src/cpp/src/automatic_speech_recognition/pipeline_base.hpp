@@ -16,7 +16,7 @@ public:
     Tokenizer m_tokenizer;
     float m_load_time_ms = 0.0f;
 
-    ASRPipelineImplBase(const std::filesystem::path& models_path, const ov::AnyMap& properties)
+    ASRPipelineImplBase(const std::filesystem::path& models_path)
         : m_generation_config(utils::from_config_json_if_exists<ASRGenerationConfig>(models_path)),
           m_tokenizer{models_path} {}
 
