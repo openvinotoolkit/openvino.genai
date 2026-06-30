@@ -234,6 +234,7 @@ def analyze_args(args):
     model_args['num_assistant_tokens'] = args.num_assistant_tokens
     model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
     model_args['max_ngram_size'] = args.max_ngram_size
+    model_args['sd_generation_config'] = args.sd_generation_config
 
     model_args['speaker_embeddings'] = None
     if args.speaker_embeddings:

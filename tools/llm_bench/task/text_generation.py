@@ -45,7 +45,7 @@ def apply_sd_generation_config(args, gen_config):
                 log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
                 continue
             if hasattr(gen_config, k):
-                setattr(gen_config, k, v)
+                setattr(gen_config, k, int(v) if isinstance(v, (int, float)) and k != "assistant_confidence_threshold" else v)
             else:
                 log.warning(f"GenerationConfig has no attribute '{k}', skipping")
     config_info = "Speculative decoding config:"

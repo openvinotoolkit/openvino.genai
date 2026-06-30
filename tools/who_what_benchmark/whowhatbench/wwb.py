@@ -1227,8 +1227,12 @@ def main():
                 logger.warning(f"Key '{k}' in --sd-generation-config is not supported, skipping")
         if "num_assistant_tokens" in gen_cfg:
             args.num_assistant_tokens = int(gen_cfg["num_assistant_tokens"])
+            logger.info(f"num_assistant_tokens (final): {args.num_assistant_tokens}")
         if "assistant_confidence_threshold" in gen_cfg:
             args.assistant_confidence_threshold = float(gen_cfg["assistant_confidence_threshold"])
+            logger.info(
+                f"assistant_confidence_threshold (final): {args.assistant_confidence_threshold}"
+            )
         args.generation_config_extra = {
             k: v
             for k, v in gen_cfg.items()

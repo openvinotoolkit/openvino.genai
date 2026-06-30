@@ -207,6 +207,11 @@ class TextEvaluator(BaseEvaluator):
         )
 
         if generation_config is None:
+            extra_kwargs = (
+                {"generation_config_extra": self.generation_config_extra}
+                if self.generation_config_extra
+                else {}
+            )
             for p in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(
                     gen_answer_fn(
@@ -219,7 +224,7 @@ class TextEvaluator(BaseEvaluator):
                         self.empty_adapters,
                         self.num_assistant_tokens,
                         self.assistant_confidence_threshold,
-                        self.generation_config_extra,
+                        **extra_kwargs,
                     )
                 )
         else:
