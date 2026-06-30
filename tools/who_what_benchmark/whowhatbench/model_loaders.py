@@ -409,6 +409,8 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForVision2Seq
             elif config.model_type == "gemma4_unified":
+                if transformers_version < Version("5.10.0"):
+                    raise ImportError(f"gemma4_unified requires transformers>=5.10.0, got {__version__}.")
                 from transformers import AutoModelForMultimodalLM
 
                 model_cls = AutoModelForMultimodalLM
