@@ -905,9 +905,10 @@ ov::Tensor Qwen3TTSImpl::infer_talker_hidden(const ov::Tensor& inputs_embeds,
 //   inputs : inputs_embeds [1,1,H], attention_mask [1,kv_len], position_ids [1,1],
 //            past_key_values.{i}.{key,value} [1,n_kv,past_len,head_dim]  (i in 0..L-1)
 //   outputs: logits [num_heads,1,1,V] (all code-group heads stacked),
-//            present.{i}.{key,value}   [1,n_kv,kv_len,head_dim]
+//            present.{i}.{key,value}   [1,n_kv,kv_len,head_dim] (or [1,n_kv,1,head_dim]
+//                                       when the exporter slices to just the new token)
 // where kv_len = past_len + 1. The graph hard-wires cache_position = [past_len],
-// so the freshly produced token always lands at present slot index `past_len`.
+// so the freshly produced token always lands at the last present slot.
 void Qwen3TTSImpl::init_static_predictor_meta(const std::shared_ptr<ov::Model>& model) {
     m_pred_num_layers = 0;
     for (const auto& in : model->inputs()) {
@@ -996,16 +997,21 @@ ov::Tensor Qwen3TTSImpl::infer_predictor(const ov::Tensor& inputs_embeds, bool r
 
     run_and_time([&]{ m_talker_code_predictor.infer(); }, "code_predictor", m_perf_ms, m_perf_calls);
 
-    // Copy the freshly produced token (present slot index past_len) into host
-    // past slot p so the next step sees positions 0..p left-aligned.
+    // Copy the freshly produced token into host past slot p so the next step
+    // sees positions 0..p left-aligned. The new token is always the LAST slot of
+    // each `present` output. The exporter may emit `present` either full
+    // ([1,n_kv,kv_len,head_dim]) or sliced to just the new token
+    // ([1,n_kv,1,head_dim]); deriving the slot count from the tensor shape
+    // supports both -- we only ever read that last slot regardless.
     if (p < m_pred_past_len) {
         const size_t row = m_pred_head_dim;                 // floats per (head, slot)
         const size_t slot_stride = m_pred_past_len * row;   // host past: [.,.,past_len,head_dim]
-        const size_t present_slot_stride = m_pred_kv_len * row;
-        const size_t src_slot = m_pred_past_len;            // new token slot in present
         for (size_t i = 0; i < m_pred_num_layers; ++i) {
             const auto& pk = m_talker_code_predictor.get_tensor("present." + std::to_string(i) + ".key");
             const auto& pv = m_talker_code_predictor.get_tensor("present." + std::to_string(i) + ".value");
+            const size_t present_slots = pk.get_shape()[2];          // kv_len (full) or 1 (sliced)
+            const size_t present_slot_stride = present_slots * row;
+            const size_t src_slot = present_slots - 1;               // new token = last slot
             const float* pk_ptr = pk.data<const float>();
             const float* pv_ptr = pv.data<const float>();
             float* dk_ptr = m_pred_past_k[i].data<float>();
