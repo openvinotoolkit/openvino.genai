@@ -559,6 +559,51 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_LiveBlockDefaultsToFr
     orchestrator->free_sequence(seq_id);
 }
 
+/// Non-speculative live-row reads must track current prefill row after copy-on-write.
+TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_DefaultLiveBlockTracksReallocatedPrefillRow) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/16,
+        /*num_la_blocks=*/4,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+
+    auto seq_group = create_sequence_group(420, /*num_sequences=*/1);
+    auto parent = seq_group->get_running_sequences()[0];
+    const uint64_t parent_id = parent->get_id();
+    orchestrator->allocate_tokens(parent, seq_group, 1, seq_group->get_prompt_len());
+
+    const size_t original_prefill = orchestrator->get_linear_attention_live_block(parent_id);
+    auto child = seq_group->fork_sequence(parent);
+    const uint64_t child_id = child->get_id();
+    orchestrator->fork_sequence(parent_id, child_id);
+
+    seq_group->schedule_tokens(1);
+    orchestrator->append_slots(seq_group);
+
+    const auto& parent_owned = orchestrator->get_linear_attention_block_table(parent_id);
+    EXPECT_EQ(parent_owned.size(), 1u);
+    if (parent_owned.size() == 1u) {
+        const size_t reallocated_prefill = parent_owned.front()->get_index();
+        EXPECT_NE(reallocated_prefill, original_prefill);
+        EXPECT_EQ(orchestrator->get_linear_attention_live_block(parent_id), reallocated_prefill);
+    }
+
+    bool extra_child_forked = false;
+    try {
+        orchestrator->fork_sequence(parent_id, /*child_id=*/9003);
+        extra_child_forked = true;
+    } catch (const std::exception& ex) {
+        ADD_FAILURE() << ex.what();
+    }
+
+    if (extra_child_forked) {
+        orchestrator->free_sequence(9003);
+    }
+    orchestrator->free_sequence(child_id);
+    orchestrator->free_sequence(parent_id);
+}
+
 /// Scratch rows are owned LA rows excluding the live row.
 TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ScratchBlocksAreOwnedSetMinusLive) {
     const size_t n = 3;
