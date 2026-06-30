@@ -737,7 +737,7 @@ private:
             return 0;
         }
         OPENVINO_ASSERT(kv_manager,
-                        "SchedulerConfig cache_interval_multiplier requires KV cache inputs when prefix caching is enabled");
+                        "Prefix caching for hybrid (linear-attention) models requires the model to expose KV cache inputs, but no KV cache manager is registered");
         const size_t kv_block_size = kv_manager->get_block_size();
 
         // An explicit user multiplier is always honoured.
