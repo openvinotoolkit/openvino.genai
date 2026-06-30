@@ -208,9 +208,7 @@ class TextEvaluator(BaseEvaluator):
 
         if generation_config is None:
             extra_kwargs = (
-                {"generation_config_extra": self.generation_config_extra}
-                if self.generation_config_extra
-                else {}
+                {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
             )
             for p in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(
@@ -228,6 +226,10 @@ class TextEvaluator(BaseEvaluator):
                     )
                 )
         else:
+            if self.generation_config_extra:
+                for k, v in self.generation_config_extra.items():
+                    if hasattr(generation_config, k):
+                        setattr(generation_config, k, v)
             with tqdm(total=len(prompt_data.values)) as progress_bar:
                 batch = []
                 for p_idx, p in enumerate(prompt_data.values):

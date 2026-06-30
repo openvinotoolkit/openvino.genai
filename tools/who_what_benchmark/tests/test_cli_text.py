@@ -312,20 +312,14 @@ def _convert_draft(model_id, temp_path):
 
     model_local = snapshot_download(model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_local, trust_remote_code=True)
-    base_model = OVModelForCausalLM.from_pretrained(
-        model_local, trust_remote_code=True, ignore_mismatched_sizes=True
-    )
+    base_model = OVModelForCausalLM.from_pretrained(model_local, trust_remote_code=True, ignore_mismatched_sizes=True)
     base_model.save_pretrained(temp_path)
     tokenizer.save_pretrained(temp_path)
     export_tokenizer(tokenizer, temp_path)
 
 
-sd_main_model_path = convert_text_model(
-    sd_main_model_id, "tiny-random-qwen3-layer10", _convert_base
-)
-sd_draft_model_path = convert_text_model(
-    sd_draft_model_id, "tiny-random-qwen3-eagle3", _convert_draft
-)
+sd_main_model_path = convert_text_model(sd_main_model_id, "tiny-random-qwen3-layer10", _convert_base)
+sd_draft_model_path = convert_text_model(sd_draft_model_id, "tiny-random-qwen3-eagle3", _convert_draft)
 
 
 SD_SIMILARITY_THRESHOLD = 0.9
@@ -558,9 +552,7 @@ def test_text_genai_sd_generation_config_topk_file(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
     config_path = tmp_path / "sd_topk_config.json"
     with open(config_path, "w") as f:
-        json.dump(
-            {"num_assistant_tokens": 6, "branching_factor": 3, "tree_depth": 2}, f
-        )
+        json.dump({"num_assistant_tokens": 6, "branching_factor": 3, "tree_depth": 2}, f)
 
     run_wwb(
         [

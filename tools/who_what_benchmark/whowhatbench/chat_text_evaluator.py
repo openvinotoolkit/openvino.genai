@@ -216,11 +216,7 @@ class ChatTextEvaluator(TextEvaluator):
         if not os.path.exists(prompts_dir):
             os.makedirs(prompts_dir)
 
-        extra_kwargs = (
-            {"generation_config_extra": self.generation_config_extra}
-            if self.generation_config_extra
-            else {}
-        )
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
         for i, p in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
             answer = gen_answer_fn(
                 model,

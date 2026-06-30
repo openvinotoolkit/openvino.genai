@@ -35,11 +35,7 @@ def apply_sd_generation_config(args, gen_config):
     if args.get("assistant_confidence_threshold", None):
         gen_config.assistant_confidence_threshold = float(args["assistant_confidence_threshold"])
     if args.get("sd_generation_config"):
-        from llm_bench_utils.model_utils import get_config
-
-        extra_cfg = get_config(args["sd_generation_config"])
-        if not isinstance(extra_cfg, dict):
-            raise ValueError(f"--sd_generation_config must be a JSON object, got {type(extra_cfg).__name__}")
+        extra_cfg = args["sd_generation_config"]
         for k, v in extra_cfg.items():
             if k not in _SD_SUPPORTED_KEYS:
                 log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
@@ -49,7 +45,11 @@ def apply_sd_generation_config(args, gen_config):
             elif k == "assistant_confidence_threshold":
                 v = float(v)
             if hasattr(gen_config, k):
-                setattr(gen_config, k, int(v) if isinstance(v, (int, float)) and k != "assistant_confidence_threshold" else v)
+                setattr(
+                    gen_config,
+                    k,
+                    int(v) if isinstance(v, (int, float)) and k != "assistant_confidence_threshold" else v,
+                )
             else:
                 log.warning(f"GenerationConfig has no attribute '{k}', skipping")
     config_info = "Speculative decoding config:"

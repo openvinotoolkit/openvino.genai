@@ -134,9 +134,7 @@ class TestBenchmarkLLM:
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
-    def test_python_tool_llm_benchmark_sd_generation_config(
-        self, convert_model, convert_draft_model, tmp_path
-    ):
+    def test_python_tool_llm_benchmark_sd_generation_config(self, convert_model, convert_draft_model, tmp_path):
         """
         Test --sd_generation_config JSON file parsing for Speculative Decoding.
         Verifies that JSON config is parsed and applied with EAGLE3 draft model.
@@ -151,12 +149,22 @@ class TestBenchmarkLLM:
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "--draft_model", convert_draft_model,
-            "-p", "'Why is the Sun yellow?'",
-            "-d", "cpu", "--draft_device", "cpu",
-            "-n", "1", "-ic", "20",
-            "--sd_generation_config", str(config_path),
+            "-m",
+            convert_model,
+            "--draft_model",
+            convert_draft_model,
+            "-p",
+            "'Why is the Sun yellow?'",
+            "-d",
+            "cpu",
+            "--draft_device",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "20",
+            "--sd_generation_config",
+            str(config_path),
         ]
         run_sample(benchmark_py_command)
 
@@ -168,9 +176,7 @@ class TestBenchmarkLLM:
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
-    def test_python_tool_llm_benchmark_sd_generation_config_topk(
-        self, convert_model, convert_draft_model, tmp_path
-    ):
+    def test_python_tool_llm_benchmark_sd_generation_config_topk(self, convert_model, convert_draft_model, tmp_path):
         """
         Test --sd_generation_config with EAGLE3 Top-K parameters.
         """
@@ -178,21 +184,28 @@ class TestBenchmarkLLM:
 
         config_path = tmp_path / "sd_topk_config.json"
         with open(config_path, "w") as f:
-            json.dump(
-                {"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3},
-                f,
-            )
+            json.dump({"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}, f)
 
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "--draft_model", convert_draft_model,
-            "-p", "'Why is the Sun yellow?'",
-            "-d", "cpu", "--draft_device", "cpu",
-            "-n", "1", "-ic", "20",
-            "--sd_generation_config", str(config_path),
+            "-m",
+            convert_model,
+            "--draft_model",
+            convert_draft_model,
+            "-p",
+            "'Why is the Sun yellow?'",
+            "-d",
+            "cpu",
+            "--draft_device",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "20",
+            "--sd_generation_config",
+            str(config_path),
         ]
         run_sample(benchmark_py_command)
 
