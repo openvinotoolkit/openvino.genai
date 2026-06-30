@@ -14,8 +14,6 @@ if TYPE_CHECKING:
 
 class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
     def __init__(self, chat_mode: bool = False):
-        if chat_mode:
-            raise ValueError("gemma4_unified does not currently support chat mode.")
         super().__init__(chat_mode)
 
     def update_chat_history_with_answer(self, answer):
