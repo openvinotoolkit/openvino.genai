@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <openvino/runtime/properties.hpp>
+#include "gguf_utils/gguf_tokenizer.hpp"
 #include "utils.hpp"
 
 
@@ -83,6 +84,15 @@ TEST(TestGetModelProperties, merges_disjoint_keys_across_layers) {
     EXPECT_EQ(result.count(PER_MODEL_PROPERTIES), 0u);
     EXPECT_EQ(result.at("CACHE_DIR").as<std::string>(), "/tmp");
     EXPECT_EQ(result.at("NUM_STREAMS").as<std::string>(), "8");
+}
+
+TEST(TestGgufTokenizer, returnsTekkenPreTokenizerRegex) {
+    const auto regex = ov::genai::get_split_regex("tekken");
+    ASSERT_EQ(regex.size(), 1);
+    EXPECT_EQ(regex[0],
+              "[^\\r\\n\\p{L}\\p{N}]?((?=[\\p{L}])([^a-z]))*((?=[\\p{L}])([^A-Z]))+|"
+              "[^\\r\\n\\p{L}\\p{N}]?((?=[\\p{L}])([^a-z]))+((?=[\\p{L}])([^A-Z]))*|"
+              "\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+");
 }
 
 // --- DEVICE_PROPERTIES layer tests ---
