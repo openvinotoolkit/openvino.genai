@@ -70,16 +70,18 @@ private:
                                    const ov::Tensor& attention_mask,
                                    const ov::Tensor& position_ids,
                                    bool reset_state);
-    ov::Tensor infer_predictor(const ov::Tensor& inputs_embeds,
-                               const ov::Tensor& attention_mask,
-                               const ov::Tensor& position_ids,
-                               int64_t generation_step,
-                               bool reset_state);
-    ov::Tensor infer_predictor_hidden(const ov::Tensor& inputs_embeds,
-                                      const ov::Tensor& attention_mask,
-                                      const ov::Tensor& position_ids,
-                                      int64_t generation_step,
-                                      bool reset_state);
+    // Single-token step against the static all-heads code predictor. Manages the
+    // host-side explicit KV cache and absolute-position counter internally; pass
+    // reset_state=true at the start of each per-frame code-group prediction.
+    // Returns the stacked all-heads logits [num_heads, 1, 1, vocab].
+    ov::Tensor infer_predictor(const ov::Tensor& inputs_embeds, bool reset_state);
+    // Slice one MTP head (0-based, = code_group-1) out of stacked all-heads logits
+    // into a [1, 1, vocab] tensor for sample_token_from_logits.
+    ov::Tensor select_predictor_head(const ov::Tensor& all_logits, size_t head) const;
+    // Read static-predictor dims from the IR and (re)allocate host KV buffers.
+    void init_static_predictor_meta(const std::shared_ptr<ov::Model>& model);
+    // Zero host KV buffers and reset the running absolute-position counter.
+    void reset_predictor_state();
     ov::Tensor infer_predictor_embedding(int64_t token_id, int64_t generation_step);
     ov::Tensor infer_predictor_embedding_seq(const std::vector<int64_t>& token_ids, int64_t generation_step);
 
@@ -133,6 +135,20 @@ private:
     ov::InferRequest m_talker_text_projection;
     ov::InferRequest m_talker_code_predictor;
     ov::InferRequest m_talker_code_predictor_embedding;
+
+    // Static all-heads code predictor state. The loaded predictor IR must expose
+    // explicit past_key_values inputs (a non-static model is rejected at
+    // construction); the host drives the KV cache, see infer_predictor.
+    size_t m_pred_num_layers = 0;
+    size_t m_pred_n_kv = 0;
+    size_t m_pred_head_dim = 0;
+    size_t m_pred_past_len = 0;   // KV slots in past_key_values inputs
+    size_t m_pred_kv_len = 0;     // KV slots in present outputs (= past_len + 1)
+    size_t m_pred_num_heads = 0;  // stacked code-group heads in `logits`
+    size_t m_pred_vocab = 0;
+    size_t m_pred_position = 0;   // running absolute position within a frame
+    std::vector<ov::Tensor> m_pred_past_k;  // per-layer host KV buffers
+    std::vector<ov::Tensor> m_pred_past_v;
     ov::InferRequest m_speech_tokenizer_decoder;
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;
