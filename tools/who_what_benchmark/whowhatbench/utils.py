@@ -329,3 +329,49 @@ def parquet_generate_tables(self, files, *args, **kwargs):
 def disable_diffusers_model_progress_bar(model):
     if hasattr(model, "set_progress_bar_config"):
         model.set_progress_bar_config(disable=True)
+
+def resolve_json_dataset_path(dataset_path: str) -> str:
+    """Resolve JSON dataset path, checking local filesystem first, then whowhatbench.prompts resources."""
+    if dataset_path is None or not dataset_path.lower().endswith((".json", ".jsonl")):
+        raise ValueError("Dataset path must be a .json or .jsonl file")
+
+    if os.path.exists(dataset_path):
+        logger.info(f"JSON dataset found at local path: {dataset_path}")
+        return dataset_path
+
+    from importlib.resources import files
+    resource_path = files('whowhatbench.prompts').joinpath(dataset_path)
+    if resource_path.is_file():
+        logger.info(f"JSON dataset found in whowhatbench.prompts resources: {resource_path}")
+        return str(resource_path)
+
+    error_message = (
+        f"JSON dataset file '{dataset_path}' was not found as a local file "
+        "or in whowhatbench.prompts resources"
+    )
+    logger.error(error_message)
+    raise FileNotFoundError(error_message)
+
+
+def read_json_dataset(dataset_path: str):
+    """Read JSON dataset from file. Supports both JSON array and JSONL (line-delimited JSON) formats."""
+    logger.info(f"Reading JSON dataset from: {dataset_path}")
+    with open(dataset_path, "r", encoding="utf-8") as input_file:
+        content = input_file.read()
+
+    items = []
+    if Path(dataset_path).suffix.lower() == ".json":
+        items = json.loads(content)
+        if not isinstance(items, list):
+            raise ValueError("Top-level JSON value is not an array")
+    else:
+        # Parse as JSONL (line-delimited JSON)
+        for line in content.splitlines():
+            line = line.strip()
+            if line:
+                items.append(json.loads(line))
+
+    logger.info(f"Loaded {len(items)} records from JSON dataset")
+    return items
+
+

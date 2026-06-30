@@ -43,6 +43,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _is_visual_text_model(model_id: str) -> bool:
+    """Best-effort check whether model config describes a multimodal VLM."""
+    try:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        try:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        except Exception:
+            return False
+
+    # Multimodal checkpoints expose vision_config in config.
+    return getattr(config, "vision_config", None) is not None
+
+
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
     import openvino_genai
 
@@ -188,7 +202,9 @@ def load_text_llamacpp_pipeline(model_dir):
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
+
     trust_remote_code = False
+    config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
@@ -204,6 +220,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         if not kwargs.get("gguf_file") and config and getattr(config, "quantization_config", None):
             is_gptq = config.quantization_config["quant_method"] == "gptq"
             is_awq = config.quantization_config["quant_method"] == "awq"
+
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
@@ -211,11 +228,11 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     else:
         try:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
+                model_id, trust_remote_code=False, device_map=device, **model_kwargs
             )
         except Exception:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
+                model_id, trust_remote_code=True, device_map=device, **model_kwargs
             )
 
     if kwargs.get("adapters") is not None:
@@ -413,7 +430,7 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
-            model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+            model = model_cls.from_pretrained(model_id, device_map=device, **model_kwargs)
         except ValueError:
             try:
                 model_cls = AutoModel
@@ -424,7 +441,7 @@ def load_visual_text_model(
                 elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
-                model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+                model = model_cls.from_pretrained(model_id, device_map=device, **model_kwargs)
             except ValueError:
                 if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
                     if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
@@ -436,7 +453,7 @@ def load_visual_text_model(
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    device_map=device.lower(),
+                    device_map=device,
                     **from_pretrained_kwargs,
                     **model_kwargs,
                 )
@@ -893,7 +910,14 @@ def load_model(
     else:
         ov_options = {}
 
-    if model_type == "text" or model_type == "text-chat":
+    if model_type == "text" or model_type == "text-chat" or model_type == "text-agent":
+        if model_type == "text-agent" and use_genai and _is_visual_text_model(model_id):
+            logger.info(
+                "text-agent requested for multimodal model '%s'; using VLMPipeline via visual-text loader",
+                model_id,
+            )
+            kwargs["model_type"] = kwargs.get("model_type", "visual-text")
+            return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(

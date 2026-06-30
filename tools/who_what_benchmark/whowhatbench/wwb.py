@@ -20,11 +20,23 @@ from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.utils import get_json_config
+from whowhatbench.utils import (
+    get_json_config,
+    resolve_json_dataset_path,
+    read_json_dataset)
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+AGENT_DATASET_VARIANTS = {
+    "base": "messages_500.jsonl",
+    "small": "messages_5k.jsonl",
+    "medium": "messages_20k.jsonl",
+    "large": "messages_100k.jsonl",
+}
 
 
 def pruning_ratio_type(value: str) -> int:
@@ -96,6 +108,7 @@ def parse_args():
         type=str,
         choices=[
             "text",
+            "text-agent",
             "text-chat",
             "text-to-image",
             "text-to-video",
@@ -109,7 +122,7 @@ def parse_args():
             "text-reranking",
         ],
         default="text",
-        help="Indicates the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
+        help="Indicates the model type: text - for causal text generation, text-agent - for agent-style JSON messages/tools datasets, visual-text - for Visual Language Models with image inputs, "
         "visual-video-text - for Visual Language Models with video inputs, text-to-image - for image generation, "
         "image-to-image - for image generation based on image and prompt, image-inpainting - for image generation based on image, mask and prompt, "
         "text-to-video - for video generation, text-reranking - for reranking a list of texts based on relevance to query, "
@@ -130,7 +143,22 @@ def parse_args():
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
+        " Local .json/.jsonl files are also supported for chat messages datasets (records with messages/tools)."
         " If None then internal list of prompts will be used.",
+    )
+    parser.add_argument(
+        "--agent-dataset",
+        type=str,
+        choices=list(AGENT_DATASET_VARIANTS.keys()),
+        default=None,
+        help=(
+            "Text-agent dataset preset."
+            " Variants map to JSONL files:"
+            " base=messages_500.jsonl, small=messages_5k.jsonl,"
+            " medium=messages_20k.jsonl, large=messages_100k.jsonl."
+            " Used only for --model-type text-agent."
+            " If set, it overrides default/--long-prompt selection."
+        ),
     )
     parser.add_argument(
         "--dataset-field",
@@ -425,21 +453,45 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
-    split = "validation"
+
+    dataset_split = "validation"
     if args.split is not None:
-        split = args.split
-    if "," in args.dataset:
-        path_name = args.dataset.split(",")
-        path = path_name[0]
-        name = path_name[1]
-    else:
-        path = args.dataset
+        dataset_split = args.split
+
+    path, separator, name = args.dataset.partition(",")
+    if not separator:
         name = None
-    data = load_dataset(path=path, name=name, split=split)
+    data = load_dataset(path=path, name=name, split=dataset_split)
 
     res = data[args.dataset_field]
-    res = {"prompts": list(res)}
-    return res
+    prompts = {"prompts": list(res)}
+    logger.info("Prompts source path %s name %s split %s: count=%d", path, name, dataset_split, len(res))
+    return prompts
+
+
+def load_agent_dataset(args):
+    if args.dataset is not None:
+        resolved_path = resolve_json_dataset_path(args.dataset)
+        logger.info("Text-agent dataset selected from --dataset: %s", resolved_path)
+    elif args.agent_dataset is not None:
+        dataset_name = AGENT_DATASET_VARIANTS[args.agent_dataset]
+        resolved_path = resolve_json_dataset_path(dataset_name)
+        logger.info(
+            "Text-agent dataset selected from --agent-dataset=%s: %s",
+            args.agent_dataset,
+            resolved_path,
+        )
+    else:
+        dataset_name = "messages_20k.jsonl" if args.long_prompt else "messages_500.jsonl"
+        resolved_path = resolve_json_dataset_path(dataset_name)
+        logger.info(
+            "Text-agent dataset selected by legacy flag/default (%s): %s",
+            "--long-prompt" if args.long_prompt else "default",
+            resolved_path,
+        )
+
+    data = read_json_dataset(resolved_path)
+    return data
 
 
 def load_tokenizer(args):
@@ -844,10 +896,11 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
+        prompts = None
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
+            prompts = load_prompts(args)
 
             if args.genai:
                 gen_answer_fn = genai_gen_text
@@ -880,7 +933,32 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
             )
+        elif task == "text-agent":
+            tokenizer = load_tokenizer(args)
+            dataset_records = load_agent_dataset(args)
+
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=dataset_records,
+                tokenizer=tokenizer,
+                similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
+                num_samples=args.num_samples,
+                gen_answer_fn=None,
+                empty_adapters=args.empty_adapters,
+                num_assistant_tokens=(
+                    int(args.num_assistant_tokens)
+                    if args.num_assistant_tokens is not None else 0
+                ),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None else 0.0
+                ),
+                is_genai_backend=args.genai,
+            )
         elif task == "text-to-image":
+            prompts = load_prompts(args)
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -897,7 +975,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=None,
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 num_frames=args.video_frames_num,
@@ -1310,7 +1388,8 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+        if args.model_type in ["text", "text-agent", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type
