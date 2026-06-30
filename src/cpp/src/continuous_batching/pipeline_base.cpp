@@ -633,6 +633,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     for (size_t i = 0; i < encoded_results.size(); ++i) {
         auto result = encoded_results.at(i);
+        utils::assert_request_was_scheduled(result.m_status, result.m_request_id);
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
         gen_result.extended_perf_metrics = result.extended_perf_metrics;
