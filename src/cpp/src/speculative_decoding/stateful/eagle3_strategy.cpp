@@ -1219,7 +1219,16 @@ EncodedResults StatefulEagle3LLMPipeline::build_results(ManualTimer& generate_ti
     m_sd_perf_metrics.main_model_metrics.m_evaluated = false;
     m_sd_perf_metrics.draft_model_metrics.m_evaluated = false;
 
-    m_sd_perf_metrics.main_model_metrics.raw_metrics = m_target->get_raw_perf_metrics();
+    // Normalize batch_sizes so their sum matches the actual (capped) output length.
+    auto target_raw = m_target->get_raw_perf_metrics();
+    if (!target_raw.m_batch_sizes.empty()) {
+        const size_t recorded =
+            std::accumulate(target_raw.m_batch_sizes.begin(), target_raw.m_batch_sizes.end(), size_t{0});
+        if (recorded > generated_tokens) {
+            target_raw.m_batch_sizes.back() -= recorded - generated_tokens;
+        }
+    }
+    m_sd_perf_metrics.main_model_metrics.raw_metrics = std::move(target_raw);
     m_sd_perf_metrics.draft_model_metrics.raw_metrics = m_draft->get_raw_perf_metrics();
 
     if (total_draft_generated > 0) {
@@ -1290,6 +1299,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
         const size_t remaining_budget = config.max_new_tokens - generated_tokens;
         if (result.validated_tokens.size() > remaining_budget) {
             result.validated_tokens.resize(remaining_budget);
+            result.accepted_tokens_count = remaining_budget - 1;
             result.eos_reached = true;  // Force stop after this iteration.
         }
 
