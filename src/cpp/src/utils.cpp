@@ -15,6 +15,7 @@
 #include "openvino/op/gather.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
@@ -459,6 +460,19 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 
 bool has_linear_attention_states(const std::shared_ptr<ov::Model>& model) {
     return get_cache_types(*model).has_linear();
+}
+
+bool supports_paged_attention(const std::shared_ptr<ov::Model>& model) {
+    // Continuous batching applies ov::pass::SDPAToPagedAttention, which rewrites
+    // ScaledDotProductAttention ops into PagedAttention. A model exported without any
+    // ScaledDotProductAttention op (e.g. some Gemma exports) cannot be converted and
+    // must use a non-paged pipeline instead.
+    for (const auto& op : model->get_ops()) {
+        if (ov::is_type<ov::op::v13::ScaledDotProductAttention>(op)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 CacheTypes get_cache_types(const ov::Model& model) {

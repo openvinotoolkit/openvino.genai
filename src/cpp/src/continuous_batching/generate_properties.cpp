@@ -24,6 +24,10 @@ std::pair<std::string, ov::Any> videos_metadata_batches(
     return {utils::VIDEOS_METADATA_BATCHES_ARG_NAME, wrap_vectors_to_any(videos_metadata_batches)};
 }
 
+bool supports_paged_attention(const std::shared_ptr<ov::Model>& model) {
+    return utils::supports_paged_attention(model);
+}
+
 CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& properties_map) {
     CBGenerateProperties properties;
 

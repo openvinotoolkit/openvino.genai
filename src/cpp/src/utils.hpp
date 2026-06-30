@@ -157,6 +157,10 @@ CacheTypes get_cache_types(const ov::Model& model);
 
 bool has_linear_attention_states(const std::shared_ptr<ov::Model>& model);
 
+// True if the model can be converted for continuous batching by SDPAToPagedAttention
+// (i.e. it contains at least one ScaledDotProductAttention op).
+bool supports_paged_attention(const std::shared_ptr<ov::Model>& model);
+
 struct KVAxesPosition {
     size_t batch;
     size_t seq_len;
