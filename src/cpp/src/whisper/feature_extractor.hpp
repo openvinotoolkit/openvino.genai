@@ -51,10 +51,14 @@ public:
     /**
      * @brief Create a flattened 2d log-mel spectrogram [feature_size, n_frames] from raw speech data
      *
+     * @param raw_speech Raw audio waveform samples.
+     * @param pad_to_max_duration When true, pads audio to n_samples (chunk_length * sampling_rate)
+     *        producing a fixed-size output. When false, output length follows actual audio length.
+     *
      * @see [huggingface introduction to audio
      * data](https://huggingface.co/learn/audio-course/chapter1/audio_data#mel-spectrogram)
      */
-    WhisperFeatures extract(const std::vector<float>& raw_speech);
+    WhisperFeatures extract(const std::vector<float>& raw_speech, bool pad_to_max_duration = true);
 
 private:
     std::vector<float> sin_vals;
