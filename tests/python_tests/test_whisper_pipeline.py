@@ -945,7 +945,6 @@ def test_perf_metrics(pipelines_fixture, sample_from_dataset):
     else:
         assert perf_metrics.get_tokenization_duration().mean == 0
     assert perf_metrics.get_detokenization_duration().mean > 0
-    assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_features_extraction_duration().mean > 0
     if model_id != QWEN3_ASR_MODEL_ID:
         assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
