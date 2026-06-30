@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 """Dependency-free GGUF inspector.
 
 Reads only the header + tensor-info section of a .gguf file (no weight data is

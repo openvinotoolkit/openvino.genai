@@ -12,6 +12,15 @@
 
 using namespace std;
 
+// Read a little-endian IEEE half-precision value from a (possibly unaligned) byte
+// pointer. Using memcpy avoids the strict-aliasing/alignment undefined behavior of
+// dereferencing a reinterpreted `uint16_t*` and keeps the readers portable.
+static inline ov::float16 read_f16(const uint8_t* p) {
+    uint16_t bits;
+    std::memcpy(&bits, p, sizeof(bits));
+    return ov::float16::from_bits(bits);
+}
+
 void unpack_32_4(uint8_t* data, uint8_t* dst) {
     std::fill_n(dst, 16, 0);
     for (int j = 0; j < 16; ++j) {
@@ -39,7 +48,7 @@ void extract_q4_0_data(const gguf_tensor& tensor,
     auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
 
     ov::parallel_for(scales_arr.get_size(), [&](size_t i) {
-        scales[i] = ov::float16::from_bits(*((uint16_t*)(data + i * bytes_per_block)));
+        scales[i] = read_f16(data + i * bytes_per_block);
         biases[i] = ov::float16(-8.f * static_cast<float>(scales[i]));
         unpack_32_4(data + i * bytes_per_block + 2, weights + i * 16);
     });
@@ -57,8 +66,8 @@ void extract_q4_1_data(const gguf_tensor& tensor,
     auto scales = scales_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
     auto biases = biases_arr.data<ov::element_type_traits<ov::element::f16>::value_type>();
     ov::parallel_for(scales_arr.get_size(), [&](size_t i) {
-        scales[i] = ov::float16::from_bits(*((uint16_t*)(data + i * bytes_per_block)));
-        biases[i] = ov::float16::from_bits(*((uint16_t*)(data + i * bytes_per_block + 2)));
+        scales[i] = read_f16(data + i * bytes_per_block);
+        biases[i] = read_f16(data + i * bytes_per_block + 2);
         unpack_32_4(data + i * bytes_per_block + 4, weights + i * 16);
     });
 }
@@ -86,7 +95,7 @@ void extract_q8_0_data(const gguf_tensor& tensor,
                     "[load_gguf] Q8_0 scales size mismatch (expected group 16)");
     for (int64_t i = 0; i < static_cast<int64_t>(n_block); i++) {
         uint8_t* block_data = data + i * bytes_per_block;
-        ov::float16 sc = ov::float16::from_bits(*(uint16_t*)block_data);
+        ov::float16 sc = read_f16(block_data);
         ov::float16 bs(-128.f * static_cast<float>(sc));
         scales[i * 2] = sc;
         scales[i * 2 + 1] = sc;
@@ -135,8 +144,8 @@ void extract_q4_k_data(const gguf_tensor& tensor,
         uint8_t* block_data = data + i * bytes_per_block;
 
         // Extract scale factors and offsets
-        float scale_scales = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data)));
-        float scale_biases = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data + 1)));
+        float scale_scales = static_cast<float>(read_f16(block_data));
+        float scale_biases = static_cast<float>(read_f16(block_data + 2));
 
         // Extract qs1 and qs2
         uint8_t* qs1 = block_data + 4;
@@ -186,7 +195,7 @@ void extract_q6_k_data(const gguf_tensor& tensor,
         uint8_t* block_data = data + i * bytes_per_block;
 
         float scale_factor =
-            static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data + 104)));  // (128+64+16)/2
+            static_cast<float>(read_f16(block_data + 208));  // (128+64+16)/2
 
         for (size_t j = 0; j < 16; j++) {
             scales[j + i * 16] =
@@ -246,8 +255,8 @@ void extract_q5_k_data(const gguf_tensor& tensor,
         uint8_t* block_data = data + i * bytes_per_block;
 
         // Extract scale factors and offsets (identical packing to Q4_K).
-        float scale_scales = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data)));
-        float scale_biases = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data + 1)));
+        float scale_scales = static_cast<float>(read_f16(block_data));
+        float scale_biases = static_cast<float>(read_f16(block_data + 2));
 
         // 12-byte packed 6-bit scales/mins start right after d and dmin.
         uint8_t* qs1 = block_data + 4;
@@ -321,7 +330,7 @@ void extract_q5_0_data(const gguf_tensor& tensor,
                     "[load_gguf] Q5_0 scales size mismatch (expected group 16)");
     ov::parallel_for(n_block, [&](size_t i) {
         uint8_t* block_data = data + i * bytes_per_block;
-        float d = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data)));
+        float d = static_cast<float>(read_f16(block_data));
 
         ov::float16 sc(d);
         ov::float16 bs(-16.f * d);  // zero point 16 -> dequant is (w - 16) * d
@@ -363,8 +372,8 @@ void extract_q5_1_data(const gguf_tensor& tensor,
                     "[load_gguf] Q5_1 scales size mismatch (expected group 16)");
     ov::parallel_for(n_block, [&](size_t i) {
         uint8_t* block_data = data + i * bytes_per_block;
-        float d = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data)));
-        float m = static_cast<float>(ov::float16::from_bits(*((uint16_t*)block_data + 1)));
+        float d = static_cast<float>(read_f16(block_data));
+        float m = static_cast<float>(read_f16(block_data + 2));
 
         ov::float16 sc(d);
         ov::float16 bs(m);  // dequant is w * d + m -> zero point round(-m/d)
