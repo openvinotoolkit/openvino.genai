@@ -167,8 +167,7 @@ std::vector<std::string> Qwen3ASR::extend_audio_tokens(const std::vector<std::st
 
     for (size_t i = 0; i < prompts.size(); ++i) {
         const size_t token_pos = prompts[i].find(audio_token);
-        OPENVINO_ASSERT(token_pos != std::string::npos,
-                        "replace_multimodal_special_tokens: audio token not found in prompt");
+        OPENVINO_ASSERT(token_pos != std::string::npos, "extend_audio_tokens: audio token not found in prompt");
 
         std::string replacement;
         replacement.reserve(audio_token.size() * audio_lengths[i]);
