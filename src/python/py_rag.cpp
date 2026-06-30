@@ -99,12 +99,20 @@ void init_rag_pipelines(py::module_& m) {
             "Plugin and/or config properties")
         .def(
             "start_embed_async",
-            [](EmbeddingPipeline& pipe, const EmbeddingPipeline::TextInput& text, const std::string& prompt) -> void {
+            [](EmbeddingPipeline& pipe,
+               const EmbeddingPipeline::TextInput& text,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+               const std::optional<std::string>& prompt) -> void {
                 py::gil_scoped_release rel;
-                pipe.start_embed_async(text, prompt);
+                pipe.start_embed_async(text, images, videos, videos_metadata, prompt);
             },
             py::arg("text"),
-            py::arg("prompt"),
+            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+            py::arg("prompt") = std::nullopt,
             "Asynchronously computes embedding vectors for text or a batch of texts.")
         .def(
             "wait",

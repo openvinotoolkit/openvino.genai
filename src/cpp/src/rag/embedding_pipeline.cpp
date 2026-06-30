@@ -119,7 +119,7 @@ class EmbeddingPipeline::EmbeddingPipelineImpl {
 public:
     EmbeddingPipelineImpl(const std::filesystem::path& models_path,
                           const std::string& device,
-                          const EmbeddingPipeline::Config& config,
+                          const TextEmbeddingPipeline::Config& config,
                           const ov::AnyMap& properties)
         : m_config{config} {
         m_config.validate();
@@ -173,7 +173,7 @@ public:
     ov::Tensor embed(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
             std::lock_guard<std::mutex> async_lock(m_async_mutex);
-            OPENVINO_ASSERT(m_async_request_type == AsyncRequestType::NONE, "Previous asynchronous embed request is still pending");
+            OPENVINO_ASSERT(!m_text_async_pending, "Previous asynchronous embed request is still pending");
             std::lock_guard<std::mutex> request_lock(m_request_mutex);
             if (std::holds_alternative<std::string>(text)) {
                 const std::vector<std::string> texts{std::get<std::string>(text)};
@@ -202,57 +202,17 @@ public:
         return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
     }
 
-    void start_embed_async(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
-        const bool is_single_text = std::holds_alternative<std::string>(text);
-        if (m_mode == Mode::TEXT_ONLY) {
-            std::lock_guard<std::mutex> async_lock(m_async_mutex);
-            OPENVINO_ASSERT(m_async_request_type == AsyncRequestType::NONE, "Previous asynchronous embed request is still pending");
-            std::lock_guard<std::mutex> request_lock(m_request_mutex);
-            if (prompt.has_value()) {
-                const std::vector<std::string> texts = is_single_text ? std::vector<std::string>{std::get<std::string>(text)}
-                                                                      : std::get<std::vector<std::string>>(text);
-                m_text_embedding_pipeline->start_embed_async(texts, *prompt);
-                m_async_request_type = AsyncRequestType::BATCH;
-                return;
-            }
-            if (is_single_text) {
-                const std::vector<std::string> texts{std::get<std::string>(text)};
-                m_text_embedding_pipeline->start_embed_documents_async(texts);
-            } else {
-                m_text_embedding_pipeline->start_embed_documents_async(std::get<std::vector<std::string>>(text));
-            }
-            m_async_request_type = AsyncRequestType::BATCH;
-            return;
-        }
-        std::lock_guard<std::mutex> async_lock(m_async_mutex);
-        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
-        std::lock_guard<std::mutex> request_lock(m_request_mutex);
-        m_embed_future = std::async(std::launch::async, [this, text, prompt]() {
-            std::lock_guard<std::mutex> lock(m_request_mutex);
-            std::vector<std::string> texts = std::holds_alternative<std::string>(text)
-                ? std::vector<std::string>{std::get<std::string>(text)}
-                : std::get<std::vector<std::string>>(text);
-            std::vector<EncodedImage> encoded_images;
-            std::vector<EncodedVideo> encoded_videos;
-            return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
-        });
-        m_async_request_type = is_single_text ? AsyncRequestType::SINGLE : AsyncRequestType::BATCH;
-    }
-
     ov::Tensor wait() {
         if (m_mode == Mode::TEXT_ONLY) {
             std::lock_guard<std::mutex> async_lock(m_async_mutex);
-            OPENVINO_ASSERT(m_async_request_type != AsyncRequestType::NONE,
-                            "Asynchronous embed request was not started");
+            OPENVINO_ASSERT(m_text_async_pending, "Asynchronous embed request was not started");
             ov::Tensor result = embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents());
-            m_async_request_type = AsyncRequestType::NONE;
+            m_text_async_pending = false;
             return result;
         }
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
         OPENVINO_ASSERT(m_embed_future.valid(), "Asynchronous embed request was not started");
-        ov::Tensor result = m_embed_future.get();
-        m_async_request_type = AsyncRequestType::NONE;
-        return result;
+        return m_embed_future.get();
     }
 
     ov::Tensor embed(const EmbeddingPipeline::TextInput& text,
@@ -261,10 +221,8 @@ public:
                      const std::vector<VideoMetadata>& videos_metadata,
                      const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
-            OPENVINO_ASSERT(images.empty() && videos.empty(),
+            OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support image/video input");
-            OPENVINO_ASSERT(videos_metadata.empty(),
-                            "TextEmbeddingPipeline fallback is active and does not support video metadata input");
             return embed(text, prompt);
         }
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
@@ -295,11 +253,21 @@ public:
                            const std::optional<std::string>& prompt) {
         const bool is_single_text = std::holds_alternative<std::string>(text);
         if (m_mode == Mode::TEXT_ONLY) {
-            OPENVINO_ASSERT(images.empty() && videos.empty(),
+            OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support image/video input");
-            OPENVINO_ASSERT(videos_metadata.empty(),
-                            "TextEmbeddingPipeline fallback is active and does not support video metadata input");
-            start_embed_async(text, prompt);
+            std::lock_guard<std::mutex> async_lock(m_async_mutex);
+            OPENVINO_ASSERT(!m_text_async_pending, "Previous asynchronous embed request is still pending");
+            std::lock_guard<std::mutex> request_lock(m_request_mutex);
+            if (prompt.has_value()) {
+                const std::vector<std::string> texts = is_single_text ? std::vector<std::string>{std::get<std::string>(text)}
+                                                                      : std::get<std::vector<std::string>>(text);
+                m_text_embedding_pipeline->start_embed_async(texts, *prompt);
+            } else if (is_single_text) {
+                m_text_embedding_pipeline->start_embed_documents_async(std::vector<std::string>{std::get<std::string>(text)});
+            } else {
+                m_text_embedding_pipeline->start_embed_documents_async(std::get<std::vector<std::string>>(text));
+            }
+            m_text_async_pending = true;
             return;
         }
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
@@ -324,19 +292,12 @@ public:
 
             return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
         });
-        m_async_request_type = is_single_text ? AsyncRequestType::SINGLE : AsyncRequestType::BATCH;
     }
 
 private:
     enum class Mode {
         MULTIMODAL,
         TEXT_ONLY,
-    };
-
-    enum class AsyncRequestType {
-        NONE,
-        SINGLE,
-        BATCH,
     };
 
     void init_multimodal(const std::filesystem::path& models_path,
@@ -604,7 +565,7 @@ private:
     Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
-    EmbeddingPipeline::Config m_config;
+    TextEmbeddingPipeline::Config m_config;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
     std::mutex m_request_mutex;
@@ -613,12 +574,12 @@ private:
     std::unordered_set<std::string> m_language_model_output_names;
     std::string m_embedding_output_name;
     std::future<ov::Tensor> m_embed_future;
-    AsyncRequestType m_async_request_type = AsyncRequestType::NONE;
+    bool m_text_async_pending = false;
 };
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const std::string& device,
-                                     const Config& config,
+                                     const TextEmbeddingPipeline::Config& config,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, config, properties)) {}
 
@@ -627,10 +588,10 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
-                                          const std::optional<std::string>& prompt) {
-    return m_impl->start_embed_async(text, prompt);
-}
+// void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
+//                                           const std::optional<std::string>& prompt) {
+//     return m_impl->start_embed_async(text, prompt);
+// }
 
 ov::Tensor EmbeddingPipeline::wait() {
     return m_impl->wait();

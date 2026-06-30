@@ -21,13 +21,11 @@ namespace genai {
 /**
  * @brief Embedding pipeline for multimodal and text-only inputs.
  *
- * Computes a single embedding vector for a prompt with optional images and videos.
+ * Computes embedding vectors for a single prompt or a batch of prompts, with optional images and videos.
  */
 class OPENVINO_GENAI_EXPORTS EmbeddingPipeline {
 public:
     using TextInput = std::variant<std::string, std::vector<std::string>>;
-    using PoolingType = TextEmbeddingPipeline::PoolingType;
-    using Config = TextEmbeddingPipeline::Config;
 
     /**
      * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
@@ -39,7 +37,7 @@ public:
      */
     EmbeddingPipeline(const std::filesystem::path& models_path,
                       const std::string& device,
-                      const Config& config,
+                      const TextEmbeddingPipeline::Config& config,
                       const ov::AnyMap& properties = {});
 
     /**
@@ -52,16 +50,6 @@ public:
     EmbeddingPipeline(const std::filesystem::path& models_path,
                       const std::string& device,
                       const ov::AnyMap& properties = {});
-
-    /**
-    * @brief Starts asynchronous embedding computation for text or a batch of texts.
-     */
-    void start_embed_async(const TextInput& text, const std::optional<std::string>& prompt = std::nullopt);
-
-    /**
-    * @brief Waits for asynchronous embedding computation and returns result.
-     */
-    ov::Tensor wait();
 
     /**
     * @brief Computes embedding vectors for text or a batch of texts with images and videos.
@@ -128,6 +116,11 @@ public:
     void start_embed_async(Properties&&... properties) {
         start_embed_async(ov::AnyMap{std::forward<Properties>(properties)...});
     }
+
+    /**
+    * @brief Waits for asynchronous embedding computation and returns result.
+     */
+    ov::Tensor wait();
 
     ~EmbeddingPipeline();
 

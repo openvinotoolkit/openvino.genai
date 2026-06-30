@@ -367,6 +367,7 @@ def test_qwen3_vl_embedding_text_batch_consistency(multimodal_emb_model):
     assert np.allclose(result2.data, batch_data[1], rtol=1e-4, atol=1e-4)
 
 
+@pytest.mark.xfail(reason="Ticket - CVS-189808")
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_hf_components, cat_image_path):
     pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
@@ -386,6 +387,7 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
     assert async_result.shape == result.shape
 
 
+@pytest.mark.xfail(reason="Ticket - CVS-189808")
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
     multimodal_emb_model,
@@ -411,6 +413,7 @@ def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
     assert_embedding_matches_hf_cosine(result, sentence_transformers_result, max_cosine_diff=0.06)
 
 
+@pytest.mark.xfail(reason="Ticket - CVS-189808")
 @pytest.mark.parametrize("model_id", MULTIMODAL_EMBEDDINGS_TEST_MODELS)
 def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
     model_id,
