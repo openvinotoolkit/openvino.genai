@@ -248,21 +248,21 @@ def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
     """
     header = (
         b"GGUF"
-        + struct.pack("<I", 3)            # version
-        + struct.pack("<Q", 1)            # tensor_count
-        + struct.pack("<Q", 1)            # metadata_kv_count
+        + struct.pack("<I", 3)  # version
+        + struct.pack("<Q", 1)  # tensor_count
+        + struct.pack("<Q", 1)  # metadata_kv_count
         + _gguf_kv_string("general.architecture", "llama")
     )
     tensor_info = (
         _gguf_string("x.weight")
-        + struct.pack("<I", 1)            # ndim
-        + struct.pack("<Q", last_dim)     # dim[0]
+        + struct.pack("<I", 1)  # ndim
+        + struct.pack("<Q", last_dim)  # dim[0]
         + struct.pack("<I", tensor_type)  # tensor type
-        + struct.pack("<Q", 0)            # offset
+        + struct.pack("<Q", 0)  # offset
     )
     blob = header + tensor_info
     blob += b"\x00" * ((-len(blob)) % 32)  # align tensor data section
-    blob += bytes([0x42]) * 512            # attacker-controlled weight bytes
+    blob += bytes([0x42]) * 512  # attacker-controlled weight bytes
     path.write_bytes(blob)
 
 
