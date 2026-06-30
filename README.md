@@ -9,6 +9,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
 [![PyPI Downloads](https://static.pepy.tech/badge/openvino.genai)](https://pypi.org/project/openvino.genai/)
+[![NPM](https://img.shields.io/npm/v/openvino-genai-node)](https://www.npmjs.com/package/openvino-genai-node)
 ![Python](https://img.shields.io/badge/python-3.10+-green)
 ![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
 
@@ -31,6 +32,7 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 * [Build OpenVINO™ GenAI](/src/docs/BUILD.md)
 * [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 * [Model Preparation Guide](https://openvinotoolkit.github.io/openvino.genai/docs/category/model-preparation)
+* [Node.js bindings](https://openvinotoolkit.github.io/openvino.genai/docs/bindings/node-js/)
 
 Explore blogs to setup your first hands-on experience with OpenVINO GenAI:
 
@@ -59,7 +61,7 @@ Explore blogs to setup your first hands-on experience with OpenVINO GenAI:
 
 ## Supported Generative AI Scenarios
 
-OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run the following Generative AI Scenarios:
+OpenVINO™ GenAI library provides very lightweight C++, Python, and Node.js APIs to run the following Generative AI Scenarios:
  - [Text generation using Large Language Models (LLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-generation/) - Chat with local Llama, Phi, Qwen and other models
  - [Image processing using Visual Language Model (VLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/) - Analyze images/videos with LLaVa, MiniCPM-V and other models
  - [Image generation using Diffusers](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-generation/) - Generate images with Stable Diffusion & Flux models
