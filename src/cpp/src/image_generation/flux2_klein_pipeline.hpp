@@ -577,6 +577,12 @@ public:
         const size_t image_seq_len = latent_height * latent_width;
 
         const double mu = flux2_compute_empirical_mu(image_seq_len, m_custom_generation_config.num_inference_steps);
+
+        // Flux2 Klein does not support variable strength:
+        // - Text2Image: always denoises from pure noise, requires all steps
+        // - Image2Image: uses reference conditioning (image latents as extra tokens),
+        //   not noise blending, so partial denoising is not applicable
+        // Aligned with diffusers FluxPipeline which does not accept 'strength':
         m_scheduler->set_timesteps_with_mu(mu, m_custom_generation_config.num_inference_steps, 1.0f);
 
         // Prepare timesteps
@@ -585,6 +591,9 @@ public:
         // Prepare latent variables
         ov::Tensor latents, processed_image, image_latent, noise;
         std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
+        (void)processed_image;
+        (void)image_latent;
+        (void)noise;
 
         // Set latent IDs (and image IDs if img2img)
         set_latent_and_image_ids(m_custom_generation_config);
@@ -749,12 +758,9 @@ protected:
         OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by Flux2KleinPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by Flux2KleinPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by Flux2KleinPipeline");
+        OPENVINO_ASSERT(generation_config.strength == 1.0f, "Strength must be 1.0f for Flux2KleinPipeline");
 
-        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE && initial_image) {
-            OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
-                "'Strength' generation parameter must be within [0, 1] range");
-        } else if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
-            OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
+        if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
         }
     }
@@ -780,9 +786,7 @@ protected:
 private:
     void load_vae_batch_norm_params(const std::filesystem::path& vae_config_path) {
         std::ifstream file(vae_config_path);
-        if (!file.is_open()) {
-            return;
-        }
+        OPENVINO_ASSERT(file.is_open(), "Failed to open VAE config for batch norm parameters: ", vae_config_path);
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
@@ -800,6 +804,7 @@ private:
         if (data.contains("patch_size")) {
             read_json_param(data, "patch_size", patch_size);
         }
+        OPENVINO_ASSERT(patch_size.size() == 2, "patch_size must have exactly 2 elements, got ", patch_size.size());
 
         m_batch_norm_eps = batch_norm_eps;
         m_latent_channels = latent_channels;
@@ -807,23 +812,23 @@ private:
 
         const size_t num_bn_channels = latent_channels * patch_size[0] * patch_size[1];
 
-        // Load batch norm parameters from JSON arrays in vae config
-        if (data.contains("bn_running_mean_data") && data.contains("bn_running_var_data")) {
-            std::vector<float> bn_mean_data = data["bn_running_mean_data"].get<std::vector<float>>();
-            std::vector<float> bn_var_data = data["bn_running_var_data"].get<std::vector<float>>();
+        OPENVINO_ASSERT(data.contains("bn_running_mean_data") && data.contains("bn_running_var_data"),
+                        "VAE config missing required 'bn_running_mean_data' and/or 'bn_running_var_data' for Flux2KleinPipeline");
 
-            OPENVINO_ASSERT(bn_mean_data.size() == num_bn_channels,
-                            "BN running mean size mismatch: expected ", num_bn_channels, ", got ", bn_mean_data.size());
-            OPENVINO_ASSERT(bn_var_data.size() == num_bn_channels,
-                            "BN running var size mismatch: expected ", num_bn_channels, ", got ", bn_var_data.size());
+        std::vector<float> bn_mean_data = data["bn_running_mean_data"].get<std::vector<float>>();
+        std::vector<float> bn_var_data = data["bn_running_var_data"].get<std::vector<float>>();
 
-            m_bn_mean = std::move(bn_mean_data);
-            m_bn_std.resize(num_bn_channels);
+        OPENVINO_ASSERT(bn_mean_data.size() == num_bn_channels,
+                        "BN running mean size mismatch: expected ", num_bn_channels, ", got ", bn_mean_data.size());
+        OPENVINO_ASSERT(bn_var_data.size() == num_bn_channels,
+                        "BN running var size mismatch: expected ", num_bn_channels, ", got ", bn_var_data.size());
 
-            // Convert variance to std: std = sqrt(var + eps)
-            for (size_t i = 0; i < num_bn_channels; ++i) {
-                m_bn_std[i] = std::sqrt(bn_var_data[i] + m_batch_norm_eps);
-            }
+        m_bn_mean = std::move(bn_mean_data);
+        m_bn_std.resize(num_bn_channels);
+
+        // Convert variance to std: std = sqrt(var + eps)
+        for (size_t i = 0; i < num_bn_channels; ++i) {
+            m_bn_std[i] = std::sqrt(bn_var_data[i] + m_batch_norm_eps);
         }
     }
 

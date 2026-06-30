@@ -24,6 +24,7 @@ Qwen3TextEncoder::Config::Config(const std::filesystem::path& config_path) {
 
     read_json_param(data, "hidden_size", hidden_size);
     read_json_param(data, "num_hidden_layers", num_hidden_layers);
+    read_json_param(data, "hidden_states_layers", hidden_states_layers);
 }
 
 Qwen3TextEncoder::Qwen3TextEncoder(const std::filesystem::path& root_dir)
@@ -58,6 +59,9 @@ std::shared_ptr<Qwen3TextEncoder> Qwen3TextEncoder::clone() {
 
 Qwen3TextEncoder& Qwen3TextEncoder::reshape(int batch_size, int max_sequence_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
+    OPENVINO_ASSERT(batch_size == 1,
+                    "Qwen3TextEncoder only supports batch_size == 1. "
+                    "Multi-image generation is handled by repeating embeddings after inference");
 
     std::map<std::string, ov::PartialShape> name_to_shape;
     for (auto&& input : m_model->inputs()) {
@@ -115,7 +119,7 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, int max_sequence_l
     int64_t* ids_data = input_ids.data<int64_t>();
     int64_t* mask_data = attention_mask.data<int64_t>();
 
-    // Fill with pad_token_id (e.g. 151643 for Qwen3's <|endoftext|>)
+    // Fill with pad_token_id
     const int64_t pad_token_id = m_tokenizer.get_pad_token_id();
     std::fill(ids_data, ids_data + seq_len, pad_token_id);
     std::fill(mask_data, mask_data + seq_len, static_cast<int64_t>(0));
@@ -131,7 +135,6 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, int max_sequence_l
     m_request.infer();
 
     // Gather hidden states from selected layers and concatenate along channel dimension
-    // Output names are "hidden_states.9", "hidden_states.18", "hidden_states.27"
     const size_t num_layers = m_config.hidden_states_layers.size();
     const size_t hidden_size = m_config.hidden_size;
     const size_t output_dim = num_layers * hidden_size;

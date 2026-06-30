@@ -274,8 +274,11 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t
     double mu;
     if (m_config.time_shift_type == "exponential") {
         mu = compute_empirical_mu(image_seq_len, num_inference_steps);
-    } else {
+    } else if (m_config.time_shift_type == "linear") {
         mu = calculate_shift(image_seq_len);
+    } else {
+        OPENVINO_THROW("Unsupported time_shift_type '", m_config.time_shift_type,
+                       "'. Supported values are 'linear' and 'exponential'");
     }
     set_timesteps_with_mu(mu, num_inference_steps, strength);
 }
