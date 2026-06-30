@@ -8,22 +8,6 @@
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
 
-namespace {
-ov::InferRequest init_model(ov::CompiledModel& compiled) {
-    ov::InferRequest request = compiled.create_infer_request();
-
-    try {
-        ov::RemoteContext context = compiled.get_context();
-        ov::Shape output_shape = request.get_output_tensor().get_shape();
-        ov::RemoteTensor remote = context.create_tensor(ov::element::f32, output_shape);
-        request.set_tensor("last_hidden_state", remote);
-        return request;
-    } catch (const ov::Exception&) {
-        return request;
-    }
-}
-}  // namespace
-
 namespace ov::genai {
 
 Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
@@ -34,7 +18,7 @@ Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
     ov::CompiledModel compiled_model =
         core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
-    m_request = init_model(compiled_model);
+    m_request = compiled_model.create_infer_request();
 }
 
 ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
@@ -45,6 +29,10 @@ ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
 
     m_request.infer();
 
+    // whisper implementation has remote_tensor optimization when last_hidden_state set to decoder without copy
+    // qwen3-asr encoder chunking inference requires merging after inference
+    // access to last_hidden_state tensor data -> data copy to host memory -> cannot use remote_tensor optimization
+    // consider pre-post processing for chunked inference to avoid data copy and remote_tensor optimization
     const ov::Tensor chunked_output = m_request.get_tensor("last_hidden_state");
     ov::Tensor output = merge_chunked_encoder_output(chunked_output, remainder_frames);
 
