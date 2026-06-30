@@ -13,8 +13,9 @@ public:
     explicit ASRGenerationConfig(const std::filesystem::path& json_path);
 
     /**
-     * @brief Language token to use for generation in the form of <|en|>.
-     * Can be set for multilingual models only.
+     * @brief Language token to use for generation
+     * In the form of <|en|> for Whisper models. Can be set for multilingual models only.
+     * In the form of English for Qwen3-ASR models.
      */
     std::optional<std::string> language = std::nullopt;
 
@@ -80,6 +81,10 @@ public:
      */
     std::optional<std::string> hotwords = std::nullopt;
 
+    // Qwen3-ASR parameters
+
+    std::optional<std::string> context = std::nullopt;
+
     using GenerationConfig::update_generation_config;
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
@@ -112,5 +117,6 @@ static constexpr ov::Property<bool> word_timestamps{"word_timestamps"};
 static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
 static constexpr ov::Property<std::string> hotwords{"hotwords"};
+static constexpr ov::Property<std::string> context{"context"};
 
 }  // namespace ov::genai
