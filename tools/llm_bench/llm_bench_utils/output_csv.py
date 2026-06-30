@@ -172,6 +172,7 @@ def write_result(
     mem_unit = MemThreadHandler.DEF_MEM_UNIT
     if memory_data_collector.mth:
         mem_unit = memory_data_collector.mth.memory_unit
+    first_latenct_unit = "ms" if model_args["use_case"].task in ["text_gen_chat"] else "ms/token"
     header = [
         "iteration",
         "model",
@@ -189,7 +190,7 @@ def write_result(
         "generation_time(s)",
         "output_size",
         "latency(ms)",
-        "1st_latency(ms)",
+        f"1st_latency({first_latenct_unit})",
         "2nd_avg_latency(ms)",
         "precision",
         f"max_rss_mem({mem_unit.value})",
@@ -198,7 +199,7 @@ def write_result(
         f"max_increase_sys_mem({mem_unit.value})",
         "prompt_idx",
         "chat_idx",
-        "1st_infer_latency(ms)",
+        f"1st_infer_latency({first_latenct_unit})",
         "2nd_infer_avg_latency(ms)",
         "num_beams",
         "batch_size",
@@ -235,4 +236,4 @@ def write_result(
                 for data in res_data[key]:
                     gen_data_to_csv(result, data, '', iter_timestamp, None, mem_unit)
                     writer.writerow(result)
-            output_comments(result, model_args['use_case'], writer)
+            output_comments(result, model_args["use_case"].task, writer)

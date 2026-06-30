@@ -81,10 +81,8 @@ class UseCaseTextGen(UseCase):
 
 
 @dataclass
-class UseCaseTextGenChat(UseCase):
+class UseCaseTextGenChat(UseCaseTextGen):
     task = "text_gen_chat"
-    ov_cls: type | None = OVModelForCausalLM
-    pt_cls: type | None = AutoModelForCausalLM
 
 
 @dataclass
