@@ -85,6 +85,8 @@ def test_embedding_pipeline_public_api():
     assert hasattr(EmbeddingPipeline, "wait")
     assert "prompt" in EmbeddingPipeline.embed.__doc__
     assert "prompt" in EmbeddingPipeline.start_embed_async.__doc__
+    assert hasattr(openvino_genai, "EmbedResult")
+    assert hasattr(openvino_genai.EmbedResult, "embeddings")
 
 
 @pytest.fixture(scope="module")
@@ -194,10 +196,10 @@ def make_embedding_video_metadata() -> VideoMetadata:
     return video_metadata
 
 
-def assert_embedding_tensor(result: ov.Tensor, batch_size: int):
-    assert isinstance(result, ov.Tensor)
-    assert result.shape[0] == batch_size
-    assert result.shape[1] > 0
+def assert_embedding_tensor(result, batch_size: int):
+    assert isinstance(result.embeddings, ov.Tensor)
+    assert result.embeddings.shape[0] == batch_size
+    assert result.embeddings.shape[1] > 0
 
 
 def run_multimodal_embedding_hf(
@@ -287,8 +289,8 @@ def run_multimodal_embedding_transformers(
     return F.normalize(pooled.to(torch.float32), p=2, dim=-1).cpu().numpy()
 
 
-def assert_embedding_matches_hf_cosine(result: ov.Tensor, reference: np.ndarray, max_cosine_diff: float):
-    actual = np.array(result.data, dtype=np.float32).reshape(result.shape)
+def assert_embedding_matches_hf_cosine(result, reference: np.ndarray, max_cosine_diff: float):
+    actual = np.array(result.embeddings.data, dtype=np.float32).reshape(result.embeddings.shape)
     actual_norm = np.linalg.norm(actual)
     reference_norm = np.linalg.norm(reference)
     cosine_similarity = float(actual.flatten() @ reference.flatten() / (actual_norm * reference_norm))
@@ -309,20 +311,20 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
     pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
 
     result = pipeline.embed("What is OpenVINO?")
-    assert result.shape[0] == 1
-    assert result.shape[1] > 0
+    assert result.embeddings.shape[0] == 1
+    assert result.embeddings.shape[1] > 0
 
     batch_result = pipeline.embed(["What is OpenVINO?", "What is OpenVINO GenAI?"])
-    assert batch_result.shape[0] == 2
-    assert batch_result.shape[1] == result.shape[1]
+    assert batch_result.embeddings.shape[0] == 2
+    assert batch_result.embeddings.shape[1] == result.embeddings.shape[1]
 
     pipeline.start_embed_async("What is OpenVINO?")
     async_result = pipeline.wait()
-    assert async_result.shape == result.shape
+    assert async_result.embeddings.shape == result.embeddings.shape
 
     pipeline.start_embed_async(["What is OpenVINO?", "What is OpenVINO GenAI?"])
     async_batch_result = pipeline.wait()
-    assert async_batch_result.shape == batch_result.shape
+    assert async_batch_result.embeddings.shape == batch_result.embeddings.shape
 
     with pytest.raises(
         RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"
@@ -341,7 +343,7 @@ def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
 
     pipeline.start_embed_async(text, prompt=prompt)
     async_result = pipeline.wait()
-    assert async_result.shape == result.shape
+    assert async_result.embeddings.shape == result.embeddings.shape
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
@@ -359,12 +361,12 @@ def test_qwen3_vl_embedding_text_batch_consistency(multimodal_emb_model):
     result_batch = pipeline.embed(texts, prompt=prompt)
 
     # Verify shapes
-    assert result_batch.shape == (2, result1.shape[1])
+    assert result_batch.embeddings.shape == (2, result1.embeddings.shape[1])
 
     # Verify results match
-    batch_data = np.array(result_batch.data).reshape(result_batch.shape)
-    assert np.allclose(result1.data, batch_data[0], rtol=1e-4, atol=1e-4)
-    assert np.allclose(result2.data, batch_data[1], rtol=1e-4, atol=1e-4)
+    batch_data = np.array(result_batch.embeddings.data).reshape(result_batch.embeddings.shape)
+    assert np.allclose(result1.embeddings.data, batch_data[0], rtol=1e-4, atol=1e-4)
+    assert np.allclose(result2.embeddings.data, batch_data[1], rtol=1e-4, atol=1e-4)
 
 
 @pytest.mark.xfail(reason="Ticket - CVS-189808")
@@ -384,7 +386,7 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
 
     pipeline.start_embed_async(image_text_prompt, images=[image], prompt=prompt)
     async_result = pipeline.wait()
-    assert async_result.shape == result.shape
+    assert async_result.embeddings.shape == result.embeddings.shape
 
 
 @pytest.mark.xfail(reason="Ticket - CVS-189808")
@@ -437,7 +439,7 @@ def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
         prompt=prompt,
     )
     assert_embedding_matches_hf_cosine(
-        ov.Tensor(sentence_transformers_result),
+        openvino_genai.EmbedResult(ov.Tensor(sentence_transformers_result)),
         transformers_result,
         max_cosine_diff=0.05,
     )
@@ -455,7 +457,7 @@ def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model, cat_image_path)
 
     pipeline.start_embed_async(text, videos=[video], videos_metadata=[video_metadata])
     async_result = pipeline.wait()
-    assert async_result.shape == result.shape
+    assert async_result.embeddings.shape == result.embeddings.shape
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
@@ -486,7 +488,7 @@ def test_embedding_pipeline_matches_text_embedding_pipeline(emb_model):
     text_embedding_result = text_embedding_pipeline.embed_documents([text])
 
     np.testing.assert_allclose(
-        embedding_result.data,
+        embedding_result.embeddings.data,
         np.asarray(text_embedding_result, dtype=np.float32),
         atol=MAX_EMBEDDING_ERROR,
         rtol=0,

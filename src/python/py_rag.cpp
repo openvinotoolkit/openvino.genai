@@ -16,6 +16,7 @@
 namespace py = pybind11;
 using ov::genai::EmbeddingResult;
 using ov::genai::EmbeddingResults;
+using ov::genai::EmbedResult;
 using ov::genai::EmbeddingPipeline;
 using ov::genai::TextEmbeddingPipeline;
 using ov::genai::TextRerankPipeline;
@@ -73,6 +74,10 @@ Computes a single embedding vector for:
 }  // namespace
 
 void init_rag_pipelines(py::module_& m) {
+    py::class_<EmbedResult>(m, "EmbedResult")
+        .def(py::init([](ov::Tensor embeddings) { return EmbedResult{embeddings}; }), py::arg("embeddings"))
+        .def_readwrite("embeddings", &EmbedResult::embeddings);
+
     py::class_<EmbeddingPipeline>(m, "EmbeddingPipeline", embedding_pipeline_docstring)
         .def(
             py::init([](const std::filesystem::path& models_path,
@@ -116,7 +121,7 @@ void init_rag_pipelines(py::module_& m) {
             "Asynchronously computes embedding vectors for text or a batch of texts.")
         .def(
             "wait",
-            [](EmbeddingPipeline& pipe) -> ov::Tensor {
+            [](EmbeddingPipeline& pipe) -> EmbedResult {
                 py::gil_scoped_release rel;
                 return pipe.wait();
             },
@@ -128,7 +133,7 @@ void init_rag_pipelines(py::module_& m) {
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
-               const std::optional<std::string>& prompt) -> ov::Tensor {
+               const std::optional<std::string>& prompt) -> EmbedResult {
                 py::gil_scoped_release rel;
                 return pipe.embed(text, images, videos, videos_metadata, prompt);
             },
@@ -140,7 +145,7 @@ void init_rag_pipelines(py::module_& m) {
             "Computes embedding vectors for text or a batch of texts with images and videos.")
         .def(
             "embed",
-            [](EmbeddingPipeline& pipe, const py::kwargs& kwargs) -> ov::Tensor {
+            [](EmbeddingPipeline& pipe, const py::kwargs& kwargs) -> EmbedResult {
                 const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
                 return pipe.embed(properties);

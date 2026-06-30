@@ -170,7 +170,7 @@ public:
         }
     }
 
-    ov::Tensor embed(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
+    EmbedResult embed(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
         if (m_mode == Mode::TEXT_ONLY) {
             std::lock_guard<std::mutex> async_lock(m_async_mutex);
             OPENVINO_ASSERT(!m_text_async_pending, "Previous asynchronous embed request is still pending");
@@ -178,15 +178,15 @@ public:
             if (std::holds_alternative<std::string>(text)) {
                 const std::vector<std::string> texts{std::get<std::string>(text)};
                 if (prompt.has_value()) {
-                    return embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt));
+                    return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
                 }
-                return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
+                return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
             } else {
                 const std::vector<std::string>& texts = std::get<std::vector<std::string>>(text);
                 if (prompt.has_value()) {
-                    return embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt));
+                    return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
                 }
-                return embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts));
+                return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
             }
         }
         std::lock_guard<std::mutex> async_lock(m_async_mutex);
@@ -202,11 +202,11 @@ public:
         return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
     }
 
-    ov::Tensor wait() {
+    EmbedResult wait() {
         if (m_mode == Mode::TEXT_ONLY) {
             std::lock_guard<std::mutex> async_lock(m_async_mutex);
             OPENVINO_ASSERT(m_text_async_pending, "Asynchronous embed request was not started");
-            ov::Tensor result = embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents());
+            EmbedResult result{embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents())};
             m_text_async_pending = false;
             return result;
         }
@@ -215,7 +215,7 @@ public:
         return m_embed_future.get();
     }
 
-    ov::Tensor embed(const EmbeddingPipeline::TextInput& text,
+    EmbedResult embed(const EmbeddingPipeline::TextInput& text,
                      const std::vector<ov::Tensor>& images,
                      const std::vector<ov::Tensor>& videos,
                      const std::vector<VideoMetadata>& videos_metadata,
@@ -337,7 +337,7 @@ private:
                         "Language model must expose 'inputs_embeds' input for EmbeddingPipeline");
     }
 
-    ov::Tensor extract_multimodal_batch(const std::vector<std::string>& texts,
+    EmbedResult extract_multimodal_batch(const std::vector<std::string>& texts,
                                         const std::vector<EncodedImage>& encoded_images,
                                         const std::vector<EncodedVideo>& encoded_videos,
                                         const std::optional<std::string>& prompt) {
@@ -512,7 +512,7 @@ private:
             outputs.push_back(single_output);
         }
 
-        return stack_tensors(outputs);
+        return EmbedResult{stack_tensors(outputs)};
     }
 
 private:
@@ -573,7 +573,7 @@ private:
     std::unordered_set<std::string> m_language_model_input_names;
     std::unordered_set<std::string> m_language_model_output_names;
     std::string m_embedding_output_name;
-    std::future<ov::Tensor> m_embed_future;
+    std::future<EmbedResult> m_embed_future;
     bool m_text_async_pending = false;
 };
 
@@ -593,11 +593,11 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
 //     return m_impl->start_embed_async(text, prompt);
 // }
 
-ov::Tensor EmbeddingPipeline::wait() {
+EmbedResult EmbeddingPipeline::wait() {
     return m_impl->wait();
 }
 
-ov::Tensor EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text,
+EmbedResult EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text,
                                     const std::vector<ov::Tensor>& images,
                                     const std::vector<ov::Tensor>& videos,
                                     const std::vector<VideoMetadata>& videos_metadata,
@@ -613,7 +613,7 @@ void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& te
     return m_impl->start_embed_async(text, images, videos, videos_metadata, prompt);
 }
 
-ov::Tensor EmbeddingPipeline::embed(const ov::AnyMap& properties) {
+EmbedResult EmbeddingPipeline::embed(const ov::AnyMap& properties) {
     std::vector<ov::Tensor> images_vec;
     std::vector<ov::Tensor> videos_vec;
     std::vector<VideoMetadata> videos_metadata_vec;

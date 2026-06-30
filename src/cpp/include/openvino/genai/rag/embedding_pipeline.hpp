@@ -19,6 +19,13 @@ namespace ov {
 namespace genai {
 
 /**
+ * @brief Result of an embedding computation.
+ */
+struct OPENVINO_GENAI_EXPORTS EmbedResult {
+    ov::Tensor embeddings;
+};
+
+/**
  * @brief Embedding pipeline for multimodal and text-only inputs.
  *
  * Computes embedding vectors for a single prompt or a batch of prompts, with optional images and videos.
@@ -60,11 +67,11 @@ public:
     * @param prompt Prompt to use for embedding computation.
     * @return Embedding tensor.
     */
-    ov::Tensor embed(const TextInput& text,
-                     const std::vector<ov::Tensor>& images = {},
-                     const std::vector<ov::Tensor>& videos = {},
-                     const std::vector<VideoMetadata>& videos_metadata = {},
-                     const std::optional<std::string>& prompt = std::nullopt);
+    EmbedResult embed(const TextInput& text,
+                           const std::vector<ov::Tensor>& images = {},
+                           const std::vector<ov::Tensor>& videos = {},
+                           const std::vector<VideoMetadata>& videos_metadata = {},
+                           const std::optional<std::string>& prompt = std::nullopt);
 
     /**
     * @brief Computes embedding vectors for text or a batch of texts with images and videos.
@@ -73,9 +80,9 @@ public:
     * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
     * @param videos_metadata Video metadata for the videos provided.
     * @param prompt Prompt to use for embedding computation.
-    * @return Embedding tensor.
+    * @return EmbeddingResults.
     */
-    ov::Tensor embed(const ov::AnyMap& properties);
+    EmbedResult embed(const ov::AnyMap& properties);
 
     /**
     * @brief Computes embedding vectors for text or a batch of texts with images and videos.
@@ -85,11 +92,11 @@ public:
     * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
     * @param videos_metadata Video metadata for the videos provided.
     * @param prompt Prompt to use for embedding computation.
-    * @return Embedding tensor.
+    * @return EmbeddingResults.
     */
      template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    ov::Tensor embed(Properties&&... properties) {
+    EmbedResult embed(Properties&&... properties) {
         return embed(ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
@@ -137,9 +144,9 @@ public:
 
     /**
     * @brief Waits for asynchronous embedding computation and returns result.
-    * @return Embedding tensor.
+    * @return EmbeddingResults.
     */
-    ov::Tensor wait();
+    EmbedResult wait();
 
     ~EmbeddingPipeline();
 
@@ -149,7 +156,8 @@ private:
 };
 
 /**
- * @brief Prompt to use for embedding computation.
+ * @brief Instruction for encoding a document or query.
+ * If the model has a chat template, the prompt is added to the system message; otherwise it is prepended to the text.
  */
 static constexpr ov::Property<std::string> prompt{"prompt"};
 
