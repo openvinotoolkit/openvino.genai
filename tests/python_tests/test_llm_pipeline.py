@@ -177,13 +177,6 @@ def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
 
 @pytest.fixture(scope="module")
 def ov_pipe(llm_model: OVConvertedModelSchema) -> ov_genai.LLMPipeline:
-    if llm_model.model_id in LINEAR_ATTENTION_MODELS_LIST and (
-        is_transformers_version("<", "4.57") or is_transformers_version(">=", "5.0")
-    ):
-        # AUTO PA backend with linear attention models is not supported
-        # for transformers less than 4.57 and greater or equal to 5.0
-        # should be explicitly set to STATEFUL to avoid init error
-        return create_ov_pipeline(llm_model.models_path, pipeline_type=PipelineType.STATEFUL)
     return create_ov_pipeline(llm_model.models_path)
 
 
@@ -207,9 +200,6 @@ def test_string_inputs(
     )
 
 
-@pytest.mark.transformers_dependent(
-    reason="qwen3_next is not supported by optimum-intel 423b423 with transformers>=5.0"
-)
 @pytest.mark.parametrize("llm_model", LINEAR_ATTENTION_MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict,prompt", GREEDY_INPUTS_TEST_CASES)  # exclude beam search case
 @pytest.mark.parametrize("pipeline_type", LINEAR_ATTENTION_PIPELINE_TYPES)
@@ -228,10 +218,7 @@ def test_linear_attention_string_inputs(
 
 
 ENCODED_INPUTS_MODELS_LIST = [*LINEAR_ATTENTION_MODELS_LIST]
-if is_transformers_version(">=", "5.0"):
-    # LINEAR_ATTENTION_MODELS_LIST depends on the tranformers version, but MODELS_LIST is the same
-    # to eliminate duplication of tests, MODELS_LIST will be added for transformers>=5.0 only
-    ENCODED_INPUTS_MODELS_LIST += MODELS_LIST
+ENCODED_INPUTS_MODELS_LIST += MODELS_LIST
 
 
 @pytest.mark.transformers_dependent(
