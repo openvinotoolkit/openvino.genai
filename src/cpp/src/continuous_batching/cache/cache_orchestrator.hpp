@@ -683,12 +683,24 @@ public:
     //  Linear attention live/scratch block registry: single source of truth for which owned
     //  state row holds a sequence's committed ("live") recurrent state. Owned set = the
     //  sequence's LA block table (size 1 + num_assistant_tokens); live vs. scratch are index
-    //  roles within it. Live is provisioned lazily to block_table[0] (prefill row) on first query.
+    //  roles within it. The registry records only explicit promotions (speculative steps); a
+    //  sequence with no recorded promotion lives on the prefill row (block_table[0]). The live
+    //  index is resolved dynamically from the current block table, so it stays correct across
+    //  block reallocation (preemption/recompute) rather than caching a physical index that can
+    //  go stale.
     // -----------------------------------------------------------------------
 
-    /// @return Physical block index of the sequence's live linear-attention state row.
+    /// @return Physical block index of the sequence's live linear-attention state row,
+    ///         defaulting to the prefill row (block_table[0]) when no promotion was recorded.
     size_t get_linear_attention_live_block(uint64_t seq_id) const {
-        return provision_linear_attention_live_block(seq_id);
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        auto it = m_linear_attention_live_block.find(seq_id);
+        if (it != m_linear_attention_live_block.end()) {
+            return it->second;
+        }
+        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
+        OPENVINO_ASSERT(!owned.empty(), "Linear attention block table empty for sequence ", seq_id);
+        return owned.front()->get_index();
     }
 
     /// @brief Records which owned physical block is now the sequence's live state row.
@@ -754,21 +766,6 @@ public:
 private:
     bool has_registered_types() const {
         return !m_cache_managers.empty();
-    }
-
-    /// @brief Returns the sequence's live linear-attention block, provisioning it to the
-    ///        prefill row (block_table[0]) on first access.
-    size_t provision_linear_attention_live_block(uint64_t seq_id) const {
-        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        auto it = m_linear_attention_live_block.find(seq_id);
-        if (it != m_linear_attention_live_block.end()) {
-            return it->second;
-        }
-        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
-        OPENVINO_ASSERT(!owned.empty(), "Linear attention block table empty for sequence ", seq_id);
-        const size_t live_block = owned.front()->get_index();
-        m_linear_attention_live_block[seq_id] = live_block;
-        return live_block;
     }
 
     /**
@@ -971,7 +968,8 @@ private:
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
     // seq_id -> physical block index of the live linear-attention state row.
-    mutable std::map<uint64_t, size_t> m_linear_attention_live_block;
+    // Holds only explicit promotions (speculative steps); absent => sequence lives on the prefill row.
+    std::map<uint64_t, size_t> m_linear_attention_live_block;
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,
