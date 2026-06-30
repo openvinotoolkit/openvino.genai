@@ -179,7 +179,7 @@ std::tuple<Output<ov::Node>, Output<ov::Node>, std::pair<Output<ov::Node>, Outpu
         int64_t head_size,
         const Output<Node>& hidden_dim,
         const std::pair<Output<ov::Node>, Output<ov::Node>>& cos_sin_cached,
-        int64_t unsqueeze_dim=1) {
+        int64_t unsqueeze_dim) {
     
     // Handle unsqueeze or cached values
     Output<ov::Node> cos_unsqueezed, sin_unsqueezed;
@@ -701,6 +701,7 @@ ov::Output<ov::Node> make_weights_subgraph(const std::string& key,
                                            int head_size) {
     switch (qtype) {
     case gguf_tensor_type::GGUF_TYPE_F16:
+    case gguf_tensor_type::GGUF_TYPE_BF16:
         return make_fp16_weights(key, consts, reorder, head_size);
     case gguf_tensor_type::GGUF_TYPE_Q8_0:
         return make_int8_weights(key, consts, reorder, head_size);
@@ -710,6 +711,8 @@ ov::Output<ov::Node> make_weights_subgraph(const std::string& key,
         return make_int4_weights(key, consts, reorder, head_size);
     case gguf_tensor_type::GGUF_TYPE_Q4_K:
         return make_int4_weights(key, consts, reorder, head_size);
+    case gguf_tensor_type::GGUF_TYPE_Q5_K:
+        return make_int8_weights(key, consts, reorder, head_size, 32);
     case gguf_tensor_type::GGUF_TYPE_Q6_K:
         return make_int8_weights(key, consts, reorder, head_size, 16);
     default:
@@ -722,8 +725,8 @@ ov::Output<ov::Node> make_fc(
     const ov::Output<ov::Node>& input,
     const std::unordered_map<std::string, ov::Tensor>& consts,
     gguf_tensor_type qtype,
-    bool reorder = false,
-    int head_size = -1) {
+    bool reorder,
+    int head_size) {
     auto w_f32 = make_weights_subgraph(key, consts, qtype, reorder, head_size);
     std::shared_ptr<ov::Node> output = std::make_shared<ov::op::v0::MatMul>(input, w_f32, false, true);
 
