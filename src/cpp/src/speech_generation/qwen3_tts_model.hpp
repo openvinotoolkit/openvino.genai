@@ -139,6 +139,13 @@ private:
     ov::InferRequest m_speech_tokenizer_encoder;
 
     uint32_t m_output_sample_rate = 24000;
+    mutable std::unordered_map<std::string, double>   m_perf_ms;
+    mutable std::unordered_map<std::string, int64_t>  m_perf_calls;
+    mutable std::unordered_map<std::string, std::string> m_perf_device;
+    mutable int64_t m_talker_prefill_tokens = 0;
+
+    void perf_print_and_reset() const;
+
     uint32_t m_decoder_num_quantizers = 16;
     uint32_t m_decoder_upsample = 1920;
     uint32_t m_speaker_encoder_sample_rate = 24000;
