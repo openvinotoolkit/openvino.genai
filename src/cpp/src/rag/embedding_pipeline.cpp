@@ -47,20 +47,25 @@ ov::Tensor stack_tensors(const std::vector<ov::Tensor>& tensors) {
     OPENVINO_ASSERT(first_shape.size() == 2 && first_shape[0] == 1,
                     "Expected rank-2 single embedding tensor");
     const size_t embedding_size = first_shape[1];
-    ov::Tensor result(ov::element::f32, {tensors.size(), embedding_size});
-    float* result_data = result.data<float>();
+    const ov::element::Type element_type = tensors.front().get_element_type();
+    ov::Tensor result(element_type, {tensors.size(), embedding_size});
+    auto* result_data = static_cast<unsigned char*>(result.data());
+    const size_t row_bytes = embedding_size * element_type.size();
 
     for (size_t row_idx = 0; row_idx < tensors.size(); ++row_idx) {
         const ov::Tensor& tensor = tensors[row_idx];
         const ov::Shape shape = tensor.get_shape();
-        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32,
-                        "Expected f32 embedding tensor, got ",
+        OPENVINO_ASSERT(tensor.get_element_type() == element_type,
+                        "Expected all embeddings to have element type ",
+                        element_type,
+                        ", got ",
                         tensor.get_element_type());
         OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1 && shape[1] == embedding_size,
                         "Expected all embeddings to have shape [1, ",
                         embedding_size,
                         "]");
-        std::copy_n(tensor.data<const float>(), embedding_size, result_data + row_idx * embedding_size);
+        const auto* src = static_cast<const unsigned char*>(tensor.data());
+        std::copy_n(src, row_bytes, result_data + row_idx * row_bytes);
     }
 
     return result;
