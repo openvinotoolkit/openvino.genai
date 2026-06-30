@@ -277,7 +277,7 @@ void load_arrays(gguf_ctx* ctx,
 
     while (gguf_get_tensor(ctx, &tensor)) {
         if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
-            tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
+            tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q5_K || tensor.type == GGUF_TYPE_Q6_K) {
             gguf_load_quantized(array_map, qtype_map, tensor);
         } else {
             std::string name(tensor.name, tensor.namelen);
@@ -388,6 +388,27 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["rope_freq_base"] = metadata.count(arch + ".rope.freq_base") ?
             metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
     config["file_type"] = metadata_to_int(metadata, "general.file_type");
+
+    // Qwen3.5 specific: SSM / linear attention parameters
+    if (metadata.count(arch + ".ssm.conv_kernel")) {
+        config["ssm_d_conv"] = metadata_to_int(metadata, arch + ".ssm.conv_kernel");
+    }
+    if (metadata.count(arch + ".ssm.inner_size")) {
+        config["ssm_d_inner"] = metadata_to_int(metadata, arch + ".ssm.inner_size");
+    }
+    if (metadata.count(arch + ".ssm.state_size")) {
+        config["ssm_d_state"] = metadata_to_int(metadata, arch + ".ssm.state_size");
+    }
+    if (metadata.count(arch + ".ssm.time_step_rank")) {
+        config["ssm_dt_rank"] = metadata_to_int(metadata, arch + ".ssm.time_step_rank");
+    }
+    if (metadata.count(arch + ".ssm.group_count")) {
+        config["ssm_n_group"] = metadata_to_int(metadata, arch + ".ssm.group_count");
+    }
+    if (metadata.count(arch + ".full_attention_interval")) {
+        config["full_attn_interval"] = metadata_to_int(metadata, arch + ".full_attention_interval");
+    }
+
     return config;
 }
 
@@ -418,22 +439,32 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
     // Process layer weights
     for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
         consts[format("model.layers[%d].input_layernorm.weight", i)] = weights.at(format("blk.%d.attn_norm.weight", i));
-        consts[format("model.layers[%d].post_attention_layernorm.weight", i)] = weights.at(format("blk.%d.ffn_norm.weight", i));
-        
-        // Attention weights
-        consts[format("model.layers[%d].self_attn.q_proj.weight", i)] = weights.at(format("blk.%d.attn_q.weight", i));
+        if (weights.count(format("blk.%d.ffn_norm.weight", i))) {
+            consts[format("model.layers[%d].post_attention_layernorm.weight", i)] = weights.at(format("blk.%d.ffn_norm.weight", i));
+        }
+
+        // Attention weights (not present in Qwen3.5 recurrent layers)
+        if (weights.count(format("blk.%d.attn_q.weight", i))) {
+            consts[format("model.layers[%d].self_attn.q_proj.weight", i)] = weights.at(format("blk.%d.attn_q.weight", i));
+        }
         if (weights.count(format("blk.%d.attn_q.bias", i))) {
             consts[format("model.layers[%d].self_attn.q_proj.bias", i)] = weights.at(format("blk.%d.attn_q.bias", i));
         }
-        consts[format("model.layers[%d].self_attn.k_proj.weight", i)] = weights.at(format("blk.%d.attn_k.weight", i));
+        if (weights.count(format("blk.%d.attn_k.weight", i))) {
+            consts[format("model.layers[%d].self_attn.k_proj.weight", i)] = weights.at(format("blk.%d.attn_k.weight", i));
+        }
         if (weights.count(format("blk.%d.attn_k.bias", i))) {
             consts[format("model.layers[%d].self_attn.k_proj.bias", i)] = weights.at(format("blk.%d.attn_k.bias", i));
         }
-        consts[format("model.layers[%d].self_attn.v_proj.weight", i)] = weights.at(format("blk.%d.attn_v.weight", i));
+        if (weights.count(format("blk.%d.attn_v.weight", i))) {
+            consts[format("model.layers[%d].self_attn.v_proj.weight", i)] = weights.at(format("blk.%d.attn_v.weight", i));
+        }
         if (weights.count(format("blk.%d.attn_v.bias", i))) {
             consts[format("model.layers[%d].self_attn.v_proj.bias", i)] = weights.at(format("blk.%d.attn_v.bias", i));
         }
-        consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
+        if (weights.count(format("blk.%d.attn_output.weight", i))) {
+            consts[format("model.layers[%d].self_attn.o_proj.weight", i)] = weights.at(format("blk.%d.attn_output.weight", i));
+        }
         if (weights.count(format("blk.%d.attn_output.bias", i))) {
             consts[format("model.layers[%d].self_attn.o_proj.bias", i)] = weights.at(format("blk.%d.attn_output.bias", i));
         }
@@ -509,6 +540,85 @@ std::unordered_map<std::string, ov::Tensor> consts_from_weights(
         }
     }
 
+    // Qwen3.5 specific layer weights
+    auto arch_it = config.find("architecture");
+    if (arch_it != config.end() && std::get<std::string>(arch_it->second) == "qwen35") {
+        int full_attn_interval = 4;
+        if (config.count("full_attn_interval")) {
+            full_attn_interval = std::get<int>(config.at("full_attn_interval"));
+        }
+
+        for (int i = 0; i < std::get<int>(config.at("layer_num")); ++i) {
+            // Post-attention norm (qwen35 uses post_attention_norm instead of ffn_norm)
+            if (weights.count(format("blk.%d.post_attention_norm.weight", i))) {
+                consts[format("model.layers[%d].post_attention_layernorm.weight", i)] = weights.at(format("blk.%d.post_attention_norm.weight", i));
+            }
+
+            bool is_recurrent = ((i + 1) % full_attn_interval != 0);
+
+            if (is_recurrent) {
+                // Linear attention layer tensors
+                if (weights.count(format("blk.%d.attn_qkv.weight", i))) {
+                    consts[format("model.layers[%d].linear_attn.qkv_proj.weight", i)] = weights.at(format("blk.%d.attn_qkv.weight", i));
+                }
+                if (weights.count(format("blk.%d.attn_gate.weight", i))) {
+                    consts[format("model.layers[%d].linear_attn.gate_proj.weight", i)] = weights.at(format("blk.%d.attn_gate.weight", i));
+                }
+                if (weights.count(format("blk.%d.ssm_conv1d.weight", i))) {
+                    consts[format("model.layers[%d].linear_attn.conv1d.weight", i)] = weights.at(format("blk.%d.ssm_conv1d.weight", i));
+                }
+                if (weights.count(format("blk.%d.ssm_dt.bias", i))) {
+                    consts[format("model.layers[%d].linear_attn.dt_bias", i)] = weights.at(format("blk.%d.ssm_dt.bias", i));
+                }
+                if (weights.count(format("blk.%d.ssm_a", i))) {
+                    consts[format("model.layers[%d].linear_attn.a_log", i)] = weights.at(format("blk.%d.ssm_a", i));
+                }
+                if (weights.count(format("blk.%d.ssm_beta.weight", i))) {
+                    consts[format("model.layers[%d].linear_attn.beta_proj.weight", i)] = weights.at(format("blk.%d.ssm_beta.weight", i));
+                }
+                if (weights.count(format("blk.%d.ssm_alpha.weight", i))) {
+                    consts[format("model.layers[%d].linear_attn.alpha_proj.weight", i)] = weights.at(format("blk.%d.ssm_alpha.weight", i));
+                }
+                if (weights.count(format("blk.%d.ssm_norm.weight", i))) {
+                    consts[format("model.layers[%d].linear_attn.norm.weight", i)] = weights.at(format("blk.%d.ssm_norm.weight", i));
+                }
+                if (weights.count(format("blk.%d.ssm_out.weight", i))) {
+                    consts[format("model.layers[%d].linear_attn.out_proj.weight", i)] = weights.at(format("blk.%d.ssm_out.weight", i));
+                }
+
+                // Quantization scales/biases for linear attention
+                if (weights.count(format("blk.%d.attn_qkv.scales", i))) {
+                    consts[format("model.layers[%d].linear_attn.qkv_proj.scales", i)] = weights.at(format("blk.%d.attn_qkv.scales", i));
+                    consts[format("model.layers[%d].linear_attn.qkv_proj.biases", i)] = weights.at(format("blk.%d.attn_qkv.biases", i));
+                }
+                if (weights.count(format("blk.%d.attn_gate.scales", i))) {
+                    consts[format("model.layers[%d].linear_attn.gate_proj.scales", i)] = weights.at(format("blk.%d.attn_gate.scales", i));
+                    consts[format("model.layers[%d].linear_attn.gate_proj.biases", i)] = weights.at(format("blk.%d.attn_gate.biases", i));
+                }
+                if (weights.count(format("blk.%d.ssm_beta.scales", i))) {
+                    consts[format("model.layers[%d].linear_attn.beta_proj.scales", i)] = weights.at(format("blk.%d.ssm_beta.scales", i));
+                    consts[format("model.layers[%d].linear_attn.beta_proj.biases", i)] = weights.at(format("blk.%d.ssm_beta.biases", i));
+                }
+                if (weights.count(format("blk.%d.ssm_alpha.scales", i))) {
+                    consts[format("model.layers[%d].linear_attn.alpha_proj.scales", i)] = weights.at(format("blk.%d.ssm_alpha.scales", i));
+                    consts[format("model.layers[%d].linear_attn.alpha_proj.biases", i)] = weights.at(format("blk.%d.ssm_alpha.biases", i));
+                }
+                if (weights.count(format("blk.%d.ssm_out.scales", i))) {
+                    consts[format("model.layers[%d].linear_attn.out_proj.scales", i)] = weights.at(format("blk.%d.ssm_out.scales", i));
+                    consts[format("model.layers[%d].linear_attn.out_proj.biases", i)] = weights.at(format("blk.%d.ssm_out.biases", i));
+                }
+            } else {
+                // Full attention layer: Q norm and K norm
+                if (weights.count(format("blk.%d.attn_q_norm.weight", i))) {
+                    consts[format("model.layers[%d].self_attn.q_norm.weight", i)] = weights.at(format("blk.%d.attn_q_norm.weight", i));
+                }
+                if (weights.count(format("blk.%d.attn_k_norm.weight", i))) {
+                    consts[format("model.layers[%d].self_attn.k_norm.weight", i)] = weights.at(format("blk.%d.attn_k_norm.weight", i));
+                }
+            }
+        }
+    }
+
     return consts;
 }
 
@@ -561,6 +671,28 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
         }
         if (qtype.count(format("blk.%d.ffn_down.qtype", i))) {
             qtype_map[format("model.layers[%d].mlp.down_proj.qtype", i)] = qtype.at(format("blk.%d.ffn_down.qtype", i));
+        }
+
+        // Qwen3.5 post_attention_norm (uses different GGUF name than ffn_norm)
+        if (qtype.count(format("blk.%d.post_attention_norm.qtype", i))) {
+            qtype_map[format("model.layers[%d].post_attention_layernorm.qtype", i)] = qtype.at(format("blk.%d.post_attention_norm.qtype", i));
+        }
+
+        // Qwen3.5 linear attention qtypes
+        if (qtype.count(format("blk.%d.attn_qkv.qtype", i))) {
+            qtype_map[format("model.layers[%d].linear_attn.qkv_proj.qtype", i)] = qtype.at(format("blk.%d.attn_qkv.qtype", i));
+        }
+        if (qtype.count(format("blk.%d.attn_gate.qtype", i))) {
+            qtype_map[format("model.layers[%d].linear_attn.gate_proj.qtype", i)] = qtype.at(format("blk.%d.attn_gate.qtype", i));
+        }
+        if (qtype.count(format("blk.%d.ssm_beta.qtype", i))) {
+            qtype_map[format("model.layers[%d].linear_attn.beta_proj.qtype", i)] = qtype.at(format("blk.%d.ssm_beta.qtype", i));
+        }
+        if (qtype.count(format("blk.%d.ssm_alpha.qtype", i))) {
+            qtype_map[format("model.layers[%d].linear_attn.alpha_proj.qtype", i)] = qtype.at(format("blk.%d.ssm_alpha.qtype", i));
+        }
+        if (qtype.count(format("blk.%d.ssm_out.qtype", i))) {
+            qtype_map[format("model.layers[%d].linear_attn.out_proj.qtype", i)] = qtype.at(format("blk.%d.ssm_out.qtype", i));
         }
     }
 
