@@ -471,8 +471,8 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    if "gemma4" in ov_model and ov_backend == "PA":
-        pytest.xfail("gemma4 does not support PA attention backend")
+    if "gemma4" in ov_model and ov_backend == "PA" and ov_prompt_lookup:
+        pytest.xfail("gemma4 does not support PA with prompt_lookup=True")
 
     models_path = _get_ov_model(ov_model)
 
@@ -1481,6 +1481,11 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
         pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
+    if (
+        "gemma4-moe" in ov_pipe_model.model_id or "gemma4-31B" in ov_pipe_model.model_id
+    ) and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma4 models with token_type_ids and PA. CVS-189726")
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -2240,6 +2245,9 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # gemma3 PA cases
     "*tiny-random-gemma3/PA/*": "CVS-167316",
+    # Gemma4 models (with token_type_ids input) PA cases with image input
+    "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
+    "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
     # qwen2vl cases that use 70x70 video resolution
     "*tiny-random-qwen2vl/*/video-70x70": "CVS-180070",
     # qwen2.5-vl cases that use 350x350 image, or 70x70 video resolutions
