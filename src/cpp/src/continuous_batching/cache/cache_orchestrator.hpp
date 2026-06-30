@@ -683,11 +683,13 @@ public:
     //  Linear attention live/scratch block registry: single source of truth for which owned
     //  state row holds a sequence's committed ("live") recurrent state. Owned set = the
     //  sequence's LA block table (size 1 + num_assistant_tokens); live vs. scratch are index
-    //  roles within it. The registry records only explicit promotions (speculative steps); a
-    //  sequence with no recorded promotion lives on the prefill row (block_table[0]). The live
-    //  index is resolved dynamically from the current block table, so it stays correct across
-    //  block reallocation (preemption/recompute) rather than caching a physical index that can
-    //  go stale.
+    //  roles within it. The registry stores an entry only after an explicit promotion
+    //  (set_linear_attention_live_block, speculative steps); a sequence with no recorded
+    //  promotion has its live index resolved from the current prefill row (block_table[0]) on
+    //  each query. A recorded entry cannot go stale across reallocation: non-speculative
+    //  sequences (e.g. beam search) never get an entry; partial preemption skips fixed-size LA
+    //  rows (block table unchanged); and full preemption (recompute) frees the sequence, which
+    //  erases its entry via free_sequence().
     // -----------------------------------------------------------------------
 
     /// @return Physical block index of the sequence's live linear-attention state row,

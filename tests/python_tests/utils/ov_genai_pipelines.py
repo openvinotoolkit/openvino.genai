@@ -17,8 +17,6 @@ from openvino_genai import (
     StreamerBase, 
     DecodedResults,
 )
-from optimum.intel.utils.import_utils import is_transformers_version
-
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
 from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
