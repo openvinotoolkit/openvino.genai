@@ -1248,13 +1248,11 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     const auto streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     // Extract input tensors.
-    ov::Tensor input_ids, attention_mask;
+    ov::Tensor input_ids;
     if (const auto* tensor_input = std::get_if<ov::Tensor>(&inputs)) {
         input_ids = *tensor_input;
-        attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (const auto* tokenized_input = std::get_if<TokenizedInputs>(&inputs)) {
         input_ids = tokenized_input->input_ids;
-        attention_mask = tokenized_input->attention_mask;
     }
 
     OPENVINO_ASSERT(input_ids.get_shape()[0] == 1, "Only batch size 1 supported");
