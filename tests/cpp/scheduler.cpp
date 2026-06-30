@@ -95,6 +95,7 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
 
 // The owned linear-attention rows that are not the current live one (scratch rows), derived from
 // the public registry accessors. Mirrors what the scheduler builds inline for speculative paging.
+namespace {
 std::vector<size_t> linear_attention_scratch_blocks(const std::shared_ptr<CacheOrchestrator>& orchestrator,
                                                     uint64_t seq_id) {
     const size_t live_block = orchestrator->get_linear_attention_live_block(seq_id);
@@ -107,6 +108,7 @@ std::vector<size_t> linear_attention_scratch_blocks(const std::shared_ptr<CacheO
     }
     return scratch_blocks;
 }
+}  // namespace
 
 std::shared_ptr<CacheOrchestrator> init_linear_attention_cache_orchestrator(SchedulerConfig scheduler_config,
                                                                             size_t la_num_layers = 1) {
