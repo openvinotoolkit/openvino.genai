@@ -83,7 +83,14 @@ def save_input_data_to_file(
     proc_id: int,
     is_chat: bool = False,
 ):
-    if args["output_dir"] is not None and iter_num == 0:
+    if args["output_dir"] is None or iter_num > 0:
+        return
+
+    if is_chat:
+        llm_bench_utils.output_file.output_input_text(
+            input_text_list, args, model_precision, prompt_index, 0, proc_id, is_chat
+        )
+    else:
         for bs_index, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_input_text(
                 in_text, args, model_precision, prompt_index, bs_index, proc_id, is_chat

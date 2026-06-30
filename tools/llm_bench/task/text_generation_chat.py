@@ -43,7 +43,7 @@ def get_chat_input_data(input_text: str | list, args: dict):
         if args.get("chat_iter"):
             input_data = [input_text] * args["chat_iter"]
         else:
-            log.error("Chat mode can't be started due to incompatible input prompts")
+            raise RuntimeError("Chat mode can't be started due to incompatible input prompts")
     return input_data
 
 
@@ -203,7 +203,7 @@ def run_text_generation_chat_optimum(
 
     past_key_values = None
     prefix_len = 0
-    full_chat = args.get("full_chat_hist")
+    full_chat = args.get("full_chat")
 
     mem_consumption.start(iter_num)
     for prompt_index, prompt in enumerate(input_data):
@@ -355,7 +355,7 @@ def run_text_generation_chat_optimum(
     memory_metrics = mem_consumption.iter_stop_and_collect_data(iter_num)
     update_chat_iteration_with_memory_info(chat_iter_data_list, memory_metrics)
 
-    metrics_print.print_memory_info(iter_num, iter_data, chat_index)
+    metrics_print.print_memory_info(iter_num, chat_iter_data_list[-1], chat_index)
 
     # === Save perf data ===
     iter_data_list.extend(chat_iter_data_list)
@@ -411,6 +411,7 @@ def run_text_generation_genai_chat_mode(
     chat_iter_data_list = []
     chat_token_size = 0
     num_input_size = 0
+    tokenizer = model.get_tokenizer()
 
     mem_consumption.start(iter_num)
     for prompt_index, prompt in enumerate(input_data):
@@ -435,7 +436,7 @@ def run_text_generation_genai_chat_mode(
 
         # For GenAI it's impossible to calculate precise token size, but we can calulate approximate number
         num_full_chat_input_tokens = perf_metrics.get_num_input_tokens()
-        if chat_token_size == 0 and args.get("full_chat_hist", False):
+        if chat_token_size == 0 and args.get("full_chat", False):
             num_input_size = num_full_chat_input_tokens
         else:
             num_input_size = num_full_chat_input_tokens - chat_token_size
@@ -461,7 +462,7 @@ def run_text_generation_genai_chat_mode(
         tokenization_time.append(np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
 
         result_md5_list = []
-        generated_text = "; ".join(str(replica) for replica in chat_history.get_messages())
+        generated_text = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
         result_md5_list.append(hashlib.new("md5", generated_text.encode(), usedforsecurity=False).hexdigest())
         if len(md5_list[iter_num]) == 0:
             md5_list[iter_num] = {}
@@ -516,7 +517,7 @@ def run_text_generation_genai_chat_mode(
 
     memory_metrics = mem_consumption.iter_stop_and_collect_data(iter_num)
     update_chat_iteration_with_memory_info(chat_iter_data_list, memory_metrics)
-    metrics_print.print_memory_info(iter_num, iter_data, chat_index)
+    metrics_print.print_memory_info(iter_num, chat_iter_data_list[-1], chat_index)
 
     # === Save perf data ===
     iter_data_list.extend(chat_iter_data_list)
@@ -555,7 +556,8 @@ def run_text_generation_benchmark(
             if 0 <= i < len(input_text_list):
                 text_list.append(input_text_list[i])
                 inputs_idx_list.append(i)
-    if len(input_text_list) == 0:
+
+    if len(input_text_list) == 0 or any(len(chat_prompts_list) == 0 for chat_prompts_list in input_text_list):
         raise RuntimeError("==Failure prompts is empty ==")
     chat_info = f", chat iteration {args['chat_iter']}" if args.get("chat_iter") else ""
     log.info(

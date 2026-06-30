@@ -34,7 +34,7 @@ def num_positive_integers(x):
     return x
 
 
-def num_greater_than_one(x):
+def num_at_least_one(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError("Minimum input value is 1")
@@ -99,7 +99,7 @@ def get_argparser():
         "-ic",
         "--infer_count",
         default=None,
-        type=num_greater_than_one,
+        type=num_at_least_one,
         help="set the output token size, the value must be greater than 0.",
     )
     parser.add_argument(
@@ -316,9 +316,7 @@ def get_argparser():
         action="store_true",
         help="Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).",
     )
-    parser.add_argument(
-        "--set_torch_thread", default=0, type=num_greater_than_one, help="Set the number of Torch thread. "
-    )
+    parser.add_argument("--set_torch_thread", default=0, type=num_at_least_one, help="Set the number of Torch thread. ")
     parser.add_argument(
         "-tl",
         "--tokens_len",
@@ -483,12 +481,20 @@ def get_argparser():
     )
     parser.add_argument(
         "--chat_iter",
-        type=num_greater_than_one,
+        type=num_at_least_one,
         default=None,
-        help="Use with --task text_gen_chat. The chat will run chat_iter iterations with the one prompt."
+        help="Use with --task text_gen_chat. The chat will run chat-iter iterations with the one prompt."
         " Alternative option is setup prompts list in JSONL via -pf option."
         " The parameter specifies the amount of the chat iterations.",
     )
+    parser.add_argument(
+        "--full_chat",
+        action="store_true",
+        help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
+        "Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
+        "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
+    )
+
     return parser.parse_args()
 
 

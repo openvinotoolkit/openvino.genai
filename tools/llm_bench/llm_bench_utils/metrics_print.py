@@ -58,14 +58,14 @@ def print_metrics(
         output_str = ' '.join([prefix, output_str])
         log.info(output_str)
     if tms is not None:
-        iter_data['first_token_latency'] = tms[0] * 1000 if len(tms) > 0 else -1
-        if is_chat_mode and len(tms) > 0:
+        iter_data["first_token_latency"] = tms[0] * 1000 if len(tms) > 0 else -1
+        if is_chat_mode and len(tms) > 0 and iter_data["input_size"] != "" and int(iter_data["input_size"]) > 0:
             iter_data["first_token_latency"] /= iter_data["input_size"]
         iter_data["other_tokens_avg_latency"] = sum(tms[1:]) / (len(tms) - 1) * 1000 if len(tms) > 1 else -1
         first_token_latency = (
             "NA" if iter_data["first_token_latency"] == -1 else f"{iter_data['first_token_latency']:.2f}"
         )
-        # in chat model prompts can be very long, so we need to calculate latency per token
+        # in chat model prompts can be different from iteration to iteration, so we need to calculate latency per token
         first_token_latency += f" ms/{latency_unit}" if is_chat_mode else " ms"
         other_token_latency = 'NA' if iter_data['other_tokens_avg_latency'] == -1 else f"{iter_data['other_tokens_avg_latency']:.2f} ms/{latency_unit}"
         if text_emb is not None:
@@ -87,8 +87,8 @@ def print_metrics(
         if len(tms) == 0:
             log.warning(f'{prefix} No hook data output for first token latency and other tokens latency')
     if tms_infer is not None:
-        iter_data['first_token_infer_latency'] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
-        if is_chat_mode and len(tms_infer) > 0:
+        iter_data["first_token_infer_latency"] = tms_infer[0] * 1000 if len(tms_infer) > 0 else -1
+        if is_chat_mode and len(tms_infer) > 0 and iter_data["input_size"] != "" and int(iter_data["input_size"]) > 0:
             iter_data["first_token_infer_latency"] /= iter_data["input_size"]
         iter_data["other_tokens_infer_avg_latency"] = (
             sum(tms_infer[1:]) / (len(tms_infer) - 1) * 1000 if len(tms_infer) > 1 else -1
@@ -96,7 +96,7 @@ def print_metrics(
         first_infer_latency = (
             "NA" if iter_data["first_token_infer_latency"] == -1 else f"{iter_data['first_token_infer_latency']:.2f}"
         )
-        # in chat model prompts can be very long, so we need to calculate latency per token
+        # in chat model prompts can be different from iteration to iteration, so we need to calculate latency per token
         first_infer_latency += f" ms/{latency_unit}" if is_chat_mode else " ms"
         other_infer_latency = 'NA' if iter_data['other_tokens_infer_avg_latency'] == -1 else f"{iter_data['other_tokens_infer_avg_latency']:.2f} ms/infer"
         log.info(
