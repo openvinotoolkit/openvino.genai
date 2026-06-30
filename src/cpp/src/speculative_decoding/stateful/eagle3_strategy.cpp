@@ -59,12 +59,6 @@ void copy_hidden_state_row(const ov::Tensor& src, size_t src_position, ov::Tenso
 
 namespace ov::genai {
 
-// NPUW property keys used for Eagle3 NPU model configuration.
-static constexpr const char* NPUW_EAGLE = "NPUW_EAGLE";
-static constexpr const char* NPUW_MAX_GEN_TOKEN_LEN = "NPUW_LLM_MAX_GENERATION_TOKEN_LEN";
-static constexpr const char* NPUW_ONLINE_PIPELINE = "NPUW_ONLINE_PIPELINE";
-static constexpr const char* NPUW_SLICE_OUT = "NPUW_SLICE_OUT";
-
 // ---------------------------------------------------------------------------
 // Eagle3InputBuilder
 // ---------------------------------------------------------------------------
@@ -151,19 +145,14 @@ InputTensors Eagle3InputBuilder::build_draft_initial_inputs(size_t input_token_c
         result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, 1, 1});
         result.eagle_tree_mask.data<float>()[0] = 0.0f;
     } else {
-        // Shape: {1, 1, input_token_count, total_len}
-        // Columns [0, start_pos): 0.0 — attend to all past KV context.
-        // Columns [start_pos, total_len): causal lower-triangular among input tokens.
-        //   Row i attends to columns [start_pos, start_pos + i] (inclusive), rest is -INF.
-        result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, input_token_count, total_len});
+        // Square mask: {1, 1, input_token_count, input_token_count}.
+        // Only encodes causal relationships among current input tokens.
+        result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, input_token_count, input_token_count});
         float* mask_ptr = result.eagle_tree_mask.data<float>();
-        std::fill_n(mask_ptr, input_token_count * total_len, -std::numeric_limits<float>::infinity());
+        std::fill_n(mask_ptr, input_token_count * input_token_count, -std::numeric_limits<float>::infinity());
         for (size_t i = 0; i < input_token_count; ++i) {
-            float* row = mask_ptr + i * total_len;
-            // Attend to all past context [0, start_pos)
-            std::fill_n(row, start_pos, 0.0f);
-            // Attend causally within input tokens [start_pos, start_pos + i]
-            std::fill_n(row + start_pos, i + 1, 0.0f);
+            // Row i attends causally to positions [0, i] (lower-triangular).
+            std::fill_n(mask_ptr + i * input_token_count, i + 1, 0.0f);
         }
     }
 
@@ -181,7 +170,7 @@ InputTensors Eagle3InputBuilder::build_draft_iteration_inputs(size_t past_accept
     //   input_ids    : [42, 107, 99, 12]       shape {1, 4}
     //   history_len  : 5 + 1 = 6
     //   position_ids : [6, 7, 6, 7]            (history_len + t per token, reset per seq)
-    //   attn_len     : 6 + 4 = 10;  tree_mask: {1, 1, 4, 10}
+    //   tree_mask    : {1, 1, 4, 4}            (square, NPUW pads history zeros)
     OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
     const auto& prompt_ids = m_sequence_group->get_prompt_ids();
     const size_t prompt_len = prompt_ids.size();
@@ -229,27 +218,24 @@ InputTensors Eagle3InputBuilder::build_draft_iteration_inputs(size_t past_accept
     result.attention_mask = ov::Tensor(ov::element::i64, {1, attn_len});
     std::fill_n(result.attention_mask.data<int64_t>(), attn_len, 1);
 
-    // 3. eagle_tree_mask — shape {1, 1, total_tokens, attn_len}.
-    //    Columns [0, history_len):          0.0   — all rows attend to full history.
-    //    Columns [history_len, attn_len):   -INF by default; each row opens its own
-    //    path's columns causally (up to and including its branch position t).
-    //    Rows from different sequences are fully blocked from attending each other.
+    // 3. eagle_tree_mask — square shape {1, 1, total_tokens, total_tokens}.
+    //    Only encodes inter-token relationships among current input tokens.
+    //    Each row opens its own path's columns causally; cross-sequence is blocked.
     //
-    //    Example (num_seqs=2, branch_len=2, history_len=6, attn_len=10):
-    //      cols:          0 1 2 3 4 5 |   6    7  |   8    9    ← branch cols: seq0=[6,7], seq1=[8,9]
-    //      row0 (s0,t=0): 0 0 0 0 0 0 |   0  -inf | -inf -inf
-    //      row1 (s0,t=1): 0 0 0 0 0 0 |   0    0  | -inf -inf
-    //      row2 (s1,t=0): 0 0 0 0 0 0 | -inf -inf |   0  -inf
-    //      row3 (s1,t=1): 0 0 0 0 0 0 | -inf -inf |   0    0
-    result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, total_tokens, attn_len});
+    //    Example (num_seqs=2, branch_len=2):
+    //      cols:           0    1  |   2    3     ← seq0=[0,1], seq1=[2,3]
+    //      row0 (s0,t=0):  0  -inf | -inf -inf
+    //      row1 (s0,t=1):  0    0  | -inf -inf
+    //      row2 (s1,t=0): -inf -inf |   0  -inf
+    //      row3 (s1,t=1): -inf -inf |   0    0
+    result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, total_tokens, total_tokens});
     float* mask_ptr = result.eagle_tree_mask.data<float>();
-    std::fill_n(mask_ptr, total_tokens * attn_len, -std::numeric_limits<float>::infinity());
+    std::fill_n(mask_ptr, total_tokens * total_tokens, -std::numeric_limits<float>::infinity());
 
     for (size_t s = 0; s < num_seqs; ++s) {
-        const size_t path_col_start = history_len + s * branch_len;
+        const size_t path_col_start = s * branch_len;
         for (size_t t = 0; t < branch_len; ++t) {
-            float* row_ptr = mask_ptr + (s * branch_len + t) * attn_len;
-            std::fill_n(row_ptr, history_len, 0.0f);
+            float* row_ptr = mask_ptr + (s * branch_len + t) * total_tokens;
             std::fill_n(row_ptr + path_col_start, t + 1, 0.0f);
         }
     }
@@ -267,17 +253,17 @@ InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
     //   0 → not an ancestor (blocked → -INF)
     // tree_position_ids[i]: tree depth of candidate i (root = 0).
     //
-    // eagle_tree_mask layout (example: context_len=6, 4 candidates — root + 3 nodes):
+    // eagle_tree_mask layout — square {num_candidates x num_candidates}:
     //   tree_mask (4×4):  1 0 0 0      row i attends to col j iff tree_mask[i][j]==1
     //                     1 1 0 0
     //                     1 0 1 0
     //                     1 1 0 1
-    //   attn_len = 6 + 4 = 10
-    //   cols:   0..5 (history)  | 6(root)  7(n1)  8(n2)  9(n3)
-    //   row0:   0 0 0 0 0 0     |   0      -inf   -inf   -inf
-    //   row1:   0 0 0 0 0 0     |   0        0    -inf   -inf
-    //   row2:   0 0 0 0 0 0     |   0      -inf     0    -inf
-    //   row3:   0 0 0 0 0 0     |   0        0    -inf     0
+    //   cols:   root  n1    n2    n3
+    //   row0:    0   -inf  -inf  -inf
+    //   row1:    0     0   -inf  -inf
+    //   row2:    0   -inf    0   -inf
+    //   row3:    0     0   -inf    0
+    //   NPUW pads left columns with zeros for history attention.
     OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
     const auto current_sequence = m_sequence_group->get_running_sequences().at(0);
 
@@ -328,16 +314,16 @@ InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
     result.attention_mask = ov::Tensor(ov::element::i64, {1, attn_len});
     std::fill_n(result.attention_mask.data<int64_t>(), attn_len, 1);
 
-    // 4. eagle_tree_mask: history region all-0; tree region from tree_mask_bin.
+    // 4. eagle_tree_mask: square shape {1, 1, num_candidates, num_candidates}.
+    //    Only encodes tree ancestor relationships among current candidates.
     const float neg_inf = -std::numeric_limits<float>::infinity();
-    result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, num_candidates, attn_len});
+    result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, num_candidates, num_candidates});
     float* mask_ptr = result.eagle_tree_mask.data<float>();
 
     for (size_t i = 0; i < num_candidates; ++i) {
-        float* row = mask_ptr + i * attn_len;
-        std::fill_n(row, context_len, 0.0f);
+        float* row = mask_ptr + i * num_candidates;
         for (size_t j = 0; j < num_candidates; ++j) {
-            row[context_len + j] = (tree_mask_bin[i][j] == 1) ? 0.0f : neg_inf;
+            row[j] = (tree_mask_bin[i][j] == 1) ? 0.0f : neg_inf;
         }
     }
 
@@ -1109,9 +1095,9 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
     // --- Configure and create draft model ---
     auto draft_desc = draft_model_desc;
     if (draft_desc.device == "NPU") {
-        draft_desc.properties[NPUW_EAGLE] = "TRUE";
-        draft_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = draft_validation_window;
-        draft_desc.properties[NPUW_ONLINE_PIPELINE] = "NONE";
+        draft_desc.properties["NPUW_EAGLE"] = "TRUE";
+        draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = draft_validation_window;
+        draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
     }
     m_draft = std::make_unique<Eagle3DraftWrapper>(draft_desc);
     m_draft->set_draft_target_mapping(m_d2t_mapping);
@@ -1119,9 +1105,9 @@ void StatefulEagle3LLMPipeline::configure_and_create_models(const ModelDesc& tar
     // --- Configure and create target model ---
     auto target_desc = target_model_desc;
     if (target_desc.device == "NPU") {
-        target_desc.properties[NPUW_EAGLE] = "TRUE";
-        target_desc.properties[NPUW_MAX_GEN_TOKEN_LEN] = target_validation_window;
-        target_desc.properties[NPUW_SLICE_OUT] = "NO";
+        target_desc.properties["NPUW_EAGLE"] = "TRUE";
+        target_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = target_validation_window;
+        target_desc.properties["NPUW_SLICE_OUT"] = "NO";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 }
