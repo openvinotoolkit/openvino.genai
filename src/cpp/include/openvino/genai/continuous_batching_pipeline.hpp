@@ -387,11 +387,11 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
 /**
  * @brief Reports whether a model can be served by the continuous batching pipeline.
  *
- * Continuous batching applies the SDPAToPagedAttention transformation, which requires the
- * model to contain ScaledDotProductAttention ops. Some architectures (e.g. certain Gemma
- * exports) are produced without them and therefore cannot use paged attention; callers can
- * use this to choose a non-paged pipeline instead of attempting construction and handling a
- * failure.
+ * Continuous batching requires the model to pass the SDPAToPagedAttention transformation.
+ * This runs that transformation on a clone of the model and reports whether it succeeded
+ * (a PagedAttention op was produced and the attention_mask/beam_idx inputs were removed).
+ * Some architectures (e.g. certain Gemma exports) cannot be converted; callers can use this
+ * to choose a non-paged pipeline instead of attempting construction and handling a failure.
  *
  * @param model The model to inspect.
  * @return true if the model supports paged attention (continuous batching), false otherwise.

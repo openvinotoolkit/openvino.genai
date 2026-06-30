@@ -39,12 +39,13 @@ std::shared_ptr<ov::Model> make_model_with_sdpa() {
 
 }  // namespace
 
-// A model with a ScaledDotProductAttention op can be converted by SDPAToPagedAttention,
-// so it is reported as supporting paged attention (continuous batching).
-TEST(SupportsPagedAttention, TrueWhenModelHasScaledDotProductAttention) {
+// A ScaledDotProductAttention op is necessary but NOT sufficient: a bare SDPA without the
+// stateful KV-cache / attention_mask / beam_idx structure of an LLM does not pass
+// SDPAToPagedAttention, so the model is correctly reported as not supporting paged attention.
+TEST(SupportsPagedAttention, FalseForBareScaledDotProductAttention) {
     auto model = make_model_with_sdpa();
-    EXPECT_TRUE(ov::genai::supports_paged_attention(model));
-    EXPECT_TRUE(ov::genai::utils::supports_paged_attention(model));
+    EXPECT_FALSE(ov::genai::supports_paged_attention(model));
+    EXPECT_FALSE(ov::genai::utils::supports_paged_attention(model));
 }
 
 // A model without any ScaledDotProductAttention op (e.g. some Gemma exports) cannot be
