@@ -56,7 +56,7 @@ public:
 
 private:
     std::shared_ptr<ov::Model> create_embedding_model(const std::shared_ptr<ov::Model>& model) const;
-    uint64_t execute_inference(ov::InferRequest& request);
+    uint64_t execute_inference();
     void update_inference_time(uint64_t inference_time_us);
 
     static constexpr size_t BATCH_SIZE = 1;

@@ -124,9 +124,9 @@ std::shared_ptr<ov::Model> Gemma4MTPTargetWrapper::create_embedding_model(const 
     return std::make_shared<ov::Model>(ov::ResultVector{result}, parameters, "gemma4_mtp_embeddings");
 }
 
-uint64_t Gemma4MTPTargetWrapper::execute_inference(ov::InferRequest& request) {
+uint64_t Gemma4MTPTargetWrapper::execute_inference() {
     const auto start = std::chrono::steady_clock::now();
-    request.infer();
+    m_request.infer();
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
 }
 
@@ -158,7 +158,7 @@ Gemma4MTPOutput Gemma4MTPTargetWrapper::infer(const ov::Tensor& input_ids,
     m_request.get_tensor("beam_idx").set_shape({BATCH_SIZE});
     m_request.get_tensor("beam_idx").data<int32_t>()[0] = 0;
 
-    const uint64_t inference_time_us = execute_inference(m_request);
+    const uint64_t inference_time_us = execute_inference();
     update_inference_time(inference_time_us);
     m_processed_tokens += input_ids.get_shape().at(1);
 
