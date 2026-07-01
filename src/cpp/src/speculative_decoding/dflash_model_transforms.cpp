@@ -160,12 +160,12 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
     config.erase(mode_it);
 
     auto mask_it = config.find("dflash_mask_token_id");
-    OPENVINO_ASSERT(mask_it != config.end(), "DFlash draft model is missing dflash/mask_token_id RT info.");
+    OPENVINO_ASSERT(mask_it != config.end(), "DFlash draft model is missing dflash_mask_token_id RT info.");
     info.mask_token_id = mask_it->second.as<int64_t>();
     config.erase(mask_it);
 
     auto layers_it = config.find("dflash_target_layer_ids");
-    OPENVINO_ASSERT(layers_it != config.end(), "DFlash draft model is missing dflash/target_layer_ids RT info.");
+    OPENVINO_ASSERT(layers_it != config.end(), "DFlash draft model is missing dflash_target_layer_ids RT info.");
     info.target_layer_ids = layers_it->second.as<std::vector<int32_t>>();
     config.erase(layers_it);
     OPENVINO_ASSERT(!info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
