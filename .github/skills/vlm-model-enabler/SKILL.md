@@ -117,6 +117,23 @@ Replace the VisionEncoder stub. Key references:
 
 Update `get_inputs_embeds()` to handle the non-empty images case: insert vision embeddings at placeholder token positions.
 
+Before reporting a tokenizer/export blocker, compare Hugging Face and OpenVINO
+tokenization for every required image/chat special token. If the OpenVINO
+tokenizer drops or splits added tokens, implement architecture-aware recovery
+in the model-specific input embedder:
+
+1. Read `tokenizer.json` added tokens and the relevant token IDs from model and
+   processor configuration.
+2. Split the normalized prompt around required added-token strings.
+3. Tokenize ordinary text spans with the OpenVINO tokenizer and splice the
+   exact added-token IDs back into `input_ids`.
+4. Verify image-placeholder positions exist and their count matches the vision
+   embedding rows before merging.
+5. Validate the recovery with real image-text generation and the Optimum
+   comparison.
+
+Do not hard-code a Hub repository ID or silently replace missing tokens.
+
 ### 3.3 Build and verify
 
 Rebuild, then create and run:
@@ -130,9 +147,30 @@ Rebuild, then create and run:
 
 ---
 
+## Step 4 — Repository Test Coverage
+
+Every newly enabled model must add repository tests:
+
+1. Prefer adding the matching tiny-random model to
+   `tests/python_tests/test_vlm_pipeline.py`.
+2. Add a dedicated test file only when the behavior cannot fit the shared VLM
+   suite. Reuse existing fixtures and conversion-cache helpers.
+3. Never use a full-size model in repository tests.
+4. Run the narrow pytest selection for the new model.
+5. If special Transformers or Optimum dependencies are required, add a
+   dedicated VLM CI matrix entry instead of changing unrelated jobs.
+
+Do not report successful enablement after GenAI source changes unless the test
+is added and its exact pytest result is recorded. If local execution is
+blocked, add the test and report the exact blocker and expected CI coverage.
+
+---
+
 ## Final Deliverables
 
 Before declaring the model enabled:
 
 - [ ] `.model_analysis/<model_type>_analysis.md` exists with the `## GenAI Enablement Design` section
 - [ ] All test scripts exist and pass in `.model_enabler/`
+- [ ] Tiny-random repository coverage is added under `tests/python_tests/`
+- [ ] Narrow pytest command/result, or the exact local blocker, is recorded

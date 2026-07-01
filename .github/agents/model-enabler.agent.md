@@ -72,6 +72,10 @@ Before modifying shared model code, check backward compatibility:
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
 If model-checker passes, proceed to Step 4.
 
+For every newly enabled VLM, add the repository test coverage required by the
+`vlm-model-enabler` skill. GenAI source changes without a corresponding
+tiny-random test are incomplete.
+
 ### Step 4: Documentation Update
 
 Read and follow the **update-docs** skill.
