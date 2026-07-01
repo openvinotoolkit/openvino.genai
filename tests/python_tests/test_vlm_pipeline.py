@@ -2895,7 +2895,9 @@ def test_vlm_eagle3(cat_tensor):
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
-    generation_config_with_tree = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False)
+    generation_config_with_tree = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
+    )
     result_with_draft = ov_pipe_with_draft.generate(
         PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
     )
@@ -2953,7 +2955,9 @@ def test_vlm_eagle3_chat_with_videos(
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
-    generation_config_with_tree = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False)
+    generation_config_with_tree = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
+    )
     results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
     results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_tree)
 
