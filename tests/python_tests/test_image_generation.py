@@ -339,8 +339,7 @@ class TestImageGenerationWithBlobTensorModels:
                 unet=unet,
                 vae=vae,
             )
-
-        if pipe_type == "image2image":
+        else:
             blob_pipe = ov_genai.Image2ImagePipeline.stable_diffusion_xl(
                 scheduler=ov_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
                 clip_text_model=text_encoder,
