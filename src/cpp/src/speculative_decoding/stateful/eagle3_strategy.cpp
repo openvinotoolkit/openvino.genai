@@ -10,6 +10,7 @@
 #include <numeric>
 
 #include "continuous_batching/timer.hpp"
+#include "openvino/core/type/float16.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "sampling/sampler.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
@@ -36,8 +37,8 @@ ov::Tensor slice_hidden_state(const ov::Tensor& hidden_features, size_t position
     return ov::Tensor(hidden_features, start_coord, end_coord);
 }
 
-/// @brief Copies one hidden-state row (one token) from src tensor at src_position into
-///        dst tensor at dst_position.  Both tensors must have shape [1, *, hidden_size].
+/// @brief Copies one hidden-state row (one token) from src[src_position] into dst[dst_position].
+/// Both tensors must have shape [1, *, hidden_size] and identical element type.
 void copy_hidden_state_row(const ov::Tensor& src, size_t src_position, ov::Tensor& dst, size_t dst_position) {
     OPENVINO_ASSERT(src_position < src.get_shape()[1],
                     "src_position ",
@@ -49,10 +50,100 @@ void copy_hidden_state_row(const ov::Tensor& src, size_t src_position, ov::Tenso
                     dst_position,
                     " out of bounds for seq_len ",
                     dst.get_shape()[1]);
+    OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
+                    "copy_hidden_state_row: src type ",
+                    src.get_element_type(),
+                    " != dst type ",
+                    dst.get_element_type());
     const size_t hidden_size = src.get_shape()[2];
-    const float* src_ptr = src.data<const float>() + src_position * hidden_size;
-    float* dst_ptr = dst.data<float>() + dst_position * hidden_size;
-    std::copy_n(src_ptr, hidden_size, dst_ptr);
+    const size_t elem_size = src.get_element_type().size();
+    const size_t row_bytes = hidden_size * elem_size;
+    const auto* src_ptr = static_cast<const uint8_t*>(src.data()) + src_position * row_bytes;
+    auto* dst_ptr = static_cast<uint8_t*>(dst.data()) + dst_position * row_bytes;
+    std::memcpy(dst_ptr, src_ptr, row_bytes);
+}
+
+/// @brief Fills an eagle_tree_mask tensor with a single 0.0 scalar.
+void set_eagle_tree_mask_scalar_zero(ov::Tensor& mask) {
+    std::memset(mask.data(), 0, mask.get_byte_size());
+}
+
+template <typename T>
+void fill_causal_square_mask_impl(ov::Tensor& mask, size_t seq_len) {
+    const T neg_inf = -std::numeric_limits<T>::infinity();
+    T* mask_ptr = mask.data<T>();
+    std::fill_n(mask_ptr, seq_len * seq_len, neg_inf);
+    for (size_t i = 0; i < seq_len; ++i) {
+        std::fill_n(mask_ptr + i * seq_len, i + 1, T{});
+    }
+}
+
+/// @brief Writes a lower-triangular causal mask {1, 1, seq_len, seq_len}:
+/// on/below diagonal = 0.0, above = -inf.  Dispatches on mask type (f32 or f16).
+void fill_causal_square_mask(ov::Tensor& mask, size_t seq_len) {
+    const auto type = mask.get_element_type();
+    if (type == ov::element::f32) {
+        fill_causal_square_mask_impl<float>(mask, seq_len);
+    } else if (type == ov::element::f16) {
+        fill_causal_square_mask_impl<ov::float16>(mask, seq_len);
+    } else {
+        OPENVINO_THROW("Unsupported eagle_tree_mask element type: ", type);
+    }
+}
+
+template <typename T>
+void fill_block_causal_mask_impl(ov::Tensor& mask, size_t num_seqs, size_t branch_len) {
+    const size_t total_tokens = num_seqs * branch_len;
+    const T neg_inf = -std::numeric_limits<T>::infinity();
+    T* mask_ptr = mask.data<T>();
+    std::fill_n(mask_ptr, total_tokens * total_tokens, neg_inf);
+
+    for (size_t s = 0; s < num_seqs; ++s) {
+        const size_t path_col_start = s * branch_len;
+        for (size_t t = 0; t < branch_len; ++t) {
+            T* row_ptr = mask_ptr + (s * branch_len + t) * total_tokens;
+            std::fill_n(row_ptr + path_col_start, t + 1, T{});
+        }
+    }
+}
+
+/// @brief Writes a block-causal mask {1, 1, num_seqs*branch_len, num_seqs*branch_len} for
+/// DRAFT_ITERATION: within-sequence causal, cross-sequence blocked.  Dispatches on mask type.
+void fill_block_causal_mask(ov::Tensor& mask, size_t num_seqs, size_t branch_len) {
+    const auto type = mask.get_element_type();
+    if (type == ov::element::f32) {
+        fill_block_causal_mask_impl<float>(mask, num_seqs, branch_len);
+    } else if (type == ov::element::f16) {
+        fill_block_causal_mask_impl<ov::float16>(mask, num_seqs, branch_len);
+    } else {
+        OPENVINO_THROW("Unsupported eagle_tree_mask element type: ", type);
+    }
+}
+
+template <typename T>
+void fill_tree_mask_from_bin_impl(ov::Tensor& mask, const std::vector<std::vector<uint8_t>>& tree_mask_bin) {
+    const size_t num_candidates = tree_mask_bin.size();
+    const T neg_inf = -std::numeric_limits<T>::infinity();
+    T* mask_ptr = mask.data<T>();
+    for (size_t i = 0; i < num_candidates; ++i) {
+        T* row = mask_ptr + i * num_candidates;
+        for (size_t j = 0; j < num_candidates; ++j) {
+            row[j] = (tree_mask_bin[i][j] == 1) ? T{} : neg_inf;
+        }
+    }
+}
+
+/// @brief Writes a tree-ancestor mask {1, 1, N, N} from a binary matrix:
+/// tree_mask_bin[i][j]==1 -> 0.0 (open), else -inf.  Dispatches on mask type.
+void fill_tree_mask_from_bin(ov::Tensor& mask, const std::vector<std::vector<uint8_t>>& tree_mask_bin) {
+    const auto type = mask.get_element_type();
+    if (type == ov::element::f32) {
+        fill_tree_mask_from_bin_impl<float>(mask, tree_mask_bin);
+    } else if (type == ov::element::f16) {
+        fill_tree_mask_from_bin_impl<ov::float16>(mask, tree_mask_bin);
+    } else {
+        OPENVINO_THROW("Unsupported eagle_tree_mask element type: ", type);
+    }
 }
 
 }  // anonymous namespace
@@ -60,10 +151,10 @@ void copy_hidden_state_row(const ov::Tensor& src, size_t src_position, ov::Tenso
 namespace ov::genai {
 
 // ---------------------------------------------------------------------------
-// Eagle3InputBuilder
+// Input builders
 // ---------------------------------------------------------------------------
 
-InputTensors Eagle3InputBuilder::build_target_prefill_inputs() const {
+InputTensors Eagle3TargetWrapper::build_prefill_inputs() const {
     OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
     const auto current_sequence = m_sequence_group->get_running_sequences().at(0);
 
@@ -87,13 +178,13 @@ InputTensors Eagle3InputBuilder::build_target_prefill_inputs() const {
     std::fill_n(result.attention_mask.data<int64_t>(), prompt_len, 1);
 
     // TARGET_PREFILL processes tokens causally; no tree attention mask is needed.
-    result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, 1, 1});
-    result.eagle_tree_mask.data<float>()[0] = 0.0f;
+    result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, 1, 1});
+    set_eagle_tree_mask_scalar_zero(result.eagle_tree_mask);
 
     return result;
 }
 
-InputTensors Eagle3InputBuilder::build_draft_initial_inputs(size_t input_token_count) const {
+InputTensors Eagle3DraftWrapper::build_initial_inputs(size_t input_token_count) const {
     OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
     const auto current_sequence = m_sequence_group->get_running_sequences().at(0);
 
@@ -133,33 +224,25 @@ InputTensors Eagle3InputBuilder::build_draft_initial_inputs(size_t input_token_c
     result.attention_mask = ov::Tensor(ov::element::i64, {1, total_len});
     std::fill_n(result.attention_mask.data<int64_t>(), total_len, 1);
 
-    // DRAFT_INITIAL tree mask logic:
-    // - start_pos == 0: NPUW routes to prefill submodel (position_ids[0]==0, seq_len>1).
-    //   Prefill has built-in causal masking; tree mask shape must be {1,1,1,1} to match
-    //   the prefill model's static input.
-    // - start_pos > 0, input_token_count == 1: single token, no causal issue.
-    // - start_pos > 0, input_token_count > 1: NPUW routes to generation submodel which
-    //   relies on tree mask for intra-input causality. Must provide proper causal mask
-    //   to prevent earlier tokens from attending to later tokens.
+    // eagle_tree_mask shape depends on whether an intra-input causal pattern is needed:
+    //   - start_pos == 0: full prefill; the model applies its built-in causal mask, so
+    //     a scalar mask {1,1,1,1} suffices.
+    //   - input_token_count == 1: single token; no intra-input relationship to encode.
+    //   - otherwise: {1, 1, input_token_count, input_token_count} causal mask to prevent
+    //     earlier tokens from attending to later ones.
     if (start_pos == 0 || input_token_count == 1) {
-        result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, 1, 1});
-        result.eagle_tree_mask.data<float>()[0] = 0.0f;
+        result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, 1, 1});
+        set_eagle_tree_mask_scalar_zero(result.eagle_tree_mask);
     } else {
-        // Square mask: {1, 1, input_token_count, input_token_count}.
-        // Only encodes causal relationships among current input tokens.
-        result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, input_token_count, input_token_count});
-        float* mask_ptr = result.eagle_tree_mask.data<float>();
-        std::fill_n(mask_ptr, input_token_count * input_token_count, -std::numeric_limits<float>::infinity());
-        for (size_t i = 0; i < input_token_count; ++i) {
-            // Row i attends causally to positions [0, i] (lower-triangular).
-            std::fill_n(mask_ptr + i * input_token_count, i + 1, 0.0f);
-        }
+        result.eagle_tree_mask =
+            ov::Tensor(m_eagle_tree_mask_type, {1, 1, input_token_count, input_token_count});
+        fill_causal_square_mask(result.eagle_tree_mask, input_token_count);
     }
 
     return result;
 }
 
-InputTensors Eagle3InputBuilder::build_draft_iteration_inputs(size_t past_accepted_token_count) const {
+InputTensors Eagle3DraftWrapper::build_iteration_inputs(size_t past_accepted_token_count) const {
     // All running sequences (beam paths) are concatenated into one flat batch so a single
     // infer call handles all paths.  The first past_accepted_token_count entries of each
     // sequence's generated_ids are already in the draft KV cache; only the tail (branch_len
@@ -170,7 +253,7 @@ InputTensors Eagle3InputBuilder::build_draft_iteration_inputs(size_t past_accept
     //   input_ids    : [42, 107, 99, 12]       shape {1, 4}
     //   history_len  : 5 + 1 = 6
     //   position_ids : [6, 7, 6, 7]            (history_len + t per token, reset per seq)
-    //   tree_mask    : {1, 1, 4, 4}            (square, NPUW pads history zeros)
+    //   tree_mask    : {1, 1, 4, 4}            (square, history columns implied)
     OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
     const auto& prompt_ids = m_sequence_group->get_prompt_ids();
     const size_t prompt_len = prompt_ids.size();
@@ -228,22 +311,13 @@ InputTensors Eagle3InputBuilder::build_draft_iteration_inputs(size_t past_accept
     //      row1 (s0,t=1):  0    0  | -inf -inf
     //      row2 (s1,t=0): -inf -inf |   0  -inf
     //      row3 (s1,t=1): -inf -inf |   0    0
-    result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, total_tokens, total_tokens});
-    float* mask_ptr = result.eagle_tree_mask.data<float>();
-    std::fill_n(mask_ptr, total_tokens * total_tokens, -std::numeric_limits<float>::infinity());
-
-    for (size_t s = 0; s < num_seqs; ++s) {
-        const size_t path_col_start = s * branch_len;
-        for (size_t t = 0; t < branch_len; ++t) {
-            float* row_ptr = mask_ptr + (s * branch_len + t) * total_tokens;
-            std::fill_n(row_ptr + path_col_start, t + 1, 0.0f);
-        }
-    }
+    result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, total_tokens, total_tokens});
+    fill_block_causal_mask(result.eagle_tree_mask, num_seqs, branch_len);
 
     return result;
 }
 
-InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
+InputTensors Eagle3TargetWrapper::build_validation_inputs() const {
     // Submits all candidates (root + N tree nodes) to the target model in one pass.
     // The root is the last token the target produced; its KV was not written back yet,
     // so it must be re-submitted together with the draft tree nodes for validation.
@@ -263,7 +337,6 @@ InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
     //   row1:    0     0   -inf  -inf
     //   row2:    0   -inf    0   -inf
     //   row3:    0     0   -inf    0
-    //   NPUW pads left columns with zeros for history attention.
     OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
     const auto current_sequence = m_sequence_group->get_running_sequences().at(0);
 
@@ -316,16 +389,8 @@ InputTensors Eagle3InputBuilder::build_target_validation_inputs() const {
 
     // 4. eagle_tree_mask: square shape {1, 1, num_candidates, num_candidates}.
     //    Only encodes tree ancestor relationships among current candidates.
-    const float neg_inf = -std::numeric_limits<float>::infinity();
-    result.eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, num_candidates, num_candidates});
-    float* mask_ptr = result.eagle_tree_mask.data<float>();
-
-    for (size_t i = 0; i < num_candidates; ++i) {
-        float* row = mask_ptr + i * num_candidates;
-        for (size_t j = 0; j < num_candidates; ++j) {
-            row[j] = (tree_mask_bin[i][j] == 1) ? 0.0f : neg_inf;
-        }
-    }
+    result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, num_candidates, num_candidates});
+    fill_tree_mask_from_bin(result.eagle_tree_mask, tree_mask_bin);
 
     return result;
 }
@@ -355,6 +420,18 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ModelDesc& model_desc)
         m_request =
             utils::singleton_core().compile_model(model_desc.model, m_device, m_properties).create_infer_request();
     }
+
+    // Cache Eagle3 port types; precision follows the IR.
+    const auto compiled_model = m_request.get_compiled_model();
+    m_eagle_tree_mask_type = compiled_model.input("eagle_tree_mask").get_element_type();
+    m_hidden_output_type = compiled_model.output("last_hidden_state").get_element_type();
+    m_logits_type = compiled_model.output("logits").get_element_type();
+    OPENVINO_ASSERT(m_eagle_tree_mask_type == ov::element::f32 || m_eagle_tree_mask_type == ov::element::f16,
+                    "eagle_tree_mask element type must be f32 or f16, got ",
+                    m_eagle_tree_mask_type);
+    OPENVINO_ASSERT(m_hidden_output_type == ov::element::f32 || m_hidden_output_type == ov::element::f16,
+                    "last_hidden_state element type must be f32 or f16, got ",
+                    m_hidden_output_type);
 
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.tokenization_durations = {MicroSeconds(0.0f)};
@@ -704,15 +781,12 @@ InferenceOutput Eagle3TargetWrapper::infer(const InputTensors& inputs) {
 // Dispatched by ctx.num_tokens_to_validate: 0 = prefill, >0 = tree validation.
 // Hidden states are stored to the target sequence for the next DRAFT_INITIAL pass.
 InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
-    Eagle3InputBuilder builder(m_sequence_group);
-
     const bool is_validation = ctx.num_tokens_to_validate > 0;
-    const InputTensors inputs =
-        is_validation ? builder.build_target_validation_inputs() : builder.build_target_prefill_inputs();
+    const InputTensors inputs = is_validation ? build_validation_inputs() : build_prefill_inputs();
 
     auto output = infer(inputs);
 
-    // Strip NPU output padding: prefill uses last 1 position, validation uses all candidates.
+    // Trim padded outputs: prefill uses last 1 position, validation uses all candidates.
     const size_t num_candidates = is_validation ? inputs.input_ids.get_shape()[1] : 1;
     output.logits = trim_tensor_tail(output.logits, num_candidates);
 
@@ -728,7 +802,17 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
 // Eagle3DraftWrapper
 // ---------------------------------------------------------------------------
 
-Eagle3DraftWrapper::Eagle3DraftWrapper(const ov::genai::ModelDesc& model_desc) : Eagle3InferWrapperBase(model_desc) {}
+Eagle3DraftWrapper::Eagle3DraftWrapper(const ov::genai::ModelDesc& model_desc) : Eagle3InferWrapperBase(model_desc) {
+    // Draft `hidden_states` input receives the target's `last_hidden_state` output verbatim,
+    // so the two precisions must match.
+    m_hidden_input_type = m_request.get_compiled_model().input("hidden_states").get_element_type();
+    OPENVINO_ASSERT(m_hidden_input_type == m_hidden_output_type,
+                    "Draft `hidden_states` input type (",
+                    m_hidden_input_type,
+                    ") must match target `last_hidden_state` output type (",
+                    m_hidden_output_type,
+                    ")");
+}
 
 void Eagle3DraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config) {
     const auto& shape = input_ids.get_shape();
@@ -757,12 +841,14 @@ void Eagle3DraftWrapper::allocate_buffers(size_t max_sequences,
     m_hidden_size = hidden_size;
     m_vocab_size = vocab_size;
 
-    m_logits_gather_buf = ov::Tensor(ov::element::f32, {1, max_sequences, vocab_size});
-    m_hidden_concat_buf = ov::Tensor(ov::element::f32, {1, max_sequences * max_depth, hidden_size});
+    // `m_logits_gather_buf` holds raw logits; the hidden buffers feed the draft's
+    // `hidden_states` input directly — allocate with the matching model precisions.
+    m_logits_gather_buf = ov::Tensor(m_logits_type, {1, max_sequences, vocab_size});
+    m_hidden_concat_buf = ov::Tensor(m_hidden_input_type, {1, max_sequences * max_depth, hidden_size});
 
     m_per_seq_hidden_bufs.resize(max_sequences);
     for (size_t i = 0; i < max_sequences; ++i) {
-        m_per_seq_hidden_bufs[i] = ov::Tensor(ov::element::f32, {1, max_depth, hidden_size});
+        m_per_seq_hidden_bufs[i] = ov::Tensor(m_hidden_input_type, {1, max_depth, hidden_size});
     }
 
     m_buffers_allocated = true;
@@ -827,19 +913,21 @@ ov::Tensor Eagle3DraftWrapper::prepare_hidden_states(const InferContext& ctx) {
         m_hidden_concat_buf.set_shape({1, total_seq_len, hidden_size});
         concat_buf = m_hidden_concat_buf;
     } else {
-        concat_buf = ov::Tensor(ov::element::f32, {1, total_seq_len, hidden_size});
+        concat_buf = ov::Tensor(m_hidden_input_type, {1, total_seq_len, hidden_size});
     }
 
     // Concatenate per-sequence hidden states into a contiguous tensor matching
-    // the flat input_ids layout expected by the draft model.
+    // the flat input_ids layout expected by the draft model.  Byte-based copy so
+    // f32 / f16 both work; src/dst types match by construction.
+    const size_t elem_size = concat_buf.get_element_type().size();
+    const size_t row_bytes = hidden_size * elem_size;
     size_t offset = 0;
     for (size_t i = 0; i < num_sequences; ++i) {
         const auto seq_hidden = running_sequences[i]->get_hidden_state();
         const size_t seq_len = seq_hidden.get_shape()[1];
-        const size_t copy_elems = seq_len * hidden_size;
-        std::memcpy(concat_buf.data<float>() + offset * hidden_size,
-                    seq_hidden.data<const float>(),
-                    copy_elems * sizeof(float));
+        std::memcpy(static_cast<uint8_t*>(concat_buf.data()) + offset * row_bytes,
+                    seq_hidden.data(),
+                    seq_len * row_bytes);
         offset += seq_len;
     }
 
@@ -855,12 +943,13 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
         const auto& h_shape = output.hidden_features.get_shape();
         const auto root_hidden = slice_hidden_state(output.hidden_features, h_shape[1] - 1);
         const size_t hidden_size = h_shape[2];
+        const size_t row_bytes = hidden_size * root_hidden.get_element_type().size();
 
         for (size_t i = 0; i < num_sequences; ++i) {
             if (m_buffers_allocated && i < m_per_seq_hidden_bufs.size()) {
                 // Use pre-allocated buffer: set shape to {1, 1, H} and copy root.
                 m_per_seq_hidden_bufs[i].set_shape({1, 1, hidden_size});
-                std::memcpy(m_per_seq_hidden_bufs[i].data(), root_hidden.data(), hidden_size * sizeof(float));
+                std::memcpy(m_per_seq_hidden_bufs[i].data(), root_hidden.data(), row_bytes);
                 running_sequences[i]->update_hidden_state(m_per_seq_hidden_bufs[i]);
             } else {
                 running_sequences[i]->update_hidden_state(root_hidden);
@@ -890,6 +979,7 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
                     ")");
     const size_t hidden_size = hidden_shape[2];
     const size_t new_len = branch_len + 1;
+    const size_t row_bytes = hidden_size * output.hidden_features.get_element_type().size();
 
     for (size_t i = 0; i < num_sequences; ++i) {
         // The last branch token for sequence i sits at (i+1)*branch_len - 1.
@@ -903,15 +993,15 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
             if (existing.data() != m_per_seq_hidden_bufs[i].data()) {
                 std::memcpy(m_per_seq_hidden_bufs[i].data(),
                             existing.data(),
-                            branch_len * hidden_size * sizeof(float));
+                            branch_len * row_bytes);
             }
             copy_hidden_state_row(output.hidden_features, last_tok_pos, m_per_seq_hidden_bufs[i], branch_len);
             running_sequences[i]->update_hidden_state(m_per_seq_hidden_bufs[i]);
         } else {
             // Fallback: allocate new tensor.
-            ov::Tensor updated(ov::element::f32, {1, new_len, hidden_size});
+            ov::Tensor updated(output.hidden_features.get_element_type(), {1, new_len, hidden_size});
             const auto existing = running_sequences[i]->get_hidden_state();
-            std::memcpy(updated.data(), existing.data(), branch_len * hidden_size * sizeof(float));
+            std::memcpy(updated.data(), existing.data(), branch_len * row_bytes);
             copy_hidden_state_row(output.hidden_features, last_tok_pos, updated, branch_len);
             running_sequences[i]->update_hidden_state(updated);
         }
@@ -954,17 +1044,22 @@ ov::Tensor Eagle3DraftWrapper::gather_logits_for_sampling(const InferenceOutput&
         m_logits_gather_buf.set_shape({1, num_sequences, vocab_size});
         gather_buf = m_logits_gather_buf;
     } else {
-        gather_buf = ov::Tensor(ov::element::f32, {1, num_sequences, vocab_size});
+        gather_buf = ov::Tensor(output.logits.get_element_type(), {1, num_sequences, vocab_size});
     }
 
-    const float* src = output.logits.data<const float>();
-    float* dst = gather_buf.data<float>();
+    OPENVINO_ASSERT(gather_buf.get_element_type() == output.logits.get_element_type(),
+                    "Logits gather buffer type mismatch");
+
+    const size_t elem_size = gather_buf.get_element_type().size();
+    const size_t row_bytes = vocab_size * elem_size;
+    const auto* src = static_cast<const uint8_t*>(output.logits.data());
+    auto* dst = static_cast<uint8_t*>(gather_buf.data());
 
     for (size_t s = 0; s < num_sequences; ++s) {
         // Each sequence occupies [s*prev_branch_len, (s+1)*prev_branch_len) in the flat layout;
         // take the last position of each sequence's branch.
         const size_t flat_pos = (s + 1) * prev_branch_len - 1;
-        std::copy_n(src + flat_pos * vocab_size, vocab_size, dst + s * vocab_size);
+        std::memcpy(dst + s * row_bytes, src + flat_pos * row_bytes, row_bytes);
     }
 
     return gather_buf;
@@ -981,11 +1076,9 @@ ov::Tensor Eagle3DraftWrapper::gather_logits_for_sampling(const InferenceOutput&
 // Hidden states are updated BEFORE sampling so that sequence forks (from tree search)
 // inherit the correct state.
 InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
-    Eagle3InputBuilder builder(m_sequence_group);
-
     const InputTensors inputs = ctx.use_target_hidden
-                                    ? builder.build_draft_initial_inputs(ctx.input_token_count)
-                                    : builder.build_draft_iteration_inputs(ctx.past_accepted_token_count);
+                                    ? build_initial_inputs(ctx.input_token_count)
+                                    : build_iteration_inputs(ctx.past_accepted_token_count);
 
     const ov::Tensor hidden_states = prepare_hidden_states(ctx);
     auto output = infer(inputs, hidden_states);
@@ -1171,9 +1264,6 @@ int64_t StatefulEagle3LLMPipeline::run_prefill() {
     if (!m_draft->buffers_allocated()) {
         const auto& h_shape = prefill_result.output.hidden_features.get_shape();
         OPENVINO_ASSERT(h_shape.size() == 3, "hidden_features must be rank-3, got rank ", h_shape.size());
-        OPENVINO_ASSERT(prefill_result.output.hidden_features.get_element_type() == ov::element::f32,
-                        "Eagle3 pipeline requires f32 hidden states, got ",
-                        prefill_result.output.hidden_features.get_element_type());
         const size_t hidden_size = h_shape[2];
 
         const auto& l_shape = prefill_result.output.logits.get_shape();
@@ -1186,9 +1276,10 @@ int64_t StatefulEagle3LLMPipeline::run_prefill() {
                                   vocab_size);
 
         // Pre-allocate accepted hidden state buffer for gather_accepted_hidden_states().
-        // Sized to compile-time max to handle any valid runtime config.
+        // Sized to compile-time max; precision follows the target's `last_hidden_state` output.
         const size_t max_accepted = m_compile_config.max_assistant_tokens + 1;
-        m_accepted_hidden_buf = ov::Tensor(ov::element::f32, {1, max_accepted, hidden_size});
+        m_accepted_hidden_buf =
+            ov::Tensor(m_target->hidden_output_type(), {1, max_accepted, hidden_size});
     }
 
     return initial_token;
@@ -1455,9 +1546,13 @@ void StatefulEagle3LLMPipeline::gather_accepted_hidden_states(const ValidationRe
 
     // Reuse pre-allocated buffer to avoid per-iteration heap allocation.
     // Maximum tokens is bounded by num_assistant_tokens + 1.
+    OPENVINO_ASSERT(m_accepted_hidden_buf.get_element_type() == current_hidden.get_element_type(),
+                    "Accepted hidden buffer type mismatch");
     m_accepted_hidden_buf.set_shape({1, total_accepted_tokens, hidden_size});
-    const float* src = current_hidden.data<const float>();
-    float* dst = m_accepted_hidden_buf.data<float>();
+    const size_t elem_size = current_hidden.get_element_type().size();
+    const size_t row_bytes = hidden_size * elem_size;
+    const auto* src = static_cast<const uint8_t*>(current_hidden.data());
+    auto* dst = static_cast<uint8_t*>(m_accepted_hidden_buf.data());
 
     for (size_t i = 0; i < total_accepted_tokens; ++i) {
         const size_t row = validated_indices[i];
@@ -1469,7 +1564,7 @@ void StatefulEagle3LLMPipeline::gather_accepted_hidden_states(const ValidationRe
                         " is out of range [0, ",
                         h_shape[1],
                         ")");
-        std::copy_n(src + row * hidden_size, hidden_size, dst + i * hidden_size);
+        std::memcpy(dst + i * row_bytes, src + row * row_bytes, row_bytes);
     }
     m_target->get_current_sequence()->update_hidden_state(m_accepted_hidden_buf);
 

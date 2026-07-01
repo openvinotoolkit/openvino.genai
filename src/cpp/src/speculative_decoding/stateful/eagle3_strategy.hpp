@@ -70,41 +70,6 @@ struct SpeculativeResult {
 };
 
 // ---------------------------------------------------------------------------
-// Eagle3InputBuilder — stateless input tensor construction
-// ---------------------------------------------------------------------------
-
-/// @brief Constructs model input tensors for each Eagle3 inference phase.
-///
-/// Each method reads sequence state (prompt ids, generated ids, TreeMetaData)
-/// and produces a complete InputTensors bundle.
-class Eagle3InputBuilder {
-public:
-    explicit Eagle3InputBuilder(const SequenceGroup::Ptr& sequence_group) : m_sequence_group(sequence_group) {}
-
-    /// @brief Builds inputs for TARGET_PREFILL phase.
-    ///
-    /// Precondition: generated_ids is empty (called immediately after initialize_sequence).
-    /// Produces causal inputs covering the full prompt; no tree attention mask.
-    InputTensors build_target_prefill_inputs() const;
-
-    /// @brief Builds inputs for the first draft pass of each speculative window.
-    ///
-    /// Uses target hidden states instead of the draft model's own hidden states.
-    /// Submits the last input_token_count tokens from the draft sequence; no tree attention mask.
-    InputTensors build_draft_initial_inputs(size_t input_token_count) const;
-
-    /// @brief Builds inputs for DRAFT_ITERATION: flat-concatenated branch tokens across all sequences.
-    /// @param past_accepted_token_count Tokens already in the draft KV cache.
-    InputTensors build_draft_iteration_inputs(size_t past_accepted_token_count) const;
-
-    /// @brief Builds inputs for TARGET_VALIDATION: all N+1 tree candidates with tree attention mask.
-    InputTensors build_target_validation_inputs() const;
-
-private:
-    SequenceGroup::Ptr m_sequence_group;
-};
-
-// ---------------------------------------------------------------------------
 // Eagle3InferWrapperBase — shared model-wrapper infrastructure
 // ---------------------------------------------------------------------------
 
@@ -121,6 +86,21 @@ public:
 
     const std::string& device() const {
         return m_device;
+    }
+
+    /// @brief Element type of the `eagle_tree_mask` model input from the compiled model.
+    ov::element::Type eagle_tree_mask_type() const {
+        return m_eagle_tree_mask_type;
+    }
+
+    /// @brief Element type of the `last_hidden_state` model output from the compiled model.
+    ov::element::Type hidden_output_type() const {
+        return m_hidden_output_type;
+    }
+
+    /// @brief Element type of the `logits` model output from the compiled model.
+    ov::element::Type logits_type() const {
+        return m_logits_type;
     }
 
     /// @brief Sets draft-to-target token mapping for sampler.
@@ -268,6 +248,10 @@ protected:
     ov::genai::utils::KVAxesPosition m_kv_axes_pos;
     size_t m_max_prompt_len = 0;
 
+    ov::element::Type m_eagle_tree_mask_type;
+    ov::element::Type m_hidden_output_type;
+    ov::element::Type m_logits_type;
+
     SequenceGroup::Ptr m_sequence_group;
     Sampler m_sampler;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
@@ -295,6 +279,13 @@ public:
     InferenceOutput infer(const InputTensors& inputs);
 
     InferResult forward(const InferContext& ctx) override;
+
+private:
+    /// @brief Builds inputs for TARGET_PREFILL: full prompt, causal, no tree mask.
+    InputTensors build_prefill_inputs() const;
+
+    /// @brief Builds inputs for TARGET_VALIDATION: N+1 tree candidates with tree attention mask.
+    InputTensors build_validation_inputs() const;
 };
 
 // ---------------------------------------------------------------------------
@@ -310,6 +301,11 @@ class Eagle3DraftWrapper : public Eagle3InferWrapperBase {
 public:
     explicit Eagle3DraftWrapper(const ov::genai::ModelDesc& model_desc);
     ~Eagle3DraftWrapper() override = default;
+
+    /// @brief Element type of the draft's `hidden_states` model input.
+    ov::element::Type hidden_input_type() const {
+        return m_hidden_input_type;
+    }
 
     /// @brief Initializes sequence using tokens[1:] per Eagle3 spec.
     void initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config);
@@ -327,6 +323,14 @@ public:
     void allocate_buffers(size_t max_sequences, size_t max_depth, size_t hidden_size, size_t vocab_size);
 
 private:
+    /// @brief Builds inputs for the first draft pass of each speculative window.
+    /// Uses target hidden states; no tree attention mask.
+    InputTensors build_initial_inputs(size_t input_token_count) const;
+
+    /// @brief Builds inputs for DRAFT_ITERATION: flat-concatenated branch tokens across all sequences.
+    /// @param past_accepted_token_count Tokens already in the draft KV cache.
+    InputTensors build_iteration_inputs(size_t past_accepted_token_count) const;
+
     /// @brief Prepares hidden states for the current forward pass.
     /// DRAFT_INITIAL: returns the target model's hidden state directly.
     /// DRAFT_ITERATION: concatenates per-sequence hidden states into a flat tensor.
@@ -350,6 +354,7 @@ private:
     size_t m_hidden_size = 0;
     size_t m_vocab_size = 0;
     bool m_buffers_allocated = false;
+    ov::element::Type m_hidden_input_type;
 
 public:
     /// @brief Returns true if pre-allocated buffers have been initialized.
