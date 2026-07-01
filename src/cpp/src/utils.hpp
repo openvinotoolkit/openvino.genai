@@ -248,6 +248,13 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const KVAxesPosition& kv_pos,
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
 
+/// @brief Add the NPUW properties needed to run a text reranking model on NPU.
+/// A reranker is a plain causal LM, so it must run through NPUW; NPUW_TEXT_RERANK tags it as a
+/// non-generating scoring model so the plugin wraps the request in its batched-scoring element,
+/// letting a single [N, L] batch be scored on a device that only compiles batch size 1.
+/// Existing properties are preserved (caller-provided values take precedence).
+void update_npu_config_text_rerank(ov::AnyMap& config);
+
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
 /// Another difference is that the alternative value is shared between all instances of SharedOptional like std::shared_ptr.
