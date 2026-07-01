@@ -3,16 +3,16 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <filesystem>
-#include <sstream>
-#include <vector>
 #include <iterator>
-#include <algorithm>
-
 #include <openvino/runtime/tensor.hpp>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "openvino/genai/tokenizer.hpp"
 
@@ -81,6 +81,63 @@ inline void print_tensor(std::string name, ov::Tensor tensor) {
         print_tensor<bool>(tensor);
     } else if (tensor.get_element_type() == ov::element::f16) {
         print_tensor<ov::float16>(tensor);
+    }
+}
+
+template <typename T>
+void print_tensor_stats(const ov::Tensor& tensor) {
+    const auto* data = tensor.data<T>();
+    const size_t size = tensor.get_size();
+
+    if (size == 0) {
+        std::cout << " [empty tensor]" << std::endl;
+        return;
+    }
+
+    T min = data[0];
+    T max = data[0];
+    double sum = 0.0;
+    for (size_t i = 0; i < size; ++i) {
+        if (data[i] < min)
+            min = data[i];
+        if (data[i] > max)
+            max = data[i];
+        sum += data[i];
+    }
+    double mean = sum / size;
+
+    double sq_sum = 0.0;
+    for (size_t i = 0; i < size; ++i) {
+        sq_sum += (data[i] - mean) * (data[i] - mean);
+    }
+    double _std = std::sqrt(sq_sum / size);
+
+    std::cout << ": " << mean << "-+" << _std << ", " << min << "/" << max << ", [";
+    for (size_t i = 0; i < std::min(size, size_t(5)); ++i) {
+        std::cout << data[i] << " ";
+    }
+    std::cout << "], [";
+    for (size_t i = (size > 5 ? size - 5 : 0); i < size; ++i) {
+        std::cout << data[i] << " ";
+    }
+    std::cout << "]" << std::endl;
+}
+
+inline void print_tensor_stats(std::string name, const ov::Tensor& tensor) {
+    // print basic stats of tensor, such as min, max, mean, std, 5 first/last elements
+    // <tensor name> [<shape>]: <mean>-+<std>, <min>/<max>, [first 5 elements], [last 5 elements]
+    std::cout << name;
+    std::cout << " " << tensor.get_shape().to_string();
+    if (tensor.get_element_type() == ov::element::i32) {
+        print_tensor_stats<int>(tensor);
+    } else if (tensor.get_element_type() == ov::element::i64) {
+        print_tensor_stats<int64_t>(tensor);
+    } else if (tensor.get_element_type() == ov::element::f32) {
+        print_tensor_stats<float>(tensor);
+    } else if (tensor.get_element_type() == ov::element::boolean) {
+        print_tensor_stats<bool>(tensor);
+    } else if (tensor.get_element_type() == ov::element::f16) {
+        print_tensor_stats<ov::float16>(tensor);
     }
 }
 
@@ -226,10 +283,7 @@ inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
     float max_diff = 0.0f;
     for (size_t idx = 0; idx < lhs.get_size(); ++idx) {
         OPENVINO_SUPPRESS_DEPRECATED_START
-        max_diff = std::max(
-            max_diff,
-            std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx])
-        );
+        max_diff = std::max(max_diff, std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx]));
         OPENVINO_SUPPRESS_DEPRECATED_END
     }
     return max_diff;
@@ -247,4 +301,4 @@ inline ostream& operator<<(ostream& os, const vector<float>& floats) {
     copy(floats.begin(), floats.end(), ostream_iterator<float>(os, " "));
     return os;
 }
-}
+}  // namespace std
