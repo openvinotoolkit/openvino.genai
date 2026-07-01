@@ -6,6 +6,8 @@ argument-hint: "model_dir and log_info (e.g. /path/to/tencent_HY-MT1.5-1.8B /pat
 
 # LLM Bench Fail Analyzer
 
+<!-- SECTION-START: triage -->
+
 Analyzes failed llm bench results for models, which were run with transformers, optimum-intel or GenAI backends; Provides fixes or insights for troubleshooting.
 
 ## When to Use
@@ -66,8 +68,12 @@ When analyzing failures and implementing fixes, refer to the following key locat
 
 **Use this reference throughout Steps 1-3 when analyzing logs and identifying where to implement fixes.**
 
+<!-- SECTION-END: triage -->
+
 
 ## Procedure
+
+<!-- SECTION-START: implementation -->
 
 
 ### Step 1: Analyze the logs
@@ -78,6 +84,10 @@ If the logs for llm_bench don't contain failures, proceed to Step 2. Otherwise, 
   - Define whether fail relates to llm_bench or backend/model.
   - If it's a llm_bench bug/limitation, implement necessary fixes to llm_bench tool. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running llm_bench tool with corresponding cmd parameters.
   - If it's a model issue or backend limitation, provide description in the report.
+
+<!-- SECTION-END: implementation -->
+
+<!-- SECTION-START: reporting -->
 
 
 ### Step 2: Report Results
@@ -100,3 +110,5 @@ Results format:
 
 - **NEVER** install any packages. Assume the environment is pre-configured.
 - **NEVER** modify `model_dir` — pass it exactly as provided by the user.
+
+<!-- SECTION-END: reporting -->

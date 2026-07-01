@@ -1,0 +1,13 @@
+{
+  "skill": "vlm-model-enabler",
+  "section_file": ".github/skills/vlm-model-enabler/SKILL.md",
+  "sections": [
+    {"name": "overview", "description": "Input contract, working directory, rules, and references for VLM enablement."},
+    {"name": "model_analysis", "description": "Create the static .model_analysis upstream report from installed Transformers/Optimum sources and exported IR, then append the GenAI enablement design."},
+    {"name": "text_only_inference", "description": "Implement text-only VLMPipeline behavior, compare deterministic output with Optimum, and debug token/template/position mismatches."},
+    {"name": "image_text_inference", "description": "Implement preprocessing, vision encoding, and embedding merge, then run image-text smoke/comparison tests and debug unrelated output."},
+    {"name": "accuracy_verification", "description": "Run WWB HF, Optimum, and GenAI accuracy checks and interpret similarity."},
+    {"name": "repository_tests", "description": "Add tiny-random Python VLM coverage, run a narrow pytest target, and add a dedicated CI matrix entry when model-specific dependencies are required."},
+    {"name": "final_deliverables", "description": "Final checklist before declaring VLM model support enabled."}
+  ]
+}

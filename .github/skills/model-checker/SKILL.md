@@ -6,6 +6,8 @@ argument-hint: "model_id and task (e.g. tencent/HY-MT1.5-1.8B text-generation-wi
 
 # Model Checker
 
+<!-- SECTION-START: overview -->
+
 Validates that a HuggingFace model exported via optimum-intel works correctly with OpenVINO GenAI pipelines and passes accuracy benchmarks.
 
 ## When to Use
@@ -41,7 +43,11 @@ Ensure the Python virtual environment is activated before running any commands.
    - **Windows (PowerShell)**: `<venv_path>\Scripts\Activate.ps1`
 4. The background terminal doesn't inherit the venv activation. Run it with the venv activated in the same command.
 
+<!-- SECTION-END: overview -->
+
 ## Procedure
+
+<!-- SECTION-START: run_checker -->
 
 ### Step 1: Run check_model.py
 
@@ -69,6 +75,10 @@ When a previous run already passed some steps (e.g. export succeeded but inferen
 
 Do **not** use skip flags on the first run. Only use them when retrying after a targeted fix.
 
+<!-- SECTION-END: run_checker -->
+
+<!-- SECTION-START: interpret_results -->
+
 ### Step 2: Interpret Results
 
 The script logs progress for each step and exits with code 0 (pass) or non-zero (fail).
@@ -92,6 +102,10 @@ The script logs progress for each step and exits with code 0 (pass) or non-zero 
 
 **work-dir:** work-dir is in current workspace, prefer to use tool calls to access logs and outputs instead of custom bash commands.
 
+<!-- SECTION-END: interpret_results -->
+
+<!-- SECTION-START: report_and_security -->
+
 ### Step 3: Report Results
 
 Results format:
@@ -108,3 +122,5 @@ Results format:
 
 - **NEVER** invoke `optimum-cli`, `wwb`, or `llm_bench` directly. Always go through `check_model.py`.
 - **NEVER** modify `model_id` — pass it exactly as provided by the user.
+
+<!-- SECTION-END: report_and_security -->
