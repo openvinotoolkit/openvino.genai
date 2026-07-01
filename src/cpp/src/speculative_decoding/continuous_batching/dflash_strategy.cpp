@@ -268,6 +268,9 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     m_tokenizer = main_model_desc.tokenizer;
     auto main_generation_config = main_model_desc.generation_config;
     dflash_cb::ensure_num_assistant_tokens_is_set(main_generation_config);
+    OPENVINO_ASSERT(main_model_desc.scheduler_config.max_num_batched_tokens >= main_generation_config.num_assistant_tokens + 1,
+                    "DFlash CB/PA requires max_num_batched_tokens >= num_assistant_tokens + 1 while it is limited ",
+                    "to one active request and one running sequence.");
     m_generation_config = main_generation_config;
     auto target_scheduler_config = main_model_desc.scheduler_config;
     target_scheduler_config.num_linear_attention_blocks =
