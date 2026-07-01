@@ -67,6 +67,7 @@ void ASRGenerationConfig::update_generation_config(const ov::AnyMap& config_map)
     read_anymap_param(config_map, "alignment_heads", alignment_heads);
     read_anymap_param(config_map, "initial_prompt", initial_prompt);
     read_anymap_param(config_map, "hotwords", hotwords);
+    read_anymap_param(config_map, "context", context);
 
     GenerationConfig::update_generation_config(config_map);
 }
@@ -74,42 +75,12 @@ void ASRGenerationConfig::update_generation_config(const ov::AnyMap& config_map)
 void ASRGenerationConfig::validate() const {
     GenerationConfig::validate();
 
-    // validation is model specific. We can pass validation to specific model implementation. Although asr config is
-    // multi model on purpose. consider moving validation
-    if (is_multilingual) {
-        OPENVINO_ASSERT(!lang_to_id.empty(),
-                        "'lang_to_id' map must be provided for multilingual models.\n"
-                        "'lang_to_id' map can be provided as custom std::map<std::string, int64_t>\n"
-                        "Or initialized from generation_config.json:\n"
-                        "ov::genai::ASRGenerationConfig config{models_path / \"generation_config.json\"};");
-    }
-
-    if (is_multilingual && language.has_value()) {
-        OPENVINO_ASSERT(lang_to_id.count(*language),
-                        "'language' " + *language + " must be provided in 'lang_to_id' map.");
-    }
-
-    if (is_multilingual && task.has_value()) {
-        OPENVINO_ASSERT(*task == "transcribe" || *task == "translate",
-                        "'task' must be 'transcribe' or 'translate'. Task provided: '",
-                        *task,
-                        "'.");
-    }
-
-    if (!is_multilingual) {
-        OPENVINO_ASSERT(!language.has_value(), "Cannot specify 'language' for not multilingual model.");
-        OPENVINO_ASSERT(!task.has_value(), "Cannot specify 'task' for not multilingual model.");
-    }
-
     OPENVINO_ASSERT(num_return_sequences == 1,
                     "'num_return_sequences' must be 1. Provided: ",
                     num_return_sequences,
                     ".");
 
     OPENVINO_ASSERT(!is_assisting_generation(), "Assisted generation is not supported.");
-
-    OPENVINO_ASSERT(!word_timestamps || !alignment_heads.empty(),
-                    "'word_timestamps' can be true only when 'alignment_heads' is set and not empty.");
 }
 
 std::pair<std::string, ov::Any> generation_config(const ASRGenerationConfig& config) {
