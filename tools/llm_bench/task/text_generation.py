@@ -21,11 +21,24 @@ from llm_bench_utils.prompt_utils import get_text_prompt
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 _SD_SUPPORTED_KEYS = {
-    "num_assistant_tokens",
-    "assistant_confidence_threshold",
-    "branching_factor",
-    "tree_depth",
+    "num_assistant_tokens": int,
+    "assistant_confidence_threshold": float,
+    "branching_factor": int,
+    "tree_depth": int,
 }
+
+
+def _validate_sd_config_value(key, value, expected_type):
+    """Validate a value from --sd_generation_config. Reject bool/str for numeric keys."""
+    if isinstance(value, bool):
+        raise ValueError(f"'{key}' in --sd_generation_config must be a {expected_type.__name__}, got bool")
+    if not isinstance(value, (int, float)):
+        raise ValueError(
+            f"'{key}' in --sd_generation_config must be a {expected_type.__name__}, got {type(value).__name__}"
+        )
+    if expected_type is int and isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"'{key}' in --sd_generation_config must be an integer, got {value}")
+    return expected_type(value)
 
 
 def apply_sd_generation_config(args, gen_config):
@@ -40,16 +53,9 @@ def apply_sd_generation_config(args, gen_config):
             if k not in _SD_SUPPORTED_KEYS:
                 log.warning(f"Key '{k}' in --sd_generation_config is not supported, skipping")
                 continue
-            if k == "num_assistant_tokens":
-                v = int(v)
-            elif k == "assistant_confidence_threshold":
-                v = float(v)
+            validated = _validate_sd_config_value(k, v, _SD_SUPPORTED_KEYS[k])
             if hasattr(gen_config, k):
-                setattr(
-                    gen_config,
-                    k,
-                    int(v) if isinstance(v, (int, float)) and k != "assistant_confidence_threshold" else v,
-                )
+                setattr(gen_config, k, validated)
             else:
                 log.warning(f"GenerationConfig has no attribute '{k}', skipping")
     config_info = "Speculative decoding config:"

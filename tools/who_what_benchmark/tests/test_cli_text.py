@@ -331,7 +331,9 @@ def sd_draft_model_path():
 SD_SIMILARITY_THRESHOLD = 0.9
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS")
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
 def test_text_genai_sd_generation_config_json_string(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config with JSON string for speculative decoding."""
     temp_file_name = tmp_path / "gt.csv"
@@ -376,7 +378,9 @@ def test_text_genai_sd_generation_config_json_string(tmp_path, sd_main_model_pat
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS")
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
 def test_text_genai_sd_generation_config_json_file(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config with JSON file for speculative decoding."""
     temp_file_name = tmp_path / "gt.csv"
@@ -423,7 +427,9 @@ def test_text_genai_sd_generation_config_json_file(tmp_path, sd_main_model_path,
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS")
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
 def test_text_genai_sd_generation_config_unsupported_key(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config warns on unsupported keys."""
     temp_file_name = tmp_path / "gt.csv"
@@ -465,7 +471,9 @@ def test_text_genai_sd_generation_config_unsupported_key(tmp_path, sd_main_model
     assert "not supported" in output
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS")
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
 def test_text_genai_sd_generation_config_override(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config overrides --num-assistant-tokens from cmdline."""
     temp_file_name = tmp_path / "gt.csv"
@@ -513,7 +521,9 @@ def test_text_genai_sd_generation_config_override(tmp_path, sd_main_model_path, 
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS")
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
 def test_text_genai_sd_generation_config_topk(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config with EAGLE3 Top-K parameters."""
     temp_file_name = tmp_path / "gt.csv"
@@ -558,7 +568,9 @@ def test_text_genai_sd_generation_config_topk(tmp_path, sd_main_model_path, sd_d
     assert similarity >= SD_SIMILARITY_THRESHOLD
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS")
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
 def test_text_genai_sd_generation_config_topk_file(tmp_path, sd_main_model_path, sd_draft_model_path):
     """Test --sd-generation-config Top-K via JSON file."""
     temp_file_name = tmp_path / "gt.csv"

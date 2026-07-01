@@ -26,6 +26,28 @@ from whowhatbench.utils import get_json_config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Supported keys for --sd-generation-config and their expected Python types.
+# Kept as a module-level constant so parsing/validation and the CLI help text stay in sync.
+SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
+    "num_assistant_tokens": int,
+    "assistant_confidence_threshold": float,
+    "branching_factor": int,
+    "tree_depth": int,
+}
+
+
+def _validate_sd_config_value(key, value, expected_type):
+    """Validate a value from --sd-generation-config. Reject bool/str for numeric keys."""
+    if isinstance(value, bool):
+        raise ValueError(f"'{key}' in --sd-generation-config must be a {expected_type.__name__}, got bool")
+    if not isinstance(value, (int, float)):
+        raise ValueError(
+            f"'{key}' in --sd-generation-config must be a {expected_type.__name__}, got {type(value).__name__}"
+        )
+    if expected_type is int and isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"'{key}' in --sd-generation-config must be an integer, got {value}")
+    return expected_type(value)
+
 
 def pruning_ratio_type(value: str) -> int:
     ivalue = int(value)
@@ -403,7 +425,12 @@ def parse_args():
         type=str,
         default=None,
         help="Path to JSON file or JSON string with speculative decoding generation config parameters. "
-        "Supported keys: 'num_assistant_tokens', 'assistant_confidence_threshold', 'branching_factor', 'tree_depth'. "
+        "Supported keys:\n"
+        "  - num_assistant_tokens (int): number of draft candidate tokens submitted to the target model per step.\n"
+        "  - assistant_confidence_threshold (float): draft-model confidence threshold for dynamic SD (0.0 disables).\n"
+        "  - branching_factor (int): EAGLE3 Top-K number of branches at each level of the candidate tree.\n"
+        "  - tree_depth (int): EAGLE3 Top-K lookahead depth of the candidate tree.\n"
+        "Any other keys will be ignored with a warning. "
         'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
 
@@ -1216,25 +1243,20 @@ def main():
         if not isinstance(gen_cfg, dict):
             raise ValueError(f"--sd-generation-config must be a JSON object, got {type(gen_cfg).__name__}")
         logger.info(f"sd_generation_config: {gen_cfg}")
-        _supported_keys = {
-            "num_assistant_tokens",
-            "assistant_confidence_threshold",
-            "branching_factor",
-            "tree_depth",
-        }
-        for k in gen_cfg:
-            if k not in _supported_keys:
+        validated = {}
+        for k, v in gen_cfg.items():
+            if k not in SD_GENERATION_CONFIG_SUPPORTED_KEYS:
                 logger.warning(f"Key '{k}' in --sd-generation-config is not supported, skipping")
-        if "num_assistant_tokens" in gen_cfg:
-            args.num_assistant_tokens = int(gen_cfg["num_assistant_tokens"])
+                continue
+            validated[k] = _validate_sd_config_value(k, v, SD_GENERATION_CONFIG_SUPPORTED_KEYS[k])
+        if "num_assistant_tokens" in validated:
+            args.num_assistant_tokens = validated["num_assistant_tokens"]
             logger.info(f"num_assistant_tokens (final): {args.num_assistant_tokens}")
-        if "assistant_confidence_threshold" in gen_cfg:
-            args.assistant_confidence_threshold = float(gen_cfg["assistant_confidence_threshold"])
+        if "assistant_confidence_threshold" in validated:
+            args.assistant_confidence_threshold = validated["assistant_confidence_threshold"]
             logger.info(f"assistant_confidence_threshold (final): {args.assistant_confidence_threshold}")
         args.generation_config_extra = {
-            k: v
-            for k, v in gen_cfg.items()
-            if k in _supported_keys and k not in ("num_assistant_tokens", "assistant_confidence_threshold")
+            k: v for k, v in validated.items() if k not in ("num_assistant_tokens", "assistant_confidence_threshold")
         }
     else:
         args.generation_config_extra = {}
