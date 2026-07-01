@@ -58,6 +58,8 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 
 > **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
 > **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode
+> **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.
+> **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
