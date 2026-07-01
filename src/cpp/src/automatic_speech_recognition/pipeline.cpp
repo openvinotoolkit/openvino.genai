@@ -3,17 +3,19 @@
 
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
+#include <chrono>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <unordered_map>
 
+#include "automatic_speech_recognition/models/qwen3-asr/pipeline.hpp"
+#include "automatic_speech_recognition/models/whisper/pipeline.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
-#include "automatic_speech_recognition/whisper_asr_pipeline_adapter.hpp"
 #include "utils.hpp"
 
 namespace {
 
-enum class ASRModelType { whisper };
+enum class ASRModelType { whisper, qwen3_asr };
 
 ASRModelType read_model_type(const std::filesystem::path& models_path) {
     auto config_path = models_path / "config.json";
@@ -26,6 +28,7 @@ ASRModelType read_model_type(const std::filesystem::path& models_path) {
 
     static const std::unordered_map<std::string, ASRModelType> model_types_map = {
         {"whisper", ASRModelType::whisper},
+        {"qwen3_asr", ASRModelType::qwen3_asr},
     };
 
     auto it = model_types_map.find(value);
@@ -49,12 +52,19 @@ namespace ov::genai {
 ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
                          const std::string& device,
                          const ov::AnyMap& properties) {
+    const auto start_time = std::chrono::steady_clock::now();
     switch (read_model_type(models_path)) {
     case ASRModelType::whisper: {
         m_impl = std::make_unique<WhisperASRPipelineAdapter>(models_path, device, properties);
         break;
     }
+    case ASRModelType::qwen3_asr: {
+        m_impl = std::make_unique<Qwen3ASR>(models_path, device, properties);
+        break;
     }
+    }
+    const auto stop_time = std::chrono::steady_clock::now();
+    m_impl->m_load_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
 }
 
 ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs,
