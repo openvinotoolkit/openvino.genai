@@ -17,7 +17,7 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         super().__init__(chat_mode)
 
     def update_chat_history_with_answer(self, answer):
-        pass
+        self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
 
     def _preprocess_non_chat_template(
         self,
@@ -47,8 +47,9 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
+        self.update_images(image)
         if getattr(processor, "chat_template", None) is None:
-            return self._preprocess_non_chat_template(text, image, processor)
+            return self._preprocess_non_chat_template(text, self.images, processor)
 
         content = []
         if image is not None:
@@ -57,7 +58,13 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
             content.extend({"type": "image", "image": img} for img in image)
         content.append({"type": "text", "text": text})
 
-        messages = [{"role": "user", "content": content}]
+        new_message = {"role": "user", "content": content}
+        if self.chat_mode:
+            self.chat_history.append(new_message)
+            messages = self.chat_history
+        else:
+            messages = [new_message]
+
         return processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
