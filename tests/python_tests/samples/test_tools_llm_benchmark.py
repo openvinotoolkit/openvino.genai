@@ -320,9 +320,27 @@ class TestBenchmarkLLM:
                 ],
                 False,
             ),
+            (
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--task",
+                    "text_to_speech",
+                    "--optimum",
+                    "--speech_voice",
+                    "tiny_voice",
+                    "--speech_language",
+                    "en-us",
+                    "--prompt",
+                    "Why is the Sun yellow?",
+                ],
+                False,
+            ),
         ],
     )
-    def test_python_tool_llm_benchmark_tts_kokoro_genai(
+    def test_python_tool_llm_benchmark_tts_kokoro(
         self,
         tiny_kokoro_ov_path: Path,
         tiny_kokoro_speaker_embedding_file_path: str,
