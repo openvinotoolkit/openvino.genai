@@ -260,7 +260,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             min_generated_tokens = result.inserted_tokens_cnt;
             running_sequences = request->get_running_sequences();
             min_candidate_len = result.inserted_tokens_cnt;
-            if (eagle_mode_enabled && !m_is_validation_mode_enabled) {
+            if ((eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled) {
                 m_model_runner->set_initial_hidden_state(request_id,
                                                      candidates.begin()->second.hidden_states);
             }
@@ -283,7 +283,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 candidate_token_log_probs.resize(min_candidate_len);
                 result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
                 // handle hidden states for eagle mode
-                if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for draft model
+                if ((eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for draft model
                     // at least there should be one bonus token from main
                     auto& hidden_state = candidate_sequence.hidden_states;
                     ov::Tensor pruned_hidden_state = truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
@@ -384,7 +384,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             raw_perf_metrics.m_batch_sizes.emplace_back(num_generated_tokens);
         }
 
-        if (eagle_mode_enabled)
+        if (eagle_mode_enabled || mtp_mode_enabled)
             m_model_runner->enable_hidden_state_import(false);
         to_generate = false;
         for (auto& request : m_requests) {
@@ -409,7 +409,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             to_generate |= request->can_generate_tokens();
         }
     }
-    if (eagle_mode_enabled)
+    if (eagle_mode_enabled || mtp_mode_enabled)
         m_model_runner->enable_hidden_state_import(true);
 }
 }

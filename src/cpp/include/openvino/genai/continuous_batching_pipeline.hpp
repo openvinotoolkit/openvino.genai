@@ -132,17 +132,21 @@ protected:
 
     class ContinuousBatchingForSpeculativeDecodingImpl;
     class ContinuousBatchingForEagle3DecodingImpl;
+    class ContinuousBatchingForMtpDecodingImpl;
     class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
     class Eagle3DecodingImpl;
+    class MtpDecodingImpl;
     class PromptLookupImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
-    
+
     friend class ContinuousBatchingForPromptLookupImpl;
     friend class ContinuousBatchingForEagle3DecodingImpl;
+    friend class ContinuousBatchingForMtpDecodingImpl;
     friend class SpeculativeDecodingImpl;
     friend class Eagle3DecodingImpl;
+    friend class MtpDecodingImpl;
     friend class PromptLookupImpl;
     friend class VLMPipeline;
     friend class ContinuousBatchingAdapter;
