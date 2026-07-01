@@ -734,6 +734,19 @@ void get_npu_text_embedding_config(ov::AnyMap& properties,
     update_npu_config_text_embedding(properties, kv_pos, kv_desc);
 }
 
+void update_npu_config_text_rerank(ov::AnyMap& config) {
+    // A reranker is a standard causal LM (no prefill-only rebuild, unlike embedding), so beyond
+    // routing it through NPUW the only extra it needs is the NPUW_TEXT_RERANK tag: that flags it
+    // as a non-generating scoring model, so the plugin wraps the request in its batched-scoring
+    // element (a [N, L] batch is unrolled into N independent [1, L] inferences with the KV-cache
+    // reset between rows, then stacked back into [N, ...]). The element derives the batch size
+    // from the input tensor, so no NPUW_LLM_BATCH_DIM/SEQ_LEN_DIM or prompt-length overrides are
+    // required here -- the NPUW defaults are correct for a causal LM.
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_LLM", "YES"});
+    update_config(config, {"NPUW_TEXT_RERANK", "YES"});
+}
+
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::shared_ptr<ov::Model>& model,
                                                                   const ov::AnyMap& config,
                                                                   const KVAxesPosition& kv_pos,
