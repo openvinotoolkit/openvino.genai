@@ -5,7 +5,7 @@ from transformers import (
     PreTrainedTokenizer,
 )
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Any
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -13,8 +13,12 @@ if TYPE_CHECKING:
 
 
 class Qwen2VLInputsPreprocessor(VLMInputsPreprocessor):
-    def __init__(self, chat_mode: bool = False):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         super().__init__(chat_mode)
+        if model is not None:
+            self.def_image_token_id = getattr(model.config, "image_token_id", 151655)
+        else:
+            self.def_image_token_id = 151655
 
     def update_chat_history_with_answer(self, answer):
         self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
@@ -67,6 +71,15 @@ class Qwen2VLInputsPreprocessor(VLMInputsPreprocessor):
             add_generation_prompt=True,
             tokenize=False,
         )
+
+        # Qwen2-VL-..-Instruct: have "role" in the template
+        # Qwen2-VL: don't have "role" in the template, text will be empty after applying the template
+        if not text_prompt.strip():
+            if self.chat_mode:
+                raise ValueError("Qwen2-VL is not supported chat, please, use Qwen2-VL Instruct version instead.")
+            text_prompt = processor.apply_chat_template(
+                new_message["content"], add_generation_prompt=True, tokenize=False
+            )
 
         inputs = processor(
             images=self.images,
