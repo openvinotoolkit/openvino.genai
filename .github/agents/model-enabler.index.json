@@ -2,20 +2,59 @@
   "agent": "model-enabler",
   "section_file": ".github/agents/model-enabler.agent.md",
   "sections": [
-    {"name": "role_and_inputs", "description": "Use at the start to understand the GenAI agent role, accepted model_id/task inputs, and local tiny model identity rules."},
-    {"name": "repo_setup", "description": "Use only after validation proves a local GenAI source edit is required."},
-    {"name": "validation", "description": "Use when deciding how to validate a HuggingFace model id or local model path before/after GenAI changes."},
-    {"name": "enablement", "description": "Use only when validation shows GenAI support is missing or inaccurate; then choose the smallest relevant skill section."},
-    {"name": "local_build", "description": "Use after editing OpenVINO GenAI source files to rebuild and validate the edited local package instead of stale installed packages."},
-    {"name": "repository_tests", "description": "Use after GenAI validation passes to add tiny-random repository tests, run narrow pytest coverage, and update model-specific CI dependencies when required."},
-    {"name": "docs_update", "description": "Use only after source support and validation pass, when updating supported-model documentation."},
-    {"name": "reporting_rules", "description": "Use only at the end, to prepare the changed-files summary and required JSON handoff."}
+    {
+      "name": "role_and_inputs",
+      "description": "Use at the start to understand the GenAI agent role, accepted model_id/task inputs, and local tiny model identity rules."
+    },
+    {
+      "name": "repo_setup",
+      "description": "Use only after validation proves a local GenAI source edit is required."
+    },
+    {
+      "name": "validation",
+      "description": "Use when deciding how to validate a HuggingFace model id or local model path before/after GenAI changes."
+    },
+    {
+      "name": "enablement",
+      "description": "Use only when validation shows GenAI support is missing or inaccurate; then choose the smallest relevant skill section."
+    },
+    {
+      "name": "local_build",
+      "description": "Use after editing OpenVINO GenAI source files to rebuild and validate the edited local package instead of stale installed packages."
+    },
+    {
+      "name": "repository_tests",
+      "description": "Use after GenAI validation passes to add tiny-random repository tests, run narrow pytest coverage, and update model-specific CI dependencies when required."
+    },
+    {
+      "name": "docs_update",
+      "description": "Use only after source support and validation pass, when updating supported-model documentation."
+    },
+    {
+      "name": "reporting_rules",
+      "description": "Use only at the end, to prepare the changed-files summary and required JSON handoff."
+    }
   ],
   "allowed_skill_indexes": [
-    {"path": ".github/skills/vlm-model-enabler/SKILL.index.json", "description": "Use only for image-text-to-text VLM enablement details."},
-    {"path": ".github/skills/model-checker/SKILL.index.json", "description": "Use only when running or interpreting model-checker validation."},
-    {"path": ".github/skills/wwb-fail-analyzer/SKILL.index.json", "description": "Use only after a WWB execution or similarity failure reaches GenAI."},
-    {"path": ".github/skills/llm-bench-fail-analyzer/SKILL.index.json", "description": "Use only after an llm_bench execution failure reaches GenAI."},
-    {"path": ".github/skills/update-docs/SKILL.index.json", "description": "Use only when updating supported-model documentation."}
+    {
+      "path": ".github/skills/vlm-model-enabler/SKILL.index.json",
+      "description": "Use only for image-text-to-text VLM enablement details."
+    },
+    {
+      "path": ".github/skills/model-checker/SKILL.index.json",
+      "description": "Use only when running or interpreting model-checker validation."
+    },
+    {
+      "path": ".github/skills/wwb-fail-analyzer/SKILL.index.json",
+      "description": "Use only after a WWB execution or similarity failure reaches GenAI."
+    },
+    {
+      "path": ".github/skills/llm-bench-fail-analyzer/SKILL.index.json",
+      "description": "Use only after an llm_bench execution failure reaches GenAI."
+    },
+    {
+      "path": ".github/skills/update-docs/SKILL.index.json",
+      "description": "Use only when updating supported-model documentation."
+    }
   ]
 }
