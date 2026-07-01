@@ -467,6 +467,16 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     models_path = _get_ov_model(ov_model)
 
+    pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
+    if "qwen3.5" in ov_model and ov_backend == "PA" and ov_prompt_lookup:
+        # qwen3.5 is a hybrid (linear-attention) model. Prompt lookup on the PA backend engages the
+        # linear-attention verifier, which does not yet support prefix caching. VLMPipeline enables
+        # prefix caching by default (latency-oriented scheduler config), so pass an explicit config
+        # with it disabled instead of relying on the default.
+        scheduler_config = SchedulerConfig()
+        scheduler_config.enable_prefix_caching = False
+        pipeline_properties["scheduler_config"] = scheduler_config
+
     vision_preprocess_env_set = False
     key = "VISION_PREPROCESS"
     if preprocess_method == "CPP":
@@ -476,7 +486,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
             vision_preprocess_env_set = True
 
     try:
-        pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend, prompt_lookup=ov_prompt_lookup)
+        pipeline = VLMPipeline(models_path, "CPU", **pipeline_properties)
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
