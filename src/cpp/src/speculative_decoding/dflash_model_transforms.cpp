@@ -158,6 +158,9 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
 
     info.dflash_mode = mode_it->second.as<bool>();
     config.erase(mode_it);
+    if (!info.dflash_mode) {
+        return info;
+    }
 
     auto mask_it = config.find("dflash_mask_token_id");
     OPENVINO_ASSERT(mask_it != config.end(), "DFlash draft model is missing dflash_mask_token_id RT info.");
