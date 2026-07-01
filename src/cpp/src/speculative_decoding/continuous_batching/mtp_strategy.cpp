@@ -14,10 +14,7 @@ namespace ov::genai {
 
 namespace {
 
-// Builds the MTP draft input embeds by dropping the first prompt embedding.
-// MTP at position i is trained to predict token[i+2] from hidden[i] + embed(token[i+1]); the
-// paired embedding stream is therefore the prompt embeddings shifted left by one, mirroring
-// EAGLE3's create_draft_input_ids shift but on the embeddings tensor.
+// Align hidden[t] with embed(token[t+1]).
 ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     const auto shape = input_embeds.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 1,
@@ -47,18 +44,13 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     const Tokenizer& main_model_tokenizer = main_model_desc.tokenizer;
     const Tokenizer& draft_model_tokenizer = draft_model_desc.tokenizer;
     m_tokenizer = main_model_tokenizer;
-    // The outer MTP impl exposes the embeddings input path, so the base string/chat generate overloads
-    // compute inputs_embeds via the shared embedder before dispatching to generate(input_embeds, ...).
     m_inputs_embedder = inputs_embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
 
-    // The exported MTP module simulates a low-precision KV cache with a no-op f32->bf16->f32 Convert
-    // round-trip on the KV-read path, which blocks SDPAToPagedAttention from matching the KV pattern.
-    // Remove it so the pure single-layer full-attention block converts cleanly.
+    // Strip exporter f32->bf16->f32 KV-cache round trips before PA conversion.
     utils::mtp::remove_roundtrip_converts(draft_model);
 
-    // Convert both models to paged attention first (matching the EAGLE3 ordering), then graft the
-    // lm_head onto the paged MTP draft.
+    // PA conversion must precede the MTP lm_head graft.
     bool allow_score_aggregation = true;
     bool allow_xattention = false;
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
@@ -67,16 +59,12 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
                                    allow_xattention).run_on_model(main_model);
     ov::pass::SDPAToPagedAttention(false, false, allow_score_aggregation, allow_xattention).run_on_model(draft_model);
 
-    // Graft the tied lm_head onto the MTP draft so it outputs `logits` in addition to `last_hidden_state`.
-    // The main VLM language model already outputs `last_hidden_state` natively, so no graft is needed there.
     utils::mtp::graft_lm_head_on_mtp(draft_model, main_model);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
 
-    // Give the main model most of the cache and the tiny hidden-state-driven MTP draft a small fixed
-    // slice. The default KV-hidden ratio split (init_speculative_models) over-allocates the draft and
-    // under-allocates the hybrid main model, so bypass it here.
+    // Bypass default KV-ratio split: MTP draft needs only a small cache slice.
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto draft_scheduler_config = main_scheduler_config;
     if (draft_model_desc.scheduler_config == SchedulerConfig()) {
@@ -118,13 +106,10 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
 void ContinuousBatchingPipeline::MtpDecodingImpl::enable_mtp_hidden_state_pairing() {
     auto main_mtp_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline);
     auto draft_mtp_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_draft_pipeline);
-    // Main model exports its last_hidden_state; the draft imports it for the first draft forward and
-    // reuses the internally stored hidden state for the remaining draft forwards.
     main_mtp_pipeline->set_hidden_state_export_needed(true);
     draft_mtp_pipeline->set_hidden_state_export_needed(true);
     draft_mtp_pipeline->set_hidden_state_import_needed(true);
     draft_mtp_pipeline->set_hidden_state_internal_needed(true);
-    // The MTP draft consumes plain sequential positions, not the main model's M-RoPE positions.
     draft_mtp_pipeline->set_mtp_draft_positions_needed(true);
 }
 
@@ -135,13 +120,11 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     std::optional<ov::Tensor> token_type_ids,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
-    // input_ids here is the main model's inputs_embeds tensor [1, seq, hidden] (EMBEDDINGS pipeline).
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
-    // The MTP draft is a plain attention model: it takes only shifted embeds, never token_type_ids /
-    // prompt_ids / lm_extra_inputs (those are vision/main-model specific).
+    // Draft gets shifted embeds only; VLM extras belong to the main model.
     ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params)});
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
@@ -151,9 +134,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const std::string& prompt,
     const ov::genai::GenerationConfig& sampling_params) {
-    // Serving-style string add_request: compute inputs_embeds (text-only) via the shared embedder,
-    // prime its position_ids, then delegate to the tensor overload. Mirrors the base embeddings path
-    // in IContinuousBatchingPipeline::add_request(prompt, images).
+    // Text-only serving path.
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs_embeds;
     std::optional<ov::Tensor> token_type_ids;
@@ -199,7 +180,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
         OPENVINO_ASSERT(main_cfg.is_greedy_decoding() && main_cfg.num_return_sequences == 1,
                         "MTP speculative decoding currently supports only greedy, batch-1 generation.");
         if (main_cfg.num_assistant_tokens == 0) {
-            main_cfg.num_assistant_tokens = 1;  // MTP drafts one token per step by design.
+            main_cfg.num_assistant_tokens = 1;
         }
         draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         draft_cfg.ignore_eos = true;

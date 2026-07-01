@@ -18,7 +18,6 @@ namespace mtp {
 
 namespace {
 
-// Finds the output node feeding the model Result with the given tensor name.
 ov::Output<ov::Node> find_result_source(const std::shared_ptr<ov::Model>& model, const std::string& tensor_name) {
     for (const auto& result : model->get_results()) {
         const auto source = result->input_value(0);
@@ -33,8 +32,7 @@ ov::Output<ov::Node> find_result_source(const std::shared_ptr<ov::Model>& model,
     return {};
 }
 
-// Recursively clones a node and all of its inputs, deep-copying Constants so the clone shares no
-// data with the source model.
+// Clone into the MTP model without sharing source-model constants.
 std::shared_ptr<ov::Node> clone_subgraph(const std::shared_ptr<ov::Node>& node,
                                          std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) {
     const auto it = cloned_nodes.find(node.get());
@@ -103,7 +101,6 @@ void remove_roundtrip_converts(const std::shared_ptr<ov::Model>& model) {
             continue;
         }
         const auto source = inner->input_value(0);
-        // Only a genuine no-op round-trip: the outer Convert restores the source's element type.
         if (source.get_element_type() != outer->get_output_element_type(0)) {
             continue;
         }
@@ -122,7 +119,6 @@ void graft_lm_head_on_mtp(std::shared_ptr<ov::Model>& mtp_model, const std::shar
     bool transpose_weight = false;
     const auto main_weight = extract_tied_lm_head_weight(main_model, transpose_weight);
 
-    // Clone the tied weight subgraph into the MTP model to avoid cross-model node references.
     std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
     auto cloned_weight = clone_subgraph(main_weight.get_node_shared_ptr(), cloned_nodes);
     OPENVINO_ASSERT(cloned_weight, "Failed to clone the tied lm_head weight into the MTP draft model.");

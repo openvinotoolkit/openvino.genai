@@ -8,16 +8,7 @@
 
 namespace ov::genai {
 
-/**
- * @brief Multi-Token Prediction (MTP) speculative-decoding strategy.
- *
- * Drafts speculative tokens with a single-layer MTP module that consumes the main model's
- * `last_hidden_state` plus the embedding of the main-predicted token. Reuses the EAGLE3 hidden-state
- * pairing machinery; distinct from EAGLE3 in that:
- *  - the main VLM `language_model` already outputs `last_hidden_state` (no hidden-state graft on main),
- *  - the MTP draft has no lm_head, so a tied-weight lm_head is grafted onto it at load,
- *  - both main and draft consume `inputs_embeds` from a shared `EmbeddingsModel`.
- */
+// MTP strategy: draft consumes main last_hidden_state plus shifted token embeddings.
 class ContinuousBatchingPipeline::MtpDecodingImpl : public ContinuousBatchingPipeline::SpeculativeDecodingImpl {
 public:
     template <class Impl>

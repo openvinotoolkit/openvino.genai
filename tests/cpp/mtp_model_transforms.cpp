@@ -22,17 +22,14 @@ using ov::genai::utils::mtp::graft_lm_head_on_mtp;
 constexpr size_t HIDDEN = 8;
 constexpr size_t VOCAB = 16;
 
-// Main-model stand-in: inputs_embeds -> (identity hidden) -> logits = MatMul(hidden, W^T) + last_hidden_state.
-// Mirrors the real Qwen3.5 language_model which outputs both `logits` and `last_hidden_state`.
+// Main model stand-in with logits and last_hidden_state outputs.
 std::shared_ptr<ov::Model> make_main_model(const std::vector<float>& weights_data) {
     auto embeds = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, HIDDEN});
     embeds->output(0).set_names({"inputs_embeds"});
 
-    // A trivial transform standing in for the decoder stack.
     auto bias = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{HIDDEN}, 0.5f);
     auto hidden = std::make_shared<ov::op::v1::Add>(embeds, bias);
 
-    // tied lm_head weight [VOCAB, HIDDEN], applied with transpose_b=true.
     auto weights = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{VOCAB, HIDDEN}, weights_data.data());
     auto logits_matmul = std::make_shared<ov::op::v0::MatMul>(hidden, weights, false, true);
 
@@ -48,7 +45,7 @@ std::shared_ptr<ov::Model> make_main_model(const std::vector<float>& weights_dat
                                        ov::ParameterVector{embeds});
 }
 
-// MTP-model stand-in: hidden_states -> last_hidden_state only (no lm_head), like openvino_mtp_model.xml.
+// MTP stand-in: hidden_states -> last_hidden_state only.
 std::shared_ptr<ov::Model> make_mtp_model() {
     auto hidden_states = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, HIDDEN});
     hidden_states->output(0).set_names({"hidden_states"});
@@ -122,7 +119,6 @@ TEST(MtpModelTransforms, GraftLmHeadAddsLogitsResult) {
     ASSERT_EQ(mtp_model->get_results().size(), 1u);
     graft_lm_head_on_mtp(mtp_model, main_model);
 
-    // A `logits` result is added while `last_hidden_state` is preserved.
     ASSERT_EQ(mtp_model->get_results().size(), 2u);
     bool has_logits = false, has_hidden = false;
     for (const auto& result : mtp_model->get_results()) {
@@ -133,12 +129,9 @@ TEST(MtpModelTransforms, GraftLmHeadAddsLogitsResult) {
     EXPECT_TRUE(has_logits);
     EXPECT_TRUE(has_hidden);
 
-    // The cloned weight lives in the MTP model (deep copy, no cross-model reference).
     EXPECT_GE(count_ops<ov::op::v0::Constant>(mtp_model), 2u);
 }
 
-// The grafted MTP logits must equal main_hidden @ W^T for the same hidden input the main model
-// produces, i.e. logits = MTP(hidden) @ tied_weight.
 TEST(MtpModelTransforms, GraftedLogitsMatchTiedWeightMatmul) {
     std::vector<float> weights_data(VOCAB * HIDDEN);
     for (size_t i = 0; i < weights_data.size(); ++i) {
@@ -163,7 +156,6 @@ TEST(MtpModelTransforms, GraftedLogitsMatchTiedWeightMatmul) {
     auto mtp_hidden = mtp_req.get_tensor("last_hidden_state");
     ASSERT_EQ(logits.get_shape(), (ov::Shape{1, seq_len, VOCAB}));
 
-    // Reference: logits[t, v] = sum_h mtp_hidden[t, h] * W[v, h]  (transpose_b).
     const float* hidden_data = mtp_hidden.data<float>();
     const float* logits_data = logits.data<float>();
     for (size_t t = 0; t < seq_len; ++t) {
