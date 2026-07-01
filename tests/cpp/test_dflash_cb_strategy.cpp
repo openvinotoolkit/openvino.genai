@@ -246,7 +246,7 @@ TEST(DFlashCBDraftInputs, BuildsPositionIdsFromCommittedLength) {
     ASSERT_EQ(int64_tensor_values(position_ids), (std::vector<int64_t>{5, 6, 7, 8, 9, 10}));
 }
 
-TEST(DFlashCBGenerationConfig, DefaultsAssistantTokensToSeven) {
+TEST(DFlashCBGenerationConfig, DefaultsAssistantTokensToFive) {
     ov::genai::GenerationConfig config;
 
     ov::genai::dflash_cb::ensure_num_assistant_tokens_is_set(config);
