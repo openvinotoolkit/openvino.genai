@@ -53,6 +53,25 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model, const std::v
  */
 void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model);
 
+/**
+ * @brief Grafts the target lm_head onto the draft model.
+ *
+ * Clones only the weight side (input(1)) of the target's final lm_head MatMul - including any INT4
+ * decompression subgraph - and builds a fresh MatMul(draft last_hidden_state, cloned_weight) using
+ * the target's transpose flags. The draft `last_hidden_state` Result is replaced by a `logits`
+ * Result. Run before `expose_target_hidden_states` adds a second target output.
+ */
+void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model,
+                                    const std::shared_ptr<ov::Model>& draft_model);
+
+/**
+ * @brief Builds a minimal `input_ids -> Gather -> inputs_embeds` model from the target embedding.
+ *
+ * Clones the target token-embedding weight subgraph into a standalone model used to feed the DFlash
+ * draft its token embeddings (consumed via EmbeddingsModel).
+ */
+std::shared_ptr<ov::Model> build_draft_embedder_model(const std::shared_ptr<ov::Model>& main_model);
+
 }  // namespace dflash
 }  // namespace utils
 }  // namespace genai

@@ -10,10 +10,12 @@
 
 #include <openvino/pass/sdpa_to_paged_attention.hpp>
 
+#include "circular_buffer_queue.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
+#include "visual_language/embedding_model.hpp"
 
 namespace ov::genai {
 
@@ -33,6 +35,13 @@ bool has_compiled_input(const ov::CompiledModel& model, const std::string& name)
     return std::find_if(inputs.begin(), inputs.end(), [&](const ov::Output<const ov::Node>& port) {
         return port.get_names().count(name) != 0;
     }) != inputs.end();
+}
+
+bool model_has_output(const std::shared_ptr<ov::Model>& model, const std::string& name) {
+    const auto outputs = model->outputs();
+    return std::find_if(outputs.begin(), outputs.end(), [&](const ov::Output<ov::Node>& port) {
+        return port.get_names().count(name) != 0;
+    }) != outputs.end();
 }
 
 void validate_target_has_no_unmanaged_state(const std::shared_ptr<ov::Model>& model) {
@@ -56,11 +65,14 @@ class ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashCBDraftRunner {
 public:
     DFlashCBDraftRunner(const ov::genai::ModelDesc& model_desc,
                         const Tokenizer& tokenizer,
-                        const ov::genai::utils::dflash::DFlashRTInfo& rt_info)
+                        const ov::genai::utils::dflash::DFlashRTInfo& rt_info,
+                        EmbeddingsModel::Ptr embedder)
         : m_tokenizer(tokenizer),
           m_request(create_draft_infer_request(model_desc)),
           m_sampler(tokenizer),
-          m_mask_token_id(rt_info.mask_token_id) {
+          m_mask_token_id(rt_info.mask_token_id),
+          m_embedder(std::move(embedder)),
+          m_embed_return_remote(model_desc.device.find("GPU") != std::string::npos) {
         m_has_beam_idx = has_compiled_input(m_request.get_compiled_model(), "beam_idx");
         if (m_has_beam_idx) {
             m_beam_idx = ov::Tensor(ov::element::i32, {BATCH_SIZE});
@@ -111,10 +123,21 @@ public:
 
         auto input_ids = build_input_ids(seed_token, candidate_count);
         auto position_ids = build_position_ids(hidden_delta_length, candidate_count);
-        m_request.set_tensor("input_ids", input_ids);
         m_request.set_tensor("hidden_states", hidden_delta);
         m_request.set_tensor("position_ids", position_ids);
-        update_inference_time(execute_inference());
+        if (m_embedder) {
+            // New embeds-in draft: embed [seed, MASK...] via the target-derived embedder and feed
+            // inputs_embeds. The guard must outlive the draft inference that reads the embeds tensor.
+            CircularBufferQueueElementGuard<EmbeddingsRequest> embed_guard(m_embedder->get_request_queue().get());
+            EmbeddingsRequest& embed_req = embed_guard.get();
+            auto inputs_embeds = m_embedder->infer(embed_req, input_ids, m_embed_return_remote);
+            m_request.set_tensor("inputs_embeds", inputs_embeds);
+            update_inference_time(execute_inference());
+        } else {
+            // Legacy bundled draft: feed token ids directly.
+            m_request.set_tensor("input_ids", input_ids);
+            update_inference_time(execute_inference());
+        }
         m_committed_context_length += hidden_delta_length;
         return m_request.get_tensor("logits");
     }
@@ -147,6 +170,10 @@ private:
         OPENVINO_ASSERT(model_desc.model, "DFlash draft model cannot be null.");
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "hidden_states"),
                         "DFlash CB/PA draft model must have 'hidden_states' input.");
+        OPENVINO_ASSERT(utils::has_input(model_desc.model, "inputs_embeds") ||
+                            utils::has_input(model_desc.model, "input_ids"),
+                        "DFlash CB/PA draft model must have an 'inputs_embeds' (embeds-in) or "
+                        "'input_ids' (legacy) input.");
         if (model_desc.device == "NPU") {
             auto kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
             auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, model_desc.properties, kv_axes_pos);
@@ -211,6 +238,8 @@ private:
     size_t m_prompt_length = 0;
     size_t m_committed_context_length = 0;
     int64_t m_mask_token_id = -1;
+    EmbeddingsModel::Ptr m_embedder;
+    bool m_embed_return_remote = false;
 };
 
 ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
@@ -223,6 +252,25 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     auto main_model = main_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model_desc.model, "DFlash requires both target and draft models.");
+
+    // Infer the draft capability from its I/O signature (no RT-info markers): a new embeds-in /
+    // hidden-out draft has an `inputs_embeds` input and a `last_hidden_state` output; a legacy
+    // bundled draft has `input_ids` and `logits`.
+    const bool draft_embeds_in = utils::has_input(draft_model_desc.model, "inputs_embeds");
+    const bool draft_hidden_out = model_has_output(draft_model_desc.model, "last_hidden_state");
+    OPENVINO_ASSERT(draft_embeds_in == draft_hidden_out,
+                    "DFlash draft model must be fully embeds-in/hidden-out (new export) or fully "
+                    "bundled (legacy); mixed signatures are not supported.");
+
+    // While the target is still pristine, derive the draft embedder graph and graft the lm_head.
+    std::shared_ptr<ov::Model> draft_embedder_model;
+    if (draft_embeds_in) {
+        draft_embedder_model = utils::dflash::build_draft_embedder_model(main_model);
+    }
+    if (draft_hidden_out) {
+        utils::dflash::attach_target_lm_head_to_draft(main_model, draft_model_desc.model);
+    }
+
     const bool target_has_linear_attention = utils::get_cache_types(*main_model).has_linear();
 
     bool allow_score_aggregation = true;
@@ -250,9 +298,19 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
         draft_model_desc_for_runner.device = main_model_desc.device;
     }
     utils::dflash::reshape_draft_hidden_states_input_for_cb(draft_model_desc_for_runner.model);
+
+    // The embedder is owned at the DFlashDecodingImpl level so it can be shared with the target
+    // pipeline in the unified (1b) path; the draft runner only borrows the shared pointer.
+    if (draft_embedder_model) {
+        m_embedder = EmbeddingsModel::create(draft_embedder_model,
+                                             /*scale_emb=*/1.0f,
+                                             draft_model_desc_for_runner.device,
+                                             draft_model_desc_for_runner.properties);
+    }
     m_draft = std::make_shared<DFlashCBDraftRunner>(draft_model_desc_for_runner,
                                                     m_tokenizer,
-                                                    m_rt_info);
+                                                    m_rt_info,
+                                                    m_embedder);
 
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
         main_model,

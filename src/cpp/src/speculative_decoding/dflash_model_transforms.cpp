@@ -6,15 +6,21 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <nlohmann/json.hpp>
 
 #include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/gather.hpp"
+#include "openvino/op/matmul.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
+
+#include "eagle3_model_transforms.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -24,7 +30,7 @@ namespace dflash {
 namespace {
 
 constexpr const char* DFLASH_HIDDEN_STATES_RT_INFO_KEY = "hidden_states_decoder_layers";
-constexpr const char* DFLASH_LAST_HIDDEN_STATE_OUTPUT_NAME = "last_hidden_state";
+constexpr const char* LAST_HIDDEN_STATE_OUTPUT_NAME = "last_hidden_state";
 
 std::optional<ov::Output<ov::Node>> find_dflash_output_by_tensor_name(const std::shared_ptr<ov::Model>& model,
                                                                       const std::string& tensor_name) {
@@ -50,8 +56,8 @@ void add_dflash_hidden_state_result(std::shared_ptr<ov::Model>& model,
     }
 
     auto result = std::make_shared<ov::op::v0::Result>(node_to_operate);
-    result->output(0).set_names({DFLASH_LAST_HIDDEN_STATE_OUTPUT_NAME});
-    result->set_friendly_name(DFLASH_LAST_HIDDEN_STATE_OUTPUT_NAME);
+    result->output(0).set_names({LAST_HIDDEN_STATE_OUTPUT_NAME});
+    result->set_friendly_name(LAST_HIDDEN_STATE_OUTPUT_NAME);
     result->get_rt_info()["manually_added_output"] = true;
     model->add_results({result});
 }
@@ -202,6 +208,82 @@ void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model)
         consumer.replace_source_output(reshape->output(0));
     }
     model->validate_nodes_and_infer_types();
+}
+
+void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model,
+                                    const std::shared_ptr<ov::Model>& draft_model) {
+    OPENVINO_ASSERT(main_model && draft_model, "DFlash lm_head graft requires both target and draft models.");
+
+    auto target_head = std::get<0>(ov::genai::utils::find_llm_matmul(main_model));
+    auto target_matmul = ov::as_type_ptr<ov::op::v0::MatMul>(target_head);
+    OPENVINO_ASSERT(target_matmul,
+                    "DFlash: could not locate the target lm_head MatMul to graft onto the draft.");
+
+    // Clone ONLY the weight side (input(1)); input(0) is the target activation and is not reused.
+    // Cloning recursively carries any INT4 decompression subgraph intact.
+    auto weight_source = target_matmul->input_value(1);
+    std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
+    auto cloned_weight = eagle3::clone_node_recursive(weight_source.get_node_shared_ptr(), cloned_nodes);
+    OPENVINO_ASSERT(cloned_weight, "DFlash: failed to clone the target lm_head weight subgraph.");
+    auto cloned_weight_out = cloned_weight->output(weight_source.get_index());
+
+    std::shared_ptr<ov::op::v0::Result> hidden_result;
+    for (const auto& result : draft_model->get_results()) {
+        if (result->output(0).get_names().count(LAST_HIDDEN_STATE_OUTPUT_NAME) != 0 ||
+            result->get_friendly_name() == LAST_HIDDEN_STATE_OUTPUT_NAME) {
+            hidden_result = result;
+            break;
+        }
+    }
+    OPENVINO_ASSERT(hidden_result,
+                    "DFlash draft model must expose a 'last_hidden_state' output to graft the target lm_head.");
+
+    // Feed the draft post-norm hidden into a bare MatMul with the target head weight + transpose flags.
+    auto draft_hidden = hidden_result->input_value(0);
+    auto logits_matmul = std::make_shared<ov::op::v0::MatMul>(draft_hidden,
+                                                              cloned_weight_out,
+                                                              target_matmul->get_transpose_a(),
+                                                              target_matmul->get_transpose_b());
+    logits_matmul->set_friendly_name("dflash_grafted_lm_head");
+
+    auto logits_result = std::make_shared<ov::op::v0::Result>(logits_matmul);
+    logits_result->output(0).set_names({"logits"});
+    logits_result->set_friendly_name("logits");
+    logits_result->get_rt_info()["manually_added_output"] = true;
+
+    draft_model->add_results({logits_result});
+    draft_model->remove_result(hidden_result);
+    draft_model->validate_nodes_and_infer_types();
+}
+
+std::shared_ptr<ov::Model> build_draft_embedder_model(const std::shared_ptr<ov::Model>& main_model) {
+    OPENVINO_ASSERT(main_model, "DFlash embedder extraction requires a target model.");
+
+    auto gather = eagle3::find_embedding_gather(main_model);
+    OPENVINO_ASSERT(gather,
+                    "DFlash: could not find the target token-embedding Gather to build the draft embedder.");
+
+    auto weight_source = gather->input_value(0);
+    std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
+    auto cloned_weight = eagle3::clone_node_recursive(weight_source.get_node_shared_ptr(), cloned_nodes);
+    OPENVINO_ASSERT(cloned_weight, "DFlash: failed to clone the target embedding weight subgraph.");
+    auto cloned_weight_out = cloned_weight->output(weight_source.get_index());
+
+    auto input_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
+    input_ids->set_friendly_name("input_ids");
+    input_ids->output(0).set_names({"input_ids"});
+
+    auto axis = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, std::vector<int64_t>{0});
+    auto embed_gather = std::make_shared<ov::op::v8::Gather>(cloned_weight_out, input_ids, axis);
+    embed_gather->set_friendly_name("dflash_draft_embedding");
+
+    auto result = std::make_shared<ov::op::v0::Result>(embed_gather);
+    result->output(0).set_names({"inputs_embeds"});
+    result->set_friendly_name("inputs_embeds");
+
+    return std::make_shared<ov::Model>(ov::ResultVector{result},
+                                       ov::ParameterVector{input_ids},
+                                       "dflash_draft_embedder");
 }
 
 }  // namespace dflash
