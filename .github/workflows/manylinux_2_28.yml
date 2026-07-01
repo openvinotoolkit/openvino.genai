@@ -35,6 +35,8 @@ env:
   BASE_PRODUCT_TYPE: public_manylinux_2_28_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+  HF_TOKEN_PATH_LIN: /secrets/huggingface/token-primary
+  HF_TOKEN_PATH_WIN: "C:\\mount\\secrets\\huggingface\\token-primary"
 
 jobs:
   smart_ci:
@@ -53,7 +55,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@65855d31e3e61c308e56454c16c0c3f411a5029f
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@b0f640ad8270d06d36caf5549a091dc972625a15
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -495,12 +497,19 @@ jobs:
       fail-fast: false
       matrix:
         test:
-          - name: 'Whisper'
+          - name: 'ASR'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
-            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 120
-
+          - name: 'ASR (Qwen3-ASR)'
+            cmd: |
+              # optimum intel master commit with Qwen3-ASR support
+              python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4"
+              python -m pip install transformers==4.57.6 qwen-asr==0.0.6
+              python -m pytest -s -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
+            timeout: 20
           - name: 'Cacheopt E2E (Part 1)'
             cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
@@ -528,7 +537,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
           - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "not transformers_lower_v5" -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat" --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "not transformers_lower_v5" -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat and not eagle3" --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 90
 
@@ -618,7 +627,7 @@ jobs:
           - name: 'VLM (qwen3-vl and qwen3-next)'
             cmd: |
               python -m pip install transformers==4.57.6
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl"
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl or eagle3"
               python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test  || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 60
@@ -635,11 +644,11 @@ jobs:
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
-          - name: 'Whisper Transformers under 5.0'
+          - name: 'ASR Transformers under 5.0'
             cmd: |
               python -m pip install transformers==4.57.6
-              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5" -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
+              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
             timeout: 120
           - name: 'VLM with transformers under 5.0'
             cmd: |
@@ -662,8 +671,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
@@ -672,6 +681,10 @@ jobs:
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests/
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -713,8 +726,8 @@ jobs:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
         - /mount:/mount
+        - /home/runner/secrets/:/secrets:ro
         - ${{ github.workspace }}:${{ github.workspace }}
-      options: -e HF_TOKEN
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -723,6 +736,10 @@ jobs:
       PY_INSTALL_DIR: ${{ github.workspace }}/install
 
     steps:
+      - name: Setup Variables
+        run: |
+          echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
+
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
