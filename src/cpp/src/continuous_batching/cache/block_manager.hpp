@@ -900,6 +900,8 @@ public:
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(m_block_table.count(seq_id) > 0,
                         "Cannot reserve temporary cache blocks for unknown sequence ", seq_id);
+        OPENVINO_ASSERT(m_num_layers == 1,
+                        "Temporary cache checkpoint reservation expects a shared one-layer block table");
         OPENVINO_ASSERT(m_temporary_block_table[seq_id].empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
         OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
