@@ -63,10 +63,41 @@ public:
         return compiled_model.get_property(name);
     }
 
+    /**
+     * @brief Enables/disables export of the model's `last_hidden_state`, delegating to the model runner.
+     *        Shared by EAGLE3 and MTP hidden-state pairing.
+     */
+    void set_hidden_state_export_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_export(is_needed);
+        }
+    }
+
+    /**
+     * @brief Enables/disables import of the main model's hidden state into this (draft) model runner,
+     *        used for the first draft forward in each speculative-decode step.
+     */
+    void set_hidden_state_import_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_import(is_needed);
+        }
+    }
+
+    /**
+     * @brief Enables/disables use of the internally stored hidden state for the draft model runner,
+     *        used for the 2nd..num_assistant draft forwards in each speculative-decode step.
+     */
+    void set_hidden_state_internal_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_hidden_state_internal(is_needed);
+        }
+    }
+
 protected:
     void finish_request(SequenceGroup::Ptr request);
     void _pull_awaiting_requests() override {};
     bool eagle_mode_enabled = false;
+    bool mtp_mode_enabled = false;
 };
 
 class ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl
@@ -127,48 +158,6 @@ public:
         }
     }
 
-    /**
-     * @brief Sets whether the export of hidden states is needed during model execution.
-     *
-     * This function enables or disables the export of hidden states by delegating
-     * the request to the underlying model runner, if it exists.
-     *
-     * @param is_needed Boolean flag indicating whether hidden state export is required.
-     */
-    void set_hidden_state_export_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_export(is_needed);
-        }
-    }
-
-    /**
-     * @brief Sets whether the import of hidden state is needed for the model runner.
-     *
-     * This function enables or disables the import of hidden state in the underlying
-     * model runner, which is for the first draft model inference in each speculative decode step.
-     *
-     * @param is_needed Boolean flag indicating whether hidden state import is required.
-     */
-    void set_hidden_state_import_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_import(is_needed);
-        }
-    }
-
-    /**
-     * @brief Sets whether the internal hidden state is required for the model runner.
-     *
-     * This function enables or disables the use of the internal hidden state in the model runner,
-     * which is for the draft model 2...num_assistant forwards in each speculative decode step.
-     *
-     * @param is_needed Boolean flag indicating whether the internal hidden state should be enabled (true) or disabled (false).
-     */
-    void set_hidden_state_internal_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_hidden_state_internal(is_needed);
-        }
-    }
-
     void collect_block_update_info(const GeneratedRequests& main_generated_requests,
                                    std::vector<int32_t>& block_update_indices,
                                    std::vector<int32_t>& block_update_begins) const;
@@ -178,6 +167,55 @@ public:
             return m_model_runner->get_infer_request().get_tensor(name);
         }
         return {};
+    }
+};
+
+/**
+ * @brief Continuous-batching pipeline for a Multi-Token Prediction (MTP) draft or main model.
+ *
+ * MTP reuses the EAGLE3 hidden-state pairing machinery (import/internal/export gated on the same
+ * `mtp_mode_enabled` path as `eagle_mode_enabled`). Both the MTP main and draft models consume
+ * `inputs_embeds` produced by a shared `EmbeddingsModel`, so this impl takes an `InputsEmbedder`
+ * and runs on the EMBEDDINGS input path. The draft additionally imports the main model's
+ * `last_hidden_state` and pairs it with the embedding of the main-predicted token.
+ */
+class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
+    : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
+public:
+    ContinuousBatchingForMtpDecodingImpl() = default;
+
+    ContinuousBatchingForMtpDecodingImpl(const std::shared_ptr<ov::Model>& model,
+                                         const std::shared_ptr<InputsEmbedder>& inputs_embedder,
+                                         const Tokenizer& tokenizer,
+                                         const GenerationConfig& generation_config,
+                                         const SchedulerConfig& scheduler_config,
+                                         const std::string& device,
+                                         const ov::AnyMap& plugin_config,
+                                         bool is_validation_mode_enabled)
+        : ContinuousBatchingForSpeculativeDecodingImpl(model,
+                                                       tokenizer,
+                                                       generation_config,
+                                                       scheduler_config,
+                                                       device,
+                                                       plugin_config,
+                                                       is_validation_mode_enabled) {
+        mtp_mode_enabled = true;
+        // Both MTP main and draft consume inputs_embeds from the shared embeddings model.
+        m_inputs_embedder = inputs_embedder;
+        m_model_runner->set_inputs_embedder(inputs_embedder);
+        m_model_input_type = ModelInputType::EMBEDDINGS;
+    }
+
+    /**
+     * @brief Switches the draft model runner to plain sequential position_ids.
+     *
+     * The MTP draft consumes rank-1 sequential positions, unlike the main VLM language model whose
+     * shared InputsEmbedder produces rank-3 M-RoPE positions.
+     */
+    void set_mtp_draft_positions_needed(bool is_needed) {
+        if (m_model_runner) {
+            m_model_runner->enable_mtp_draft_positions(is_needed);
+        }
     }
 };
 }

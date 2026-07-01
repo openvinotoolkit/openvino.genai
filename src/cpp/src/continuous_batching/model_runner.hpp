@@ -316,6 +316,7 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
+    bool m_mtp_draft_positions = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     std::unordered_map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
@@ -405,6 +406,12 @@ public:
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
 
+    // The MTP draft model consumes plain sequential position_ids (rank <= 2), unlike the main VLM
+    // language model which uses rank-3 M-RoPE positions produced by the shared InputsEmbedder.
+    // When enabled, the EMBEDDINGS forward path generates sequential positions for the draft instead
+    // of reading the M-RoPE positions stored on the sequence.
+    void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
+
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
         m_embedding = inputs_embedder->get_embedding_model();
@@ -449,6 +456,15 @@ public:
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+
+        // For embeddings models, generated-token embeddings are normally produced at the end of each
+        // step for the tokens this pipeline sampled. In speculative decoding, the draft additionally
+        // receives injected candidate tokens (the main model's predictions) that have no embeddings yet.
+        // Compute any missing generated-token embeddings up front so the forward can read them.
+        if (m_embedding && !sequence_groups.empty() &&
+            sequence_groups[0]->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS) {
+            append_embeddings(sequence_groups, scheduler_output);
+        }
 
         size_t batch_size_in_sequences = 0;
         size_t total_num_tokens = 0;
@@ -535,12 +551,18 @@ public:
             inputs_embeds_data = inputs_embeds.data<float>();
             token_type_ids_data = token_type_ids.data<int64_t>();
 
-            auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids_list();
-            ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
-            if (position_ids_shape.size() == 3) {
-                position_ids_shape[2] = total_num_tokens;
-            } else {
+            ov::Shape position_ids_shape;
+            if (m_mtp_draft_positions) {
+                // MTP draft: plain sequential rank-1 positions, ignore the M-RoPE positions on the sequence.
                 position_ids_shape = {total_num_tokens};
+            } else {
+                auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids_list();
+                position_ids_shape = position_ids_elem[0].get_shape();
+                if (position_ids_shape.size() == 3) {
+                    position_ids_shape[2] = total_num_tokens;
+                } else {
+                    position_ids_shape = {total_num_tokens};
+                }
             }
             position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", position_ids_shape, ov::element::i64);
 
@@ -736,11 +758,16 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
-                        const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
+                        if (m_mtp_draft_positions) {
+                            // MTP draft consumes plain sequential rank-1 positions.
+                            position_ids_data[position_ids_idx] = position_id;
+                        } else {
+                            const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
+                            const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
 
-                        ov::Tensor dst_roi(position_ids, begin, end);
-                        position_ids_elem.copy_to(dst_roi);
+                            ov::Tensor dst_roi(position_ids, begin, end);
+                            position_ids_elem.copy_to(dst_roi);
+                        }
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
