@@ -10,6 +10,7 @@
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
+#include "model_desc.hpp"
 #include "stateful_pipeline_base.hpp"
 #include "utils.hpp"
 
