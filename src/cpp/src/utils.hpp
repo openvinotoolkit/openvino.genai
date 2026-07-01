@@ -136,7 +136,7 @@ void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
 void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
-std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<Model>& model);
+std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<ov::Model>& model);
 
 ov::Core& singleton_core();
 
