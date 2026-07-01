@@ -66,7 +66,7 @@ setup(
             "spacy==3.8.14",
             "kokoro==0.9.4",
             "transformers==4.57.6",
-            "optimum-intel==2.0.0",
+            "optimum-intel[nncf] @ https://github.com/huggingface/optimum-intel/archive/a8c4734741e766ef95d7f1a7d1e29a1d4ba2ab8f.tar.gz",
         ],
     },
 )
