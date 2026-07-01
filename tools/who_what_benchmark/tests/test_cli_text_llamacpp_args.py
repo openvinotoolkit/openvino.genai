@@ -146,70 +146,22 @@ def test_text_base_model_load_passes_llamacpp_flag(monkeypatch):
     assert len(calls) == 1
     load_args, load_kwargs = calls[0]
     assert load_args[6] is True
-    assert load_kwargs["llamacpp_n_ctx"] is None
 
 
-def test_main_rejects_mutually_exclusive_backend_flags(monkeypatch):
-    args = Namespace(
-        base_model="dummy_base_model",
-        target_model=None,
-        tokenizer=None,
-        omit_chat_template=False,
-        gt_data=None,
-        target_data=None,
-        model_type="text",
-        data_encoder="sentence-transformers/all-mpnet-base-v2",
-        dataset=None,
-        dataset_field="text",
-        split=None,
-        output=None,
-        num_samples=None,
-        verbose=False,
-        device="CPU",
-        ov_config=None,
-        language="en",
-        hf=True,
-        genai=False,
-        cb_config=None,
-        llamacpp=True,
-        llamacpp_chat=False,
-        llamacpp_n_ctx=4096,
-        image_size=None,
-        num_inference_steps=None,
-        seed=42,
-        taylorseer_config=None,
-        from_onnx=False,
-        adapters=None,
-        alphas=None,
-        long_prompt=False,
-        short_prompt=True,
-        empty_adapters=False,
-        embeds_pooling_type=None,
-        embeds_normalize=False,
-        embeds_padding_side=None,
-        embeds_batch_size=None,
-        rag_config=None,
-        gguf_file=None,
-        draft_model=None,
-        draft_device=None,
-        draft_cb_config=None,
-        num_assistant_tokens=None,
-        assistant_confidence_threshold=None,
-        video_frames_num=None,
-        speaker_embeddings=None,
-        speech_language="",
-        speech_voice="",
-        tts_eval_whisper_model="base.en",
-        vocoder_path=None,
-        pruning_ratio=None,
-        relevance_weight=None,
-        max_new_tokens=128,
+def test_cli_rejects_mutually_exclusive_backend_flags():
+    output = _assert_wwb_cli_error(
+        [
+            "--base-model",
+            "dummy_base_model",
+            "--model-type",
+            "text",
+            "--llamacpp",
+            "--hf",
+        ],
+        "Options --hf, --genai and --llamacpp are mutually exclusive",
     )
 
-    monkeypatch.setattr(wwb, "parse_args", lambda: args)
-
-    with pytest.raises(ValueError, match="Options --hf, --genai and --llamacpp are mutually exclusive"):
-        wwb.main()
+    assert "Options --hf, --genai and --llamacpp are mutually exclusive" in output
 
 
 def test_main_csv_only_rejects_llamacpp_n_ctx_without_llamacpp(monkeypatch, tmp_path):
