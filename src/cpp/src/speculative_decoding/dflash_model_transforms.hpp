@@ -65,12 +65,15 @@ void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model
                                     const std::shared_ptr<ov::Model>& draft_model);
 
 /**
- * @brief Builds a minimal `input_ids -> Gather -> inputs_embeds` model from the target embedding.
+ * @brief Attaches the target token embedding into the draft graph.
  *
- * Clones the target token-embedding weight subgraph into a standalone model used to feed the DFlash
- * draft its token embeddings (consumed via EmbeddingsModel).
+ * Clones the target token-embedding weight subgraph (including any INT4 decompression chain) and
+ * splices `input_ids -> Gather(cloned_weight)` into the draft in place of its `inputs_embeds`
+ * Parameter. The draft becomes self-contained (`input_ids`-native), mirroring how the target
+ * lm_head is grafted. Run while the target is still pristine (before `SDPAToPagedAttention`).
  */
-std::shared_ptr<ov::Model> build_draft_embedder_model(const std::shared_ptr<ov::Model>& main_model);
+void attach_target_embedding_to_draft(const std::shared_ptr<ov::Model>& main_model,
+                                      const std::shared_ptr<ov::Model>& draft_model);
 
 }  // namespace dflash
 }  // namespace utils

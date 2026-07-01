@@ -68,18 +68,6 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
     m_embeddings_requests_queue = init(compiled_model);
 }
 
-EmbeddingsModel::EmbeddingsModel(const std::shared_ptr<ov::Model>& model,
-                                 const float scale_emb,
-                                 const std::string& device,
-                                 const ov::AnyMap& properties) {
-    ov::Core core = utils::singleton_core();
-    // apply embedding postprocessing step by merging them into the model
-    merge_postprocess(model, scale_emb);
-
-    ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
-    m_embeddings_requests_queue = init(compiled_model);
-}
-
 std::unique_ptr<CircularBufferQueue<EmbeddingsRequest>>& EmbeddingsModel::get_request_queue() {
     return this->m_embeddings_requests_queue;
 }

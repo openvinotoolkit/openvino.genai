@@ -12,8 +12,6 @@
 
 namespace ov::genai {
 
-class EmbeddingsModel;
-
 class ContinuousBatchingPipeline::DFlashDecodingImpl : public ContinuousBatchingPipeline::SpeculativeDecodingImpl {
 public:
     DFlashDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
@@ -70,7 +68,6 @@ private:
     ov::genai::RawPerfMetrics collect_draft_raw_metrics();
 
     std::shared_ptr<DFlashCBDraftRunner> m_draft;
-    std::shared_ptr<EmbeddingsModel> m_embedder;
     ov::genai::utils::dflash::DFlashRTInfo m_rt_info;
     std::map<uint64_t, RequestState> m_request_states;
 };

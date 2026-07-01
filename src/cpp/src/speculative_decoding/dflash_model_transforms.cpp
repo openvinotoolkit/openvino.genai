@@ -123,6 +123,16 @@ std::shared_ptr<ov::op::v0::Parameter> find_hidden_states_parameter(const std::s
     return nullptr;
 }
 
+std::shared_ptr<ov::op::v0::Parameter> find_inputs_embeds_parameter(const std::shared_ptr<ov::Model>& model) {
+    for (const auto& parameter : model->get_parameters()) {
+        if (parameter->get_friendly_name() == "inputs_embeds" ||
+            parameter->output(0).get_names().count("inputs_embeds") != 0) {
+            return parameter;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
@@ -256,18 +266,38 @@ void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model
     draft_model->validate_nodes_and_infer_types();
 }
 
-std::shared_ptr<ov::Model> build_draft_embedder_model(const std::shared_ptr<ov::Model>& main_model) {
-    OPENVINO_ASSERT(main_model, "DFlash embedder extraction requires a target model.");
+void attach_target_embedding_to_draft(const std::shared_ptr<ov::Model>& main_model,
+                                      const std::shared_ptr<ov::Model>& draft_model) {
+    OPENVINO_ASSERT(main_model && draft_model, "DFlash embedding attach requires both target and draft models.");
 
     auto gather = eagle3::find_embedding_gather(main_model);
     OPENVINO_ASSERT(gather,
-                    "DFlash: could not find the target token-embedding Gather to build the draft embedder.");
+                    "DFlash: could not find the target token-embedding Gather to attach onto the draft.");
 
+    // Clone the embedding weight (input(0)). The recursive clone is precision-agnostic: it copies a
+    // plain f16/f32 Constant or an int8/int4 dequant chain intact, so the draft owns its embedding.
     auto weight_source = gather->input_value(0);
     std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
     auto cloned_weight = eagle3::clone_node_recursive(weight_source.get_node_shared_ptr(), cloned_nodes);
     OPENVINO_ASSERT(cloned_weight, "DFlash: failed to clone the target embedding weight subgraph.");
     auto cloned_weight_out = cloned_weight->output(weight_source.get_index());
+
+    auto inputs_embeds_param = find_inputs_embeds_parameter(draft_model);
+    OPENVINO_ASSERT(inputs_embeds_param,
+                    "DFlash draft model must expose an 'inputs_embeds' input to attach the target embedding.");
+
+    // Snapshot the live consumers of inputs_embeds before rewiring them onto the new Gather.
+    std::unordered_set<const ov::Node*> live_nodes;
+    for (const auto& node : draft_model->get_ordered_ops()) {
+        live_nodes.insert(node.get());
+    }
+    std::vector<ov::Input<ov::Node>> original_consumers;
+    for (auto consumer : inputs_embeds_param->output(0).get_target_inputs()) {
+        if (live_nodes.count(consumer.get_node()) != 0) {
+            original_consumers.push_back(consumer);
+        }
+    }
+    OPENVINO_ASSERT(!original_consumers.empty(), "DFlash draft inputs_embeds input has no live consumers.");
 
     auto input_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
     input_ids->set_friendly_name("input_ids");
@@ -277,13 +307,12 @@ std::shared_ptr<ov::Model> build_draft_embedder_model(const std::shared_ptr<ov::
     auto embed_gather = std::make_shared<ov::op::v8::Gather>(cloned_weight_out, input_ids, axis);
     embed_gather->set_friendly_name("dflash_draft_embedding");
 
-    auto result = std::make_shared<ov::op::v0::Result>(embed_gather);
-    result->output(0).set_names({"inputs_embeds"});
-    result->set_friendly_name("inputs_embeds");
-
-    return std::make_shared<ov::Model>(ov::ResultVector{result},
-                                       ov::ParameterVector{input_ids},
-                                       "dflash_draft_embedder");
+    for (auto consumer : original_consumers) {
+        consumer.replace_source_output(embed_gather->output(0));
+    }
+    draft_model->add_parameters({input_ids});
+    draft_model->remove_parameter(inputs_embeds_param);
+    draft_model->validate_nodes_and_infer_types();
 }
 
 }  // namespace dflash
