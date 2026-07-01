@@ -1044,6 +1044,9 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
+
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
