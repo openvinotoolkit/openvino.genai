@@ -322,10 +322,7 @@ public:
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
 
-    // The MTP draft model consumes plain sequential position_ids (rank <= 2), unlike the main VLM
-    // language model which uses rank-3 M-RoPE positions produced by the shared InputsEmbedder.
-    // When enabled, the EMBEDDINGS forward path generates sequential positions for the draft instead
-    // of reading the M-RoPE positions stored on the sequence.
+    // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
     void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
 
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
@@ -373,12 +370,10 @@ public:
         m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
-        // For embeddings models, generated-token embeddings are normally produced at the end of each
-        // step for the tokens this pipeline sampled. In speculative decoding, the draft additionally
-        // receives injected candidate tokens (the main model's predictions) that have no embeddings yet.
-        // Compute any missing generated-token embeddings up front so the forward can read them.
+        // Speculative decoding may inject generated tokens before their embeddings are computed.
         if (m_embedding && !sequence_groups.empty() &&
-            sequence_groups[0]->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS) {
+            sequence_groups[0]->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS &&
+            _has_missing_generated_embeddings(sequence_groups, scheduler_output)) {
             append_embeddings(sequence_groups, scheduler_output);
         }
 
@@ -457,7 +452,6 @@ public:
 
             ov::Shape position_ids_shape;
             if (m_mtp_draft_positions) {
-                // MTP draft: plain sequential rank-1 positions, ignore the M-RoPE positions on the sequence.
                 position_ids_shape = {total_num_tokens};
             } else {
                 auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids_list();
@@ -623,7 +617,6 @@ public:
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                         if (m_mtp_draft_positions) {
-                            // MTP draft consumes plain sequential rank-1 positions.
                             position_ids_data[position_ids_idx] = position_id;
                         } else {
                             const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
@@ -822,6 +815,19 @@ public:
         }
         // return logits
         return m_request.get_tensor("logits");
+    }
+
+    bool _has_missing_generated_embeddings(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                           const Scheduler::Output& scheduler_output) const {
+        for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+            const SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            for (const auto& seq : sequence_group->get_running_sequences()) {
+                if (seq->get_generated_len() > seq->get_generated_ids_embeds().size()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     void append_embeddings(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {

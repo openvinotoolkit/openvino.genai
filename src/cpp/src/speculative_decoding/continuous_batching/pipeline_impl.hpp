@@ -36,30 +36,18 @@ public:
 
     RawPerfMetrics raw_perf_metrics;
 
-    /**
-     * @brief Enables/disables export of the model's `last_hidden_state`, delegating to the model runner.
-     *        Shared by EAGLE3 and MTP hidden-state pairing.
-     */
     void set_hidden_state_export_needed(bool is_needed) {
         if (m_model_runner) {
             m_model_runner->enable_hidden_state_export(is_needed);
         }
     }
 
-    /**
-     * @brief Enables/disables import of the main model's hidden state into this (draft) model runner,
-     *        used for the first draft forward in each speculative-decode step.
-     */
     void set_hidden_state_import_needed(bool is_needed) {
         if (m_model_runner) {
             m_model_runner->enable_hidden_state_import(is_needed);
         }
     }
 
-    /**
-     * @brief Enables/disables use of the internally stored hidden state for the draft model runner,
-     *        used for the 2nd..num_assistant draft forwards in each speculative-decode step.
-     */
     void set_hidden_state_internal_needed(bool is_needed) {
         if (m_model_runner) {
             m_model_runner->enable_hidden_state_internal(is_needed);
@@ -113,15 +101,7 @@ public:
     }
 };
 
-/**
- * @brief Continuous-batching pipeline for a Multi-Token Prediction (MTP) draft or main model.
- *
- * MTP reuses the EAGLE3 hidden-state pairing machinery (import/internal/export gated on the same
- * `mtp_mode_enabled` path as `eagle_mode_enabled`). Both the MTP main and draft models consume
- * `inputs_embeds` produced by a shared `EmbeddingsModel`, so this impl takes an `InputsEmbedder`
- * and runs on the EMBEDDINGS input path. The draft additionally imports the main model's
- * `last_hidden_state` and pairs it with the embedding of the main-predicted token.
- */
+// EMBEDDINGS pipeline used by MTP main and draft models.
 class ContinuousBatchingPipeline::ContinuousBatchingForMtpDecodingImpl
     : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
 public:
@@ -143,18 +123,11 @@ public:
                                                        plugin_config,
                                                        is_validation_mode_enabled) {
         mtp_mode_enabled = true;
-        // Both MTP main and draft consume inputs_embeds from the shared embeddings model.
         m_inputs_embedder = inputs_embedder;
         m_model_runner->set_inputs_embedder(inputs_embedder);
         m_model_input_type = ModelInputType::EMBEDDINGS;
     }
 
-    /**
-     * @brief Switches the draft model runner to plain sequential position_ids.
-     *
-     * The MTP draft consumes rank-1 sequential positions, unlike the main VLM language model whose
-     * shared InputsEmbedder produces rank-3 M-RoPE positions.
-     */
     void set_mtp_draft_positions_needed(bool is_needed) {
         if (m_model_runner) {
             m_model_runner->enable_mtp_draft_positions(is_needed);

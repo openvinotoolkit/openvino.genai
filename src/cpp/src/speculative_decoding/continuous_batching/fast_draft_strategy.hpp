@@ -11,9 +11,7 @@
 #include "utils.hpp"
 
 namespace ov::genai {
-// Extra per-request inputs forwarded to the main pipeline's add_request (e.g. VLM lm_extra_inputs such
-// as deepstack_visual_embeds / visual_pos_masks). Only consumed when GenerateStrategy provides
-// prepare_main_request_inputs; the draft pipeline never receives these.
+// Main-only inputs for strategies that need extra request state (for example VLM inputs).
 struct MainRequestInputs {
     std::optional<ov::Tensor> token_type_ids;
     std::optional<ov::Tensor> prompt_ids;
@@ -32,8 +30,7 @@ struct GenerateStrategy {
                        const std::vector<GenerationConfig>&)> check_streaming;
     std::function<TimePoint()> start_timer;
     std::function<uint64_t(TimePoint)> stop_timer;
-    // Optional: supplies main-pipeline extra inputs for request `rid` and may prime shared state
-    // (e.g. the embedder's position_ids). When unset, the main request is added without extra inputs.
+    // Optional hook for main-pipeline request extras.
     std::function<MainRequestInputs(size_t)> prepare_main_request_inputs;
 };
 
@@ -79,8 +76,6 @@ std::vector<EncodedGenerationResult> generate_common(
             strategy.prepare_request(rid, input_ids[rid],
                                     main_cfg, draft_cfg,
                                     main_in, draft_in);
-            // Forward main-only extra inputs (e.g. VLM M-RoPE positions primed on the shared embedder
-            // plus lm_extra_inputs) when the strategy provides them; the draft never gets these.
             MainRequestInputs main_extra;
             if (strategy.prepare_main_request_inputs) {
                 main_extra = strategy.prepare_main_request_inputs(rid);
