@@ -46,16 +46,16 @@ std::optional<ov::Output<ov::Node>> find_dflash_output_by_tensor_name(const std:
 
 void add_dflash_hidden_state_result(std::shared_ptr<ov::Model>& model,
                                     const std::vector<ov::Output<ov::Node>>& hidden_state_outputs) {
-    std::shared_ptr<ov::Node> node_to_operate;
+    ov::Output<ov::Node> output_to_operate;
     if (hidden_state_outputs.size() > 1) {
         auto concat = std::make_shared<ov::op::v0::Concat>(hidden_state_outputs, -1);
         concat->set_friendly_name("dflash_hidden_states_concat");
-        node_to_operate = concat;
+        output_to_operate = concat->output(0);
     } else {
-        node_to_operate = hidden_state_outputs[0].get_node_shared_ptr();
+        output_to_operate = hidden_state_outputs[0];
     }
 
-    auto result = std::make_shared<ov::op::v0::Result>(node_to_operate);
+    auto result = std::make_shared<ov::op::v0::Result>(output_to_operate);
     result->output(0).set_names({LAST_HIDDEN_STATE_OUTPUT_NAME});
     result->set_friendly_name(LAST_HIDDEN_STATE_OUTPUT_NAME);
     result->get_rt_info()["manually_added_output"] = true;
