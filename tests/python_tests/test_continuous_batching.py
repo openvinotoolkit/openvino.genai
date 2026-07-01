@@ -5,6 +5,7 @@ import os
 import pytest
 import math
 import sys
+import numpy as np
 
 from pathlib import Path
 from shutil import rmtree
@@ -784,6 +785,111 @@ def test_dynamic_split_fuse_for_eagle3(prompts, max_num_batched_tokens):
         prompts,
         max_num_batched_tokens,
     )
+
+
+EAGLE3_FIXED_PROMPT_BASE = (
+    "During speculative decoding, the draft path proposes several tokens and the main path validates them in order. "
+    "Prefix caching reduces recomputation by reusing KV blocks that correspond to the unchanged prompt prefix. "
+    "A robust scheduler tracks block ownership, eviction pressure, and per-request progress across decoding steps. "
+    "When accepted-token streaks are long, throughput improves because fewer full-model validations are required. "
+    "If a mismatch appears, the pipeline rolls back to the last verified state and resumes from the main model output. "
+    "Stable request alignment is important so that hidden-state transitions and cache indices remain consistent. "
+    "Latency can vary with block size, batching policy, and how aggressively the system reuses"
+)
+
+
+@pytest.fixture(scope="module")
+def eagle3_model_paths() -> tuple[Path, Path]:
+    main_model_path = download_and_convert_model("Qwen/Qwen3-1.7B").models_path
+    draft_model_path = download_and_convert_model("AngelSlim/Qwen3-1.7B_eagle3").models_path
+    return main_model_path, draft_model_path
+
+
+def _build_input_ids_with_exact_token_count(ov_tokenizer, target_tokens: int) -> ov.Tensor:
+    if target_tokens not in (127, 128, 129):
+        raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
+
+    fixed_prompt = EAGLE3_FIXED_PROMPT_BASE
+    encoded = ov_tokenizer.encode(fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist()
+
+    while len(encoded) < target_tokens:
+        encoded.extend(ov_tokenizer.encode(" " + fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist())
+
+    return ov.Tensor(np.array([encoded[:target_tokens]], dtype=np.int64))
+
+
+@pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
+def test_eagle3_prefix_caching_no_crash(target_prompt_tokens: int, eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config(
+        {"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
+    ov_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+
+    ov_tokenizer = ov_pipe.get_tokenizer()
+    input_ids = _build_input_ids_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+
+    pipeline_generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
+    first_results = ov_pipe.generate(input_ids, pipeline_generation_config)
+    try:
+        second_results = ov_pipe.generate(input_ids, pipeline_generation_config)
+    except RuntimeError as exc:
+        pytest.fail(
+            "Second Eagle3 generate with prefix cache reuse must not raise RuntimeError. "
+            f"prompt_tokens={target_prompt_tokens}, error={exc}"
+        )
+
+    assert len(first_results.tokens) == 1
+    assert len(second_results.tokens) == 1
+    assert len(first_results.tokens[0]) > 0
+    assert len(second_results.tokens[0]) > 0
+
+
+@pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
+def test_eagle3_prefix_caching_add_request_no_crash(target_prompt_tokens: int, eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config(
+        {"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
+    cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+
+    ov_tokenizer = cb_pipe.get_tokenizer()
+    input_ids = _build_input_ids_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+
+    generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
+
+    first_handle = cb_pipe.add_request(0, input_ids, generation_config=generation_config)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    first_outputs = first_handle.read_all()
+
+    try:
+        second_handle = cb_pipe.add_request(1, input_ids, generation_config=generation_config)
+        while cb_pipe.has_non_finished_requests():
+            cb_pipe.step()
+        second_outputs = second_handle.read_all()
+    except RuntimeError as exc:
+        pytest.fail(
+            "Second Eagle3 add_request with prefix cache reuse must not raise RuntimeError. "
+            f"prompt_tokens={target_prompt_tokens}, error={exc}"
+        )
+
+    assert len(first_outputs) == 1
+    assert len(second_outputs) == 1
+    assert len(first_outputs[0].generated_ids) > 0
+    assert len(second_outputs[0].generated_ids) > 0
 
 
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
