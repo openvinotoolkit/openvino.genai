@@ -286,6 +286,7 @@ class TestImageGenerationWithBlobTensorModels:
             raise RuntimeError(f"Failed to read tokenizer from {tokenizer_path}: {e}")
 
     def _load_blob_pipeline(self, model_dir, blob_dir, pipe_type="image2image"):
+        # This test case only supports text2image and image2image pipelines.
         tokenizer = self._read_tokenizer(model_dir)
         tokenizer_2 = self._read_tokenizer(model_dir, tokenizer_name="tokenizer_2")
 
