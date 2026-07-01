@@ -1469,9 +1469,6 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
-    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
-
     if (
         "gemma4-moe" in ov_pipe_model.model_id or "gemma4-31B" in ov_pipe_model.model_id
     ) and ov_pipe_model.ov_backend == "PA":
@@ -1611,9 +1608,6 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 ):
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
-
-    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
 
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
@@ -2253,8 +2247,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-qwen3-vl/*/GRAPH/image-100x77/video-70x70": "CVS-180070",
     # qwen3.5 cases that use 32x32 video
     "*tiny-random-qwen3.5/*/video-32x32": "CVS-180070",
-    # qwen3.5 cases that use 70x70 video with CPP preprocessing
-    "*tiny-random-qwen3.5/*/CPP/video-70x70": "CVS-180070",
+    # qwen3.5 cases that use 70x70 video (both CPP and GRAPH preprocessing)
+    "*tiny-random-qwen3.5/*/video-70x70": "CVS-180070",
     # llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
@@ -2431,8 +2425,6 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
-    if sys.platform == "win32" or sys.platform == "linux":
-        pytest.xfail("Memory error. Ticket - 185156")
     resized_image = None
     resized_video = None
     if has_image:
