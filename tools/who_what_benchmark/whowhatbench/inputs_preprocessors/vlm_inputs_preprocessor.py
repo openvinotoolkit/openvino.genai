@@ -3,26 +3,26 @@ from transformers import (
     AutoImageProcessor,
     PretrainedConfig,
     PreTrainedTokenizer,
-    __version__,
 )
 from abc import ABC, abstractmethod
-from packaging.version import Version
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Any
+import torch
 
 if TYPE_CHECKING:
     from PIL.Image import Image
     from transformers.image_utils import VideoInput
 
 
-TRANSFORMERS_VERSION = Version(__version__)
-
-
 class VLMInputsPreprocessor(ABC):
-    def __init__(self, chat_mode: bool = False):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         self.images = None
         self.videos = None
         self.chat_history = []
         self.chat_mode = chat_mode
+        if model is not None:
+            self.def_image_token_id = getattr(model.config, "image_token_id", None)
+        else:
+            self.def_image_token_id = None
 
     @abstractmethod
     def preprocess_inputs(
@@ -52,3 +52,13 @@ class VLMInputsPreprocessor(ABC):
                     self.images.append(image)
         else:
             self.images = image
+
+    def align_inputs_with_cache(self, model: Any, inputs: dict, full_tokenized_chat: torch.Tensor, prefix_len: int):
+        return inputs
+
+    def is_image_token(self, tokenized_input: list, idx: int) -> bool:
+        # can't define if it's image token or not, so will treat as image
+        if self.def_image_token_id is None:
+            return True
+
+        return tokenized_input[idx] == self.def_image_token_id

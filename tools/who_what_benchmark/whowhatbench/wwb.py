@@ -587,6 +587,8 @@ def genai_gen_chat_text(
     empty_adapters=False,
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
+    _full_chat=False,
+    _kv_axes_pos=2,
 ):
     import openvino_genai
 
@@ -790,6 +792,9 @@ def genai_gen_visual_text_chat(
     max_new_tokens: int,
     pruning_ratio: Optional[float],
     relevance_weight: Optional[float],
+    _kv_axes_pos=None,
+    _crop_question=None,
+    _full_chat=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
@@ -832,6 +837,7 @@ def is_model_with_automatic_crop(config):
     return (
         "internvl" in config.model_type
         or "minicpmv" in config.model_type
+        or "minicpmo" in config.model_type
         or "videochat_flash_qwen" in config.model_type
     )
 
@@ -1017,6 +1023,7 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None
                     else 0.0
                 ),
+                device=args.device,
             )
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
@@ -1034,6 +1041,11 @@ def create_evaluator(base_model, args):
                     "please, specify chat_template or use --model-type visual-text. "
                 )
 
+            if config and is_model_with_automatic_crop(config) and args.hf:
+                crop_question = False
+            else:
+                crop_question = True
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -1045,6 +1057,8 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
+                crop_question=crop_question,
+                device=args.device,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
