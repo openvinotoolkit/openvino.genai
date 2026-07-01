@@ -393,6 +393,12 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
  * Some architectures (e.g. certain Gemma exports) cannot be converted; callers can use this
  * to choose a non-paged pipeline instead of attempting construction and handling a failure.
  *
+ * This is a per-model query, not a per-pipeline one. For a pipeline composed of several
+ * models (e.g. an omni pipeline with a separate language decoder and talker model), call
+ * this once for each sub-model's ov::Model and combine the results according to that
+ * pipeline's own requirements; this function does not attempt to report a single aggregate
+ * answer for a multi-model pipeline.
+ *
  * @param model The model to inspect.
  * @return true if the model supports paged attention (continuous batching), false otherwise.
  */
