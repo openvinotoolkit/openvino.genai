@@ -82,7 +82,7 @@ def test_cli_rejects_mutually_exclusive_backend_flags():
     )
 
     assert "Options --hf, --genai and --llamacpp are mutually exclusive" in output
-    
+
 
 def test_loader_raises_for_llamacpp_n_ctx_when_hf_backend_selected():
     with pytest.raises(
