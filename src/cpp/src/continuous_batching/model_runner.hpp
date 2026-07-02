@@ -44,11 +44,10 @@ inline std::string get_adaptive_rkv_diversity_score_output_for_decoder_layer(siz
  *
  * Enum values:
  *   - HS_NONE:    No hidden state operations are enabled (default).
- *   - HS_EXPORT:  Enables exporting hidden states from the model for draft model useage.
+ *   - HS_EXPORT:  Enables exporting hidden states from the model for draft model usage.
  *   - HS_IMPORT:  Enables importing hidden states into the model for a valid draft model forward.
  *   - HS_INTERNAL: Enables internal handling of hidden states for draft model forward.
  */
-
 enum HiddenStateFlags : uint8_t {
     HS_NONE      = 0,
     HS_EXPORT    = 1 << 0,
@@ -69,7 +68,6 @@ enum HiddenStateFlags : uint8_t {
  * Comparison:
  *   - operator< is defined to allow use as a key in std::map or std::set.
  */
-
 struct SequenceKey {
     size_t request_id{};
     size_t grouped_sequence_id{};
@@ -89,7 +87,6 @@ struct SequenceKey {
  *   - start_token_idx: The starting index of the token range.
  *   - length: The number of tokens in the range.
  */
-
 struct HiddenStateRange {
     size_t start_token_idx{};
     size_t length{};

@@ -333,6 +333,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;
+            // After MTP rollback, let the target model commit the replacement token before drafting more tokens.
+            if (mtp_mode_enabled && result.removed_tokens_cnt > 0) {
+                pause_gen_status = true;
+            }
             if (generated_len >= max_new_tokens - 1 || generated_len != 0 && result.inserted_tokens_cnt == 0) {
                 pause_gen_status = true;
             }
