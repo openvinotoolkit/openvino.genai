@@ -72,6 +72,21 @@ Before modifying shared model code, check backward compatibility:
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
 If model-checker passes, proceed to Step 4.
 
+If any GenAI source file changed, rebuild the edited checkout before running
+model-checker or direct inference. Verify `openvino_genai.__file__` resolves to
+the local build and that its linked OpenVINO libraries match the active
+runtime. A result produced by an installed/prebuilt wheel does not validate
+local source changes.
+
+For every newly enabled VLM, add the repository test coverage required by the
+`vlm-model-enabler` skill. GenAI source changes without a corresponding
+tiny-random test are incomplete.
+
+Do not report a model as enabled when its required repository test is blocked,
+failing, deselected, or references an inaccessible tiny-model repository. A
+test merely added to source is not validation. Repair the fixture or report the
+exact blocker and leave enablement incomplete.
+
 ### Step 4: Documentation Update
 
 Read and follow the **update-docs** skill.
