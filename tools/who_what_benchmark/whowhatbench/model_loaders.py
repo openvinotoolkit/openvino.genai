@@ -196,7 +196,12 @@ OMNI_MODEL_TYPES = {
 def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **kwargs):
     import transformers
 
-    model_cls_name = OMNI_MODEL_TYPES[config.model_type]
+    model_cls_name = OMNI_MODEL_TYPES.get(getattr(config, "model_type", None))
+    if model_cls_name is None:
+        raise ValueError(
+            f"Unsupported Qwen3-Omni model_type='{getattr(config, 'model_type', None)}'. "
+            f"Supported types: {', '.join(sorted(OMNI_MODEL_TYPES))}."
+        )
     model_cls = getattr(transformers, model_cls_name, None)
     if model_cls is None:
         raise ValueError(

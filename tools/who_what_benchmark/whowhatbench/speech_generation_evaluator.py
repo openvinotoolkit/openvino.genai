@@ -278,6 +278,12 @@ class Qwen3OmniSpeechWrapper:
                 "Use --speech-voice with a supported speaker name (for example, Ethan or Chelsie)."
             )
 
+        if isinstance(language, str) and language.strip():
+            raise ValueError(
+                "Qwen3-Omni does not support language selection via --speech-language "
+                "(it is currently supported only for Kokoro). Remove --speech-language."
+            )
+
         import torch
 
         speaker = voice.strip() if isinstance(voice, str) and voice.strip() else self.default_speaker
@@ -344,6 +350,12 @@ class GenAIOmniSpeechWrapper:
             raise ValueError(
                 "Qwen3-Omni selects the voice by a named speaker and does not accept speaker embeddings. "
                 "Use --speech-voice with a supported speaker name (for example, Ethan or Chelsie)."
+            )
+
+        if isinstance(language, str) and language.strip():
+            raise ValueError(
+                "Qwen3-Omni does not support language selection via --speech-language "
+                "(it is currently supported only for Kokoro). Remove --speech-language."
             )
 
         import openvino_genai
