@@ -883,6 +883,250 @@ class MemorySampler(dict, SamplerTiming):
         return tuple(map(self.format_to_export, mapargs))
 
 
+# ---------------------------------------------------------------------------
+# Windows-specific ctypes setup for MemorySamplerW
+#
+# All objects are defined at module level so they are created only once and
+# reused across every collect() call, keeping sampling overhead minimal.
+#
+# The key Win32 call chain is:
+#   OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid)
+#       → HANDLE hProcess
+#   GetProcessMemoryInfo(hProcess, &PROCESS_MEMORY_COUNTERS_EX, sizeof(...))
+#       → fills the struct with per-process memory counters
+#   CloseHandle(hProcess)
+#
+# PROCESS_MEMORY_COUNTERS_EX lives in psapi.dll (also re-exported by
+# kernel32.dll on modern Windows) and mirrors the C struct from psapi.h.
+# ---------------------------------------------------------------------------
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes as _wintypes
+
+    _PROCESS_QUERY_INFORMATION = 0x0400
+    _PROCESS_VM_READ = 0x0010
+
+    class _PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+        """
+        Mirrors the Win32 ``PROCESS_MEMORY_COUNTERS_EX`` struct (psapi.h).
+
+        Fields of interest
+        ------------------
+        WorkingSetSize  : Physical RAM pages currently resident for the
+                          process (= RSS / what Task Manager "Memory" column
+                          shows after adding the Working Set column in Details).
+        PrivateUsage    : Committed virtual memory private to the process
+                          (= Private Bytes / Commit Size in Task Manager).
+        PagefileUsage   : Amount of the page-file currently consumed.
+        """
+        _fields_ = [
+            ("cb",                         _wintypes.DWORD),
+            ("PageFaultCount",             _wintypes.DWORD),
+            ("PeakWorkingSetSize",         ctypes.c_size_t),
+            ("WorkingSetSize",             ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage",    ctypes.c_size_t),
+            ("QuotaPagedPoolUsage",        ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage",     ctypes.c_size_t),
+            ("PagefileUsage",              ctypes.c_size_t),
+            ("PeakPagefileUsage",          ctypes.c_size_t),
+            ("PrivateUsage",               ctypes.c_size_t),
+        ]
+
+    # Load DLLs once; use_last_error=True makes ctypes preserve the Win32
+    # last-error code so we can call ctypes.get_last_error() for diagnostics.
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _psapi    = ctypes.WinDLL("psapi",    use_last_error=True)
+
+    # Declare argument / return types explicitly so ctypes performs correct
+    # marshalling and we avoid silent truncation on 64-bit pointers.
+    _kernel32.OpenProcess.restype  = _wintypes.HANDLE
+    _kernel32.OpenProcess.argtypes = [
+        _wintypes.DWORD,   # dwDesiredAccess
+        _wintypes.BOOL,    # bInheritHandle
+        _wintypes.DWORD,   # dwProcessId
+    ]
+    _kernel32.CloseHandle.restype  = _wintypes.BOOL
+    _kernel32.CloseHandle.argtypes = [_wintypes.HANDLE]
+
+    _psapi.GetProcessMemoryInfo.restype  = _wintypes.BOOL
+    _psapi.GetProcessMemoryInfo.argtypes = [
+        _wintypes.HANDLE,                              # hProcess
+        ctypes.POINTER(_PROCESS_MEMORY_COUNTERS_EX),  # ppsmemCounters
+        _wintypes.DWORD,                               # cb  (struct size)
+    ]
+
+
+class MemorySamplerW(MemorySampler):
+    """
+    Windows-native memory sampler.
+
+    Uses the Win32 ``GetProcessMemoryInfo`` API (``psapi.dll``) to query
+    per-process memory counters directly, without going through the psutil
+    abstraction layer.  Metrics are aggregated across the monitored process
+    **and all its child processes** (mirrors the behaviour of
+    :class:`MemorySampler5`).
+
+    Metrics
+    -------
+    wset
+        **Working Set** (``WorkingSetSize`` from
+        ``PROCESS_MEMORY_COUNTERS_EX``).  Physical RAM pages currently
+        resident for the process, including pages shared with other
+        processes (e.g. DLLs mapped by multiple callers).  This is the
+        value shown in the *Memory (Working Set)* column of the Windows
+        Task Manager **Details** tab.  Closest Windows equivalent to RSS
+        on Linux.
+
+    priv
+        **Private Bytes** (``PrivateUsage``).  Committed virtual memory
+        that is *private* to the process — it cannot be shared and is
+        backed by the page file when paged out.  Corresponds to the
+        *Commit Size* / *Private Bytes* column in Task Manager and to
+        ``psutil``'s ``private`` field.  Grows monotonically as the
+        process allocates heap memory.
+
+    pagefile
+        **Page-File Usage** (``PagefileUsage``).  Amount of the system
+        page file currently consumed by the process.  On most workloads
+        this tracks ``PrivateUsage`` closely; it can diverge when large
+        memory-mapped files are involved.
+
+    sys
+        **System-wide used physical memory** — ``total - available`` from
+        ``psutil.virtual_memory()``.  Affected by all processes on the
+        machine, identical to the ``sys`` metric in
+        :class:`MemorySampler5`.
+
+    nsys
+        ``sys`` expressed as a percentage of total installed RAM.
+
+    Notes
+    -----
+    * Only available on ``sys.platform == "win32"``.  The
+      :meth:`_query_win_mem` helper returns ``(0, 0, 0)`` on other
+      platforms so the class is safe to import everywhere.
+    * DLL handles and the ``PROCESS_MEMORY_COUNTERS_EX`` ctypes structure
+      are defined at module level (inside the ``if sys.platform == "win32"``
+      guard above) so the per-call overhead is limited to one
+      ``OpenProcess`` + ``GetProcessMemoryInfo`` + ``CloseHandle`` round
+      trip per PID.
+    """
+
+    chunk_size = 8192
+    metrics = OrderedDict(
+        [
+            # fmt: off
+            ("wset",     {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # Working Set
+            ("priv",     {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # Private Bytes
+            ("pagefile", {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # Page-File Usage
+            ("sys",      {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # System-wide used RAM
+            ("nsys",     {"denom": 1,         "unit": "%",   "digits": 3, "cv": False}),  # System-wide used RAM %
+            # fmt: on
+        ]
+    )
+
+    def __init__(self, process_id):
+        MemorySampler.__init__(self)
+        self.process_id = process_id
+
+    # ------------------------------------------------------------------
+    # Internal helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _query_win_mem(pid):
+        """
+        Open *pid* with ``OpenProcess`` and call ``GetProcessMemoryInfo``
+        to retrieve the ``PROCESS_MEMORY_COUNTERS_EX`` struct.
+
+        :param pid: The Windows process ID to query.
+        :returns: A 3-tuple ``(WorkingSetSize, PrivateUsage, PagefileUsage)``
+                  in **bytes**.  Returns ``(0, 0, 0)`` when the process is
+                  inaccessible (e.g. it has already exited, or we lack
+                  ``PROCESS_QUERY_INFORMATION`` rights) or when running on a
+                  non-Windows platform.
+        """
+        if sys.platform != "win32":
+            return 0, 0, 0
+
+        hProcess = _kernel32.OpenProcess(
+            _PROCESS_QUERY_INFORMATION | _PROCESS_VM_READ, False, pid
+        )
+        if not hProcess:
+            return 0, 0, 0
+
+        try:
+            counters = _PROCESS_MEMORY_COUNTERS_EX()
+            counters.cb = ctypes.sizeof(_PROCESS_MEMORY_COUNTERS_EX)
+            ok = _psapi.GetProcessMemoryInfo(
+                hProcess,
+                ctypes.byref(counters),
+                ctypes.sizeof(_PROCESS_MEMORY_COUNTERS_EX),
+            )
+            if ok:
+                return (
+                    counters.WorkingSetSize,
+                    counters.PrivateUsage,
+                    counters.PagefileUsage,
+                )
+        finally:
+            _kernel32.CloseHandle(hProcess)
+
+        return 0, 0, 0
+
+    # ------------------------------------------------------------------
+    # MemorySampler protocol
+    # ------------------------------------------------------------------
+
+    def collect(self, marker):
+        """
+        Take a single memory snapshot of the monitored process (and all its
+        descendants) using the Windows ``GetProcessMemoryInfo`` API and
+        accumulate the sample into the running statistics for *marker*.
+
+        The method iterates over the parent process and every child process
+        (recursive) returned by ``psutil``, calls :meth:`_query_win_mem` for
+        each PID, and sums the three counters.  System-wide memory is read
+        once via ``psutil.virtual_memory()``.
+
+        :param marker: Logical phase label for grouping samples, e.g.
+                       ``"warmup"``, ``"P1"``, ``"cooldown"``.
+        :returns: A formatted tuple of metric values as produced by
+                  :meth:`MemorySampler.aggregate_and_format`.
+        """
+        wset_total    = 0
+        priv_total    = 0
+        pagefile_total = 0
+
+        # ── Main (parent) process ────────────────────────────────────────
+        ws, pr, pf = self._query_win_mem(self.process_id)
+        wset_total    += ws
+        priv_total    += pr
+        pagefile_total += pf
+
+        # ── Child processes (recursive) ──────────────────────────────────
+        try:
+            parent = psutilProcess(self.process_id)
+            for child in parent.children(recursive=True):
+                ws, pr, pf = self._query_win_mem(child.pid)
+                wset_total    += ws
+                priv_total    += pr
+                pagefile_total += pf
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # The target process may have exited between the parent query
+            # and the child iteration — treat as a partial sample.
+            pass
+
+        # ── System-wide memory ───────────────────────────────────────────
+        vm       = psutil.virtual_memory()
+        sys_mem  = vm.total - vm.available
+        nsys_mem = 100.0 * sys_mem / vm.total
+
+        vals = wset_total, priv_total, pagefile_total, sys_mem, nsys_mem
+        return self.aggregate_and_format(marker, vals)
+
+
 class MemorySampler5(MemorySampler):
     chunk_size = 8192
     metrics = OrderedDict(
@@ -923,7 +1167,8 @@ class MemorySampler5(MemorySampler):
 class MemoryMarkerMonitor(list):
     def __init__(self, marker_queue, process_id, sampling_interval, path_prefix):
         log.info("Memory worker: MemorySampler5 init...")
-        self.sampler = MemorySampler5(process_id)
+        ### self.sampler = MemorySampler5(process_id)
+        self.sampler = MemorySamplerW(process_id)
         self.sampling_interval = float(sampling_interval)
         self.process_id = int(process_id)
         self.last_ts = time.perf_counter()
