@@ -55,6 +55,19 @@ struct GenerationFinishInfo
     GenerationStatus streaming_finish_status;
 };
 
+// A request finishes with GenerationStatus::IGNORED when the scheduler could not fit it within
+// the available cache budget (out of memory) - this can happen for the prompt or later during
+// generation under overall cache pressure. Call sites that discard GenerationStatus (and would
+// otherwise return an empty result) should use this to surface an actionable error instead.
+// request_id identifies which request was dropped when several are generated together.
+inline void assert_request_was_scheduled(GenerationStatus status, uint64_t request_id) {
+    OPENVINO_ASSERT(status != GenerationStatus::IGNORED,
+                    "Request ", request_id, " was dropped by the scheduler because it did not fit in the "
+                    "available cache budget (out of memory). Increase cache_size / num_kv_blocks, reduce the "
+                    "prompt or generation length, or for hybrid (linear-attention) models raise "
+                    "cache_interval_multiplier to lower per-token cache usage.");
+}
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
