@@ -196,6 +196,10 @@ def run_visual_language_generation_genai(
         gen_config.pruning_ratio = args["pruning_ratio"]
     if args["relevance_weight"] is not None:
         gen_config.relevance_weight = args["relevance_weight"]
+    if args.get("draft_model", ""):
+        from task.text_generation import apply_sd_generation_config
+
+        apply_sd_generation_config(args, gen_config)
     kwargs = {}
     prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
     log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
