@@ -819,11 +819,16 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
 def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     import openvino_genai
 
+    model_type = None
     try:
-        config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+        config = AutoConfig.from_pretrained(model_dir, trust_remote_code=False)
         model_type = getattr(config, "model_type", None)
     except Exception:
-        model_type = None
+        try:
+            config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+            model_type = getattr(config, "model_type", None)
+        except Exception:
+            model_type = None
 
     if model_type in OMNI_MODEL_TYPES:
         from .speech_generation_evaluator import GenAIOmniSpeechWrapper
