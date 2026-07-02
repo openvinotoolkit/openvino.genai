@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "audio_utils.hpp"
-#include "openvino/genai/whisper_pipeline.hpp"
+#include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 auto get_config_for_cache() {
     ov::AnyMap config;
-    config.insert({ov::cache_dir("whisper_cache")});
+    config.insert({ov::cache_dir("asr_cache")});
     return config;
 }
 
@@ -27,16 +27,21 @@ int main(int argc, char* argv[]) try {
         ov_config = get_config_for_cache();
     }
 
-    // Word timestamps require decomposition of cross-attention decoder SDPA layers,
-    // so word_timestamps must be passed to the pipeline constructor (not just in generation config)
+    // Word timestamps supported by Whisper models only
+    // Must be passed to ASRPipeline constructor as a property
     ov_config.insert(ov::genai::word_timestamps(true));
 
-    ov::genai::WhisperPipeline pipeline(models_path, device, ov_config);
+    ov::genai::ASRPipeline pipeline(models_path, device, ov_config);
 
-    ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
-    // 'task' and 'language' parameters are supported for multilingual models only
-    config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
-    config.task = "transcribe";
+    ov::genai::ASRGenerationConfig config = pipeline.get_generation_config();
+
+    // If language is known in advance it can be passed to the pipeline
+    // In the form of "<|en|>" for Whisper models. Supported by multilingual models only
+    // In the form of "English" for Qwen3-ASR models.
+    config.language = "<|en|>";
+
+    // Whisper models parameters. Ignored for Qwen3-ASR models
+    config.task = "transcribe";  // Supported by multilingual models only
     config.return_timestamps = true;
     config.word_timestamps = true;
 
@@ -47,12 +52,16 @@ int main(int argc, char* argv[]) try {
     std::cout << result << "\n";
 
     std::cout << std::fixed << std::setprecision(2);
-    for (auto& chunk : *result.chunks) {
-        std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
+    if (result.chunks.has_value()) {
+        for (auto& chunk : (*result.chunks)[0]) {
+            std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
+        }
     }
 
-    for (auto& word : *result.words) {
-        std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.word << "\n";
+    if (result.words.has_value()) {
+        for (auto& word : (*result.words)[0]) {
+            std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
+        }
     }
 
 } catch (const std::exception& error) {

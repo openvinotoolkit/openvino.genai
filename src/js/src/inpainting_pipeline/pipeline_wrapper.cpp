@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "include/helper.hpp"
+#include "include/image_decode_worker.hpp"
 #include "include/inpainting_pipeline/init_worker.hpp"
 
 namespace {
@@ -19,11 +20,13 @@ struct InpaintingTsfnContext {
                           ov::Tensor image,
                           ov::Tensor mask_image,
                           ov::AnyMap generation_properties,
+                          std::shared_ptr<std::atomic<bool>> is_busy,
                           std::shared_ptr<std::atomic<bool>> is_generating)
         : prompt(std::move(prompt)),
           image(std::move(image)),
           mask_image(std::move(mask_image)),
           generation_properties(std::move(generation_properties)),
+          is_busy(std::move(is_busy)),
           is_generating(std::move(is_generating)) {}
 
     std::thread native_thread;
@@ -34,6 +37,7 @@ struct InpaintingTsfnContext {
     ov::Tensor mask_image;
     ov::AnyMap generation_properties;
     std::vector<std::string> callback_exceptions;
+    std::shared_ptr<std::atomic<bool>> is_busy;
     std::shared_ptr<std::atomic<bool>> is_generating;
     std::shared_ptr<ov::genai::InpaintingPipeline> pipe = nullptr;
 };
@@ -68,28 +72,66 @@ void inpainting_perform_inference_thread(InpaintingTsfnContext* context) {
             context->generation_properties["callback"] =
                 std::function<bool(size_t, size_t, ov::Tensor&)>(
                     [context](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
-                        std::promise<bool> result_promise;
+                        auto result_promise = std::make_shared<std::promise<bool>>();
+                        auto result_future = result_promise->get_future();
+                        // Release the inference request while the JS step callback runs so it may call decode().
+                        context->is_busy->store(false);
                         napi_status status = context->streamer_tsfn->BlockingCall(
-                            [step, num_steps, &result_promise, context](
+                            [step, num_steps, &latent, result_promise, context](
                                 Napi::Env env, Napi::Function js_callback) {
                                 try {
                                     auto js_result =
                                         js_callback.Call({Napi::Number::New(env, static_cast<double>(step)),
-                                                          Napi::Number::New(env, static_cast<double>(num_steps))});
-                                    result_promise.set_value(js_result.IsBoolean() &&
-                                                             js_result.As<Napi::Boolean>().Value());
+                                                          Napi::Number::New(env, static_cast<double>(num_steps)),
+                                                          cpp_to_js<ov::Tensor, Napi::Value>(env, latent)});
+                                    if (js_result.IsBoolean()) {
+                                        result_promise->set_value(js_result.As<Napi::Boolean>().Value());
+                                    } else if (js_result.IsPromise()) {
+                                        Napi::Object promise = js_result.As<Napi::Object>();
+                                        Napi::Function then = promise.Get("then").As<Napi::Function>();
+                                        auto on_fulfilled = Napi::Function::New(
+                                            env, [result_promise, context](const Napi::CallbackInfo& cb) {
+                                                if (cb.Length() > 0 && cb[0].IsBoolean()) {
+                                                    result_promise->set_value(cb[0].As<Napi::Boolean>().Value());
+                                                } else {
+                                                    context->callback_exceptions.push_back(
+                                                        "Step callback must resolve to a boolean.");
+                                                    result_promise->set_value(true);  // stop on invalid resolved value
+                                                }
+                                            });
+                                        auto on_rejected = Napi::Function::New(
+                                            env, [result_promise, context](const Napi::CallbackInfo& cb) {
+                                                std::string message = "Step callback promise rejected";
+                                                if (cb.Length() > 0 && cb[0].IsObject()) {
+                                                    Napi::Value msg = cb[0].As<Napi::Object>().Get("message");
+                                                    if (msg.IsString()) {
+                                                        message = msg.As<Napi::String>().Utf8Value();
+                                                    }
+                                                }
+                                                context->callback_exceptions.push_back(message);
+                                                result_promise->set_value(true);  // stop on rejection
+                                            });
+                                        then.Call(promise, {on_fulfilled, on_rejected});
+                                    } else {
+                                        context->callback_exceptions.push_back(
+                                            "Step callback must return a boolean or a Promise<boolean>.");
+                                        result_promise->set_value(true);  // stop on invalid return type
+                                    }
                                 } catch (const std::exception& err) {
                                     context->callback_exceptions.push_back(err.what());
-                                    result_promise.set_value(true);  // stop on exception
+                                    result_promise->set_value(true);  // stop on exception
                                 }
                             });
                         if (status != napi_ok) {
+                            context->is_busy->store(true);
                             context->callback_exceptions.push_back(
                                 "Step callback BlockingCall failed with status: " +
                                 std::to_string(static_cast<int>(status)));
                             return true;  // stop
                         }
-                        return result_promise.get_future().get();
+                        bool stop = result_future.get();
+                        context->is_busy->store(true);
+                        return stop;
                     });
         }
 
@@ -97,6 +139,7 @@ void inpainting_perform_inference_thread(InpaintingTsfnContext* context) {
                                                     context->image,
                                                     context->mask_image,
                                                     context->generation_properties);
+        context->is_busy->store(false);
         context->is_generating->store(false);
 
         if (!context->callback_exceptions.empty()) {
@@ -125,6 +168,7 @@ void inpainting_perform_inference_thread(InpaintingTsfnContext* context) {
             }
         }
     } catch (const std::exception& ex) {
+        context->is_busy->store(false);
         context->is_generating->store(false);
         report_error(ex.what());
     }
@@ -143,6 +187,7 @@ Napi::Function InpaintingPipelineWrapper::get_class(Napi::Env env) {
                        {
                            InstanceMethod("init", &InpaintingPipelineWrapper::init),
                            InstanceMethod("generate", &InpaintingPipelineWrapper::generate),
+                           InstanceMethod("decode", &InpaintingPipelineWrapper::decode),
                            InstanceMethod("getPerformanceMetrics",
                                           &InpaintingPipelineWrapper::get_performance_metrics),
                            InstanceMethod("getGenerationConfig", &InpaintingPipelineWrapper::get_generation_config),
@@ -183,7 +228,9 @@ Napi::Value InpaintingPipelineWrapper::generate(const Napi::CallbackInfo& info) 
     auto env = info.Env();
     try {
         OPENVINO_ASSERT(this->pipe, "InpaintingPipeline is not initialized");
-        OPENVINO_ASSERT(!this->is_generating->load(), "Another generate is already in progress");
+        OPENVINO_ASSERT(!this->is_busy->load() && !this->is_generating->load(),
+                        "generate() cannot run while another generate() or decode() is in progress");
+        this->is_busy->store(true);
         this->is_generating->store(true);
 
         // generate(prompt, image, mask, properties, streamer, doneCallback)
@@ -221,6 +268,7 @@ Napi::Value InpaintingPipelineWrapper::generate(const Napi::CallbackInfo& info) 
                                                   std::move(image),
                                                   std::move(mask_image),
                                                   std::move(generation_properties),
+                                                  this->is_busy,
                                                   this->is_generating);
         context->pipe = this->pipe;
 
@@ -240,10 +288,32 @@ Napi::Value InpaintingPipelineWrapper::generate(const Napi::CallbackInfo& info) 
 
         context->native_thread = std::thread(inpainting_perform_inference_thread, context);
     } catch (const std::exception& ex) {
+        this->is_busy->store(false);
         this->is_generating->store(false);
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }
 
+    return env.Undefined();
+}
+
+Napi::Value InpaintingPipelineWrapper::decode(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "InpaintingPipeline is not initialized");
+        OPENVINO_ASSERT(!this->is_busy->load(),
+                        "decode() cannot run while another generate() or decode() is in progress");
+        VALIDATE_ARGS_COUNT(info, 2, "decode()");
+        auto latent = js_to_cpp<ov::Tensor>(env, info[0]);
+        OPENVINO_ASSERT(info[1].IsFunction(), "decode callback is not a function");
+        Napi::Function callback = info[1].As<Napi::Function>();
+
+        this->is_busy->store(true);
+        auto* async_worker =
+            new ImageDecodeWorker<ov::genai::InpaintingPipeline>(callback, this->pipe, std::move(latent), this->is_busy);
+        async_worker->Queue();
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
     return env.Undefined();
 }
 

@@ -56,5 +56,9 @@ public:
     using ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests;
 protected:
     TokenIds generate_candidates(const TokenIds& input_ids, size_t num_pred_tokens, size_t max_ngram_size);
+
+    bool sync_embeddings_after_candidates() const override {
+        return true;
+    }
 };
 }
