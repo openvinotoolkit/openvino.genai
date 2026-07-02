@@ -22,6 +22,7 @@ export class DecodedResults {
    * @param {PerfMetrics} perfMetrics - Performance metrics (tpot, ttft, etc.).
    * @param {Record<string, unknown>[]} parsed - The results of parsers processing for each sequence.
    * @param {GenerationFinishReason[]} finishReasons - Finish reasons for each sequence.
+   * @param {BigInt64Array[]} tokens - Generated token ids per sequence (parallels `texts`).
    */
   constructor(
     texts: string[],
@@ -29,12 +30,14 @@ export class DecodedResults {
     perfMetrics: PerfMetrics,
     parsed: Record<string, unknown>[],
     finishReasons: GenerationFinishReason[] = [],
+    tokens: BigInt64Array[] = [],
   ) {
     this.texts = texts;
     this.scores = scores;
     this.perfMetrics = perfMetrics;
     this.parsed = parsed;
     this.finishReasons = finishReasons;
+    this.tokens = tokens;
   }
   toString() {
     if (this.scores.length !== this.texts.length) {
@@ -54,6 +57,7 @@ export class DecodedResults {
   perfMetrics: PerfMetrics;
   parsed: Record<string, unknown>[];
   finishReasons: GenerationFinishReason[];
+  tokens: BigInt64Array[];
 }
 
 /**
@@ -67,6 +71,7 @@ export class VLMDecodedResults extends DecodedResults {
    * @param {VLMPerfMetrics} perfMetrics - VLM-specific performance metrics.
    * @param {Record<string, unknown>[]} parsed - The results of parsers processing for each sequence.
    * @param {GenerationFinishReason[]} finishReasons - Finish reasons for each sequence.
+   * @param {BigInt64Array[]} tokens - Generated token ids per sequence (parallels `texts`).
    */
   constructor(
     texts: string[],
@@ -74,8 +79,9 @@ export class VLMDecodedResults extends DecodedResults {
     perfMetrics: VLMPerfMetrics,
     parsed: Record<string, unknown>[],
     finishReasons: GenerationFinishReason[] = [],
+    tokens: BigInt64Array[] = [],
   ) {
-    super(texts, scores, perfMetrics, parsed, finishReasons);
+    super(texts, scores, perfMetrics, parsed, finishReasons, tokens);
     this.perfMetrics = perfMetrics;
   }
 

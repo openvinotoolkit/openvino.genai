@@ -194,6 +194,7 @@ private:
         final_decoded_results.perf_metrics.evaluate_statistics(start_time);
         final_decoded_results.texts = decoded_results.texts;
         final_decoded_results.scores = decoded_results.scores;
+        final_decoded_results.tokens = std::move(decoded_results.tokens);
         final_decoded_results.finish_reasons = decoded_results.finish_reasons;
         final_decoded_results.extended_perf_metrics = decoded_results.extended_perf_metrics;
         return final_decoded_results;
