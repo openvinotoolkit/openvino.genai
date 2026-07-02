@@ -526,7 +526,18 @@ def load_visual_text_model(
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
             from optimum.intel.openvino import OVModelForMultimodalLM
 
-            return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
+            try:
+                return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
+            except ValueError:
+                return OVModelForMultimodalLM.from_pretrained(
+                    model_id,
+                    config=config,
+                    trust_remote_code=True,
+                    use_cache=True,
+                    device=device,
+                    ov_config=ov_config,
+                    **kwargs,
+                )
 
         try:
             model = OVModelForVisualCausalLM.from_pretrained(
