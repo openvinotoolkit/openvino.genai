@@ -180,3 +180,416 @@ def get_video_gen_prompt(args):
     else:
         input_list.append(output_data_list[0])
     return input_list
+
+
+#########################################################
+# DONE: implement BenchPrompt and BenchPrompter
+#
+# CLASS BenchPrompt is handler for a single multimedia prompt
+#   - it load prompt content/data: text, image, video, and/or audio
+#   - data should be store inside under keys: prompt, image, video, audio, mask, etc.
+#   - it should evaluate correctnes of input data (decimate/reduce if needed especially for video see make_video_tensor)
+#   - it should be able to create prompt representation (repr) with size of its elements:
+#     -- text -> <text length in tokens>
+#     -- text + image -> <text length in tokens> + <width in pixels>x<height in pixels>
+#     -- text + video -> <text length in tokens> + <width in pixels>x<height in pixels>@<frames>
+#     -- text + audio -> <text length in tokens> + <duration in seconds>@<sampling-rate>
+#     -- text + image + mask -> <text length in tokens> + <width in pixels>x<height in pixels>/<fraction in percentege>%
+#   - please note that prompts can be loaded directly from command line of from jsonl files e.g.:
+#     -- example 1:
+#     {"type": "audio", "media": "./audio/intel_ad_30s_124kbps.mp3"}
+#     {"type": "audio", "media": "./audio/intel_ad_90s_128kbps.mp3"}
+#     -- example 2:
+#     {"prompt": "What is presented in the video?", "video": "./video/spinning-earth-480.mp4"}
+#     {"prompt": "What is Earth's spin and which continents are visible ...", "video": "./video/spinning-earth-480.mp4"}
+#     -- example 3:
+#     {"prompt": "What is in the image?", "media": "./image/overture-creations-5sI6fQgYIuo.png"}
+#     -- example 4:
+#      {"word_num": "32", "type": "image_description", "language": "EN", "source": "Gustavosta/Stable-Diffusion-Prompts",
+#       "prompt": "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, ..."}
+#   - see tools/llm_bench/benchmark.py for possible options how to provide prompts
+#
+# CLASS BenchPrompter is a container for multiple BenchPrompts
+#   - it parses and analyzes command line in context of prompts loading
+#   - prompt index should be possition in BenchPrompter which is list
+#   - it gives an iterator for main loops with proper sequence of prompts
+#     with respect of: args.prompt_index, args.batch_size, args.streaming, args.subsequent, etc.
+#
+# DONE: refactor code in tools/llm_bench/task/text_generation.py to use new classes
+#     in tools/llm_bench/task/text_generation.py in run_text_generation_benchmark
+#     it seems that code under: "if args['subsequent'] is False:" is very similar with code under "else"
+#     propose unification of this code mapping idx -> p_idx inside BenchPrompter class
+#
+
+
+class BenchPrompt(dict):
+    """
+    Handler for a single multimedia prompt.
+
+    Inherits from ``dict`` and stores prompt data under well-known keys:
+
+        'prompt'          - required text prompt string
+        'media'           - path to an image file
+        'mask_image'      - path to a mask image (inpainting tasks)
+        'video'           - path to a video file or directory of video frames
+        'audio'           - path to an audio file
+        'negative_prompt' - negative text prompt (image / video generation)
+
+    Media sizes and shapes are probed **lazily** on the first call to
+    ``__repr__`` (or to ``probe()`` explicitly). For video, optional
+    decimation is applied via ``args['video_frames']`` using
+    ``make_video_tensor``.
+
+    Parameters
+    ----------
+    data : str | dict
+        A single prompt entry. A plain ``str`` is stored as the text
+        prompt. A ``dict`` may contain any combination of the keys listed
+        above; unknown keys are silently ignored.
+    args : dict, optional
+        Global benchmark args dict (e.g. as returned by
+        ``model_utils.analyze_args``). Used for:
+            - ``args['video_frames']`` - frame decimation target for video
+    """
+
+    #: Keys recognised and stored by BenchPrompt
+    MEDIA_KEYS = ("prompt", "media", "mask_image", "video", "audio", "negative_prompt")
+
+    def __init__(self, data, args=None):
+        dict.__init__(self)
+        self._args = args or {}
+        # Lazily filled by probe()
+        self._image_size = None  # (width, height) | None
+        self._video_shape = None  # (frames, height, width) | None
+        self._audio_info = None  # (duration_sec, sample_rate) | None
+        self._probed = False
+        self._load(data)
+
+    # ------------------------------------------------------------------ #
+    # Loading & structural validation                                      #
+    # ------------------------------------------------------------------ #
+
+    def _load(self, data):
+        """Populate the dict from *data* and run cheap structural checks."""
+        if isinstance(data, str):
+            self["prompt"] = data
+        elif isinstance(data, dict):
+            for key in self.MEDIA_KEYS:
+                if key in data:
+                    self[key] = data[key]
+        else:
+            raise TypeError(f"BenchPrompt: unsupported data type {type(data)!r}. Expected str or dict.")
+        if "prompt" not in self:
+            raise RuntimeError("BenchPrompt: 'prompt' key is required")
+        if self["prompt"] == "":
+            raise RuntimeError("BenchPrompt: 'prompt' must not be an empty string")
+
+    # ------------------------------------------------------------------ #
+    # Lazy media probing                                                   #
+    # ------------------------------------------------------------------ #
+
+    def probe(self):
+        """
+        Probe all media files to fill size / shape metadata.
+
+        Called automatically by ``__repr__``. Safe to call multiple times
+        (runs only once). Validates correctness of input data and applies
+        decimation to video via ``make_video_tensor``.
+        """
+        if self._probed:
+            return
+        self._probed = True
+
+        if self.get("media"):
+            self._image_size = self._get_image_size(self["media"])
+
+        if self.get("video"):
+            decim = self._args.get("video_frames")
+            self._video_shape = self._get_video_shape(self["video"], decim)
+
+        if self.get("audio"):
+            self._audio_info = self._get_audio_info(self["audio"])
+
+    # ------------------------------------------------------------------ #
+    # Static media helpers                                                 #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _get_image_size(path):
+        """Return ``(width, height)`` or ``None`` on failure."""
+        try:
+            return Image.open(path).size
+        except Exception as exc:
+            log.warning(f"BenchPrompt: cannot probe image '{path}': {exc}")
+            return None
+
+    @staticmethod
+    def _get_video_shape(path, decim_frames=None):
+        """
+        Return ``(frames, height, width)`` or ``None`` on failure.
+
+        Delegates to ``make_video_tensor`` so that the same decimation
+        logic used during actual benchmarking is also applied during
+        validation.
+        """
+        try:
+            # genai_flag=False -> returns np.ndarray with shape (F, H, W, C)
+            tensor = make_video_tensor(str(path), decim_frames, genai_flag=False)
+            return tuple(tensor.shape[:3])  # (frames, height, width)
+        except Exception as exc:
+            log.warning(f"BenchPrompt: cannot probe video '{path}': {exc}")
+            return None
+
+    @staticmethod
+    def _get_audio_info(path):
+        """Return ``(duration_sec, sample_rate)`` or ``None`` on failure."""
+        try:
+            import librosa
+
+            sr = librosa.get_samplerate(path)
+            dur = librosa.get_duration(path=path)
+            return (dur, sr)
+        except Exception as exc:
+            log.warning(f"BenchPrompt: cannot probe audio '{path}': {exc}")
+            return None
+
+    @staticmethod
+    def _get_mask_fraction(mask_path):
+        """Return the percentage of non-zero pixels in *mask_path* or ``None``."""
+        try:
+            arr = np.array(Image.open(mask_path).convert("L"))
+            return 100.0 * float(np.count_nonzero(arr)) / arr.size
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------------ #
+    # Representation                                                       #
+    # ------------------------------------------------------------------ #
+
+    def __repr__(self):
+        """
+        Human-readable description of the prompt and its media dimensions.
+
+        Format (``+`` separates modalities):
+
+            BenchPrompt(text:7t)
+            BenchPrompt(text:7t + image:512x512)
+            BenchPrompt(text:7t + video:640x480@30f)
+            BenchPrompt(text:7t + audio:30.0s@44100Hz)
+            BenchPrompt(text:7t + image:512x512/35.2%)
+            BenchPrompt(text:7t + image:1024x768 + video:640x480@16f)
+
+        Token count is estimated as the whitespace-split word count of the
+        text prompt (exact token count would require the tokenizer).
+        """
+        self.probe()
+        parts = []
+
+        # ---- text ----
+        token_est = len(self.get("prompt", "").split())
+        parts.append(f"text:{token_est}t")
+
+        # ---- image (optionally decorated with mask coverage fraction) ----
+        if self.get("media"):
+            if self._image_size:
+                w, h = self._image_size
+                if self.get("mask_image"):
+                    frac = self._get_mask_fraction(self["mask_image"])
+                    if frac is not None:
+                        parts.append(f"image:{w}x{h}/{frac:.1f}%")
+                    else:
+                        parts.append(f"image:{w}x{h}")
+                else:
+                    parts.append(f"image:{w}x{h}")
+            else:
+                parts.append("image:?x?")
+
+        # ---- video ----
+        if self.get("video"):
+            if self._video_shape:
+                frames, h, w = self._video_shape
+                parts.append(f"video:{w}x{h}@{frames}f")
+            else:
+                parts.append("video:?x?@?f")
+
+        # ---- audio ----
+        if self.get("audio"):
+            if self._audio_info:
+                dur, sr = self._audio_info
+                parts.append(f"audio:{dur:.1f}s@{sr}Hz")
+            else:
+                parts.append("audio:?s@?Hz")
+
+        return "BenchPrompt(" + " + ".join(parts) + ")"
+
+
+class BenchPrompter(list):
+    """
+    Container for multiple :class:`BenchPrompt` objects.
+
+    Parses command-line arguments and/or ``.jsonl`` prompt files, wraps
+    every entry in a :class:`BenchPrompt`, and exposes an iterator over
+    ``(iteration_num, prompt_idx, BenchPrompt)`` triples whose order
+    respects the ``'subsequent'`` scheduling flag.
+
+    Scheduling modes
+    ----------------
+    ``subsequent=False`` *(default)*
+        Outer loop = iteration numbers, inner loop = prompts.
+        All prompts are run before advancing to the next iteration.
+
+    ``subsequent=True``
+        Outer loop = prompts, inner loop = iteration numbers.
+        All iterations for one prompt complete before moving to the next.
+
+    In both modes ``num=0`` is the warm-up iteration.
+
+    Parameters
+    ----------
+    args : dict
+        Full benchmark args dict (as produced by
+        ``model_utils.analyze_args``). Relevant keys:
+
+            'use_case'      - object with a ``.task`` attribute
+            'prompt_index'  - ``list[int]`` or ``None`` (prompt subset)
+            'subsequent'    - ``bool`` (scheduling mode)
+            'batch_size'    - ``int``
+            'video_frames'  - ``int`` or ``None`` (video decimation)
+    """
+
+    def __init__(self, args):
+        list.__init__(self)
+        self._args = args
+        self._load_prompts()
+
+    # ------------------------------------------------------------------ #
+    # Loading                                                              #
+    # ------------------------------------------------------------------ #
+
+    def _load_prompts(self):
+        """
+        Populate the list with :class:`BenchPrompt` objects.
+
+        Selects the appropriate ``input_key`` for
+        :func:`get_param_from_file` and the matching parse function based
+        on the task type derived from ``args['use_case'].task``.
+        """
+        args = self._args
+        use_case = args.get("use_case")
+        task = getattr(use_case, "task", "text_gen") if use_case else "text_gen"
+
+        # ---- pick input keys based on task ----
+        if task == "visual_text_gen":
+            input_key = ["video", "media", "prompt"]
+        elif task == "image_gen":
+            if use_case and hasattr(use_case, "TASK"):
+                inpainting_name = use_case.TASK.get("inpainting", {}).get("name")
+                img2img_name = use_case.TASK.get("img2img", {}).get("name")
+                if args.get("task") == inpainting_name or (
+                    (args.get("media") or args.get("images")) and args.get("mask_image")
+                ):
+                    input_key = ["media", "mask_image", "prompt"]
+                elif args.get("task") == img2img_name or args.get("media") or args.get("images"):
+                    input_key = ["media", "prompt"]
+                else:
+                    input_key = ["prompt"]
+            else:
+                input_key = ["prompt"]
+        elif task == "video_gen":
+            input_key = ["prompt", "negative_prompt"]
+        else:
+            # text_gen, code_gen, text_embed, text2speech, text_rerank, ...
+            input_key = "prompt"
+
+        output_data_list, is_json_data = get_param_from_file(args, input_key)
+
+        if is_json_data:
+            # Parse raw jsonl dicts according to task type.
+            # Note: parse_text_json_data returns plain strings; all others
+            # return dicts – both are accepted by BenchPrompt.__init__.
+            if task == "visual_text_gen":
+                raw_list = parse_vlm_json_data(output_data_list)
+            elif task == "image_gen":
+                raw_list = parse_image_json_data(output_data_list)
+            elif task == "video_gen":
+                raw_list = parse_video_json_data(output_data_list)
+            else:
+                raw_list = parse_text_json_data(output_data_list)
+        else:
+            raw_list = output_data_list
+
+        if not raw_list:
+            raise RuntimeError("BenchPrompter: prompt list is empty")
+
+        for entry in raw_list:
+            self.append(BenchPrompt(entry, args))
+
+    # ------------------------------------------------------------------ #
+    # List interface                                                       #
+    # ------------------------------------------------------------------ #
+
+    def append(self, prompt):
+        """Only :class:`BenchPrompt` objects may be appended."""
+        assert isinstance(prompt, BenchPrompt), f"BenchPrompter only accepts BenchPrompt objects, got {type(prompt)!r}"
+        super().append(prompt)
+
+    # ------------------------------------------------------------------ #
+    # Prompt selection                                                     #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def active_pairs(self):
+        """
+        Return a list of ``(p_idx, BenchPrompt)`` pairs to be benchmarked.
+
+        If ``args['prompt_index']`` is provided only the prompts at those
+        positions are included (out-of-range indices are silently skipped).
+        Otherwise all prompts are included and ``p_idx`` equals the
+        position in this list.
+        """
+        prompt_index = self._args.get("prompt_index")
+        if prompt_index is None:
+            return list(enumerate(self))
+        return [(i, self[i]) for i in prompt_index if 0 <= i < len(self)]
+
+    # ------------------------------------------------------------------ #
+    # Iteration scheduling                                                 #
+    # ------------------------------------------------------------------ #
+
+    def iter_schedule(self, num_iters):
+        """
+        Yield ``(num, p_idx, prompt)`` triples in scheduling order.
+
+        Parameters
+        ----------
+        num_iters : int
+            Number of benchmark iterations *excluding* warm-up.
+            ``num`` ranges from ``0`` (warm-up) to ``num_iters`` inclusive.
+
+        Yields
+        ------
+        num : int
+            Iteration number (``0`` = warm-up).
+        p_idx : int
+            Original index of the prompt in this list.
+        prompt : BenchPrompt
+            The prompt object for this (iteration, prompt) pair.
+
+        Scheduling order
+        ----------------
+        ``subsequent=False``  ->  for num in iters: for (p_idx, p) in active
+        ``subsequent=True``   ->  for (p_idx, p) in active: for num in iters
+        """
+        active = self.active_pairs
+        subsequent = self._args.get("subsequent", False)
+
+        if not subsequent:
+            # All prompts inside each iteration
+            for num in range(num_iters + 1):
+                for p_idx, prompt in active:
+                    yield num, p_idx, prompt
+        else:
+            # All iterations for each prompt before moving on
+            for p_idx, prompt in active:
+                for num in range(num_iters + 1):
+                    yield num, p_idx, prompt
