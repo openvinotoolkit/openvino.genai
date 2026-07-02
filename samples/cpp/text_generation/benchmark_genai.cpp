@@ -11,10 +11,10 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>())
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
-    ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
-    ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
+    ("F,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
+    ("N,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
-    ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
+    ("M,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
     ("h,help", "Print usage");
 
@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device);
     else
-        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device, ov::genai::SchedulerConfig(scheduler_config));
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
