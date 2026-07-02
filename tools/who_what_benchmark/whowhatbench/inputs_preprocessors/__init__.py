@@ -7,10 +7,12 @@ from .phi4 import Phi4MMInputsPreprocessor
 from .qwen2 import Qwen2VLInputsPreprocessor
 from .qwen3 import Qwen3VLInputsPreprocessor, Qwen3_5VLInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
+from .youtu_vl import YoutuVLInputsPreprocessor
 from .gemma4 import Gemma4InputsPreprocessor, Gemma4UnifiedInputsPreprocessor
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
+    "youtu_vl": YoutuVLInputsPreprocessor,
     "qwen3_vl": Qwen3VLInputsPreprocessor,
     "qwen3_5_moe": Qwen3_5VLInputsPreprocessor,
     "qwen3_5": Qwen3_5VLInputsPreprocessor,
