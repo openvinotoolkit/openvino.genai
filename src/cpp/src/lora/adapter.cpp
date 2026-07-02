@@ -254,7 +254,22 @@ struct LoRAWeightGetterDefault {
     mutable std::set<std::string> used_tensors;
     mutable bool active = false;    // true if operator() was called at least once to filter out the case when this object is temporary object that is not used for tensor queries
 
-    LoRAWeightGetterDefault (const std::map<std::string, TENSOR_TYPE>* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {}
+    struct FilteredTensor {
+        std::string original_name;
+        std::string filtered_name;
+        TENSOR_TYPE tensor;
+    };
+    std::vector<FilteredTensor> filtered_tensors;
+
+    LoRAWeightGetterDefault (const std::map<std::string, TENSOR_TYPE>* lora_tensors, const std::string& prefix) : lora_tensors(lora_tensors), prefix(prefix) {
+        if (lora_tensors) {
+            for (const auto& pair : *lora_tensors) {
+                if (pair.first.find(prefix) == 0) {
+                    filtered_tensors.push_back({pair.first, pair.first.substr(prefix.length()), pair.second});
+                }
+            }
+        }
+    }
 
     std::optional<NODE_TYPE> operator() (const std::string& name) const {
         active = true;
@@ -262,21 +277,14 @@ struct LoRAWeightGetterDefault {
         // TODO: Investigate what is the root cause for this replacement in the name. Customize mapping or change PT FE to produce correct weight names.
         std::replace(name_with_underscores.begin(), name_with_underscores.end(), '.', '_');
         std::vector<std::string> variants{name, name_with_underscores};
-        auto it = std::find_if(lora_tensors->begin(), lora_tensors->end(), [this, variants](const std::pair<std::string, TENSOR_TYPE>& pair) {
-            std::string lora_name = pair.first;
-            // TODO: Make this filtering for prefix once in ctor as a more efficient solution
-            if(lora_name.find(prefix) == 0) {
-                lora_name = lora_name.substr(prefix.length());
-            } else {
-                return false;
-            }
+        auto it = std::find_if(filtered_tensors.begin(), filtered_tensors.end(), [this, variants](const FilteredTensor& ft) {
             // TODO: Should it be an exact match instead of substring taking into account that we should provide custom mapper for names?
-            return variants.end() != std::find_if(variants.begin(), variants.end(), [lora_name](const std::string& name) { return name.find(lora_name) != std::string::npos; });
+            return variants.end() != std::find_if(variants.begin(), variants.end(), [&ft](const std::string& name) { return name.find(ft.filtered_name) != std::string::npos; });
         });
 
-        if(it != lora_tensors->end()) {
-            used_tensors.insert(it->first);
-            return it->second;
+        if(it != filtered_tensors.end()) {
+            used_tensors.insert(it->original_name);
+            return it->tensor;
         }
         return std::nullopt;
     }
@@ -284,11 +292,9 @@ struct LoRAWeightGetterDefault {
     // Return list of LoRA tensors that are dedicated for the model but left unused
     std::list<std::string> get_unused_tensors() const {
         std::list<std::string> unused;
-        for(auto const& tensor: *lora_tensors) {
-            if(tensor.first.find(prefix) == 0) {
-                if(used_tensors.find(tensor.first) == used_tensors.end()) {
-                    unused.push_back(tensor.first);
-                }
+        for(auto const& ft: filtered_tensors) {
+            if(used_tensors.find(ft.original_name) == used_tensors.end()) {
+                unused.push_back(ft.original_name);
             }
         }
         return unused;
