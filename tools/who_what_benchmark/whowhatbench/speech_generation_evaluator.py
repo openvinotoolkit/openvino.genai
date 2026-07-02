@@ -25,6 +25,8 @@ DEFAULT_SPEAKER_EMBEDDING_FILENAME = "cmu_us_slt_arctic-wav-arctic_a0508.bin"
 SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
 KOKORO_SPEAKER_EMB_SHAPE = (510, 1, 256)
 KOKORO_SAMPLE_RATE = 24000
+QWEN3_OMNI_SAMPLE_RATE = 24000
+QWEN3_OMNI_DEFAULT_SPEAKER = "Ethan"
 LOGGER = logging.getLogger(__name__)
 
 SPEAKER_SCORE_COL = "speaker score"
@@ -243,6 +245,151 @@ class KokoroModelWrapper:
         audio = result.audio
 
         return _SpeechResult(audio)
+
+
+class Qwen3OmniSpeechWrapper:
+    """Wrapper for Qwen3-Omni models (HF or Optimum) that emit speech via the talker module.
+
+    Qwen3-Omni selects the voice by a named speaker (for example, "Ethan" or "Chelsie")
+    instead of an xvector speaker embedding, so embedding files are not supported. Both the
+    HF (transformers) full model and the Optimum OVModelForMultimodalLM expose the same
+    generate(..., speaker=..., return_audio=True) -> (text, waveform) interface.
+    """
+
+    def __init__(self, model, processor, default_speaker=QWEN3_OMNI_DEFAULT_SPEAKER):
+        self.model = model
+        self.processor = processor
+        self.default_speaker = default_speaker
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+    def get_speaker_embedding_shape(self):
+        # Qwen3-Omni does not use xvector speaker embeddings; the shape is unused.
+        return (1, 1)
+
+    def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
+        if speaker_embedding is not None:
+            raise ValueError(
+                "Qwen3-Omni selects the voice by a named speaker and does not accept speaker embeddings. "
+                "Use --speech-voice with a supported speaker name (for example, Ethan or Chelsie)."
+            )
+
+        if isinstance(language, str) and language.strip():
+            raise ValueError(
+                "Qwen3-Omni does not support language selection via --speech-language "
+                "(it is currently supported only for Kokoro). Remove --speech-language."
+            )
+
+        import torch
+
+        speaker = voice.strip() if isinstance(voice, str) and voice.strip() else self.default_speaker
+
+        conversation = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+        inputs = self.processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+
+        # HF models expose a torch device and require inputs on it; the Optimum
+        # OVModelForMultimodalLM keeps CPU torch tensors and has no torch device.
+        device = getattr(self.model, "device", None)
+        if isinstance(device, torch.device):
+            inputs = inputs.to(device)
+
+        with torch.inference_mode():
+            output = self.model.generate(
+                **inputs,
+                speaker=speaker,
+                return_audio=True,
+                thinker_max_new_tokens=1024,
+                thinker_eos_token_id=151645,
+            )
+
+        audio = output[1] if isinstance(output, (tuple, list)) else getattr(output, "audio", None)
+        if audio is None:
+            raise ValueError("Qwen3-Omni did not return audio. Ensure the talker module is enabled.")
+
+        if isinstance(audio, torch.Tensor):
+            speech = audio.detach().cpu().reshape(-1).float().numpy()
+        else:
+            speech = torch.as_tensor(audio).cpu().reshape(-1).float().numpy()
+
+        class _Speech:
+            def __init__(self, data):
+                self.data = data
+
+        class _SpeechResult:
+            def __init__(self, data):
+                self.speeches = [_Speech(data)]
+                self.output_sample_rate = QWEN3_OMNI_SAMPLE_RATE
+
+        return _SpeechResult(speech)
+
+
+class GenAIOmniSpeechWrapper:
+    """Adapts openvino_genai.OmniPipeline to the speech-generation evaluator interface.
+
+    OmniPipeline.generate returns OmniDecodedResults whose speech_result.speech_outputs holds
+    the speech waveform tensors; this wrapper exposes them through the same .speeches /
+    .output_sample_rate result shape used by the other speech-generation backends.
+    """
+
+    def __init__(self, pipe, model_dir, default_speaker=QWEN3_OMNI_DEFAULT_SPEAKER):
+        self.pipe = pipe
+        self.model_dir = model_dir
+        self.default_speaker = default_speaker
+        self.model_type = "speech-generation"
+
+    def get_speaker_embedding_shape(self):
+        # Qwen3-Omni does not use xvector speaker embeddings; the shape is unused.
+        return (1, 1)
+
+    def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
+        if speaker_embedding is not None:
+            raise ValueError(
+                "Qwen3-Omni selects the voice by a named speaker and does not accept speaker embeddings. "
+                "Use --speech-voice with a supported speaker name (for example, Ethan or Chelsie)."
+            )
+
+        if isinstance(language, str) and language.strip():
+            raise ValueError(
+                "Qwen3-Omni does not support language selection via --speech-language "
+                "(it is currently supported only for Kokoro). Remove --speech-language."
+            )
+
+        import openvino_genai
+
+        speaker = voice.strip() if isinstance(voice, str) and voice.strip() else self.default_speaker
+
+        talker_speech_config = openvino_genai.OmniTalkerSpeechConfig()
+        talker_speech_config.return_audio = True
+        talker_speech_config.speaker = speaker
+
+        result = self.pipe.generate(prompt, talker_speech_config=talker_speech_config)
+
+        speech_outputs = result.speech_result.speech_outputs
+        if not speech_outputs:
+            raise ValueError("OmniPipeline did not return audio. Ensure the talker module is enabled.")
+
+        speech = np.asarray(speech_outputs[0].data, dtype=np.float32).reshape(-1)
+
+        class _Speech:
+            def __init__(self, data):
+                self.data = data
+
+        class _SpeechResult:
+            def __init__(self, data):
+                self.speeches = [_Speech(data)]
+                self.output_sample_rate = QWEN3_OMNI_SAMPLE_RATE
+
+        return _SpeechResult(speech)
 
 
 def _safe_metric_mean(values):
