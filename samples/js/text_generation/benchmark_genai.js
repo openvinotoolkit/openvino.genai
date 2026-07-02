@@ -23,12 +23,12 @@ async function main() {
         "The prompt to generate text. If without `-p` and `--pf`, the default prompt is `The Sky is blue because`.",
     })
     .option("prompt_file", {
-      alias: "pf",
+      alias: "F",
       type: "string",
       describe: "Read prompt from file.",
     })
     .option("num_warmup", {
-      alias: "nw",
+      alias: "N",
       type: "number",
       default: 1,
       describe: "Number of warmup iterations.",
@@ -40,7 +40,7 @@ async function main() {
       describe: "Number of iterations.",
     })
     .option("max_new_tokens", {
-      alias: "mt",
+      alias: "M",
       type: "number",
       default: 20,
       describe: "Maximal number of new tokens.",

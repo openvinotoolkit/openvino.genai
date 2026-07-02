@@ -107,7 +107,7 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
-  node benchmark_genai.js [-m MODEL] [-p PROMPT] [--nw NUM_WARMUP] [-n NUM_ITER] [--mt MAX_NEW_TOKENS] [-d DEVICE]
+  node benchmark_genai.js [-m MODEL] [-p PROMPT] [-N NUM_WARMUP] [-n NUM_ITER] [-M MAX_NEW_TOKENS] [-d DEVICE]
   ```
 
 ### 7. Structured Output Sample (`structured_output_sample`)
