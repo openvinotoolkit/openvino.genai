@@ -348,6 +348,10 @@ public:
         return generate(histories, AnyMap{std::forward<Properties>(properties)...});
     }
 
+    /// @brief Toggle hidden-states accumulation on the underlying CB pipeline.
+    /// This flag controls whether they are stored in GenerationResult for caller retrieval.
+    void set_collect_hidden_states(bool enabled);
+
     /**
     * @brief start chat with keeping history in kv cache.
     * @param system_message optional system message.
@@ -382,6 +386,12 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_batches(
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_batches
+);
+
+/// @brief Factory for audios_batches AnyMap entry.
+/// Audios must be encoded before text tokenization for Qwen3-Omni's interleaved layout.
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> audios_batches(
+    const std::vector<std::vector<ov::Tensor>>& audios_batches
 );
 
 }

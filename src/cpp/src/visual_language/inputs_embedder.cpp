@@ -12,6 +12,7 @@
 #include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
+#include "visual_language/qwen3_omni/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -39,8 +40,6 @@ void throw_if_video_not_implemented(const std::vector<VideoType>& videos) {
 }  // anonymous namespace
 
 namespace ov::genai {
-
-// Base InputsEmbedder class
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     ov::Tensor position_ids = ov::Tensor{ov::element::i64, { 1, inputs_embeds_size }};
@@ -320,8 +319,6 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
     return empty_map;
 }
 
-/// Public InputsEmbedder class
-
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) {
@@ -351,6 +348,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_5 || vlm_config.model_type == VLMModelType::QWEN3_5_MOE) {
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
@@ -393,6 +392,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_5 || vlm_config.model_type == VLMModelType::QWEN3_5_MOE) {
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
+        m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
@@ -478,6 +479,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(
     return m_impl->encode_videos(videos, videos_metadata);
 }
 
+void InputsEmbedder::encode_audios(const std::vector<ov::Tensor>& audios) {
+    m_impl->encode_audios(audios);
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
@@ -503,7 +508,7 @@ EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
 }
 
 ov::genai::utils::CacheState& InputsEmbedder::get_cache_state() {
-    return  m_impl->get_cache_state();
+    return m_impl->get_cache_state();
 }
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
@@ -511,23 +516,23 @@ Tokenizer InputsEmbedder::get_tokenizer() const {
 }
 
 void InputsEmbedder::start_chat(const std::string& system_message) {
-    return m_impl->start_chat(system_message);
+    m_impl->start_chat(system_message);
 }
 
 void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    return m_impl->update_chat_history(decoded_results, generation_finish_status);
+    m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
-    return m_impl->set_apply_chat_template_status(apply_chat_template);
+    m_impl->set_apply_chat_template_status(apply_chat_template);
 }
 
 void InputsEmbedder::finish_chat() {
-    return m_impl->finish_chat();
+    m_impl->finish_chat();
 }
 
 void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
-    return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
+    m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
 }
 
 std::string InputsEmbedder::get_last_pruned_prompt(const std::string& original_prompt) const {
@@ -549,7 +554,7 @@ NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos
 ) const {
-     return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
+    return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
 }
 
 void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions) {

@@ -68,7 +68,19 @@ protected:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
 
+    // Per-request audio batches passed by the audios-aware generate() overloads.
+    // Populated under m_embeddings_mutex by the audio overload and consumed inside the
+    // per-prompt loop right before tokenization, so each prompt sees its own audio
+    // embeddings (m_inputs_embedder->encode_audios overwrites internal cache state).
+    // Empty when the no-audio overloads are used.
+    std::vector<std::vector<ov::Tensor>> m_pending_audios_batches;
+
     std::shared_ptr<VisionRegistry> m_vision_registry;
+
+    // Hidden-states collection gate. Toggled by VLMPipelineBase::enable_hidden_states_collection
+    // (driven by OmniPipeline's HiddenStatesCollectionScope) to opt this pipeline into
+    // accumulating per-token hidden states during a generate() call. Off by default.
+    bool m_collect_hidden_states = false;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
@@ -76,6 +88,11 @@ public:
     void set_config(const GenerationConfig& config);
     PipelineMetrics get_metrics() const;
     Tokenizer get_tokenizer();
+
+    /// @brief Toggle hidden-states accumulation for the next generate() call(s).
+    /// OmniPipeline flips this on for the duration of an audio-producing generate via
+    /// `VLMPipelineBase::HiddenStatesCollectionScope`.
+    virtual void set_collect_hidden_states(bool enabled) { m_collect_hidden_states = enabled; }
 
     /**
      * Adds requests to awaiting queue using encoded inputs
@@ -123,6 +140,18 @@ public:
                                  const std::vector<ov::Tensor>& images,
                                  const std::vector<ov::Tensor>& videos,
                                  const std::vector<VideoMetadata>& videos_metadata,
+                                 GenerationConfig sampling_params);
+
+    /**
+     * Overload accepting audios. Audios are encoded under m_embeddings_mutex before text tokenization so
+     * <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
+     */
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 const std::vector<VideoMetadata>& videos_metadata,
+                                 const std::vector<ov::Tensor>& audios,
                                  GenerationConfig sampling_params);
 
     /**
@@ -180,7 +209,17 @@ public:
         const StreamerVariant& streamer
     );
 
-    
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+
     /**
      * Performs monolitic generation based on ChatHistory objects
      */
@@ -210,6 +249,16 @@ public:
         const std::vector<std::vector<ov::Tensor>>& images,
         const std::vector<std::vector<ov::Tensor>>& videos,
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer
     );

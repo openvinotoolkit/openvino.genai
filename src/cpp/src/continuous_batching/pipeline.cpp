@@ -457,7 +457,7 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     ov::genai::OptionalGenerationConfig generation_config = utils::get_config_from_map(properties_map);
     OPENVINO_ASSERT(generation_config.has_value(),
         "\"generation_config\" property is required in add_request with properties map");
-    
+
     const auto vision_properties = extract_vision_properties(properties_map);
 
     if (!vision_properties.has_value()) {
@@ -552,6 +552,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
         properties.streamer
     );
@@ -595,9 +596,14 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
         properties.streamer
     );
+}
+
+void ContinuousBatchingPipeline::set_collect_hidden_states(bool enabled) {
+    m_impl->set_collect_hidden_states(enabled);
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
