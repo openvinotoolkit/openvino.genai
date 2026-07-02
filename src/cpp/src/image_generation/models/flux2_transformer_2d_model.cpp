@@ -102,11 +102,11 @@ Flux2Transformer2DModel& Flux2Transformer2DModel::reshape(int batch_size,
             // (B, text_seq_len, joint_attention_dim)
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
         } else if (input_name == "img_ids") {
-            // (image_seq_len, 4) — 2D, not batched
-            name_to_shape[input_name] = {image_seq_len, 4};
+            // (B, image_seq_len, 4)
+            name_to_shape[input_name] = {batch_size, image_seq_len, 4};
         } else if (input_name == "txt_ids") {
-            // (text_seq_len, 4) — 2D, not batched
-            name_to_shape[input_name] = {tokenizer_model_max_length, 4};
+            // (B, text_seq_len, 4)
+            name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, 4};
         } else if (input_name == "guidance") {
             name_to_shape[input_name] = {batch_size};
         }
