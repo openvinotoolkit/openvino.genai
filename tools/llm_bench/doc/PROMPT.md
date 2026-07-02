@@ -9,6 +9,8 @@ Supported parameters that can be set are:
 Prompt file example：
 {"prompt": "what is openvino?"}
 {"prompt": "A chat between a curious user and an artificial intelligence assistant."}
+Prompt file example for chat mode:
+{"prompt": ["what is openvino?", "show examples of use?"]}
 
 ## 2.Stable-diffusion
 Supported parameters that can be set are:
