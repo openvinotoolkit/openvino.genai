@@ -209,7 +209,7 @@ For more information on how performance metrics are calculated, please follow th
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
-  python benchmark_genai.py [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+  python benchmark_genai.py [-m MODEL] [-p PROMPT] [-N NUM_WARMUP] [-n NUM_ITER] [-M MAX_NEW_TOKENS] [-d DEVICE]
   ```
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.

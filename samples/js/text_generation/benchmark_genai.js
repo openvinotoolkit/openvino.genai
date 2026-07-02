@@ -20,7 +20,7 @@ async function main() {
       alias: "p",
       type: "string",
       describe:
-        "The prompt to generate text. If without `-p` and `--pf`, the default prompt is `The Sky is blue because`.",
+        "The prompt to generate text. If without `-p` and `-F`, the default prompt is `The Sky is blue because`.",
     })
     .option("prompt_file", {
       alias: "F",
@@ -36,7 +36,7 @@ async function main() {
     .option("num_iter", {
       alias: "n",
       type: "number",
-      default: 2,
+      default: 3,
       describe: "Number of iterations.",
     })
     .option("max_new_tokens", {
