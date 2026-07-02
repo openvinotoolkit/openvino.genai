@@ -227,6 +227,10 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 
 bool env_setup_for_print_debug_info();
 
+/// @brief Read a boolean environment variable. Accepts 1/0, true/false, on/off, yes/no
+/// (case-insensitive); returns @p default_value when unset or unrecognized.
+bool env_bool(const char* name, bool default_value);
+
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
 void print_gguf_debug_info(const std::string& debug_info);

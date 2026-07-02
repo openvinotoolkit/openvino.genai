@@ -5,6 +5,8 @@
 #include "model_desc.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <variant>
 #include <fstream>
 #include <memory>
@@ -424,6 +426,14 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
     auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
+        // Default path: the native GGUF FrontEnd in the openvino repo reads the .gguf directly
+        // via Core::read_model, emitting opaque gguf_* weight Constants consumed by the GPU
+        // FCGGUFOpt kernel (no in-host dequant). Set OPENVINO_GENAI_USE_NATIVE_GGUF_FE=0 to fall
+        // back to the legacy in-tree reader for one release cycle (SPEC.md §6.1, D3).
+        const bool use_native_fe = env_bool("OPENVINO_GENAI_USE_NATIVE_GGUF_FE", /*default=*/true);
+        if (use_native_fe) {
+            return singleton_core().read_model(model_dir, {}, filtered_properties);
+        }
 #ifdef ENABLE_GGUF
         return create_from_gguf(model_dir.string(), enable_save_ov_model);
 #else
@@ -599,6 +609,24 @@ bool env_setup_for_print_debug_info() {
     const char* env_var_value = std::getenv(env_var_name);
     // Check if the environment variable was found
     return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
+}
+
+bool env_bool(const char* name, bool default_value) {
+    const char* value = std::getenv(name);
+    if (value == nullptr) {
+        return default_value;
+    }
+    std::string v(value);
+    std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (v == "0" || v == "false" || v == "off" || v == "no") {
+        return false;
+    }
+    if (v == "1" || v == "true" || v == "on" || v == "yes") {
+        return true;
+    }
+    return default_value;
 }
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
