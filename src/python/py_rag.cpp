@@ -7,6 +7,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/stl_bind.h>
 
+#include "openvino/genai/rag/embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "py_utils.hpp"
@@ -15,6 +16,8 @@
 namespace py = pybind11;
 using ov::genai::EmbeddingResult;
 using ov::genai::EmbeddingResults;
+using ov::genai::EmbedResult;
+using ov::genai::EmbeddingPipeline;
 using ov::genai::TextEmbeddingPipeline;
 using ov::genai::TextRerankPipeline;
 
@@ -59,9 +62,121 @@ Attributes:
         Side to use for padding "left" or "right"
 )";
 
+const auto embedding_pipeline_docstring = R"(
+Embedding pipeline.
+
+Computes a single embedding vector for:
+- text only
+- text + images
+- text + images + videos
+)";
+
 }  // namespace
 
 void init_rag_pipelines(py::module_& m) {
+    py::class_<EmbedResult>(m, "EmbedResult")
+        .def(py::init([](ov::Tensor embeddings) { return EmbedResult{embeddings}; }), py::arg("embeddings"))
+        .def_readwrite("embeddings", &EmbedResult::embeddings);
+
+    py::class_<EmbeddingPipeline>(m, "EmbeddingPipeline", embedding_pipeline_docstring)
+        .def(
+            py::init([](const std::filesystem::path& models_path,
+                        const std::string& device,
+                        const std::optional<TextEmbeddingPipeline::Config>& config,
+                        const py::kwargs& kwargs) {
+                ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                if (config.has_value()) {
+                    return std::make_unique<EmbeddingPipeline>(models_path,
+                                                               device,
+                                                               *config,
+                                                               properties);
+                }
+                return std::make_unique<EmbeddingPipeline>(models_path, device, properties);
+            }),
+            py::arg("models_path"),
+            "Path to the directory containing model xml/bin files and tokenizer",
+            py::arg("device"),
+            "Device to run the model on (e.g., CPU, GPU)",
+            py::arg("config") = std::nullopt,
+            "Optional pipeline configuration",
+            "Plugin and/or config properties")
+        .def(
+            "start_embed_async",
+            [](EmbeddingPipeline& pipe,
+               const EmbeddingPipeline::TextInput& text,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+               const std::optional<std::string>& prompt) -> void {
+                py::gil_scoped_release rel;
+                pipe.start_embed_async(text, images, videos, videos_metadata, prompt);
+            },
+            py::arg("text"),
+            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+            py::arg("prompt") = std::nullopt,
+            "Asynchronously computes embedding vectors for text or a batch of texts.")
+        .def(
+            "wait",
+            [](EmbeddingPipeline& pipe) -> EmbedResult {
+                py::gil_scoped_release rel;
+                return pipe.wait();
+            },
+            "Waits for asynchronous embedding computation and returns result.")
+        .def(
+            "embed",
+            [](EmbeddingPipeline& pipe,
+               const EmbeddingPipeline::TextInput& text,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+               const std::optional<std::string>& prompt) -> EmbedResult {
+                py::gil_scoped_release rel;
+                return pipe.embed(text, images, videos, videos_metadata, prompt);
+            },
+            py::arg("text"),
+            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+            py::arg("prompt") = std::nullopt,
+            "Computes embedding vectors for text or a batch of texts with images and videos.")
+        .def(
+            "embed",
+            [](EmbeddingPipeline& pipe, const py::kwargs& kwargs) -> EmbedResult {
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                return pipe.embed(properties);
+            },
+            "Computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).")
+        .def(
+            "start_embed_async",
+            [](EmbeddingPipeline& pipe,
+               const EmbeddingPipeline::TextInput& text,
+               const std::vector<ov::Tensor>& images,
+               const std::vector<ov::Tensor>& videos,
+               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+               const std::optional<std::string>& prompt) -> void {
+                py::gil_scoped_release rel;
+                pipe.start_embed_async(text, images, videos, videos_metadata, prompt);
+            },
+            py::arg("text"),
+            py::arg("images") = std::vector<ov::Tensor>{},
+            py::arg("videos") = std::vector<ov::Tensor>{},
+            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+            py::arg("prompt") = std::nullopt,
+            "Asynchronously computes embedding vectors for text or a batch of texts with images and videos.")
+        .def(
+            "start_embed_async",
+            [](EmbeddingPipeline& pipe, const py::kwargs& kwargs) -> void {
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                py::gil_scoped_release rel;
+                pipe.start_embed_async(properties);
+            },
+            "Asynchronously computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).");
+
     auto text_embedding_pipeline =
         py::class_<TextEmbeddingPipeline>(m, "TextEmbeddingPipeline", "Text embedding pipeline")
             .def(
@@ -79,6 +194,23 @@ void init_rag_pipelines(py::module_& m) {
                 "List of texts ",
                 "Computes embeddings for a vector of texts")
             .def(
+                "embed",
+                [](TextEmbeddingPipeline& pipe,
+                   std::vector<std::string>& texts,
+                   std::string& prompt) -> py::typing::Union<EmbeddingResults> {
+                    EmbeddingResults res;
+                    {
+                        py::gil_scoped_release rel;
+                        res = pipe.embed(texts, prompt);
+                    }
+                    return py::cast(res);
+                },
+                py::arg("texts"),
+                py::arg("prompt"),
+                "List of texts ",
+                "Prompt prepended to each text ",
+                "Computes embeddings for a vector of texts prepended with a prompt")
+            .def(
                 "start_embed_documents_async",
                 [](TextEmbeddingPipeline& pipe, std::vector<std::string>& texts) -> void {
                     py::gil_scoped_release rel;
@@ -87,6 +219,17 @@ void init_rag_pipelines(py::module_& m) {
                 py::arg("texts"),
                 "List of texts ",
                 "Asynchronously computes embeddings for a vector of texts")
+            .def(
+                "start_embed_async",
+                [](TextEmbeddingPipeline& pipe, std::vector<std::string>& texts, std::string& prompt) -> void {
+                    py::gil_scoped_release rel;
+                    pipe.start_embed_async(texts, prompt);
+                },
+                py::arg("texts"),
+                py::arg("prompt"),
+                "List of texts ",
+                "Prompt prepended to each text ",
+                "Asynchronously computes embeddings for a vector of texts prepended with a prompt")
             .def(
                 "wait_embed_documents",
                 [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResults> {
