@@ -947,7 +947,6 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     remote_code, model_config = _resolve_remote_code_and_config(model_id)
 
     if getattr(model_config, "model_type", None) in OMNI_MODEL_TYPES:
-        logger.info("Using Optimum API for Qwen3-Omni speech generation")
         from optimum.intel.openvino import OVModelForMultimodalLM
         from transformers import AutoProcessor
 
