@@ -180,3 +180,54 @@ def get_video_gen_prompt(args):
     else:
         input_list.append(output_data_list[0])
     return input_list
+
+
+#########################################################
+# TODO: implement BenchPrompt and BenchPrompter
+#
+# CLASS BenchPrompt is handler for a single multimedia prompt
+#   - it load prompt content/data: text, image, video, and/or audio
+#   - data should be store inside under keys: prompt, image, video, audio, mask, etc.
+#   - it should evaluate correctnes of input data (decimate/reduce if needed especially for video see make_video_tensor)
+#   - it should be able to create prompt representation (repr) with size of its elements:
+#     -- text -> <text length in tokens>
+#     -- text + image -> <text length in tokens> + <width in pixels>x<height in pixels>
+#     -- text + video -> <text length in tokens> + <width in pixels>x<height in pixels>@<frames>
+#     -- text + audio -> <text length in tokens> + <duration in seconds>@<sampling-rate>
+#     -- text + image + mask -> <text length in tokens> + <width in pixels>x<height in pixels>/<fraction in percentege>%
+#   - please note that prompts can be loaded directly from command line of from jsonl files e.g.:
+#     -- example 1: 
+#     {"type": "audio", "media": "./audio/intel_ad_30s_124kbps.mp3"}
+#     {"type": "audio", "media": "./audio/intel_ad_90s_128kbps.mp3"}
+#     -- example 2:
+#     {"prompt": "What is presented in the video?", "video": "./video/spinning-earth-480.mp4"}
+#     {"prompt": "What is Earth's spin and which continents are visible over time in the video? Which of them are shown on the beginning and which of them are presented on the end of the clip?", "video": "./video/spinning-earth-480.mp4"}
+#     -- example 3:
+#     {"prompt": "What is in the image?", "media": "./image/overture-creations-5sI6fQgYIuo.png"}
+#     -- example 4:
+#      {"word_num": "32", "type": "image_description", "language": "EN", "source": "Gustavosta/Stable-Diffusion-Prompts", "prompt": "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, beautifully backlit, swirly vibrant color lines, fantastically gaudy, aesthetic octane render, 8K HD Resolution"}
+#   - see tools/llm_bench/benchmark.py for possible options how to provide prompts
+#
+# CLASS BenchPrompter is a container for multiple BenchPrompts
+#   - it parses and analyzes command line in context of prompts loading
+#   - prompt index should be possition in BenchPrompter which is list
+#   - it gives an iterator for main loops with proper sequence of prompts
+#     with respect of: args.prompt_index, args.batch_size, args.streaming, args.subsequent, etc.
+#
+# TODO: refactor code in tools/llm_bench/task/text_generation.py to use new classes
+#     in tools/llm_bench/task/text_generation.py in run_text_generation_benchmark
+#     it seems that code under: "if args['subsequent'] is False:" is very similar with code under "else"
+#     propose unification of this code mapping idx -> p_idx inside BenchPrompter class
+#
+
+class BenchPrompt(dict):
+    def __init__(self, args):
+        dict.__init__(self)
+
+
+class BenchPrompter(list):
+    def __init__(self, args):
+        list.__init__(self)
+
+    def append(self, prompt):
+        assert type(prompt) is BenchPrompt
