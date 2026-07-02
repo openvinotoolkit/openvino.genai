@@ -10,6 +10,7 @@ import logging as log
 from transformers.image_utils import load_image
 from .model_utils import get_param_from_file, resolve_media_file_path
 from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data
+import llm_bench_utils.metrics_print as metrics_print
 from pathlib import Path
 import openvino as ov
 import math
@@ -259,9 +260,9 @@ class BenchPrompt(dict):
         dict.__init__(self)
         self._args = args or {}
         # Lazily filled by probe()
-        self._image_size = None   # (width, height) | None
-        self._video_shape = None   # (frames, height, width) | None
-        self._audio_info = None   # (duration_sec, sample_rate) | None
+        self._image_size = None  # (width, height) | None
+        self._video_shape = None  # (frames, height, width) | None
+        self._audio_info = None  # (duration_sec, sample_rate) | None
         self._probed = False
         self._load(data)
 
@@ -278,10 +279,7 @@ class BenchPrompt(dict):
                 if key in data:
                     self[key] = data[key]
         else:
-            raise TypeError(
-                f"BenchPrompt: unsupported data type {type(data)!r}. "
-                "Expected str or dict."
-            )
+            raise TypeError(f"BenchPrompt: unsupported data type {type(data)!r}. Expected str or dict.")
         if "prompt" not in self:
             raise RuntimeError("BenchPrompt: 'prompt' key is required")
         if self["prompt"] == "":
@@ -338,7 +336,7 @@ class BenchPrompt(dict):
         try:
             # genai_flag=False -> returns np.ndarray with shape (F, H, W, C)
             tensor = make_video_tensor(str(path), decim_frames, genai_flag=False)
-            return tuple(tensor.shape[:3])   # (frames, height, width)
+            return tuple(tensor.shape[:3])  # (frames, height, width)
         except Exception as exc:
             log.warning(f"BenchPrompt: cannot probe video '{path}': {exc}")
             return None
@@ -348,6 +346,7 @@ class BenchPrompt(dict):
         """Return ``(duration_sec, sample_rate)`` or ``None`` on failure."""
         try:
             import librosa
+
             sr = librosa.get_samplerate(path)
             dur = librosa.get_duration(path=path)
             return (dur, sr)
@@ -422,7 +421,18 @@ class BenchPrompt(dict):
             else:
                 parts.append("audio:?s@?Hz")
 
-        return "BenchPrompt(" + " + ".join(parts) + ")"
+        return " + ".join(parts)
+
+
+    def introduce_in_stdout(self, num, prefix):
+        if num == 0:
+            metrics_print.print_unicode(
+                f"{prefix} Input text: {self['prompt']}",
+                f"{prefix} Unable print input text",
+                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
+            )
+        prompt_repr = repr(self)
+        log.info(f"{prefix} Prompt: {prompt_repr}")
 
 
 class BenchPrompter(list):
@@ -464,6 +474,11 @@ class BenchPrompter(list):
         self._args = args
         self._load_prompts()
 
+    def get_prefix(self, num, p_idx):
+        if num == 0:
+            return f"[warm-up][P{p_idx}]"
+        return f"[{num}][P{p_idx}]"
+
     # ------------------------------------------------------------------ #
     # Loading                                                              #
     # ------------------------------------------------------------------ #
@@ -477,32 +492,31 @@ class BenchPrompter(list):
         on the task type derived from ``args['use_case'].task``.
         """
         args = self._args
-        use_case = args.get('use_case')
-        task = getattr(use_case, 'task', 'text_gen') if use_case else 'text_gen'
+        use_case = args.get("use_case")
+        task = getattr(use_case, "task", "text_gen") if use_case else "text_gen"
 
         # ---- pick input keys based on task ----
-        if task == 'visual_text_gen':
+        if task == "visual_text_gen":
             input_key = ["video", "media", "prompt"]
-        elif task == 'image_gen':
-            if use_case and hasattr(use_case, 'TASK'):
-                inpainting_name = use_case.TASK.get('inpainting', {}).get('name')
-                img2img_name = use_case.TASK.get('img2img', {}).get('name')
-                if args.get('task') == inpainting_name or (
-                    (args.get('media') or args.get('images')) and args.get('mask_image')
+        elif task == "image_gen":
+            if use_case and hasattr(use_case, "TASK"):
+                inpainting_name = use_case.TASK.get("inpainting", {}).get("name")
+                img2img_name = use_case.TASK.get("img2img", {}).get("name")
+                if args.get("task") == inpainting_name or (
+                    (args.get("media") or args.get("images")) and args.get("mask_image")
                 ):
                     input_key = ["media", "mask_image", "prompt"]
-                elif (args.get('task') == img2img_name
-                        or args.get('media') or args.get('images')):
+                elif args.get("task") == img2img_name or args.get("media") or args.get("images"):
                     input_key = ["media", "prompt"]
                 else:
                     input_key = ["prompt"]
             else:
                 input_key = ["prompt"]
-        elif task == 'video_gen':
+        elif task == "video_gen":
             input_key = ["prompt", "negative_prompt"]
         else:
             # text_gen, code_gen, text_embed, text2speech, text_rerank, ...
-            input_key = 'prompt'
+            input_key = "prompt"
 
         output_data_list, is_json_data = get_param_from_file(args, input_key)
 
@@ -510,11 +524,11 @@ class BenchPrompter(list):
             # Parse raw jsonl dicts according to task type.
             # Note: parse_text_json_data returns plain strings; all others
             # return dicts – both are accepted by BenchPrompt.__init__.
-            if task == 'visual_text_gen':
+            if task == "visual_text_gen":
                 raw_list = parse_vlm_json_data(output_data_list)
-            elif task == 'image_gen':
+            elif task == "image_gen":
                 raw_list = parse_image_json_data(output_data_list)
-            elif task == 'video_gen':
+            elif task == "video_gen":
                 raw_list = parse_video_json_data(output_data_list)
             else:
                 raw_list = parse_text_json_data(output_data_list)
@@ -533,9 +547,7 @@ class BenchPrompter(list):
 
     def append(self, prompt):
         """Only :class:`BenchPrompt` objects may be appended."""
-        assert isinstance(prompt, BenchPrompt), (
-            f"BenchPrompter only accepts BenchPrompt objects, got {type(prompt)!r}"
-        )
+        assert isinstance(prompt, BenchPrompt), f"BenchPrompter only accepts BenchPrompt objects, got {type(prompt)!r}"
         super().append(prompt)
 
     # ------------------------------------------------------------------ #
@@ -552,7 +564,7 @@ class BenchPrompter(list):
         Otherwise all prompts are included and ``p_idx`` equals the
         position in this list.
         """
-        prompt_index = self._args.get('prompt_index')
+        prompt_index = self._args.get("prompt_index")
         if prompt_index is None:
             return list(enumerate(self))
         return [(i, self[i]) for i in prompt_index if 0 <= i < len(self)]
@@ -586,7 +598,7 @@ class BenchPrompter(list):
         ``subsequent=True``   ->  for (p_idx, p) in active: for num in iters
         """
         active = self.active_pairs
-        subsequent = self._args.get('subsequent', False)
+        subsequent = self._args.get("subsequent", False)
 
         if not subsequent:
             # All prompts inside each iteration
