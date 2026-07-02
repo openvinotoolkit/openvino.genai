@@ -370,6 +370,16 @@ multi_head_attention(
     Output<Node> cos, sin;
     if (cos_sin_cached.first.get_node() == nullptr) {
         std::tie(cos, sin) = rope_emb(v_split, rope_const, position_ids, batch_dim);
+
+        // YaRN attention magnitude scaling (mscale): intentionally NOT applied.
+        // For Devstral-2512 (mistral3) the GGUF carries yarn_log_multiplier=1.0, but
+        // the effective attention factor llama.cpp uses for this model is 1.0 (verified
+        // from llama.cpp's own load log: "yarn_attn_factor = 1.0000 (mscale == 1.0)").
+        // Empirically, scaling cos/sin by any mscale>1 here corrupts generation in the
+        // OpenVINO graph, so the correct behavior is mscale=1.0 (no-op). The YaRN
+        // *frequency* interpolation in init_rope is what extends context; that is applied.
+        // TODO: if a future YaRN model ships rope.scaling.attn_factor != 1.0, wire it as
+        // an SDPA-scale multiplier (mscale^2 on the QK scale), not a cos/sin multiply.
     }
 
     auto [q_rot, k_rot, new_cos_sin] = apply_rotary_pos_emb(
@@ -468,6 +478,17 @@ multi_head_attention(
     }
 
     // 6. Scaled dot product attention
+    // TODO(mistral3): apply attention.temperature_scale (Devstral-2512 = 0.1).
+    // This is the llama4/mistral "attention temperature tuning" for long context:
+    // logits are scaled per-position by a factor derived from the position index,
+    // roughly attn_scale = log(floor(pos / orig_ctx) + 1) * temperature_scale + 1.0,
+    // applied to the QK^T logits *before* softmax. The exact mistral3 semantics
+    // (per-token position-dependent factor, whether it multiplies the SDPA `scale`
+    // or the logits) are not yet confirmed against a reference, so it is read into
+    // config["attention_temperature_scale"] but intentionally NOT wired here to
+    // avoid a wrong guess. ScaledDotProductAttention below uses the default
+    // 1/sqrt(head_dim) scale (correct for all currently-supported archs). When
+    // temperature_scale==0.0 (all non-mistral3 models) this is a no-op regardless.
     auto attention = std::make_shared<ScaledDotProductAttention>(
         q_rot, k_reshaped, v_reshaped, final_mask, false);
 
@@ -883,10 +904,18 @@ std::tuple<ov::Output<ov::Node>,
                                          std::get<float>(configs.at("rms_norm_eps")));
 
     // Attention projections
-    // check if it's llama structure, if so, reorder= true
+    // Reorder (de-interleave) q/k weights for NORM-type RoPE architectures.
+    // llama.cpp stores q/k permuted (interleaved) for NORM rope (rope type 0);
+    // our rotate_half expects the NEOX "halves" layout, so we must de-interleave.
+    // This applies to llama AND mistral/mistral3 (both NORM-type). Qwen2/Qwen3 are
+    // NEOX-type (rope type 2) and are stored in halves layout already -> no reorder.
     bool reorder = false;
-    if (std::get<std::string>(configs.at("architecture")).find("llama") != std::string::npos) {
-        reorder = true;
+    {
+        const std::string& arch = std::get<std::string>(configs.at("architecture"));
+        if (arch.find("llama") != std::string::npos ||
+            arch.find("mistral") != std::string::npos) {
+            reorder = true;
+        }
     }
     auto q = make_fc(
         layer_prefix + ".self_attn.q_proj",
@@ -995,19 +1024,73 @@ ov::Output<ov::Node> init_rope(
     int64_t head_dim,
     int64_t max_position_embeddings,
     float base,
-    float scaling_factor) {
+    float scaling_factor,
+    const RopeScalingParams& rope_scaling) {
 
     // Calculate inverse frequencies
     size_t num_elements = head_dim / 2;
     std::vector<float> inv_freq_data(num_elements);
-    for (size_t i = 0; i < num_elements; ++i) {
-        float idx = static_cast<float>(2 * i);  // Matches Python's step=2
-        float exponent = idx / static_cast<float>(head_dim);
-        inv_freq_data[i] = 1.0f / std::pow(base, exponent);
-        
-        // Apply scaling factor if needed (from original Python signature)
-        if (scaling_factor != 1.0f) {
-            inv_freq_data[i] *= scaling_factor;
+
+    const bool is_yarn = (rope_scaling.type == "yarn");
+
+    if (is_yarn) {
+        // YaRN (NTK-by-parts) RoPE scaling, matching llama.cpp / HF.
+        //
+        // For each frequency dim i (stride 2 over head_dim), we blend an
+        // "extrapolated" frequency (unchanged, used for high-frequency dims)
+        // with an "interpolated" frequency (divided by the scaling factor,
+        // used for low-frequency / long-wavelength dims). The blend weight is
+        // a linear ramp between two correction dims derived from beta_fast and
+        // beta_slow.
+        constexpr double PI = 3.14159265358979323846;
+
+        const double s = (rope_scaling.factor > 0.0f) ? rope_scaling.factor : 1.0;
+        const double orig_ctx = (rope_scaling.original_context_length > 0)
+            ? static_cast<double>(rope_scaling.original_context_length)
+            : static_cast<double>(max_position_embeddings);
+        const double dim = static_cast<double>(head_dim);
+
+        // find_correction_dim(num_rotations) = dim * ln(orig_ctx / (num_rotations * 2*PI)) / (2 * ln(base))
+        auto find_correction_dim = [&](double num_rotations) {
+            return dim * std::log(orig_ctx / (num_rotations * 2.0 * PI)) /
+                   (2.0 * std::log(static_cast<double>(base)));
+        };
+
+        double low = std::floor(find_correction_dim(rope_scaling.yarn_beta_fast));
+        double high = std::ceil(find_correction_dim(rope_scaling.yarn_beta_slow));
+        // Clamp to the valid pair-index range [0, num_elements - 1].
+        const double max_idx = static_cast<double>(num_elements) - 1.0;
+        low = std::max(0.0, std::min(low, max_idx));
+        high = std::max(0.0, std::min(high, max_idx));
+        // Avoid division by zero in the ramp.
+        const double denom = (high - low > 1e-3) ? (high - low) : 1e-3;
+
+        for (size_t i = 0; i < num_elements; ++i) {
+            float idx = static_cast<float>(2 * i);  // Matches Python's step=2
+            float exponent = idx / static_cast<float>(head_dim);
+            double base_inv_freq = 1.0 / std::pow(static_cast<double>(base), exponent);
+
+            double extrapolation = base_inv_freq;        // high-frequency dims: unchanged
+            double interpolation = base_inv_freq / s;     // low-frequency dims: scaled down
+
+            // ramp over the pair index i; mask=1 keeps extrapolation.
+            double ramp = (static_cast<double>(i) - low) / denom;
+            ramp = std::max(0.0, std::min(ramp, 1.0));
+            double mask = 1.0 - ramp;
+
+            double freq = interpolation * (1.0 - mask) + extrapolation * mask;
+            inv_freq_data[i] = static_cast<float>(freq);
+        }
+    } else {
+        for (size_t i = 0; i < num_elements; ++i) {
+            float idx = static_cast<float>(2 * i);  // Matches Python's step=2
+            float exponent = idx / static_cast<float>(head_dim);
+            inv_freq_data[i] = 1.0f / std::pow(base, exponent);
+
+            // Apply scaling factor if needed (from original Python signature)
+            if (scaling_factor != 1.0f) {
+                inv_freq_data[i] *= scaling_factor;
+            }
         }
     }
 
