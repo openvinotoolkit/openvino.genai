@@ -887,8 +887,8 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
             return KokoroModelWrapper(model_id)
 
         remote_code, model_config = _resolve_remote_code_and_config(model_id)
+        logger.info("Using HF Transformers API")
         if getattr(model_config, "model_type", None) in OMNI_MODEL_TYPES:
-            logger.info("Using HF Transformers API for Qwen3-Omni speech generation")
             from transformers import AutoProcessor
 
             model = load_omni_hf_pipeline(model_id, device, model_config, remote_code)
@@ -897,7 +897,6 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
             processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=remote_code)
             return Qwen3OmniSpeechWrapper(model, processor)
 
-        logger.info("Using HF Transformers API")
         from transformers import SpeechT5ForTextToSpeech
 
         model = SpeechT5ForTextToSpeech.from_pretrained(model_id, trust_remote_code=remote_code)
