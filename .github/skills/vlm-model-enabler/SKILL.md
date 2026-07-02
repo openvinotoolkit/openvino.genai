@@ -6,7 +6,6 @@ argument-hint: "HuggingFace model_id and task (e.g. google/gemma-3n-E2B-it image
 
 # VLM Model Enabler
 
-
 Enables a new VLM model in the GenAI VLM pipeline. Follows a strict 4-step workflow with checkpoints.
 
 ## Input
@@ -30,9 +29,7 @@ All intermediate assets go in `.model_enabler/`. Create it if it does not exist.
 - [model-inference-text-to-text.md](model-inference-text-to-text.md) — Supplementary test templates and debugging tips for text-only mode (Step 2).
 - [model-inference-image-text.md](model-inference-image-text.md) — Supplementary test templates, preprocessing utilities list, and debugging tips for image-text mode (Step 3).
 
-
 ---
-
 
 ## Step 1 — GenAI Enablement Design
 
@@ -67,8 +64,6 @@ Append a `## GenAI Enablement Design` section to `.model_analysis/<model_type>_a
 **Do not proceed to Step 2 until this section exists.**
 
 ---
-
-
 
 ## Step 2 — Text-Only Inference
 
@@ -105,8 +100,6 @@ Create and run `.model_enabler/test_text_only_compare.py` — compare GenAI vs o
 **Do not proceed to Step 3 until text-only output matches optimum-intel exactly.**
 
 ---
-
-
 
 ## Step 3 — Image-Text Inference
 
@@ -154,8 +147,6 @@ Rebuild, then create and run:
 
 ---
 
-
-
 ## Step 4 — Repository Test Coverage
 
 Every newly enabled model must add repository tests:
@@ -174,8 +165,6 @@ is added and its exact pytest result is recorded. If local execution is
 blocked, add the test and report the exact blocker and expected CI coverage.
 
 ---
-
-
 
 ## Final Deliverables
 
