@@ -146,6 +146,25 @@ describe("InpaintingPipeline methods", { skip: os.platform() === "darwin" }, () 
     assert.strictEqual(steps.length, 2, "Should stop after steps 0 and 1");
   });
 
+  it("decode(latent) returns an image tensor from a callback latent", async () => {
+    let decoded;
+    await pipeline.generate("a tiny robot", testImage, testMask, {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      strength: 1.0,
+      callback: async (step, numSteps, latent) => {
+        assert.ok(latent, "callback should receive a latent tensor");
+        decoded = await pipeline.decode(latent);
+        return true; // stop early, we only need one latent
+      },
+    });
+    assert.ok(decoded, "should have captured a decoded image");
+    assert.deepStrictEqual(decoded.getShape(), [1, 64, 64, 3]);
+    assert.ok(decoded.data instanceof Uint8Array);
+    assert.ok(decoded.data.length > 0);
+  });
+
   it("generate(prompt, image, mask) rejects unbatched rank-3 image tensor", async () => {
     const unbatchedImage = createTestImageTensor(64, 64);
     assert.strictEqual(unbatchedImage.getShape().length, 3);
@@ -182,6 +201,55 @@ describe("InpaintingPipeline methods", { skip: os.platform() === "darwin" }, () 
   });
 });
 
+// Skip due to CVS-179949
+describe("InpaintingPipeline concurrency", { skip: os.platform() === "darwin" }, () => {
+  let pipeline;
+  let testImage;
+  let testMask;
+  let latent;
+
+  before(async () => {
+    pipeline = await InpaintingPipeline(IMAGE_GENERATION_MODEL_PATH, "CPU");
+    testImage = createBatchedTestImageTensor(64, 64);
+    testMask = createBatchedTestImageTensor(64, 64);
+    await pipeline.generate("a tiny robot", testImage, testMask, {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      callback: (step, numSteps, capturedLatent) => {
+        latent = capturedLatent;
+        return true; // stop early, we only need one latent
+      },
+    });
+  });
+
+  it("decode() rejects while a generate() is in progress", async () => {
+    const generating = pipeline.generate("a tiny robot", testImage, testMask, {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+    });
+    await assert.rejects(
+      pipeline.decode(latent),
+      /decode\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+    );
+    await generating;
+  });
+
+  it("generate() rejects while a decode() is in progress", async () => {
+    const decoding = pipeline.decode(latent);
+    await assert.rejects(
+      pipeline.generate("a tiny robot", testImage, testMask, {
+        width: 64,
+        height: 64,
+        num_inference_steps: 2,
+      }),
+      /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+    );
+    await decoding;
+  });
+});
+
 describe("InpaintingPipeline initialization", () => {
   let testImage;
   let testMask;
@@ -195,6 +263,14 @@ describe("InpaintingPipeline initialization", () => {
     const uninitializedPipeline = new InpaintingPipelineClass(IMAGE_GENERATION_MODEL_PATH, "CPU");
     await assert.rejects(
       uninitializedPipeline.generate("a tiny robot", testImage, testMask),
+      /InpaintingPipeline is not initialized/,
+    );
+  });
+
+  it("throws when decode() is called before init()", async () => {
+    const uninitializedPipeline = new InpaintingPipelineClass(IMAGE_GENERATION_MODEL_PATH, "CPU");
+    await assert.rejects(
+      uninitializedPipeline.decode(undefined),
       /InpaintingPipeline is not initialized/,
     );
   });

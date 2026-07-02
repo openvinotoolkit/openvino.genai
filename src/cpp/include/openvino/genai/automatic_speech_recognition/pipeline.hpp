@@ -4,10 +4,12 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
