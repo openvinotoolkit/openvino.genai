@@ -62,8 +62,8 @@ def test_load_speech_generation_genai_pipeline_routes_omni(monkeypatch):
         def __init__(self, *args, **kwargs):
             pass
 
-    monkeypatch.setattr(model_loaders, "AutoConfig", _FakeAutoConfig)
-    monkeypatch.setattr(openvino_genai, "OmniPipeline", _FakeOmniPipeline)
+    monkeypatch.setattr(model_loaders, "AutoConfig", _FakeAutoConfig
+    monkeypatch.setattr(openvino_genai, "OmniPipeline", _FakeOmniPipeline, raising=False)
 
     model = model_loaders.load_speech_generation_genai_pipeline("dummy-omni-dir", "CPU")
 
