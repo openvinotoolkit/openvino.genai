@@ -257,12 +257,12 @@ class BenchPrompt(dict):
 
     def __init__(self, data, args=None):
         dict.__init__(self)
-        self._args       = args or {}
+        self._args = args or {}
         # Lazily filled by probe()
-        self._image_size  = None   # (width, height) | None
+        self._image_size = None   # (width, height) | None
         self._video_shape = None   # (frames, height, width) | None
-        self._audio_info  = None   # (duration_sec, sample_rate) | None
-        self._probed      = False
+        self._audio_info = None   # (duration_sec, sample_rate) | None
+        self._probed = False
         self._load(data)
 
     # ------------------------------------------------------------------ #
@@ -348,7 +348,7 @@ class BenchPrompt(dict):
         """Return ``(duration_sec, sample_rate)`` or ``None`` on failure."""
         try:
             import librosa
-            sr  = librosa.get_samplerate(path)
+            sr = librosa.get_samplerate(path)
             dur = librosa.get_duration(path=path)
             return (dur, sr)
         except Exception as exc:
@@ -476,9 +476,9 @@ class BenchPrompter(list):
         :func:`get_param_from_file` and the matching parse function based
         on the task type derived from ``args['use_case'].task``.
         """
-        args     = self._args
+        args = self._args
         use_case = args.get('use_case')
-        task     = getattr(use_case, 'task', 'text_gen') if use_case else 'text_gen'
+        task = getattr(use_case, 'task', 'text_gen') if use_case else 'text_gen'
 
         # ---- pick input keys based on task ----
         if task == 'visual_text_gen':
@@ -486,7 +486,7 @@ class BenchPrompter(list):
         elif task == 'image_gen':
             if use_case and hasattr(use_case, 'TASK'):
                 inpainting_name = use_case.TASK.get('inpainting', {}).get('name')
-                img2img_name    = use_case.TASK.get('img2img',    {}).get('name')
+                img2img_name = use_case.TASK.get('img2img', {}).get('name')
                 if args.get('task') == inpainting_name or (
                     (args.get('media') or args.get('images')) and args.get('mask_image')
                 ):
@@ -585,7 +585,7 @@ class BenchPrompter(list):
         ``subsequent=False``  ->  for num in iters: for (p_idx, p) in active
         ``subsequent=True``   ->  for (p_idx, p) in active: for num in iters
         """
-        active     = self.active_pairs
+        active = self.active_pairs
         subsequent = self._args.get('subsequent', False)
 
         if not subsequent:
