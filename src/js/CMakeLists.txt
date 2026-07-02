@@ -48,6 +48,7 @@ add_library(${PROJECT_NAME} SHARED
     ${SOURCE_FILES}
     ${CMAKE_JS_SRC}
 )
+ov_genai_enable_coverage(${PROJECT_NAME})
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE

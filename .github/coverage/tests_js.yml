@@ -1,0 +1,34 @@
+schema_version: 1
+suite: js
+reporting:
+  label: Node.js
+  artifact_group: js
+  artifact_name_template: coverage-{suite}-{lane}
+  selection_env: JS_TEST_NAMES
+  stats_file: js-coverage-stats.env
+  duration_file: js-test-durations.csv
+  coverage_file: js-lcov.info
+  extra_files:
+    - coverage.info
+  debug_dirs:
+    - src: .tmp/cpp-coverage-parts
+      dest: native-cpp-debug
+  uploads:
+    - name_template: Node.js bindings, {lane}
+      file: js-lcov.info
+      flag_template: genai-js-{lane}
+    - name_template: C++ runtime, Node.js suite, {lane}
+      file: coverage.info
+      flag_template: genai-native-js-{lane}
+tests:
+  - name: node_package_tests
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 ./tests/setup.py --to-env-file test.env &&
+      npx c8 --reporter=lcov --reporter=text
+      --report-dir ${OV_WORKSPACE}/js-coverage
+      --clean=true
+      --exclude 'tests/**'
+      --exclude 'dist/**/*.d.ts'
+      node --env-file=test.env --test ./tests/*.test.js
