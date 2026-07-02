@@ -176,6 +176,41 @@ class TestBenchmarkLLM:
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
+    def test_python_tool_llm_benchmark_sd_generation_config_json_string(self, convert_model, convert_draft_model):
+        """
+        Test --sd_generation_config with a JSON string argument (no filesystem I/O).
+        """
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--draft_model",
+            convert_draft_model,
+            "-p",
+            "Why is the Sun yellow?",
+            "-d",
+            "cpu",
+            "--draft_device",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "20",
+            "--sd_generation_config",
+            '{"num_assistant_tokens": 6, "branching_factor": 2, "tree_depth": 3}',
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model",
+        [
+            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3"),
+        ],
+        indirect=["convert_model", "convert_draft_model"],
+    )
     def test_python_tool_llm_benchmark_sd_generation_config_topk(self, convert_model, convert_draft_model, tmp_path):
         """
         Test --sd_generation_config with EAGLE3 Top-K parameters.
