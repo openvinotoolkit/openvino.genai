@@ -124,7 +124,10 @@ class VisualTextEvaluator(TextEvaluator):
             pruning_ratio,
             relevance_weight,
         ):
-            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
+            # Optimum exports OpenVINO models (OVModelFor*); everything else reaching
+            # this path is a native torch/HF model, possibly wrapped (e.g. by peft.PeftModel),
+            is_optimum_ov = "openvino" in str(type(model)).lower()
+            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and not is_optimum_ov:
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
                 preprocess_inputs = inputs_processor.preprocess_inputs
             else:
@@ -147,7 +150,7 @@ class VisualTextEvaluator(TextEvaluator):
             )
             from .model_loaders import OMNI_MODEL_TYPES
 
-            is_hf_omni = model.config.model_type in OMNI_MODEL_TYPES and "transformers" in str(type(model))
+            is_hf_omni = model.config.model_type in OMNI_MODEL_TYPES and not is_optimum_ov
             if is_hf_omni:
                 # Qwen3-Omni's generate() bounds text output via thinker_max_new_tokens
                 # and would synthesize audio unless return_audio is disabled.

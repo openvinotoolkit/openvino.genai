@@ -304,7 +304,10 @@ class Qwen3OmniSpeechWrapper:
         if audio is None:
             raise ValueError("Qwen3-Omni did not return audio. Ensure the talker module is enabled.")
 
-        speech = audio.detach().cpu().reshape(-1).float().numpy()
+        if isinstance(audio, torch.Tensor):
+            speech = audio.detach().cpu().reshape(-1).float().numpy()
+        else:
+            speech = torch.as_tensor(audio).cpu().reshape(-1).float().numpy()
 
         class _Speech:
             def __init__(self, data):

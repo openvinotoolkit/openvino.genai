@@ -896,7 +896,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         if getattr(model_config, "model_type", None) in OMNI_MODEL_TYPES:
             from transformers import AutoProcessor
 
-            model = load_omni_hf_pipeline(model_id, device, model_config, remote_code)
+            model = load_omni_hf_pipeline(model_id, device, model_config, remote_code, **kwargs)
             if not getattr(model, "has_talker", False):
                 raise ValueError(f"Model {model_id} does not expose a talker module required for speech generation.")
             processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=remote_code)
@@ -936,7 +936,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         from transformers import AutoProcessor
 
         try:
-            model = OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config)
+            model = OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
         except ValueError:
             model = OVModelForMultimodalLM.from_pretrained(
                 model_id,
@@ -945,6 +945,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
                 use_cache=True,
                 device=device,
                 ov_config=ov_config,
+                **kwargs,
             )
         if not getattr(model, "has_talker", False):
             raise ValueError(
