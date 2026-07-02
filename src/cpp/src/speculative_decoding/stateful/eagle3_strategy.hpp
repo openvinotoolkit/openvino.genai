@@ -7,12 +7,12 @@
 #include <openvino/genai/perf_metrics.hpp>
 #include <openvino/genai/speculative_decoding/perf_metrics.hpp>
 
+#include "model_desc.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "stateful_pipeline_base.hpp"
 #include "utils.hpp"
-#include "model_desc.hpp"
 
 class ManualTimer;  // Forward declaration for build_results()
 
@@ -211,11 +211,18 @@ protected:
     // ---- Sampling helpers (split by mode) ----
 
     /// @brief Configures the SequenceGroup for sampling and invokes the sampler.
-    /// @param logits           Logit tensor to feed to the sampler.
-    /// @param input_token_count  Number of input tokens (for scheduling).
-    /// @param sample_count     Number of output positions to sample.
-    /// @param is_validation    Whether the sampler should run in tree-validation mode.
-    void invoke_sampler(const ov::Tensor& logits, size_t input_token_count, size_t sample_count, bool is_validation);
+    /// @param logits                 Logit tensor to feed to the sampler.
+    /// @param input_token_count      Number of input tokens (for scheduling).
+    /// @param sample_count           Number of output positions to sample.
+    /// @param num_validated_tokens   Number of tokens to validate (0 for non-validation calls).
+    /// @param is_validation          Selects the sampler's validation branch. Target-model passes
+    ///                               always require true (even for prefill) to avoid sequence forks;
+    ///                               draft-model passes require false.
+    void invoke_sampler(const ov::Tensor& logits,
+                        size_t input_token_count,
+                        size_t sample_count,
+                        size_t num_validated_tokens,
+                        bool is_validation);
 
     /// @brief Samples the next token for each running sequence (non-validation mode).
     ///        Collects the last generated token from each running sequence after the sampler has run.
@@ -374,11 +381,14 @@ struct Eagle3CompileConfig {
     size_t max_branching_factor;
     size_t max_assistant_tokens;
 
-    /// Maximum tokens the draft model processes in one generation step.
+    /// Maximum input tokens the draft model receives in a single generate() call.
+    /// Feeds NPUW_LLM_MAX_GENERATION_TOKEN_LEN as the static shape upper bound.
     size_t draft_max_gen_tokens() const {
         return max_tree_depth * max_branching_factor;
     }
-    /// Maximum tokens the target model processes in one validation step.
+    /// Maximum input tokens the target model receives in a single validation call
+    /// (root + up to max_assistant_tokens tree nodes).
+    /// Feeds NPUW_LLM_MAX_GENERATION_TOKEN_LEN as the static shape upper bound.
     size_t target_max_gen_tokens() const {
         return max_assistant_tokens + 1;
     }
@@ -424,8 +434,8 @@ private:
 
     /// @brief Runs a complete speculative iteration (draft + validate + sync).
     SpeculativeResult run_speculative_iteration(size_t token_count,
-                                                 const std::set<int64_t>& stop_token_ids,
-                                                 size_t draft_iterations);
+                                                const std::set<int64_t>& stop_token_ids,
+                                                size_t draft_iterations);
 
     /// @brief Step 1: Generates the first draft tree level using target hidden states.
     InferResult generate_initial_draft(size_t input_token_count, size_t past_accepted_token_count);

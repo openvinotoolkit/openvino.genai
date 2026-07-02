@@ -40,22 +40,15 @@ ov::Tensor slice_hidden_state(const ov::Tensor& hidden_features, size_t position
 /// @brief Copies one hidden-state row (one token) from src[src_position] into dst[dst_position].
 /// Both tensors must have shape [1, *, hidden_size] and identical element type.
 void copy_hidden_state_row(const ov::Tensor& src, size_t src_position, ov::Tensor& dst, size_t dst_position) {
-    OPENVINO_ASSERT(src_position < src.get_shape()[1],
-                    "src_position ",
-                    src_position,
-                    " out of bounds for seq_len ",
-                    src.get_shape()[1]);
-    OPENVINO_ASSERT(dst_position < dst.get_shape()[1],
-                    "dst_position ",
-                    dst_position,
-                    " out of bounds for seq_len ",
-                    dst.get_shape()[1]);
-    OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(),
-                    "copy_hidden_state_row: src type ",
-                    src.get_element_type(),
-                    " != dst type ",
-                    dst.get_element_type());
-    const size_t hidden_size = src.get_shape()[2];
+    const auto& src_shape = src.get_shape();
+    const auto& dst_shape = dst.get_shape();
+    OPENVINO_ASSERT(src_shape.size() == 3, "copy_hidden_state_row: src must be 3D");
+    OPENVINO_ASSERT(dst_shape.size() == 3, "copy_hidden_state_row: dst must be 3D");
+    OPENVINO_ASSERT(src_position < src_shape[1], "copy_hidden_state_row: src_position out of range");
+    OPENVINO_ASSERT(dst_position < dst_shape[1], "copy_hidden_state_row: dst_position out of range");
+    OPENVINO_ASSERT(src_shape[2] == dst_shape[2], "copy_hidden_state_row: hidden_size mismatch");
+    OPENVINO_ASSERT(src.get_element_type() == dst.get_element_type(), "copy_hidden_state_row: element type mismatch");
+    const size_t hidden_size = src_shape[2];
     const size_t elem_size = src.get_element_type().size();
     const size_t row_bytes = hidden_size * elem_size;
     const auto* src_ptr = static_cast<const uint8_t*>(src.data()) + src_position * row_bytes;
@@ -234,8 +227,7 @@ InputTensors Eagle3DraftWrapper::build_initial_inputs(size_t input_token_count) 
         result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, 1, 1});
         set_eagle_tree_mask_scalar_zero(result.eagle_tree_mask);
     } else {
-        result.eagle_tree_mask =
-            ov::Tensor(m_eagle_tree_mask_type, {1, 1, input_token_count, input_token_count});
+        result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, input_token_count, input_token_count});
         fill_causal_square_mask(result.eagle_tree_mask, input_token_count);
     }
 
@@ -373,8 +365,7 @@ InputTensors Eagle3TargetWrapper::build_validation_inputs() const {
 
     // 1. input_ids: all N+1 candidates — root then tree nodes.
     result.input_ids = ov::Tensor(ov::element::i64, {1, num_candidates});
-    const size_t gen_offset = generated_ids.size() - num_candidates;
-    std::copy_n(generated_ids.data() + gen_offset, num_candidates, result.input_ids.data<int64_t>());
+    std::copy_n(generated_ids.data() + past_accepted_len, num_candidates, result.input_ids.data<int64_t>());
 
     // 2. position_ids: context_len + tree depth of each candidate.
     result.position_ids = ov::Tensor(ov::element::i64, {1, num_candidates});
@@ -551,13 +542,14 @@ void Eagle3InferWrapperBase::release_memory() {
 void Eagle3InferWrapperBase::invoke_sampler(const ov::Tensor& logits,
                                             size_t input_token_count,
                                             size_t sample_count,
+                                            size_t num_validated_tokens,
                                             bool is_validation) {
     const auto sequence_group = get_sequence_group();
     OPENVINO_ASSERT(sequence_group, "SequenceGroup not initialized");
 
     sequence_group->schedule_tokens(input_token_count);
     sequence_group->set_output_seq_len(sample_count);
-    sequence_group->set_num_validated_tokens(is_validation ? sample_count : 0);
+    sequence_group->set_num_validated_tokens(num_validated_tokens);
 
     m_sampler.sample({sequence_group}, logits, is_validation);
     sequence_group->finish_iteration();
@@ -595,7 +587,7 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_next_tokens(const ov::Tensor
                     num_sequences,
                     "). Caller must normalize logits before sampling.");
 
-    invoke_sampler(logits, input_token_count, /*sample_count=*/1, /*is_validation=*/false);
+    invoke_sampler(logits, input_token_count, /*sample_count=*/1, /*num_validated_tokens=*/0, /*is_validation=*/false);
     // Draft EOS must not terminate the sequence: the target model may reject it, and the
     // next iteration still needs every sequence reachable.
     restore_running_status();
@@ -652,12 +644,9 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_and_validate(const ov::Tenso
                     num_candidates,
                     "). Caller must normalize logits before validation.");
 
-    sequence_group->schedule_tokens(input_token_count);
-    sequence_group->set_output_seq_len(num_candidates);
-    sequence_group->set_num_validated_tokens(num_tokens_to_validate);
-
-    m_sampler.sample({sequence_group}, logits, /*is_validation=*/true);
-    sequence_group->finish_iteration();
+    // Target-model sampling always uses is_validation=true (even for prefill, num_validated_tokens=0);
+    // running with is_validation=false forks target sequences and breaks subsequent validation passes.
+    invoke_sampler(logits, input_token_count, num_candidates, num_tokens_to_validate, /*is_validation=*/true);
 
     // Extract all tokens appended by the sampler (new_token for prefill; acc_1..acc_k + bonus for validation).
     const auto& gen_after = running_sequences[0]->get_generated_ids();
@@ -678,27 +667,10 @@ ov::Tensor Eagle3InferWrapperBase::get_logits() const {
 
 ov::Tensor Eagle3InferWrapperBase::get_hidden_features(size_t actual_seq_len) const {
     const auto hidden_state = m_request.get_tensor("last_hidden_state");
-    const auto& shape = hidden_state.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1, "Invalid hidden state shape: ", shape);
-
-    const size_t output_seq_len = shape[1];
     if (actual_seq_len == 0) {
-        actual_seq_len = m_request.get_tensor("input_ids").get_shape()[1];
+        actual_seq_len = m_request.get_tensor("input_ids").get_shape().at(1);
     }
-
-    if (output_seq_len == actual_seq_len) {
-        return hidden_state;
-    }
-
-    OPENVINO_ASSERT(actual_seq_len <= output_seq_len,
-                    "Sequence length mismatch: actual=",
-                    actual_seq_len,
-                    ", output=",
-                    output_seq_len);
-
-    auto [start_coord, end_coord] =
-        ov::genai::utils::make_roi(shape, 1, output_seq_len - actual_seq_len, output_seq_len);
-    return ov::Tensor(hidden_state, start_coord, end_coord);
+    return trim_tensor_tail(hidden_state, actual_seq_len);
 }
 
 ov::Tensor Eagle3InferWrapperBase::trim_tensor_tail(const ov::Tensor& tensor, size_t useful_len) {
@@ -762,7 +734,11 @@ void Eagle3TargetWrapper::initialize_sequence(const ov::Tensor& input_ids, const
 }
 
 InferenceOutput Eagle3TargetWrapper::infer(const InputTensors& inputs) {
-    const size_t input_len = inputs.input_ids.get_shape()[1];
+    const auto& ids_shape = inputs.input_ids.get_shape();
+    OPENVINO_ASSERT(ids_shape.size() == 2 && ids_shape[0] == 1,
+                    "Expected input_ids shape [1, seq_len], got ",
+                    ids_shape);
+    const size_t input_len = ids_shape[1];
 
     m_request.set_tensor("input_ids", inputs.input_ids);
     m_request.set_tensor("attention_mask", inputs.attention_mask);
@@ -787,7 +763,7 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
     auto output = infer(inputs);
 
     // Trim padded outputs: prefill uses last 1 position, validation uses all candidates.
-    const size_t num_candidates = is_validation ? inputs.input_ids.get_shape()[1] : 1;
+    const size_t num_candidates = is_validation ? inputs.input_ids.get_shape().at(1) : 1;
     output.logits = trim_tensor_tail(output.logits, num_candidates);
 
     const std::vector<int64_t> sampled =
@@ -822,8 +798,9 @@ void Eagle3DraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const 
     const size_t total_len = shape[1];
     OPENVINO_ASSERT(total_len >= 2, "Draft model requires at least 2 tokens");
 
-    // Draft model uses tokens[1:] — Eagle3 draft skips the first prompt token because
-    // the target model's hidden state for that position is not available at draft init.
+    // Draft model uses tokens[1:] — Eagle draft pairs each hidden state h_i (from the
+    // target's layer for position i) with the token at position i+1, so the input
+    // sequence is advanced by one timestep relative to the prompt.
     const TokenIds draft_prompt_ids(ids_data + 1, ids_data + total_len);
     m_sequence_group = std::make_shared<SequenceGroup>(1, draft_prompt_ids, config);
 
@@ -855,7 +832,11 @@ void Eagle3DraftWrapper::allocate_buffers(size_t max_sequences,
 }
 
 InferenceOutput Eagle3DraftWrapper::infer(const InputTensors& inputs, const ov::Tensor& hidden_states) {
-    const size_t input_token_count = inputs.input_ids.get_shape()[1];
+    const auto& ids_shape = inputs.input_ids.get_shape();
+    OPENVINO_ASSERT(ids_shape.size() == 2 && ids_shape[0] == 1,
+                    "Expected input_ids shape [1, seq_len], got ",
+                    ids_shape);
+    const size_t input_token_count = ids_shape[1];
 
     m_request.set_tensor("input_ids", inputs.input_ids);
     m_request.set_tensor("attention_mask", inputs.attention_mask);
@@ -907,7 +888,7 @@ ov::Tensor Eagle3DraftWrapper::prepare_hidden_states(const InferContext& ctx) {
     }
 
     // Use pre-allocated buffer if available and large enough, otherwise allocate.
-    const size_t hidden_size = running_sequences[0]->get_hidden_state().get_shape()[2];
+    const size_t hidden_size = running_sequences[0]->get_hidden_state().get_shape().at(2);
     ov::Tensor concat_buf;
     if (m_buffers_allocated && total_seq_len <= m_max_sequences * m_max_depth) {
         m_hidden_concat_buf.set_shape({1, total_seq_len, hidden_size});
@@ -924,7 +905,7 @@ ov::Tensor Eagle3DraftWrapper::prepare_hidden_states(const InferContext& ctx) {
     size_t offset = 0;
     for (size_t i = 0; i < num_sequences; ++i) {
         const auto seq_hidden = running_sequences[i]->get_hidden_state();
-        const size_t seq_len = seq_hidden.get_shape()[1];
+        const size_t seq_len = seq_hidden.get_shape().at(1);
         std::memcpy(static_cast<uint8_t*>(concat_buf.data()) + offset * row_bytes,
                     seq_hidden.data(),
                     seq_len * row_bytes);
@@ -967,7 +948,7 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
     const auto& hidden_shape = output.hidden_features.get_shape();
     OPENVINO_ASSERT(hidden_shape.size() == 3 && hidden_shape[0] == 1, "Invalid hidden features shape: ", hidden_shape);
 
-    const size_t branch_len = running_sequences[0]->get_hidden_state().get_shape()[1];
+    const size_t branch_len = running_sequences[0]->get_hidden_state().get_shape().at(1);
     const size_t total_hidden_tokens = num_sequences * branch_len;
     OPENVINO_ASSERT(hidden_shape[1] == total_hidden_tokens,
                     "hidden_features seq_len (",
@@ -991,9 +972,7 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
             const auto existing = running_sequences[i]->get_hidden_state();
             m_per_seq_hidden_bufs[i].set_shape({1, new_len, hidden_size});
             if (existing.data() != m_per_seq_hidden_bufs[i].data()) {
-                std::memcpy(m_per_seq_hidden_bufs[i].data(),
-                            existing.data(),
-                            branch_len * row_bytes);
+                std::memcpy(m_per_seq_hidden_bufs[i].data(), existing.data(), branch_len * row_bytes);
             }
             copy_hidden_state_row(output.hidden_features, last_tok_pos, m_per_seq_hidden_bufs[i], branch_len);
             running_sequences[i]->update_hidden_state(m_per_seq_hidden_bufs[i]);
@@ -1023,7 +1002,7 @@ ov::Tensor Eagle3DraftWrapper::gather_logits_for_sampling(const InferenceOutput&
     OPENVINO_ASSERT(lshape.size() == 3 && lshape[0] == 1, "Invalid logits shape: ", lshape);
 
     // The stored hidden state was just grown to branch_len+1, so prev_branch_len = shape[1]-1.
-    const size_t new_branch_len = running_sequences[0]->get_hidden_state().get_shape()[1];
+    const size_t new_branch_len = running_sequences[0]->get_hidden_state().get_shape().at(1);
     const size_t prev_branch_len = new_branch_len - 1;
     OPENVINO_ASSERT(prev_branch_len > 0, "branch_len must be positive in DRAFT_ITERATION");
     const size_t total_tokens = num_sequences * prev_branch_len;
@@ -1076,15 +1055,14 @@ ov::Tensor Eagle3DraftWrapper::gather_logits_for_sampling(const InferenceOutput&
 // Hidden states are updated BEFORE sampling so that sequence forks (from tree search)
 // inherit the correct state.
 InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
-    const InputTensors inputs = ctx.use_target_hidden
-                                    ? build_initial_inputs(ctx.input_token_count)
-                                    : build_iteration_inputs(ctx.past_accepted_token_count);
+    const InputTensors inputs = ctx.use_target_hidden ? build_initial_inputs(ctx.input_token_count)
+                                                      : build_iteration_inputs(ctx.past_accepted_token_count);
 
     const ov::Tensor hidden_states = prepare_hidden_states(ctx);
     auto output = infer(inputs, hidden_states);
 
     // Trim padded output to useful positions.
-    const size_t useful_logits_len = ctx.use_target_hidden ? 1 : inputs.input_ids.get_shape()[1];
+    const size_t useful_logits_len = ctx.use_target_hidden ? 1 : inputs.input_ids.get_shape().at(1);
     output.logits = trim_tensor_tail(output.logits, useful_logits_len);
 
     update_hidden_states(output, ctx);
@@ -1278,8 +1256,7 @@ int64_t StatefulEagle3LLMPipeline::run_prefill() {
         // Pre-allocate accepted hidden state buffer for gather_accepted_hidden_states().
         // Sized to compile-time max; precision follows the target's `last_hidden_state` output.
         const size_t max_accepted = m_compile_config.max_assistant_tokens + 1;
-        m_accepted_hidden_buf =
-            ov::Tensor(m_target->hidden_output_type(), {1, max_accepted, hidden_size});
+        m_accepted_hidden_buf = ov::Tensor(m_target->hidden_output_type(), {1, max_accepted, hidden_size});
     }
 
     return initial_token;
@@ -1355,8 +1332,8 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
         input_ids = tokenized_input->input_ids;
     }
 
-    OPENVINO_ASSERT(input_ids.get_shape()[0] == 1, "Only batch size 1 supported");
-    m_prompt_length = input_ids.get_shape()[1];
+    OPENVINO_ASSERT(input_ids.get_shape().at(0) == 1, "Only batch size 1 supported");
+    m_prompt_length = input_ids.get_shape().at(1);
 
     // Reset model states.
     m_target->reset_state();
@@ -1383,8 +1360,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
 
     while (!eos_reached && generated_tokens < config.max_new_tokens &&
            streaming_status == ov::genai::StreamingStatus::RUNNING) {
-        auto result =
-            run_speculative_iteration(input_token_count, config.stop_token_ids, draft_iterations);
+        auto result = run_speculative_iteration(input_token_count, config.stop_token_ids, draft_iterations);
 
         // Truncate validated tokens if they would exceed max_new_tokens.
         const size_t remaining_budget = config.max_new_tokens - generated_tokens;
@@ -1567,7 +1543,6 @@ void StatefulEagle3LLMPipeline::gather_accepted_hidden_states(const ValidationRe
         std::memcpy(dst + i * row_bytes, src + row * row_bytes, row_bytes);
     }
     m_target->get_current_sequence()->update_hidden_state(m_accepted_hidden_buf);
-
 }
 
 SpeculativeResult StatefulEagle3LLMPipeline::run_speculative_iteration(size_t input_token_count,

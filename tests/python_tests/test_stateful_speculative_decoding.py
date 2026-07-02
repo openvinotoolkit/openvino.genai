@@ -203,35 +203,6 @@ def test_extended_perf_metrics():
         assert std_gen_duration == 0
 
 
-# Eagle3 specific tests
-eagle3_models_and_input = [
-    (
-        "Qwen/Qwen3-1.7B",
-        "AngelSlim/Qwen3-1.7B_eagle3",
-        """Code:
-def add(a, b):
-    return a + b
-
-Question: Can you please add 2 and 3
-A:""",
-    ),
-    (
-        "Qwen/Qwen3-1.7B",
-        "AngelSlim/Qwen3-1.7B_eagle3",
-        "What is the capital of Ireland?/no_think",
-    )
-]
-
-eagle3_devices = [("NPU", "NPU")]
-
-# Tree search parameter configurations: (branching_factor, tree_depth, num_assistant_tokens)
-# (0, 0, 0) means "use pipeline defaults" — do not set tree params in GenerationConfig.
-eagle3_tree_params = [
-    (0, 0, 0),  # default: pipeline uses ensure_tree_params_is_set() defaults (bf=2, td=4, nat=7)
-    (4, 2, 7),  # topk: wide and shallow tree
-    (1, 4, 4),  # top-1: linear chain, no branching
-]
-
 # assistant model is randomly generated from the target model
 gemma4_mtp_models_and_input = [
     (
@@ -383,6 +354,36 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
         "Per-model perf metrics accumulate across generate() calls instead of being reset. "
         f"first={first}, second={second}"
     )
+
+
+# Eagle3 specific tests
+eagle3_models_and_input = [
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        """Code:
+def add(a, b):
+    return a + b
+
+Question: Can you please add 2 and 3
+A:""",
+    ),
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        "What is the capital of Ireland?/no_think",
+    ),
+]
+
+eagle3_devices = [("NPU", "NPU")]
+
+# Tree search parameter configurations: (branching_factor, tree_depth, num_assistant_tokens)
+# (0, 0, 0) means "use pipeline defaults" — do not set tree params in GenerationConfig.
+eagle3_tree_params = [
+    (0, 0, 0),  # default: pipeline uses ensure_tree_params_is_set() defaults (bf=2, td=4, nat=7)
+    (4, 2, 7),  # topk: wide and shallow tree
+    (1, 4, 4),  # top-1: linear chain, no branching
+]
 
 
 @pytest.mark.parametrize("branching_factor,tree_depth,num_assistant_tokens", eagle3_tree_params)
