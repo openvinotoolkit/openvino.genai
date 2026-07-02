@@ -285,14 +285,16 @@ def get_argparser():
         "--num_assistant_tokens",
         required=False,
         default=None,
-        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding",
+        help="[DEPRECATED, will be removed soon. Please use --sd_generation_config instead.] "
+        "Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding",
         type=int,
     )
     parser.add_argument(
         "--assistant_confidence_threshold",
         required=False,
         default=None,
-        help="Config option assistant_confidence_threshold for Speculative decoding",
+        help="[DEPRECATED, will be removed soon. Please use --sd_generation_config instead.] "
+        "Config option assistant_confidence_threshold for Speculative decoding",
         type=float,
     )
     parser.add_argument(
@@ -492,6 +494,17 @@ def main():
     )
     args = get_argparser()
     memory_data_collector = MemoryMonitorHandler(args)
+
+    if args.num_assistant_tokens is not None:
+        log.warning(
+            "--num_assistant_tokens is DEPRECATED and will be removed soon. "
+            "Please use --sd_generation_config '{\"num_assistant_tokens\": N}' instead."
+        )
+    if args.assistant_confidence_threshold is not None:
+        log.warning(
+            "--assistant_confidence_threshold is DEPRECATED and will be removed soon. "
+            "Please use --sd_generation_config '{\"assistant_confidence_threshold\": X}' instead."
+        )
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")

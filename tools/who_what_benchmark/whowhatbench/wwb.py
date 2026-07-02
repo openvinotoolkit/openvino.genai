@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Supported keys for --sd-generation-config and their expected Python types.
-# Kept as a module-level constant so parsing/validation and the CLI help text stay in sync.
+# When updating this dict, also update the CLI help string for --sd-generation-config below to keep them consistent.
 SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
     "num_assistant_tokens": int,
     "assistant_confidence_threshold": float,
@@ -363,13 +363,15 @@ def parse_args():
         "--num-assistant-tokens",
         type=int,
         default=None,
-        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
+        help="[DEPRECATED, will be removed soon. Please use --sd-generation-config instead.] "
+        "Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
     )
     parser.add_argument(
         "--assistant-confidence-threshold",
         type=float,
         default=None,
-        help="Config option assistant_confidence_threshold for Speculative decoding.",
+        help="[DEPRECATED, will be removed soon. Please use --sd-generation-config instead.] "
+        "Config option assistant_confidence_threshold for Speculative decoding.",
     )
     parser.add_argument(
         "--video-frames-num",
@@ -1270,6 +1272,17 @@ def print_speech_results(evaluator):
 def main():
     args = parse_args()
     check_args(args)
+
+    if args.num_assistant_tokens is not None:
+        logger.warning(
+            "--num-assistant-tokens is DEPRECATED and will be removed soon. "
+            "Please use --sd-generation-config '{\"num_assistant_tokens\": N}' instead."
+        )
+    if args.assistant_confidence_threshold is not None:
+        logger.warning(
+            "--assistant-confidence-threshold is DEPRECATED and will be removed soon. "
+            "Please use --sd-generation-config '{\"assistant_confidence_threshold\": X}' instead."
+        )
 
     # Parse --sd-generation-config and override cmdline params if specified
     if args.sd_generation_config is not None:

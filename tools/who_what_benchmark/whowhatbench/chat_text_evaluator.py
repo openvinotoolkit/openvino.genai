@@ -27,7 +27,7 @@ def default_gen_answer(
     _assistant_confidence_threshold=0.0,
     full_chat=False,
     kv_axes_pos=2,
-    _generation_config_extra=None,
+    generation_config_extra=None,
 ):
     is_awq = getattr(model, "is_awq", None) is not None
     device = "cpu"
