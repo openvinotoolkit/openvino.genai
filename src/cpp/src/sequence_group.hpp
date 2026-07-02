@@ -14,6 +14,7 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -53,6 +54,13 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
+    ov::Tensor m_intermediate_hidden_state = ov::Tensor();
+    // When enabled, hidden states are accumulated across all generation steps
+    static constexpr size_t kMaxAccumulatedHiddenStates = 512;
+    bool m_accumulate_hidden_states = false;
+    bool m_hidden_state_cap_warned = false;
+    std::vector<ov::Tensor> m_all_hidden_states;
+    std::vector<ov::Tensor> m_all_intermediate_hidden_states;
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
@@ -81,6 +89,11 @@ class Sequence {
         m_generated_log_probs(seq.m_generated_log_probs),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
+        m_intermediate_hidden_state(seq.m_intermediate_hidden_state),
+        m_accumulate_hidden_states(seq.m_accumulate_hidden_states),
+        m_hidden_state_cap_warned(seq.m_hidden_state_cap_warned),
+        m_all_hidden_states(seq.m_all_hidden_states),
+        m_all_intermediate_hidden_states(seq.m_all_intermediate_hidden_states),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_sequence_group(seq.m_sequence_group),
@@ -147,7 +160,6 @@ public:
         m_finish_reason = finish_reason;
     }
 
-    // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
@@ -156,6 +168,19 @@ public:
 
     void update_hidden_state(const ov::Tensor& tensor) {
         m_hidden_state = tensor;
+        if (m_accumulate_hidden_states && tensor.get_size() > 0) {
+            if (m_all_hidden_states.size() >= kMaxAccumulatedHiddenStates) {
+                if (!m_hidden_state_cap_warned) {
+                    GENAI_WARN("Hidden state accumulation cap reached (%zu steps); stopping accumulation",
+                               kMaxAccumulatedHiddenStates);
+                    m_hidden_state_cap_warned = true;
+                }
+                return;
+            }
+            ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
+            tensor.copy_to(copy);
+            m_all_hidden_states.push_back(std::move(copy));
+        }
     }
 
     ov::Tensor get_hidden_state() const {
@@ -168,6 +193,44 @@ public:
 
     const TreeMetaData& get_tree_metadata() const {
         return m_tree_metadata;
+    }
+
+    void update_intermediate_hidden_state(const ov::Tensor& tensor) {
+        m_intermediate_hidden_state = tensor;
+        if (m_accumulate_hidden_states && tensor.get_size() > 0) {
+            if (m_all_intermediate_hidden_states.size() >= kMaxAccumulatedHiddenStates) {
+                if (!m_hidden_state_cap_warned) {
+                    GENAI_WARN("Hidden state accumulation cap reached (%zu steps); stopping accumulation",
+                               kMaxAccumulatedHiddenStates);
+                    m_hidden_state_cap_warned = true;
+                }
+                return;
+            }
+            ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
+            tensor.copy_to(copy);
+            m_all_intermediate_hidden_states.push_back(std::move(copy));
+        }
+    }
+
+    ov::Tensor get_intermediate_hidden_state() const {
+        return m_intermediate_hidden_state;
+    }
+
+    void set_accumulate_hidden_states(bool enable) {
+        m_accumulate_hidden_states = enable;
+        m_hidden_state_cap_warned = false;
+        if (enable) {
+            m_all_hidden_states.reserve(256);
+            m_all_intermediate_hidden_states.reserve(256);
+        }
+    }
+
+    const std::vector<ov::Tensor>& get_all_hidden_states() const {
+        return m_all_hidden_states;
+    }
+
+    const std::vector<ov::Tensor>& get_all_intermediate_hidden_states() const {
+        return m_all_intermediate_hidden_states;
     }
 
     // removes n last tokens and updates cumulative log prob
@@ -694,7 +757,6 @@ public:
         m_num_processed_tokens -= num_preempt_tokens;
     }
 
-    // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
@@ -741,7 +803,6 @@ public:
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
     }
 
-    // mark current schedule phase as finished and updates internal counters
     void finish_iteration() {
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens

@@ -658,7 +658,7 @@ public:
 
     // penalties (not used in beam search)
     float repetition_penalty = 1.0f;
-    float presence_penalty = 0.0;
+    float presence_penalty = 0.0f;
     float frequency_penalty = 0.0f;
 
     // Beam search specific
@@ -698,7 +698,6 @@ public:
 
     // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
     bool apply_chat_template = true;
-
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
