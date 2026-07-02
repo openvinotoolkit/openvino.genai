@@ -1262,6 +1262,16 @@ def main():
         taylorseer_config.disable_cache_after_step = ts_cfg.get("disable_cache_after_step", -2)
         logger.info(f"TaylorSeer config: {taylorseer_config}")
 
+    def set_generation_config_for_draft_model(model):
+        if not hasattr(model, "get_generation_config") or not hasattr(model, "set_generation_config"):
+            raise TypeError(
+                "--draft-model requires a GenAI model/pipeline with get_generation_config()/set_generation_config()."
+            )
+        generation_config = model.get_generation_config()
+        if args.num_assistant_tokens is not None:
+            generation_config.num_assistant_tokens = int(args.num_assistant_tokens)
+        model.set_generation_config(generation_config)
+
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
@@ -1275,6 +1285,9 @@ def main():
             args.genai,
             **kwargs,
         )
+
+        if args.draft_model is not None and base_model is not None:
+            set_generation_config_for_draft_model(base_model)
 
         # Set TaylorSeer config via generation config if applicable
         if taylorseer_config is not None and base_model is not None:
@@ -1320,6 +1333,9 @@ def main():
                 generation_config = target_model.get_generation_config()
                 generation_config.taylorseer_config = taylorseer_config
                 target_model.set_generation_config(generation_config)
+
+            if args.draft_model is not None and target_model is not None:
+                set_generation_config_for_draft_model(target_model)
 
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,

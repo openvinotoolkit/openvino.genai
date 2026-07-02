@@ -55,7 +55,11 @@ def main():
     parser.add_argument(
         "prompt_lookup", nargs="?", default="false", help="Enable prompt lookup decoding (default: false)"
     )
+    parser.add_argument("draft_model_dir", nargs="?", default="", help="Path to the draft model directory")
     args = parser.parse_args()
+
+    if args.device == "NPU" and args.draft_model_dir:
+        parser.error("draft_model_dir is not supported when device is NPU")
 
     rgbs = read_images(args.image_dir)
 
@@ -64,6 +68,9 @@ def main():
     # Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
     prompt_lookup = args.prompt_lookup == "true"
     properties = {"prompt_lookup": prompt_lookup}
+    if args.draft_model_dir != "":
+        draft_model = openvino_genai.draft_model(args.draft_model_dir, args.device)
+        properties["draft_model"] = draft_model
     if args.device == "GPU":
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.
