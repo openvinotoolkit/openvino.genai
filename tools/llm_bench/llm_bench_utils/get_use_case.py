@@ -29,6 +29,7 @@ DIFFUSERS_PIPELINE_TYPES = {
     "StableDiffusionInpaintPipeline",
     "StableDiffusionXLInpaintPipeline",
     "FluxPipeline",
+    "Flux2KleinPipeline",
     "LatentConsistencyModelPipeline",
 }
 

@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import inspect
 import os
 from typing import Any, Union
 
@@ -79,15 +80,18 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
         def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None):
+            model_params = inspect.signature(model.__call__).parameters
+            kwargs = {
+                "prompt": prompt,
+                "image": image,
+                "num_inference_steps": num_inference_steps,
+                "output_type": "pil",
+                "generator": generator,
+            }
+            if "strength" in model_params:
+                kwargs["strength"] = 0.8
             with torch.no_grad():
-                output = model(
-                    prompt,
-                    image=image,
-                    num_inference_steps=num_inference_steps,
-                    output_type="pil",
-                    strength=0.8,
-                    generator=generator,
-                )
+                output = model(**kwargs)
             return output.images[0]
 
         generation_fn = gen_image_fn or default_gen_image_fn
