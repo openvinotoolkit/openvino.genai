@@ -3,6 +3,7 @@
 
 #include <string_view>
 #include "sequence_group.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -104,6 +105,14 @@ size_t Sequence::get_hash(size_t block_size) {
     auto sequence_group = get_sequence_group_ptr();
     OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
     return get_hash(sequence_group->get_context_len(), block_size);
+}
+
+SequenceGroup::SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params)
+    : m_request_id(request_id),
+      m_sampling_params(sampling_params),
+      m_sequence_group_type(SequenceGroupType::TOKENS),
+      m_generation_stream(GenerationStream::create()) {
+    ov::genai::utils::print_generation_config_info(m_sampling_params);
 }
 }  // namespace genai
 }  // namespace ov
