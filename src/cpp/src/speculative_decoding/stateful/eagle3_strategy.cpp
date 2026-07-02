@@ -80,7 +80,7 @@ void fill_causal_square_mask(ov::Tensor& mask, size_t seq_len) {
     } else if (type == ov::element::f16) {
         fill_causal_square_mask_impl<ov::float16>(mask, seq_len);
     } else {
-        OPENVINO_THROW("Unsupported eagle_tree_mask element type: ", type);
+        OPENVINO_ASSERT(false, "Unsupported eagle_tree_mask element type: ", type);
     }
 }
 
@@ -109,7 +109,7 @@ void fill_block_causal_mask(ov::Tensor& mask, size_t num_seqs, size_t branch_len
     } else if (type == ov::element::f16) {
         fill_block_causal_mask_impl<ov::float16>(mask, num_seqs, branch_len);
     } else {
-        OPENVINO_THROW("Unsupported eagle_tree_mask element type: ", type);
+        OPENVINO_ASSERT(false, "Unsupported eagle_tree_mask element type: ", type);
     }
 }
 
@@ -135,7 +135,7 @@ void fill_tree_mask_from_bin(ov::Tensor& mask, const std::vector<std::vector<uin
     } else if (type == ov::element::f16) {
         fill_tree_mask_from_bin_impl<ov::float16>(mask, tree_mask_bin);
     } else {
-        OPENVINO_THROW("Unsupported eagle_tree_mask element type: ", type);
+        OPENVINO_ASSERT(false, "Unsupported eagle_tree_mask element type: ", type);
     }
 }
 
@@ -423,6 +423,8 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ModelDesc& model_desc)
     OPENVINO_ASSERT(m_hidden_output_type == ov::element::f32 || m_hidden_output_type == ov::element::f16,
                     "last_hidden_state element type must be f32 or f16, got ",
                     m_hidden_output_type);
+    // The sampler reads logits as `logits.data<const float>()`, so the model must output f32.
+    OPENVINO_ASSERT(m_logits_type == ov::element::f32, "logits element type must be f32, got ", m_logits_type);
 
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.tokenization_durations = {MicroSeconds(0.0f)};
