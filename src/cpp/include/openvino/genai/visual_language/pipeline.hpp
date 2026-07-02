@@ -22,11 +22,10 @@ public:
     // Hidden-state fields for speech generation (exposed to Python to enable custom Talker impls).
     // Populated by the CB pipeline when `return_audio` is requested on the GenerationConfig.
     // Consumed by Talker / TalkerBase impls to drive Qwen3-Omni speech generation.
-    // All three fields are empty (default-constructed) on the text-only path.
+    // Both fields are empty (default-constructed) on the text-only path.
     //
-    // Outer index of hidden_states / intermediate_hidden_states is per return sequence;
+    // Outer index of intermediate_hidden_states is per return sequence;
     // inner is one tensor per generation step.
-    std::vector<std::vector<ov::Tensor>> hidden_states;
     std::vector<std::vector<ov::Tensor>> intermediate_hidden_states;
     // Full prompt + generated token ids for the first sequence (talker input construction).
     std::vector<int64_t> prompt_ids;

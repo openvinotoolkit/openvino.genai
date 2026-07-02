@@ -208,7 +208,6 @@ private:
         // Forward hidden-states fields so OmniPipelineImpl / TalkerBase can drive speech
         // generation. Inner ov::Tensor copies are ref-counted handles, so the outer-vector
         // copies are O(n) in step count, not in tensor bytes.
-        decoded.hidden_states = result.hidden_states;
         decoded.intermediate_hidden_states = result.intermediate_hidden_states;
         decoded.prompt_ids = result.prompt_ids;
         return decoded;

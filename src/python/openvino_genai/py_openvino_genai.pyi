@@ -5111,9 +5111,6 @@ class VLMDecodedResults(DecodedResults):
     def __str__(self) -> str:
         ...
     @property
-    def hidden_states(self) -> list[list[openvino._pyopenvino.Tensor]]:
-        ...
-    @property
     def intermediate_hidden_states(self) -> list[list[openvino._pyopenvino.Tensor]]:
         ...
     @property

@@ -53,21 +53,17 @@ public:
     TalkerResult generate(const VLMDecodedResults& vlm_result,
                           const OmniTalkerSpeechConfig& talker_speech_config,
                           const OmniSpeechStreamerVariant& speech_streamer) {
-        OPENVINO_ASSERT(!vlm_result.hidden_states.empty(),
-                        "Talker: hidden states missing on VLMDecodedResults; the VLM must run with "
-                        "talker_speech_config.return_audio=true so it accumulates thinker hidden states.");
+        OPENVINO_ASSERT(!vlm_result.intermediate_hidden_states.empty(),
+                        "Talker: intermediate hidden states missing on VLMDecodedResults; the VLM must run "
+                        "with talker_speech_config.return_audio=true so it accumulates thinker hidden states.");
 
-        auto all_hidden_states = split_hidden_states(vlm_result.hidden_states[0]);
-        auto all_intermediate_hidden_states = vlm_result.intermediate_hidden_states.empty()
-                                                  ? std::vector<ov::Tensor>{}
-                                                  : split_hidden_states(vlm_result.intermediate_hidden_states[0]);
+        auto all_intermediate_hidden_states = split_hidden_states(vlm_result.intermediate_hidden_states[0]);
 
         // talker_speech_config carries audio_chunk_frames, speaker / speaker_embedding,
         // max_new_tokens, rng_seed, plus the talker_* / cp_* sampling overrides. The pipeline
         // resolves each std::optional<...> against the JSON-loaded checkpoint defaults at the
         // top of generate_speech(); unset overrides keep the checkpoint values.
         return m_speech->generate_speech(vlm_result.prompt_ids,
-                                         all_hidden_states,
                                          all_intermediate_hidden_states,
                                          speech_streamer,
                                          talker_speech_config);

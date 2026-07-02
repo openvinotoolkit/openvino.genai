@@ -518,10 +518,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
 
-        // Propagate hidden states for speech generation (Qwen3-Omni). All three fields stay
-        // empty on the text-only path (CB only fills m_hidden_states when return_audio is set).
-        if (!result.m_hidden_states.empty()) {
-            gen_result.hidden_states = std::move(result.m_hidden_states);
+        // Propagate hidden states for speech generation (Qwen3-Omni). Both fields stay empty
+        // on the text-only path (CB only fills m_intermediate_hidden_states when return_audio is set).
+        if (!result.m_intermediate_hidden_states.empty()) {
             gen_result.intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
             gen_result.prompt_ids = std::move(result.m_prompt_ids);
             if (!result.m_generation_ids.empty()) {

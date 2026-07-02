@@ -671,8 +671,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         result.m_finish_reasons.resize(num_outputs, GenerationFinishReason::NONE);
         result.m_status = request->get_generation_stream()->get_status();
 
-        // Always collect hidden states when model outputs them.
-        result.m_hidden_states.resize(num_outputs);
+        // Always collect intermediate hidden states when model outputs them.
         result.m_intermediate_hidden_states.resize(num_outputs);
         result.m_prompt_ids = request->get_prompt_ids();
 
@@ -691,8 +690,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                 result.m_finish_reasons[i] = request->get_generation_stream()->get_finish_reason();
             }
 
-            // Extract accumulated hidden states for speech generation.
-            result.m_hidden_states[i] = sequence->get_all_hidden_states();
+            // Extract accumulated intermediate hidden states for speech generation.
             result.m_intermediate_hidden_states[i] = sequence->get_all_intermediate_hidden_states();
         }
 

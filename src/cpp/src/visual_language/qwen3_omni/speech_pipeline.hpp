@@ -79,7 +79,6 @@ public:
 
     /// @brief Generate speech from thinker generation results.
     /// @param full_token_ids All token IDs from the full sequence (prompt + generated).
-    /// @param all_hidden_states Accumulated final hidden states [one tensor per step].
     /// @param all_intermediate_hidden_states Accumulated layer-14 hidden states [one tensor per step].
     /// @param audio_streamer Callback or OmniSpeechStreamerBase for streaming (monostate = batch mode).
     /// @param talker_speech_config Speech generation knobs. Reads `audio_chunk_frames`, `speaker`
@@ -91,7 +90,6 @@ public:
     /// @note Not thread-safe per instance — shares the pipeline's owned std::mt19937 and
     ///       ov::InferRequests across talker and CodePredictor sampling.
     TalkerResult generate_speech(const std::vector<int64_t>& full_token_ids,
-                                 const std::vector<ov::Tensor>& all_hidden_states,
                                  const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                  const OmniSpeechStreamerVariant& audio_streamer,
                                  const OmniTalkerSpeechConfig& talker_speech_config);

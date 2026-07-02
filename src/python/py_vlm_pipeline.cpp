@@ -268,7 +268,6 @@ void init_vlm_pipeline(py::module_& m) {
         .def_property_readonly("texts", [](const ov::genai::VLMDecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8(dr.texts); })
         .def_readonly("scores", &ov::genai::VLMDecodedResults::scores)
         .def_readonly("perf_metrics", &ov::genai::VLMDecodedResults::perf_metrics)
-        .def_readonly("hidden_states", &ov::genai::VLMDecodedResults::hidden_states)
         .def_readonly("intermediate_hidden_states", &ov::genai::VLMDecodedResults::intermediate_hidden_states)
         .def_readonly("prompt_ids", &ov::genai::VLMDecodedResults::prompt_ids)
         .def("__str__", [](const ov::genai::VLMDecodedResults &dr) -> py::str {

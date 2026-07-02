@@ -389,6 +389,8 @@ public:
                     name.compare(name.size() - marker.size(), marker.size(), marker) == 0) {
                     std::string prefix = name.substr(0, name.size() - marker.size());
                     m_linear_attention_paging_groups.push_back({prefix, {}, {}, {}, {}});
+                } else if (name == "qq_bias_begins") {
+                    m_has_qq_bias_input = true;
                 }
                 break;  // use first name per input
             }
@@ -861,7 +863,7 @@ public:
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
         }
-        if (_is_hs_export_only()) {
+        if (_is_hs_export_only() && m_has_qq_bias_input) {
             _set_query_to_query_tensors(sequence_groups, scheduler_output);
         }
         if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[1] == 1) {
@@ -1049,6 +1051,10 @@ private:
     bool m_has_hidden_states_output = false;
     // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
     bool m_has_intermediate_hidden_states_output = false;
+    // Whether model has the Eagle3 "qq_bias_begins" input (tree-decoding query-to-query bias).
+    // Guards _set_query_to_query_tensors so the HS_EXPORT flag, which Qwen3-Omni also reuses to
+    // collect thinker hidden states, does not trigger an Eagle3-only tensor bind on Omni models.
+    bool m_has_qq_bias_input = false;
 
     // Hidden state flags and helpers
     bool _is_hs_export()   const { return m_hidden_state_flags & HS_EXPORT; }

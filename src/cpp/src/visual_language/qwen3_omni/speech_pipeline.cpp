@@ -783,7 +783,6 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 }
 
 TalkerResult Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
-                                                       const std::vector<ov::Tensor>& all_hidden_states,
                                                        const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                                        const OmniSpeechStreamerVariant& audio_streamer,
                                                        const OmniTalkerSpeechConfig& talker_speech_config) {
@@ -834,9 +833,8 @@ TalkerResult Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>
     // seed fully reproduces the generated audio. Matches the reference torch.Generator contract.
     m_rng.seed(static_cast<std::mt19937::result_type>(talker_speech_config.rng_seed));
 
-    GENAI_DEBUG("Speech: tokens=%zu, hidden_states=%zu, intermediate=%zu",
+    GENAI_DEBUG("Speech: tokens=%zu, intermediate=%zu",
                 full_token_ids.size(),
-                all_hidden_states.size(),
                 all_intermediate_hidden_states.size());
 
     // Resolve speaker embedding from the variant: Tensor path takes the embedding directly;
