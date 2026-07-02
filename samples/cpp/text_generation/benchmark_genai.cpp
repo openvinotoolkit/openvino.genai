@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device);
     else
-        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device, ov::genai::SchedulerConfig(scheduler_config));
+        pipe = std::make_unique<ov::genai::LLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
