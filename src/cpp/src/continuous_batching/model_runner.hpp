@@ -671,11 +671,21 @@ public:
                     size_t stored_seq_len = stored_shape[0];
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
-                    OPENVINO_ASSERT(stored_hidden_size == hidden_size, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
-                    OPENVINO_ASSERT(stored_seq_len == total_num_tokens, "Target state sequence length does not match the expected length for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_hidden_size == hidden_size,
+                                    "Eagle3 hs import: hidden size mismatch. request_id=",
+                                    sequence_group->get_request_id(),
+                                    ", grouped_id=", sequence->get_grouped_id(),
+                                    ", stored_hidden_size=", stored_hidden_size,
+                                    ", expected_hidden_size=", hidden_size);
+                    OPENVINO_ASSERT(stored_seq_len == num_scheduled_tokens,
+                                    "Eagle3 hs import: seq len mismatch. request_id=",
+                                    sequence_group->get_request_id(),
+                                    ", grouped_id=", sequence->get_grouped_id(),
+                                    ", stored_seq_len=", stored_seq_len,
+                                    ", num_scheduled_tokens=", num_scheduled_tokens);
 
                     // fill the draft model hidden state input with the target hidden state
-                    hidden_state_input = stored_hidden_state;
+                    _copy_roi_between_tensors(stored_hidden_state, 0, stored_seq_len, hidden_state_input, current_token_idx);
                 } else if (_is_hs_internal()) {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
@@ -1152,11 +1162,13 @@ private:
         if (hidden_size == 0) {
             for (const auto& kv : m_initial_hidden_states) {
                 const auto& initial_hidden_states = kv.second;
-                auto hidden_states_shape = initial_hidden_states.get_shape();
-                OPENVINO_ASSERT(initial_hidden_states && hidden_states_shape.size() >= 2,
-                                "Initial hidden states tensor rank is less than 2.");
-                hidden_size = hidden_states_shape.back();
-                break;
+                if (initial_hidden_states) {
+                    auto hidden_states_shape = initial_hidden_states.get_shape();
+                    OPENVINO_ASSERT(hidden_states_shape.size() >= 2,
+                                    "Initial hidden states tensor rank is less than 2.");
+                    hidden_size = hidden_states_shape.back();
+                    break;
+                }
             }
         }
         if (hidden_size == 0) {

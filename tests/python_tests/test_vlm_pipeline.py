@@ -2291,6 +2291,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
@@ -2443,7 +2444,9 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
-    if sys.platform == "win32" or sys.platform == "linux":
+    if (sys.platform == "win32" or sys.platform == "linux") and not _is_videochat_flash_qwen_model(
+        ov_pipe_model.model_id
+    ):
         pytest.xfail("Memory error. Ticket - 185156")
     resized_image = None
     resized_video = None

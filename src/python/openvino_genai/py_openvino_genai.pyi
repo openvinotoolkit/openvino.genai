@@ -70,8 +70,9 @@ class ASRGenerationConfig(GenerationConfig):
     
         Common parameters:
     
-        :param language: Language token to use for generation in the form of <|en|>.
-                         Can be set for multilingual models only.
+        :param language: Language token to use for generation.
+                         In the form of <|en|> for Whisper models. Can be set for multilingual models only.
+                         In the form of English for Qwen3-ASR models.
         :type language: Optional[str]
     
         :param return_timestamps: Whether to return segment-level timestamps.
@@ -149,9 +150,15 @@ class ASRGenerationConfig(GenerationConfig):
                            #  He has gone and gone for good answered Polychrome who...
         :type hotwords: Optional[str]
     
+        Qwen3-ASR parameters:
+    
+        :param context: System prompt context prepended to Qwen3-ASR transcription requests.
+        :type context: Optional[str]
+    
         For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
         see GenerationConfig documentation.
     """
+    context: str | None
     hotwords: str | None
     initial_prompt: str | None
     is_multilingual: bool
@@ -246,6 +253,12 @@ class ASRPerfMetrics(PerfMetrics):
         :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
         :type get_word_level_timestamps_processing_duration: MeanStdPair
     
+        :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds
+        :type get_encode_inference_duration: MeanStdPair
+    
+        :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration in milliseconds
+        :type get_decode_inference_duration: MeanStdPair
+    
         :param asr_raw_metrics: ASR specific raw metrics
         :type ASRRawPerfMetrics:
     """
@@ -297,8 +310,9 @@ class ASRPipeline:
         
             Common parameters:
         
-            :param language: Language token to use for generation in the form of <|en|>.
-                             Can be set for multilingual models only.
+            :param language: Language token to use for generation.
+                             In the form of <|en|> for Whisper models. Can be set for multilingual models only.
+                             In the form of English for Qwen3-ASR models.
             :type language: Optional[str]
         
             :param return_timestamps: Whether to return segment-level timestamps.
@@ -376,6 +390,11 @@ class ASRPipeline:
                                #  He has gone and gone for good answered Polychrome who...
             :type hotwords: Optional[str]
         
+            Qwen3-ASR parameters:
+        
+            :param context: System prompt context prepended to Qwen3-ASR transcription requests.
+            :type context: Optional[str]
+        
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
         """
@@ -395,6 +414,12 @@ class ASRRawPerfMetrics:
     
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
+    
+        :param encode_inference_durations: Duration for each encoder inference call.
+        :type encode_inference_durations: list[MicroSeconds]
+    
+        :param decode_inference_durations: Duration for each decoder inference call during token generation.
+        :type decode_inference_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
         ...
@@ -3118,7 +3143,11 @@ class SchedulerConfig:
                                     Only applicable for models with linear attention cache inputs.
         cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                     The internal interval is KV cache block size * cache_interval_multiplier.
-                                    When unset, the default value 8 is used for hybrid models with prefix caching.
+                                    When unset, the multiplier is derived adaptively from the model's linear-attention
+                                    state size so one checkpoint costs roughly one KV block (>= the default of 8); this
+                                    prevents the recurrent-state cache of large hybrid SSM models from exhausting the
+                                    cache budget on long prompts. Larger values reduce memory at the cost of coarser
+                                    prefix-cache reuse.
                                     For models without linear attention cache inputs, this parameter is ignored.
                                     0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
