@@ -72,6 +72,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "detokenization_time": detokenization_time,
             "prompt_idx": iter_data["prompt_idx"],
             "chat_idx": iter_data["chat_idx"],
+            "prompt_repr": iter_data.get("prompt_repr", ""),
             "result_md5": result_md5,
             "start": timestamp_start,
             "end": timestamp_end,
