@@ -81,6 +81,13 @@ When analyzing failures and implementing fixes, refer to the following key locat
 - Prefer configuration, architecture metadata, and processor capabilities over
   hard-coded Hub repository IDs. Never swallow generation exceptions, insert
   placeholder answers, or weaken validation to make the benchmark complete.
+- After loading a processor, verify that its callable interface actually
+  accepts the task's modalities. `AutoProcessor` may resolve to a bare text
+  tokenizer for remote-code VLMs; passing `images=` to it then fails even
+  though model loading succeeded. For visual-text tasks, detect this by
+  capability/configuration, load the correct image processor when needed, and
+  add a focused regression test. Do not special-case a single Hub ID when the
+  same capability check can support the architecture generally.
 - If `--model-type` is `visual-text` or `visual-text-chat`, check if the input preprocessing in `inputs_preprocessors` folder exists for corresponding model_id. If not, add necessary preprocessing steps. Investigate the file https://github.com/huggingface/optimum-intel/blob/main/optimum/intel/openvino/modeling_visual_language.py to find out how function `preprocess_inputs` are established for other models in the optimum-intel; perhaps you will find a function there for the current model. Based on the function example and examples of other classes from the `inputs_preprocessors` folder, create a new class for the current model_id. `preprocess_inputs` function should contain functionality for question answering and chat cases.
 
 **Some common failure points for GenAI backend**:

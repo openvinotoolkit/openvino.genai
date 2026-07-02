@@ -82,9 +82,21 @@ Follow the checklist in [genai-vlm-architecture.md](genai-vlm-architecture.md) "
 
 ### 2.2 Build
 
+Build the current checkout using the repository instructions in
+`src/docs/BUILD.md`. Preserve the active OpenVINO, Transformers, Optimum Intel,
+and tokenizer versions unless a source-compatible dependency change is part of
+the fix. Do not validate edited source through a previously installed wheel.
+
+After building, verify:
+
 ```bash
-pip install --pre -U . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+python -c "import openvino, openvino_genai; print(openvino.__version__); print(openvino_genai.__file__)"
 ```
+
+Confirm the imported module comes from this checkout's build/install output.
+If native loading fails, locate the actual `libopenvino.so*` used by the build
+and resolve the ABI/version mismatch; adding an arbitrary library directory to
+`LD_LIBRARY_PATH` is not proof of compatibility.
 
 Fix all compilation errors.
 
@@ -140,6 +152,20 @@ Rebuild, then create and run:
 
 - `.model_enabler/test_image_text_compare.py` — compare GenAI vs optimum-intel on 3 image prompts
 
+If output differs, locate the first divergent component rather than judging
+only decoded text. Compare, in order:
+
+1. chat template and token IDs;
+2. processor outputs, shapes, value ranges, layouts, masks, and spatial grids;
+3. vision embeddings and projector/merger outputs;
+4. image-token insertion positions and counts;
+5. language-model inputs, logits, and generated token IDs.
+
+Also inspect effective precision at every stage. Models may use `dtype`,
+`torch_dtype`, nested vision/text precision fields, or cast inputs inside
+`forward()`. Verify actual tensor and parameter dtypes; do not assume an fp32
+export merely because the command requested fp32.
+
 ### Checkpoint
 
 - [ ] Build succeeds
@@ -160,9 +186,20 @@ Every newly enabled model must add repository tests:
 5. If special Transformers or Optimum dependencies are required, add a
    dedicated VLM CI matrix entry instead of changing unrelated jobs.
 
+Before adding a tiny-model ID to a test matrix, verify that it exists, is
+accessible without a developer's private cache, preserves the real
+architecture identity, and can execute the requested generation path. Never
+add a guessed or not-yet-published Hub ID and then treat HTTP 401/403/404 as a
+passing test. If repository policy requires a hosted fixture and publication
+is unavailable, report a test-fixture blocker and leave enablement incomplete.
+If the test infrastructure supports a deterministic local constructor, prefer
+that over a newly uploaded model and cache it using repository conventions.
+
 Do not report successful enablement after GenAI source changes unless the test
 is added and its exact pytest result is recorded. If local execution is
 blocked, add the test and report the exact blocker and expected CI coverage.
+Confirm that the narrow pytest command collected at least one test; a passing
+command with every test deselected is not validation.
 
 ---
 
@@ -174,3 +211,5 @@ Before declaring the model enabled:
 - [ ] All test scripts exist and pass in `.model_enabler/`
 - [ ] Tiny-random repository coverage is added under `tests/python_tests/`
 - [ ] Narrow pytest command/result, or the exact local blocker, is recorded
+- [ ] `git diff --name-only` contains the intended source, test, and docs files only
+- [ ] No debug prints, scratch artifacts, local absolute paths, or unrelated edits remain
