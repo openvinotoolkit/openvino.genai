@@ -12,10 +12,10 @@ def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
-    parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
-    parser.add_argument("-nw", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
+    parser.add_argument("-F", "--prompt_file", type=str, help="Read prompt from file")
+    parser.add_argument("-N", "--num_warmup", type=int, default=1, help="Number of warmup iterations")
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
-    parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
+    parser.add_argument("-M", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
 
     args = parser.parse_args()
