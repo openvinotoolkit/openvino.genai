@@ -304,7 +304,13 @@ class Qwen3OmniSpeechWrapper:
             inputs = inputs.to(device)
 
         with torch.inference_mode():
-            output = self.model.generate(**inputs, speaker=speaker, return_audio=True)
+            output = self.model.generate(
+                **inputs,
+                speaker=speaker,
+                return_audio=True,
+                thinker_max_new_tokens=1024,
+                thinker_eos_token_id=151645,
+            )
 
         audio = output[1] if isinstance(output, (tuple, list)) else getattr(output, "audio", None)
         if audio is None:
