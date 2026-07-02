@@ -124,8 +124,8 @@ class VisualTextEvaluator(TextEvaluator):
             pruning_ratio,
             relevance_weight,
         ):
-            # Optimum exports OpenVINO models (OVModelFor*); everything else reaching
-            # this path is a native torch/HF model, possibly wrapped (e.g. by peft.PeftModel),
+            # Optimum exports OpenVINO models (OVModelFor*). Everything else reaching
+            # this path is a native torch/HF model, possibly wrapped (e.g. by peft.PeftModel).
             is_optimum_ov = "openvino" in str(type(model)).lower()
             if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and not is_optimum_ov:
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
