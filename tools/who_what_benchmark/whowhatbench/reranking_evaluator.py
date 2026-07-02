@@ -27,8 +27,16 @@ def is_qwen3(config):
     return config.model_type == "qwen3"
 
 
+def is_qwen3_vl(config):
+    return config.model_type == "qwen3_vl"
+
+
 def is_qwen3_causallm(config):
     return is_qwen3(config) and "Qwen3ForCausalLM" in config.architectures
+
+
+def is_qwen3_generative_reranker(config):
+    return is_qwen3_causallm(config) or is_qwen3_vl(config)
 
 
 def preprocess_fn(example):
@@ -71,7 +79,7 @@ class RerankingEvaluator(BaseEvaluator):
         self.tokenizer = tokenizer
         self.num_samples = num_samples
         self.generation_fn = gen_rerank_fn
-        self.gt_dir = os.path.dirname(gt_data)
+        self.gt_dir = os.path.dirname(gt_data) if gt_data else os.getcwd()
 
         if base_model:
             self.gt_data = self._generate_data(
@@ -129,25 +137,77 @@ class RerankingEvaluator(BaseEvaluator):
         qwen3_passages = [f"<Document>: {doc}{suffix}" for doc in passages]
         return qwen3_query, qwen3_passages
 
+    def _apply_qwen3_vl_template(self, query, passages):
+        task = "Given a web search query, retrieve relevant passages that answer the query"
+        system_prompt = (
+            "Judge whether the Document meets the requirements based on the Query and the Instruct provided. "
+            'Note that the answer can only be "yes" or "no".'
+        )
+
+        return [
+            [
+                {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"<Instruct>: {task}"},
+                        {"type": "text", "text": "<Query>:"},
+                        {"type": "text", "text": query},
+                        {"type": "text", "text": "\n<Document>:"},
+                        {"type": "text", "text": passage},
+                    ],
+                },
+            ]
+            for passage in passages
+        ]
+
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(model, tokenizer, query, passages):
             # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if is_qwen3(model.config):
                 pairs = [f"{query}{passage}" for passage in passages]
-                input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
+                input_data = tokenizer(
+                    pairs,
+                    padding=True,
+                    truncation=True,
+                    max_length=DEFAULT_MAX_LENGTH_QWEN,
+                    return_tensors="pt",
+                    padding_side="left",
+                )
+            elif is_qwen3_vl(model.config):
+                tokenizer.tokenizer.padding_side = "left"
+                pairs = self._apply_qwen3_vl_template(query, passages)
+                rendered_inputs = tokenizer.apply_chat_template(pairs, tokenize=False, add_generation_prompt=True)
+                input_data = tokenizer(
+                    text=rendered_inputs,
+                    images=None,
+                    videos=None,
+                    truncation=False,
+                    padding=False,
+                    do_resize=False,
+                )
+                padded_inputs = tokenizer.tokenizer.pad(
+                    {"input_ids": input_data["input_ids"]},
+                    padding=True,
+                    return_tensors="pt",
+                    max_length=DEFAULT_MAX_LENGTH_QWEN,
+                )
+                for key, value in padded_inputs.items():
+                    input_data[key] = value
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)
                 input_data = tokenizer(inputs, passages, return_tensors="pt", **tokenizer_kwargs)
 
             with torch.no_grad():
-                outputs = model(**input_data).logits
+                outputs = torch.as_tensor(model(**input_data).logits)
 
-            if is_qwen3_causallm(model.config):
+            if is_qwen3_generative_reranker(model.config):
                 batch_scores = outputs[:, -1, :]
-                token_false_id = tokenizer.convert_tokens_to_ids("no")
-                token_true_id = tokenizer.convert_tokens_to_ids("yes")
+                qwen_tokenizer = tokenizer.tokenizer if hasattr(tokenizer, "tokenizer") else tokenizer
+                token_false_id = qwen_tokenizer.convert_tokens_to_ids("no")
+                token_true_id = qwen_tokenizer.convert_tokens_to_ids("yes")
                 true_vector = batch_scores[:, token_true_id]
                 false_vector = batch_scores[:, token_false_id]
                 batch_scores = torch.stack([false_vector, true_vector], dim=1)
@@ -158,7 +218,7 @@ class RerankingEvaluator(BaseEvaluator):
                     scores = outputs[:, 1]
                 else:
                     scores = outputs.flatten()
-                scores = scipy.special.expit(scores)
+                scores = torch.as_tensor(scipy.special.expit(scores))
             ordered_scores = []
             for index, (score, _) in enumerate(zip(scores, passages)):
                 ordered_scores.append(np.array([index, score.to(torch.float32).cpu().numpy()]))

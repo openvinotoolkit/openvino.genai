@@ -23,6 +23,7 @@ from .reranking_evaluator import (
     DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K,
     is_qwen3_causallm,
     is_qwen3,
+    is_qwen3_vl,
 )
 from .utils import (
     apply_peft_adapters,
@@ -677,9 +678,18 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
     except Exception:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
 
+    model_path = Path(model_id)
+    has_openvino_artifacts = model_path.exists() and any(model_path.glob("openvino_*.xml"))
+
     if use_hf:
         logger.info("Using HF Transformers API")
-        if is_qwen3_causallm(config):
+        if is_qwen3_vl(config):
+            from transformers import Qwen3VLForConditionalGeneration
+
+            model = Qwen3VLForConditionalGeneration.from_pretrained(
+                model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG
+            )
+        elif is_qwen3_causallm(config):
             from transformers import AutoModelForCausalLM
 
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
@@ -689,31 +699,51 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = AutoModelForSequenceClassification.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
+        if is_qwen3_vl(config):
+            raise ValueError("Qwen3-VL rerankers are not supported by the OpenVINO GenAI TextRerankPipeline yet.")
         is_qwen3_model = is_qwen3(config)
         model = load_reranking_genai_pipeline(model_id, device, ov_config, is_qwen3_model)
     else:
         logger.info("Using Optimum API")
-        model_cls = None
-        if is_qwen3_causallm(config):
-            from optimum.intel.openvino import OVModelForCausalLM
-            model_cls = OVModelForCausalLM
-        else:
-            from optimum.intel.openvino import OVModelForSequenceClassification
-            model_cls = OVModelForSequenceClassification
+        if is_qwen3_vl(config):
+            if not has_openvino_artifacts:
+                logger.info("Falling back to HF Transformers API for Qwen3-VL reranker reference model")
+                from transformers import Qwen3VLForConditionalGeneration
 
-        try:
-            model = model_cls.from_pretrained(
-                model_id, device=device, ov_config=ov_config, safety_checker=None,
-            )
-        except ValueError:
-            model = model_cls.from_pretrained(
-                model_id,
-                trust_remote_code=True,
-                use_cache=False,
-                device=device,
-                ov_config=ov_config,
-                safety_checker=None
-            )
+                model = Qwen3VLForConditionalGeneration.from_pretrained(
+                    model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG
+                )
+            else:
+                from optimum.intel.openvino import OVModelForVisualCausalLM
+
+                model = OVModelForVisualCausalLM.from_pretrained(
+                    model_id, device=device, ov_config=ov_config, trust_remote_code=True
+                )
+        else:
+            model_cls = None
+            if is_qwen3_causallm(config):
+                from optimum.intel.openvino import OVModelForCausalLM
+                model_cls = OVModelForCausalLM
+            else:
+                from optimum.intel.openvino import OVModelForSequenceClassification
+                model_cls = OVModelForSequenceClassification
+
+            try:
+                model = model_cls.from_pretrained(
+                    model_id, device=device, ov_config=ov_config, safety_checker=None,
+                )
+            except ValueError:
+                model = model_cls.from_pretrained(
+                    model_id,
+                    trust_remote_code=True,
+                    use_cache=False,
+                    device=device,
+                    ov_config=ov_config,
+                    safety_checker=None
+                )
+
+    if hasattr(model, "eval"):
+        model.eval()
 
     return model
 
