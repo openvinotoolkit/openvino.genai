@@ -55,7 +55,8 @@ InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
     auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
     auto core = utils::singleton_core();
     auto model = core.read_model(per_layer_model_path);
-    auto compiled_model = core.compile_model(model, device, device_config);
+    const auto properties = utils::get_model_properties(device_config, "text_embeddings_per_layer", device);
+    auto compiled_model = core.compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings per layer model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -80,7 +81,9 @@ InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
     } else {
         model = core.read_model(config_dir_path / "openvino_text_embeddings_per_layer_model.xml");
     }
-    auto compiled_model = core.compile_model(model, device, device_config);
+
+    const auto properties = utils::get_model_properties(device_config, "text_embeddings_per_layer", device);
+    auto compiled_model = core.compile_model(model, device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings per layer model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
