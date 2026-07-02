@@ -1,9 +1,10 @@
 # OpenVINO GenAI Video Generation Python Samples
 
-These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The sample features `openvino_genai.Text2VideoPipeline` for generating videos from text prompts using models like LTX-Video.
+These samples showcase the use of OpenVINO's inference capabilities for video generation tasks. The samples feature `openvino_genai.Text2VideoPipeline` for generating videos from text prompts, and `openvino_genai.Image2VideoPipeline` for generating videos with text prompts combined with conditioning images, using models like LTX-Video.
 The applications don't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU.
 
  - [`text2video.py`](./text2video.py) demonstrates basic text to video generation.
+ - [`image2video.py`](./image2video.py) demonstrates image-conditioned video generation.
  - [`taylorseer_text2video.py`](./taylorseer_text2video.py) demonstrates text to video generation with TaylorSeer caching optimization for improved performance. LTX-Video model is supported only.
 
 ## Table of Contents
@@ -21,13 +22,21 @@ Install [../../export-requirements.txt](../../export-requirements.txt) if model 
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
 ```
 
-Then, run the export with Optimum CLI:
+### For Text-to-Video
 
 ```sh
 optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --weight-format fp32 ltx_video_ov/FP32
 ```
 
 > **Note:** For basic video generation without LoRA, `--weight-format int8` produces a smaller model.
+
+### For Image-to-Video
+
+The image-to-video pipeline requires a VAE encoder in addition to the standard model files. Export with `--task image-to-video`:
+
+```sh
+optimum-cli export openvino --model Lightricks/LTX-Video --task image-to-video --weight-format fp32 ltx_video_ov_i2v/FP32
+```
 
 Alternatively, do it in Python code:
 
@@ -69,6 +78,26 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
   Example:
   ```bash
   python text2video.py ./ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
+  ```
+
+### Image to Video Sample (`image2video.py`)
+
+- **Description:**
+  Image-conditioned video generation using an image-to-video model. This sample demonstrates how to generate videos from a conditioning image and a text prompt using the OpenVINO GenAI Image2VideoPipeline. The generated video's first frame is anchored to the input image. The LTX-Video model exported with `--task image-to-video` is required.
+
+  Recommended models: Lightricks/LTX-Video (exported with `--task image-to-video`)
+
+- **Main Feature:** Generate videos that continue naturally from an input image, guided by a text prompt.
+
+- **Run Command:**
+  ```bash
+  python image2video.py model_dir image_path prompt
+  ```
+
+  Example (download the overture image first):
+  ```bash
+  wget -O overture-creations.png https://raw.githubusercontent.com/CompVis/latent-diffusion/main/data/inpainting_examples/overture-creations-5sI6fQgYIuo.png
+  python image2video.py ./ltx_video_ov_i2v/FP32 overture-creations.png "A golden retriever in a sunlit bedroom slowly stands up, stretches its front paws forward, yawns wide showing pink tongue, then turns its head to look at the camera, ears perking up alertly, tail beginning to wag, warm afternoon window light, cinematic shallow depth of field, smooth handheld camera motion, photorealistic, detailed fur"
   ```
 
 ### LoRA Text to Video Sample (`lora_text2video.py`)

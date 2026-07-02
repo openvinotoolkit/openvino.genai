@@ -818,6 +818,15 @@ class AutoencoderKLLTXVideo:
                         latent (ov.Tensor): Latent video tensor.
                         Returns: Decoded video tensor.
         """
+    def encode(self, video: openvino._pyopenvino.Tensor, generator: Generator | None = None) -> openvino._pyopenvino.Tensor:
+        """
+                        Encodes a video tensor to latent space.
+                        video (ov.Tensor): Input video tensor [B, C, F, H, W].
+                        generator (Generator, optional): Random generator for sampling from the latent
+                            distribution. Required only when the encoder outputs latent parameters
+                            (mean + logvar); unused when it outputs a latent sample directly.
+                        Returns: Normalized latent tensor.
+        """
     def get_config(self) -> AutoencoderKLLTXVideo.Config:
         ...
     def get_vae_scale_factor(self) -> int:
@@ -4296,6 +4305,31 @@ class Text2SpeechPipeline:
         Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
         """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
+        ...
+class Image2VideoPipeline:
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
+        ...
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        ...
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> VideoGenerationResult:
+        ...
+    def generate(self, image: openvino._pyopenvino.Tensor, prompt: str, **kwargs) -> VideoGenerationResult:
+        ...
+    def get_generation_config(self) -> VideoGenerationConfig:
+        ...
+    def get_performance_metrics(self) -> VideoGenerationPerfMetrics:
+        ...
+    def reshape(self, num_videos_per_prompt: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, guidance_scale: typing.SupportsFloat) -> None:
+        ...
+    def set_generation_config(self, config: VideoGenerationConfig) -> None:
         ...
 class Text2VideoPipeline:
     @typing.overload

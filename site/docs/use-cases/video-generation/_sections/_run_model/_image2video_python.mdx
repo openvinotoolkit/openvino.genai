@@ -2,7 +2,13 @@ import CodeBlock from '@theme/CodeBlock';
 
 <CodeBlock language="python" showLineNumbers>
 {`import openvino_genai as ov_genai
+import openvino as ov
+import numpy as np
 import cv2
+
+def load_image(image_path: str) -> ov.Tensor:
+    img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
+    return ov.Tensor(img[np.newaxis])  # [1, H, W, 3] uint8
 
 def save_video(filename: str, video_tensor, fps: int = 25):
     batch_size, num_frames, height, width, _ = video_tensor.shape
@@ -26,11 +32,13 @@ def save_video(filename: str, video_tensor, fps: int = 25):
         print(f"Wrote {output_path} ({num_frames} frames, {width}x{height} @ {fps} fps)")
 
 
-model_path = "path/to/model"  # Path to the model directory
+model_path = "path/to/model"   # Path to the model directory (must contain vae_encoder/)
+image_path = "path/to/image.png"  # Path to the conditioning image
 prompt = "your video generation prompt"
 
-pipe = ov_genai.Text2VideoPipeline(model_path, "${props.device || 'CPU'}")
-video = pipe.generate(prompt).video
+image = load_image(image_path)
+pipe = ov_genai.Image2VideoPipeline(model_path, "${props.device || 'CPU'}")
+video = pipe.generate(image, prompt).video
 
 save_video("genai_video.avi", video)
 `}
