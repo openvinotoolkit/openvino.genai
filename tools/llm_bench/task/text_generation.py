@@ -645,6 +645,8 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
                 f"{prefix} Unable print input text",
                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
             )
+        prompt_repr = repr(prompt)
+        log.info(f"{prefix} Prompt: {prompt_repr}")
         iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
         text_gen_fn(
             input_text,
@@ -663,6 +665,10 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
             mem_consumption,
             prefix,
         )
+        # Attach the prompt representation to the iter_data entry just appended
+        # so it is available for JSON report output.
+        if iter_data_list:
+            iter_data_list[-1]["prompt_repr"] = prompt_repr
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(
             f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
