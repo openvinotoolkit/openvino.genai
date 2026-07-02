@@ -188,7 +188,14 @@ public:
             model = apply_postprocessing(model);
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        // On NPU a reranker runs through NPUW as a batched-scoring model. Mirrors how the text
+        // embedding pipeline sets up its NPU config.
+        ov::AnyMap device_properties = properties;
+        if (device == "NPU") {
+            utils::update_npu_config_text_rerank(device_properties);
+        }
+
+        ov::CompiledModel compiled_model = core.compile_model(model, device, device_properties);
 
         utils::print_compiled_model_properties(compiled_model, "text rerank model");
         m_request = compiled_model.create_infer_request();
