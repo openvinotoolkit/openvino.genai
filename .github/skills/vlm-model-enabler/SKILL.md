@@ -6,7 +6,6 @@ argument-hint: "HuggingFace model_id and task (e.g. google/gemma-3n-E2B-it image
 
 # VLM Model Enabler
 
-<!-- SECTION-START: overview -->
 
 Enables a new VLM model in the GenAI VLM pipeline. Follows a strict 4-step workflow with checkpoints.
 
@@ -31,11 +30,9 @@ All intermediate assets go in `.model_enabler/`. Create it if it does not exist.
 - [model-inference-text-to-text.md](model-inference-text-to-text.md) — Supplementary test templates and debugging tips for text-only mode (Step 2).
 - [model-inference-image-text.md](model-inference-image-text.md) — Supplementary test templates, preprocessing utilities list, and debugging tips for image-text mode (Step 3).
 
-<!-- SECTION-END: overview -->
 
 ---
 
-<!-- SECTION-START: model_analysis -->
 
 ## Step 1 — GenAI Enablement Design
 
@@ -71,9 +68,7 @@ Append a `## GenAI Enablement Design` section to `.model_analysis/<model_type>_a
 
 ---
 
-<!-- SECTION-END: model_analysis -->
 
-<!-- SECTION-START: text_only_inference -->
 
 ## Step 2 — Text-Only Inference
 
@@ -111,9 +106,7 @@ Create and run `.model_enabler/test_text_only_compare.py` — compare GenAI vs o
 
 ---
 
-<!-- SECTION-END: text_only_inference -->
 
-<!-- SECTION-START: image_text_inference -->
 
 ## Step 3 — Image-Text Inference
 
@@ -161,19 +154,7 @@ Rebuild, then create and run:
 
 ---
 
-<!-- SECTION-END: image_text_inference -->
 
-<!-- SECTION-START: accuracy_verification -->
-
-## Accuracy Verification
-
-Run the WWB accuracy checks through the `model-checker` skill and record the
-Hugging Face ground truth, Optimum similarity, and GenAI similarity. Diagnose
-any execution failure or below-threshold result before adding repository tests.
-
-<!-- SECTION-END: accuracy_verification -->
-
-<!-- SECTION-START: repository_tests -->
 
 ## Step 4 — Repository Test Coverage
 
@@ -194,9 +175,7 @@ blocked, add the test and report the exact blocker and expected CI coverage.
 
 ---
 
-<!-- SECTION-END: repository_tests -->
 
-<!-- SECTION-START: final_deliverables -->
 
 ## Final Deliverables
 
@@ -206,5 +185,3 @@ Before declaring the model enabled:
 - [ ] All test scripts exist and pass in `.model_enabler/`
 - [ ] Tiny-random repository coverage is added under `tests/python_tests/`
 - [ ] Narrow pytest command/result, or the exact local blocker, is recorded
-
-<!-- SECTION-END: final_deliverables -->

@@ -6,7 +6,6 @@ argument-hint: "model_id and log_info (e.g. tencent/HY-MT1.5-1.8B /path/to/folde
 
 # WWB Fail Analyzer
 
-<!-- SECTION-START: triage -->
 
 Analyzes the results of failed WWB runs for models executed with the transformers, optimum-intel, or GenAI backends; Provides fixes or insights for troubleshooting.
 
@@ -58,12 +57,10 @@ When analyzing failures and implementing fixes, refer to the following key locat
 
 **Use this reference throughout Steps 1-3 when analyzing logs and identifying where to implement fixes.**
 
-<!-- SECTION-END: triage -->
 
 
 ## Procedure
 
-<!-- SECTION-START: implementation -->
 
 ### Step 1: Analyze the log
 
@@ -95,9 +92,7 @@ When analyzing failures and implementing fixes, refer to the following key locat
 **Some common failure points for similarity**:
 - If threshold is low, check whether chat_template is correctly applied and the model output correctly processed in the evaluator.
 
-<!-- SECTION-END: implementation -->
 
-<!-- SECTION-START: reporting -->
 
 ### Step 2: Report Results
 
@@ -127,5 +122,3 @@ Results format:
 
 - **NEVER** install any packages. Assume the environment is pre-configured.
 - **NEVER** modify `model_id` — pass it exactly as provided by the user.
-
-<!-- SECTION-END: reporting -->

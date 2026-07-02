@@ -6,7 +6,6 @@ argument-hint: "Description of what changed (e.g. 'added SpeculativeDecodingPipe
 
 # Update Docs
 
-<!-- SECTION-START: overview -->
 
 Updates Docusaurus site pages under `/site/docs/` after a code change.
 
@@ -24,9 +23,7 @@ The user must provide (or the agent infers from the diff):
 
 If the description is not provided, derive it from the git diff against `master` (see Step 1).
 
-<!-- SECTION-END: overview -->
 
-<!-- SECTION-START: procedure -->
 
 ## Procedure
 
@@ -87,5 +84,3 @@ Summarize to the user:
 
 - Files changed and what was added/updated in each.
 - Any gaps where documentation could not be written because implementation details are unclear — list those explicitly and ask the user to clarify.
-
-<!-- SECTION-END: procedure -->
