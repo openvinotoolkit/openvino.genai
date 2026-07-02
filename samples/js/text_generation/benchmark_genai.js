@@ -111,6 +111,6 @@ async function main() {
   console.log(`Tokenization time: ${perfMetrics.getTokenizationDuration().mean} ± ${perfMetrics.getTokenizationDuration().std} ms`);
   console.log(`Detokenization time: ${perfMetrics.getDetokenizationDuration().mean} ± ${perfMetrics.getDetokenizationDuration().std} ms`);
   console.log(`TTFT: ${perfMetrics.getTTFT().mean} ± ${perfMetrics.getTTFT().std} ms`);
-  console.log(`TPOT: ${perfMetrics.getTPOT().mean} ± ${perfMetrics.getTPOT().std} ms`);
+  console.log(`TPOT: ${perfMetrics.getTPOT().mean} ± ${perfMetrics.getTPOT().std} ms/token`);
   console.log(`Throughput : ${perfMetrics.getThroughput().mean} ± ${perfMetrics.getThroughput().std} tokens/s`);
 }
