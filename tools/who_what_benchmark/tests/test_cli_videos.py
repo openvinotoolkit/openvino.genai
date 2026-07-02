@@ -1,5 +1,7 @@
 import sys
+import subprocess
 import pytest
+import pandas as pd
 from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
 
@@ -145,6 +147,152 @@ def test_video_model_genai_with_taylorseer(model_id, model_type, tmp_path):
     assert "TaylorSeer config:" in output
     similarity = get_similarity(output)
     assert similarity >= 0.97
+
+
+@pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners. Ticket CVS-179749")
+@pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows. Ticket CVS-179750")
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [("creeper-hat/tiny-random-ltx-video-0.9.1", "text-to-video")],
+)
+def test_video_model_genai_with_decode_conditioning(model_id, model_type, tmp_path):
+    gt_file = tmp_path / "gt.csv"
+    model_path = convert_model(model_id)
+
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+            "--video-frames-num",
+            "9",
+            "--hf",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            model_path,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+            "--video-frames-num",
+            "9",
+            "--decode-timestep",
+            "0.05",
+            "--decode-noise-scale",
+            "0.025",
+            "--output",
+            tmp_path,
+        ]
+    )
+
+    assert "Text-to-video decode conditioning" in output
+    assert "Metrics for model" in output
+
+    target_csv = tmp_path / "target.csv"
+    assert target_csv.exists()
+    target_df = pd.read_csv(target_csv)
+    assert "decode_timestep" in target_df.columns
+    assert "decode_noise_scale" in target_df.columns
+    assert target_df["decode_timestep"].iloc[0] == pytest.approx(0.05)
+    assert target_df["decode_noise_scale"].iloc[0] == pytest.approx(0.025)
+
+
+@pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners. Ticket CVS-179749")
+@pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows. Ticket CVS-179750")
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [("creeper-hat/tiny-random-ltx-video-0.9.1", "text-to-video")],
+)
+def test_video_model_hf_with_decode_conditioning(model_id, model_type, tmp_path):
+    gt_file = tmp_path / "gt.csv"
+
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+            "--video-frames-num",
+            "9",
+            "--hf",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            gt_file,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--hf",
+            "--num-inference-steps",
+            "2",
+            "--video-frames-num",
+            "9",
+            "--decode-timestep",
+            "0.05",
+            "--decode-noise-scale",
+            "0.025",
+            "--output",
+            tmp_path,
+        ]
+    )
+
+    assert "Text-to-video decode conditioning" in output
+    assert "Metrics for model" in output
+
+
+def test_video_decode_conditioning_requires_text_to_video_model_type(tmp_path):
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        run_wwb(
+            [
+                "--base-model",
+                "dummy-model-id",
+                "--gt-data",
+                tmp_path / "gt.csv",
+                "--genai",
+                "--model-type",
+                "text",
+                "--decode-timestep",
+                "0.1",
+            ]
+        )
+
+    assert "supported only for --model-type text-to-video" in error.value.output
 
 
 def run_test_with_lora(model_id, model_type, tmp_path, *, genai_threshold):

@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 MODEL_ID = "tiny-random-ltx-video"
 MODEL_NAME = "optimum-intel-internal-testing/tiny-random-ltx-video"
+MODEL_ID_DECODE = "tiny-random-ltx-video-0.9.1"
+MODEL_NAME_DECODE = "creeper-hat/tiny-random-ltx-video-0.9.1"
 
 
 @pytest.fixture(scope="module")
@@ -40,6 +42,35 @@ def video_generation_model() -> str:
     return str(model_path)
 
 
+@pytest.fixture(scope="module")
+def video_generation_model_decode() -> str:
+    models_dir = get_ov_cache_converted_models_dir()
+    model_path = Path(models_dir) / MODEL_ID_DECODE / MODEL_NAME_DECODE
+
+    manager = AtomicDownloadManager(model_path)
+
+    def convert_model(temp_path: Path) -> None:
+        command = [
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            MODEL_NAME_DECODE,
+            "--trust-remote-code",
+            str(temp_path),
+        ]
+        logger.info(f"Conversion command: {' '.join(command)}")
+        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+
+    try:
+        manager.execute(convert_model)
+    except subprocess.CalledProcessError as error:
+        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+        raise
+
+    return str(model_path)
+
+
 class TestVideoGenerationConfig:
     def test_config_default_values(self):
         config = ov_genai.VideoGenerationConfig()
@@ -50,6 +81,8 @@ class TestVideoGenerationConfig:
         config = ov_genai.VideoGenerationConfig()
         assert hasattr(config, "num_frames")
         assert hasattr(config, "frame_rate")
+        assert hasattr(config, "decode_timestep")
+        assert hasattr(config, "decode_noise_scale")
         assert hasattr(config, "num_videos_per_prompt")
         assert hasattr(config, "guidance_rescale")
 
@@ -69,6 +102,17 @@ class TestVideoGenerationConfig:
         assert config.num_frames == 17
         assert config.height == 32
         assert config.width == 64
+
+    def test_config_update_with_decode_conditioning_params(self, video_generation_model_decode):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model_decode, "CPU")
+        config = ov_genai.VideoGenerationConfig()
+        config.decode_timestep = 0.05
+        config.decode_noise_scale = 0.025
+
+        pipe.set_generation_config(config)
+        retrieved_config = pipe.get_generation_config()
+        assert retrieved_config.decode_timestep == pytest.approx(0.05)
+        assert retrieved_config.decode_noise_scale == pytest.approx(0.025)
 
     def test_config_validate_guidance_scale_with_negative_prompt(self):
         """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
@@ -129,6 +173,20 @@ class TestText2VideoPipelineGenerate:
             num_inference_steps=2,
             guidance_scale=3.0,
             guidance_rescale=0.7,
+        )
+        assert result is not None
+        assert result.video is not None
+
+    def test_generate_with_decode_conditioning_params(self, video_generation_model_decode):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model_decode, "CPU")
+        result = pipe.generate(
+            "test prompt",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
+            decode_timestep=0.05,
+            decode_noise_scale=0.025,
         )
         assert result is not None
         assert result.video is not None
