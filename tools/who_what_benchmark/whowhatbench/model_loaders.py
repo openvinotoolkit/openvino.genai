@@ -11,6 +11,7 @@ from packaging.version import Version
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
     AutoModel,
     AutoTokenizer,
     __version__,
@@ -142,6 +143,31 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
+    # Check if this is a seq2seq model
+    try:
+        config = AutoConfig.from_pretrained(model_dir, trust_remote_code=False)
+    except Exception:
+        try:
+            config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+        except Exception:
+            config = None
+
+    # If encoder-decoder (seq2seq), use OpenVINO GenAI Seq2SeqPipeline
+    if config is not None and getattr(config, "is_encoder_decoder", False):
+        logger.info("Detected encoder-decoder model, using GenAI Seq2SeqPipeline")
+        import openvino_genai
+        
+        max_new_tokens = kwargs.get("max_new_tokens", 128)
+        pipeline = openvino_genai.Seq2SeqPipeline(
+            model_dir,
+            device=device,
+        )
+        gen_config = pipeline.get_generation_config()
+        gen_config.max_new_tokens = max_new_tokens
+        pipeline.set_generation_config(gen_config)
+        return GenAIModelWrapper(pipeline, model_dir, "text")
+
+    # Otherwise, use standard LLMPipeline (causal models)
     pipeline_path = model_dir
     if kwargs.get('gguf_file'):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
@@ -189,6 +215,7 @@ def load_text_llamacpp_pipeline(model_dir):
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
     trust_remote_code = False
+    config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
@@ -198,6 +225,10 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+    model_class = AutoModelForCausalLM
+    if config is not None and getattr(config, "is_encoder_decoder", False):
+        model_class = AutoModelForSeq2SeqLM
+
     if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
         is_awq = False
@@ -205,16 +236,16 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             is_gptq = config.quantization_config["quant_method"] == "gptq"
             is_awq = config.quantization_config["quant_method"] == "awq"
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
+            model = model_class.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
             model.is_awq = is_awq
     else:
         try:
-            model = AutoModelForCausalLM.from_pretrained(
+            model = model_class.from_pretrained(
                 model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
             )
         except Exception:
-            model = AutoModelForCausalLM.from_pretrained(
+            model = model_class.from_pretrained(
                 model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
 
@@ -238,16 +269,30 @@ def load_text_model(
         model = load_text_llamacpp_pipeline(model_id)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel.openvino import OVModelForCausalLM
+        from optimum.intel.openvino import OVModelForCausalLM, OVModelForSeq2SeqLM
+        
+        # Determine if model is encoder-decoder (seq2seq)
+        model_class = OVModelForCausalLM
         try:
-            model = OVModelForCausalLM.from_pretrained(
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
+            try:
+                config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            except Exception:
+                config = None
+        
+        if config is not None and getattr(config, "is_encoder_decoder", False):
+            model_class = OVModelForSeq2SeqLM
+        
+        try:
+            model = model_class.from_pretrained(
                 model_id, device=device, ov_config=ov_config, **kwargs
             )
         except Exception:
             try:
                 config = AutoConfig.from_pretrained(
                     model_id, trust_remote_code=True)
-                model = OVModelForCausalLM.from_pretrained(
+                model = model_class.from_pretrained(
                     model_id,
                     config=config,
                     trust_remote_code=True,
@@ -258,7 +303,7 @@ def load_text_model(
                 )
             except Exception:
                 config = AutoConfig.from_pretrained(model_id)
-                model = OVModelForCausalLM.from_pretrained(
+                model = model_class.from_pretrained(
                     model_id,
                     config=config,
                     use_cache=True,

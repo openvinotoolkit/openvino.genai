@@ -163,7 +163,8 @@ class TextEvaluator(BaseEvaluator):
                     tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
             else:
                 tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
-            if crop_question:
+            # Encoder-decoder models (e.g. T5) return only decoder tokens.
+            if crop_question and not getattr(getattr(model, "config", None), "is_encoder_decoder", False):
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
             return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
 
