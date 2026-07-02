@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import openvino
 import openvino.properties.hint as hints
+import openvino.properties as props
 import pytest
 from data.models import get_models_list
 from data.tokenizer_configs import get_tokenizer_configs
@@ -828,3 +829,28 @@ def test_chat_template_with_empty_output(tmp_path):
             add_generation_prompt=False, 
             chat_template=chat_template_with_empty_output
         )
+
+
+@pytest.mark.parametrize(
+    "property_dict",
+    [
+        {props.num_streams: 2},
+        {props.inference_num_threads: 2},
+        {props.num_streams: 2, props.inference_num_threads: 2},
+    ],
+    ids=["num_streams", "inference_num_threads", "num_streams_and_inference_num_threads"],
+)
+def test_tokenizer_properties(tmp_path, property_dict):
+    model_cached = snapshot_download("llamafactory/tiny-random-Llama-3")
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached))
+    ov_tokenizer = convert_tokenizer(hf_tokenizer)
+    openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
+    del ov_tokenizer, hf_tokenizer
+
+    ov_tokenizer = Tokenizer(
+        tmp_path,
+        properties=property_dict | get_disabled_mmap_ov_config(),
+    )
+    text = "What is OpenVINO?"
+    result = ov_tokenizer.encode(text)
+    assert result.input_ids.data.size > 0
