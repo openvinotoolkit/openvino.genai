@@ -59,9 +59,17 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-flux": {"name": "optimum-intel-internal-testing/tiny-random-flux", "convert_args": []},
     "tiny-random-flux-fill": {"name": "optimum-intel-internal-testing/tiny-random-flux-fill", "convert_args": []},
     "tiny-random-ltx-video": {"name": "optimum-intel-internal-testing/tiny-random-ltx-video", "convert_args": []},
+    "tiny-videochat-flash-qwen": {
+        "name": "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
     "speecht5_tts": {
         "name": "microsoft/speecht5_tts",
         "convert_args": ["--model-kwargs", '{"vocoder": "microsoft/speecht5_hifigan"}'],
+    },
+    "Kokoro-82M": {
+        "name": "hexgrad/Kokoro-82M",
+        "convert_args": ["--trust-remote-code"],
     },
 }
 
@@ -125,7 +133,7 @@ def convert_model(model_name: str) -> str:
             str(temp_path),
         ]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
 
     try:
         manager.execute(convert)

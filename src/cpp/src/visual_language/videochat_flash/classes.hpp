@@ -5,6 +5,8 @@
 
 #include <filesystem>
 #include <array>
+#include <functional>
+#include <optional>
 
 #include "visual_language/vlm_config.hpp"
 
@@ -37,6 +39,9 @@ protected:
     /// @brief Infer requests queue for vision merge model.
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_merge_model;
 
+    /// @brief Infer requests queue for GPU/CPU-accelerated frame preprocessing (resize + normalize).
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_preprocess;
+
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
 
@@ -49,6 +54,19 @@ private:
     size_t m_num_attention_heads = 16;
     size_t m_target_num_token = 64;
 
+    /// @brief Cached default resize target tensor {image_size, image_size} for the current model config.
+    ov::Tensor m_resize_target_tensor;
+
+    /// @brief Default to OV-graph batched preprocess; set env VISION_PREPROCESS=CPP to fall back to the CPU per-frame loop.
+    bool m_use_ov_vision_preprocess = true;
+
+    using PreprocessFunc = std::function<ov::Tensor(
+        const ov::Tensor& sampled_video,
+        ImageSize target_size,
+        std::optional<CircularBufferQueueElementGuard<ov::InferRequest>>& preprocess_guard)>;
+    /// @brief Returns a callable that runs the selected preprocess path (OV graph or CPU loop).
+    PreprocessFunc get_preprocess_func();
+
     /// @brief Loads shared VideoChat-Flash configs from the model config directory.
     void initialize_shared_config(const std::filesystem::path& config_dir_path);
     /// @brief Reshapes and compiles the vision embeddings model with static rotary positional embedding shape.
@@ -56,11 +74,14 @@ private:
     /// @brief Initializes infer request queue for the vision projection model.
     void initialize_vision_projection_queue(ov::CompiledModel& compiled_model);
     /// @brief Pads frames if frame count is not divisible by mm_local_num_frames.
+    // TODO Override InputsEmbedder::sample_video_if_needed instead
     ov::Tensor sample_video_if_needed(const ov::Tensor& video) const;
     /// @brief Initializes 3D sin-cos positional embedding tensor for vision encoder input.
     void initialize_positional_embedding();
     /// @brief Builds and prepares infer request queue for token merge model.
     void initialize_merge_model_queue();
+    /// @brief Builds and compiles the frame preprocessing (resize + normalize) model.
+    void initialize_preprocess_queue(const std::string& device, const ov::AnyMap& properties);
     /// @brief Loads VideoChat-Flash private runtime config from model config.json.
     void initialize_runtime_config(const std::filesystem::path& config_path);
 };
@@ -82,7 +103,10 @@ public:
         const std::string& device,
         const ov::AnyMap device_config);
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata
+    ) override;
 
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
     ov::Tensor get_inputs_embeds(const std::string& prompt,

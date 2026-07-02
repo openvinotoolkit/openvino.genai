@@ -25,6 +25,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen2_vl", VLMModelType::QWEN2_VL},
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
         {"qwen3_vl", VLMModelType::QWEN3_VL},
+        {"qwen3_5", VLMModelType::QWEN3_5},
+        {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
         {"gemma3", VLMModelType::GEMMA3},
         {"gemma3n", VLMModelType::GEMMA3N},
         {"gemma4", VLMModelType::GEMMA4},
@@ -78,6 +80,17 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
     read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+
+    // gemma4
+    read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
+    // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean
+    if (
+        parsed.contains("text_config")
+        && parsed.at("text_config").contains("use_bidirectional_attention")
+        && parsed.at("text_config").at("use_bidirectional_attention").is_string()
+    ) {
+        read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
+    }
 }
 
 }  // namespace ov::genai

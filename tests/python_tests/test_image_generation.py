@@ -165,6 +165,22 @@ class TestImageGenerationCallback:
         assert image is not None
 
 
+    def test_callback_exception_does_not_crash(self, image_generation_model):
+        # Regression test for: crash when generate() throws while a callback thread is running.
+        # Destroying a joinable std::thread calls std::terminate(); the fix adds a destructor
+        # to ThreadedCallbackWrapper that calls end() to join the thread before destruction.
+        def callback(step, num_steps, latent):
+            return False
+
+        # Pass a tensor with wrong element type (f16 instead of u8) to trigger an exception
+        # inside generate() while the callback thread is alive.
+        wrong_type_image = ov.Tensor(np.zeros((1, 64, 64, 3), dtype=np.float16))
+
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+        with pytest.raises(Exception):
+            pipe.generate("test prompt", wrong_type_image, callback=callback, num_inference_steps=2)
+
+
 class TestTaylorSeerImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
     def test_flux_text2image_taylorseer_with_callback(self, image_generation_model):
@@ -228,6 +244,7 @@ class TestImageGenerationOnNpuByNpuwCpu:
 
     @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
     @pytest.mark.skipif(**should_skip_npuw_tests())
+    @pytest.mark.transformers_lower_v5(reason="CVS-186071")
     def test_image_generation_cpu_vs_npuw_cpu_with_blob_model(self, image_generation_model):
         generation_args = self._get_generation_args()
 

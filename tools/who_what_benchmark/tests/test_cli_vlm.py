@@ -5,6 +5,9 @@ import pytest
 import logging
 import sys
 
+from transformers import __version__ as transformers_version
+from packaging.version import Version
+
 from conftest import convert_model, run_wwb
 from test_cli_image import get_similarity
 
@@ -177,6 +180,7 @@ def run_test_with_lora(
     assert similarity_genai >= genai_threshold
 
 
+@pytest.mark.xfail(strict=True, reason="CVS-190187: The default dataset is broken.")
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
@@ -197,6 +201,7 @@ def test_vlm_chat(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 
+@pytest.mark.xfail(strict=True, reason="CVS-190187: The default dataset is broken.")
 @pytest.mark.nanollava
 @pytest.mark.parametrize(
     ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
@@ -208,17 +213,28 @@ def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold,
     run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
 
 
-@pytest.mark.parametrize(
-    ("model_id", "model_type"),
-    [
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-video-text"),
+if Version(transformers_version) < Version("5.0.0"):
+    # llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0
+    # videochat_flash_qwen is incompatible with transformers >= 5.0.0
+    VISUAL_VIDEO_TEXT_MODELS = [
         ("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),
-    ],
+        ("optimum-intel-internal-testing/tiny-videochat-flash-qwen", "visual-video-text"),
+    ]
+else:
+    VISUAL_VIDEO_TEXT_MODELS = [
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-video-text"),
+    ]
+
+
+@pytest.mark.transformers_dependent(
+    reason="llava_next_video is not supported yet by optimum-intel 423b423 with transformers 5.0"
 )
+@pytest.mark.parametrize(("model_id", "model_type"), VISUAL_VIDEO_TEXT_MODELS)
 def test_vlm_video(model_id, model_type, tmp_path):
     run_test(model_id, model_type, 0.8, 0.8, tmp_path)
 
 
+@pytest.mark.xfail(strict=True, reason="CVS-190187: The default dataset is broken.")
 @pytest.mark.parametrize(
     (
         "model_id",

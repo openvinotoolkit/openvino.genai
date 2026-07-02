@@ -4,6 +4,7 @@
 #pragma once
 
 #include "llm/pipeline_base.hpp"
+#include "utils.hpp"
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include <memory>
@@ -35,11 +36,28 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
         ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, mutable_plugin_config);
         m_generation_config = m_impl->get_config();
         }
+
+    ContinuousBatchingAdapter(
+        const std::shared_ptr<ov::Model>& model,
+        const Tokenizer& tokenizer,
+        const SchedulerConfig& scheduler_config,
+        const std::string& device,
+        const ov::AnyMap& plugin_config,
+        const ov::genai::GenerationConfig& generation_config,
+        const std::filesystem::path& model_config_dir = {}
+        ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
+        auto mutable_plugin_config = plugin_config;
+        mutable_plugin_config["sampler_num_threads"] = 1;
+        m_impl.reset(new ContinuousBatchingPipeline(model, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config, model_config_dir));
+        m_generation_config = m_impl->get_config();
+    }
 
     ContinuousBatchingAdapter(
         const std::string& model_str,
@@ -50,6 +68,7 @@ public:
         const ov::AnyMap& plugin_config,
         const ov::genai::GenerationConfig& generation_config
     ): LLMPipelineImplBase{tokenizer, GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(model_str, weights_tensor, tokenizer, scheduler_config, device, mutable_plugin_config, generation_config);
@@ -61,6 +80,7 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     ): LLMPipelineImplBase{Tokenizer(models_path, plugin_config), GenerationConfig()} {
+        set_attention_backend(PA_BACKEND);
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
@@ -93,6 +113,7 @@ public:
         std::vector<float> plain_scores;
         std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
+            utils::assert_request_was_scheduled(res.m_status, res.m_request_id);
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
@@ -152,6 +173,7 @@ public:
         std::vector<float> plain_scores;
         std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
+            utils::assert_request_was_scheduled(res.m_status, res.m_request_id);
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
@@ -254,6 +276,7 @@ public:
         std::vector<float> plain_scores;
         std::vector<GenerationFinishReason> plain_finish_reasons;
         for (EncodedGenerationResult& res : generated) {
+            utils::assert_request_was_scheduled(res.m_status, res.m_request_id);
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
