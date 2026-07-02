@@ -292,7 +292,6 @@ class TestImageGenerationWithBlobTensorModels:
         # This test case only supports text2image pipelines.
         tokenizer = self._read_tokenizer(model_dir)
         tokenizer_2 = self._read_tokenizer(model_dir, tokenizer_name="tokenizer_2")
-
         text_encoder_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder")
         text_encoder_2_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder_2")
         unet_blob_tensor = self._read_blob_tensor(blob_dir, "unet")
