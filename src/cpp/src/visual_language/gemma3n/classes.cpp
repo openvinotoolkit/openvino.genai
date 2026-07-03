@@ -72,18 +72,14 @@ InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
                                              const std::string& device,
                                              const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    auto per_layer_it = models_map.find("text_embeddings_per_layer");
-    auto core = utils::singleton_core();
-    std::shared_ptr<ov::Model> model;
-    if (per_layer_it != models_map.end()) {
-        const auto& [model_str, weights] = per_layer_it->second;
-        model = core.read_model(model_str, weights);
-    } else {
-        model = core.read_model(config_dir_path / "openvino_text_embeddings_per_layer_model.xml");
-    }
+    auto it = models_map.find("text_embeddings_per_layer");
 
+    OPENVINO_ASSERT(it != models_map.end(), "Per-layer text embeddings model not found in models map");
+
+    const auto& [model_str, weights] = it->second;
     const auto properties = utils::get_model_properties(device_config, "text_embeddings_per_layer", device);
-    auto compiled_model = core.compile_model(model, device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(model_str, weights, device, properties);
+
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings per layer model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
