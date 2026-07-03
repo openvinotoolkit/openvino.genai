@@ -2524,3 +2524,103 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
          }
     }
 }
+
+TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 42;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    scheduler.set_expected_num_scheduled_tokens(request_id, 5);
+    EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 5);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 5);
+    EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    // Release scheduled sequences and acknowledge the iteration so that
+    // Scheduler / BlockManager state is consistent at destruction time.
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
+}
+
+TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_than_available) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 43;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    // Available tokens for the request are 12; expected value above it must be ignored.
+    scheduler.set_expected_num_scheduled_tokens(request_id, 13);
+
+    auto out = scheduler.schedule(requests);
+    // Default scheduling is min(max_num_batched_tokens, available_tokens) = min(8, 12) = 8.
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 8);
+    EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
+}
+
+TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedule) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 44;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    scheduler.set_expected_num_scheduled_tokens(request_id, 5);
+    auto out1 = scheduler.schedule(requests);
+    EXPECT_EQ(out1.m_total_num_scheduled_tokens, 5);
+
+    requests[0]->finish_iteration();
+
+    scheduler.clear_expected_num_scheduled_tokens(request_id);
+    EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 0);
+
+    auto out2 = scheduler.schedule(requests);
+    // 7 prompt tokens remain after the first scheduling; default scheduling should now apply.
+    EXPECT_EQ(out2.m_total_num_scheduled_tokens, 7);
+    EXPECT_FALSE(out2.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
+}
