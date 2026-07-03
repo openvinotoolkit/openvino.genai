@@ -247,6 +247,38 @@ class KokoroModelWrapper:
         return _SpeechResult(audio)
 
 
+def _force_greedy_qwen3_omni_hf_code_predictor():
+    """Make the transformers Qwen3-Omni talker code predictor decode greedily.
+
+    The transformers modeling invokes the residual code predictor with a hardcoded
+    do_sample=True at every talker step, overriding the model config's
+    code_predictor do_sample=False and making the HF reference non-deterministic.
+    Forcing greedy keeps the HF path reproducible and consistent with the Optimum
+    path, which is made greedy via talker_top_k=1. Patching the class is a no-op on
+    the Optimum path, which runs its own OV code predictor instead.
+    """
+    try:
+        from transformers.models.qwen3_omni_moe import modeling_qwen3_omni_moe as omni_modeling
+    except ImportError:
+        return
+
+    code_predictor_cls = getattr(omni_modeling, "Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration", None)
+    if code_predictor_cls is None or getattr(code_predictor_cls, "_wwb_greedy_patched", False):
+        return
+
+    original_generate = code_predictor_cls.generate
+
+    def greedy_generate(self, *args, **kwargs):
+        kwargs["do_sample"] = False
+        kwargs.pop("top_k", None)
+        kwargs.pop("top_p", None)
+        kwargs.pop("temperature", None)
+        return original_generate(self, *args, **kwargs)
+
+    code_predictor_cls.generate = greedy_generate
+    code_predictor_cls._wwb_greedy_patched = True
+
+
 class Qwen3OmniSpeechWrapper:
     """Wrapper for Qwen3-Omni models (HF or Optimum) that emit speech via the talker module.
 
@@ -261,6 +293,7 @@ class Qwen3OmniSpeechWrapper:
         self.processor = processor
         self.default_speaker = default_speaker
         self.model_type = "speech-generation"
+        _force_greedy_qwen3_omni_hf_code_predictor()
 
     def __getattr__(self, attr):
         if attr in self.__dict__:
@@ -308,8 +341,14 @@ class Qwen3OmniSpeechWrapper:
                 **inputs,
                 speaker=speaker,
                 return_audio=True,
-                thinker_max_new_tokens=1024,
+                thinker_max_new_tokens=128,
                 thinker_eos_token_id=151645,
+                talker_max_new_tokens=4096,
+                talker_do_sample=False,
+                talker_top_k=1,
+                talker_top_p=1.0,
+                talker_temperature=0.0,
+                talker_repetition_penalty=1.05,
             )
 
         audio = output[1] if isinstance(output, (tuple, list)) else getattr(output, "audio", None)
