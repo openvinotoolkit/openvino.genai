@@ -74,7 +74,6 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     assert pruner_info in output
 
 
-@pytest.mark.xfail(strict=True, reason="CVS-190187: The default dataset is broken.")
 @pytest.mark.parametrize(
     ("model_id", "model_type", "pruning_ratio", "relevance_weight"),
     [
