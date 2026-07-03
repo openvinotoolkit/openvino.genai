@@ -130,6 +130,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA4) {
         return std::make_shared<VisionEncoderGemma4>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::GEMMA4_UNIFIED) {
+        return std::make_shared<VisionEncoderGemma4>(model_dir, device, properties);
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(model_dir, device, properties);
     } else {
@@ -170,6 +172,8 @@ VisionEncoder::Ptr VisionEncoder::create(
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA4) {
+        return std::make_shared<VisionEncoderGemma4>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::GEMMA4_UNIFIED) {
         return std::make_shared<VisionEncoderGemma4>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(models_map, config_dir_path, device, device_config);

@@ -4,7 +4,7 @@ tools: [read, edit, search, execute, todo]
 argument-hint: "<model_id> <task>  e.g. google/gemma-3-4b-it image-text-to-text"
 ---
 
-You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingFace model by validating it works with OpenVINO GenAI and updating the site documentation to reflect its support.
+You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingFace model by validating it works with OpenVINO GenAI, adding repository test coverage, and updating the site documentation to reflect its support.
 
 ## Sub-agents and Skills
 
@@ -72,11 +72,31 @@ Before modifying shared model code, check backward compatibility:
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
 If model-checker passes, proceed to Step 4.
 
-### Step 4: Documentation Update
+### Step 4: Add Tests
+
+Add repository Python tests for every newly enabled VLM model before updating docs.
+
+For `image-text-to-text` models:
+
+1. **Find the tiny-random model id**:
+   - First infer it from the optimum-intel model description, tests, or release notes when available.
+   - If it is not documented there, look it up directly on HuggingFace Hub.
+   - Matching the `optimum-intel-internal-testing/tiny-random-*` prefix, for example `optimum-intel-internal-testing/tiny-random-gemma4-unified-it`.
+2. **Add the model to VLM Python tests**:
+   - Prefer extending `tests/python_tests/test_vlm_pipeline.py` with the tiny-random model id, prompt image tag, video tag if applicable, resolution, and any targeted skip/xfail entry required by an already-tracked issue.
+   - Add a dedicated `tests/python_tests/test_<model_type>_*.py` only when the new model requires behavior that does not fit the shared VLM pipeline suite.
+   - Use the existing VLM fixtures and converted-model cache helpers; do not use the full-size model in repository tests.
+3. **Validate locally**:
+   - Run the narrow pytest target for the added or modified tests from the activated virtual environment.
+   - If the test cannot run locally, document the exact command, blocker, and expected CI coverage in Step 6.
+
+Do not proceed to Step 5 until tiny-random Python tests are added or an explicit blocker is recorded.
+
+### Step 5: Documentation Update
 
 Read and follow the **update-docs** skill.
 
-### Step 5: Final Report
+### Step 6: Final Report
 
 Report a structured summary:
 
@@ -93,6 +113,10 @@ Report a structured summary:
 - **Model Enablement Status**:
   - **Enabled/Not Enabled** if passed all model-checker steps
   - **Details**: Provide a summary of changes. Highlight design and architectural decisions made during enablement.
+- **Tests Status**:
+  - **Added/Not Added** for `tests/python_tests` coverage with the tiny-random VLM model
+  - **Tiny-random model**: `<tiny_random_model_id>` and how it was identified (optimum-intel description or HuggingFace Hub)
+  - **Validation**: pytest command and result, or blocker if not run
 - **Docs Update Status**:
   - **Updated/Not Updated** if updated the supported models docs
   - **Details**: summary of doc changes.
