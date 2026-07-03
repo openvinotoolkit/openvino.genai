@@ -458,9 +458,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                     original_prompt_ids_list,
                                                                     lm_extra_inputs_list);
     for (size_t i = 0; i < prompts.size(); i++) {
+        utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
@@ -630,9 +632,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     results.reserve(encoded_results.size());
 
     for (size_t i = 0; i < encoded_results.size(); ++i) {
+        utils::assert_request_was_scheduled(encoded_results.at(i).m_status, encoded_results.at(i).m_request_id);
         auto result = encoded_results.at(i);
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
     
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;

@@ -265,7 +265,6 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
     std::vector<DraftBeam> m_frontier;
     size_t m_current_draft_layer = 0;
     size_t m_pre_draft_generated_len = 0;
-    uint64_t m_original_grouped_id = 0;
     ov::Tensor m_d2t_tensor;  // keeps draft-to-target vocab offset tensor alive
 
     void tree_reset();
