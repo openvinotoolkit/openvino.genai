@@ -670,7 +670,9 @@ def get_vlm_processor(model_path):
 def create_genai_image_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs):
     import openvino_genai
 
-    if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
+    if model_path.suffix != '.gguf' and (
+        not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists()
+    ):
         convert_ov_tokenizer(model_path)
 
     cb_config = kwargs.get("cb_config")
@@ -829,6 +831,7 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
 
 def create_image_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_path = Path(model_path)
+
     # specify the model path
     if model_path.name.endswith('xml'):
         model_path = model_path.parents[2]
@@ -840,22 +843,30 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
-        remote_code = False
-        try:
-            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
-        except Exception:
-            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            remote_code = True
         if kwargs.get("genai", True):
             if not is_genai_available(log_msg=True):
                 raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
             try:
                 return create_genai_image_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
             except Exception as exp:
+                if model_path.suffix == '.gguf':
+                    raise RuntimeError(f"GGUF VLM pipeline loading failed with following error: {exp}")
+
+                try:
+                    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+                except Exception:
+                    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
                 raise RuntimeError(
                     f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
                     f"GenAI pipeline loading failed with following error: {exp}"
                 )
+
+        remote_code = False
+        try:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+        except Exception:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+            remote_code = True
 
         log.info("Selected Optimum Intel for benchmarking")
         ov_config.pop("ATTENTION_BACKEND", None)

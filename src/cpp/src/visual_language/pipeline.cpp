@@ -54,6 +54,125 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
 
 }
 
+class VLMPipeline::VLMTextOnlyGGUFPipelineImpl : public VLMPipelineBase {
+public:
+    VLMTextOnlyGGUFPipelineImpl(
+        const std::filesystem::path& gguf_path,
+        const std::string& device,
+        const ov::AnyMap& properties
+    ) : m_llm(gguf_path, device, properties) {}
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        return generate(prompt, images, {}, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        return generate(prompt, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>&,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        ensure_text_only_inputs(images, videos);
+        DecodedResults decoded = m_llm.generate(prompt, generation_config, streamer);
+        return to_vlm_results(decoded);
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        return generate(history, images, {}, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        return generate(history, images, videos, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>&,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        ensure_text_only_inputs(images, videos);
+        DecodedResults decoded = m_llm.generate(history, generation_config, streamer);
+        return to_vlm_results(decoded);
+    }
+
+    void start_chat(const std::string& system_message) override {
+        m_llm.start_chat(system_message);
+    }
+
+    void finish_chat() override {
+        m_llm.finish_chat();
+    }
+
+    Tokenizer get_tokenizer() const override {
+        return const_cast<LLMPipeline&>(m_llm).get_tokenizer();
+    }
+
+    void set_chat_template(const std::string& new_template) override {
+        m_llm.get_tokenizer().set_chat_template(new_template);
+    }
+
+    GenerationConfig get_generation_config() const override {
+        return m_llm.get_generation_config();
+    }
+
+    void set_generation_config(const GenerationConfig& new_config) override {
+        m_llm.set_generation_config(new_config);
+    }
+
+private:
+    static void ensure_text_only_inputs(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos) {
+        OPENVINO_ASSERT(
+            images.empty() && videos.empty(),
+            "VLMPipeline GGUF mode currently supports text-only generation (no images/videos)."
+        );
+    }
+
+    static VLMDecodedResults to_vlm_results(const DecodedResults& decoded) {
+        VLMDecodedResults vlm;
+        vlm.texts = decoded.texts;
+        vlm.scores = decoded.scores;
+        vlm.finish_reasons = decoded.finish_reasons;
+        vlm.parsed = decoded.parsed;
+        vlm.extended_perf_metrics = decoded.extended_perf_metrics;
+        PerfMetrics perf_metrics = decoded.perf_metrics;
+        vlm.perf_metrics = VLMPerfMetrics(perf_metrics);
+        return vlm;
+    }
+
+    LLMPipeline m_llm;
+};
+
 class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A config to follow for text generation.
     GenerationConfig m_generation_config;
@@ -864,6 +983,13 @@ VLMPipeline::VLMPipeline(
     const ov::AnyMap& user_properties
 ) {
     auto start_time = std::chrono::steady_clock::now();
+
+    if (models_dir.extension() == ".gguf") {
+        m_pimpl = std::make_unique<VLMTextOnlyGGUFPipelineImpl>(models_dir, device, user_properties);
+        auto stop_time = std::chrono::steady_clock::now();
+        m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
+        return;
+    }
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
