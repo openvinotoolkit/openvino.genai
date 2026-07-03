@@ -254,7 +254,7 @@ InputTensors Eagle3DraftWrapper::build_iteration_inputs(size_t past_accepted_tok
     const size_t num_seqs = running_sequences.size();
     OPENVINO_ASSERT(num_seqs > 0, "No running sequences");
 
-    const size_t full_path_len = running_sequences[0]->get_generated_ids().size();
+    const size_t full_path_len = running_sequences.at(0)->get_generated_ids().size();
     OPENVINO_ASSERT(full_path_len > past_accepted_token_count,
                     "DRAFT_ITERATION: generated_ids length ",
                     full_path_len,
@@ -629,7 +629,7 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_and_validate(const ov::Tenso
     // newly accepted tokens can be sliced out afterwards.
     // Prefill (N=0):  generated_ids = []                           → result_start = 0
     // Validation (N>0): generated_ids = [...history, root, n_1..n_N] → result_start = history_len + 1
-    const auto& gen_before = running_sequences[0]->get_generated_ids();
+    const auto& gen_before = running_sequences.at(0)->get_generated_ids();
     OPENVINO_ASSERT(gen_before.size() >= num_tokens_to_validate,
                     "generated_ids too short before sampling: ",
                     gen_before.size(),
@@ -651,7 +651,7 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_and_validate(const ov::Tenso
     invoke_sampler(logits, input_token_count, num_candidates, num_tokens_to_validate, /*is_validation=*/true);
 
     // Extract all tokens appended by the sampler (new_token for prefill; acc_1..acc_k + bonus for validation).
-    const auto& gen_after = running_sequences[0]->get_generated_ids();
+    const auto& gen_after = running_sequences.at(0)->get_generated_ids();
     OPENVINO_ASSERT(gen_after.size() > result_start,
                     "Sampler produced no new tokens: gen_after.size()=",
                     gen_after.size(),
@@ -890,7 +890,7 @@ ov::Tensor Eagle3DraftWrapper::prepare_hidden_states(const InferContext& ctx) {
     }
 
     // Use pre-allocated buffer if available and large enough, otherwise allocate.
-    const size_t hidden_size = running_sequences[0]->get_hidden_state().get_shape().at(2);
+    const size_t hidden_size = running_sequences.at(0)->get_hidden_state().get_shape().at(2);
     ov::Tensor concat_buf;
     if (m_buffers_allocated && total_seq_len <= m_max_sequences * m_max_depth) {
         m_hidden_concat_buf.set_shape({1, total_seq_len, hidden_size});
@@ -950,7 +950,7 @@ void Eagle3DraftWrapper::update_hidden_states(const InferenceOutput& output, con
     const auto& hidden_shape = output.hidden_features.get_shape();
     OPENVINO_ASSERT(hidden_shape.size() == 3 && hidden_shape[0] == 1, "Invalid hidden features shape: ", hidden_shape);
 
-    const size_t branch_len = running_sequences[0]->get_hidden_state().get_shape().at(1);
+    const size_t branch_len = running_sequences.at(0)->get_hidden_state().get_shape().at(1);
     const size_t total_hidden_tokens = num_sequences * branch_len;
     OPENVINO_ASSERT(hidden_shape[1] == total_hidden_tokens,
                     "hidden_features seq_len (",
@@ -1004,7 +1004,7 @@ ov::Tensor Eagle3DraftWrapper::gather_logits_for_sampling(const InferenceOutput&
     OPENVINO_ASSERT(lshape.size() == 3 && lshape[0] == 1, "Invalid logits shape: ", lshape);
 
     // The stored hidden state was just grown to branch_len+1, so prev_branch_len = shape[1]-1.
-    const size_t new_branch_len = running_sequences[0]->get_hidden_state().get_shape().at(1);
+    const size_t new_branch_len = running_sequences.at(0)->get_hidden_state().get_shape().at(1);
     const size_t prev_branch_len = new_branch_len - 1;
     OPENVINO_ASSERT(prev_branch_len > 0, "branch_len must be positive in DRAFT_ITERATION");
     const size_t total_tokens = num_sequences * prev_branch_len;
