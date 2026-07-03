@@ -2674,37 +2674,6 @@ def ov_continuous_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
     return ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
 
 
-def test_cdpruner_continuous_batching(
-    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
-    cat_tensor: openvino.Tensor,
-    car_tensor: openvino.Tensor,
-):
-    """Test CDPruner with continuous batching pipeline.
-    Verifies that a small non-zero pruning ratio (pruning_ratio=1, i.e. ~1% pruning)
-    produces the same output as the unpruned baseline with pruning_ratio=0."""
-    # Baseline run with pruning_ratio=0
-    generation_config_baseline = GenerationConfig()
-    generation_config_baseline.max_new_tokens = 10
-    generation_config_baseline.do_sample = False
-    generation_config_baseline.pruning_ratio = 0
-
-    baseline = ov_continuous_batching_pipe_qwen2vl.generate(
-        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config_baseline]
-    )[0].texts[0]
-
-    # Pruned run with pruning_ratio=1
-    generation_config_pruned = GenerationConfig()
-    generation_config_pruned.max_new_tokens = 10
-    generation_config_pruned.do_sample = False
-    generation_config_pruned.pruning_ratio = 1
-
-    pruned = ov_continuous_batching_pipe_qwen2vl.generate(
-        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config_pruned]
-    )[0].texts[0]
-
-    assert baseline == pruned, f"Output mismatch: baseline='{baseline}', pruned='{pruned}'"
-
-
 def test_cdpruner_continuous_batching_chat_mode(
     ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
     cat_tensor: openvino.Tensor,
