@@ -145,6 +145,10 @@ in the model-specific input embedder:
    comparison.
 
 Do not hard-code a Hub repository ID or silently replace missing tokens.
+For models exposing `image_pad_token_id`, assert or explicitly check that the
+final tokenized `input_ids` contains that ID and that its occurrence count
+equals the number of image-embedding rows inserted by the model-specific
+embedder. A prompt containing only the textual placeholder is not sufficient.
 
 ### 3.3 Build and verify
 
@@ -185,6 +189,10 @@ Every newly enabled model must add repository tests:
 4. Run the narrow pytest selection for the new model.
 5. If special Transformers or Optimum dependencies are required, add a
    dedicated VLM CI matrix entry instead of changing unrelated jobs.
+
+Apply model-specific dependency entries consistently to the relevant Linux,
+manylinux, and Windows VLM workflows. Do not update a shared dependency for all
+models when only the newly enabled architecture requires it.
 
 Before adding a tiny-model ID to a test matrix, verify that it exists, is
 accessible without a developer's private cache, preserves the real

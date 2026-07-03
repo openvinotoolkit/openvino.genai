@@ -21,7 +21,9 @@ You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingF
 
 Expect the user to provide:
 
-- **model_id**: HuggingFace model identifier (e.g. `google/gemma-3-4b-it`)
+- **model_id**: HuggingFace model identifier (e.g. `google/gemma-3-4b-it`),
+  local architecture-preserving tiny-model directory, or exported OpenVINO IR
+  directory
 - **task**: optimum export task (e.g. `image-text-to-text`, `text-generation-with-past`)
 
 If either is missing, ask for them before proceeding.
@@ -43,6 +45,18 @@ Ensure the Python virtual environment is activated before running any commands.
 ### Step 1: Model Validation
 
 Read and follow the **model-checker** skill.
+
+For a Hugging Face model ID, run model-checker normally. For a local model or
+IR directory, do not reject it for not matching `org/model` and do not invoke a
+checker path that requires a Hub ID. Instead:
+
+1. Read its `config.json` and processor metadata to establish `model_type`,
+   architecture, task, and whether it is a source model or exported IR.
+2. Reuse a supplied export when present; otherwise export the local source
+   model into a local work directory.
+3. Run the smallest correct direct GenAI generation check for the task.
+4. Preserve the original Hugging Face identity in the analysis report when it
+   is known, while using the local path as the runnable validation artifact.
 
 Read **model-checker** step results. Depending on the results:
 
@@ -71,6 +85,10 @@ Before modifying shared model code, check backward compatibility:
 
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
 If model-checker passes, proceed to Step 4.
+
+Revalidate using the same mode used initially: model-checker for a Hub model,
+or the same direct local-path generation reproducer for a local model/IR. Do
+not replace a failing local-artifact check with success from another model.
 
 If any GenAI source file changed, rebuild the edited checkout before running
 model-checker or direct inference. Verify `openvino_genai.__file__` resolves to
@@ -113,3 +131,7 @@ Report a structured summary:
   - **Details**: summary of doc changes.
   - **PR Created** (if applicable): Link or reference to documentation PR
 - **Details**: Additional details required for context, next steps, or follow-ups.
+
+Do not commit, push, or create a pull request unless the user explicitly asks.
+Leave validated changes in the working tree and report the repository path,
+branch, and changed files.
