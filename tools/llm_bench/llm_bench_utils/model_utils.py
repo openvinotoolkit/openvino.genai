@@ -231,9 +231,15 @@ def analyze_args(args):
     if args.draft_cb_config:
         draft_cb_config = get_config(args.draft_cb_config)
     model_args["draft_cb_config"] = draft_cb_config
-    model_args['num_assistant_tokens'] = args.num_assistant_tokens
-    model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
-    model_args['max_ngram_size'] = args.max_ngram_size
+    model_args["num_assistant_tokens"] = args.num_assistant_tokens
+    model_args["assistant_confidence_threshold"] = args.assistant_confidence_threshold
+    model_args["max_ngram_size"] = args.max_ngram_size
+    sd_generation_config = None
+    if args.sd_generation_config:
+        sd_generation_config = get_config(args.sd_generation_config)
+        if not isinstance(sd_generation_config, dict):
+            raise ValueError(f"--sd_generation_config must be a JSON object, got {type(sd_generation_config).__name__}")
+    model_args["sd_generation_config"] = sd_generation_config
 
     model_args['speaker_embeddings'] = None
     if args.speaker_embeddings:
