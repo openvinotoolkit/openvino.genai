@@ -210,15 +210,22 @@ def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lor
 
 # preapre default dataset for visualtext(VLM) evalutor
 def preprocess_fn(example):
+    # load_image accepts a URL, a local path, or an already-decoded PIL image
+    # and always returns a PIL image, so datasets that embed their images work
+    # without relying on external (and potentially unavailable) image hosts.
     return {
-        "prompts": example["instruction"],
-        "images": load_image(example["image_url"]),
+        "prompts": example["question"],
+        "images": load_image(example["image"]),
         "videos": None,
     }
 
 
 def prepare_default_data_image(num_samples=None):
-    DATASET_NAME = "ucla-contextual/contextual_test"
+    # ucla-contextual/contextual_test stores only image URLs pointing at an S3
+    # bucket that now returns HTTP 403 (AllAccessDisabled), which breaks ground
+    # truth generation. lmms-lab/ai2d embeds the images directly in the dataset,
+    # so it stays reproducible regardless of external image hosting.
+    DATASET_NAME = "lmms-lab/ai2d"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)

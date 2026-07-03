@@ -172,6 +172,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-llava-next",
         "optimum-intel-internal-testing/tiny-random-gemma3",
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        "optimum-intel-internal-testing/tiny-random-glm-edge-v",
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -200,6 +201,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
+    "optimum-intel-internal-testing/tiny-random-glm-edge-v": lambda idx: "<|begin_of_image|>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
@@ -225,6 +227,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-glm-edge-v": 672,
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
@@ -398,12 +401,18 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+                    "optimum-intel-internal-testing/tiny-random-glm-edge-v",
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
                 },
             )
         )
         if model.config.model_type == "llava-qwen2" or _is_videochat_flash_qwen_model(model_id):
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
+        # GLM-Edge-V ships a text tokenizer plus a separate Mllama image processor
+        # (there is no unified processor), so AutoProcessor resolves to the tokenizer.
+        elif model.config.model_type == "glm":
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
+            processor = transformers.AutoImageProcessor.from_pretrained(model_cached, trust_remote_code=True)
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
             tokenizer = processor

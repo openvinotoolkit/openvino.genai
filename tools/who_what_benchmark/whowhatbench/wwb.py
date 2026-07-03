@@ -8,7 +8,8 @@ import logging
 import os
 from pathlib import Path
 
-from transformers import AutoTokenizer, AutoProcessor, AutoConfig
+from transformers import AutoTokenizer, AutoProcessor, AutoConfig, AutoImageProcessor
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 import openvino as ov
 
 import pandas as pd
@@ -551,6 +552,20 @@ def load_processor(args):
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
         preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
+
+    # Some vision-text families (e.g. GLM-Edge-V) do not ship a unified HF
+    # processor: AutoProcessor.from_pretrained returns a bare text tokenizer.
+    # For those models the OV target path uses optimum-intel's preprocess_inputs,
+    # which calls processor(images=...) and therefore needs an image processor,
+    # not a tokenizer. Detect this case from the loaded object + config and load
+    # the model's AutoImageProcessor so the image branch works, letting the
+    # caller fall back to load_tokenizer() for text.
+    is_vision_text = getattr(config, "vision_config", None) is not None
+    if is_vision_text and isinstance(preprocessor, PreTrainedTokenizerBase):
+        try:
+            preprocessor = AutoImageProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+        except Exception:
+            preprocessor = AutoImageProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
 
 

@@ -30,6 +30,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"gemma3", VLMModelType::GEMMA3},
         {"gemma4", VLMModelType::GEMMA4},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
+        {"glm", VLMModelType::GLM_EDGE_V},
     };
 
     auto it = model_types_map.find(value);
