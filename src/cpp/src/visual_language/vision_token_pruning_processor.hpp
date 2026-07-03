@@ -206,6 +206,11 @@ public:
 
     /**
      * @brief Update 1D position IDs for LLaVA-style models.
+     *
+     * @param spatial_merge_size Spatial merge factor applied by the vision encoder. grid_h and
+     *        grid_w in combined_grid_thw are pre-merge patch counts; this function divides them
+     *        by spatial_merge_size to obtain the actual LLM-visible token counts per region,
+     *        keeping token accounting consistent with the rest of the pruning pipeline.
      */
     ov::Tensor update_position_ids_1d(const ov::Tensor& original_position_ids,
                                       const ov::Tensor& input_ids,
@@ -213,6 +218,7 @@ public:
                                       int64_t image_pad_token_id,
                                       const std::vector<std::array<size_t, 3>>& reordered_combined_grid_thw,
                                       const std::vector<std::vector<size_t>>& kept_indices_per_image,
+                                      size_t spatial_merge_size,
                                       std::vector<std::vector<bool>>& keep_flags_out,
                                       int64_t video_pad_token_id = -1) const;
 

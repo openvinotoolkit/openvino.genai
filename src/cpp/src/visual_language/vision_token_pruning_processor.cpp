@@ -476,6 +476,7 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                               image_pad_token_id,
                                               reordered_combined_grid_thw,
                                               kept_indices_per_image,
+                                              spatial_merge_size,
                                               keep_flags_per_region_out,
                                               video_pad_token_id);
     }
@@ -671,6 +672,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     int64_t image_pad_token_id,
     const std::vector<std::array<size_t, 3>>& reordered_combined_grid_thw,
     const std::vector<std::vector<size_t>>& kept_indices_per_image,
+    size_t spatial_merge_size,
     std::vector<std::vector<bool>>& keep_flags_out,
     int64_t video_pad_token_id) const {
     const ov::Shape& pos_shape = original_position_ids.get_shape();
@@ -680,13 +682,19 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     const size_t seq_len = pos_shape[1];
     const size_t region_count = reordered_combined_grid_thw.size();
 
-    // Calculate tokens per image
+    // Calculate tokens per image, accounting for spatial merging.
+    // grid_h and grid_w are pre-merge patch counts; the LLM sees
+    // (grid_h / spatial_merge_size) * (grid_w / spatial_merge_size) tokens per frame.
     std::vector<size_t> tokens_per_image;
     tokens_per_image.reserve(region_count);
     size_t cumulative_offset = 0;
 
     for (const auto& [grid_t, grid_h, grid_w] : reordered_combined_grid_thw) {
-        size_t tokens = grid_t * grid_h * grid_w;
+        OPENVINO_ASSERT(grid_h % spatial_merge_size == 0 && grid_w % spatial_merge_size == 0,
+                        "Grid dimensions must be divisible by spatial_merge_size");
+        const size_t llm_grid_h = grid_h / spatial_merge_size;
+        const size_t llm_grid_w = grid_w / spatial_merge_size;
+        size_t tokens = std::max<size_t>(1, grid_t) * llm_grid_h * llm_grid_w;
         tokens_per_image.push_back(tokens);
         cumulative_offset += tokens;
     }
