@@ -203,27 +203,6 @@ def test_extended_perf_metrics():
         assert std_gen_duration == 0
 
 
-# Eagle3 specific tests
-eagle3_models_and_input = [
-    (
-        "Qwen/Qwen3-1.7B",
-        "AngelSlim/Qwen3-1.7B_eagle3",
-        """Code:
-def add(a, b):
-    return a + b
-
-Question: Can you please add 2 and 3
-A:""",
-    ),
-    (
-        "Qwen/Qwen3-1.7B",
-        "AngelSlim/Qwen3-1.7B_eagle3",
-        "What is the capital of Ireland?/no_think",
-    )
-]
-
-eagle3_devices = [("NPU", "NPU")]
-
 # assistant model is randomly generated from the target model
 gemma4_mtp_models_and_input = [
     (
@@ -377,9 +356,42 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
     )
 
 
+# Eagle3 specific tests
+eagle3_models_and_input = [
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        """Code:
+def add(a, b):
+    return a + b
+
+Question: Can you please add 2 and 3
+A:""",
+    ),
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        "What is the capital of Ireland?/no_think",
+    ),
+]
+
+eagle3_devices = [("NPU", "NPU")]
+
+# Tree search parameter configurations: (branching_factor, tree_depth, num_assistant_tokens)
+# (0, 0, 0) means "use pipeline defaults" — do not set tree params in GenerationConfig.
+eagle3_tree_params = [
+    (0, 0, 0),  # default: pipeline uses ensure_tree_params_is_set() defaults (bf=2, td=4, nat=7)
+    (4, 2, 7),  # topk: wide and shallow tree
+    (1, 4, 4),  # top-1: linear chain, no branching
+]
+
+
+@pytest.mark.parametrize("branching_factor,tree_depth,num_assistant_tokens", eagle3_tree_params)
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
 @pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
-def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_device, prompt):
+def test_eagle3_string_inputs(
+    target_model, target_device, draft_model, draft_device, prompt, branching_factor, tree_depth, num_assistant_tokens
+):
     """Test Eagle3 pipeline with string inputs on different device combinations"""
     # Download and convert models:
     target_model_schema = download_and_convert_model(target_model)
@@ -389,14 +401,35 @@ def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_de
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI Eagle3 pipeline:
+    use_default_tree_params = branching_factor == 0
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    if draft_device == "NPU" and not use_default_tree_params:
+        draft_config.update(
+            {
+                "MAX_TREE_DEPTH": tree_depth,
+                "MAX_BRANCHING_FACTOR": branching_factor,
+                "MAX_ASSISTANT_TOKENS": num_assistant_tokens,
+            }
+        )
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
     target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
 
     # Run reference HF model:
-    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=30, do_sample=False)
+    if use_default_tree_params:
+        ov_generation_config = ov_genai.GenerationConfig(
+            max_new_tokens=30,
+            do_sample=False,
+        )
+    else:
+        ov_generation_config = ov_genai.GenerationConfig(
+            max_new_tokens=30,
+            do_sample=False,
+            branching_factor=branching_factor,
+            tree_depth=tree_depth,
+            num_assistant_tokens=num_assistant_tokens,
+        )
     target_hf_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
     ref_gen_results = run_hugging_face(target_opt_model, target_hf_tokenizer, [prompt], ov_generation_config)
 
@@ -416,27 +449,50 @@ def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_de
     compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, ov_generation_config)
 
 
+@pytest.mark.parametrize("branching_factor,tree_depth,num_assistant_tokens", eagle3_tree_params)
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
 @pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
-def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_device, prompt):
+def test_eagle3_perf_metrics(
+    target_model, target_device, draft_model, draft_device, prompt, branching_factor, tree_depth, num_assistant_tokens
+):
     """Test Eagle3 pipeline performance metrics to verify speculative decoding is actually working"""
     # Download and convert models:
     target_model_path = download_and_convert_model(target_model).models_path
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI Eagle3 pipeline:
+    use_default_tree_params = branching_factor == 0
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    if draft_device == "NPU" and not use_default_tree_params:
+        draft_config.update(
+            {
+                "MAX_TREE_DEPTH": tree_depth,
+                "MAX_BRANCHING_FACTOR": branching_factor,
+                "MAX_ASSISTANT_TOKENS": num_assistant_tokens,
+            }
+        )
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
     target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
-    generation_config = ov_genai.GenerationConfig(
-        do_sample=False, max_new_tokens=30, ignore_eos=True, num_assistant_tokens=5
-    )
+    if use_default_tree_params:
+        generation_config = ov_genai.GenerationConfig(
+            do_sample=False,
+            max_new_tokens=30,
+            ignore_eos=True,
+        )
+    else:
+        generation_config = ov_genai.GenerationConfig(
+            do_sample=False,
+            max_new_tokens=30,
+            ignore_eos=True,
+            branching_factor=branching_factor,
+            tree_depth=tree_depth,
+            num_assistant_tokens=num_assistant_tokens,
+        )
 
     # Generate and collect both basic and extended performance metrics
     results = ov_pipe.generate([prompt], generation_config)
-    perf_metrics = results.perf_metrics
     extended_perf_metrics = results.extended_perf_metrics
 
     # Verify extended metrics exist (proves Eagle3 speculative decoding is enabled)
