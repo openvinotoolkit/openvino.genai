@@ -2471,51 +2471,52 @@ def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvin
 
 
 @parametrize_cdpruner_models
-def test_cdpruner_with_multiple_images(
-    ov_pipe_model: VlmModelInfo,
-    cat_tensor: openvino.Tensor,
-    car_tensor: openvino.Tensor,
-    handwritten_tensor: openvino.Tensor,
-):
-    """Test CDPruner with multiple images."""
-    ov_pipe = ov_pipe_model.pipeline
-    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
-
-    images = [cat_tensor, car_tensor, handwritten_tensor]
-
-    # Test with 30% pruning
-    generation_config.pruning_ratio = 30
-    result = ov_pipe.generate("Describe these images.", images=images, generation_config=generation_config)
-
-    assert result.texts[0].strip() != "", "Result with multiple images should not be empty"
-    assert result.perf_metrics is not None
-
-
-@parametrize_cdpruner_models
 def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor):
-    """Test CDPruner in chat mode."""
+    """Test CDPruner in chat mode.
+    Verifies that pruning reduces the first vision turn's input token count compared to the
+    unpruned baseline, and that a text-only follow-up turn works with pruning enabled."""
     ov_pipe = ov_pipe_model.pipeline
-    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
 
-    # Enable pruning
+    # Baseline: run the first turn with pruning disabled in a separate chat context to get
+    # the unpruned input token count for comparison.
+    baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    baseline_config.pruning_ratio = 0
+    ov_pipe.start_chat("You are a helpful assistant.")
+    try:
+        baseline_result = ov_pipe.generate(
+            "What is in this image?", images=[cat_tensor], generation_config=baseline_config
+        )
+    finally:
+        ov_pipe.finish_chat()
+    assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
+    baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
+
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     generation_config.pruning_ratio = 25
 
-    # Start chat
     ov_pipe.start_chat("You are a helpful assistant.")
+    try:
+        # First turn with image
+        result1 = ov_pipe.generate("What is in this image?", images=[cat_tensor], generation_config=generation_config)
+        assert result1.texts[0].strip() != "", "First turn result should not be empty"
 
-    # First turn with image
-    result1 = ov_pipe.generate("What is in this image?", images=[cat_tensor], generation_config=generation_config)
-    assert result1.texts[0].strip() != "", "First turn result should not be empty"
+        # Second turn with different image
+        result2 = ov_pipe.generate("Now describe this one.", images=[car_tensor], generation_config=generation_config)
+        assert result2.texts[0].strip() != "", "Second turn result should not be empty"
 
-    # Second turn with different image
-    result2 = ov_pipe.generate("Now describe this one.", images=[car_tensor], generation_config=generation_config)
-    assert result2.texts[0].strip() != "", "Second turn result should not be empty"
+        # Third turn is text-only (no image) to verify CDPruner handles text-only turns after
+        # prior vision turns without corrupting the chat history.
+        result3 = ov_pipe.generate("What did you see in total?", generation_config=generation_config)
+        assert result3.texts[0].strip() != "", "Third turn result should not be empty"
+    finally:
+        ov_pipe.finish_chat()
 
-    # Third turn without image
-    result3 = ov_pipe.generate("What did you see in total?", generation_config=generation_config)
-    assert result3.texts[0].strip() != "", "Third turn result should not be empty"
-
-    ov_pipe.finish_chat()
+    # Verify pruning was actually applied on the first vision turn.
+    assert result1.perf_metrics is not None, "Performance metrics should be available for turn 1"
+    assert result1.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
+        "CDPruner chat turn 1 should process fewer input tokens than the unpruned baseline, "
+        f"got {result1.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
+    )
 
 
 @parametrize_cdpruner_models
@@ -2595,101 +2596,73 @@ CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
 
-parametrize_cdpruner_video_pruning_models = pytest.mark.parametrize(
-    "ov_pipe_model",
-    [(m, b) for m in CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS for b in ATTENTION_BACKEND],
-    ids=lambda p: f"{p[0]}/{p[1]}",
+
+def _cdpruner_visual_input_params() -> list:
+    """Build (model, backend) x modality params for the unified CDPruner visual-input test.
+    Image pruning is supported by all CDPruner models; video and mixed (image + video) pruning
+    are supported only by models in CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS."""
+    params = []
+    for model_id in CDPRUNER_SUPPORTED_MODELS:
+        modalities = ["images"]
+        if model_id in CDPRUNER_VIDEO_PRUNING_SUPPORTED_MODELS:
+            modalities += ["videos", "images_and_videos"]
+        for backend in ATTENTION_BACKEND:
+            for modality in modalities:
+                params.append(pytest.param((model_id, backend), modality, id=f"{model_id}/{backend}/{modality}"))
+    return params
+
+
+parametrize_cdpruner_visual_inputs = pytest.mark.parametrize(
+    "ov_pipe_model,modality",
+    _cdpruner_visual_input_params(),
     indirect=["ov_pipe_model"],
 )
 
 
-@parametrize_cdpruner_video_pruning_models
-@pytest.mark.parametrize("pruning_ratio", [0, 50, 70, 80])
-def test_cdpruner_with_video(
+@parametrize_cdpruner_visual_inputs
+def test_cdpruner_with_visual_inputs(
     ov_pipe_model: VlmModelInfo,
-    synthetic_video_32x32_tensor: openvino.Tensor,
-    pruning_ratio: int,
-):
-    """Test CDPruner with video input at different pruning ratios."""
-    ov_pipe = ov_pipe_model.pipeline
-
-    # Run baseline (ratio=0) first to avoid pruning state leaking into the comparison
-    baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    baseline_config.pruning_ratio = 0
-    baseline_result = ov_pipe.generate(
-        PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=baseline_config
-    )
-    assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
-    baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
-
-    if pruning_ratio == 0:
-        result = baseline_result
-    else:
-        generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-        generation_config.pruning_ratio = pruning_ratio
-        result = ov_pipe.generate(
-            PROMPTS[0], videos=[synthetic_video_32x32_tensor], generation_config=generation_config
-        )
-    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning on video should not be empty"
-    assert result.perf_metrics is not None, "Performance metrics should be available"
-
-    if pruning_ratio > 0:
-        # Verify pruning was actually applied: pruned run must process fewer input tokens than baseline
-        assert result.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
-            f"Pruned result (ratio={pruning_ratio}) should have fewer input tokens than baseline, "
-            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
-        )
-    else:
-        # Verify no pruning: token count must equal baseline
-        assert result.perf_metrics.get_num_input_tokens() == baseline_input_tokens, (
-            f"Unpruned result (ratio=0) should have the same input tokens as baseline, "
-            f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
-        )
-
-
-@parametrize_cdpruner_video_pruning_models
-def test_cdpruner_with_video_and_images(
-    ov_pipe_model: VlmModelInfo,
+    modality: str,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
+    handwritten_tensor: openvino.Tensor,
     synthetic_video_32x32_tensor: openvino.Tensor,
 ):
-    """Test CDPruner with mixed video and image inputs.
-    Verifies that pruning reduces input token count compared to the unpruned baseline."""
+    """Test CDPruner with image, video, and mixed visual inputs.
+    Verifies that a pruned run (pruning_ratio=30) processes fewer input tokens than the
+    unpruned baseline (pruning_ratio=0)."""
     ov_pipe = ov_pipe_model.pipeline
 
-    # Baseline run with pruning_ratio=0
+    if modality == "images":
+        prompt = "Describe these images."
+        vision_kwargs = {"images": [cat_tensor, car_tensor, handwritten_tensor]}
+    elif modality == "videos":
+        prompt = PROMPTS[0]
+        vision_kwargs = {"videos": [synthetic_video_32x32_tensor]}
+    else:  # images_and_videos
+        prompt = "Describe these."
+        vision_kwargs = {"images": [cat_tensor, car_tensor], "videos": [synthetic_video_32x32_tensor]}
+
+    # Baseline run (pruning disabled) to get the unpruned input token count.
     baseline_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
     baseline_config.pruning_ratio = 0
-    baseline_result = ov_pipe.generate(
-        "Describe these.",
-        images=[cat_tensor, car_tensor],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=baseline_config,
-    )
-    assert baseline_result.texts[0].strip() != "", "Baseline result with mixed video and images should not be empty"
+    baseline_result = ov_pipe.generate(prompt, **vision_kwargs, generation_config=baseline_config)
+    assert baseline_result.texts[0].strip() != "", f"Baseline result ({modality}) should not be empty"
     assert baseline_result.perf_metrics is not None, "Baseline performance metrics should be available"
     baseline_input_tokens = baseline_result.perf_metrics.get_num_input_tokens()
 
-    # Pruned run with pruning_ratio=30
+    # Pruned run.
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
     generation_config.pruning_ratio = 30
-    result = ov_pipe.generate(
-        "Describe these.",
-        images=[cat_tensor, car_tensor],
-        videos=[synthetic_video_32x32_tensor],
-        generation_config=generation_config,
-    )
-    assert result.texts[0].strip() != "", "Result with mixed video and images should not be empty"
+    result = ov_pipe.generate(prompt, **vision_kwargs, generation_config=generation_config)
+    assert result.texts[0].strip() != "", f"Pruned result ({modality}) should not be empty"
     assert result.perf_metrics is not None, "Performance metrics should be available"
 
-    # Verify pruning was actually applied in the mixed-modality path.
-    # Note: pruning_ratio=30 prunes 30% of *visual* tokens only. get_num_input_tokens()
-    # returns the total token count (text + visual), so the total reduction percentage
-    # is less than pruning_ratio and depends on the visual-to-text token ratio of the model.
-    # A simple `<` check is therefore the correct bound here.
+    # Pruning removes 30% of *visual* tokens only. get_num_input_tokens() returns the total
+    # token count (text + visual), so the total reduction is less than pruning_ratio and depends
+    # on the visual-to-text token ratio of the model. A strict `<` check is the correct bound.
     assert result.perf_metrics.get_num_input_tokens() < baseline_input_tokens, (
-        f"Pruned result (ratio=30) should have fewer input tokens than baseline, "
+        f"Pruned result ({modality}) should have fewer input tokens than baseline, "
         f"got {result.perf_metrics.get_num_input_tokens()} vs {baseline_input_tokens}"
     )
 
