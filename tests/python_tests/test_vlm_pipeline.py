@@ -317,11 +317,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
-    if (
-        model_id in [MODEL_GEMMA3N]
-        and is_transformers_version("<=", "4.57.0")
-        and is_transformers_version(">", "5.0.0")
-        and is_optimum_version("<", "2.0.0")
+    if model_id in [MODEL_GEMMA3N] and (
+        is_transformers_version("<", "4.57.0")
+        or is_transformers_version(">=", "5.0.0")
+        or is_optimum_version("<", "2.0.0")
     ):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is >= 4.57.0 and < 5.0.0. Supported optimum version is >= 2.0.0."
