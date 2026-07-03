@@ -170,11 +170,11 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
     "tiny-random-qwen3-layer10": {
-        "name": "xf2022/tiny-random-qwen3-layer10",
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-layer10",
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
     "tiny-random-qwen3-eagle3": {
-        "name": "xf2022/tiny-random-qwen3-eagle3",
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-eagle3",
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
     "tiny-random-llava-next-video": {
