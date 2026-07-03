@@ -1042,6 +1042,7 @@ ov::CompiledModel import_model(const ov::Tensor& blob_tensor,
                                const std::string& device,
                                const ov::AnyMap& properties) {
     OPENVINO_ASSERT(blob_tensor.get_element_type() == ov::element::u8, "Blob tensor should have uint8 element type");
+    OPENVINO_ASSERT(blob_tensor.get_size() > 0, "Blob tensor is empty");
     return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
 }
 
