@@ -26,6 +26,28 @@ from whowhatbench.utils import get_json_config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Supported keys for --sd-generation-config and their expected Python types.
+# When updating this dict, also update the CLI help string for --sd-generation-config below to keep them consistent.
+SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
+    "num_assistant_tokens": int,
+    "assistant_confidence_threshold": float,
+    "branching_factor": int,
+    "tree_depth": int,
+}
+
+
+def _validate_sd_config_value(key, value, expected_type):
+    """Validate a value from --sd-generation-config. Reject bool/str for numeric keys."""
+    if isinstance(value, bool):
+        raise ValueError(f"'{key}' in --sd-generation-config must be a {expected_type.__name__}, got bool")
+    if not isinstance(value, (int, float)):
+        raise ValueError(
+            f"'{key}' in --sd-generation-config must be a {expected_type.__name__}, got {type(value).__name__}"
+        )
+    if expected_type is int and isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"'{key}' in --sd-generation-config must be an integer, got {value}")
+    return expected_type(value)
+
 
 def pruning_ratio_type(value: str) -> int:
     ivalue = int(value)
@@ -341,13 +363,15 @@ def parse_args():
         "--num-assistant-tokens",
         type=int,
         default=None,
-        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
+        help="[DEPRECATED, will be removed soon. Please use --sd-generation-config instead.] "
+        "Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
     )
     parser.add_argument(
         "--assistant-confidence-threshold",
         type=float,
         default=None,
-        help="Config option assistant_confidence_threshold for Speculative decoding.",
+        help="[DEPRECATED, will be removed soon. Please use --sd-generation-config instead.] "
+        "Config option assistant_confidence_threshold for Speculative decoding.",
     )
     parser.add_argument(
         "--video-frames-num",
@@ -417,6 +441,19 @@ def parse_args():
         default=128,
         required=False,
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
+    )
+    parser.add_argument(
+        "--sd-generation-config",
+        type=str,
+        default=None,
+        help="Path to JSON file or JSON string with speculative decoding generation config parameters. "
+        "Supported keys:\n"
+        "  - num_assistant_tokens (int): number of draft candidate tokens submitted to the target model per step.\n"
+        "  - assistant_confidence_threshold (float): draft-model confidence threshold for dynamic SD (0.0 disables).\n"
+        "  - branching_factor (int): EAGLE3 Top-K number of branches at each level of the candidate tree.\n"
+        "  - tree_depth (int): EAGLE3 Top-K lookahead depth of the candidate tree.\n"
+        "Any other keys will be ignored with a warning. "
+        'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
 
     return parser.parse_args()
@@ -581,12 +618,25 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
-                   num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+def genai_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
+):
     kwargs = {}
     if empty_adapters:
         import openvino_genai
+
         kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if generation_config_extra:
+        kwargs.update(generation_config_extra)
 
     return model.generate(
         question,
@@ -609,12 +659,15 @@ def genai_gen_chat_text(
     assistant_confidence_threshold=0.0,
     _full_chat=False,
     _kv_axes_pos=2,
+    generation_config_extra=None,
 ):
     import openvino_genai
 
     kwargs = {}
     if empty_adapters:
         kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if generation_config_extra:
+        kwargs.update(generation_config_extra)
 
     answers = []
     chat_history = openvino_genai.ChatHistory()
@@ -634,8 +687,17 @@ def genai_gen_chat_text(
     return answers
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
-                      assistant_confidence_threshold=0.0):
+def llamacpp_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
+):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -913,6 +975,7 @@ def create_evaluator(base_model, args):
                     float(args.assistant_confidence_threshold)
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
+                generation_config_extra=args.generation_config_extra,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -1052,6 +1115,7 @@ def create_evaluator(base_model, args):
                     else 0.0
                 ),
                 device=args.device,
+                generation_config_extra=args.generation_config_extra,
             )
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
@@ -1216,6 +1280,41 @@ def print_speech_results(evaluator):
 def main():
     args = parse_args()
     check_args(args)
+
+    if args.num_assistant_tokens is not None:
+        logger.warning(
+            "--num-assistant-tokens is DEPRECATED and will be removed soon. "
+            "Please use --sd-generation-config '{\"num_assistant_tokens\": N}' instead."
+        )
+    if args.assistant_confidence_threshold is not None:
+        logger.warning(
+            "--assistant-confidence-threshold is DEPRECATED and will be removed soon. "
+            "Please use --sd-generation-config '{\"assistant_confidence_threshold\": X}' instead."
+        )
+
+    # Parse --sd-generation-config and override cmdline params if specified
+    if args.sd_generation_config is not None:
+        gen_cfg = get_json_config(args.sd_generation_config)
+        if not isinstance(gen_cfg, dict):
+            raise ValueError(f"--sd-generation-config must be a JSON object, got {type(gen_cfg).__name__}")
+        logger.info(f"sd_generation_config: {gen_cfg}")
+        validated = {}
+        for k, v in gen_cfg.items():
+            if k not in SD_GENERATION_CONFIG_SUPPORTED_KEYS:
+                logger.warning(f"Key '{k}' in --sd-generation-config is not supported, skipping")
+                continue
+            validated[k] = _validate_sd_config_value(k, v, SD_GENERATION_CONFIG_SUPPORTED_KEYS[k])
+        if "num_assistant_tokens" in validated:
+            args.num_assistant_tokens = validated["num_assistant_tokens"]
+            logger.info(f"num_assistant_tokens (final): {args.num_assistant_tokens}")
+        if "assistant_confidence_threshold" in validated:
+            args.assistant_confidence_threshold = validated["assistant_confidence_threshold"]
+            logger.info(f"assistant_confidence_threshold (final): {args.assistant_confidence_threshold}")
+        args.generation_config_extra = {
+            k: v for k, v in validated.items() if k not in ("num_assistant_tokens", "assistant_confidence_threshold")
+        }
+    else:
+        args.generation_config_extra = {}
 
     version_str = f'openvino runtime version: {ov.get_version()}'
     if args.genai:
