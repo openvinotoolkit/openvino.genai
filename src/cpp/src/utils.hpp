@@ -26,29 +26,6 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
-struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
-
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
-              const std::string& device = {},
-              const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
-        device(device),
-        properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-    
-    ModelDesc() = default;
-};
 }  // namespace genai
 }  // namespace ov
 
@@ -77,6 +54,19 @@ struct GenerationFinishInfo
     EncodedResults results;
     GenerationStatus streaming_finish_status;
 };
+
+// A request finishes with GenerationStatus::IGNORED when the scheduler could not fit it within
+// the available cache budget (out of memory) - this can happen for the prompt or later during
+// generation under overall cache pressure. Call sites that discard GenerationStatus (and would
+// otherwise return an empty result) should use this to surface an actionable error instead.
+// request_id identifies which request was dropped when several are generated together.
+inline void assert_request_was_scheduled(GenerationStatus status, uint64_t request_id) {
+    OPENVINO_ASSERT(status != GenerationStatus::IGNORED,
+                    "Request ", request_id, " was dropped by the scheduler because it did not fit in the "
+                    "available cache budget (out of memory). Increase cache_size / num_kv_blocks, reduce the "
+                    "prompt or generation length, or for hybrid (linear-attention) models raise "
+                    "cache_interval_multiplier to lower per-token cache usage.");
+}
 
 Tensor init_attention_mask(const Tensor& position_ids);
 
@@ -122,10 +112,6 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
-
-ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
-
-ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 

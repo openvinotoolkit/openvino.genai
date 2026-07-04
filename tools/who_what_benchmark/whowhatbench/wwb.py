@@ -26,6 +26,28 @@ from whowhatbench.utils import get_json_config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Supported keys for --sd-generation-config and their expected Python types.
+# When updating this dict, also update the CLI help string for --sd-generation-config below to keep them consistent.
+SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
+    "num_assistant_tokens": int,
+    "assistant_confidence_threshold": float,
+    "branching_factor": int,
+    "tree_depth": int,
+}
+
+
+def _validate_sd_config_value(key, value, expected_type):
+    """Validate a value from --sd-generation-config. Reject bool/str for numeric keys."""
+    if isinstance(value, bool):
+        raise ValueError(f"'{key}' in --sd-generation-config must be a {expected_type.__name__}, got bool")
+    if not isinstance(value, (int, float)):
+        raise ValueError(
+            f"'{key}' in --sd-generation-config must be a {expected_type.__name__}, got {type(value).__name__}"
+        )
+    if expected_type is int and isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"'{key}' in --sd-generation-config must be an integer, got {value}")
+    return expected_type(value)
+
 
 def pruning_ratio_type(value: str) -> int:
     ivalue = int(value)
@@ -48,10 +70,19 @@ def positive_integer(value: str) -> int:
     return value
 
 
+class NewlineHelpFormatter(argparse.HelpFormatter):
+    def _split_lines(self, text, width):
+        lines = []
+        for line in text.splitlines():
+            lines.extend(super()._split_lines(line, width))
+        return lines
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="WWB CLI",
         description="This script generates answers for questions from csv file",
+        formatter_class=NewlineHelpFormatter,
     )
 
     text_def_dataset_group = parser.add_mutually_exclusive_group()
@@ -109,11 +140,18 @@ def parse_args():
             "text-reranking",
         ],
         default="text",
-        help="Indicates the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
-        "visual-video-text - for Visual Language Models with video inputs, text-to-image - for image generation, "
-        "image-to-image - for image generation based on image and prompt, image-inpainting - for image generation based on image, mask and prompt, "
-        "text-to-video - for video generation, text-reranking - for reranking a list of texts based on relevance to query, "
-        "text-embedding - for creation of embedding for a list of texts, "
+        help="Indicates the model type:\n"
+        "text - for causal text generation, \n"
+        "text-chat - for causal text generation in chat mode, \n"
+        "visual-text - for Visual Language Models with image inputs, \n"
+        "visual-text-chat - for Visual Language Models with image inputs in chat mode, \n"
+        "visual-video-text - for Visual Language Models with video inputs, \n"
+        "text-to-image - for image generation, \n"
+        "image-to-image - for image generation based on image and prompt, \n"
+        "image-inpainting - for image generation based on image, mask and prompt, \n"
+        "text-to-video - for video generation, \n"
+        "text-reranking - for reranking a list of texts based on relevance to query, \n"
+        "text-embedding - for creation of embedding for a list of texts, \n"
         "speech-generation - for text to speech generation ",
     )
     parser.add_argument(
@@ -174,7 +212,11 @@ def parse_args():
         "--ov-config",
         type=str,
         default=None,
-        help="Path to the JSON file that contains OpenVINO Runtime configuration. Or a JSON string of the configuration.",
+        help="""Path to the JSON file that contains OpenVINO Runtime configuration. Or a JSON string of the configuration. \n
+        Example for OpenVINO: {"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0} \n
+        Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"} \n
+        Example of setting option via string in Linux/Windows cmd: "{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}" \n
+        Example of setting option via string in PowerShell: '{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}' """,
     )
     parser.add_argument(
         "--language",
@@ -254,7 +296,7 @@ def parse_args():
     text_def_dataset_group.add_argument(
         "--long-prompt",
         action='store_true',
-        help="LLMPipeline specific parameter that defines the use of a long context prompt. "
+        help="LLMPipeline specific parameter that defines the use of a long context prompt. \n"
         "Deprecated. Kept for backward compatibility, long prompts are used by default.",
     )
     text_def_dataset_group.add_argument(
@@ -296,8 +338,8 @@ def parse_args():
         "--gguf-file",
         type=str,
         default=None,
-        help="Path to GGUF model file for tokenizer loading. "
-        "If the base/target model is a local path, gguf-file should be just the filename (e.g., 'model.gguf'). "
+        help="Path to GGUF model file for tokenizer loading. \n"
+        "If the base/target model is a local path, gguf-file should be just the filename (e.g., 'model.gguf'). \n"
         "If the base/target model is a HuggingFace model ID, gguf-file should be a relative path.",
     )
     parser.add_argument(
@@ -321,13 +363,15 @@ def parse_args():
         "--num-assistant-tokens",
         type=int,
         default=None,
-        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
+        help="[DEPRECATED, will be removed soon. Please use --sd-generation-config instead.] "
+        "Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
     )
     parser.add_argument(
         "--assistant-confidence-threshold",
         type=float,
         default=None,
-        help="Config option assistant_confidence_threshold for Speculative decoding.",
+        help="[DEPRECATED, will be removed soon. Please use --sd-generation-config instead.] "
+        "Config option assistant_confidence_threshold for Speculative decoding.",
     )
     parser.add_argument(
         "--video-frames-num",
@@ -353,10 +397,10 @@ def parse_args():
         "--speaker_embeddings",
         type=str,
         default=None,
-        help="Optional path to .bin or .npy float32 speaker embedding file for text-to-speech generation. "
+        help="Optional path to .bin or .npy float32 speaker embedding file for text-to-speech generation. \n"
         "If using SpeechT5 TTS model with HF/Optimum, WWB downloads "
         "Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin automatically. "
-        "For GenAI, this is the default speaker embedding that is compiled into the runtime. "
+        "For GenAI, this is the default speaker embedding that is compiled into the runtime. \n"
         "For Kokoro, when using optimum or genai modes, this parameter is supported for specifying path "
         "to a <voice>.bin file, but it is recommended to instead use --speech-voice parameter.",
     )
@@ -371,7 +415,7 @@ def parse_args():
         "--speech-voice",
         type=str,
         default="",
-        help="Speech-generation voice name (for example, af_heart for Kokoro). This is currently used only for Kokoro. "
+        help="Speech-generation voice name (for example, af_heart for Kokoro). This is currently used only for Kokoro. \n"
         "For other TTS models (such as SpeechT5), please use --speaker_embeddings parameter to specify the voice. "
         "If omitted for Kokoro, the default voice used is 'af_heart'",
     )
@@ -409,6 +453,19 @@ def parse_args():
         default=128,
         required=False,
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
+    )
+    parser.add_argument(
+        "--sd-generation-config",
+        type=str,
+        default=None,
+        help="Path to JSON file or JSON string with speculative decoding generation config parameters. "
+        "Supported keys:\n"
+        "  - num_assistant_tokens (int): number of draft candidate tokens submitted to the target model per step.\n"
+        "  - assistant_confidence_threshold (float): draft-model confidence threshold for dynamic SD (0.0 disables).\n"
+        "  - branching_factor (int): EAGLE3 Top-K number of branches at each level of the candidate tree.\n"
+        "  - tree_depth (int): EAGLE3 Top-K lookahead depth of the candidate tree.\n"
+        "Any other keys will be ignored with a warning. "
+        'Example: \'{"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}\'',
     )
 
     return parser.parse_args()
@@ -579,12 +636,25 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
-                   num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+def genai_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
+):
     kwargs = {}
     if empty_adapters:
         import openvino_genai
+
         kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if generation_config_extra:
+        kwargs.update(generation_config_extra)
 
     return model.generate(
         question,
@@ -605,12 +675,17 @@ def genai_gen_chat_text(
     empty_adapters=False,
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
+    _full_chat=False,
+    _kv_axes_pos=2,
+    generation_config_extra=None,
 ):
     import openvino_genai
 
     kwargs = {}
     if empty_adapters:
         kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if generation_config_extra:
+        kwargs.update(generation_config_extra)
 
     answers = []
     chat_history = openvino_genai.ChatHistory()
@@ -630,8 +705,17 @@ def genai_gen_chat_text(
     return answers
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
-                      assistant_confidence_threshold=0.0):
+def llamacpp_gen_text(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
+):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -814,6 +898,9 @@ def genai_gen_visual_text_chat(
     max_new_tokens: int,
     pruning_ratio: Optional[float],
     relevance_weight: Optional[float],
+    _kv_axes_pos=None,
+    _crop_question=None,
+    _full_chat=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
@@ -856,6 +943,7 @@ def is_model_with_automatic_crop(config):
     return (
         "internvl" in config.model_type
         or "minicpmv" in config.model_type
+        or "minicpmo" in config.model_type
         or "videochat_flash_qwen" in config.model_type
     )
 
@@ -903,6 +991,7 @@ def create_evaluator(base_model, args):
                     float(args.assistant_confidence_threshold)
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
+                generation_config_extra=args.generation_config_extra,
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -1043,6 +1132,8 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None
                     else 0.0
                 ),
+                device=args.device,
+                generation_config_extra=args.generation_config_extra,
             )
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
@@ -1060,6 +1151,11 @@ def create_evaluator(base_model, args):
                     "please, specify chat_template or use --model-type visual-text. "
                 )
 
+            if config and is_model_with_automatic_crop(config) and args.hf:
+                crop_question = False
+            else:
+                crop_question = True
+
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -1071,6 +1167,8 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
+                crop_question=crop_question,
+                device=args.device,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -1200,6 +1298,41 @@ def print_speech_results(evaluator):
 def main():
     args = parse_args()
     check_args(args)
+
+    if args.num_assistant_tokens is not None:
+        logger.warning(
+            "--num-assistant-tokens is DEPRECATED and will be removed soon. "
+            "Please use --sd-generation-config '{\"num_assistant_tokens\": N}' instead."
+        )
+    if args.assistant_confidence_threshold is not None:
+        logger.warning(
+            "--assistant-confidence-threshold is DEPRECATED and will be removed soon. "
+            "Please use --sd-generation-config '{\"assistant_confidence_threshold\": X}' instead."
+        )
+
+    # Parse --sd-generation-config and override cmdline params if specified
+    if args.sd_generation_config is not None:
+        gen_cfg = get_json_config(args.sd_generation_config)
+        if not isinstance(gen_cfg, dict):
+            raise ValueError(f"--sd-generation-config must be a JSON object, got {type(gen_cfg).__name__}")
+        logger.info(f"sd_generation_config: {gen_cfg}")
+        validated = {}
+        for k, v in gen_cfg.items():
+            if k not in SD_GENERATION_CONFIG_SUPPORTED_KEYS:
+                logger.warning(f"Key '{k}' in --sd-generation-config is not supported, skipping")
+                continue
+            validated[k] = _validate_sd_config_value(k, v, SD_GENERATION_CONFIG_SUPPORTED_KEYS[k])
+        if "num_assistant_tokens" in validated:
+            args.num_assistant_tokens = validated["num_assistant_tokens"]
+            logger.info(f"num_assistant_tokens (final): {args.num_assistant_tokens}")
+        if "assistant_confidence_threshold" in validated:
+            args.assistant_confidence_threshold = validated["assistant_confidence_threshold"]
+            logger.info(f"assistant_confidence_threshold (final): {args.assistant_confidence_threshold}")
+        args.generation_config_extra = {
+            k: v for k, v in validated.items() if k not in ("num_assistant_tokens", "assistant_confidence_threshold")
+        }
+    else:
+        args.generation_config_extra = {}
 
     version_str = f'openvino runtime version: {ov.get_version()}'
     if args.genai:

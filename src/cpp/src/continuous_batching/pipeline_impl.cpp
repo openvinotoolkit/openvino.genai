@@ -111,6 +111,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const ov::genai::GenerationConfig& generation_config,
     bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
     m_inputs_embedder = inputs_embedder;
+    
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -465,9 +466,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         candidates_timer.end();
     }
 
-    // append embeddings for generated tokens
-    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+    // Append embeddings for tokens produced in this step.
+    // Validation mode usually skips this because speculative validation reuses/rewinds
+    // candidate tokens instead of committing them here. prompt_lookup is the exception:
+    // it appends validation candidates after sampling and must keep embeddings in sync
+    // before the next scheduling/hash step.
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
         m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     // notify requests dropped by handle
     {
