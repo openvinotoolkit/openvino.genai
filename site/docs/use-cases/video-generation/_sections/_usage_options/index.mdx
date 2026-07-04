@@ -30,7 +30,9 @@ You can adjust several parameters to control the video generation process, inclu
           num_inference_steps=30,
           num_frames=161,
           guidance_scale=7.5,
-          frame_rate=fps
+          frame_rate=fps,
+          decode_timestep=0.0,
+          decode_noise_scale=0.0
           # highlight-end
         ).video
 
@@ -56,7 +58,9 @@ You can adjust several parameters to control the video generation process, inclu
                 ov::genai::num_inference_steps(30),
                 ov::genai::num_frames(161),
                 ov::genai::guidance_scale(7.5f),
-                ov::genai::frame_rate(fps)
+                ov::genai::frame_rate(fps),
+                ov::genai::decode_timestep(0.0f),
+                ov::genai::decode_noise_scale(0.0f)
                 // highlight-end
             ).video;
 
@@ -83,6 +87,10 @@ Refer to the [LoRA Adapters](/docs/guides/lora-adapters) for more details on wor
 - `guidance_scale`: Balances prompt adherence vs. creativity. Higher values follow prompt more strictly, lower values allow more creative freedom.
 - `generator`: Controls randomness for reproducible results. Same generator seed produces identical videos across runs.
 - `frame_rate`: Target video FPS used by the pipeline.
+- `decode_timestep`: Decode-time timestep for timestep-conditioned VAE decoders. If omitted (`std::nullopt` in C++ config), pipeline default is used.
+- `decode_noise_scale`: Decode-time conditioning noise scale for timestep-conditioned VAE decoders. If omitted (`std::nullopt` in C++ config), default decode_timestep value is used.
+
+These decode-time parameters are forwarded to VAE only when the VAE config enables `timestep_conditioning`.
 
 For the full list of generation parameters, refer to the [Video Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html).
 
