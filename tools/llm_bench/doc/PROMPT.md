@@ -71,8 +71,6 @@ Prompt file example：
 ## 8. Text To Speech Models
 Supported parameters that can be set are:
 * `prompt` - input prompt text for the speech generation
-* `speech_voice` - optional voice for Kokoro text to speech (default `af_heart`)
-* `speech_language` - optional language for Kokoro text to speech (`en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`)
 Prompt file example：
 {"prompt": "what is openvino?"}
 {"prompt": "A chat between a curious user and an artificial intelligence assistant."}
