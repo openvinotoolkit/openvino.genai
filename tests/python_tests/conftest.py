@@ -89,6 +89,7 @@ MODELS_REQUIRING_OPTIMUM_MASTER = {"tiny-random-flux.2-klein"}
 
 def _install_package(package: str) -> None:
     import sys
+
     logger.info(f"Installing: {package}")
     subprocess.run(  # nosec B603
         [sys.executable, "-m", "pip", "install", "--no-deps", package],
