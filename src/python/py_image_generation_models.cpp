@@ -867,13 +867,17 @@ void init_qwen3_text_encoder(py::module_& m) {
         .def("reshape", &ov::genai::Qwen3TextEncoder::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
         .def("infer",
             [](ov::genai::Qwen3TextEncoder& self,
-               const std::string& prompt,
+               const std::string& pos_prompt,
+               const std::string& neg_prompt,
+               bool do_classifier_free_guidance,
                int max_sequence_length
             ) {
                 py::gil_scoped_release rel;
-                return self.infer(prompt, max_sequence_length);
+                return self.infer(pos_prompt, neg_prompt, do_classifier_free_guidance, max_sequence_length);
             },
-            py::arg("prompt"),
+            py::arg("pos_prompt"),
+            py::arg("neg_prompt"),
+            py::arg("do_classifier_free_guidance"),
             py::arg("max_sequence_length"))
         .def("get_config", &ov::genai::Qwen3TextEncoder::get_config)
         .def(

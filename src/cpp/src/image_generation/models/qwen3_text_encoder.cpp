@@ -59,9 +59,8 @@ std::shared_ptr<Qwen3TextEncoder> Qwen3TextEncoder::clone() {
 
 Qwen3TextEncoder& Qwen3TextEncoder::reshape(const int batch_size, const int max_sequence_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
-    OPENVINO_ASSERT(batch_size == 1,
-                    "Qwen3TextEncoder only supports batch_size == 1. "
-                    "Multi-image generation is handled by repeating embeddings after inference");
+    OPENVINO_ASSERT(batch_size >= 1 && batch_size <= 2,
+                    "Qwen3TextEncoder supports batch_size 1 or 2 (for classifier-free guidance)");
 
     std::map<std::string, ov::PartialShape> name_to_shape;
     for (auto&& input : m_model->inputs()) {
@@ -93,42 +92,57 @@ Qwen3TextEncoder& Qwen3TextEncoder::compile(const std::string& device, const ov:
     return *this;
 }
 
-ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, const int& max_sequence_length) {
+ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, const int& max_sequence_length) {
     OPENVINO_ASSERT(m_request, "Qwen3 text encoder model must be compiled first. Cannot infer non-compiled model");
 
-    // Apply chat template as diffusers does:
-    // messages = [{"role": "user", "content": prompt}]
-    // text = tokenizer.apply_chat_template(messages, add_generation_prompt=True, enable_thinking=False)
-    ChatHistory history = {{{"role", "user"}, {"content", prompt}}};
-    JsonContainer extra_context = JsonContainer::from_json_string("{\"enable_thinking\": false}");
-    std::string formatted_prompt = m_tokenizer.apply_chat_template(history, true, {}, std::nullopt, extra_context);
-
-    // Tokenize the formatted prompt
-    auto tokenizer_output = m_tokenizer.encode(formatted_prompt);
-    ov::Tensor input_ids_token = tokenizer_output.input_ids;
-    ov::Tensor attention_mask_token = tokenizer_output.attention_mask;
-
-    const size_t token_len = input_ids_token.get_shape()[1];
+    const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
     const size_t seq_len = static_cast<size_t>(max_sequence_length);
-    const size_t actual_len = std::min(token_len, seq_len);
 
-    // Prepare padded input_ids and attention_mask
-    ov::Tensor input_ids(ov::element::i64, {1, seq_len});
-    ov::Tensor attention_mask(ov::element::i64, {1, seq_len});
-
-    int64_t* ids_data = input_ids.data<int64_t>();
-    int64_t* mask_data = attention_mask.data<int64_t>();
-
-    // Fill with pad_token_id
+    // Use element type from the compiled model's inputs
+    const ov::element::Type input_type = m_request.get_compiled_model().input("input_ids").get_element_type();
     const int64_t pad_token_id = m_tokenizer.get_pad_token_id();
-    std::fill(ids_data, ids_data + seq_len, pad_token_id);
-    std::fill(mask_data, mask_data + seq_len, static_cast<int64_t>(0));
 
-    // Copy actual tokens
-    const int64_t* src_ids = input_ids_token.data<int64_t>();
-    const int64_t* src_mask = attention_mask_token.data<int64_t>();
-    std::copy(src_ids, src_ids + actual_len, ids_data);
-    std::copy(src_mask, src_mask + actual_len, mask_data);
+    auto tokenize_prompt = [&](const std::string& prompt, size_t batch_idx,
+                               ov::Tensor& input_ids, ov::Tensor& attention_mask) {
+        // Apply chat template as diffusers does
+        ChatHistory history = {{{"role", "user"}, {"content", prompt}}};
+        JsonContainer extra_context = JsonContainer::from_json_string("{\"enable_thinking\": false}");
+        std::string formatted_prompt = m_tokenizer.apply_chat_template(history, true, {}, std::nullopt, extra_context);
+
+        auto tokenizer_output = m_tokenizer.encode(formatted_prompt);
+        ov::Tensor input_ids_token = tokenizer_output.input_ids;
+        ov::Tensor attention_mask_token = tokenizer_output.attention_mask;
+
+        const size_t token_len = input_ids_token.get_shape()[1];
+        const size_t actual_len = std::min(token_len, seq_len);
+
+        if (input_type == ov::element::i32) {
+            int32_t* ids_row = input_ids.data<int32_t>() + batch_idx * seq_len;
+            int32_t* mask_row = attention_mask.data<int32_t>() + batch_idx * seq_len;
+            std::fill_n(ids_row, seq_len, static_cast<int32_t>(pad_token_id));
+            std::fill_n(mask_row, seq_len, static_cast<int32_t>(0));
+            std::copy_n(input_ids_token.data<int64_t>(), actual_len, ids_row);
+            std::copy_n(attention_mask_token.data<int64_t>(), actual_len, mask_row);
+        } else {
+            int64_t* ids_row = input_ids.data<int64_t>() + batch_idx * seq_len;
+            int64_t* mask_row = attention_mask.data<int64_t>() + batch_idx * seq_len;
+            std::fill_n(ids_row, seq_len, pad_token_id);
+            std::fill_n(mask_row, seq_len, static_cast<int64_t>(0));
+            std::copy_n(input_ids_token.data<int64_t>(), actual_len, ids_row);
+            std::copy_n(attention_mask_token.data<int64_t>(), actual_len, mask_row);
+        }
+    };
+
+    // Prepare batched input tensors
+    ov::Tensor input_ids(input_type, {text_embedding_batch_size, seq_len});
+    ov::Tensor attention_mask(input_type, {text_embedding_batch_size, seq_len});
+
+    size_t current_batch_idx = 0;
+    if (do_classifier_free_guidance) {
+        tokenize_prompt(neg_prompt, current_batch_idx, input_ids, attention_mask);
+        ++current_batch_idx;
+    }
+    tokenize_prompt(pos_prompt, current_batch_idx, input_ids, attention_mask);
 
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
@@ -139,8 +153,8 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, const int& max_seq
     const size_t hidden_size = m_config.hidden_size;
     const size_t output_dim = num_layers * hidden_size;
 
-    // Output shape: (1, seq_len, num_layers * hidden_size)
-    ov::Tensor result(ov::element::f32, {1, seq_len, output_dim});
+    // Output shape: (text_embedding_batch_size, seq_len, num_layers * hidden_size)
+    ov::Tensor result(ov::element::f32, {text_embedding_batch_size, seq_len, output_dim});
     float* result_data = result.data<float>();
 
     for (size_t layer_idx = 0; layer_idx < num_layers; ++layer_idx) {
@@ -150,13 +164,14 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, const int& max_seq
         ov::Tensor hidden_state = m_request.get_tensor(output_name);
         const float* hs_data = hidden_state.data<float>();
 
-        // Copy this layer's hidden states into the concatenated output
-        // hidden_state shape: (1, seq_len, hidden_size)
-        // result layout: (1, seq_len, [layer0_hidden | layer1_hidden | layer2_hidden])
-        for (size_t s = 0; s < seq_len; ++s) {
-            std::memcpy(result_data + s * output_dim + layer_idx * hidden_size,
-                        hs_data + s * hidden_size,
-                        hidden_size * sizeof(float));
+        // hidden_state shape: (text_embedding_batch_size, seq_len, hidden_size)
+        // result layout: (batch, seq_len, [layer0_hidden | layer1_hidden | ...])
+        for (size_t b = 0; b < text_embedding_batch_size; ++b) {
+            for (size_t s = 0; s < seq_len; ++s) {
+                std::memcpy(result_data + (b * seq_len + s) * output_dim + layer_idx * hidden_size,
+                            hs_data + (b * seq_len + s) * hidden_size,
+                            hidden_size * sizeof(float));
+            }
         }
     }
 

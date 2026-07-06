@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "image_generation/diffusion_pipeline.hpp"
+#include "image_generation/flux_latent_utils.hpp"
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/threaded_callback.hpp"
 
@@ -17,140 +18,22 @@
 
 namespace {
 
-// Patchify latents: (B, C, H, W) -> (B, C*4, H/2, W/2)
-inline ov::Tensor flux2_patchify_latents(const ov::Tensor& latents) {
-    const ov::Shape& shape = latents.get_shape();
-    const size_t batch_size = shape[0];
-    const size_t num_channels = shape[1];
-    const size_t height = shape[2];
-    const size_t width = shape[3];
-
-    const size_t h_half = height / 2;
-    const size_t w_half = width / 2;
-
-    ov::Shape out_shape = {batch_size, num_channels * 4, h_half, w_half};
-    ov::Tensor result(latents.get_element_type(), out_shape);
-
-    const float* src = latents.data<float>();
-    float* dst = result.data<float>();
+// Prepare text IDs for Flux2: (batch_size, text_seq_len, 4) with format (T=0, H=0, W=0, L=0..seq_len-1)
+inline ov::Tensor flux2_prepare_text_ids(size_t batch_size, size_t text_seq_len) {
+    ov::Tensor text_ids(ov::element::f32, {batch_size, text_seq_len, 4});
+    float* data = text_ids.data<float>();
 
     for (size_t b = 0; b < batch_size; ++b) {
-        for (size_t c = 0; c < num_channels; ++c) {
-            for (size_t h = 0; h < h_half; ++h) {
-                for (size_t w = 0; w < w_half; ++w) {
-                    const size_t src_base = (b * num_channels + c) * height * width + (h * 2) * width + (w * 2);
-                    const size_t dst_base_c = c * 4;
-
-                    // (c, 0, 0), (c, 0, 1), (c, 1, 0), (c, 1, 1) -> channels c*4, c*4+1, c*4+2, c*4+3
-                    dst[(b * num_channels * 4 + dst_base_c + 0) * h_half * w_half + h * w_half + w] = src[src_base];
-                    dst[(b * num_channels * 4 + dst_base_c + 1) * h_half * w_half + h * w_half + w] = src[src_base + 1];
-                    dst[(b * num_channels * 4 + dst_base_c + 2) * h_half * w_half + h * w_half + w] = src[src_base + width];
-                    dst[(b * num_channels * 4 + dst_base_c + 3) * h_half * w_half + h * w_half + w] = src[src_base + width + 1];
-                }
-            }
+        for (size_t l = 0; l < text_seq_len; ++l) {
+            const size_t idx = (b * text_seq_len + l) * 4;
+            data[idx + 0] = 0.0f;  // T
+            data[idx + 1] = 0.0f;  // H
+            data[idx + 2] = 0.0f;  // W
+            data[idx + 3] = static_cast<float>(l);  // L
         }
     }
 
-    return result;
-}
-
-// Unpatchify latents: (B, C*4, H/2, W/2) -> (B, C, H, W)
-inline ov::Tensor flux2_unpatchify_latents(const ov::Tensor& latents) {
-    const ov::Shape& shape = latents.get_shape();
-    const size_t batch_size = shape[0];
-    const size_t num_channels_packed = shape[1];
-    const size_t h_half = shape[2];
-    const size_t w_half = shape[3];
-
-    const size_t num_channels = num_channels_packed / 4;
-    const size_t height = h_half * 2;
-    const size_t width = w_half * 2;
-
-    ov::Shape out_shape = {batch_size, num_channels, height, width};
-    ov::Tensor result(latents.get_element_type(), out_shape);
-
-    const float* src = latents.data<float>();
-    float* dst = result.data<float>();
-
-    for (size_t b = 0; b < batch_size; ++b) {
-        for (size_t c = 0; c < num_channels; ++c) {
-            for (size_t h = 0; h < h_half; ++h) {
-                for (size_t w = 0; w < w_half; ++w) {
-                    const size_t src_base_c = c * 4;
-                    const size_t dst_base = (b * num_channels + c) * height * width + (h * 2) * width + (w * 2);
-
-                    dst[dst_base] = src[(b * num_channels_packed + src_base_c + 0) * h_half * w_half + h * w_half + w];
-                    dst[dst_base + 1] = src[(b * num_channels_packed + src_base_c + 1) * h_half * w_half + h * w_half + w];
-                    dst[dst_base + width] = src[(b * num_channels_packed + src_base_c + 2) * h_half * w_half + h * w_half + w];
-                    dst[dst_base + width + 1] = src[(b * num_channels_packed + src_base_c + 3) * h_half * w_half + h * w_half + w];
-                }
-            }
-        }
-    }
-
-    return result;
-}
-
-// Pack latents: (B, C, H, W) -> (B, H*W, C)
-inline ov::Tensor flux2_pack_latents(const ov::Tensor& latents) {
-    const ov::Shape& shape = latents.get_shape();
-    const size_t batch_size = shape[0];
-    const size_t num_channels = shape[1];
-    const size_t height = shape[2];
-    const size_t width = shape[3];
-    const size_t seq_len = height * width;
-
-    ov::Shape out_shape = {batch_size, seq_len, num_channels};
-    ov::Tensor result(latents.get_element_type(), out_shape);
-
-    const float* src = latents.data<float>();
-    float* dst = result.data<float>();
-
-    for (size_t b = 0; b < batch_size; ++b) {
-        for (size_t c = 0; c < num_channels; ++c) {
-            for (size_t hw = 0; hw < seq_len; ++hw) {
-                dst[(b * seq_len + hw) * num_channels + c] = src[(b * num_channels + c) * seq_len + hw];
-            }
-        }
-    }
-
-    return result;
-}
-
-// Unpack latents with position IDs: (B, seq_len, C) + (B, seq_len, 4) -> (B, C, H, W)
-inline ov::Tensor flux2_unpack_latents_with_ids(const ov::Tensor& latents,
-                                                const ov::Tensor& latent_ids,
-                                                size_t height,
-                                                size_t width) {
-    const ov::Shape& shape = latents.get_shape();
-    const size_t batch_size = shape[0];
-    const size_t seq_len = shape[1];
-    const size_t channels = shape[2];
-
-    ov::Shape out_shape = {batch_size, channels, height, width};
-    ov::Tensor result(latents.get_element_type(), out_shape);
-    float* dst = result.data<float>();
-    std::fill(dst, dst + result.get_size(), 0.0f);
-
-    const float* src = latents.data<float>();
-    const float* ids = latent_ids.data<float>();
-
-    for (size_t b = 0; b < batch_size; ++b) {
-        for (size_t s = 0; s < seq_len; ++s) {
-            // ids format: (T, H, W, L) — use H and W indices
-            const size_t id_offset = (b * seq_len + s) * 4;
-            const size_t h_idx = static_cast<size_t>(ids[id_offset + 1]);
-            const size_t w_idx = static_cast<size_t>(ids[id_offset + 2]);
-
-            const size_t flat_idx = h_idx * width + w_idx;
-
-            for (size_t c = 0; c < channels; ++c) {
-                dst[(b * channels + c) * height * width + flat_idx] = src[(b * seq_len + s) * channels + c];
-            }
-        }
-    }
-
-    return result;
+    return text_ids;
 }
 
 // Prepare latent IDs for Flux2: (batch_size, H*W, 4) with format (T=0, H, W, L=0)
@@ -172,24 +55,6 @@ inline ov::Tensor flux2_prepare_latent_ids(size_t batch_size, size_t height, siz
     }
 
     return latent_ids;
-}
-
-// Prepare text IDs for Flux2: (batch_size, text_seq_len, 4) with format (T=0, H=0, W=0, L=0..seq_len-1)
-inline ov::Tensor flux2_prepare_text_ids(size_t batch_size, size_t text_seq_len) {
-    ov::Tensor text_ids(ov::element::f32, {batch_size, text_seq_len, 4});
-    float* data = text_ids.data<float>();
-
-    for (size_t b = 0; b < batch_size; ++b) {
-        for (size_t l = 0; l < text_seq_len; ++l) {
-            const size_t idx = (b * text_seq_len + l) * 4;
-            data[idx + 0] = 0.0f;  // T
-            data[idx + 1] = 0.0f;  // H
-            data[idx + 2] = 0.0f;  // W
-            data[idx + 3] = static_cast<float>(l);  // L
-        }
-    }
-
-    return text_ids;
 }
 
 // Prepare image IDs for Flux2 reference conditioning: (batch_size, N*H*W, 4) with format (T=scale+scale*i, H, W, L=0)
@@ -370,7 +235,8 @@ public:
                  const float guidance_scale) override {
         check_image_size(height, width);
 
-        m_text_encoder->reshape(1, m_generation_config.max_sequence_length);
+        const int text_encoder_batch = do_classifier_free_guidance(guidance_scale) ? 2 : 1;
+        m_text_encoder->reshape(text_encoder_batch, m_generation_config.max_sequence_length);
         m_transformer->reshape(num_images_per_prompt, height, width, m_generation_config.max_sequence_length);
         m_vae->reshape(num_images_per_prompt, height, width);
     }
@@ -406,20 +272,53 @@ public:
         return pipeline;
     }
 
+    bool do_classifier_free_guidance(float guidance_scale) const {
+        return guidance_scale > 1.0f && !m_is_distilled;
+    }
+
     bool do_classifier_free_guidance(const ImageGenerationConfig& generation_config) const {
-        return generation_config.guidance_scale > 1.0f && !m_is_distilled;
+        return do_classifier_free_guidance(generation_config.guidance_scale);
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+        const bool do_cfg = do_classifier_free_guidance(generation_config);
+
         auto infer_start = std::chrono::steady_clock::now();
-        ov::Tensor prompt_embeds = m_text_encoder->infer(positive_prompt, generation_config.max_sequence_length);
+        ov::Tensor encoder_output = m_text_encoder->infer(positive_prompt, "", do_cfg, generation_config.max_sequence_length);
         auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
-        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
+        const size_t text_seq_len = encoder_output.get_shape()[1];
+        const size_t output_dim = encoder_output.get_shape()[2];
 
-        const size_t text_seq_len = prompt_embeds.get_shape()[1];
-        ov::Tensor text_ids = flux2_prepare_text_ids(generation_config.num_images_per_prompt, text_seq_len);
+        if (do_cfg) {
+            // encoder_output shape: (2, seq_len, dim) where [0]=negative, [1]=positive
+            ov::Tensor prompt_embeds(ov::element::f32, {1, text_seq_len, output_dim});
+            std::memcpy(prompt_embeds.data<float>(),
+                        encoder_output.data<float>() + text_seq_len * output_dim,
+                        text_seq_len * output_dim * sizeof(float));
+
+            ov::Tensor neg_embeds(ov::element::f32, {1, text_seq_len, output_dim});
+            std::memcpy(neg_embeds.data<float>(),
+                        encoder_output.data<float>(),
+                        text_seq_len * output_dim * sizeof(float));
+
+            prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
+            neg_embeds = numpy_utils::repeat(neg_embeds, generation_config.num_images_per_prompt);
+
+            m_positive_prompt_embeds = prompt_embeds;
+            m_positive_text_ids = flux2_prepare_text_ids(generation_config.num_images_per_prompt, text_seq_len);
+            m_negative_prompt_embeds = neg_embeds;
+            m_negative_text_ids = flux2_prepare_text_ids(generation_config.num_images_per_prompt, text_seq_len);
+        } else {
+            // encoder_output shape: (1, seq_len, dim)
+            ov::Tensor prompt_embeds = numpy_utils::repeat(encoder_output, generation_config.num_images_per_prompt);
+
+            m_positive_prompt_embeds = prompt_embeds;
+            m_positive_text_ids = flux2_prepare_text_ids(generation_config.num_images_per_prompt, text_seq_len);
+            m_negative_prompt_embeds = ov::Tensor();
+            m_negative_text_ids = ov::Tensor();
+        }
 
         if (m_transformer->get_config().guidance_embeds) {
             ov::Tensor guidance(ov::element::f32, {generation_config.num_images_per_prompt});
@@ -427,23 +326,8 @@ public:
             m_transformer->set_hidden_states("guidance", guidance);
         }
 
-        m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
-        m_transformer->set_hidden_states("txt_ids", text_ids);
-
-        // Store positive prompt embeddings for CFG restoration after negative prompt inference
-        m_positive_prompt_embeds = prompt_embeds;
-        m_positive_text_ids = text_ids;
-
-        // Encode negative prompt for classifier-free guidance
-        if (do_classifier_free_guidance(generation_config)) {
-            m_negative_prompt_embeds = m_text_encoder->infer("", generation_config.max_sequence_length);
-            m_negative_prompt_embeds = numpy_utils::repeat(m_negative_prompt_embeds, generation_config.num_images_per_prompt);
-            const size_t neg_text_seq_len = m_negative_prompt_embeds.get_shape()[1];
-            m_negative_text_ids = flux2_prepare_text_ids(generation_config.num_images_per_prompt, neg_text_seq_len);
-        } else {
-            m_negative_prompt_embeds = ov::Tensor();
-            m_negative_text_ids = ov::Tensor();
-        }
+        m_transformer->set_hidden_states("encoder_hidden_states", m_positive_prompt_embeds);
+        m_transformer->set_hidden_states("txt_ids", m_positive_text_ids);
     }
 
     // Prepare and set image IDs (latent_ids only for text2image, latent_ids + image_ids for img2img)
@@ -484,11 +368,10 @@ public:
         const size_t height = generation_config.height / vae_scale_factor;
         const size_t width = generation_config.width / vae_scale_factor;
 
-        // After patchify: shape is (B, C*4, H/2, W/2), then pack to (B, H/2*W/2, C*4)
         ov::Shape latent_shape{generation_config.num_images_per_prompt,
-                               num_channels_latents * 4,
-                               height / 2,
-                               width / 2};
+                               num_channels_latents,
+                               height,
+                               width};
         ov::Tensor latent, noise, processed_image, image_latents;
 
         // Reset reference image state
@@ -507,16 +390,13 @@ public:
             // Undo VAE's scaling_factor (AutoencoderKLFlux2 doesn't use it, but our AutoencoderKL applies it)
             undo_vae_encode_scaling(image_latents);
 
-            // Patchify and normalize with batch norm
-            image_latents = flux2_patchify_latents(image_latents);
-            apply_bn_normalize(image_latents);
-
-            // Pack image latents: (1, C*4, H/2, W/2) -> (1, H/2*W/2, C*4)
-            m_ref_image_latents = flux2_pack_latents(image_latents);
+            // Pack latents and normalize with batch norm
+            m_ref_image_latents = pack_latents(image_latents, 1, num_channels_latents, height, width);
+            apply_bn_normalize(m_ref_image_latents);
 
             // Prepare image IDs with T-offset
-            const size_t img_h = image_latents.get_shape()[2];
-            const size_t img_w = image_latents.get_shape()[3];
+            const size_t img_h = height / 2;
+            const size_t img_w = width / 2;
             std::vector<std::pair<size_t, size_t>> image_dims = {{img_h, img_w}};
             m_ref_image_ids = flux2_prepare_image_ids(generation_config.num_images_per_prompt, image_dims);
 
@@ -528,7 +408,7 @@ public:
 
         // Generate random noise latents (same for both text2image and img2img)
         noise = generation_config.generator->randn_tensor(latent_shape);
-        latent = flux2_pack_latents(noise);
+        latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
 
         return std::make_tuple(latent, processed_image, image_latents, noise);
     }
@@ -691,15 +571,11 @@ public:
             callback_ptr->end();
         }
 
-        // Unpack latents: (B, seq_len, C) -> (B, C, H/2, W/2) using position IDs
-        ov::Tensor latent_ids = flux2_prepare_latent_ids(latents.get_shape()[0], latent_height, latent_width);
-        ov::Tensor unpacked_latents = flux2_unpack_latents_with_ids(latents, latent_ids, latent_height, latent_width);
+        // Denormalize with batch norm in sequence form
+        apply_bn_denormalize(latents);
 
-        // Denormalize with batch norm: latents = latents * bn_std + bn_mean
-        apply_bn_denormalize(unpacked_latents);
-
-        // Unpatchify: (B, C*4, H/2, W/2) -> (B, C, H, W)
-        ov::Tensor final_latents = flux2_unpatchify_latents(unpacked_latents);
+        // Unpack latents: (B, seq_len, C*4) -> (B, C, H, W)
+        ov::Tensor final_latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
 
         // Pre-apply VAE's scaling_factor so decode's internal division cancels out
         apply_vae_decode_scaling(final_latents);
@@ -716,13 +592,11 @@ public:
 
     ov::Tensor decode(const ov::Tensor latent) override {
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        const size_t latent_height = m_custom_generation_config.height / vae_scale_factor / 2;
-        const size_t latent_width = m_custom_generation_config.width / vae_scale_factor / 2;
 
-        ov::Tensor latent_ids = flux2_prepare_latent_ids(latent.get_shape()[0], latent_height, latent_width);
-        ov::Tensor unpacked_latents = flux2_unpack_latents_with_ids(latent, latent_ids, latent_height, latent_width);
-        apply_bn_denormalize(unpacked_latents);
-        ov::Tensor final_latents = flux2_unpatchify_latents(unpacked_latents);
+        ov::Tensor latent_copy(latent.get_element_type(), latent.get_shape());
+        latent.copy_to(latent_copy);
+        apply_bn_denormalize(latent_copy);
+        ov::Tensor final_latents = unpack_latents(latent_copy, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
         apply_vae_decode_scaling(final_latents);
         return m_vae->decode(final_latents);
     }
@@ -857,52 +731,50 @@ private:
     }
 
     // Apply batch norm normalization: (latents - mean) / std
+    // Operates on sequence form (B, seq_len, C)
     void apply_bn_normalize(ov::Tensor& latents) const {
         if (m_bn_mean.empty() || m_bn_std.empty()) {
             return;
         }
 
         const ov::Shape& shape = latents.get_shape();
-        OPENVINO_ASSERT(shape.size() == 4, "Expected 4D tensor for batch norm");
+        OPENVINO_ASSERT(shape.size() == 3, "Expected 3D tensor (B, seq, C) for batch norm");
         const size_t batch_size = shape[0];
-        const size_t channels = shape[1];
-        const size_t spatial = shape[2] * shape[3];
+        const size_t seq_len = shape[1];
+        const size_t channels = shape[2];
 
         float* data = latents.data<float>();
 
         for (size_t b = 0; b < batch_size; ++b) {
-            for (size_t c = 0; c < channels; ++c) {
-                const float mean = m_bn_mean[c];
-                const float std_val = m_bn_std[c];
-                float* channel_data = data + (b * channels + c) * spatial;
-                for (size_t i = 0; i < spatial; ++i) {
-                    channel_data[i] = (channel_data[i] - mean) / std_val;
+            for (size_t s = 0; s < seq_len; ++s) {
+                float* token_data = data + (b * seq_len + s) * channels;
+                for (size_t c = 0; c < channels; ++c) {
+                    token_data[c] = (token_data[c] - m_bn_mean[c]) / m_bn_std[c];
                 }
             }
         }
     }
 
     // Apply batch norm denormalization: latents * std + mean
+    // Operates on sequence form (B, seq_len, C)
     void apply_bn_denormalize(ov::Tensor& latents) const {
         if (m_bn_mean.empty() || m_bn_std.empty()) {
             return;
         }
 
         const ov::Shape& shape = latents.get_shape();
-        OPENVINO_ASSERT(shape.size() == 4, "Expected 4D tensor for batch norm denormalization");
+        OPENVINO_ASSERT(shape.size() == 3, "Expected 3D tensor (B, seq, C) for batch norm denormalization");
         const size_t batch_size = shape[0];
-        const size_t channels = shape[1];
-        const size_t spatial = shape[2] * shape[3];
+        const size_t seq_len = shape[1];
+        const size_t channels = shape[2];
 
         float* data = latents.data<float>();
 
         for (size_t b = 0; b < batch_size; ++b) {
-            for (size_t c = 0; c < channels; ++c) {
-                const float mean = m_bn_mean[c];
-                const float std_val = m_bn_std[c];
-                float* channel_data = data + (b * channels + c) * spatial;
-                for (size_t i = 0; i < spatial; ++i) {
-                    channel_data[i] = channel_data[i] * std_val + mean;
+            for (size_t s = 0; s < seq_len; ++s) {
+                float* token_data = data + (b * seq_len + s) * channels;
+                for (size_t c = 0; c < channels; ++c) {
+                    token_data[c] = token_data[c] * m_bn_std[c] + m_bn_mean[c];
                 }
             }
         }
