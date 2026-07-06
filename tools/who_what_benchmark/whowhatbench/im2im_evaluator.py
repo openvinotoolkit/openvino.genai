@@ -85,7 +85,7 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                 "num_inference_steps": num_inference_steps,
                 "output_type": "pil",
                 "strength": 0.8,
-                "generator": generator
+                "generator": generator,
             }
             with torch.no_grad():
                 output = model(**kwargs)
