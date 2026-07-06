@@ -745,6 +745,7 @@ void init_flux2_transformer_2d_model(py::module_& m) {
         }),
         py::arg("config_path"))
         .def_readwrite("in_channels", &ov::genai::Flux2Transformer2DModel::Config::in_channels)
+        .def_readwrite("guidance_embeds", &ov::genai::Flux2Transformer2DModel::Config::guidance_embeds)
         .def_readwrite("default_sample_size", &ov::genai::Flux2Transformer2DModel::Config::default_sample_size);
 
     flux2_transformer_2d_model.def(py::init([](
