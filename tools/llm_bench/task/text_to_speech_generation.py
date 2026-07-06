@@ -12,7 +12,6 @@ import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 from llm_bench_utils.hook_forward import TTSHook
-from llm_bench_utils.tts_utils import KOKORO_SPEAKER_EMB_SHAPE, DEFAULT_KOKORO_VOICE
 import openvino as ov
 import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
@@ -304,17 +303,12 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
     # For Kokoro with GenAI, the pipeline requires speaker_embedding as an ov.Tensor.
     # Auto-resolve from the model's voices/ directory when not provided via CLI.
     if args.get("is_kokoro_model") and use_genai and args.get("speaker_embeddings") is None:
-        from llm_bench_utils.model_utils import get_speaker_embeddings
-
-        voice = args.get("speech_voice", "").strip() or DEFAULT_KOKORO_VOICE
-        voice_file = model_path / "voices" / f"{voice}.bin"
-        if not voice_file.exists():
-            raise RuntimeError(
-                f"Kokoro voice file not found: {voice_file}. "
-                f"Pass --speaker_embeddings directly or ensure '{voice}' exists under {model_path / 'voices'}/."
-            )
-        log.info(f"Loading Kokoro speaker embedding from {voice_file}")
-        args["speaker_embeddings"] = get_speaker_embeddings(str(voice_file), expected_shape=KOKORO_SPEAKER_EMB_SHAPE)
+        args["speaker_embeddings"] = model_utils.resolve_kokoro_speaker_embedding(
+            model_path=model_path,
+            speech_voice=args.get("speech_voice", ""),
+            speaker_embeddings=args.get("speaker_embeddings"),
+            strict=True,
+        )
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}

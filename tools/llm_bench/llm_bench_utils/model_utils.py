@@ -114,6 +114,32 @@ def read_wav(filepath, sampling_rate):
     return raw_speech[0]
 
 
+def resolve_kokoro_speaker_embedding(model_path, speech_voice="", speaker_embeddings=None, strict=False):
+    if speaker_embeddings is not None:
+        return speaker_embeddings
+
+    selected_voice = speech_voice.strip() if isinstance(speech_voice, str) else ""
+    if not selected_voice:
+        selected_voice = DEFAULT_KOKORO_VOICE
+
+    if model_path is None:
+        if strict:
+            raise RuntimeError("Kokoro model path is required to resolve speaker embedding")
+        return None
+
+    voice_file = Path(model_path) / "voices" / f"{selected_voice}.bin"
+    if voice_file.exists():
+        return get_speaker_embeddings(str(voice_file), expected_shape=KOKORO_SPEAKER_EMB_SHAPE)
+
+    if strict:
+        raise RuntimeError(
+            f"Kokoro voice file not found: {voice_file}. "
+            f"Pass --speaker_embeddings directly or ensure '{selected_voice}' exists under {Path(model_path) / 'voices'}/."
+        )
+
+    return None
+
+
 def set_default_param_for_ov_config(ov_config):
     # With this PR https://github.com/huggingface/optimum-intel/pull/362, we are able to disable model cache
     if 'CACHE_DIR' not in ov_config:

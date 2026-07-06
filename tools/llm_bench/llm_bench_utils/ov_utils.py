@@ -12,13 +12,12 @@ import copy
 import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
-from llm_bench_utils.model_utils import get_version_in_format_to_pars, get_speaker_embeddings
+from llm_bench_utils.model_utils import get_version_in_format_to_pars, resolve_kokoro_speaker_embedding
 from llm_bench_utils.config_class import UseCaseSpeech2Text, UseCaseTextGen, UseCaseTextReranker, PA_ATTENTION_BACKEND
 from llm_bench_utils.tts_utils import (
     is_kokoro_model_id,
     normalize_kokoro_lang_code,
     DEFAULT_KOKORO_VOICE,
-    KOKORO_SPEAKER_EMB_SHAPE,
 )
 from transformers import pipeline
 import queue
@@ -1001,20 +1000,13 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                     if not selected_voice:
                         selected_voice = DEFAULT_KOKORO_VOICE
 
-                    # Prefer local converted Kokoro voice pack (.bin) when available.
-                    # This avoids remote HF lookup for `<voice>.pt` and matches benchmark test assets.
-                    model_save_dir = getattr(self._model, "model_save_dir", None)
-                    local_voice_file = None
-                    if model_save_dir is not None:
-                        candidate = Path(model_save_dir) / "voices" / f"{selected_voice}.bin"
-                        if candidate.exists():
-                            local_voice_file = candidate
-
-                    if local_voice_file is not None:
-                        local_speaker_embedding = get_speaker_embeddings(
-                            str(local_voice_file),
-                            expected_shape=KOKORO_SPEAKER_EMB_SHAPE,
-                        )
+                    local_speaker_embedding = resolve_kokoro_speaker_embedding(
+                        model_path=getattr(self._model, "model_save_dir", None),
+                        speech_voice=selected_voice,
+                        speaker_embeddings=None,
+                        strict=False,
+                    )
+                    if local_speaker_embedding is not None:
                         preprocess_kwargs["speaker_embedding"] = local_speaker_embedding.detach().cpu().numpy()
                     else:
                         preprocess_kwargs["voice"] = selected_voice
