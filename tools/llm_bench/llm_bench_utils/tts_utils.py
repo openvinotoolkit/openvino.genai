@@ -4,7 +4,6 @@
 
 from pathlib import Path
 import numpy as np
-import openvino as ov
 
 SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
 KOKORO_SPEAKER_EMB_SHAPE = (510, 1, 256)
