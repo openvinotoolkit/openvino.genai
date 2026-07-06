@@ -1202,7 +1202,7 @@ void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& conf
 }
 
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
-    GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
+    GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(std::move(generation_config));
     OPENVINO_ASSERT(!config.do_sample, "Eagle3 speculative decoding requires greedy sampling (do_sample=false)");
     ensure_tree_params_is_set(config);
 
