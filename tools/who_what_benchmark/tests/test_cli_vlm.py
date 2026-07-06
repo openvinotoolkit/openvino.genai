@@ -205,9 +205,11 @@ def test_vlm_chat(model_id, model_type, tmp_path):
 # and its tokenizer.json ships an empty BPE vocab.
 # The config also requires transformers>=5.1.
 @pytest.mark.xfail(
-    reason="tiny-random-qwen3-omni HF model must be regenerated upstream"
-    "(chat_template image placeholder mismatches image_token_id; empty tokenizer vocab)"
-    "also requires transformers>=5.1",
+    reason=(
+        "tiny-random-qwen3-omni HF model must be regenerated upstream "
+        "(chat_template image placeholder mismatches image_token_id; empty tokenizer vocab) "
+        "and requires transformers>=5.1"
+    ),
     strict=True,
 )
 @pytest.mark.parametrize(
