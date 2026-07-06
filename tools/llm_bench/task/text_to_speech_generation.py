@@ -74,10 +74,7 @@ def _kokoro_generate_once(model, input_text, args, use_genai):
     return _extract_audio_array(generation_result)
 
 
-def _kokoro_preprocess_once(model, input_text, args, use_genai):
-    if use_genai:
-        return input_text
-
+def _kokoro_preprocess_once(model, input_text, args):
     speaker_embeddings = args.get("speaker_embeddings")
     speech_language = args.get("speech_language", "")
     speech_voice = args.get("speech_voice", "")
@@ -120,7 +117,7 @@ def run_text_to_speech_generation_optimum(
     if is_kokoro_model:
         tok_encode_start = time.perf_counter()
         input_token_size = len(input_text.split())
-        kokoro_preprocessed_inputs.append(_kokoro_preprocess_once(model, input_text, args, use_genai=False))
+        kokoro_preprocessed_inputs.append(_kokoro_preprocess_once(model, input_text, args))
         tok_encode_end = time.perf_counter()
         tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     else:
