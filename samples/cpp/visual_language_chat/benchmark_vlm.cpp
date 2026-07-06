@@ -3,6 +3,7 @@
 
 #include <cxxopts.hpp>
 #include <filesystem>
+#include <memory>
 
 #include "load_image.hpp"
 #include <openvino/genai/speculative_decoding/perf_metrics.hpp>
