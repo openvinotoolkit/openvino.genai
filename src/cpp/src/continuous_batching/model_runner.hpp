@@ -308,6 +308,9 @@ class ModelRunner {
         ov::Tensor cached_cache_interval;
     };
     std::vector<PagingGroup> m_linear_attention_paging_groups;
+    // Whether the compiled model exposes the Eagle3 tree-decoding query-to-query bias inputs
+    // (`qq_bias` / `qq_bias_begins`). MTP main models are export-only but have no such inputs.
+    bool m_has_qq_bias_inputs = false;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -388,6 +391,20 @@ public:
                     m_linear_attention_paging_groups.push_back({prefix, {}, {}, {}, {}});
                 }
                 break;  // use first name per input
+            }
+        }
+
+        // Detect the Eagle3 tree-decoding query-to-query bias inputs so that the qq_bias tensors are
+        // only populated for models that actually expose them (Eagle3 main), not e.g. the MTP main model.
+        for (const auto& input : compiled_model.inputs()) {
+            for (const auto& name : input.get_names()) {
+                if (name == "qq_bias_begins") {
+                    m_has_qq_bias_inputs = true;
+                    break;
+                }
+            }
+            if (m_has_qq_bias_inputs) {
+                break;
             }
         }
     }
@@ -867,7 +884,7 @@ public:
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
         }
-        if (_is_hs_export_only()) {
+        if (_is_hs_export_only() && m_has_qq_bias_inputs) {
             _set_query_to_query_tensors(sequence_groups, scheduler_output);
         }
         if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[1] == 1) {

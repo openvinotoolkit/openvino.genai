@@ -126,7 +126,10 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     draft_sampling_params.stop_strings = {};
     // Draft gets shifted embeds only; VLM extras belong to the main model.
     ov::Tensor draft_input_embeds = create_draft_input_embeds(input_ids);
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params)});
+    // Use insert_or_assign, not insert: a finished prior request may leave a stale (stopped) handle
+    // under the same request_id. insert() would be a no-op there, dropping the new handle as a
+    // temporary whose destructor stops the freshly added draft request before it can draft.
+    m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
     return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
 }
 
