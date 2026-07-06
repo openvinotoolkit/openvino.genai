@@ -11,7 +11,7 @@ Speculative decoding (also referred to as [assisted-generation](https://huggingf
 
 Because validation is parallel over the candidate length, each accepted draft token replaces a sequential decode step of the target model with (a fraction of) one batched step. When acceptance is high, this can yield end-to-end speedups on memory-bandwidth-bound decoding without changing the model output distribution in theory (the standard verification scheme is statistically equivalent to sampling from the target).
 
-OpenVINO GenAI implements three drafting strategies, sharing the same target-side validation step and the same `GenerationConfig` knobs (`num_assistant_tokens`, `assistant_confidence_threshold`):
+OpenVINO GenAI implements three drafting strategies that share the same target-side validation step. All strategies use `num_assistant_tokens`; Fast Draft additionally supports `assistant_confidence_threshold` (Continuous Batching only).
 
 | Strategy | Drafter | Strength | Configured by |
 |---|---|---|---|
@@ -19,7 +19,7 @@ OpenVINO GenAI implements three drafting strategies, sharing the same target-sid
 | Prompt Lookup Decoding | n-gram match against prompt | Best when output copies large spans of input (RAG, summarization, code edit) | `prompt_lookup=True` (at pipeline construction) + `num_assistant_tokens` + `max_ngram_size` |
 | EAGLE3 | Custom 1-layer draft head trained on the target's hidden states; supports tree drafting | Highest acceptance rate, tightest target/draft alignment | `draft_model(...)` with an EAGLE3 head + `num_assistant_tokens` + `branching_factor`/`tree_depth` |
 
-All three are usable with the `LLMPipeline` Python and C++ APIs. Fast Draft and EAGLE3 can be supported on both the Continuous Batching(CPU/GPU) and Stateful backends(NPU only); Prompt Lookup is supported on the Continuous Batching backend only.
+All three are usable with the `LLMPipeline` Python and C++ APIs. Fast Draft and EAGLE3 are supported on both the Continuous Batching (CPU/GPU) and Stateful (NPU only) backends; Prompt Lookup is supported on the Continuous Batching backend only.
 
 ## Common Configuration
 
