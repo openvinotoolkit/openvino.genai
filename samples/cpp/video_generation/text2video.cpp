@@ -5,11 +5,20 @@
 #include <string>
 #include <random>
 #include <filesystem>
+#include <iostream>
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
+
+void print_perf_metrics(ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
+    std::cout << "\nPerformance metrics:\n"
+              << "  Load time: " << perf_metrics.get_load_time() << " ms\n"
+              << "  Generate duration: " << perf_metrics.get_generate_duration() << " ms\n"
+              << "  Transformer duration: " << perf_metrics.get_transformer_infer_duration().mean << " ms\n"
+              << "  VAE decoder duration: " << perf_metrics.get_vae_decoder_infer_duration() << " ms\n";
+}
 
 int main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
@@ -35,6 +44,7 @@ int main(int32_t argc, char* argv[]) try {
     );
 
     save_video("genai_video.avi", output.video, frame_rate);
+    print_perf_metrics(output.performance_stat);
 
     return EXIT_SUCCESS;
 } catch (const std::exception& error) {
