@@ -139,6 +139,25 @@ describe("Image2ImagePipeline methods", { skip: os.platform() === "darwin" }, ()
     assert.strictEqual(steps.length, 2, "Should stop after steps 0 and 1");
   });
 
+  it("decode(latent) returns an image tensor from a callback latent", async () => {
+    let decoded;
+    await pipeline.generate("a tiny robot", testImage, {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      strength: 1.0,
+      callback: async (step, numSteps, latent) => {
+        assert.ok(latent, "callback should receive a latent tensor");
+        decoded = await pipeline.decode(latent);
+        return true; // stop early, we only need one latent
+      },
+    });
+    assert.ok(decoded, "should have captured a decoded image");
+    assert.deepStrictEqual(decoded.getShape(), [1, 64, 64, 3]);
+    assert.ok(decoded.data instanceof Uint8Array);
+    assert.ok(decoded.data.length > 0);
+  });
+
   it("generate(prompt, image) rejects unbatched rank-3 tensor", async () => {
     const unbatchedImage = createTestImageTensor(64, 64);
     assert.strictEqual(unbatchedImage.getShape().length, 3);
@@ -154,6 +173,57 @@ describe("Image2ImagePipeline methods", { skip: os.platform() === "darwin" }, ()
   });
 });
 
+// Skip due to CVS-179949
+describe("Image2ImagePipeline concurrency", { skip: os.platform() === "darwin" }, () => {
+  let pipeline;
+  let testImage;
+  let latent;
+
+  before(async () => {
+    pipeline = await Image2ImagePipeline(IMAGE_GENERATION_MODEL_PATH, "CPU");
+    testImage = createTestImageTensor(64, 64);
+    testImage.setShape([1, 64, 64, 3]);
+    await pipeline.generate("a tiny robot", testImage, {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      strength: 1.0,
+      callback: (step, numSteps, capturedLatent) => {
+        latent = capturedLatent;
+        return true; // stop early, we only need one latent
+      },
+    });
+  });
+
+  it("decode() rejects while a generate() is in progress", async () => {
+    const generating = pipeline.generate("a tiny robot", testImage, {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      strength: 1.0,
+    });
+    await assert.rejects(
+      pipeline.decode(latent),
+      /decode\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+    );
+    await generating;
+  });
+
+  it("generate() rejects while a decode() is in progress", async () => {
+    const decoding = pipeline.decode(latent);
+    await assert.rejects(
+      pipeline.generate("a tiny robot", testImage, {
+        width: 64,
+        height: 64,
+        num_inference_steps: 2,
+        strength: 1.0,
+      }),
+      /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+    );
+    await decoding;
+  });
+});
+
 describe("Image2ImagePipeline initialization", () => {
   let testImage;
 
@@ -166,6 +236,14 @@ describe("Image2ImagePipeline initialization", () => {
     const uninitializedPipeline = new Image2ImagePipelineClass(IMAGE_GENERATION_MODEL_PATH, "CPU");
     await assert.rejects(
       uninitializedPipeline.generate("a tiny robot", testImage),
+      /Image2ImagePipeline is not initialized/,
+    );
+  });
+
+  it("throws when decode() is called before init()", async () => {
+    const uninitializedPipeline = new Image2ImagePipelineClass(IMAGE_GENERATION_MODEL_PATH, "CPU");
+    await assert.rejects(
+      uninitializedPipeline.decode(undefined),
       /Image2ImagePipeline is not initialized/,
     );
   });
