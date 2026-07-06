@@ -984,11 +984,7 @@ def create_evaluator(base_model, args):
                 frames_num=args.video_frames_num,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
-                num_assistant_tokens=(
-                    int(args.num_assistant_tokens)
-                    if args.num_assistant_tokens is not None
-                    else 0
-                ),
+                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
                 assistant_confidence_threshold=(
                     float(args.assistant_confidence_threshold)
                     if args.assistant_confidence_threshold is not None
@@ -1104,11 +1100,7 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
-                num_assistant_tokens=(
-                    int(args.num_assistant_tokens)
-                    if args.num_assistant_tokens is not None
-                    else 0
-                ),
+                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
                 assistant_confidence_threshold=(
                     float(args.assistant_confidence_threshold)
                     if args.assistant_confidence_threshold is not None
