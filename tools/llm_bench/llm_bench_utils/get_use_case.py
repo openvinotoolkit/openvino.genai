@@ -51,10 +51,7 @@ def safe_json_load(file_path: Path) -> Optional[dict]:
 
 
 def resolve_complex_model_types(config):
-    model_type_raw = config.get("model_type")
-    if not isinstance(model_type_raw, str) or model_type_raw == "":
-        return None, None
-    model_type = model_type_raw.lower().replace("_", "-")
+    model_type = config.get("model_type").lower().replace('_', '-')
     if model_type == "gemma3":
         return USE_CASES["visual_text_gen"][0], model_type
     if model_type == "gemma3-text":
