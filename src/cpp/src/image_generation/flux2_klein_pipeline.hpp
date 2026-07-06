@@ -487,11 +487,8 @@ public:
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         // Prepare latent variables
-        ov::Tensor latents, processed_image, image_latent, noise;
-        std::tie(latents, processed_image, image_latent, noise) = prepare_latents(initial_image, m_custom_generation_config);
-        (void)processed_image;
-        (void)image_latent;
-        (void)noise;
+        ov::Tensor latents;
+        std::tie(latents, std::ignore, std::ignore, std::ignore) = prepare_latents(initial_image, m_custom_generation_config);
 
         // Set latent IDs (and image IDs if img2img)
         set_latent_and_image_ids(m_custom_generation_config);

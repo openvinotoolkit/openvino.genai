@@ -88,9 +88,10 @@ MODELS_REQUIRING_OPTIMUM_MASTER = {"tiny-random-flux.2-klein"}
 
 
 def _install_package(package: str) -> None:
+    import sys
     logger.info(f"Installing: {package}")
     subprocess.run(  # nosec B603
-        ["pip", "install", "--no-deps", package],
+        [sys.executable, "-m", "pip", "install", "--no-deps", package],
         check=True,
         encoding="utf-8",
         text=True,
@@ -144,7 +145,7 @@ def image_generation_model(request):
     try:
         manager.execute(convert_model)
     except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+        logger.exception(f"optimum-cli returned {error.returncode}. Stdout:\n{error.stdout}\nStderr:\n{error.stderr}")
         raise
 
     return str(model_path)
