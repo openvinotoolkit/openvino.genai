@@ -51,7 +51,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
                                    allow_cache_rotation,
-                                   allow_xattention,
+                                   main_model_desc.scheduler_config.use_sparse_attention,
                                    allow_adaptive_rkv).run_on_model(draft_model);
 
     utils::apply_gather_before_matmul_transformation(main_model);
@@ -61,7 +61,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
 
     ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
                                draft_scheduler_config = is_draft_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
-    draft_scheduler_config.use_sparse_attention = false;
+
     if (is_draft_scheduler_undefined) {
         // split KV cache to 2 caches for main and draft models
         auto compute_total_hidden_size = [] (const std::shared_ptr<ov::Model>& model) -> size_t {
