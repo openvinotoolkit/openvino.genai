@@ -12,9 +12,10 @@ import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 from llm_bench_utils.hook_forward import TTSHook
+import openvino as ov
 from llm_bench_utils.tts_utils import (
+    extract_audio_array,
     get_tts_sample_rate,
-    kokoro_generate_once,
     kokoro_preprocess_once,
     kokoro_generate_from_preprocessed,
     resolve_kokoro_speaker_embedding,
@@ -151,33 +152,32 @@ def run_text_to_speech_generation_genai(
         out_str += 'all input token size after padding: {} * {}, '.format(num_input_tokens, args['batch_size'])
         log.info(out_str)
 
-    start = time.perf_counter()
     speeches = []
     perf_metrics = None
-    tokenization_time = None
+    additional_args = (
+        {
+            "speaker_embedding": ov.Tensor(
+                args["speaker_embeddings"].detach().cpu().numpy()
+                if hasattr(args["speaker_embeddings"], "detach")
+                else np.asarray(args["speaker_embeddings"], dtype=np.float32)
+            ),
+        }
+        if args.get("speaker_embeddings") is not None
+        else {}
+    )
+
     if is_kokoro_model:
-        speeches.append(kokoro_generate_once(model, input_text, args, use_genai=True))
-        out_size = sum(speech.size for speech in speeches)
-    else:
-        additional_args = (
-            {
-                "speaker_embedding": ov.Tensor(
-                    args["speaker_embeddings"].detach().cpu().numpy()
-                    if hasattr(args["speaker_embeddings"], "detach")
-                    else np.asarray(args["speaker_embeddings"], dtype=np.float32)
-                )
-            }
-            if args.get("speaker_embeddings") is not None
-            else {}
-        )
-        generation_result = model.generate(input_text_list, **additional_args)
-        perf_metrics = generation_result.perf_metrics
-        tokenization_time = [perf_metrics.get_tokenization_duration().mean]
-        out_size = perf_metrics.num_generated_samples
-        for bs_idx in range(args["batch_size"]):
-            speeches.append(generation_result.speeches[bs_idx].data[0])
+        additional_args["language"] = args.get("speech_language", "")
+
+    start = time.perf_counter()
+    generation_result = model.generate(input_text_list, **additional_args)
     end = time.perf_counter()
     generation_time = end - start
+
+    perf_metrics = generation_result.perf_metrics
+    for bs_idx in range(args["batch_size"]):
+        speeches.append(extract_audio_array(generation_result.speeches[bs_idx].data))
+    out_size = perf_metrics.num_generated_samples
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     result_md5_list = []
@@ -191,9 +191,11 @@ def run_text_to_speech_generation_genai(
 
     md5_list[num][prompt_index] = result_md5_list
 
-    tokenization_kwargs = {}
-    if tokenization_time is not None:
-        tokenization_kwargs["tokenization_time"] = tokenization_time
+    tokenization_time = None
+    tokenization_duration = perf_metrics.get_tokenization_duration().mean
+    if tokenization_duration > 0:
+        tokenization_time = [tokenization_duration]
+    tokenization_kwargs = {"tokenization_time": tokenization_time} if tokenization_time is not None else {}
 
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
@@ -214,8 +216,8 @@ def run_text_to_speech_generation_genai(
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    if perf_metrics is not None:
-        log.debug(f"[{num}]Throughput: {perf_metrics.throughput.mean:.4f}")
+
+    log.debug(f"[{num}]Throughput: {perf_metrics.throughput.mean:.4f}")
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:

@@ -106,36 +106,6 @@ def extract_audio_array(output):
     return np.asarray(output, dtype=np.float32).reshape(-1)
 
 
-def kokoro_generate_once(model, input_text, args, use_genai):
-    speaker_embeddings = args.get("speaker_embeddings")
-    speech_language = args.get("speech_language", "")
-    speech_voice = args.get("speech_voice", "")
-
-    if use_genai:
-        # Note: For GenAI Kokoro model, the speaker embedding is passed here, even if user specified --speech_voice.
-        speaker_embedding_np = (
-            speaker_embeddings.detach().cpu().numpy()
-            if hasattr(speaker_embeddings, "detach")
-            else np.asarray(speaker_embeddings)
-        )
-        generation_result = model.generate(
-            input_text,
-            speaker_embedding=ov.Tensor(speaker_embedding_np),
-            language=speech_language,
-        )
-        if hasattr(generation_result, "speeches"):
-            return extract_audio_array(generation_result.speeches[0].data)
-        return extract_audio_array(generation_result)
-
-    generation_result = model.generate(
-        input_text,
-        speaker_embeddings=speaker_embeddings,
-        language=speech_language,
-        voice=speech_voice,
-    )
-    return extract_audio_array(generation_result)
-
-
 def kokoro_preprocess_once(model, input_text, args):
     speaker_embeddings = args.get("speaker_embeddings")
     speech_language = args.get("speech_language", "")
@@ -156,4 +126,4 @@ def kokoro_generate_from_preprocessed(model, preprocessed_input, args):
         generation_result = model.generate_from_preprocessed(preprocessed_input)
         return extract_audio_array(generation_result)
 
-    return kokoro_generate_once(model, preprocessed_input, args, use_genai=False)
+    raise RuntimeError("Kokoro model wrapper must provide generate_from_preprocessed")
