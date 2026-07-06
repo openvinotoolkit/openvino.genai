@@ -19,7 +19,12 @@ def is_kokoro_model_id(model_id_or_path):
     model_path = Path(model_str)
     voices_dir = model_path / "voices"
     if model_path.is_dir() and voices_dir.is_dir():
-        if (voices_dir / "af_heart.bin").exists() or (voices_dir / "af_heart.pt").exists():
+        if (
+            (voices_dir / "af_heart.bin").exists()
+            or (voices_dir / "af_heart.pt").exists()
+            or (voices_dir / "tiny_voice.bin").exists()
+            or (voices_dir / "tiny_voice.pt").exists()
+        ):
             return True
     return False
 
