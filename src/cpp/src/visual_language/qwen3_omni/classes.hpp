@@ -8,6 +8,12 @@
 
 namespace ov::genai {
 
+namespace qwen3_omni_testing {
+/// @brief Test-only accessor for the in-graph patch rearrange model
+/// (inputs: "tiled_patches", "reshape_shape8d"/"4d"/"2d"; output: "patches_2d").
+std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test();
+}  // namespace qwen3_omni_testing
+
 /// @brief Vision encoder for Qwen3-Omni.
 /// Does NOT load the vision_embeddings model (it's merged with the merger in the new export format).
 /// Only does image preprocessing (resize, normalize, create raw patches).

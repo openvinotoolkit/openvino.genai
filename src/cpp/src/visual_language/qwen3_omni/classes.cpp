@@ -210,6 +210,13 @@ std::shared_ptr<ov::Model> build_patch_preprocess_model() {
 
 }  // namespace
 
+namespace qwen3_omni_testing {
+// Test-only accessor for the anonymous-namespace patch rearrange builder.
+std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test() {
+    return build_patch_rearrange_model();
+}
+}  // namespace qwen3_omni_testing
+
 // --- VisionEncoderQwen3Omni ---
 
 VisionEncoderQwen3Omni::VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,
