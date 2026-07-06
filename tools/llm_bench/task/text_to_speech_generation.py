@@ -74,6 +74,35 @@ def _kokoro_generate_once(model, input_text, args, use_genai):
     return _extract_audio_array(generation_result)
 
 
+def _kokoro_preprocess_once(model, input_text, args, use_genai):
+    if use_genai:
+        return input_text
+
+    speaker_embeddings = args.get("speaker_embeddings")
+    speech_language = args.get("speech_language", "")
+    speech_voice = args.get("speech_voice", "")
+
+    if hasattr(model, "preprocess_input"):
+        return model.preprocess_input(
+            input_text,
+            speaker_embeddings=speaker_embeddings,
+            language=speech_language,
+            voice=speech_voice,
+        )
+    return input_text
+
+
+def _kokoro_generate_from_preprocessed(model, preprocessed_input, args, use_genai):
+    if use_genai:
+        return _kokoro_generate_once(model, preprocessed_input, args, use_genai=True)
+
+    if hasattr(model, "generate_from_preprocessed"):
+        generation_result = model.generate_from_preprocessed(preprocessed_input)
+        return _extract_audio_array(generation_result)
+
+    return _kokoro_generate_once(model, preprocessed_input, args, use_genai=False)
+
+
 def run_text_to_speech_generation_optimum(
     input_text, num, model, processor, vocoder, args, iter_data_list, md5_list, prompt_index, tts_hook, model_precision, proc_id, mem_consumption
 ):
@@ -86,16 +115,23 @@ def run_text_to_speech_generation_optimum(
             )
     is_kokoro_model = args.get("is_kokoro_model", False)
     sample_rate = _get_tts_sample_rate(args)
-    tok_encode_start = time.perf_counter()
+    tok_encode_time = None
+    kokoro_preprocessed_inputs = []
     if is_kokoro_model:
+        tok_encode_start = time.perf_counter()
         input_token_size = len(input_text.split())
+        for _ in range(args["batch_size"]):
+            kokoro_preprocessed_inputs.append(_kokoro_preprocess_once(model, input_text, args, use_genai=False))
+        tok_encode_end = time.perf_counter()
+        tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     else:
+        tok_encode_start = time.perf_counter()
         input_data = processor(text=input_text_list, return_tensors="pt", padding=True, truncation=True)
         input_data.pop("token_type_ids", None)
         input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
         input_token_size = input_tokens[0].numel()
-    tok_encode_end = time.perf_counter()
-    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+        tok_encode_end = time.perf_counter()
+        tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
@@ -106,8 +142,8 @@ def run_text_to_speech_generation_optimum(
     start = time.perf_counter()
     speeches = []
     if is_kokoro_model:
-        for _ in range(args["batch_size"]):
-            speeches.append(_kokoro_generate_once(model, input_text, args, use_genai=False))
+        for preprocessed_input in kokoro_preprocessed_inputs:
+            speeches.append(_kokoro_generate_from_preprocessed(model, preprocessed_input, args, use_genai=False))
         out_size = sum(speech.size for speech in speeches)
     else:
         if vocoder:
@@ -134,6 +170,11 @@ def run_text_to_speech_generation_optimum(
         md5_list[num] = {prompt_index : result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
+
+    tokenization_kwargs = {}
+    if tok_encode_time is not None:
+        tokenization_kwargs["tokenization_time"] = [tok_encode_time]
+
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args['batch_size'],
@@ -141,7 +182,7 @@ def run_text_to_speech_generation_optimum(
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=prompt_index,
-        tokenization_time=[tok_encode_time],
+        **tokenization_kwargs,
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
@@ -149,7 +190,7 @@ def run_text_to_speech_generation_optimum(
         iter_num=num,
         iter_data=iter_data,
         warm_up=(num == 0),
-        tokenization_time=[tok_encode_time],
+        **tokenization_kwargs,
         batch_size=args['batch_size'],
         prompt_idx=prompt_index,
         tts=tts_hook
@@ -189,11 +230,11 @@ def run_text_to_speech_generation_genai(
     start = time.perf_counter()
     speeches = []
     perf_metrics = None
+    tokenization_time = None
     if is_kokoro_model:
         for _ in range(args["batch_size"]):
             speeches.append(_kokoro_generate_once(model, input_text, args, use_genai=True))
         out_size = sum(speech.size for speech in speeches)
-        tokenization_time = [0]
     else:
         additional_args = (
             {
@@ -227,6 +268,10 @@ def run_text_to_speech_generation_genai(
 
     md5_list[num][prompt_index] = result_md5_list
 
+    tokenization_kwargs = {}
+    if tokenization_time is not None:
+        tokenization_kwargs["tokenization_time"] = tokenization_time
+
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=num_input_tokens * args['batch_size'],
@@ -234,7 +279,7 @@ def run_text_to_speech_generation_genai(
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=prompt_index,
-        tokenization_time=tokenization_time,
+        **tokenization_kwargs,
         **memory_metrics,
     )
     iter_data_list.append(iter_data)

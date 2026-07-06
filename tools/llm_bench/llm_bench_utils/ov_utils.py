@@ -984,7 +984,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
             def __init__(self, model):
                 self._model = model
 
-            def generate(self, prompt, speaker_embeddings=None, language="", voice=""):
+            def preprocess_input(self, prompt, speaker_embeddings=None, language="", voice=""):
                 preprocess_kwargs = {
                     "text": prompt,
                     "lang_code": normalize_kokoro_lang_code(language),
@@ -997,8 +997,19 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                         selected_voice = DEFAULT_KOKORO_VOICE
                     preprocess_kwargs["voice"] = selected_voice
 
-                preprocessed = self._model.preprocess_input(**preprocess_kwargs)
-                return self._model.generate(**preprocessed)
+                return self._model.preprocess_input(**preprocess_kwargs)
+
+            def generate_from_preprocessed(self, preprocessed_inputs):
+                return self._model.generate(**preprocessed_inputs)
+
+            def generate(self, prompt, speaker_embeddings=None, language="", voice=""):
+                preprocessed = self.preprocess_input(
+                    prompt,
+                    speaker_embeddings=speaker_embeddings,
+                    language=language,
+                    voice=voice,
+                )
+                return self.generate_from_preprocessed(preprocessed)
 
         ov_model = KokoroOVModelWrapper(ov_model)
         processor = None

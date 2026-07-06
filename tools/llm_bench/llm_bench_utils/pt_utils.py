@@ -201,19 +201,76 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
                             self._kmodel = KModel(repo_id=str(model_dir))
                         self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
 
-                    def generate(self, prompt, speaker_embeddings=None, language="", voice=""):
+                    def _update_language(self, language):
                         requested_lang_code = normalize_kokoro_lang_code(language)
                         if requested_lang_code != self._lang_code:
                             self._lang_code = requested_lang_code
                             self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
 
+                    def preprocess_input(self, prompt, speaker_embeddings=None, language="", voice=""):
+                        self._update_language(language)
+                        quiet_pipeline = KPipeline(lang_code=self._lang_code, model=False)
+
                         selected_voice = voice.strip() if isinstance(voice, str) else ""
                         if not selected_voice:
                             selected_voice = DEFAULT_KOKORO_VOICE
-                        result = next(iter(self._pipeline(prompt, voice=selected_voice)), None)
-                        if result is None:
-                            raise RuntimeError("Kokoro pipeline returned no audio output")
-                        return np.asarray(result.audio, dtype=np.float32)
+
+                        # Resolve voice pack during preprocessing to keep timed generation focused on synthesis.
+                        voice_or_embedding = (
+                            speaker_embeddings
+                            if speaker_embeddings is not None
+                            else quiet_pipeline.load_voice(selected_voice)
+                        )
+
+                        preprocessed_segments = []
+                        for result in quiet_pipeline(prompt):
+                            phonemes = getattr(result, "phonemes", "")
+                            if not phonemes:
+                                continue
+                            preprocessed_segments.append(
+                                {
+                                    "phonemes": phonemes,
+                                }
+                            )
+
+                        if not preprocessed_segments:
+                            raise RuntimeError("Kokoro preprocessing produced no valid phoneme segments")
+
+                        return {
+                            "segments": preprocessed_segments,
+                            "voice_or_embedding": voice_or_embedding,
+                        }
+
+                    def generate_from_preprocessed(self, preprocessed_inputs):
+                        segments = preprocessed_inputs.get("segments", [])
+                        voice_or_embedding = preprocessed_inputs.get("voice_or_embedding")
+                        generated_chunks = []
+
+                        for segment in segments:
+                            phonemes = segment.get("phonemes")
+                            if not phonemes:
+                                continue
+                            for result in self._pipeline.generate_from_tokens(
+                                phonemes,
+                                voice=voice_or_embedding,
+                                model=self._kmodel,
+                            ):
+                                if result.audio is not None:
+                                    generated_chunks.append(np.asarray(result.audio, dtype=np.float32).reshape(-1))
+
+                        if not generated_chunks:
+                            raise RuntimeError("Kokoro generation produced no audio output")
+
+                        return np.concatenate(generated_chunks, axis=0)
+
+                    def generate(self, prompt, speaker_embeddings=None, language="", voice=""):
+                        preprocessed = self.preprocess_input(
+                            prompt,
+                            speaker_embeddings=speaker_embeddings,
+                            language=language,
+                            voice=voice,
+                        )
+                        return self.generate_from_preprocessed(preprocessed)
 
                     def to(self, _device):
                         # Kokoro KPipeline keeps CPU execution internally.
