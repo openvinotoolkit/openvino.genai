@@ -178,7 +178,7 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
 void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
     for (const auto& token : input_ids) {
         if (m_grammar_matcher.IsTerminated()) {
-            break;   // stop feeding draft tokens past the accepted stop token (grammar_matcher.cc:493)
+            break;  // stop accepting tokens once the matcher has terminated (e.g., after accepting the stop token)
         }
         m_grammar_matcher.AcceptToken(token);
     }
