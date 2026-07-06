@@ -530,12 +530,12 @@ def load_visual_text_model(
         except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
-            from optimum.intel.openvino import OVModelForMultimodalLM
+            from optimum.intel.openvino import OVModelForOmni
 
             try:
-                return OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
+                return OVModelForOmni.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
             except ValueError:
-                return OVModelForMultimodalLM.from_pretrained(
+                return OVModelForOmni.from_pretrained(
                     model_id,
                     config=config,
                     trust_remote_code=True,
