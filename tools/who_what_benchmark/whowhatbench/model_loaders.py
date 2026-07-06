@@ -419,6 +419,12 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
+            # GLM-Edge-V exposes its vision-text model only via AutoModelForCausalLM
+            # (auto_map AutoModel -> GlmModel has no generate); force CausalLM.
+            if config.model_type == "glm":
+                model_cls = AutoModelForCausalLM
+                model_kwargs["trust_remote_code"] = True
+
             model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:
             try:
