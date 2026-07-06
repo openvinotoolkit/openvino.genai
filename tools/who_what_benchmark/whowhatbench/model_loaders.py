@@ -404,7 +404,13 @@ def load_visual_text_model(
             # AutoModelForVision2Seq was removed in transformers 5.0.0
             # let's try to use AutoModelForImageTextToText instead first
             transformers_version = Version(__version__)
-            if transformers_version < Version("5.0.0"):
+            if config.model_type == "gemma4_unified":
+                if transformers_version < Version("5.10.0"):
+                    raise ImportError(f"gemma4_unified requires transformers>=5.10.0, got {__version__}.")
+                from transformers import AutoModelForMultimodalLM
+
+                model_cls = AutoModelForMultimodalLM
+            elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
                 model_cls = AutoModelForVision2Seq
@@ -421,7 +427,7 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3"]:
+                elif config.model_type in ["gemma3", "gemma3n"]:
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)

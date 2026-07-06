@@ -27,16 +27,21 @@ int main(int argc, char* argv[]) try {
         ov_config = get_config_for_cache();
     }
 
-    // Word timestamps require decomposition of cross-attention decoder SDPA layers,
-    // so word_timestamps must be passed to the pipeline constructor (not just in generation config)
+    // Word timestamps supported by Whisper models only
+    // Must be passed to ASRPipeline constructor as a property
     ov_config.insert(ov::genai::word_timestamps(true));
 
     ov::genai::ASRPipeline pipeline(models_path, device, ov_config);
 
     ov::genai::ASRGenerationConfig config = pipeline.get_generation_config();
-    // 'task' and 'language' parameters are supported for multilingual models only
-    config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
-    config.task = "transcribe";
+
+    // If language is known in advance it can be passed to the pipeline
+    // In the form of "<|en|>" for Whisper models. Supported by multilingual models only
+    // In the form of "English" for Qwen3-ASR models.
+    config.language = "<|en|>";
+
+    // Whisper models parameters. Ignored for Qwen3-ASR models
+    config.task = "transcribe";  // Supported by multilingual models only
     config.return_timestamps = true;
     config.word_timestamps = true;
 
