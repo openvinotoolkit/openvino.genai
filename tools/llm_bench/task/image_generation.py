@@ -13,8 +13,7 @@ import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-from llm_bench_utils.prompt_utils import get_image_prompt
-from .pipeline_utils import collect_prompts_step
+from llm_bench_utils.prompt_utils import BenchPrompter
 from transformers.image_utils import load_image
 import openvino as ov
 import numpy as np
@@ -196,7 +195,18 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    image_list, prompt_idx_list = collect_prompts_step(args, get_image_prompt)
+    # Build the prompt schedule via BenchPrompter, which handles both
+    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
+    # in a single unified iter_schedule() loop, eliminating the previous
+    # duplicated if/else branches.  Also fixes the bug in the subsequent=True
+    # path where `callback` was not forwarded to image_gen_fn.
+    prompter = BenchPrompter(args)
+    if len(prompter) == 0:
+        raise RuntimeError('==Failure prompts is empty ==')
+
+    active = prompter.active_pairs
+    prompt_idx_list = [p_idx for p_idx, _ in active]
+    image_list = [p for _, p in active]
 
     # If --static_reshape is specified, we need to get width, height, and guidance scale to drop into args
     # as genai's create_image_gen_model implementation will need those to reshape the pipeline before compile().
@@ -228,26 +238,13 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     proc_id = os.getpid()
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
-    if args['subsequent'] is False:
-        for num in range(num_iters + 1):
-            for image_id, image_param in enumerate(image_list):
-                p_idx = prompt_idx_list[image_id]
-                mem_consumption.update_marker(f"step-{num}-{p_idx}")
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                image_gen_fn(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption, callback)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
-    else:
-        for image_id, image_param in enumerate(image_list):
-            p_idx = prompt_idx_list[image_id]
-            for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{image_id}")
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                image_gen_fn(image_param, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
+        image_gen_fn(prompt, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption, callback)
+        iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time, iter_timestamp

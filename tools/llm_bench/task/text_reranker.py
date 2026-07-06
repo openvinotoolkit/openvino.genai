@@ -14,9 +14,9 @@ import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 from llm_bench_utils.config_class import UseCaseTextReranker
-from llm_bench_utils.prompt_utils import get_text_prompt
+from llm_bench_utils.prompt_utils import BenchPrompter
 import llm_bench_utils.gen_output_data as gen_output_data
-from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step
+from task.pipeline_utils import CommonPipeline, execution_time_in_sec
 from pathlib import Path
 from typing import Any
 
@@ -366,7 +366,18 @@ def run_text_reranker_benchmark(
     mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
-    text_list, prompt_idx_list = collect_prompts_step(args, get_text_prompt)
+
+    # Build the prompt schedule via BenchPrompter, which handles both
+    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
+    # in a single unified iter_schedule() loop, eliminating the previous
+    # duplicated if/else branches.
+    prompter = BenchPrompter(args)
+    if len(prompter) == 0:
+        raise RuntimeError('==Failure prompts is empty ==')
+
+    active = prompter.active_pairs
+    prompt_idx_list = [p_idx for p_idx, _ in active]
+    text_list = [p["prompt"] for _, p in active]
 
     if not use_genai:
         text_reranker_pipeline = TextRerankerOptimum(model, tokenizer, args, model_path, mem_consumption)
@@ -376,18 +387,10 @@ def run_text_reranker_benchmark(
     proc_id = os.getpid()
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
-    if args["subsequent"] is False:
-        for num in range(num_iters + 1):
-            for idx, input_text in enumerate(text_list):
-                p_idx = prompt_idx_list[idx]
-                mem_consumption.update_marker(f"step-{num}-{p_idx}")
-                iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
-    else:
-        for idx, input_text in enumerate(text_list):
-            p_idx = prompt_idx_list[idx]
-            for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{p_idx}")
-                iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
+
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, prompt["prompt"], proc_id, bench_hook))
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False, True, latency_unit="text")
     return iter_data_list, pretrain_time, iter_timestamp
