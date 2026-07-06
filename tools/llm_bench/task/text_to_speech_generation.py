@@ -88,10 +88,7 @@ def _kokoro_preprocess_once(model, input_text, args):
     return input_text
 
 
-def _kokoro_generate_from_preprocessed(model, preprocessed_input, args, use_genai):
-    if use_genai:
-        return _kokoro_generate_once(model, preprocessed_input, args, use_genai=True)
-
+def _kokoro_generate_from_preprocessed(model, preprocessed_input, args):
     if hasattr(model, "generate_from_preprocessed"):
         generation_result = model.generate_from_preprocessed(preprocessed_input)
         return _extract_audio_array(generation_result)
@@ -138,7 +135,7 @@ def run_text_to_speech_generation_optimum(
     speeches = []
     if is_kokoro_model:
         for preprocessed_input in kokoro_preprocessed_inputs:
-            speeches.append(_kokoro_generate_from_preprocessed(model, preprocessed_input, args, use_genai=False))
+            speeches.append(_kokoro_generate_from_preprocessed(model, preprocessed_input, args))
         out_size = sum(speech.size for speech in speeches)
     else:
         if vocoder:
