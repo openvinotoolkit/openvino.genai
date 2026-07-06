@@ -5,7 +5,7 @@ from transformers import (
     PreTrainedTokenizer,
 )
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Any
 import torch
 
 if TYPE_CHECKING:
@@ -14,8 +14,12 @@ if TYPE_CHECKING:
 
 
 class InternVLInputsPreprocessor(VLMInputsPreprocessor):
-    def __init__(self, chat_mode: bool = False):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         super().__init__(chat_mode)
+        if model is not None:
+            self.def_image_token_id = getattr(model.config, "image_token_id", 151648)
+        else:
+            self.def_image_token_id = 151648
 
     def update_chat_history_with_answer(self, answer):
         self.chat_history.append({"role": "assistant", "content": answer})
@@ -166,4 +170,22 @@ class InternVLInputsPreprocessor(VLMInputsPreprocessor):
 
             inputs.update({"pixel_values": full_pixel_values})
         inputs.update(tokenizer(text, return_tensors="pt"))
+        return inputs
+
+    def align_inputs_with_cache(self, model: Any, inputs: dict, full_tokenized_chat: torch.Tensor, prefix_len: int):
+        if "transformers" in str(type(model)):
+            return inputs
+
+        if "pixel_values" in inputs:
+            num_image_token = int(
+                (model.config.vision_config.image_size // model.config.vision_config.patch_size) ** 2
+                * (model.config.downsample_ratio**2)
+            )
+            full_token_list = full_tokenized_chat[0].tolist()
+            cached_image = full_token_list[:prefix_len].count(self.def_image_token_id)
+            cached_patches = cached_image // num_image_token
+            inputs["pixel_values"] = inputs["pixel_values"][cached_patches:]
+            if inputs["pixel_values"].shape[0] == 0:
+                del inputs["pixel_values"]
+
         return inputs
