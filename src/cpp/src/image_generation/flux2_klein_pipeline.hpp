@@ -138,8 +138,9 @@ inline ov::Tensor flux2_unpack_latents_with_ids(const ov::Tensor& latents,
     for (size_t b = 0; b < batch_size; ++b) {
         for (size_t s = 0; s < seq_len; ++s) {
             // ids format: (T, H, W, L) — use H and W indices
-            const size_t h_idx = static_cast<size_t>(ids[s * 4 + 1]);
-            const size_t w_idx = static_cast<size_t>(ids[s * 4 + 2]);
+            const size_t id_offset = (b * seq_len + s) * 4;
+            const size_t h_idx = static_cast<size_t>(ids[id_offset + 1]);
+            const size_t w_idx = static_cast<size_t>(ids[id_offset + 2]);
 
             const size_t flat_idx = h_idx * width + w_idx;
 
@@ -712,7 +713,7 @@ public:
         }
 
         // Unpack latents: (B, seq_len, C) -> (B, C, H/2, W/2) using position IDs
-        ov::Tensor latent_ids = flux2_prepare_latent_ids(1, latent_height, latent_width);
+        ov::Tensor latent_ids = flux2_prepare_latent_ids(latents.get_shape()[0], latent_height, latent_width);
         ov::Tensor unpacked_latents = flux2_unpack_latents_with_ids(latents, latent_ids, latent_height, latent_width);
 
         // Denormalize with batch norm: latents = latents * bn_std + bn_mean
@@ -739,7 +740,7 @@ public:
         const size_t latent_height = m_custom_generation_config.height / vae_scale_factor / 2;
         const size_t latent_width = m_custom_generation_config.width / vae_scale_factor / 2;
 
-        ov::Tensor latent_ids = flux2_prepare_latent_ids(1, latent_height, latent_width);
+        ov::Tensor latent_ids = flux2_prepare_latent_ids(latent.get_shape()[0], latent_height, latent_width);
         ov::Tensor unpacked_latents = flux2_unpack_latents_with_ids(latent, latent_ids, latent_height, latent_width);
         apply_bn_denormalize(unpacked_latents);
         ov::Tensor final_latents = flux2_unpatchify_latents(unpacked_latents);
