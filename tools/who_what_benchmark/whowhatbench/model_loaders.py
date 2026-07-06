@@ -70,7 +70,7 @@ def _add_genai_draft_model_config(ov_config, device, **kwargs):
 
     draft_device = kwargs.get("draft_device") or device
     if device.upper() == "NPU" or draft_device.upper() == "NPU":
-         raise RuntimeError("Draft model is not supported when device is NPU")
+        raise RuntimeError("Draft model is not supported when device is NPU")
 
     draft_cb_config = kwargs.get("draft_cb_config")
     draft_model_load_kwargs = (
