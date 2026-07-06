@@ -117,7 +117,7 @@ inline ov::Tensor flux2_pack_latents(const ov::Tensor& latents) {
     return result;
 }
 
-// Unpack latents with position IDs: (B, seq_len, C) + (B, seq_len, 4) or (seq_len, 4) -> (B, C, H, W)
+// Unpack latents with position IDs: (B, seq_len, C) + (B, seq_len, 4) -> (B, C, H, W)
 inline ov::Tensor flux2_unpack_latents_with_ids(const ov::Tensor& latents,
                                                 const ov::Tensor& latent_ids,
                                                 size_t height,
@@ -135,16 +135,11 @@ inline ov::Tensor flux2_unpack_latents_with_ids(const ov::Tensor& latents,
     const float* src = latents.data<float>();
     const float* ids = latent_ids.data<float>();
 
-    // Handle both 2D (seq_len, 4) and 3D (batch, seq_len, 4) latent_ids
-    // IDs are identical across batches, so always use the first batch element
-    const size_t ids_rank = latent_ids.get_shape().size();
-    const size_t ids_offset = (ids_rank == 3) ? 0 : 0;  // first batch element starts at 0
-
     for (size_t b = 0; b < batch_size; ++b) {
         for (size_t s = 0; s < seq_len; ++s) {
             // ids format: (T, H, W, L) — use H and W indices
-            const size_t h_idx = static_cast<size_t>(ids[ids_offset + s * 4 + 1]);
-            const size_t w_idx = static_cast<size_t>(ids[ids_offset + s * 4 + 2]);
+            const size_t h_idx = static_cast<size_t>(ids[s * 4 + 1]);
+            const size_t w_idx = static_cast<size_t>(ids[s * 4 + 2]);
 
             const size_t flat_idx = h_idx * width + w_idx;
 
@@ -265,6 +260,10 @@ public:
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
 
+        if (data.contains("is_distilled")) {
+            read_json_param(data, "is_distilled", m_is_distilled);
+        }
+
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
@@ -313,6 +312,10 @@ public:
 
         nlohmann::json data = nlohmann::json::parse(file);
         using utils::read_json_param;
+
+        if (data.contains("is_distilled")) {
+            read_json_param(data, "is_distilled", m_is_distilled);
+        }
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
@@ -375,6 +378,7 @@ public:
         m_pipeline_type = pipeline_type;
         m_bn_mean = pipe.m_bn_mean;
         m_bn_std = pipe.m_bn_std;
+        m_is_distilled = pipe.m_is_distilled;
         initialize_generation_config("Flux2KleinPipeline");
     }
 
@@ -414,13 +418,14 @@ public:
         pipeline->m_root_dir = m_root_dir;
         pipeline->m_bn_mean = m_bn_mean;
         pipeline->m_bn_std = m_bn_std;
+        pipeline->m_is_distilled = m_is_distilled;
         pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
         pipeline->set_generation_config(m_generation_config);
         return pipeline;
     }
 
     bool do_classifier_free_guidance(const ImageGenerationConfig& generation_config) const {
-        return generation_config.guidance_scale > 1.0f;
+        return generation_config.guidance_scale > 1.0f && !m_is_distilled;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -565,11 +570,26 @@ public:
         m_custom_generation_config.update_generation_config(properties);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        const size_t multiple_of = vae_scale_factor * 2;
 
-        if (m_custom_generation_config.height < 0)
+        // Match diffusers behavior: if height/width not explicitly set and initial_image
+        // is provided, infer output dimensions from the input image (rounded to multiple_of)
+        bool height_set = properties.find(ov::genai::height.name()) != properties.end();
+        bool width_set = properties.find(ov::genai::width.name()) != properties.end();
+
+        if (initial_image && !height_set) {
+            size_t img_h = initial_image.get_shape()[1];
+            m_custom_generation_config.height = static_cast<int>((img_h / multiple_of) * multiple_of);
+        } else if (m_custom_generation_config.height < 0) {
             m_custom_generation_config.height = m_transformer->get_config().m_default_sample_size * vae_scale_factor;
-        if (m_custom_generation_config.width < 0)
+        }
+
+        if (initial_image && !width_set) {
+            size_t img_w = initial_image.get_shape()[2];
+            m_custom_generation_config.width = static_cast<int>((img_w / multiple_of) * multiple_of);
+        } else if (m_custom_generation_config.width < 0) {
             m_custom_generation_config.width = m_transformer->get_config().m_default_sample_size * vae_scale_factor;
+        }
 
         check_inputs(m_custom_generation_config, initial_image);
 
@@ -777,9 +797,14 @@ protected:
         OPENVINO_ASSERT(generation_config.negative_prompt == std::nullopt, "Negative prompt is not used by Flux2KleinPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by Flux2KleinPipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by Flux2KleinPipeline");
-        OPENVINO_ASSERT(generation_config.strength == 1.0f, "Strength must be 1.0f for Flux2KleinPipeline");
 
-        if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            // Flux2 Klein does not support variable strength:
+            // - Text2Image: always denoises from pure noise, requires all steps
+            // - Image2Image: uses reference conditioning (image latents as extra tokens),
+            //   not noise blending, so partial denoising is not applicable
+            // Aligned with diffusers FluxPipeline which does not accept 'strength':
+        } else {
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
         }
     }
@@ -1005,6 +1030,9 @@ private:
     ov::Tensor m_positive_text_ids;
     ov::Tensor m_negative_prompt_embeds;
     ov::Tensor m_negative_text_ids;
+
+    // Model configuration
+    bool m_is_distilled = false;
 
     // Batch norm parameters for VAE latent normalization
     std::vector<float> m_bn_mean;
