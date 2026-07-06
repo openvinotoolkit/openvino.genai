@@ -14,6 +14,12 @@ namespace ov::genai {
 /// The merged vision model is loaded and used by InputsEmbedderQwen3Omni.
 class VisionEncoderQwen3Omni : public VisionEncoderQwen3VL {
 public:
+    // Patch preprocessing offload mode, selected by the VISION_PREPROCESS env var:
+    //   unset / "GPU"  -> GpuFull      : resize + normalize + reshape/transpose/flatten on GPU (Stage 2) [default]
+    //   "GPU_REARRANGE"-> GpuRearrange : CPU resize+normalize, GPU reshape/transpose/flatten (Stage 1, bit-identical)
+    //   "CPP"          -> Cpu          : full host CPU path (reference)
+    enum class PatchPreprocMode { Cpu, GpuRearrange, GpuFull };
+
     explicit VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,
                                     const std::string& device,
                                     const ov::AnyMap properties);
@@ -34,6 +40,9 @@ private:
                                ImageSize& out_rsz_size,
                                size_t frame_num,
                                size_t frame_id);
+
+    PatchPreprocMode m_preproc_mode = PatchPreprocMode::GpuFull;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_patch_rearrange;
 };
 
 /// @brief InputsEmbedder for Qwen3-Omni. Extends Qwen3-VL with audio encoding support.
@@ -134,6 +143,9 @@ private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_merged_vision;
     // Cached rotary embedding dimension from merged vision model (avoids queue lock in get_rotary_pos_emb)
     size_t m_rotary_dim = 0;
+    // True when the GPU SDPAToVLSDPA pass fired and the vision model now expects a packed
+    // "cu_seq_lens" input instead of the dense "attention_mask".
+    bool m_with_cu_seqlens_input = false;
 
     /// @brief Replace audio token positions in input_embeds with audio features.
     void merge_audio_embeddings(ov::Tensor& input_embeds, const std::vector<int64_t>& input_ids);
