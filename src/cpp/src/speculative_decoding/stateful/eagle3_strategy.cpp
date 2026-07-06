@@ -1125,9 +1125,6 @@ void StatefulEagle3LLMPipeline::validate_construction_params(const ModelDesc& ta
 
     OPENVINO_ASSERT(draft_model_desc.properties.find("hidden_layers_list") != draft_model_desc.properties.end(),
                     "hidden_layers_list must be present in draft model properties");
-
-    OPENVINO_ASSERT(target_model_desc.model, "Target model must not be null");
-    OPENVINO_ASSERT(draft_model_desc.model, "Draft model must not be null");
 }
 
 void StatefulEagle3LLMPipeline::apply_graph_transforms(const ModelDesc& target_model_desc,
@@ -1140,6 +1137,8 @@ void StatefulEagle3LLMPipeline::apply_graph_transforms(const ModelDesc& target_m
 
     auto target_model = target_model_desc.model;
     auto draft_model = draft_model_desc.model;
+    OPENVINO_ASSERT(target_model, "Target model must not be null");
+    OPENVINO_ASSERT(draft_model, "Draft model must not be null");
 
     utils::eagle3::share_vocabulary(target_model, draft_model);
 
