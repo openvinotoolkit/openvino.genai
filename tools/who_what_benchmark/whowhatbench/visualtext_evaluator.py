@@ -42,12 +42,16 @@ class VisualTextEvaluator(TextEvaluator):
         relevance_weight=None,
         task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
         frames_num: int | None = None,
+        num_assistant_tokens: int = 0,
+        assistant_confidence_threshold: float = 0.0,
     ) -> None:
         self.processor = processor
         self.is_image_input = (task_type == "visual-text")
         self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
+        self.num_assistant_tokens = num_assistant_tokens
+        self.assistant_confidence_threshold = assistant_confidence_threshold
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -123,6 +127,8 @@ class VisualTextEvaluator(TextEvaluator):
             crop_question,
             pruning_ratio,
             relevance_weight,
+            _num_assistant_tokens=0,
+            _assistant_confidence_threshold=0.0,
         ):
             if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
@@ -201,6 +207,8 @@ class VisualTextEvaluator(TextEvaluator):
                     self._crop_question,
                     self.pruning_ratio,
                     self.relevance_weight,
+                    self.num_assistant_tokens,
+                    self.assistant_confidence_threshold,
                 )
             )
 

@@ -51,6 +51,8 @@ def default_gen_answer(
     pruning_ratio,
     relevance_weight,
     kv_axes_pos,
+    _num_assistant_tokens=0,
+    _assistant_confidence_threshold=0.0,
     crop_question=False,
     full_chat=False,
 ):
@@ -184,6 +186,8 @@ class ChatVisualTextEvaluator(TextEvaluator):
         relevance_weight=None,
         crop_question=True,
         device="CPU",
+        num_assistant_tokens: int = 0,
+        assistant_confidence_threshold: float = 0.0,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
@@ -198,6 +202,8 @@ class ChatVisualTextEvaluator(TextEvaluator):
         self.processor = processor
         self._crop_question = crop_question
         self._full_chat = device == "NPU"
+        self.num_assistant_tokens = num_assistant_tokens
+        self.assistant_confidence_threshold = assistant_confidence_threshold
 
         self.gt_dir = Path(gt_data or "").parent
         if base_model:
@@ -340,6 +346,8 @@ class ChatVisualTextEvaluator(TextEvaluator):
                 self.max_new_tokens,
                 self.pruning_ratio,
                 self.relevance_weight,
+                self.num_assistant_tokens,
+                self.assistant_confidence_threshold,
                 kv_axes_pos,
                 self._crop_question,
                 _full_chat,

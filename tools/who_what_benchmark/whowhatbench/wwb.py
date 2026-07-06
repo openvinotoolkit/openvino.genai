@@ -783,7 +783,18 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(
-    model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight
+    model,
+    prompt,
+    image,
+    video,
+    processor,
+    tokenizer,
+    max_new_tokens,
+    crop_question,
+    pruning_ratio,
+    relevance_weight,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
@@ -794,6 +805,8 @@ def genai_gen_visual_text(
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
+    kwargs["num_assistant_tokens"] = num_assistant_tokens
+    kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
 
     out = model.generate(
         prompt,
@@ -812,6 +825,8 @@ def genai_gen_visual_text_chat(
     max_new_tokens: int,
     pruning_ratio: Optional[float],
     relevance_weight: Optional[float],
+    num_assistant_tokens: int = 0,
+    assistant_confidence_threshold: float = 0.0,
     _kv_axes_pos=None,
     _crop_question=None,
     _full_chat=None,
@@ -821,6 +836,8 @@ def genai_gen_visual_text_chat(
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
+    kwargs["num_assistant_tokens"] = num_assistant_tokens
+    kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
 
     import openvino_genai
 
@@ -967,6 +984,16 @@ def create_evaluator(base_model, args):
                 frames_num=args.video_frames_num,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
+                num_assistant_tokens=(
+                    int(args.num_assistant_tokens)
+                    if args.num_assistant_tokens is not None
+                    else 0
+                ),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None
+                    else 0.0
+                ),
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -1077,6 +1104,16 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
+                num_assistant_tokens=(
+                    int(args.num_assistant_tokens)
+                    if args.num_assistant_tokens is not None
+                    else 0
+                ),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None
+                    else 0.0
+                ),
                 crop_question=crop_question,
                 device=args.device,
             )
@@ -1262,16 +1299,6 @@ def main():
         taylorseer_config.disable_cache_after_step = ts_cfg.get("disable_cache_after_step", -2)
         logger.info(f"TaylorSeer config: {taylorseer_config}")
 
-    def set_generation_config_for_draft_model(model):
-        if not hasattr(model, "get_generation_config") or not hasattr(model, "set_generation_config"):
-            raise TypeError(
-                "--draft-model requires a GenAI model/pipeline with get_generation_config()/set_generation_config()."
-            )
-        generation_config = model.get_generation_config()
-        if args.num_assistant_tokens is not None:
-            generation_config.num_assistant_tokens = int(args.num_assistant_tokens)
-        model.set_generation_config(generation_config)
-
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
@@ -1285,9 +1312,6 @@ def main():
             args.genai,
             **kwargs,
         )
-
-        if args.draft_model is not None and base_model is not None:
-            set_generation_config_for_draft_model(base_model)
 
         # Set TaylorSeer config via generation config if applicable
         if taylorseer_config is not None and base_model is not None:
@@ -1333,9 +1357,6 @@ def main():
                 generation_config = target_model.get_generation_config()
                 generation_config.taylorseer_config = taylorseer_config
                 target_model.set_generation_config(generation_config)
-
-            if args.draft_model is not None and target_model is not None:
-                set_generation_config_for_draft_model(target_model)
 
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
