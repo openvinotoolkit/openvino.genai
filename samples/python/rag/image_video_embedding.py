@@ -107,7 +107,7 @@ def main():
         parser.error("At least one input must be provided via --images or --videos")
 
     pipeline = openvino_genai.EmbeddingPipeline(args.model_dir, args.device)
-query_embedding = np.asarray(pipeline.embed(args.query).embeddings.data, dtype=np.float32)
+    query_embedding = np.asarray(pipeline.embed(args.query).embeddings.data, dtype=np.float32)
 
 
     results: list[tuple[float, str, str]] = []
