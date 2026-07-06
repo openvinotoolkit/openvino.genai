@@ -61,7 +61,7 @@ public:
         return rand_tensor;
     }
 
-    ov::Tensor mode() const {
+    ov::Tensor mean() const {
         ov::Tensor result(m_mean.get_element_type(), m_mean.get_shape());
         m_mean.copy_to(result);
         return result;
@@ -331,7 +331,7 @@ ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
     if (output_name == "latent_sample") {
         latent = output;
     } else if (output_name == "latent_parameters") {
-        latent = DiagonalGaussianDistribution(output).mode();
+        latent = DiagonalGaussianDistribution(output).mean();
     } else {
         OPENVINO_THROW("Unexpected output name for AutoencoderKL encoder '", output_name, "'");
     }

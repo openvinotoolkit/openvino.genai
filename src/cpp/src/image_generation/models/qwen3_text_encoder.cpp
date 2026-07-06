@@ -57,7 +57,7 @@ std::shared_ptr<Qwen3TextEncoder> Qwen3TextEncoder::clone() {
     return cloned;
 }
 
-Qwen3TextEncoder& Qwen3TextEncoder::reshape(int batch_size, int max_sequence_length) {
+Qwen3TextEncoder& Qwen3TextEncoder::reshape(const int batch_size, const int max_sequence_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
     OPENVINO_ASSERT(batch_size == 1,
                     "Qwen3TextEncoder only supports batch_size == 1. "
@@ -93,7 +93,7 @@ Qwen3TextEncoder& Qwen3TextEncoder::compile(const std::string& device, const ov:
     return *this;
 }
 
-ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, int max_sequence_length) {
+ov::Tensor Qwen3TextEncoder::infer(const std::string& prompt, const int& max_sequence_length) {
     OPENVINO_ASSERT(m_request, "Qwen3 text encoder model must be compiled first. Cannot infer non-compiled model");
 
     // Apply chat template as diffusers does:

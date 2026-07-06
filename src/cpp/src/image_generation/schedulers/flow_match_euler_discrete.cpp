@@ -337,7 +337,7 @@ double FlowMatchEulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
     return static_cast<double>(image_seq_len) * m + b;
 }
 
-double FlowMatchEulerDiscreteScheduler::compute_empirical_mu(size_t image_seq_len, size_t num_inference_steps) {
+double FlowMatchEulerDiscreteScheduler::compute_empirical_mu(const size_t image_seq_len, const size_t num_inference_steps) {
     constexpr double a1 = 8.73809524e-05, b1 = 1.89833333;
     constexpr double a2 = 0.00016927, b2 = 0.45666666;
 

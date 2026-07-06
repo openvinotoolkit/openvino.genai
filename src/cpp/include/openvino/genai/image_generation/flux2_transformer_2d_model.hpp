@@ -22,7 +22,7 @@ public:
     struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 128;
         bool guidance_embeds = true;
-        size_t m_default_sample_size = 128;
+        size_t default_sample_size = 128;
 
         explicit Config(const std::filesystem::path& config_path);
     };

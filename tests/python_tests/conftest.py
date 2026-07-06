@@ -91,7 +91,10 @@ def _install_package(package: str) -> None:
     logger.info(f"Installing: {package}")
     subprocess.run(  # nosec B603
         ["pip", "install", "--no-deps", package],
-        check=True, encoding="utf-8", text=True, capture_output=True,
+        check=True,
+        encoding="utf-8",
+        text=True,
+        capture_output=True,
     )
 
 

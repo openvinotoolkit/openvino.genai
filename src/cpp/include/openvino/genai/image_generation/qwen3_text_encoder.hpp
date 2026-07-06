@@ -47,7 +47,7 @@ public:
 
     std::shared_ptr<Qwen3TextEncoder> clone();
 
-    Qwen3TextEncoder& reshape(int batch_size, int max_sequence_length);
+    Qwen3TextEncoder& reshape(const int batch_size, const int max_sequence_length);
 
     Qwen3TextEncoder& compile(const std::string& device, const ov::AnyMap& properties = {});
 
@@ -60,7 +60,7 @@ public:
 
     // Encode prompt using Qwen3: returns concatenated hidden states from selected layers
     // Output shape: (batch_size, seq_len, num_layers * hidden_size)
-    ov::Tensor infer(const std::string& prompt, int max_sequence_length);
+    ov::Tensor infer(const std::string& prompt, const int& max_sequence_length);
 
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 

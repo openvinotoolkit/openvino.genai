@@ -66,7 +66,7 @@ private:
     double sigma_to_t(double sigma);
     size_t _index_for_timestep(float timestep);
     double calculate_shift(size_t image_seq_len);
-    double compute_empirical_mu(size_t image_seq_len, size_t num_inference_steps);
+    double compute_empirical_mu(const size_t image_seq_len, const size_t num_inference_steps);
 };
 
 } // namespace genai

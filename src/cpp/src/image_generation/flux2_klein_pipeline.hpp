@@ -581,14 +581,14 @@ public:
             size_t img_h = initial_image.get_shape()[1];
             m_custom_generation_config.height = static_cast<int>((img_h / multiple_of) * multiple_of);
         } else if (m_custom_generation_config.height < 0) {
-            m_custom_generation_config.height = m_transformer->get_config().m_default_sample_size * vae_scale_factor;
+            m_custom_generation_config.height = m_transformer->get_config().default_sample_size * vae_scale_factor;
         }
 
         if (initial_image && !width_set) {
             size_t img_w = initial_image.get_shape()[2];
             m_custom_generation_config.width = static_cast<int>((img_w / multiple_of) * multiple_of);
         } else if (m_custom_generation_config.width < 0) {
-            m_custom_generation_config.width = m_transformer->get_config().m_default_sample_size * vae_scale_factor;
+            m_custom_generation_config.width = m_transformer->get_config().default_sample_size * vae_scale_factor;
         }
 
         check_inputs(m_custom_generation_config, initial_image);
@@ -765,8 +765,8 @@ protected:
 
         m_generation_config = ImageGenerationConfig();
 
-        m_generation_config.height = transformer_config.m_default_sample_size * vae_scale_factor;
-        m_generation_config.width = transformer_config.m_default_sample_size * vae_scale_factor;
+        m_generation_config.height = transformer_config.default_sample_size * vae_scale_factor;
+        m_generation_config.width = transformer_config.default_sample_size * vae_scale_factor;
 
         if (class_name == "Flux2KleinPipeline") {
             m_generation_config.guidance_scale = 4.0f;
