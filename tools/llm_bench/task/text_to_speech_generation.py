@@ -120,8 +120,7 @@ def run_text_to_speech_generation_optimum(
     if is_kokoro_model:
         tok_encode_start = time.perf_counter()
         input_token_size = len(input_text.split())
-        for _ in range(args["batch_size"]):
-            kokoro_preprocessed_inputs.append(_kokoro_preprocess_once(model, input_text, args, use_genai=False))
+        kokoro_preprocessed_inputs.append(_kokoro_preprocess_once(model, input_text, args, use_genai=False))
         tok_encode_end = time.perf_counter()
         tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     else:
@@ -232,8 +231,7 @@ def run_text_to_speech_generation_genai(
     perf_metrics = None
     tokenization_time = None
     if is_kokoro_model:
-        for _ in range(args["batch_size"]):
-            speeches.append(_kokoro_generate_once(model, input_text, args, use_genai=True))
+        speeches.append(_kokoro_generate_once(model, input_text, args, use_genai=True))
         out_size = sum(speech.size for speech in speeches)
     else:
         additional_args = (
