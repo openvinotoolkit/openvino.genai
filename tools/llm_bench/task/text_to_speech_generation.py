@@ -303,6 +303,9 @@ def run_text_to_speech_generation_genai(
 def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     mem_consumption.update_marker("model")
     model, processor, vocoder, pretrain_time, use_genai = FW_UTILS[framework].create_text_2_speech_model(model_path, device, mem_consumption, **args)
+    if args.get("is_kokoro_model", False) and args.get("batch_size", 1) != 1:
+        log.warning("Only batch size 1 available for benchmarking with kokoro model")
+        args["batch_size"] = 1
     # For Kokoro with GenAI, the pipeline requires speaker_embedding as an ov.Tensor.
     # Auto-resolve from the model's voices/ directory when not provided via CLI.
     if args.get("is_kokoro_model") and use_genai and args.get("speaker_embeddings") is None:
