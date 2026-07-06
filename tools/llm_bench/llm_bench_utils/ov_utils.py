@@ -12,12 +12,13 @@ import copy
 import types
 from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
-from llm_bench_utils.model_utils import get_version_in_format_to_pars, resolve_kokoro_speaker_embedding
+from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import UseCaseSpeech2Text, UseCaseTextGen, UseCaseTextReranker, PA_ATTENTION_BACKEND
 from llm_bench_utils.tts_utils import (
     is_kokoro_model_id,
     normalize_kokoro_lang_code,
     DEFAULT_KOKORO_VOICE,
+    resolve_kokoro_speaker_embedding,
 )
 from transformers import pipeline
 import queue

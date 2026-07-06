@@ -17,6 +17,7 @@ from llm_bench_utils.tts_utils import (
     kokoro_generate_once,
     kokoro_preprocess_once,
     kokoro_generate_from_preprocessed,
+    resolve_kokoro_speaker_embedding,
 )
 import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
@@ -231,7 +232,7 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
     # For Kokoro with GenAI, the pipeline requires speaker_embedding as an ov.Tensor.
     # Auto-resolve from the model's voices/ directory when not provided via CLI.
     if args.get("is_kokoro_model") and use_genai and args.get("speaker_embeddings") is None:
-        args["speaker_embeddings"] = model_utils.resolve_kokoro_speaker_embedding(
+        args["speaker_embeddings"] = resolve_kokoro_speaker_embedding(
             model_path=model_path,
             speech_voice=args.get("speech_voice", ""),
             speaker_embeddings=args.get("speaker_embeddings"),

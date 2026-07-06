@@ -59,6 +59,34 @@ def normalize_kokoro_lang_code(language):
     )
 
 
+def resolve_kokoro_speaker_embedding(model_path, speech_voice="", speaker_embeddings=None, strict=False):
+    if speaker_embeddings is not None:
+        return speaker_embeddings
+
+    selected_voice = speech_voice.strip() if isinstance(speech_voice, str) else ""
+    if not selected_voice:
+        selected_voice = DEFAULT_KOKORO_VOICE
+
+    if model_path is None:
+        if strict:
+            raise RuntimeError("Kokoro model path is required to resolve speaker embedding")
+        return None
+
+    voice_file = Path(model_path) / "voices" / f"{selected_voice}.bin"
+    if voice_file.exists():
+        from llm_bench_utils.model_utils import get_speaker_embeddings
+
+        return get_speaker_embeddings(str(voice_file), expected_shape=KOKORO_SPEAKER_EMB_SHAPE)
+
+    if strict:
+        raise RuntimeError(
+            f"Kokoro voice file not found: {voice_file}. "
+            f"Pass --speaker_embeddings directly or ensure '{selected_voice}' exists under {Path(model_path) / 'voices'}/."
+        )
+
+    return None
+
+
 def get_tts_sample_rate(args):
     return KOKORO_SAMPLE_RATE if args.get("is_kokoro_model", False) else DEFAULT_TTS_SAMPLE_RATE
 
