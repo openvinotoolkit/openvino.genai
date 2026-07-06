@@ -149,9 +149,8 @@ class Qwen3_5VLInputsPreprocessor(VLMInputsPreprocessor):
 
 
 class Qwen3OmniInputsPreprocessor(VLMInputsPreprocessor):
-    def __init__(self, chat_mode: bool = False):
-        super().__init__(chat_mode)
-
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
+        super().__init__(chat_mode, model=model)
     def update_chat_history_with_answer(self, answer):
         self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
 
