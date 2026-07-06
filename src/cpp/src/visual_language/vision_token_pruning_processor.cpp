@@ -611,6 +611,8 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
                 (token_id == image_pad_token_id) || (video_pad_token_id >= 0 && token_id == video_pad_token_id);
             if (inside_vision && is_vision_pad) {
                 OPENVINO_ASSERT(image_idx < region_count, "Vision region index out of bounds");
+                OPENVINO_ASSERT(visual_idx < keep_flags_out[image_idx].size(),
+                                "Visual token index out of bounds in update_position_ids_3d");
                 if (keep_flags_out[image_idx][visual_idx]) {
                     const auto& region = regions[image_idx];
                     size_t local_idx = visual_idx % region.spatial_area;
@@ -768,6 +770,10 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
             const bool is_vision_pad_1d =
                 (token_id == image_pad_token_id) || (video_pad_token_id >= 0 && token_id == video_pad_token_id);
             if (inside_vision && is_vision_pad_1d) {
+                OPENVINO_ASSERT(image_idx < keep_flags_out.size(),
+                                "Vision region index out of bounds in update_position_ids_1d");
+                OPENVINO_ASSERT(visual_idx < keep_flags_out[image_idx].size(),
+                                "Visual token index out of bounds in update_position_ids_1d");
                 if (keep_flags_out[image_idx][visual_idx]) {
                     pos_data[out_offset + write_idx] = next_pos;
                     ++write_idx;
