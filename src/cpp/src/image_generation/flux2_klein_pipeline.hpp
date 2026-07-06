@@ -237,7 +237,11 @@ public:
 
         const int text_encoder_batch = do_classifier_free_guidance(guidance_scale) ? 2 : 1;
         m_text_encoder->reshape(text_encoder_batch, m_generation_config.max_sequence_length);
-        m_transformer->reshape(num_images_per_prompt, height, width, m_generation_config.max_sequence_length);
+
+        // For img2img, hidden_states/img_ids seq_len is doubled (noise latents + reference latents)
+        const int transformer_height = (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) ? height * 2 : height;
+        m_transformer->reshape(num_images_per_prompt, transformer_height, width, m_generation_config.max_sequence_length);
+
         m_vae->reshape(num_images_per_prompt, height, width);
     }
 
