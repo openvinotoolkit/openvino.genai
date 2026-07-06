@@ -30,6 +30,14 @@ enum class SequenceGroupType {
 
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
+
+struct TreeMetaData {
+    std::vector<std::vector<uint8_t>> tree_mask;
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    std::vector<int64_t> tree_position_ids;
+    std::vector<size_t> validated_indices;
+};
+
 class SequenceGroup;
 
 class Sequence {
@@ -56,12 +64,13 @@ class Sequence {
     size_t m_hidden_size;
     std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
+    TreeMetaData m_tree_metadata;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
     static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
 
-    size_t _make_hash(size_t content_length);
+    size_t _make_hash(size_t content_length, size_t block_size);
 
     static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
 
@@ -80,7 +89,8 @@ class Sequence {
         m_prefix_hashes(seq.m_prefix_hashes),
         m_generated_ids_embeds(seq.m_generated_ids_embeds),
         m_position_ids_list(seq.m_position_ids_list),
-        m_rope_delta(seq.m_rope_delta)
+        m_rope_delta(seq.m_rope_delta),
+        m_tree_metadata(seq.m_tree_metadata)
          {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
@@ -152,18 +162,33 @@ public:
         return m_hidden_state;
     }
 
+    void set_tree_metadata(TreeMetaData metadata) {
+        m_tree_metadata = std::move(metadata);
+    }
+
+    const TreeMetaData& get_tree_metadata() const {
+        return m_tree_metadata;
+    }
+
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(n >= 0, "Number of tokens to remove must be greater than or equal to 0");
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
-            if (m_type == SequenceGroupType::EMBEDDINGS) {
-                m_generated_ids_embeds.pop_back();
-                m_position_ids_list.pop_back();
-            }
+        }
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            const size_t tokens_to_remove = static_cast<size_t>(n);
+            const size_t embeds_to_remove = tokens_to_remove;
+            const size_t position_ids_to_remove = tokens_to_remove;
+            OPENVINO_ASSERT(embeds_to_remove <= m_generated_ids_embeds.size(), "Cannot remove more embeds than has been generated in embeddings");
+            OPENVINO_ASSERT(position_ids_to_remove <= m_position_ids_list.size(), "Cannot remove more position ids than has been generated in position_ids");
+
+            truncate_generated_ids_embeds(embeds_to_remove);
+            truncate_position_ids(position_ids_to_remove);
         }
     }
 
@@ -243,6 +268,21 @@ public:
 
         }
     }
+    void truncate_generated_ids_embeds(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
+        // remove the last num_tokens embeddings
+        if (num_tokens > 0)
+            m_generated_ids_embeds.resize(m_generated_ids_embeds.size() - num_tokens);
+    }
+
+    void truncate_position_ids(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
+        // remove the last num_tokens position ids
+        if (num_tokens > 0)
+            m_position_ids_list.resize(m_position_ids_list.size() - num_tokens);
+    }
 
     void append_position_ids(const ov::Tensor& position_ids) {
         size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
@@ -284,7 +324,8 @@ public:
     // Each KV block can be uniquely identified by
     // the tokens within the block and the tokens in the prefix before the block.
     // hash(prefix tokens + block tokens) <--> KV Block
-    size_t get_hash(size_t content_length = 0);
+    size_t get_hash(size_t content_length, size_t block_size);
+    size_t get_hash(size_t block_size);
 
     static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
 
@@ -292,7 +333,7 @@ public:
         ov::Coordinate end;
         if (position_ids_elem_shape.size() == 3) {
             begin = ov::Coordinate{0, 0, idx};
-            end = ov::Coordinate{3, 1, idx + 1};
+            end = ov::Coordinate{position_ids_elem_shape[0], 1, idx + 1};
         }
         else if (position_ids_elem_shape.size() == 2) {
             if (need_batch_dimention) {
@@ -319,7 +360,6 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     uint64_t m_request_id;
     std::vector<Sequence::Ptr> m_sequences;
     ov::genai::GenerationConfig m_sampling_params;
-    std::size_t m_block_size;
     TokenIds m_prompt_ids;
     std::vector<std::vector<float>> m_input_embeds;
     std::optional<std::vector<int64_t>> m_token_type_ids;
@@ -351,10 +391,9 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
-    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
+    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
-          m_block_size(block_size),
           m_sequence_group_type(SequenceGroupType::TOKENS),
           m_generation_stream(GenerationStream::create()) { }
 
@@ -372,20 +411,19 @@ public:
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, block_size, std::nullopt, std::nullopt) {
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params)
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt, std::nullopt) {
     }
 
     SequenceGroup(uint64_t request_id,
                   const ov::Tensor& input_ids,
                   const ov::genai::GenerationConfig& sampling_params,
-                  std::size_t block_size,
                   const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
                   const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs = std::nullopt,
                   const std::optional<ov::Tensor>& position_ids = std::nullopt,
                   const std::optional<int64_t>& rope_delta = std::nullopt,
                   const std::optional<ov::Tensor>& prompt_ids = std::nullopt)
-        : SequenceGroup(request_id, sampling_params, block_size) {
+        : SequenceGroup(request_id, sampling_params) {
         size_t prompt_len;
         size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
@@ -761,22 +799,6 @@ public:
         return (get_num_processed_tokens() - get_num_evicted_tokens());
     }
 
-    /**
-     * @return The number of logical KV cache blocks required to host all the tokens in this sequence group, taking into account previous token evictions.
-     */
-    size_t get_num_logical_blocks() const {
-        return (get_context_len() - get_num_evicted_tokens() + m_block_size - 1) / m_block_size;
-    }
-
-    // requires number of physical blocks for next generation
-    size_t get_num_blocks() const {
-        return get_num_logical_blocks();
-    }
-
-    size_t get_block_size() const {
-        return m_block_size;
-    }
-
     Sequence::Ptr fork_sequence(Sequence::CPtr sequence) {
         auto forked_sequence = Sequence::fork(sequence, m_next_sequence_id++);
         m_sequences.emplace_back(forked_sequence);
@@ -876,7 +898,7 @@ public:
             if (has_finished()) {
                 push_outputs();
             }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {

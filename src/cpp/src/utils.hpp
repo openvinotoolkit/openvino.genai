@@ -17,7 +17,6 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/generation_config.hpp"
-#include "visual_language/processor_config.hpp"
 
 #include "openvino/genai/streamer_base.hpp"
 
@@ -27,29 +26,6 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
-struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
-
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
-              const std::string& device = {},
-              const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
-        device(device),
-        properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-    
-    ModelDesc() = default;
-};
 }  // namespace genai
 }  // namespace ov
 
@@ -110,6 +86,9 @@ const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 const std::string EXTENSIONS_ARG_NAME = "extensions";
+const std::string IMAGES_BATCHES_ARG_NAME = "images_batches";
+const std::string VIDEOS_BATCHES_ARG_NAME = "videos_batches";
+const std::string VIDEOS_METADATA_BATCHES_ARG_NAME = "videos_metadata_batches";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -120,15 +99,6 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
-
-ProcessorConfig from_any_map(
-    const ov::AnyMap& config_map,
-    const ProcessorConfig& initial
-);
-
-ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
-
-ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
@@ -141,6 +111,26 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 ov::Core& singleton_core();
 
 std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
+
+/// @brief Key used in the main properties map to carry per-model property sub-maps.
+/// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
+extern const std::string PER_MODEL_PROPERTIES;
+
+/// @brief Resolve properties for @p model_role by merging three layers (priority low to high):
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
+///           and DEVICE_PROPERTIES if device is specified)
+///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
+///        3. PER_MODEL_PROPERTIES[model_role]
+///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins
+///        over globals.
+/// @param properties The main properties map. Not modified.
+/// @param model_role Sub-model role (e.g. "vision_embeddings").
+/// @param device Target device for the compile site. When empty,
+///        DEVICE_PROPERTIES is forwarded as-is (used at read_model sites
+///        which are not bound to a specific device).
+/// @return A new ov::AnyMap with the merged result. The input map is left
+///         untouched so callers may continue using the meta keys.
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
@@ -327,6 +317,10 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
 
+/// @brief Throws if `properties[MODEL_PROPERTIES]` contains a role name
+/// not in the known VLM roles. No-op if the key is absent.
+void validate_vlm_model_properties(const ov::AnyMap& properties);
+
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 
 SchedulerConfig get_latency_oriented_scheduler_config();
@@ -366,7 +360,7 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
 
-size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers);
+size_t get_available_gpu_memory(const std::string& device, size_t num_cache_tensors);
 
 /**
  * @brief Extracts and removes blob import/export related properties from the provided map.

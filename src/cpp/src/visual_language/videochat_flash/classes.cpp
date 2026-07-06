@@ -695,7 +695,8 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
     input_shapes["rotary_pos_emb"] = pos_emb_shape;  // it's a fixed shape: { 1, 1025, 1408 }
     model->reshape(input_shapes);
 
-    auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(properties, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -722,7 +723,9 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     initialize_vision_encoder_queue(model, device, properties);
 
     auto compiled_model_vision =
-        utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
+        utils::singleton_core().compile_model(
+            model_dir / "openvino_vision_projection_model.xml", device,
+            utils::get_model_properties(properties, "vision_projection", device));
     initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
@@ -742,7 +745,9 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
 
     const auto& [vision_projection_model, vision_projection_weights] =
         utils::get_model_weights_pair(models_map, "vision_projection");
-    auto compiled_model = utils::singleton_core().compile_model(vision_projection_model, vision_projection_weights, device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(
+        vision_projection_model, vision_projection_weights, device,
+        utils::get_model_properties(properties, "vision_projection", device));
     initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();
@@ -833,10 +838,17 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
 
 
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChatFlashQwen::encode_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChatFlashQwen::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
     const auto vision_encoder = std::static_pointer_cast<VisionEncoderVideoChatFlashQwen>(m_vision_encoder);
     std::vector<EncodedVideo> embeds;
     for (const ov::Tensor& video : videos) {
+        // TODO Override InputsEmbedder::sample_video_if_needed and use VideoMetadata for proper video sampling
         embeds.emplace_back(vision_encoder->encode_video(video));
     }
     return embeds;

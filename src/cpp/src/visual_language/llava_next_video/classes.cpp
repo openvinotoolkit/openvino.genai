@@ -251,7 +251,8 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
         // Create integrated preprocessing + vision encoder model for image/video processing
         auto vision_encoder_model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
         auto model = patch_preprocess_into_vision_encoder_model(vision_encoder_model, m_processor_config);
-        auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+        auto compiled_model = utils::singleton_core().compile_model(
+            model, device, utils::get_model_properties(properties, "vision_embeddings", device));
         // Overwrite vision encoder queue with integrated model
         m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -260,13 +261,17 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
             });
     }
 
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_multi_modal_projector_model.xml", device, {});
+    auto compiled_model = utils::singleton_core().compile_model(
+        model_dir / "openvino_multi_modal_projector_model.xml", device,
+        utils::get_model_properties(properties, "multi_modal_projector", device));
     m_ireq_queue_multi_modal_projector = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
             return compiled_model.create_infer_request();
         });
-    compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_resampler_model.xml", device, {});
+    compiled_model = utils::singleton_core().compile_model(
+        model_dir / "openvino_vision_resampler_model.xml", device,
+        utils::get_model_properties(properties, "resampler", device));
     m_ireq_queue_vision_resampler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
         [&compiled_model]() -> ov::InferRequest {
@@ -287,7 +292,8 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
         const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
         auto vision_encoder_model_original = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
         auto model = patch_preprocess_into_vision_encoder_model(vision_encoder_model_original, m_processor_config);
-        auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
+        auto compiled_model = utils::singleton_core().compile_model(
+            model, device, utils::get_model_properties(device_config, "vision_embeddings", device));
         // Overwrite vision encoder queue with integrated model
         m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -301,7 +307,9 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
     const auto& mm_projector_model = utils::get_model_weights_pair(models_map, "multi_modal_projector").first;
     const auto& mm_projector_weights = utils::get_model_weights_pair(models_map, "multi_modal_projector").second;
 
-    auto compiled_model = utils::singleton_core().compile_model(resampler_model, resampler_weights, device, device_config);
+    auto compiled_model = utils::singleton_core().compile_model(
+        resampler_model, resampler_weights, device,
+        utils::get_model_properties(device_config, "resampler", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
     m_ireq_queue_vision_resampler = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -309,7 +317,9 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
             return compiled_model.create_infer_request();
         });
 
-    compiled_model = utils::singleton_core().compile_model(mm_projector_model, mm_projector_weights, device, device_config);
+    compiled_model = utils::singleton_core().compile_model(
+        mm_projector_model, mm_projector_weights, device,
+        utils::get_model_properties(device_config, "multi_modal_projector", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM multi modal projector model");
     m_ireq_queue_multi_modal_projector = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -325,7 +335,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
     ov::InferRequest& encoder = infer_request_guard.get();
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_mm_projector(this->m_ireq_queue_multi_modal_projector.get());
     ov::InferRequest& mm_projector = infer_request_guard_mm_projector.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     ov::Shape pixel_values_shape;
     if (use_ov_vision_preprocess) {
@@ -532,13 +542,26 @@ ov::Tensor VisionEncoderLLaVANextVideo::preprocess_frames_cpp(const std::vector<
     return concatenated_frames;
 }
 
-std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos(const std::vector<ov::Tensor>& videos) {
+std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
     auto vision_encoder = std::static_pointer_cast<VisionEncoderLLaVANextVideo>(m_vision_encoder);
     auto config = vision_encoder->get_processor_config();
 
     std::vector<ov::genai::EncodedVideo> encoded_videos;
-    for (const auto video: videos) {
-        std::vector<ov::Tensor> frames = to_single_image_tensors({video});
+    encoded_videos.reserve(videos.size());
+
+    VideoMetadata default_metadata{};
+
+    for (size_t i = 0; i < videos.size(); ++i) {
+        const VideoMetadata& video_metadata = i < videos_metadata.size() ? videos_metadata[i] : default_metadata;
+        const auto sampled_video = sample_video_if_needed(videos[i], video_metadata);
+        std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
+
         size_t num_frames = frames.size();
 
         // Calculate num_video_tokens (same for both OV and CPU preprocessing)
@@ -556,7 +579,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
             size_t orig_width = frame_shape[2];
 
             // Set inputs for integrated model
-            set_preprocess_parameters(encoder, video, {orig_height, orig_width}, config);
+            set_preprocess_parameters(encoder, sampled_video, {orig_height, orig_width}, config);
         } else {
             // Use CPU preprocessing - preprocess and concatenate frames
             ov::Tensor concatenated_frames = vision_encoder->preprocess_frames_cpp(frames);
@@ -585,6 +608,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
         video_features.set_shape(new_shape);
         encoded_video.video_features = std::move(video_features);
         encoded_video.num_video_tokens = num_video_tokens;
+        encoded_video.metadata = video_metadata;
         encoded_videos.push_back(encoded_video);
     }
     return encoded_videos;

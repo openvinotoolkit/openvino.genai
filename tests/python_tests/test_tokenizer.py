@@ -18,6 +18,7 @@ from transformers import AutoTokenizer
 from huggingface_hub import snapshot_download
 
 from utils.constants import get_disabled_mmap_ov_config
+from optimum.utils.import_utils import is_transformers_version
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.network import retry_request
 from utils.tokenizers import delete_rt_info, model_tmp_path
@@ -79,13 +80,18 @@ def test_encode(ov_hf_tokenizers, prompt):
     ov_tokenizer, hf_tokenizer = ov_hf_tokenizers
 
     encoded_ov = ov_tokenizer.encode(prompt).input_ids.data
-    if isinstance(prompt, list):
-        encoded_hf = hf_tokenizer.batch_encode_plus(prompt)["input_ids"]
+    if is_transformers_version("<", "5.0"):
+        if isinstance(prompt, list):
+            encoded_hf = hf_tokenizer.batch_encode_plus(prompt)["input_ids"]
+            for tokens_ov, tokens_hf in zip(encoded_ov, encoded_hf):
+                assert np.all(tokens_ov == tokens_hf)
+        else:
+            encoded_hf = hf_tokenizer.encode(prompt)
+            assert np.all(encoded_hf == encoded_ov[0])
+    else:
+        encoded_hf = hf_tokenizer(prompt, return_tensors="np", padding=True)["input_ids"]
         for tokens_ov, tokens_hf in zip(encoded_ov, encoded_hf):
             assert np.all(tokens_ov == tokens_hf)
-    else:
-        encoded_hf = hf_tokenizer.encode(prompt)
-        assert np.all(encoded_hf == encoded_ov[0])
 
 
 @pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
@@ -464,11 +470,9 @@ def test_padding(
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
 
     # In openvino_tokenizers if sequences are of different length by default padding is applied
-    # to the longest sequence in the batch since resulting tokenization is stored as a signe ov::Tensor
+    # to the longest sequence in the batch since resulting tokenization is stored as a single  ov::Tensor
     # which cannot store irregular/ragged array.
-    # Therefore, for default mode truncation=True.
-    # For the same reason runcation is always applied.
-    # Truncate only if max_length is set.
+    # Match HF truncating behavior explicitly. By default, GenAI tokenizers do not truncate.
     is_max_len_set = max_length is not None
     hf_pad_params_map = {
         None: {"padding": "longest", "truncation": is_max_len_set},
@@ -485,6 +489,8 @@ def test_padding(
         "max_length": max_length,
         "pad_to_max_length": pad_to_max_length,
     }
+    if is_max_len_set:
+        ov_params["truncation"] = True
     if pad_to_max_length is None:
         ov_params.pop("pad_to_max_length")
     if max_length is None:
@@ -500,6 +506,29 @@ def test_padding(
 
     assert np.all(ov_res.input_ids.data == hf_res["input_ids"])
     assert np.all(ov_res.attention_mask.data == hf_res["attention_mask"])
+
+
+@pytest.mark.parametrize(
+    "hf_ov_genai_models",
+    [("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", {"padding_side": None})],
+    indirect=True,
+)
+def test_truncation_disabled_by_default(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    prompt = "What is the previous answers? " * 100
+    max_length = 16
+
+    ov_res = genai_tokenizer.encode(prompt, max_length=max_length)
+    hf_res = hf_tokenizer(prompt, return_tensors="np", truncation=False)
+
+    assert ov_res.input_ids.data.shape == hf_res["input_ids"].shape
+    assert ov_res.input_ids.data.shape[1] > max_length
+
+    ov_truncated_res = genai_tokenizer.encode(prompt, max_length=max_length, truncation=True)
+    hf_truncated_res = hf_tokenizer(prompt, return_tensors="np", max_length=max_length, truncation=True)
+
+    assert np.all(ov_truncated_res.input_ids.data == hf_truncated_res["input_ids"])
+    assert ov_truncated_res.input_ids.data.shape[1] == max_length
 
 
 # Define model base configs

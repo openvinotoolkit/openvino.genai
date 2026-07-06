@@ -5,7 +5,411 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+class ASRDecodedResultChunk:
+    """
+    
+        Structure to store decoded text with corresponding timestamps
+    
+        :param start_ts chunk start time in seconds
+        :param end_ts   chunk end time in seconds
+        :param text     chunk text
+        :param token_ids token ids corresponding to the chunk text
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def end_ts(self) -> float:
+        ...
+    @property
+    def start_ts(self) -> float:
+        ...
+    @property
+    def text(self) -> str:
+        ...
+    @property
+    def token_ids(self) -> list[int]:
+        ...
+class ASRDecodedResults:
+    """
+    
+        Structure to store resulting text outputs and scores.
+    
+        Parameters:
+        texts:              vector of resulting sequences.
+        scores:             scores for each sequence.
+        languages:          detected languages for the input audio(s), e.g. ["en"].
+        perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
+        chunks:             optional chunks of resulting sequences with timestamps
+        words:              optional chunks of resulting words with timestamps
+    """
+    def __repr__(self) -> str:
+        ...
+    @property
+    def chunks(self) -> list[list[ASRDecodedResultChunk]] | None:
+        ...
+    @property
+    def languages(self) -> list[str]:
+        ...
+    @property
+    def perf_metrics(self) -> ASRPerfMetrics:
+        ...
+    @property
+    def scores(self) -> list[float]:
+        ...
+    @property
+    def texts(self) -> list[str]:
+        ...
+    @property
+    def words(self) -> list[list[ASRDecodedResultChunk]] | None:
+        ...
+class ASRGenerationConfig(GenerationConfig):
+    """
+    
+        ASRGenerationConfig
+    
+        Common parameters:
+    
+        :param language: Language token to use for generation in the form of <|en|>.
+                         Can be set for multilingual models only.
+        :type language: Optional[str]
+    
+        :param return_timestamps: Whether to return segment-level timestamps.
+        :type return_timestamps: bool
+    
+        Whisper parameters:
+    
+        :param decoder_start_token_id: Corresponds to the "<|startoftranscript|>" token.
+        :type decoder_start_token_id: int
+    
+        :param pad_token_id: Padding token id.
+        :type pad_token_id: int
+    
+        :param translate_token_id: Translate token id.
+        :type translate_token_id: int
+    
+        :param transcribe_token_id: Transcribe token id.
+        :type transcribe_token_id: int
+    
+        :param prev_sot_token_id: Corresponds to the "<|startofprev|>" token.
+        :type prev_sot_token_id: int
+    
+        :param no_timestamps_token_id: No timestamps token id.
+        :type no_timestamps_token_id: int
+    
+        :param begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
+        :type begin_suppress_tokens: list[int]
+    
+        :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
+        :type suppress_tokens: list[int]
+    
+        :param max_initial_timestamp_index: Maximum initial timestamp index.
+        :type max_initial_timestamp_index: int
+    
+        :param is_multilingual: Whether the model is multilingual.
+        :type is_multilingual: bool
+    
+        :param task: Task to use for generation, either "translate" or "transcribe".
+                     Can be set for multilingual models only.
+        :type task: Optional[str]
+    
+        :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
+        :type lang_to_id: dict[str, int]
+    
+        :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                                When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
+                                ASRPipeline("model_path", "CPU", word_timestamps=True)
+        :type word_timestamps: bool
+    
+        :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
+                                Each pair represents (layer_index, head_index).
+        :type alignment_heads: list[tuple[int, int]]
+    
+        :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+                               window. Can be used to steer the model to use particular spellings or styles.
+    
+                               Example::
+    
+                                 result = pipeline.generate(raw_speech)
+                                 #  He has gone and gone for good answered Paul Icrom who...
+    
+                                 result = pipeline.generate(raw_speech, initial_prompt="Polychrome")
+                                 #  He has gone and gone for good answered Polychrome who...
+        :type initial_prompt: Optional[str]
+    
+        :param hotwords: Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to all processing windows.
+                         Can be used to steer the model to use particular spellings or styles.
+    
+                         Example::
+    
+                           result = pipeline.generate(raw_speech)
+                           #  He has gone and gone for good answered Paul Icrom who...
+    
+                           result = pipeline.generate(raw_speech, hotwords="Polychrome")
+                           #  He has gone and gone for good answered Polychrome who...
+        :type hotwords: Optional[str]
+    
+        For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
+        see GenerationConfig documentation.
+    """
+    hotwords: str | None
+    initial_prompt: str | None
+    is_multilingual: bool
+    language: str | None
+    return_timestamps: bool
+    task: str | None
+    word_timestamps: bool
+    @typing.overload
+    def __init__(self, json_path: os.PathLike | str | bytes) -> None:
+        """
+        path where generation_config.json is stored
+        """
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        ...
+    def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def alignment_heads(self) -> list[tuple[int, int]]:
+        ...
+    @alignment_heads.setter
+    def alignment_heads(self, arg0: collections.abc.Sequence[tuple[typing.SupportsInt, typing.SupportsInt]]) -> None:
+        ...
+    @property
+    def begin_suppress_tokens(self) -> list[int]:
+        ...
+    @begin_suppress_tokens.setter
+    def begin_suppress_tokens(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def decoder_start_token_id(self) -> int:
+        ...
+    @decoder_start_token_id.setter
+    def decoder_start_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def lang_to_id(self) -> dict[str, int]:
+        ...
+    @lang_to_id.setter
+    def lang_to_id(self, arg0: collections.abc.Mapping[str, typing.SupportsInt]) -> None:
+        ...
+    @property
+    def max_initial_timestamp_index(self) -> int:
+        ...
+    @max_initial_timestamp_index.setter
+    def max_initial_timestamp_index(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def no_timestamps_token_id(self) -> int:
+        ...
+    @no_timestamps_token_id.setter
+    def no_timestamps_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def pad_token_id(self) -> int:
+        ...
+    @pad_token_id.setter
+    def pad_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def prev_sot_token_id(self) -> int:
+        ...
+    @prev_sot_token_id.setter
+    def prev_sot_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def suppress_tokens(self) -> list[int]:
+        ...
+    @suppress_tokens.setter
+    def suppress_tokens(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
+    @property
+    def transcribe_token_id(self) -> int:
+        ...
+    @transcribe_token_id.setter
+    def transcribe_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def translate_token_id(self) -> int:
+        ...
+    @translate_token_id.setter
+    def translate_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+class ASRPerfMetrics(PerfMetrics):
+    """
+    
+        Structure with raw performance metrics for each generation before any statistics are calculated.
+    
+        :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
+        :type get_features_extraction_duration: MeanStdPair
+    
+        :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
+        :type get_word_level_timestamps_processing_duration: MeanStdPair
+    
+        :param asr_raw_metrics: ASR specific raw metrics
+        :type ASRRawPerfMetrics:
+    """
+    def __init__(self) -> None:
+        ...
+    def get_decode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_encode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_features_extraction_duration(self) -> MeanStdPair:
+        ...
+    def get_word_level_timestamps_processing_duration(self) -> MeanStdPair:
+        ...
+    @property
+    def asr_raw_metrics(self) -> ASRRawPerfMetrics:
+        ...
+class ASRPipeline:
+    """
+    Automatic speech recognition pipeline
+    """
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                    ASRPipeline class constructor.
+                    models_path (os.PathLike): Path to the model file.
+                    device (str): Device to run the model on (e.g., CPU, GPU).
+        """
+    def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
+        """
+            High level generate that receives raw speech as a vector of floats and returns decoded output.
+        
+            :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+            :type audio_inputs: list[float]
+        
+            :param generation_config: generation_config
+            :type generation_config: ASRGenerationConfig
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
+                             Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: ASRDecodedResults
+         
+         
+            ASRGenerationConfig
+        
+            Common parameters:
+        
+            :param language: Language token to use for generation in the form of <|en|>.
+                             Can be set for multilingual models only.
+            :type language: Optional[str]
+        
+            :param return_timestamps: Whether to return segment-level timestamps.
+            :type return_timestamps: bool
+        
+            Whisper parameters:
+        
+            :param decoder_start_token_id: Corresponds to the "<|startoftranscript|>" token.
+            :type decoder_start_token_id: int
+        
+            :param pad_token_id: Padding token id.
+            :type pad_token_id: int
+        
+            :param translate_token_id: Translate token id.
+            :type translate_token_id: int
+        
+            :param transcribe_token_id: Transcribe token id.
+            :type transcribe_token_id: int
+        
+            :param prev_sot_token_id: Corresponds to the "<|startofprev|>" token.
+            :type prev_sot_token_id: int
+        
+            :param no_timestamps_token_id: No timestamps token id.
+            :type no_timestamps_token_id: int
+        
+            :param begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
+            :type begin_suppress_tokens: list[int]
+        
+            :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
+            :type suppress_tokens: list[int]
+        
+            :param max_initial_timestamp_index: Maximum initial timestamp index.
+            :type max_initial_timestamp_index: int
+        
+            :param is_multilingual: Whether the model is multilingual.
+            :type is_multilingual: bool
+        
+            :param task: Task to use for generation, either "translate" or "transcribe".
+                         Can be set for multilingual models only.
+            :type task: Optional[str]
+        
+            :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
+            :type lang_to_id: dict[str, int]
+        
+            :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                                    When enabled word_timestamps=True property should be passed to ASRPipeline constructor:
+                                    ASRPipeline("model_path", "CPU", word_timestamps=True)
+            :type word_timestamps: bool
+        
+            :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction.
+                                    Each pair represents (layer_index, head_index).
+            :type alignment_heads: list[tuple[int, int]]
+        
+            :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
+                                   window. Can be used to steer the model to use particular spellings or styles.
+        
+                                   Example::
+        
+                                     result = pipeline.generate(raw_speech)
+                                     #  He has gone and gone for good answered Paul Icrom who...
+        
+                                     result = pipeline.generate(raw_speech, initial_prompt="Polychrome")
+                                     #  He has gone and gone for good answered Polychrome who...
+            :type initial_prompt: Optional[str]
+        
+            :param hotwords: Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to all processing windows.
+                             Can be used to steer the model to use particular spellings or styles.
+        
+                             Example::
+        
+                               result = pipeline.generate(raw_speech)
+                               #  He has gone and gone for good answered Paul Icrom who...
+        
+                               result = pipeline.generate(raw_speech, hotwords="Polychrome")
+                               #  He has gone and gone for good answered Polychrome who...
+            :type hotwords: Optional[str]
+        
+            For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
+            see GenerationConfig documentation.
+        """
+    def get_generation_config(self) -> ASRGenerationConfig:
+        ...
+    def get_tokenizer(self) -> Tokenizer:
+        ...
+    def set_generation_config(self, config: ASRGenerationConfig) -> None:
+        ...
+class ASRRawPerfMetrics:
+    """
+    
+        Structure with ASR specific raw performance metrics for each generation before any statistics are calculated.
+    
+        :param features_extraction_durations: Duration for each features extraction call.
+        :type features_extraction_durations: list[MicroSeconds]
+    
+        :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
+        :type word_level_timestamps_processing_durations: list[MicroSeconds]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def features_extraction_durations(self) -> list[float]:
+        ...
+    @property
+    def word_level_timestamps_processing_durations(self) -> list[float]:
+        ...
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -670,7 +1074,7 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: typing.SupportsInt, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
-    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, **kwargs) -> GenerationHandle:
         ...
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
@@ -687,25 +1091,25 @@ class ContinuousBatchingPipeline:
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, prompts: collections.abc.Sequence[str], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, prompts: collections.abc.Sequence[str], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
         ...
     @typing.overload
     def generate(self, histories: list, generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[VLMDecodedResults]:
         ...
     @typing.overload
-    def generate(self, histories: list, videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+    def generate(self, histories: list, videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> list[VLMDecodedResults]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -752,6 +1156,9 @@ class DecodedResults:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def finish_reasons(self) -> list[GenerationFinishReason]:
+        ...
+    @property
     def parsed(self) -> list:
         ...
     @property
@@ -795,6 +1202,9 @@ class EncodedGenerationResult:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def finish_reasons(self) -> list[GenerationFinishReason]:
+        ...
+    @property
     def m_generation_ids(self) -> list[list[int]]:
         ...
     @m_generation_ids.setter
@@ -832,6 +1242,9 @@ class EncodedResults:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def finish_reasons(self) -> list[GenerationFinishReason]:
+        ...
+    @property
     def perf_metrics(self) -> PerfMetrics:
         ...
     @property
@@ -853,6 +1266,7 @@ class ExtendedPerfMetrics:
         - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
+        - Chat template application duration, ms
         - Throughput, tokens/s
     
         Additional metrics include:
@@ -898,11 +1312,17 @@ class ExtendedPerfMetrics:
         :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
         :type get_detokenization_duration: MeanStdPair
     
+        :param get_chat_template_duration: Returns the mean and standard deviation of chat template application durations in milliseconds.
+        :type get_chat_template_duration: MeanStdPair
+    
         :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
         :type get_grammar_compiler_init_times: dict[str, float]
     
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
+    
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
     
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
@@ -912,6 +1332,8 @@ class ExtendedPerfMetrics:
     def __iadd__(self, right: PerfMetrics) -> PerfMetrics:
         ...
     def __init__(self) -> None:
+        ...
+    def get_chat_template_duration(self) -> MeanStdPair:
         ...
     def get_detokenization_duration(self) -> MeanStdPair:
         ...
@@ -926,6 +1348,8 @@ class ExtendedPerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_sampling_duration(self) -> MeanStdPair:
         ...
     def get_throughput(self) -> MeanStdPair:
         ...
@@ -1062,6 +1486,12 @@ class GenerationConfig:
         top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
+    
+        Tree search parameters:
+        branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+        tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+        num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                            verification. Total tree nodes = num_assistant_tokens + 1 (including root).
     """
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None
     apply_chat_template: bool
@@ -1089,6 +1519,8 @@ class GenerationConfig:
         ...
     def is_prompt_lookup(self) -> bool:
         ...
+    def is_tree_search(self) -> bool:
+        ...
     def set_eos_token_id(self, tokenizer_eos_token_id: typing.SupportsInt) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
@@ -1100,6 +1532,14 @@ class GenerationConfig:
         ...
     @assistant_confidence_threshold.setter
     def assistant_confidence_threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def branching_factor(self) -> int:
+        """
+        Number of branches (top-k) at each level of the candidate tree
+        """
+    @branching_factor.setter
+    def branching_factor(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def diversity_penalty(self) -> float:
@@ -1154,6 +1594,12 @@ class GenerationConfig:
         ...
     @min_new_tokens.setter
     def min_new_tokens(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def min_p(self) -> float:
+        ...
+    @min_p.setter
+    def min_p(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def no_repeat_ngram_size(self) -> int:
@@ -1251,6 +1697,14 @@ class GenerationConfig:
     @top_p.setter
     def top_p(self, arg0: typing.SupportsFloat) -> None:
         ...
+    @property
+    def tree_depth(self) -> int:
+        """
+        Lookahead depth of the candidate tree
+        """
+    @tree_depth.setter
+    def tree_depth(self, arg0: typing.SupportsInt) -> None:
+        ...
 class GenerationFinishReason:
     """
     Members:
@@ -1260,11 +1714,14 @@ class GenerationFinishReason:
       STOP
     
       LENGTH
+    
+      TOOL_CALL
     """
     LENGTH: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.LENGTH: 2>
     NONE: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.NONE: 0>
     STOP: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.STOP: 1>
-    __members__: typing.ClassVar[dict[str, GenerationFinishReason]]  # value = {'NONE': <GenerationFinishReason.NONE: 0>, 'STOP': <GenerationFinishReason.STOP: 1>, 'LENGTH': <GenerationFinishReason.LENGTH: 2>}
+    TOOL_CALL: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.TOOL_CALL: 3>
+    __members__: typing.ClassVar[dict[str, GenerationFinishReason]]  # value = {'NONE': <GenerationFinishReason.NONE: 0>, 'STOP': <GenerationFinishReason.STOP: 1>, 'LENGTH': <GenerationFinishReason.LENGTH: 2>, 'TOOL_CALL': <GenerationFinishReason.TOOL_CALL: 3>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -1302,7 +1759,7 @@ class GenerationHandle:
         ...
     def read_all(self) -> list[GenerationOutput]:
         ...
-    def stop(self) -> None:
+    def stop(self, finish_reason: GenerationFinishReason = ...) -> None:
         ...
 class GenerationOutput:
     finish_reason: GenerationFinishReason
@@ -1680,6 +2137,10 @@ class ImageGenerationPerfMetrics:
 class IncrementalParser:
     def __init__(self) -> None:
         ...
+    def get_status(self) -> StreamingStatus:
+        """
+        Get the current streaming status of the parser.
+        """
     def parse(self, delta_message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
@@ -1687,6 +2148,10 @@ class IncrementalParser:
     def reset(self) -> None:
         """
         Reset the internal state of the parser.
+        """
+    def set_status(self, status: StreamingStatus) -> None:
+        """
+        Set the current streaming status of the parser.
         """
 class InpaintingPipeline:
     """
@@ -1940,6 +2405,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Tree search parameters:
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     @typing.overload
     def __init__(self, models_path: os.PathLike | str | bytes, tokenizer: Tokenizer, device: str, config: collections.abc.Mapping[str, typing.Any] = {}, **kwargs) -> None:
@@ -2037,6 +2508,12 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Tree search parameters:
+            branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
+            tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
+            num_assistant_tokens (tree search): overall number of candidate (non-root) tokens submitted to the target model for
+                                                verification. Total tree nodes = num_assistant_tokens + 1 (including root).
         """
     def get_generation_config(self) -> GenerationConfig:
         ...
@@ -2159,6 +2636,7 @@ class PerfMetrics:
         - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
+        - Chat template application duration, ms
         - Throughput, tokens/s
     
         Additional metrics include:
@@ -2204,11 +2682,17 @@ class PerfMetrics:
         :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
         :type get_detokenization_duration: MeanStdPair
     
+        :param get_chat_template_duration: Returns the mean and standard deviation of chat template application durations in milliseconds.
+        :type get_chat_template_duration: MeanStdPair
+    
         :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
         :type get_grammar_compiler_init_times: dict[str, float]
     
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
+    
+        :param get_sampling_duration: Returns the mean and standard deviation of time spent in the sampler per sampling step in milliseconds.
+        :type get_sampling_duration: MeanStdPair
     
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
@@ -2218,6 +2702,8 @@ class PerfMetrics:
     def __iadd__(self, right: PerfMetrics) -> PerfMetrics:
         ...
     def __init__(self) -> None:
+        ...
+    def get_chat_template_duration(self) -> MeanStdPair:
         ...
     def get_detokenization_duration(self) -> MeanStdPair:
         ...
@@ -2236,6 +2722,8 @@ class PerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_sampling_duration(self) -> MeanStdPair:
         ...
     def get_throughput(self) -> MeanStdPair:
         ...
@@ -2266,24 +2754,27 @@ class PipelineMetrics:
         :param scheduled_requests:  Number of requests that were scheduled for processing at the previous step of the pipeline.
         :type scheduled_requests: int
     
-        :param cache_usage: Percentage of KV cache usage in the last generation step.
+        :param cache_usage: Maximum cache usage percentage across registered cache types in the last generation step.
         :type cache_usage: float
     
-        :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
+        :param max_cache_usage: Maximum cache usage percentage observed during the lifetime of the pipeline.
         :type max_cache_usage: float
     
-        :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
+        :param avg_cache_usage: Running average of cache usage percentage during the lifetime of the pipeline, with max window size of 1000 steps.
         :type avg_cache_usage: float
     
-        :param kv_cache_size_in_bytes: Total allocated KV cache size in bytes, based on the total number of KV blocks.
-          This value represents reserved/allocated memory for the KV cache and does not
-          distinguish between used and unused portions in dynamic KV cache configurations.
-        :type kv_cache_size_in_bytes: int
+        :param cache_size_in_bytes: Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
+          This value represents reserved/allocated memory for the cache and does not
+          distinguish between used and unused portions in dynamic cache configurations.
+        :type cache_size_in_bytes: int
     """
     def __init__(self) -> None:
         ...
     @property
     def avg_cache_usage(self) -> float:
+        ...
+    @property
+    def cache_size_in_bytes(self) -> int:
         ...
     @property
     def cache_usage(self) -> float:
@@ -2330,37 +2821,46 @@ class RawPerfMetrics:
     
         Structure with raw performance metrics for each generation before any statistics are calculated.
     
-        :param generate_durations: Durations for each generate call in milliseconds.
+        :param generate_durations: Durations for each generate call in microseconds.
         :type generate_durations: list[float]
     
-        :param tokenization_durations: Durations for the tokenization process in milliseconds.
+        :param tokenization_durations: Durations for the tokenization process in microseconds.
         :type tokenization_durations: list[float]
     
-        :param detokenization_durations: Durations for the detokenization process in milliseconds.
+        :param detokenization_durations: Durations for the detokenization process in microseconds.
         :type detokenization_durations: list[float]
     
-        :param m_times_to_first_token: Times to the first token for each call in milliseconds.
+        :param chat_template_durations: Durations for the chat template application in microseconds.
+        :type chat_template_durations: list[float]
+    
+        :param m_times_to_first_token: Times to the first token for each call in microseconds.
         :type m_times_to_first_token: list[float]
     
-        :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
+        :param m_new_token_times: Timestamps of generation every token or batch of tokens in microseconds.
         :type m_new_token_times: list[double]
     
-        :param token_infer_durations : Inference time for each token in milliseconds.
-        :type batch_sizes: list[float]
+        :param token_infer_durations : Inference time for each token in microseconds.
+        :type token_infer_durations: list[float]
     
         :param m_batch_sizes: Batch sizes for each generate call.
         :type m_batch_sizes: list[int]
     
-        :param m_durations: Total durations for each generate call in milliseconds.
+        :param m_durations: Total durations for each generate call in microseconds.
         :type m_durations: list[float]
     
-        :param inference_durations : Total inference duration for each generate call in milliseconds.
-        :type batch_sizes: list[float]
+        :param inference_durations : Total inference duration for each generate call in microseconds.
+        :type inference_durations: list[float]
     
-        :param grammar_compile_times: Time to compile the grammar in milliseconds.
+        :param grammar_compile_times: Time to compile the grammar in microseconds.
         :type grammar_compile_times: list[float]
+    
+        :param sampling_durations: Time spent in the sampler per sampling step in microseconds. One entry per sampler.sample() call.
+        :type sampling_durations: list[float]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def chat_template_durations(self) -> list[float]:
         ...
     @property
     def detokenization_durations(self) -> list[float]:
@@ -2385,6 +2885,9 @@ class RawPerfMetrics:
         ...
     @property
     def m_times_to_first_token(self) -> list[float]:
+        ...
+    @property
+    def sampling_durations(self) -> list[float]:
         ...
     @property
     def token_infer_durations(self) -> list[float]:
@@ -2610,8 +3113,14 @@ class SchedulerConfig:
         max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
             independent sequences, we consider total amount of tokens in a batch).
         num_kv_blocks:              total number of KV blocks available to scheduler logic.
-        cache_size:                 total size of KV cache in GB.
-        block_size:                 block size for KV cache.
+        cache_size:                 total size of cache in GB.
+        num_linear_attention_blocks: total number of linear attention blocks available to scheduler logic. 
+                                    Only applicable for models with linear attention cache inputs.
+        cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
+                                    The internal interval is KV cache block size * cache_interval_multiplier.
+                                    When unset, the default value 8 is used for hybrid models with prefix caching.
+                                    For models without linear attention cache inputs, this parameter is ignored.
+                                    0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
     
         vLLM-like settings:
@@ -2638,6 +3147,12 @@ class SchedulerConfig:
     def to_string(self) -> str:
         ...
     @property
+    def cache_interval_multiplier(self) -> int | None:
+        ...
+    @cache_interval_multiplier.setter
+    def cache_interval_multiplier(self, arg0: typing.SupportsInt | None) -> None:
+        ...
+    @property
     def cache_size(self) -> int:
         ...
     @cache_size.setter
@@ -2660,6 +3175,12 @@ class SchedulerConfig:
         ...
     @num_kv_blocks.setter
     def num_kv_blocks(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def num_linear_attention_blocks(self) -> int:
+        ...
+    @num_linear_attention_blocks.setter
+    def num_linear_attention_blocks(self, arg0: typing.SupportsInt) -> None:
         ...
 class SparseAttentionConfig:
     """
@@ -2790,17 +3311,39 @@ class SpeechGenerationConfig(GenerationConfig):
     """
     
         SpeechGenerationConfig
-        
+    
         Speech-generation specific parameters:
         :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
         :type minlenratio: float
     
         :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-        :type minlenratio: float
+        :type maxlenratio: float
     
         :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
         :type threshold: float
+    
+        Kokoro-specific parameters:
+        :param speed: speech speed multiplier.
+        :type speed: float
+    
+        :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+        :type language: str
+    
+        :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+        :type max_phoneme_length: int
+    
+        :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                             This applies only to fallback during phonemize / G2P
+                                             (graphemes to phonemes), before acoustic model inference.
+                                             If set, this OpenVINO G2P fallback is used.
+                                             If unset (None), espeak-ng G2P fallback is used.
+                                             For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                             `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                             omit this key instead of passing None because kwargs-to-AnyMap
+                                             conversion rejects None values.
+        :type phonemize_fallback_model_dir: str | None
     """
+    language: str
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -2810,6 +3353,12 @@ class SpeechGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def max_phoneme_length(self) -> int:
+        ...
+    @max_phoneme_length.setter
+    def max_phoneme_length(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
     def maxlenratio(self) -> float:
@@ -2822,6 +3371,18 @@ class SpeechGenerationConfig(GenerationConfig):
         ...
     @minlenratio.setter
     def minlenratio(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def phonemize_fallback_model_dir(self) -> pathlib.Path | None:
+        ...
+    @phonemize_fallback_model_dir.setter
+    def phonemize_fallback_model_dir(self, arg0: os.PathLike | str | bytes | None) -> None:
+        ...
+    @property
+    def speed(self) -> float:
+        ...
+    @speed.setter
+    def speed(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def threshold(self) -> float:
@@ -2924,11 +3485,14 @@ class StreamingStatus:
       CANCEL
     
       STOP
+    
+      TOOL_CALL_STOP
     """
     CANCEL: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.CANCEL: 2>
     RUNNING: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.RUNNING: 0>
     STOP: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.STOP: 1>
-    __members__: typing.ClassVar[dict[str, StreamingStatus]]  # value = {'RUNNING': <StreamingStatus.RUNNING: 0>, 'CANCEL': <StreamingStatus.CANCEL: 2>, 'STOP': <StreamingStatus.STOP: 1>}
+    TOOL_CALL_STOP: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.TOOL_CALL_STOP: 3>
+    __members__: typing.ClassVar[dict[str, StreamingStatus]]  # value = {'RUNNING': <StreamingStatus.RUNNING: 0>, 'CANCEL': <StreamingStatus.CANCEL: 2>, 'STOP': <StreamingStatus.STOP: 1>, 'TOOL_CALL_STOP': <StreamingStatus.TOOL_CALL_STOP: 3>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -3554,15 +4118,21 @@ class Text2SpeechDecodedResults:
     """
     
         Structure that stores the result from the generate method, including a list of waveform tensors
-        sampled at 16 kHz, along with performance metrics
+        along with output sample rate and performance metrics
     
-        :param speeches: a list of waveform tensors sampled at 16 kHz
+        :param speeches: a list of generated waveform tensors
         :type speeches: list
+    
+        :param output_sample_rate: sample rate of generated waveform tensors
+        :type output_sample_rate: int
     
         :param perf_metrics: performance metrics
         :type perf_metrics: SpeechGenerationPerfMetrics
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def output_sample_rate(self) -> int:
         ...
     @property
     def perf_metrics(self) -> SpeechGenerationPerfMetrics:
@@ -3585,67 +4155,117 @@ class Text2SpeechPipeline:
         """
             Generates speeches based on input texts
         
-            :param text(s): input text(s) for which to generate speech
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) for which to generate speech
+            :type text_or_texts: str or list[str]
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                                     to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
             :type properties: dict
         
-            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :returns: raw audios of the input texts spoken in the specified speaker's voice;
+                      sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
             :rtype: Text2SpeechDecodedResults
          
          
             SpeechGenerationConfig
-            
+        
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+        
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
+            :type phonemize_fallback_model_dir: str | None
         """
     @typing.overload
     def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
         
-            :param text(s): input text(s) for which to generate speech
-            :type text(s): str or list[str]
+            :param text_or_texts: input text(s) for which to generate speech
+            :type text_or_texts: str or list[str]
         
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default.
+                                     `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
+                                     to prepare this tensor externally and pass it explicitly.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
             :type properties: dict
         
-            :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
+            :returns: raw audios of the input texts spoken in the specified speaker's voice;
+                      sample rate is provided via Text2SpeechDecodedResults.output_sample_rate
             :rtype: Text2SpeechDecodedResults
          
          
             SpeechGenerationConfig
-            
+        
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
         
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
-            :type minlenratio: float
+            :type maxlenratio: float
         
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
+        
+            Kokoro-specific parameters:
+            :param speed: speech speed multiplier.
+            :type speed: float
+        
+            :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+            :type language: str
+        
+            :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+            :type max_phoneme_length: int
+        
+            :param phonemize_fallback_model_dir: Optional OpenVINO fallback phonemizer model directory.
+                                                 This applies only to fallback during phonemize / G2P
+                                                 (graphemes to phonemes), before acoustic model inference.
+                                                 If set, this OpenVINO G2P fallback is used.
+                                                 If unset (None), espeak-ng G2P fallback is used.
+                                                 For kwargs-based APIs (`SpeechGenerationConfig(**kwargs)`,
+                                                 `update_generation_config(**kwargs)`, and pipeline kwargs),
+                                                 omit this key instead of passing None because kwargs-to-AnyMap
+                                                 conversion rejects None values.
+            :type phonemize_fallback_model_dir: str | None
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
+    def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
+        """
+        Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
+        """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
 class Text2VideoPipeline:
@@ -3940,7 +4560,7 @@ class Tokenizer:
         Decode a batch of tokens into a list of string prompt.
         """
     @typing.overload
-    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs.
         Args:
@@ -3949,11 +4569,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompt: str, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a single prompt into tokenized input.
         Args:
@@ -3962,11 +4583,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts_1: collections.abc.Sequence[str], prompts_2: collections.abc.Sequence[str], add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of prompts into tokenized inputs. The number of strings must be the same, or one of the inputs can contain one string.
         In the latter case, the single-string input will be broadcast into the shape of the other input, which is more efficient than repeating the string in pairs.)
@@ -3977,11 +4599,12 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
     @typing.overload
-    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None) -> TokenizedInputs:
+    def encode(self, prompts: list, add_special_tokens: bool = True, pad_to_max_length: bool = False, max_length: typing.SupportsInt | None = None, padding_side: str | None = None, truncation: bool = False) -> TokenizedInputs:
         """
         Encodes a list of paired prompts into tokenized inputs. Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
         Args:
@@ -3990,6 +4613,7 @@ class Tokenizer:
          'pad_to_max_length' - whether to pad the sequence to the maximum length. Default is False.
          'max_length' - maximum length of the sequence. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
          'padding_side' - side to pad the sequence, can be 'left' or 'right'. If None (default), the value will be taken from the IR (where default value from original HF/GGUF model is stored).
+         'truncation' - whether to truncate the sequence to max_length. Default is False.
         Returns:
          TokenizedInputs object containing input_ids and attention_mask tensors.
         """
@@ -4329,6 +4953,8 @@ class VLMPipeline:
             Expected parameters list:
             image: ov.Tensor - input image,
             images: list[ov.Tensor] - input images,
+            videos: list[ov.Tensor] - input videos,
+            videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
         
@@ -4434,6 +5060,8 @@ class VLMPipeline:
             Expected parameters list:
             image: ov.Tensor - input image,
             images: list[ov.Tensor] - input images,
+            videos: list[ov.Tensor] - input videos,
+            videos_metadata: list[VideoMetadata] - metadata for each video,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
         
@@ -4534,6 +5162,34 @@ class VideoGenerationResult:
     @property
     def video(self) -> openvino._pyopenvino.Tensor:
         ...
+class VideoMetadata:
+    """
+    
+        Structure with metadata describing the original video source.
+        Controls video frames sampling before encoding.
+    
+        :param fps: Frame rate of the original video in frames per second. 0 means unknown.
+        :type fps: float
+    
+        :param frames_indices: Indices of frames to sample from the provided video tensor.
+        When empty (default), model-specific sampling is applied if defined, otherwise all frames are processed.
+        When non-empty, only the specified frames are extracted and model-specific sampling logic is skipped (if any).
+        :type frames_indices: list[int]
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def fps(self) -> float:
+        ...
+    @fps.setter
+    def fps(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def frames_indices(self) -> list[int]:
+        ...
+    @frames_indices.setter
+    def frames_indices(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+        ...
 class WhisperDecodedResultChunk:
     """
     
@@ -4560,15 +5216,19 @@ class WhisperDecodedResults:
         Structure to store resulting text outputs and scores.
     
         Parameters:
-        texts:      vector of resulting sequences.
-        scores:     scores for each sequence.
-        metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
-        shunks:     optional chunks of resulting sequences with timestamps
+        texts:              vector of resulting sequences.
+        scores:             scores for each sequence.
+        language:           detected language for the input audio, e.g. "en".
+        perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::WhisperPerfMetrics.
+        chunks:             optional chunks of resulting sequences with timestamps
     """
     def __str__(self) -> str:
         ...
     @property
     def chunks(self) -> list[WhisperDecodedResultChunk] | None:
+        ...
+    @property
+    def language(self) -> str:
         ...
     @property
     def perf_metrics(self) -> WhisperPerfMetrics:
@@ -4799,10 +5459,20 @@ class WhisperPerfMetrics(PerfMetrics):
         :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
         :type get_word_level_timestamps_processing_duration: MeanStdPair
     
+        :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds.
+        :type get_encode_inference_duration: MeanStdPair
+    
+        :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration per token in milliseconds.
+        :type get_decode_inference_duration: MeanStdPair
+    
         :param whisper_raw_metrics: Whisper specific raw metrics
         :type WhisperRawPerfMetrics:
     """
     def __init__(self) -> None:
+        ...
+    def get_decode_inference_duration(self) -> MeanStdPair:
+        ...
+    def get_encode_inference_duration(self) -> MeanStdPair:
         ...
     def get_features_extraction_duration(self) -> MeanStdPair:
         ...
@@ -4978,8 +5648,20 @@ class WhisperRawPerfMetrics:
     
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
+    
+        :param encode_inference_durations: Duration for each encoder inference call in microseconds.
+        :type encode_inference_durations: list[float]
+    
+        :param decode_inference_durations: Duration for each decoder inference call during token generation in microseconds.
+        :type decode_inference_durations: list[float]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def decode_inference_durations(self) -> list[float]:
+        ...
+    @property
+    def encode_inference_durations(self) -> list[float]:
         ...
     @property
     def features_extraction_durations(self) -> list[float]:
