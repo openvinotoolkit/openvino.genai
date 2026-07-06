@@ -56,6 +56,7 @@ private:
     const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
 
     size_t m_snapkv_window_size = 1;
+    std::map<uint64_t, size_t> m_expected_num_scheduled_tokens;
 
 public:
     struct Output {
@@ -213,6 +214,11 @@ public:
 
         if (!m_cache_orchestrator->has_token_capacity()) {
             _initialize_cache(sequence_groups);
+        } else if (m_dynamic_memory_allocation) {
+            // Cache already initialized and growing dynamically: make sure a newly-arrived prompt
+            // has its capacity (on top of running sequences) reserved in one reallocation rather
+            // than growing in small chunks across the prefill.
+            _reserve_dynamic_capacity_for_active_sequences(sequence_groups);
         }
 
         if (m_config.dynamic_split_fuse) {
@@ -295,6 +301,22 @@ public:
     void clear_cache() {
         OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "Cache should not be cleared if prefix caching is enabled.");
         m_cache_orchestrator->clear();
+    }
+
+    void set_expected_num_scheduled_tokens(uint64_t request_id, size_t num_tokens) {
+        m_expected_num_scheduled_tokens[request_id] = num_tokens;
+    }
+
+    size_t get_expected_num_scheduled_tokens(uint64_t request_id) const {
+        auto it = m_expected_num_scheduled_tokens.find(request_id);
+        if (it != m_expected_num_scheduled_tokens.end()) {
+            return it->second;
+        }
+        return 0;
+    }
+
+    void clear_expected_num_scheduled_tokens(uint64_t request_id) {
+        m_expected_num_scheduled_tokens.erase(request_id);
     }
 
 private:
@@ -409,6 +431,16 @@ private:
 
                 // apply megabatch limitations
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
+
+                // use externally expected scheduling size when an external expectation is provided.
+                auto it_expected_scheduled_tokens =
+                    m_expected_num_scheduled_tokens.find(sequence_group->get_request_id());
+                if (it_expected_scheduled_tokens != m_expected_num_scheduled_tokens.end()) {
+                    const size_t expected_num_scheduled_tokens = it_expected_scheduled_tokens->second;
+                    if (expected_num_scheduled_tokens > 0 && expected_num_scheduled_tokens < num_scheduled_tokens) {
+                        num_scheduled_tokens = expected_num_scheduled_tokens;
+                    }
+                }
 
                 // apply KV cache limitations
                 while (m_cache_orchestrator->available_token_slots(sequence_group) < num_scheduled_tokens) {
@@ -616,10 +648,15 @@ private:
         }
     }
 
-    void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    // Build (tokens-per-sequence, num-sequences) capacity targets for the given sequence groups,
+    // sized to each group's expected total length. Also accumulates the total concurrent sequence
+    // count (for fixed-size-per-sequence pools).
+    std::vector<std::pair<size_t, size_t>> _build_sequence_token_targets(
+            const std::vector<SequenceGroup::Ptr>& sequence_groups,
+            size_t& total_concurrent_seqs) {
         std::vector<std::pair<size_t, size_t>> sequence_token_targets;
         sequence_token_targets.reserve(sequence_groups.size());
-        size_t total_concurrent_seqs = 0;
+        total_concurrent_seqs = 0;
         for (size_t idx = 0; idx < sequence_groups.size(); idx++) {
             size_t seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             const auto& gen_config = sequence_groups[idx]->get_sampling_parameters();
@@ -633,12 +670,58 @@ private:
             total_concurrent_seqs += concurrent_seqs;
             sequence_token_targets.emplace_back(seq_length, concurrent_seqs);
         }
+        return sequence_token_targets;
+    }
+
+    void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        size_t total_concurrent_seqs = 0;
+        auto sequence_token_targets = _build_sequence_token_targets(sequence_groups, total_concurrent_seqs);
         m_cache_orchestrator->ensure_sequence_token_capacity(sequence_token_targets);
         // Fixed-size-per-sequence managers (e.g. linear attention) are not covered by
         // ensure_sequence_token_capacity.  Pre-grow their pool to the number of arriving sequences
         // so the prompt phase can allocate without triggering _try_increase_cache.
         m_cache_orchestrator->grow_fixed_size_capacity(total_concurrent_seqs);
         m_dynamic_memory_allocation = true;
+    }
+
+    // In dynamic-allocation mode, pre-grow the variable-size caches so a newly-arriving prompt
+    // fits in a single reallocation. Without this, a long prompt that arrives after the cache was
+    // sized for a smaller one grows m_cache_growth_num_tokens (256) at a time across the whole
+    // prefill; every growth reallocates and copies the entire cache, which is O(n^2) copy work and
+    // produces the unstable memory spikes observed for hybrid models.
+    //
+    // The reservation targets ALL active sequences (both prompt- and generate-phase), not just the
+    // arriving prompt: ensure_sequence_token_capacity grows to the absolute sum of the supplied
+    // targets, so it must include the footprint already held by running sequences, otherwise a new
+    // prompt arriving alongside running ones would be under-reserved and fall back to chunked
+    // growth. It is idempotent (grows only when the required level exceeds the current one), so the
+    // work is skipped entirely on pure generation steps and is a no-op once capacity is sufficient.
+    void _reserve_dynamic_capacity_for_active_sequences(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        auto is_active = [](const SequenceGroup::Ptr& sg) {
+            return !sg->is_waiting() && !sg->has_finished() && !sg->handle_stopped() && !sg->handle_cancelled();
+        };
+
+        // Only (re)reserve when a prompt-phase sequence is entering this round; pure generation
+        // steps need no capacity change.
+        const bool has_pending_prompt = std::any_of(sequence_groups.begin(), sequence_groups.end(),
+            [&](const SequenceGroup::Ptr& sg) { return is_active(sg) && !sg->can_generate_tokens(); });
+        if (!has_pending_prompt) {
+            return;
+        }
+
+        std::vector<SequenceGroup::Ptr> active_sequences;
+        active_sequences.reserve(sequence_groups.size());
+        for (const auto& sequence_group : sequence_groups) {
+            if (is_active(sequence_group)) {
+                active_sequences.push_back(sequence_group);
+            }
+        }
+        if (active_sequences.empty()) {
+            return;
+        }
+        size_t total_concurrent_seqs = 0;
+        auto sequence_token_targets = _build_sequence_token_targets(active_sequences, total_concurrent_seqs);
+        m_cache_orchestrator->ensure_sequence_token_capacity(sequence_token_targets);
     }
 
     bool _try_increase_cache(SequenceGroup::CPtr sequence_group = nullptr) {

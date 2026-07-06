@@ -366,6 +366,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
 
     ov::Tensor m_deepstack_visual_embeds;
     std::optional<std::vector<bool>> m_visual_pos_masks;
+    
+    ov::Tensor m_per_layer_inputs;
 
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
@@ -463,6 +465,15 @@ public:
                         tensor.copy_to(m_deepstack_visual_embeds);
                     } else if (input_name == "visual_pos_masks") {
                         m_visual_pos_masks = std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
+                    } else if (input_name == "per_layer_inputs") {
+                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "per_layer_inputs must have element type f32");
+                        const auto& shape = tensor.get_shape();
+                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1,
+                            "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
+                        m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
+                        tensor.copy_to(m_per_layer_inputs);
+                    } else {
+                        OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
                 }
             }
@@ -777,6 +788,11 @@ public:
         return m_visual_pos_masks;
     }
 
+    const ov::Tensor& get_per_layer_inputs() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_per_layer_inputs;
+    }
+
     size_t get_hidden_size() const {
         OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::EMBEDDINGS);
         OPENVINO_ASSERT(m_input_embeds.size() > 0, "Embeddings should be set to get hidden size.");
@@ -898,7 +914,7 @@ public:
             if (has_finished()) {
                 push_outputs();
             }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
