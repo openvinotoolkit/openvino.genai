@@ -111,6 +111,31 @@ void remove_roundtrip_converts(const std::shared_ptr<ov::Model>& model) {
     model->validate_nodes_and_infer_types();
 }
 
+void expose_last_hidden_state(const std::shared_ptr<ov::Model>& main_model) {
+    if (find_result_source(main_model, "last_hidden_state").get_node()) {
+        return;
+    }
+
+    const auto logits_source = find_result_source(main_model, "logits");
+    OPENVINO_ASSERT(logits_source.get_node(),
+                    "Failed to locate `logits` output in the main model for MTP hidden-state graft.");
+
+    auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(logits_source.get_node_shared_ptr());
+    OPENVINO_ASSERT(matmul, "Expected the main model `logits` output to be produced by a MatMul (lm_head).");
+
+    // The lm_head MatMul consumes the model's last hidden state as its first input.
+    auto hidden_state = matmul->input_value(0);
+
+    auto hidden_result = std::make_shared<ov::op::v0::Result>(hidden_state);
+    hidden_result->output(0).set_names({"last_hidden_state"});
+    hidden_result->set_friendly_name("last_hidden_state");
+    // NPUW uses this info to identify manually added outputs.
+    hidden_result->get_rt_info()["manually_added_output"] = true;
+
+    main_model->add_results({hidden_result});
+    main_model->validate_nodes_and_infer_types();
+}
+
 void graft_lm_head_on_mtp(std::shared_ptr<ov::Model>& mtp_model, const std::shared_ptr<ov::Model>& main_model) {
     const auto mtp_hidden_state = find_result_source(mtp_model, "last_hidden_state");
     OPENVINO_ASSERT(mtp_hidden_state.get_node(),

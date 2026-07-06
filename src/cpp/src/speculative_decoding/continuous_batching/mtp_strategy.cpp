@@ -60,6 +60,7 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     ov::pass::SDPAToPagedAttention(false, false, allow_score_aggregation, allow_xattention).run_on_model(draft_model);
 
     utils::mtp::graft_lm_head_on_mtp(draft_model, main_model);
+    utils::mtp::expose_last_hidden_state(main_model);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
