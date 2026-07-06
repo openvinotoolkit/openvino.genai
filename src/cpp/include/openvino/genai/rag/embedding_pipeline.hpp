@@ -5,7 +5,6 @@
 
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <variant>
 #include <vector>
 
@@ -64,14 +63,14 @@ public:
     * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
     * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
     * @param videos_metadata Video metadata for the videos provided.
-    * @param prompt Prompt to use for embedding computation.
+    * @param properties Generation arguments (e.g. ov::genai::prompt).
     * @return Embedding tensor.
     */
     EmbedResult embed(const TextInput& text,
                            const std::vector<ov::Tensor>& images = {},
                            const std::vector<ov::Tensor>& videos = {},
                            const std::vector<VideoMetadata>& videos_metadata = {},
-                           const std::optional<std::string>& prompt = std::nullopt);
+                           const ov::AnyMap& properties = {});
 
     /**
     * @brief Computes embedding vectors for text or a batch of texts with images and videos.
@@ -99,54 +98,6 @@ public:
     EmbedResult embed(Properties&&... properties) {
         return embed(ov::AnyMap{std::forward<Properties>(properties)...});
     }
-
-    /**
-    * @brief Starts asynchronous embedding computation for text or a batch of texts with images and videos.
-    * 
-    * @param text Text or a batch of texts for which embedding is computed.
-    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
-    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
-    * @param videos_metadata Video metadata for the videos provided.
-    * @param prompt Prompt to use for embedding computation.
-    * @return Embedding tensor.
-    */
-    void start_embed_async(const TextInput& text,
-                           const std::vector<ov::Tensor>& images = {},
-                           const std::vector<ov::Tensor>& videos = {},
-                           const std::vector<VideoMetadata>& videos_metadata = {},
-                           const std::optional<std::string>& prompt = std::nullopt);
-    
-    /**
-    * @brief Starts asynchronous embedding computation for text or a batch of texts with images and videos.
-    * 
-    * @param text Text or a batch of texts for which embedding is computed.
-    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
-    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
-    * @param videos_metadata Video metadata for the videos provided.
-    * @param prompt Prompt to use for embedding computation.
-    * @return Embedding tensor.
-    */                           
-    void start_embed_async(const ov::AnyMap& properties);
-
-    /**
-    * @brief Starts asynchronous embedding computation for images and videos.
-    * 
-    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
-    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
-    * @param videos_metadata Video metadata for the videos provided.
-    * @param prompt Prompt to use for embedding computation.
-    */
-    template <typename... Properties,
-              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    void start_embed_async(Properties&&... properties) {
-        start_embed_async(ov::AnyMap{std::forward<Properties>(properties)...});
-    }
-
-    /**
-    * @brief Waits for asynchronous embedding computation and returns result.
-    * @return EmbeddingResults.
-    */
-    EmbedResult wait();
 
     ~EmbeddingPipeline();
 

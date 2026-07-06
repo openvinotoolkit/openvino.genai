@@ -103,46 +103,23 @@ void init_rag_pipelines(py::module_& m) {
             "Optional pipeline configuration",
             "Plugin and/or config properties")
         .def(
-            "start_embed_async",
-            [](EmbeddingPipeline& pipe,
-               const EmbeddingPipeline::TextInput& text,
-               const std::vector<ov::Tensor>& images,
-               const std::vector<ov::Tensor>& videos,
-               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
-               const std::optional<std::string>& prompt) -> void {
-                py::gil_scoped_release rel;
-                pipe.start_embed_async(text, images, videos, videos_metadata, prompt);
-            },
-            py::arg("text"),
-            py::arg("images") = std::vector<ov::Tensor>{},
-            py::arg("videos") = std::vector<ov::Tensor>{},
-            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
-            py::arg("prompt") = std::nullopt,
-            "Asynchronously computes embedding vectors for text or a batch of texts.")
-        .def(
-            "wait",
-            [](EmbeddingPipeline& pipe) -> EmbedResult {
-                py::gil_scoped_release rel;
-                return pipe.wait();
-            },
-            "Waits for asynchronous embedding computation and returns result.")
-        .def(
             "embed",
             [](EmbeddingPipeline& pipe,
                const EmbeddingPipeline::TextInput& text,
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
-               const std::optional<std::string>& prompt) -> EmbedResult {
+               const py::kwargs& kwargs) -> EmbedResult {
+                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                 py::gil_scoped_release rel;
-                return pipe.embed(text, images, videos, videos_metadata, prompt);
+                return pipe.embed(text, images, videos, videos_metadata, properties);
             },
             py::arg("text"),
             py::arg("images") = std::vector<ov::Tensor>{},
             py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
-            py::arg("prompt") = std::nullopt,
-            "Computes embedding vectors for text or a batch of texts with images and videos.")
+            "Computes embedding vectors for text or a batch of texts with images and videos. "
+            "Generation arguments (e.g. prompt=...) can be passed as keyword arguments.")
         .def(
             "embed",
             [](EmbeddingPipeline& pipe, const py::kwargs& kwargs) -> EmbedResult {
@@ -151,31 +128,7 @@ void init_rag_pipelines(py::module_& m) {
                 return pipe.embed(properties);
             },
             "Computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).")
-        .def(
-            "start_embed_async",
-            [](EmbeddingPipeline& pipe,
-               const EmbeddingPipeline::TextInput& text,
-               const std::vector<ov::Tensor>& images,
-               const std::vector<ov::Tensor>& videos,
-               const std::vector<ov::genai::VideoMetadata>& videos_metadata,
-               const std::optional<std::string>& prompt) -> void {
-                py::gil_scoped_release rel;
-                pipe.start_embed_async(text, images, videos, videos_metadata, prompt);
-            },
-            py::arg("text"),
-            py::arg("images") = std::vector<ov::Tensor>{},
-            py::arg("videos") = std::vector<ov::Tensor>{},
-            py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
-            py::arg("prompt") = std::nullopt,
-            "Asynchronously computes embedding vectors for text or a batch of texts with images and videos.")
-        .def(
-            "start_embed_async",
-            [](EmbeddingPipeline& pipe, const py::kwargs& kwargs) -> void {
-                const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                py::gil_scoped_release rel;
-                pipe.start_embed_async(properties);
-            },
-            "Asynchronously computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).");
+        ;
 
     auto text_embedding_pipeline =
         py::class_<TextEmbeddingPipeline>(m, "TextEmbeddingPipeline", "Text embedding pipeline")
@@ -219,17 +172,6 @@ void init_rag_pipelines(py::module_& m) {
                 py::arg("texts"),
                 "List of texts ",
                 "Asynchronously computes embeddings for a vector of texts")
-            .def(
-                "start_embed_async",
-                [](TextEmbeddingPipeline& pipe, std::vector<std::string>& texts, std::string& prompt) -> void {
-                    py::gil_scoped_release rel;
-                    pipe.start_embed_async(texts, prompt);
-                },
-                py::arg("texts"),
-                py::arg("prompt"),
-                "List of texts ",
-                "Prompt prepended to each text ",
-                "Asynchronously computes embeddings for a vector of texts prepended with a prompt")
             .def(
                 "wait_embed_documents",
                 [](TextEmbeddingPipeline& pipe) -> py::typing::Union<EmbeddingResults> {

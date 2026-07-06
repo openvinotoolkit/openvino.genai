@@ -4,8 +4,6 @@
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
 #include <algorithm>
-#include <future>
-#include <mutex>
 #include <numeric>
 #include <optional>
 #include <sstream>
@@ -175,11 +173,10 @@ public:
         }
     }
 
-    EmbedResult embed(const EmbeddingPipeline::TextInput& text, const std::optional<std::string>& prompt) {
+    EmbedResult embed(const EmbeddingPipeline::TextInput& text, const ov::AnyMap& properties) {
+        std::optional<std::string> prompt;
+        utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt);
         if (m_mode == Mode::TEXT_ONLY) {
-            std::lock_guard<std::mutex> async_lock(m_async_mutex);
-            OPENVINO_ASSERT(!m_text_async_pending, "Previous asynchronous embed request is still pending");
-            std::lock_guard<std::mutex> request_lock(m_request_mutex);
             if (std::holds_alternative<std::string>(text)) {
                 const std::vector<std::string> texts{std::get<std::string>(text)};
                 if (prompt.has_value()) {
@@ -194,10 +191,6 @@ public:
                 return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
             }
         }
-        std::lock_guard<std::mutex> async_lock(m_async_mutex);
-        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
-        std::lock_guard<std::mutex> request_lock(m_request_mutex);
-
         std::vector<std::string> texts = std::holds_alternative<std::string>(text)
             ? std::vector<std::string>{std::get<std::string>(text)}
             : std::get<std::vector<std::string>>(text);
@@ -207,32 +200,18 @@ public:
         return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
     }
 
-    EmbedResult wait() {
-        if (m_mode == Mode::TEXT_ONLY) {
-            std::lock_guard<std::mutex> async_lock(m_async_mutex);
-            OPENVINO_ASSERT(m_text_async_pending, "Asynchronous embed request was not started");
-            EmbedResult result{embedding_results_to_tensor(m_text_embedding_pipeline->wait_embed_documents())};
-            m_text_async_pending = false;
-            return result;
-        }
-        std::lock_guard<std::mutex> async_lock(m_async_mutex);
-        OPENVINO_ASSERT(m_embed_future.valid(), "Asynchronous embed request was not started");
-        return m_embed_future.get();
-    }
-
     EmbedResult embed(const EmbeddingPipeline::TextInput& text,
                      const std::vector<ov::Tensor>& images,
                      const std::vector<ov::Tensor>& videos,
                      const std::vector<VideoMetadata>& videos_metadata,
-                     const std::optional<std::string>& prompt) {
+                     const ov::AnyMap& properties) {
         if (m_mode == Mode::TEXT_ONLY) {
             OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
                             "TextEmbeddingPipeline fallback is active and does not support image/video input");
-            return embed(text, prompt);
+            return embed(text, properties);
         }
-        std::lock_guard<std::mutex> async_lock(m_async_mutex);
-        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
-        std::lock_guard<std::mutex> request_lock(m_request_mutex);
+        std::optional<std::string> prompt;
+        utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt);
 
         OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
                         "videos_metadata size (",
@@ -249,54 +228,6 @@ public:
             : std::get<std::vector<std::string>>(text);
 
         return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
-    }
-
-    void start_embed_async(const EmbeddingPipeline::TextInput& text,
-                           const std::vector<ov::Tensor>& images,
-                           const std::vector<ov::Tensor>& videos,
-                           const std::vector<VideoMetadata>& videos_metadata,
-                           const std::optional<std::string>& prompt) {
-        const bool is_single_text = std::holds_alternative<std::string>(text);
-        if (m_mode == Mode::TEXT_ONLY) {
-            OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
-                            "TextEmbeddingPipeline fallback is active and does not support image/video input");
-            std::lock_guard<std::mutex> async_lock(m_async_mutex);
-            OPENVINO_ASSERT(!m_text_async_pending, "Previous asynchronous embed request is still pending");
-            std::lock_guard<std::mutex> request_lock(m_request_mutex);
-            if (prompt.has_value()) {
-                const std::vector<std::string> texts = is_single_text ? std::vector<std::string>{std::get<std::string>(text)}
-                                                                      : std::get<std::vector<std::string>>(text);
-                m_text_embedding_pipeline->start_embed_async(texts, *prompt);
-            } else if (is_single_text) {
-                m_text_embedding_pipeline->start_embed_documents_async(std::vector<std::string>{std::get<std::string>(text)});
-            } else {
-                m_text_embedding_pipeline->start_embed_documents_async(std::get<std::vector<std::string>>(text));
-            }
-            m_text_async_pending = true;
-            return;
-        }
-        std::lock_guard<std::mutex> async_lock(m_async_mutex);
-        OPENVINO_ASSERT(!m_embed_future.valid(), "Previous asynchronous embed request is still pending");
-        std::lock_guard<std::mutex> request_lock(m_request_mutex);
-        m_embed_future = std::async(std::launch::async, [this, text, images, videos, videos_metadata, prompt]() {
-            std::lock_guard<std::mutex> lock(m_request_mutex);
-
-            OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                            "videos_metadata size (",
-                            videos_metadata.size(),
-                            ") must be equal to videos size (",
-                            videos.size(),
-                            ") or empty");
-
-            std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
-            std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
-
-            std::vector<std::string> texts = std::holds_alternative<std::string>(text)
-                ? std::vector<std::string>{std::get<std::string>(text)}
-                : std::get<std::vector<std::string>>(text);
-
-            return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
-        });
     }
 
 private:
@@ -570,13 +501,9 @@ private:
     TextEmbeddingPipeline::Config m_config;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
-    std::mutex m_request_mutex;
-    std::mutex m_async_mutex;
     std::unordered_set<std::string> m_language_model_input_names;
     std::unordered_set<std::string> m_language_model_output_names;
     std::string m_embedding_output_name;
-    std::future<EmbedResult> m_embed_future;
-    bool m_text_async_pending = false;
 };
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
@@ -590,57 +517,24 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-// void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
-//                                           const std::optional<std::string>& prompt) {
-//     return m_impl->start_embed_async(text, prompt);
-// }
-
-EmbedResult EmbeddingPipeline::wait() {
-    return m_impl->wait();
-}
-
 EmbedResult EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text,
                                     const std::vector<ov::Tensor>& images,
                                     const std::vector<ov::Tensor>& videos,
                                     const std::vector<VideoMetadata>& videos_metadata,
-                                    const std::optional<std::string>& prompt) {
-    return m_impl->embed(text, images, videos, videos_metadata, prompt);
-}
-
-void EmbeddingPipeline::start_embed_async(const EmbeddingPipeline::TextInput& text,
-                                          const std::vector<ov::Tensor>& images,
-                                          const std::vector<ov::Tensor>& videos,
-                                          const std::vector<VideoMetadata>& videos_metadata,
-                                          const std::optional<std::string>& prompt) {
-    return m_impl->start_embed_async(text, images, videos, videos_metadata, prompt);
+                                    const ov::AnyMap& properties) {
+    return m_impl->embed(text, images, videos, videos_metadata, properties);
 }
 
 EmbedResult EmbeddingPipeline::embed(const ov::AnyMap& properties) {
     std::vector<ov::Tensor> images_vec;
     std::vector<ov::Tensor> videos_vec;
     std::vector<VideoMetadata> videos_metadata_vec;
-    std::optional<std::string> prompt_val;
 
     utils::read_anymap_param(properties, ov::genai::images.name(), images_vec);
     utils::read_anymap_param(properties, ov::genai::videos.name(), videos_vec);
     utils::read_anymap_param(properties, ov::genai::videos_metadata.name(), videos_metadata_vec);
-    utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt_val);
 
-    return m_impl->embed(std::string{}, images_vec, videos_vec, videos_metadata_vec, prompt_val);
-}
-
-void EmbeddingPipeline::start_embed_async(const ov::AnyMap& properties) {
-    std::vector<ov::Tensor> images_vec;
-    std::vector<ov::Tensor> videos_vec;
-    std::vector<VideoMetadata> videos_metadata_vec;
-    std::optional<std::string> prompt_val;
-
-    utils::read_anymap_param(properties, ov::genai::images.name(), images_vec);
-    utils::read_anymap_param(properties, ov::genai::videos.name(), videos_vec);
-    utils::read_anymap_param(properties, ov::genai::videos_metadata.name(), videos_metadata_vec);
-    utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt_val);
-
-    return m_impl->start_embed_async(std::string{}, images_vec, videos_vec, videos_metadata_vec, prompt_val);
+    return m_impl->embed(std::string{}, images_vec, videos_vec, videos_metadata_vec, properties);
 }
 
 EmbeddingPipeline::~EmbeddingPipeline() = default;

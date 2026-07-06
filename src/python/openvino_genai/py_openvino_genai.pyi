@@ -1195,33 +1195,15 @@ class EmbeddingPipeline:
         Plugin and/or config properties
         """
     @typing.overload
-    def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> EmbedResult:
+    def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], **kwargs) -> EmbedResult:
         """
         Computes embedding vectors for text or a batch of texts with images and videos.
+        Generation arguments (e.g. prompt=...) can be passed as keyword arguments.
         """
     @typing.overload
     def embed(self, **kwargs) -> EmbedResult:
         """
         Computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).
-        """
-    @typing.overload
-    def start_embed_async(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
-        """
-        Asynchronously computes embedding vectors for text or a batch of texts.
-        """
-    @typing.overload
-    def start_embed_async(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], prompt: str | None = None) -> None:
-        """
-        Asynchronously computes embedding vectors for text or a batch of texts with images and videos.
-        """
-    @typing.overload
-    def start_embed_async(self, **kwargs) -> None:
-        """
-        Asynchronously computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).
-        """
-    def wait(self) -> EmbedResult:
-        """
-        Waits for asynchronous embedding computation and returns result.
         """
 class EncodedGenerationResult:
     """
@@ -4453,10 +4435,6 @@ class TextEmbeddingPipeline:
     def embed_query(self, text: str) -> list[float] | list[int] | list[int]:
         """
         Computes embeddings for a query
-        """
-    def start_embed_async(self, texts: collections.abc.Sequence[str], prompt: str) -> None:
-        """
-        Asynchronously computes embeddings for a vector of texts prepended with a prompt
         """
     def start_embed_documents_async(self, texts: collections.abc.Sequence[str]) -> None:
         """
