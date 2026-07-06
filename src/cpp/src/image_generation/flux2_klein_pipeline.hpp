@@ -226,25 +226,6 @@ inline ov::Tensor flux2_prepare_image_ids(size_t batch_size, const std::vector<s
     return image_ids;
 }
 
-// Compute empirical mu for Flux2 dynamic timestep shifting
-inline double flux2_compute_empirical_mu(size_t image_seq_len, size_t num_steps) {
-    const double a1 = 8.73809524e-05, b1 = 1.89833333;
-    const double a2 = 0.00016927, b2 = 0.45666666;
-
-    if (image_seq_len > 4300) {
-        return a2 * static_cast<double>(image_seq_len) + b2;
-    }
-
-    const double m_200 = a2 * static_cast<double>(image_seq_len) + b2;
-    const double m_10 = a1 * static_cast<double>(image_seq_len) + b1;
-
-    const double a = (m_200 - m_10) / 190.0;
-    const double b = m_200 - 200.0 * a;
-    const double mu = a * static_cast<double>(num_steps) + b;
-
-    return mu;
-}
-
 }  // anonymous namespace
 
 namespace ov {
@@ -611,14 +592,12 @@ public:
         const size_t latent_width = m_custom_generation_config.width / vae_scale_factor / 2;
         const size_t image_seq_len = latent_height * latent_width;
 
-        const double mu = flux2_compute_empirical_mu(image_seq_len, m_custom_generation_config.num_inference_steps);
-
         // Flux2 Klein does not support variable strength:
         // - Text2Image: always denoises from pure noise, requires all steps
         // - Image2Image: uses reference conditioning (image latents as extra tokens),
         //   not noise blending, so partial denoising is not applicable
         // Aligned with diffusers FluxPipeline which does not accept 'strength':
-        m_scheduler->set_timesteps_with_mu(mu, m_custom_generation_config.num_inference_steps, 1.0f);
+        m_scheduler->set_timesteps(image_seq_len, m_custom_generation_config.num_inference_steps, 1.0f);
 
         // Prepare timesteps
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
