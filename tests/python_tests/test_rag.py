@@ -325,6 +325,7 @@ def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
     result = pipeline.embed(text, prompt=prompt)
     assert_embedding_tensor(result, 1)
 
+
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
 def test_qwen3_vl_embedding_text_batch_consistency(multimodal_emb_model):
     """Test that batch processing gives same results as individual processing."""
@@ -362,6 +363,7 @@ def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_
     assert_embedding_tensor(result, 1)
     hf_result = run_multimodal_embedding_hf(hf_processor, hf_model, image_text_prompt, image=image_array, prompt=prompt)
     assert_embedding_matches_hf_cosine(result, hf_result, max_cosine_diff=0.05)
+
 
 @pytest.mark.xfail(reason="Ticket - CVS-189808")
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
@@ -426,7 +428,6 @@ def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model, cat_image_path)
 
     result = pipeline.embed(text, videos=[video], videos_metadata=[video_metadata])
     assert_embedding_tensor(result, 1)
-
 
 
 @pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
