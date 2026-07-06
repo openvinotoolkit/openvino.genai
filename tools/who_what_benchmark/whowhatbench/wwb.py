@@ -805,8 +805,14 @@ def genai_gen_visual_text(
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
-    kwargs["num_assistant_tokens"] = num_assistant_tokens
-    kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
+    if num_assistant_tokens and assistant_confidence_threshold:
+         raise ValueError(
+             "Parameters 'num_assistant_tokens' and 'assistant_confidence_threshold' are mutually exclusive"
+         )
+     if num_assistant_tokens:
+         kwargs["num_assistant_tokens"] = num_assistant_tokens
+     if assistant_confidence_threshold:
+         kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
 
     out = model.generate(
         prompt,
@@ -836,8 +842,14 @@ def genai_gen_visual_text_chat(
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
-    kwargs["num_assistant_tokens"] = num_assistant_tokens
-    kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
+    if num_assistant_tokens and assistant_confidence_threshold:
+         raise ValueError(
+             "Parameters 'num_assistant_tokens' and 'assistant_confidence_threshold' are mutually exclusive"
+         )
+     if num_assistant_tokens:
+         kwargs["num_assistant_tokens"] = num_assistant_tokens
+     if assistant_confidence_threshold:
+         kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
 
     import openvino_genai
 

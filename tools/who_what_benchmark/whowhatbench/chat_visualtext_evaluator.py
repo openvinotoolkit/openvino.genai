@@ -50,9 +50,9 @@ def default_gen_answer(
     max_new_tokens,
     pruning_ratio,
     relevance_weight,
-    kv_axes_pos,
-    _num_assistant_tokens=0,
-    _assistant_confidence_threshold=0.0,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    kv_axes_pos=2,
     crop_question=False,
     full_chat=False,
 ):
@@ -339,18 +339,18 @@ class ChatVisualTextEvaluator(TextEvaluator):
             desc="Evaluate pipeline",
         ):
             answer = gen_answer_fn(
-                model,
-                inputs,
-                self.processor,
-                self.tokenizer,
-                self.max_new_tokens,
-                self.pruning_ratio,
-                self.relevance_weight,
-                self.num_assistant_tokens,
-                self.assistant_confidence_threshold,
-                kv_axes_pos,
-                self._crop_question,
-                _full_chat,
+                model=model,
+                inputs=inputs,
+                processor=self.processor,
+                tokenizer=self.tokenizer,
+                max_new_tokens=self.max_new_tokens,
+                pruning_ratio=self.pruning_ratio,
+                relevance_weight=self.relevance_weight,
+                num_assistant_tokens=self.num_assistant_tokens,
+                assistant_confidence_threshold=self.assistant_confidence_threshold,
+                kv_axes_pos=kv_axes_pos,
+                crop_question=self._crop_question,
+                full_chat=_full_chat,
             )
 
             result_path = Path(result_dir) / f"chat_vlm_output_{i}.json"
