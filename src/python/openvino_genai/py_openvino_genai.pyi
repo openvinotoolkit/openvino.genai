@@ -1374,6 +1374,7 @@ class Flux2Transformer2DModel:
         """
         This class is used for storing Flux2Transformer2DModel config.
         """
+        guidance_embeds: bool
         def __init__(self, config_path: os.PathLike | str | bytes) -> None:
             ...
         @property
@@ -1381,12 +1382,6 @@ class Flux2Transformer2DModel:
             ...
         @default_sample_size.setter
         def default_sample_size(self, arg0: typing.SupportsInt) -> None:
-            ...
-        @property
-        def guidance_embeds(self) -> bool:
-            ...
-        @guidance_embeds.setter
-        def guidance_embeds(self, arg0: bool) -> None:
             ...
         @property
         def in_channels(self) -> int:
