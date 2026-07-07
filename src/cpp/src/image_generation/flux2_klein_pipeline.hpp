@@ -430,6 +430,7 @@ public:
                         ov::Tensor initial_image,
                         ov::Tensor mask_image,
                         const ov::AnyMap& properties) override {
+        OPENVINO_ASSERT(!mask_image, "Flux2KleinPipeline does not support mask_image/inpainting");
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
         m_custom_generation_config = m_generation_config;
