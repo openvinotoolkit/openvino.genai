@@ -329,9 +329,12 @@ private:
 
         // Stack and pad all tensors to max_seq_length
         const size_t batch_size = texts.size();
+        OPENVINO_ASSERT(batch_size > 0, "embed() called with an empty batch");
+
         const size_t embed_dim = batch_items[0].inputs_embeds.get_shape().at(2);
 
         ov::Tensor batched_inputs_embeds(ov::element::f32, {batch_size, max_seq_length, embed_dim});
+        std::fill_n(batched_inputs_embeds.data<float>(), batched_inputs_embeds.get_size(), 0.0f);
         ov::Tensor batched_attention_mask(ov::element::i64, {batch_size, max_seq_length});
         std::fill_n(batched_attention_mask.data<int64_t>(), batched_attention_mask.get_size(), 0);
 
@@ -344,10 +347,9 @@ private:
         std::optional<ov::Tensor> batched_position_ids;
         if (batch_items[0].position_ids.has_value()) {
             const auto& first_pos_shape = batch_items[0].position_ids->get_shape();
+            OPENVINO_ASSERT(first_pos_shape.size() == 3,
+                            "Expected position_ids to have rank 3, got rank ", first_pos_shape.size());
             ov::Shape batched_pos_shape = first_pos_shape;
-            // For position_ids with shape [3, batch, seq] or [batch, seq], update the batch dimension
-            
-            OPENVINO_ASSERT(batched_pos_shape.size() == 3, "Expected position_ids to have rank 3, got rank ", batched_pos_shape.size());
             batched_pos_shape[1] = batch_size;  // [3, 1, seq] -> [3, batch_size, seq]
             batched_pos_shape.back() = max_seq_length;
             batched_position_ids = ov::Tensor(ov::element::i64, batched_pos_shape);
@@ -374,27 +376,15 @@ private:
                 std::copy_n(src_tti, seq_length, dst_tti);
             }
 
-            // Copy position_ids if present
+            // Copy position_ids if present; shape is [3, batch_size, max_seq_length]
             if (item.position_ids.has_value()) {
-                const auto& pos_shape = item.position_ids->get_shape();
-                const auto& batched_pos_shape = batched_position_ids->get_shape();
+                const size_t num_dims = batched_position_ids->get_shape()[0];
                 const int64_t* src_pos = item.position_ids->data<const int64_t>();
-
-                if (batched_pos_shape.size() == 3) {
-                    // Shape: [3, batch_size, max_seq_length]
-                    // For each of the 3 dimensions, copy the position values for this batch item
-                    const size_t num_dims = batched_pos_shape[0];
-                    for (size_t dim_idx = 0; dim_idx < num_dims; ++dim_idx) {
-                        int64_t* dst_pos = batched_position_ids->data<int64_t>() +
-                                          dim_idx * batch_size * max_seq_length +  // offset to dimension
-                                          i * max_seq_length;                        // offset to batch item
-                        const int64_t* src_dim = src_pos + dim_idx * seq_length;
-                        std::copy_n(src_dim, seq_length, dst_pos);
-                    }
-                } else {
-                    // Shape: [batch_size, max_seq_length]
-                    int64_t* dst_pos = batched_position_ids->data<int64_t>() + i * max_seq_length;
-                    std::copy_n(src_pos, seq_length, dst_pos);
+                for (size_t dim_idx = 0; dim_idx < num_dims; ++dim_idx) {
+                    int64_t* dst_pos = batched_position_ids->data<int64_t>() +
+                                      dim_idx * batch_size * max_seq_length +
+                                      i * max_seq_length;
+                    std::copy_n(src_pos + dim_idx * seq_length, seq_length, dst_pos);
                 }
             }
         }

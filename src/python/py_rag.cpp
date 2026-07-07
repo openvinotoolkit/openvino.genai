@@ -149,8 +149,8 @@ void init_rag_pipelines(py::module_& m) {
             .def(
                 "embed",
                 [](TextEmbeddingPipeline& pipe,
-                   std::vector<std::string>& texts,
-                   std::string& prompt) -> py::typing::Union<EmbeddingResults> {
+                   const std::vector<std::string>& texts,
+                   const std::string& prompt) -> py::typing::Union<EmbeddingResults> {
                     EmbeddingResults res;
                     {
                         py::gil_scoped_release rel;

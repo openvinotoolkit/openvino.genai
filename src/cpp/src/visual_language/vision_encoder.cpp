@@ -40,19 +40,6 @@ nlohmann::json read_json_if_exists(const std::filesystem::path& json_path) {
     return nlohmann::json::parse(stream);
 }
 
-template <typename ConfigValue>
-void read_json_param_if_missing(const nlohmann::json& parsed,
-                                const nlohmann::json& fallback,
-                                const std::string& param_name,
-                                ConfigValue& value) {
-    if (parsed.contains(param_name)) {
-        return;
-    }
-
-    using ov::genai::utils::read_json_param;
-    read_json_param(fallback, param_name, value);
-}
-
 template <typename Config>
 void apply_missing_qwen_processor_params(Config& config,
                                          const nlohmann::json& parsed,

@@ -44,7 +44,9 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     if (!parsed.contains("temporal_patch_size")) {
         read_json_param(parsed, "vision_config.temporal_patch_size", temporal_patch_size);
     }
-    read_json_param(parsed, "vision_config.spatial_merge_size", merge_size);
+    if (!parsed.contains("merge_size")) {
+        read_json_param(parsed, "vision_config.spatial_merge_size", merge_size);
+    }
 
     // Setting qwen3_vl config params
     // qwen3_vl uses size.shortest_edge and size.longest_edge instead of min_pixels and max_pixels
