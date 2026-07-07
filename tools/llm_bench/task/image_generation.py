@@ -201,9 +201,6 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     # duplicated if/else branches.  Also fixes the bug in the subsequent=True
     # path where `callback` was not forwarded to image_gen_fn.
     prompter = BenchPrompter(args)
-    if len(prompter) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-
     active = prompter.active_pairs
     prompt_idx_list = [p_idx for p_idx, _ in active]
     image_list = [p for _, p in active]

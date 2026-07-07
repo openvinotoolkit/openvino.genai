@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+
+import os
+import datetime
 import logging as log
 
 from typing import Any
@@ -12,10 +15,11 @@ from PIL import Image
 import llm_bench_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
+import llm_bench_utils.model_utils as model_utils
 
 from llm_bench_utils.hook_forward import StableDiffusionHook
-from llm_bench_utils.prompt_utils import get_video_gen_prompt
-from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step, iteration_step
+from llm_bench_utils.prompt_utils import BenchPrompter
+from task.pipeline_utils import CommonPipeline, execution_time_in_sec
 
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
@@ -365,7 +369,17 @@ class TextToVideoGenAI(CommonPipeline):
 
 
 def run_video_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    text_list, prompt_idx_list = collect_prompts_step(args, get_video_gen_prompt)
+    # Build the prompt schedule via BenchPrompter, which:
+    #   - reads and parses the video-generation prompt file (JSON or plain text)
+    #   - honours args['prompt_index'] for selective benchmarking
+    #   - handles both subsequent=False (iter-major) and subsequent=True
+    #     (prompt-major) scheduling via a single unified iter_schedule() loop,
+    #     replacing the previous collect_prompts_step + iteration_step pair.
+    prompter = BenchPrompter(args)
+    active = prompter.active_pairs
+    prompt_idx_list = [p_idx for p_idx, _ in active]
+    text_list = [p for _, p in active]
+
     mem_consumption.update_marker("model")
 
     if args.get("static_reshape", False):
@@ -380,7 +394,8 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
     iter_data_list = []
 
     log.info(
-        f"Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}"
+        f"Benchmarking iter nums(exclude warm-up): {num_iters}, "
+        f"prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}"
     )
 
     if use_genai:
@@ -394,9 +409,19 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
         )
 
     mem_consumption.activate_cooldown("after model compilation")
-    iter_data_list, iter_timestamp = iteration_step(
-        video_gen_pipeline, num_iters, text_list, prompt_idx_list, bench_hook=None, subsequent=args["subsequent"]
-    )
+    proc_id = os.getpid()
+    iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        iter_data, _ = video_gen_pipeline.run(prompt, num, p_idx, proc_id, None)
+        iter_data_list.append(iter_data)
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
+        prefix = "[warm-up]" if num == 0 else "[{}]".format(num)
+        log.info(
+            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, "
+            f"end: {iter_timestamp[num][p_idx]['end']}"
+        )
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False)
     return iter_data_list, pretrain_time, iter_timestamp
