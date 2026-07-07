@@ -73,13 +73,11 @@ public:
                            const ov::AnyMap& properties = {});
 
     /**
-    * @brief Computes embedding vectors for text or a batch of texts with images and videos.
+    * @brief Computes embedding vectors using properties.
     *
-    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
-    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
-    * @param videos_metadata Video metadata for the videos provided.
-    * @param prompt Prompt to use for embedding computation.
-    * @return EmbeddingResults.
+    * @param properties Generation arguments and inputs (e.g. ov::genai::images, ov::genai::videos,
+    *                   ov::genai::videos_metadata, ov::genai::prompt).
+    * @return Embedding tensor.
     */
     EmbedResult embed(const ov::AnyMap& properties);
 

@@ -277,6 +277,9 @@ private:
                                         const std::vector<EncodedImage>& encoded_images,
                                         const std::vector<EncodedVideo>& encoded_videos,
                                         const std::optional<std::string>& prompt) {
+        if (texts.empty()) {
+            return EmbedResult{ov::Tensor(ov::element::f32, {0, 0})};
+        }
         // Prepare all normalized prompts and get inputs_embeds for each
         struct BatchItem {
             ov::Tensor inputs_embeds;
