@@ -833,9 +833,9 @@ def genai_gen_visual_text_chat(
     relevance_weight: Optional[float],
     num_assistant_tokens: int = 0,
     assistant_confidence_threshold: float = 0.0,
-    _kv_axes_pos=None,
-    _crop_question=None,
-    _full_chat=None,
+    kv_axes_pos=None,
+    crop_question=None,
+    full_chat=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
