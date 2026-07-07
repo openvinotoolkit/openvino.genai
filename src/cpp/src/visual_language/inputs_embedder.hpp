@@ -383,6 +383,7 @@ private:
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderQwen3_5;
     friend class InputsEmbedderGemma3;
+    friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
     friend class InputsEmbedderVideoChatFlashQwen;
 };
