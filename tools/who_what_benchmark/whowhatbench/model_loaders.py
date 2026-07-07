@@ -25,6 +25,7 @@ from .reranking_evaluator import (
     is_qwen3,
 )
 from .utils import (
+    OMNI_MODEL_TYPES,
     apply_peft_adapters,
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
@@ -183,14 +184,6 @@ def load_text_llamacpp_pipeline(model_dir):
         exit(-1)
     model = Llama(model_dir)
     return model
-
-
-# Qwen3-Omni multimodal models are loaded via their explicit ForConditionalGeneration
-# class (as optimum exports them); map each model_type to its class name.
-OMNI_MODEL_TYPES = {
-    "qwen3_omni_moe": "Qwen3OmniMoeForConditionalGeneration",
-    "qwen3_omni": "Qwen3OmniForConditionalGeneration",
-}
 
 
 def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **kwargs):
