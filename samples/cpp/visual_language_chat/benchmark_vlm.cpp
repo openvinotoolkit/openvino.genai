@@ -133,9 +133,9 @@ int main(int argc, char* argv[]) try {
         std::cout << "\nMAIN MODEL " << std::endl;
         std::cout << "  Generate time: " << main_model_metrics.get_generate_duration().mean << " ms" << std::endl;
         std::cout << "  TTFT: " << main_model_metrics.get_ttft().mean  << " ± " << main_model_metrics.get_ttft().std << " ms" << std::endl;
-        std::cout << "  TTST: " << main_model_metrics.get_ttst().mean  << " ± " << main_model_metrics.get_ttst().std << " ms/token " << std::endl;
-        std::cout << "  TPOT: " << main_model_metrics.get_tpot().mean  << " ± " << main_model_metrics.get_tpot().std << " ms/iteration " << std::endl;
-        std::cout << "  AVG Latency: " << main_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/token " << std::endl;
+        std::cout << "  TTST: " << main_model_metrics.get_ttst().mean  << " ± " << main_model_metrics.get_ttst().std << " ms " << std::endl;
+        std::cout << "  TPOT: " << main_model_metrics.get_tpot().mean  << " ± " << main_model_metrics.get_tpot().std << " ms/token " << std::endl;
+        std::cout << "  AVG Latency: " << main_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/iteration " << std::endl;
         std::cout << "  Num generated token: " << main_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
         std::cout << "  Total iteration number: " << main_model_metrics.raw_metrics.m_durations.size() << std::endl;
         std::cout << "  Num accepted token: " << sd_perf_metrics->get_num_accepted_tokens() << " tokens" << std::endl;
@@ -144,7 +144,7 @@ int main(int argc, char* argv[]) try {
         std::cout << "\nDRAFT MODEL " << std::endl;
         std::cout << "  Generate time: " << draft_model_metrics.get_generate_duration().mean << " ms" << std::endl;
         std::cout << "  TTFT: " << draft_model_metrics.get_ttft().mean  << " ± " << draft_model_metrics.get_ttft().std << " ms" << std::endl;
-        std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ± " << draft_model_metrics.get_ttst().std << " ms/token " << std::endl;
+        std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ± " << draft_model_metrics.get_ttst().std << " ms " << std::endl;
         std::cout << "  TPOT: " << draft_model_metrics.get_tpot().mean  << " ± " << draft_model_metrics.get_tpot().std << " ms/token " << std::endl;
         std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << draft_model_metrics.get_latency().std << " ms/iteration " << std::endl;
         std::cout << "  Num generated token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;

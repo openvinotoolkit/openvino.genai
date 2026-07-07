@@ -205,6 +205,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         alphas=kwargs.get("alphas", None),
     )
 
+    ov_config = ov_config or {}
     _add_genai_draft_model_config(ov_config, device, **kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
