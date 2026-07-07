@@ -21,6 +21,7 @@ def main():
     )
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
+    parser.add_argument("--num-frames", type=int, default=161, help="Number of frames to generate")
     args, adapters = parser.parse_known_args()
 
     if len(adapters) % 2 != 0:
@@ -50,6 +51,7 @@ def main():
     generate_args = dict(
         negative_prompt="worst quality, inconsistent motion, blurry, jittery, distorted",
         height=480,
+        num_frames=args.num_frames,
         num_inference_steps=25,
         callback=callback,
         guidance_scale=3,

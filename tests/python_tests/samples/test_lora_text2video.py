@@ -28,11 +28,11 @@ class TestLoraText2Video:
         cpp_dir.mkdir()
 
         py_script = SAMPLES_PY_DIR / "video_generation/lora_text2video.py"
-        py_command = [sys.executable, py_script, convert_model, sample_args, download_test_content, "0.7"]
+        py_command = [sys.executable, py_script, convert_model, sample_args, download_test_content, "0.7", "--num-frames", "5"]
         run_sample(py_command, cwd=str(py_dir))
 
         cpp_sample = SAMPLES_CPP_DIR / "lora_text2video"
-        cpp_command = [cpp_sample, convert_model, sample_args, download_test_content, "0.7"]
+        cpp_command = [cpp_sample, convert_model, sample_args, download_test_content, "0.7", "--num-frames", "5"]
         run_sample(cpp_command, cwd=str(cpp_dir))
 
         for video_name in ("lora_video.avi", "baseline_video.avi"):
