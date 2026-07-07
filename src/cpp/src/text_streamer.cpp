@@ -3,6 +3,12 @@
 
 #include "openvino/genai/text_streamer.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
+
+#include "openvino/core/except.hpp"
+
 namespace {
 bool is_incomplete(std::string& text) {
     // MSVC with /utf-8 fails to compile � directly with newline in string literal error.
@@ -10,7 +16,28 @@ bool is_incomplete(std::string& text) {
     return text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0;
 }
 
-constexpr size_t delay_n_tokens = 3;
+constexpr size_t default_delay_n_tokens = 3;
+
+// In some cases adding the next token can shorten already decoded text,
+// e.g. when apostrophe removing regex had worked after adding new tokens.
+// Printing the last 'delay_n_tokens' tokens is delayed to avoid emitting text that can still change.
+// The delay can be overridden via OPENVINO_GENAI_STREAMER_DELAY_N_TOKENS for use cases
+// prioritizing lower streaming latency over that protection.
+size_t get_delay_n_tokens() {
+    static const size_t delay_n_tokens = [] {
+        const char* env_value = std::getenv("OPENVINO_GENAI_STREAMER_DELAY_N_TOKENS");
+        if (env_value == nullptr) {
+            return default_delay_n_tokens;
+        }
+        const std::string value{env_value};
+        OPENVINO_ASSERT(!value.empty() && std::all_of(value.begin(), value.end(), [](unsigned char character) {
+                             return std::isdigit(character);
+                         }),
+                         "OPENVINO_GENAI_STREAMER_DELAY_N_TOKENS must be a non-negative integer, got '", value, "'");
+        return static_cast<size_t>(std::stoul(value));
+    }();
+    return delay_n_tokens;
+}
 
 }  // namespace
 
@@ -48,9 +75,7 @@ StreamingStatus TextStreamer::write(int64_t token) {
         return run_callback_if_needed(res.str());
     }
 
-    // In some cases adding the next token can shorten the text,
-    // e.g. when apostrophe removing regex had worked after adding new tokens.
-    // Printing several last tokens is delayed.
+    const size_t delay_n_tokens = get_delay_n_tokens();
     if (m_decoded_lengths.size() < delay_n_tokens) {
         return run_callback_if_needed(res.str());
     }
@@ -155,6 +180,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     // When 'write' is called with string, it means new chunk of tokens is decoded into text
 
     auto flushed_tokens = std::vector<int64_t>();
+    const size_t delay_n_tokens = get_delay_n_tokens();
     if (delta_text.back() == '\n') {
         // Flush all tokens
         flushed_tokens.assign(m_tokens_cache.begin(), m_tokens_cache.end());
