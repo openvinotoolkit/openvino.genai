@@ -2255,6 +2255,13 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # gemma3 PA cases
     "*tiny-random-gemma3/PA/*": "CVS-167316",
+    # gemma3n cases
+    "*tiny-random-gemma3n/PA/CPP/image*": "CVS-190429",
+    "*tiny-random-gemma3n/SDPA/CPP/image*": "CVS-190429",
+    "*tiny-random-gemma3n/SDPA/CPP/text-only": "CVS-190429",
+    # Gemma4-unified cases
+    "*tiny-random-gemma4-unified-it/SDPA/CPP/image*": "CVS-190429",
+    "*tiny-random-gemma4-unified-it/SDPA/CPP/text-only": "CVS-190429",
     # Gemma4 models (with token_type_ids input) PA cases with image input
     "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
     "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
