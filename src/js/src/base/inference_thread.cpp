@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "openvino/core/except.hpp"
+
 namespace {
 
 // Reports an error from the inference thread back to JS through the callback ThreadSafeFunction.
