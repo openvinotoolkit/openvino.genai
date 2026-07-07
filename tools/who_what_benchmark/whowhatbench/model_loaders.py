@@ -403,6 +403,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         none_if_empty=True,
     )
 
+    ov_config = ov_config or {}
     _add_genai_draft_model_config(ov_config, device, **kwargs)
 
     pipeline_kwargs = {
