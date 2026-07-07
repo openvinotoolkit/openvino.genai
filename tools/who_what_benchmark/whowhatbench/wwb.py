@@ -16,7 +16,11 @@ from PIL import Image
 from datasets import load_dataset
 from typing import Any, Optional
 
-from whowhatbench.model_loaders import load_model
+from whowhatbench.model_loaders import (
+    load_model,
+    resolve_visual_preprocessor_model_id,
+    should_use_genai_visual_backend_for_type,
+)
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
@@ -25,6 +29,20 @@ from whowhatbench.utils import get_json_config
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _resolve_preprocessor_model_id(args, model_id):
+    return resolve_visual_preprocessor_model_id(args.model_type, model_id)
+
+
+def _use_genai_visual_backend(args):
+    model_id = args.base_model if args.base_model is not None else args.target_model
+    return should_use_genai_visual_backend_for_type(
+        args.model_type,
+        model_id,
+        use_hf=args.hf,
+        use_genai=args.genai,
+    )
 
 # Supported keys for --sd-generation-config and their expected Python types.
 # When updating this dict, also update the CLI help string for --sd-generation-config below to keep them consistent.
@@ -531,36 +549,39 @@ def load_tokenizer(args):
 
     tokenizer = None
     if args.tokenizer is not None:
+        tokenizer_id = _resolve_preprocessor_model_id(args, args.tokenizer)
         if args.llamacpp:
             from llama_cpp.llama_tokenizer import LlamaHFTokenizer
-            tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer, **kwargs)
+            tokenizer = LlamaHFTokenizer.from_pretrained(tokenizer_id, **kwargs)
         else:
             try:
                 tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=False, **kwargs
+                    tokenizer_id, trust_remote_code=False, **kwargs
                 )
             except Exception:
                 tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=True, **kwargs
+                    tokenizer_id, trust_remote_code=True, **kwargs
                 )
     elif args.base_model is not None:
+        base_model_id = _resolve_preprocessor_model_id(args, args.base_model)
         try:
             tokenizer = AutoTokenizer.from_pretrained(
-                args.base_model, trust_remote_code=False, **kwargs
+                base_model_id, trust_remote_code=False, **kwargs
             )
         except Exception:
             tokenizer = AutoTokenizer.from_pretrained(
-                args.base_model, trust_remote_code=True, **kwargs
+                base_model_id, trust_remote_code=True, **kwargs
             )
     elif args.target_model is not None:
+        target_model_id = _resolve_preprocessor_model_id(args, args.target_model)
         try:
             tokenizer = AutoTokenizer.from_pretrained(
-                args.target_model, trust_remote_code=False, **kwargs
+                target_model_id, trust_remote_code=False, **kwargs
             )
         except Exception:
             try:
                 tokenizer = AutoTokenizer.from_pretrained(
-                    args.target_model, trust_remote_code=True, **kwargs
+                    target_model_id, trust_remote_code=True, **kwargs
                 )
             except Exception:
                 logger.error(f"Cannot load the tokenizer for model type \"{args.model_type}\" from {args.target_model}")
@@ -573,6 +594,8 @@ def load_processor(args):
     model_id = args.base_model if args.base_model is not None else args.target_model
     if model_id is None:
         return None, None
+
+    model_id = _resolve_preprocessor_model_id(args, model_id)
 
     try:
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
@@ -1033,6 +1056,7 @@ def create_evaluator(base_model, args):
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+            use_genai_vlm_backend = _use_genai_visual_backend(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
                 crop_question = False
             else:
@@ -1045,7 +1069,7 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
                 max_new_tokens=args.max_new_tokens,
-                gen_answer_fn=genai_gen_visual_text if args.genai else None,
+                gen_answer_fn=genai_gen_visual_text if use_genai_vlm_backend else None,
                 processor=processor,
                 crop_question=crop_question,
                 task_type=task,
@@ -1134,6 +1158,7 @@ def create_evaluator(base_model, args):
         elif task == "visual-text-chat":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+            use_genai_vlm_backend = _use_genai_visual_backend(args)
             # If base_model/target_model is provided, wwb will generate data and the chat_template should be defined.
             # If test_data only is provided, wwb will not generate data and the chat_template is not necessary.
             if (
@@ -1159,7 +1184,7 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
                 max_new_tokens=args.max_new_tokens,
-                gen_answer_fn=genai_gen_visual_text_chat if args.genai else None,
+                gen_answer_fn=genai_gen_visual_text_chat if use_genai_vlm_backend else None,
                 processor=processor,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
@@ -1331,7 +1356,7 @@ def main():
         args.generation_config_extra = {}
 
     version_str = f'openvino runtime version: {ov.get_version()}'
-    if args.genai:
+    if args.genai or _use_genai_visual_backend(args):
         try:
             import openvino_genai
         except ImportError:
@@ -1448,7 +1473,7 @@ def main():
             all_metrics_per_question, all_metrics = evaluator.score(
                 target_model,
                 evaluator.get_generation_fn()
-                if args.genai or args.llamacpp or args.model_type == "speech-generation"
+                if args.genai or args.llamacpp or args.model_type == "speech-generation" or _use_genai_visual_backend(args)
                 else None,
                 output_dir=args.output,
                 verbose=args.verbose,
