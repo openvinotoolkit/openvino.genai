@@ -608,8 +608,12 @@ public:
                                            ") exceeds tree_position_ids.size() (", tree_pos_ids.size(),
                                            "); position_ids_idx=", position_ids_idx,
                                            ", seq_id=", sequence->get_id());
-                            size_t tree_pos_id = tree_pos_ids[token_id];
-                            position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
+                            int64_t tree_pos_id = tree_pos_ids[token_id];
+                            OPENVINO_ASSERT(tree_pos_id >= 0,
+                                            "tree_position_ids[", token_id, "] must be non-negative, got ", tree_pos_id,
+                                            "; position_ids_idx=", position_ids_idx,
+                                            ", seq_id=", sequence->get_id());
+                            position_ids_data[position_ids_idx] = group_position_id + tree_pos_id;
                         } else {
                             position_ids_data[position_ids_idx] = position_id;
                         }
