@@ -27,6 +27,7 @@ def default_gen_answer(
     _assistant_confidence_threshold=0.0,
     full_chat=False,
     kv_axes_pos=2,
+    generation_config_extra=None,
 ):
     is_awq = getattr(model, "is_awq", None) is not None
     device = "cpu"
@@ -135,6 +136,7 @@ class ChatTextEvaluator(TextEvaluator):
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
         device="CPU",
+        generation_config_extra=None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
@@ -148,6 +150,7 @@ class ChatTextEvaluator(TextEvaluator):
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
         self.empty_adapters = empty_adapters
+        self.generation_config_extra = generation_config_extra or {}
         self.full_chat = device == "NPU"
 
         self.gt_dir = os.path.dirname(gt_data or "")
@@ -276,6 +279,7 @@ class ChatTextEvaluator(TextEvaluator):
         if not os.path.exists(prompts_dir):
             os.makedirs(prompts_dir)
 
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
         for i, p in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
             answer = gen_answer_fn(
                 model,
@@ -287,6 +291,7 @@ class ChatTextEvaluator(TextEvaluator):
                 self.assistant_confidence_threshold,
                 self.full_chat,
                 kv_axes_pos,
+                **extra_kwargs,
             )
 
             result_path = os.path.join(result_dir, f"chat_output_{i}.json")
