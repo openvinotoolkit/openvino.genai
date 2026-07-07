@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <random>
+#include <unordered_set>
 
 #include "lm_encoding.hpp"
 #include "logger.hpp"
@@ -12,6 +13,7 @@
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
+#include "openvino/op/gather.hpp"
 #include "openvino/runtime/auto/properties.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "sampling/sampler.hpp"
@@ -54,9 +56,9 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
 
 }
 
-class VLMPipeline::VLMTextOnlyGGUFPipelineImpl : public VLMPipelineBase {
+class VLMPipeline::VLMGGUFPipelineImpl : public VLMPipelineBase {
 public:
-    VLMTextOnlyGGUFPipelineImpl(
+    VLMGGUFPipelineImpl(
         const std::filesystem::path& gguf_path,
         const std::string& device,
         const ov::AnyMap& properties
@@ -154,7 +156,9 @@ private:
     static void ensure_text_only_inputs(const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos) {
         OPENVINO_ASSERT(
             images.empty() && videos.empty(),
-            "VLMPipeline GGUF mode currently supports text-only generation (no images/videos)."
+            "VLMPipeline GGUF mode currently supports text-only generation only. "
+            "Image/video inputs are not supported for GGUF in VLMPipeline yet. "
+            "For multimodal inference, use an OpenVINO VLM directory containing openvino_language_model.xml and openvino_vision_* models."
         );
     }
 
@@ -172,6 +176,189 @@ private:
 
     LLMPipeline m_llm;
 };
+
+std::optional<std::filesystem::path> resolve_gguf_model_path(const std::filesystem::path& model_path) {
+    if (model_path.extension() == ".gguf") {
+        return model_path;
+    }
+
+    if (!std::filesystem::is_directory(model_path)) {
+        return std::nullopt;
+    }
+
+    std::vector<std::filesystem::path> gguf_files;
+    for (const auto& entry : std::filesystem::directory_iterator(model_path)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".gguf") {
+            gguf_files.push_back(entry.path());
+        }
+    }
+
+    if (gguf_files.empty()) {
+        return std::nullopt;
+    }
+
+    OPENVINO_ASSERT(
+        gguf_files.size() == 1,
+        "Multiple GGUF files found in '", model_path.string(),
+        "'. Please provide an explicit .gguf file path to VLMPipeline."
+    );
+    return gguf_files.front();
+}
+
+bool has_openvino_language_model(const std::filesystem::path& models_dir) {
+    return std::filesystem::exists(models_dir / "openvino_language_model.xml");
+}
+
+bool has_model_input(const std::shared_ptr<ov::Model>& model, const std::string& input_name) {
+    for (const auto& input : model->inputs()) {
+        if (input.get_any_name() == input_name) {
+            return true;
+        }
+        const auto& names = input.get_names();
+        if (names.find(input_name) != names.end()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool is_reachable_from_input_ids(
+    const std::shared_ptr<ov::Node>& node,
+    const std::shared_ptr<ov::op::v0::Parameter>& input_ids_param
+) {
+    if (!node) {
+        return false;
+    }
+    if (node == input_ids_param) {
+        return true;
+    }
+
+    std::unordered_set<const ov::Node*> visited;
+    std::vector<std::shared_ptr<ov::Node>> stack{node};
+
+    while (!stack.empty()) {
+        auto current = stack.back();
+        stack.pop_back();
+        if (!current) {
+            continue;
+        }
+        if (current == input_ids_param) {
+            return true;
+        }
+        if (!visited.insert(current.get()).second) {
+            continue;
+        }
+
+        for (const auto& in : current->inputs()) {
+            stack.push_back(in.get_source_output().get_node_shared_ptr());
+        }
+    }
+    return false;
+}
+
+bool adapt_gguf_model_to_inputs_embeds(std::shared_ptr<ov::Model>& model) {
+    if (has_model_input(model, "inputs_embeds")) {
+        return true;
+    }
+
+    std::shared_ptr<ov::op::v0::Parameter> input_ids_param;
+    for (const auto& param : model->get_parameters()) {
+        if (param->get_friendly_name() == "input_ids") {
+            input_ids_param = param;
+            break;
+        }
+        if (param->output(0).get_tensor().get_names().count("input_ids") > 0) {
+            input_ids_param = param;
+            break;
+        }
+    }
+    if (!input_ids_param) {
+        return false;
+    }
+
+    std::shared_ptr<ov::Node> embedding_gather;
+    for (const auto& node : model->get_ordered_ops()) {
+        auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
+        if (!gather) {
+            continue;
+        }
+        if (is_reachable_from_input_ids(gather->input_value(1).get_node_shared_ptr(), input_ids_param)) {
+            embedding_gather = gather;
+            break;
+        }
+    }
+    if (!embedding_gather) {
+        return false;
+    }
+
+    auto inputs_embeds = std::make_shared<ov::op::v0::Parameter>(
+        embedding_gather->get_output_element_type(0),
+        embedding_gather->get_output_partial_shape(0)
+    );
+    inputs_embeds->set_friendly_name("inputs_embeds");
+    inputs_embeds->output(0).get_tensor().set_names({"inputs_embeds"});
+
+    ov::replace_node(embedding_gather, inputs_embeds);
+
+    // Qwen3.5 GGUF models may still use input_ids only for shape extraction
+    // (e.g. ShapeOf(input_ids) -> gather batch dim). Rewire such shape-only
+    // consumers to inputs_embeds so input_ids can be safely removed.
+    std::vector<ov::Input<ov::Node>> input_ids_users;
+    for (const auto& target : input_ids_param->output(0).get_target_inputs()) {
+        input_ids_users.push_back(target);
+    }
+    for (auto& target : input_ids_users) {
+        auto consumer = target.get_node()->shared_from_this();
+        if (consumer && (consumer->get_type_name() == std::string("ShapeOf") ||
+                         consumer->get_type_name() == std::string("ShapeOf_v3"))) {
+            target.replace_source_output(inputs_embeds->output(0));
+        }
+    }
+
+    if (input_ids_param->output(0).get_target_inputs().empty()) {
+        model->remove_parameter(input_ids_param);
+    }
+    model->add_parameters({inputs_embeds});
+
+    return has_model_input(model, "inputs_embeds");
+}
+
+std::shared_ptr<ov::Model> load_hybrid_vlm_gguf_language_model(
+    const std::filesystem::path& gguf_path,
+    const ov::AnyMap& properties
+) {
+    auto language_model = utils::read_model(gguf_path, utils::get_model_properties(properties, "language_model"));
+    OPENVINO_ASSERT(
+        adapt_gguf_model_to_inputs_embeds(language_model),
+        "Unable to adapt GGUF language model for VLMPipeline. Expected an embedding gather driven by 'input_ids' or an existing 'inputs_embeds' input."
+    );
+    return language_model;
+}
+
+ov::Tensor adapt_position_ids_for_text_lm_if_needed(ov::InferRequest& infer_request, const ov::Tensor& position_ids) {
+    if (position_ids.get_shape().size() != 3) {
+        return position_ids;
+    }
+
+    ov::PartialShape lm_position_ids_shape;
+    try {
+        lm_position_ids_shape = infer_request.get_compiled_model().input("position_ids").get_partial_shape();
+    } catch (const ov::Exception&) {
+        return position_ids;
+    }
+
+    if (lm_position_ids_shape.rank().is_dynamic() || lm_position_ids_shape.rank().get_length() != 2) {
+        return position_ids;
+    }
+
+    const auto& src_shape = position_ids.get_shape();
+    OPENVINO_ASSERT(src_shape[0] >= 1, "Position ids must have at least one plane on dim-0");
+
+    ov::Tensor adapted(position_ids.get_element_type(), {src_shape[1], src_shape[2]});
+    const size_t plane_size = src_shape[1] * src_shape[2];
+    std::memcpy(adapted.data(), position_ids.data(), plane_size * position_ids.get_element_type().size());
+    return adapted;
+}
 
 class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A config to follow for text generation.
@@ -942,6 +1129,7 @@ private:
         ov::Tensor position_ids;
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
+        position_ids = adapt_position_ids_for_text_lm_if_needed(m_language, position_ids);
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
 
@@ -985,11 +1173,13 @@ VLMPipeline::VLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     if (models_dir.extension() == ".gguf") {
-        m_pimpl = std::make_unique<VLMTextOnlyGGUFPipelineImpl>(models_dir, device, user_properties);
+        m_pimpl = std::make_unique<VLMGGUFPipelineImpl>(models_dir, device, user_properties);
         auto stop_time = std::chrono::steady_clock::now();
         m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
         return;
     }
+
+    const auto gguf_path_in_dir = has_openvino_language_model(models_dir) ? std::nullopt : resolve_gguf_model_path(models_dir);
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
     utils::clear_false_prompt_lookup_from_config(properties);
@@ -1000,9 +1190,14 @@ VLMPipeline::VLMPipeline(
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
     } else {
         utils::extract_extensions_to_core(properties);
-        auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto language_model = utils::singleton_core().read_model(
-            language_model_path, {}, utils::get_model_properties(properties, "language_model"));
+        std::shared_ptr<ov::Model> language_model;
+        if (gguf_path_in_dir.has_value()) {
+            language_model = load_hybrid_vlm_gguf_language_model(*gguf_path_in_dir, properties);
+        } else {
+            auto language_model_path = models_dir / "openvino_language_model.xml";
+            language_model = utils::singleton_core().read_model(
+                language_model_path, {}, utils::get_model_properties(properties, "language_model"));
+        }
 
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
@@ -1021,7 +1216,12 @@ VLMPipeline::VLMPipeline(
 #endif
             } catch (const ov::Exception& exception) {
                 log_paged_attention_fallback(exception);
-                language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
+                if (gguf_path_in_dir.has_value()) {
+                    language_model = load_hybrid_vlm_gguf_language_model(*gguf_path_in_dir, properties);
+                } else {
+                    auto language_model_path = models_dir / "openvino_language_model.xml";
+                    language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
+                }
             }
         }
 

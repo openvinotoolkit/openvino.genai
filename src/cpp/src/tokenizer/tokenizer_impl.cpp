@@ -3,6 +3,7 @@
 
 #include "tokenizer/tokenizer_impl.hpp"
 
+#include <optional>
 #include <utility>
 
 #include "add_second_input_pass.hpp"
@@ -51,6 +52,24 @@ std::string remap_template(const std::string& chat_template) {
         }
     }
     return chat_template;
+}
+
+std::optional<std::filesystem::path> resolve_single_gguf_in_dir(const std::filesystem::path& models_path) {
+    if (!std::filesystem::is_directory(models_path)) {
+        return std::nullopt;
+    }
+
+    std::vector<std::filesystem::path> gguf_files;
+    for (const auto& entry : std::filesystem::directory_iterator(models_path)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".gguf") {
+            gguf_files.push_back(entry.path());
+        }
+    }
+
+    if (gguf_files.size() == 1) {
+        return gguf_files.front();
+    }
+    return std::nullopt;
 }
 
 void parse_chat_template_from_file(const std::filesystem::path& path, std::string& value) {
@@ -288,11 +307,20 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
     auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    
-    if (ov::genai::is_gguf_model(models_path)) {
+
+    auto gguf_tokenizer_path = models_path;
+    if (std::filesystem::is_directory(models_path) &&
+        !std::filesystem::exists(models_path / "openvino_tokenizer.xml") &&
+        !std::filesystem::exists(models_path / "openvino_detokenizer.xml")) {
+        if (const auto resolved = resolve_single_gguf_in_dir(models_path)) {
+            gguf_tokenizer_path = *resolved;
+        }
+    }
+
+    if (ov::genai::is_gguf_model(gguf_tokenizer_path)) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
         std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
-            create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
+            create_tokenizer_from_config(m_shared_object_ov_tokenizers, gguf_tokenizer_path);
 
         if (auto val = get_if_exist<ov::Tensor>(tokenizer_config, "padding_token_id")) {
             m_pad_token_id = static_cast<int64_t>((*val).data<uint32_t>()[0]);
@@ -314,7 +342,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
         if (enable_save_ov_model){
-            std::filesystem::path gguf_model_path(models_path);
+            std::filesystem::path gguf_model_path(gguf_tokenizer_path);
             std::filesystem::path save_ov_tokenizer_path = gguf_model_path.parent_path() / "openvino_tokenizer.xml";
             std::filesystem::path save_ov_detokenizer_path = gguf_model_path.parent_path() / "openvino_detokenizer.xml";
             ov_tokenizer->set_rt_info(m_pad_token_id, "pad_token_id");

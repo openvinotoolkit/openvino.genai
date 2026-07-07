@@ -831,7 +831,20 @@ inline std::shared_ptr<ov::Model> create_qwen35_model(
     std::shared_ptr<ov::Node> output_shape_cached = nullptr;
 
     for (int i = 0; i < layer_num; ++i) {
+        // Some Qwen3.5 GGUF exports (e.g. with next-token-prediction layers)
+        // can violate the fixed interval pattern in the tail layers.
+        // Prefer deciding layer kind from actually exported tensors.
+        const bool has_linear_qkv =
+            consts.count(format("model.layers[%d].linear_attn.qkv_proj.weight", i)) > 0;
+        const bool has_full_q =
+            consts.count(format("model.layers[%d].self_attn.q_proj.weight", i)) > 0;
+
         bool is_recurrent = ((i + 1) % full_attn_interval != 0);
+        if (has_linear_qkv && !has_full_q) {
+            is_recurrent = true;
+        } else if (!has_linear_qkv && has_full_q) {
+            is_recurrent = false;
+        }
 
         if (is_recurrent) {
             // Linear attention (gated delta net) layer
