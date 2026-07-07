@@ -18,11 +18,88 @@ namespace ov::genai {
 class OPENVINO_GENAI_EXPORTS VLMDecodedResults : public DecodedResults{
 public:
     VLMPerfMetrics perf_metrics;
+
+    // Hidden-state fields for speech generation (exposed to Python to enable custom Talker impls).
+    // Populated by the CB pipeline when `return_audio` is requested on the GenerationConfig.
+    // Consumed by Talker / TalkerBase impls to drive Qwen3-Omni speech generation.
+    // Both fields are empty (default-constructed) on the text-only path.
+    //
+    // Outer index of intermediate_hidden_states is per return sequence;
+    // inner is one tensor per generation step.
+    std::vector<std::vector<ov::Tensor>> intermediate_hidden_states;
+    // Full prompt + generated token ids (talker input construction).
+    // Outer index is per return sequence, aligned with intermediate_hidden_states;
+    // inner is prompt tokens followed by that sequence's generated tokens.
+    std::vector<std::vector<int64_t>> full_token_ids;
+};
+
+/**
+ * @brief Public abstract interface for VLM-style pipelines.
+ *
+ * Promoted to a public top-level type so callers can hold a `std::shared_ptr<VLMPipelineBase>`
+ * without depending on `VLMPipeline`'s internal pimpl. Carries only the user-visible surface:
+ * `generate()` overloads, tokenizer/config accessors, chat-template setter. Implementation-side
+ * machinery (audio plumbing, hidden-state collection, etc.) lives on internal sub-classes
+ * declared in `src/`-private headers, not here.
+ */
+class OPENVINO_GENAI_EXPORTS VLMPipelineBase {
+public:
+    virtual ~VLMPipelineBase() = default;
+
+    virtual VLMDecodedResults generate(const std::string& prompt,
+                                       const std::vector<ov::Tensor>& images,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer) = 0;
+
+    virtual VLMDecodedResults generate(const std::string& prompt,
+                                       const std::vector<ov::Tensor>& images,
+                                       const std::vector<ov::Tensor>& videos,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer) = 0;
+
+    /// @brief Single-image convenience: forwards to the vector overload.
+    virtual VLMDecodedResults generate(const std::string& prompt,
+                                       const ov::Tensor& image,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer) {
+        return generate(prompt, std::vector<ov::Tensor>{image}, generation_config, streamer);
+    }
+
+    virtual VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) = 0;
+
+    virtual VLMDecodedResults generate(const ChatHistory& history,
+                                       const std::vector<ov::Tensor>& images,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer) = 0;
+
+    virtual VLMDecodedResults generate(const ChatHistory& history,
+                                       const std::vector<ov::Tensor>& images,
+                                       const std::vector<ov::Tensor>& videos,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer) = 0;
+
+    /// @brief Single-image convenience: forwards to the vector overload.
+    virtual VLMDecodedResults generate(const ChatHistory& history,
+                                       const ov::Tensor& image,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer) {
+        return generate(history, std::vector<ov::Tensor>{image}, generation_config, streamer);
+    }
+
+    virtual VLMDecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map) = 0;
+
+    virtual Tokenizer get_tokenizer() const = 0;
+
+    virtual void set_chat_template(const std::string& new_template) = 0;
+
+    virtual GenerationConfig get_generation_config() const = 0;
+
+    virtual void set_generation_config(const GenerationConfig& new_config) = 0;
 };
 
 /// @brief A Visual language modeling pipeline class used to generate a
 /// response or run a chat given a prompt and an image.
-class OPENVINO_GENAI_EXPORTS VLMPipeline {
+class OPENVINO_GENAI_EXPORTS VLMPipeline : public VLMPipelineBase {
 public:
     /// @brief Construct a pipeline from a folder containing tokenizer
     /// and model IRs.
@@ -103,7 +180,7 @@ public:
         const std::vector<ov::Tensor>& images,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
-    );
+    ) override;
 
     /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
@@ -122,24 +199,11 @@ public:
         const std::vector<ov::Tensor>& videos,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
-    );
+    ) override;
 
-    /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
-    /// @param prompt A prompt to respond to.
-    /// For using image and video tags in prompt, see:
-    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-    /// @param image Image to be prepended to a prompt.
-    /// @param generation_config A config to follow for text generation.
-    /// @param streamer A streamer to acquire intermediate result.
-    /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
-    /// chat_template will be applied to the prompt, run pipe.set_chat_template(custom_chat_template) to update it.
-    /// To disable it for non-chat mode, please, use custom_chat_template eq "" or set generation_config.apply_chat_template to false.
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const ov::Tensor& image,
-        const GenerationConfig& generation_config,
-        const StreamerVariant& streamer
-    );
+    // Single-image flat-prompt overload is inherited from VLMPipelineBase as a default
+    // forwarder to the vector form.
+    using VLMPipelineBase::generate;
 
     /// @brief Generate a response given a prompt and config.
     /// @param prompt A prompt to respond to.
@@ -154,7 +218,7 @@ public:
     VLMDecodedResults generate(
         const std::string& prompt,
         const ov::AnyMap& config_map
-    );
+    ) override;
 
     /// @brief Generate a response given a prompt and arbitrary number
     /// of ov::Property instances.
@@ -192,7 +256,7 @@ public:
         const std::vector<ov::Tensor>& images,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
-    );
+    ) override;
 
     /// @brief Generate a response given a chat history and any number of
     /// uint8 RGB images/videos with [NHWC] layout.
@@ -210,22 +274,9 @@ public:
         const std::vector<ov::Tensor>& videos,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
-    );
+    ) override;
 
-    /// @brief Generate a response given a chat history and uint8 RGB image with [NHWC] or [HWC] layout.
-    /// @param history Chat history with messages.
-    /// For using image and video tags in prompt, see:
-    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-    /// @param image Image to be associated with the last chat history user message.
-    /// @param generation_config A config to follow for text generation.
-    /// @param streamer A streamer to acquire intermediate result.
-    /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
-    VLMDecodedResults generate(
-        const ChatHistory& history,
-        const ov::Tensor& image,
-        const GenerationConfig& generation_config,
-        const StreamerVariant& streamer
-    );
+    // Single-image chat-history overload inherited from VLMPipelineBase (forwards to the vector form).
 
     /// @brief Generate a response given a chat history and arbitrary number
     /// of ov::Property instances.
@@ -239,7 +290,7 @@ public:
     VLMDecodedResults generate(
         const ChatHistory& history,
         const ov::AnyMap& config_map
-    );
+    ) override;
 
     /// @brief Generate a response given a chat history and config.
     /// @param history Chat history with messages.
@@ -284,25 +335,35 @@ public:
     /// or workaround unsupported chat_template entries in a default
     /// model chat_template.
     /// @param new_template A new template to override with.
-    void set_chat_template(const std::string& new_template);
+    void set_chat_template(const std::string& new_template) override;
 
     /// @brief Get a Tokenizer used to tokenize input and detokenize
     /// output.
-    ov::genai::Tokenizer get_tokenizer() const;
+    ov::genai::Tokenizer get_tokenizer() const override;
 
     /// @brief Extract GenerationConfig used to get default values.
     /// @return Default values used.
-    GenerationConfig get_generation_config() const;
+    GenerationConfig get_generation_config() const override;
 
     /// @brief Override default values for GenerationConfig
     /// @param new_config A config to override default values with.
-    void set_generation_config(const GenerationConfig& new_config);
+    void set_generation_config(const GenerationConfig& new_config) override;
+
+    class VLMBackend;  // internal Omni-aware base; defined in src/cpp/src/visual_language/pipeline_base.hpp.
+
+    /// @brief Construct a backing internal VLMBackend from a model directory.
+    /// Used by OmniPipeline's shared-VLM ctor to load the VLM independently of an existing
+    /// VLMPipeline instance. The returned pointer's underlying type is the nested
+    /// `VLMPipeline::VLMBackend` (CB adapter or VLMPipelineImpl), which extends the
+    /// public namespace-level `ov::genai::VLMPipelineBase` and adds Omni-specific hooks.
+    static std::shared_ptr<VLMBackend> create_base(const std::filesystem::path& models_dir,
+                                                   const std::string& device,
+                                                   const ov::AnyMap& properties);
 
 private:
-    class VLMPipelineBase;
     class VLMPipelineImpl;
     class VLMContinuousBatchingAdapter;
-    std::unique_ptr<VLMPipelineBase> m_pimpl;
+    std::shared_ptr<VLMBackend> m_pimpl;
 };
 
 /*
@@ -315,4 +376,5 @@ static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
 static constexpr ov::Property<std::vector<VideoMetadata>> videos_metadata{"videos_metadata"};
+static constexpr ov::Property<std::vector<ov::Tensor>> audios{"audios"};
 }

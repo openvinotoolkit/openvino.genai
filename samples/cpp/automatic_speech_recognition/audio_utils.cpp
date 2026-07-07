@@ -114,5 +114,28 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
 
     return pcmf32;
 }
+
+ov::Tensor read_wav_as_tensor(const std::string& filename) {
+    ov::genai::RawSpeechInput pcm = read_wav(filename);
+    const size_t sample_count = pcm.size();
+
+    // Move the decoded samples into an allocator so the tensor owns them directly, avoiding a
+    // copy of the PCM buffer. Mirrors SharedImageAllocator in visual_language_chat/load_image.cpp.
+    struct SharedPcmAllocator {
+        std::vector<float> pcm;
+        void* allocate(size_t bytes, size_t) {
+            OPENVINO_ASSERT(bytes == pcm.size() * sizeof(float),
+                            "Unexpected number of bytes was requested to allocate.");
+            return pcm.data();
+        }
+        void deallocate(void*, size_t, size_t) noexcept {
+            pcm = {};
+        }
+        bool is_equal(const SharedPcmAllocator& other) const noexcept {
+            return this == &other;
+        }
+    };
+    return ov::Tensor(ov::element::f32, ov::Shape{sample_count}, SharedPcmAllocator{std::move(pcm)});
+}
 }  // namespace audio
 }  // namespace utils
