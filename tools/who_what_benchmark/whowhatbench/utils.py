@@ -283,7 +283,7 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
             os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn
         )
         prompt = questions_per_video[video_rel_path]["conversations"][0]["value"].replace("<image>\n", "")
-        data.append({"prompts": prompt, "images": None, "videos": video_tensor[0]})
+        data.append({"prompts": prompt, "images": None, "videos": video_tensor[0], "videos_metadata": video_tensor[1]})
 
     return data
 
