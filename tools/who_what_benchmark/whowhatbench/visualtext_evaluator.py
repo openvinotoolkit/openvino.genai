@@ -195,21 +195,25 @@ class VisualTextEvaluator(TextEvaluator):
             total=max(len(prompts), len(images), len(videos)),
             desc="Evaluate pipeline",
         ):
-            answers.append(
-                gen_answer_fn(
-                    model,
-                    p,
-                    i,
-                    v,
-                    self.processor,
-                    self.tokenizer,
-                    self.max_new_tokens,
-                    self._crop_question,
-                    self.pruning_ratio,
-                    self.relevance_weight,
+            gen_answer_args = [
+                model,
+                p,
+                i,
+                v,
+                self.processor,
+                self.tokenizer,
+                self.max_new_tokens,
+                self._crop_question,
+                self.pruning_ratio,
+                self.relevance_weight,
+            ]
+            if self.num_assistant_tokens != 0 or self.assistant_confidence_threshold != 0.0:
+                gen_answer_args.extend([
                     self.num_assistant_tokens,
                     self.assistant_confidence_threshold,
-                )
+                ])
+            answers.append(
+                gen_answer_fn(*gen_answer_args)
             )
 
         res_data = {"prompts": list(prompts), "answers": answers}
