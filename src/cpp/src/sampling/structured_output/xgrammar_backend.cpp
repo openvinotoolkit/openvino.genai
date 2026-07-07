@@ -13,6 +13,10 @@ namespace genai {
 
 XGrammarStructuredOutput::XGrammarStructuredOutput(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
     auto vocab_vector = tokenizer_impl.m_vocab;
+    OPENVINO_ASSERT(!vocab_vector.empty(),
+        "Structured output requires the tokenizer to expose its full vocabulary, but the current tokenizer "
+        "has no vocabulary entries. This typically occurs when the tokenizer is a SentencePiece wrapper "
+        "without a decomposed VocabDecoder node.");
     if (!vocab_size.has_value()) {
         vocab_size = vocab_vector.size();
     }
