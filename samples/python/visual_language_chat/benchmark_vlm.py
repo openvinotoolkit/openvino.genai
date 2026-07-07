@@ -154,9 +154,7 @@ def main():
         print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms")
         print(f"  TTFT: {main_model_metrics.get_ttft().mean:.2f}  ± {main_model_metrics.get_ttft().std:.2f} ms")
         print(f"  TTST: {main_model_metrics.get_ttst().mean:.2f}  ± {main_model_metrics.get_ttst().std:.2f} ms")
-        print(
-            f"  TPOT: {main_model_metrics.get_tpot().mean:.2f}  ± {main_model_metrics.get_tpot().std:.2f} ms/token "
-        )
+        print(f"  TPOT: {main_model_metrics.get_tpot().mean:.2f}  ± {main_model_metrics.get_tpot().std:.2f} ms/token ")
         print(
             f"  AVG Latency: {main_model_metrics.get_latency().mean:.2f}  ± {main_model_metrics.get_latency().std:.2f} ms/iteration "
         )
@@ -168,9 +166,7 @@ def main():
         print("\nDRAFT MODEL ")
         print(f"  Generate time: {draft_model_metrics.get_generate_duration().mean:.2f} ms")
         print(f"  TTFT: {draft_model_metrics.get_ttft().mean:.2f}  ± {draft_model_metrics.get_ttft().std:.2f} ms")
-        print(
-            f"  TTST: {draft_model_metrics.get_ttst().mean:.2f}  ± {draft_model_metrics.get_ttst().std:.2f} ms "
-        )
+        print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f}  ± {draft_model_metrics.get_ttst().std:.2f} ms ")
         print(
             f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f}  ± {draft_model_metrics.get_tpot().std:.2f} ms/token "
         )
