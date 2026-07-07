@@ -91,7 +91,8 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 
 Gemma 4 implementation supports text and image inputs only. Video input is not supported at the moment.
 
-The model requires `transformers==5.5.0` for the export with `optimum-cli`.
+Gemma 4 models require `transformers==5.5.0` for the export with `optimum-cli`, except for `google/gemma-4-12B-it`.
+The `google/gemma-4-12B-it` model uses the `Gemma4UnifiedForConditionalGeneration` architecture and requires `transformers==5.10.0` for the export with `optimum-cli`.
 
 #### Qwen3-VL {#qwen3_vl-notes}
 

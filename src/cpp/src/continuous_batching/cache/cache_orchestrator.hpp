@@ -36,7 +36,6 @@ namespace ov::genai {
  * Adding a new cache type requires:
  *   1. Implementing ICacheManager for the new type.
  *   2. Calling register_cache_type() with the new type, its manager and block manager.
- *      Layer IDs are assigned contiguously in registration order, starting from 0.
  */
 class CacheOrchestrator {
 public:
@@ -110,13 +109,10 @@ public:
         OPENVINO_ASSERT(num_layers > 0, "Cache type must register at least one block-table layer");
         OPENVINO_ASSERT(per_layer_control || num_layers == 1,
             "Cache types without per-layer block-table control must register exactly one shared block-table layer");
-        const size_t layer_start = m_layer_to_cache_type.size();
-        m_type_layer_start[type] = layer_start;
         m_cache_managers[type] = std::move(cache_mgr);
         m_block_managers[type] = std::move(block_mgr);
-        m_per_layer_control[type] = per_layer_control;
-        for (size_t local_idx = 0; local_idx < num_layers; ++local_idx) {
-            m_layer_to_cache_type[layer_start + local_idx] = type;
+        if (type == CacheType::KV_CACHE) {
+            m_use_per_layer_kv_block_indices = per_layer_control;
         }
     }
 
@@ -126,7 +122,7 @@ public:
 
     void allocate_cache_if_needed() {
         for (auto& [type, block_mgr] : m_block_managers) {
-            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_number_of_kv_blocks());
+            m_cache_managers.at(type)->allocate_cache_if_needed(block_mgr->get_total_block_count());
         }
         for (auto& [type, block_indices] : m_pending_zero_blocks) {
             m_cache_managers.at(type)->zero_blocks(block_indices);
@@ -153,30 +149,10 @@ public:
     //  Block management  (applies to all registered types)
     // -----------------------------------------------------------------------
 
-    /**
-     * @brief Compose a unified per-layer block table for a sequence by merging block tables
-     *        from all registered block managers.
-     *
-     * Each block manager stores block tables using local (0-based) layer indices.
-     * This method maps them back to global layer positions so the returned vector
-     * is indexed by global layer ID.
-     */
-    std::vector<BlocksPerLayer> get_block_tables(uint64_t seq_id) const {
-        const size_t total_layers = m_layer_to_cache_type.size();
-        std::vector<BlocksPerLayer> merged(total_layers);
-
-        std::map<CacheType, const std::vector<BlocksPerLayer>*> local_tables_by_type;
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            local_tables_by_type[type] = &block_mgr->get_block_tables(seq_id);
-        }
-
-        for (const auto& [global_layer_id, type] : m_layer_to_cache_type) {
-            const size_t local_idx = m_per_layer_control.at(type) ? global_layer_id - m_type_layer_start.at(type) : 0;
-            const auto& local_tables = *local_tables_by_type.at(type);
-            OPENVINO_ASSERT(local_idx < local_tables.size(), "Block table layer index is out of range");
-            merged[global_layer_id] = local_tables[local_idx];
-        }
-        return merged;
+    const std::vector<BlocksPerLayer>& get_kv_block_tables(uint64_t seq_id) const {
+        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(it != m_block_managers.end(), "No KV cache registered");
+        return it->second->get_block_tables(seq_id);
     }
 
     bool has_block_table(uint64_t seq_id) const {
@@ -258,20 +234,81 @@ public:
     }
 
     void restore_cached_blocks(const SequenceGroup::Ptr& sequence_group) {
-        const size_t initial_processed_tokens = sequence_group->get_num_processed_tokens();
-        size_t common_processed_tokens = std::numeric_limits<size_t>::max();
-        for (auto& [type, block_mgr] : m_block_managers) {
-            sequence_group->update_processed_tokens_num(initial_processed_tokens);
-            block_mgr->restore_cached_blocks(sequence_group);
-            common_processed_tokens = std::min(common_processed_tokens, sequence_group->get_num_processed_tokens());
-        }
-        if (common_processed_tokens == std::numeric_limits<size_t>::max()) {
+        if (m_block_managers.empty()) {
             return;
         }
 
-        sequence_group->update_processed_tokens_num(common_processed_tokens);
-        for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->free_empty_physical_blocks(sequence_group);
+        auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
+        auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
+            auto& kv_block_mgr = *kv_it->second;
+            auto& la_block_mgr = *la_it->second;
+
+            auto kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group);
+            if (kv_plan.empty()) {
+                return;
+            }
+
+            auto la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, kv_plan.cache_token_position);
+            if (la_plan.empty()) {
+                return;
+            }
+
+            kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, la_plan.cache_token_position);
+            if (kv_plan.empty()) {
+                return;
+            }
+
+            const size_t common_cache_token_position = std::min(kv_plan.cache_token_position,
+                                                               la_plan.cache_token_position);
+            kv_plan = kv_block_mgr.get_prefix_restore_plan(sequence_group, common_cache_token_position);
+            la_plan = la_block_mgr.get_prefix_restore_plan(sequence_group, common_cache_token_position);
+            if (kv_plan.empty() || la_plan.empty()) {
+                return;
+            }
+
+            if (!kv_block_mgr.restore_cached_blocks(sequence_group, kv_plan) ||
+                !la_block_mgr.restore_cached_blocks(sequence_group, la_plan)) {
+                return;
+            }
+            sequence_group->update_processed_tokens_num(std::min(kv_plan.processed_tokens, la_plan.processed_tokens));
+            return;
+        }
+
+        if (m_block_managers.size() == 1) {
+            m_block_managers.begin()->second->restore_cached_blocks(sequence_group);
+            return;
+        }
+
+        std::map<CacheType, BlockManager::PrefixRestorePlan> restore_plans;
+        size_t common_cache_token_position = sequence_group->get_prompt_len();
+        while (common_cache_token_position > 0) {
+            restore_plans.clear();
+            size_t next_common_cache_token_position = std::numeric_limits<size_t>::max();
+            for (auto& [type, block_mgr] : m_block_managers) {
+                auto plan = block_mgr->get_prefix_restore_plan(sequence_group, common_cache_token_position);
+                if (plan.empty()) {
+                    return;
+                }
+                next_common_cache_token_position = std::min(next_common_cache_token_position, plan.cache_token_position);
+                restore_plans[type] = std::move(plan);
+            }
+
+            if (next_common_cache_token_position == common_cache_token_position) {
+                break;
+            }
+            common_cache_token_position = next_common_cache_token_position;
+        }
+
+        size_t common_processed_tokens = std::numeric_limits<size_t>::max();
+        for (auto& [type, plan] : restore_plans) {
+            if (!m_block_managers.at(type)->restore_cached_blocks(sequence_group, plan)) {
+                return;
+            }
+            common_processed_tokens = std::min(common_processed_tokens, plan.processed_tokens);
+        }
+        if (common_processed_tokens != std::numeric_limits<size_t>::max()) {
+            sequence_group->update_processed_tokens_num(common_processed_tokens);
         }
     }
 
@@ -297,21 +334,13 @@ public:
         return max_usage;
     }
 
-    size_t get_total_number_of_kv_blocks() const {
-        size_t min_total = std::numeric_limits<size_t>::max();
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            min_total = std::min(min_total, block_mgr->get_total_number_of_kv_blocks());
-        }
-        return min_total;
-    }
-
     /// @return Block size in tokens for the given cache type.
     size_t get_block_size(CacheType type) const {
         return m_block_managers.at(type)->get_block_size();
     }
 
     /// @return Number of KV cache blocks currently allocated for the given sequence group or 0 if model does not have KV cache.
-    size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
+    size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
         auto it = m_block_managers.find(CacheType::KV_CACHE);
         return it != m_block_managers.end() ? it->second->get_num_logical_blocks(seq_group) : 0;
     }
@@ -488,17 +517,6 @@ public:
     }
 
     /**
-     * @return Total token capacity (minimum across all cache types).
-     */
-    size_t total_token_capacity() const {
-        size_t min_capacity = std::numeric_limits<size_t>::max();
-        for (const auto& [type, block_mgr] : m_block_managers) {
-            min_capacity = std::min(min_capacity, block_mgr->total_token_capacity());
-        }
-        return min_capacity;
-    }
-
-    /**
      * @brief Grows each variable-size cache type's block pool to accommodate the given number of additional tokens.
      * Fixed-size-per-sequence managers (e.g. linear attention state) are skipped: their capacity
      * is sequence-count-driven, not token-count-driven.
@@ -538,8 +556,8 @@ public:
         for (auto& [type, block_mgr] : m_block_managers) {
             if (block_mgr->is_fixed_size_per_sequence()) {
                 const size_t additional_blocks = num_seqs * block_mgr->get_fixed_blocks_per_sequence();
-                block_mgr->increase_kv_blocks_number(
-                    block_mgr->get_total_number_of_kv_blocks() + additional_blocks);
+                block_mgr->increase_block_count(
+                    block_mgr->get_total_block_count() + additional_blocks);
             }
         }
     }
@@ -559,8 +577,8 @@ public:
             const size_t required_blocks = block_mgr->required_blocks_count(seq_group);
             const size_t free_blocks = block_mgr->num_free_blocks();
             if (required_blocks > free_blocks) {
-                block_mgr->increase_kv_blocks_number(
-                    block_mgr->get_total_number_of_kv_blocks() + required_blocks - free_blocks);
+                block_mgr->increase_block_count(
+                    block_mgr->get_total_block_count() + required_blocks - free_blocks);
                 grew_capacity = true;
             }
         }
@@ -574,7 +592,7 @@ public:
     size_t get_total_cache_size_in_bytes() const {
         size_t total = 0;
         for (const auto& [type, block_mgr] : m_block_managers) {
-            total += block_mgr->get_total_number_of_kv_blocks() * m_cache_managers.at(type)->get_block_size_in_bytes();
+            total += block_mgr->get_total_block_count() * m_cache_managers.at(type)->get_block_size_in_bytes();
         }
         return total;
     }
@@ -585,26 +603,10 @@ public:
         return first_cache_manager.get_device();
     }
 
-    size_t get_num_layers() const {
-        size_t total = 0;
-        for (const auto& [type, cache_mgr] : m_cache_managers) {
-            total += cache_mgr->get_num_layers();
-        }
-        return total;
-    }
-
     size_t get_num_cache_tensors() const {
         size_t total = 0;
         for (const auto& [type, cache_mgr] : m_cache_managers) {
             total += cache_mgr->get_num_cache_tensors();
-        }
-        return total;
-    }
-
-    size_t get_block_size_in_bytes() const {
-        size_t total = 0;
-        for (const auto& [type, cache_mgr] : m_cache_managers) {
-            total += cache_mgr->get_block_size_in_bytes();
         }
         return total;
     }
@@ -625,17 +627,14 @@ public:
         return *m_block_managers.at(type);
     }
 
-    const std::map<size_t, CacheType>& get_layer_to_cache_type_map() const {
-        return m_layer_to_cache_type;
-    }
-
-    CacheType get_cache_type_for_layer(size_t layer_id) const {
-        return m_layer_to_cache_type.at(layer_id);
-    }
-
     // -----------------------------------------------------------------------
     //  Linear attention cache helpers
     // -----------------------------------------------------------------------
+
+    /// @return Whether a KV cache type is registered.
+    bool has_kv_cache() const {
+        return m_cache_managers.count(CacheType::KV_CACHE) > 0;
+    }
 
     /// @return Whether a linear attention cache type is registered.
     bool has_linear_attention_cache() const {
@@ -646,9 +645,14 @@ public:
      * @brief Returns the linear attention block table for a sequence (first layer).
      * All linear attention layers share the same block allocation, so a single layer suffices.
      */
-    BlocksPerLayer get_linear_attention_block_table(uint64_t seq_id) const {
+    const BlocksPerLayer& get_linear_attention_block_table(uint64_t seq_id) const {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_tables(seq_id)[0];
+    }
+
+    size_t get_linear_attention_block_table_logical_start(uint64_t seq_id) const {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_table_logical_start(seq_id);
     }
 
     /// @return Number of KV attention layers only (excluding other cache types).
@@ -664,12 +668,36 @@ public:
      * has per-layer control enabled. Cache types with their own dedicated inputs
      * (e.g. LINEAR_ATTENTION_CACHE with paged_conv_ / paged_gdn. inputs) do not contribute.
      */
-    bool needs_per_layer_block_indices() const {
-        return std::any_of(m_per_layer_control.begin(), m_per_layer_control.end(),
-            [](const auto& pair) {
-                // Only KV_CACHE uses block_indices / block_indices.N inputs
-                return pair.first == CacheType::KV_CACHE && pair.second;
-            });
+    bool needs_per_layer_kv_block_indices() const {
+        return m_use_per_layer_kv_block_indices;
+    }
+
+    // Upper bound for the auto-derived linear-attention checkpoint multiplier.
+    // Caps how coarse prefix-cache reuse can get for very large recurrent states.
+    static constexpr size_t MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER = 256;
+
+    // Derive the linear-attention checkpoint multiplier used when the user did not set one.
+    //
+    // A linear-attention checkpoint stores the full recurrent state (tens of MiB for large
+    // hybrid SSM models). Checkpointing every block_size tokens (multiplier 1) makes the LA
+    // state cache dwarf the KV cache and exhaust the cache budget on long prompts, which in
+    // turn makes long-prompt requests unschedulable. Size the interval so one LA checkpoint
+    // costs roughly one KV block (multiplier ~= la_block_bytes / kv_block_bytes), keeping
+    // LA-state overhead comparable to the KV cache regardless of model. Clamp to
+    // [default, MAX] so small-state models keep fine-grained prefix reuse and huge-state
+    // models do not get an unbounded interval.
+    static size_t adaptive_cache_interval_multiplier(size_t la_block_bytes, size_t kv_block_bytes) {
+        size_t multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
+        if (kv_block_bytes > 0) {
+            // ceil(la_block_bytes / kv_block_bytes) computed via division + remainder to avoid
+            // the intermediate-addition overflow of (la_block_bytes + kv_block_bytes - 1).
+            size_t ratio = la_block_bytes / kv_block_bytes;
+            if (la_block_bytes % kv_block_bytes != 0) {
+                ++ratio;
+            }
+            multiplier = std::max(multiplier, ratio);
+        }
+        return std::min(multiplier, MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER);
     }
 
 private:
@@ -699,9 +727,6 @@ private:
         OPENVINO_ASSERT(la_manager || config.num_linear_attention_blocks == 0,
                         "SchedulerConfig num_linear_attention_blocks can be set only for models with linear attention cache inputs");
 
-        OPENVINO_ASSERT(la_manager || !config.cache_interval_multiplier.has_value(),
-                        "SchedulerConfig cache_interval_multiplier can be set only for models with linear attention cache inputs");
-
         return {std::move(kv_manager), std::move(la_manager)};
     }
 
@@ -712,8 +737,22 @@ private:
             return 0;
         }
         OPENVINO_ASSERT(kv_manager,
-                        "SchedulerConfig cache_interval_multiplier requires KV cache inputs when prefix caching is enabled");
-        return config.get_cache_interval(kv_manager->get_block_size());
+                        "Prefix caching for hybrid (linear-attention) models requires the model to expose KV cache inputs, but no KV cache manager is registered");
+        const size_t kv_block_size = kv_manager->get_block_size();
+
+        // An explicit user multiplier is always honoured.
+        if (config.cache_interval_multiplier.has_value()) {
+            return config.get_cache_interval(kv_block_size);
+        }
+
+        const size_t multiplier = adaptive_cache_interval_multiplier(la_manager->get_block_size_in_bytes(),
+                                                                     kv_manager->get_block_size_in_bytes());
+        // Keep the same overflow guard as SchedulerConfig::get_cache_interval() for consistency.
+        OPENVINO_ASSERT(multiplier == 0 ||
+                            kv_block_size <= std::numeric_limits<std::size_t>::max() / multiplier,
+                        "Derived cache_interval_multiplier is too large for KV cache block size. multiplier: ",
+                        multiplier, ", kv_block_size: ", kv_block_size);
+        return kv_block_size * multiplier;
     }
 
     /**
@@ -830,7 +869,6 @@ private:
 
     /**
      * @brief Create a BlockManager for linear attention cache and register it with this orchestrator.
-     *        Layer IDs are assigned contiguously after any previously registered types.
      */
     void register_linear_attention_cache(std::unique_ptr<LinearAttentionCacheManager> la_manager,
                                          const SchedulerConfig& config,
@@ -843,7 +881,9 @@ private:
                 config.num_linear_attention_blocks,
                 true,
                 cache_interval,
-                1);
+                1,
+                0,
+                true);
         } else {
             la_block_manager = std::make_unique<BlockManager>(
                 config.num_linear_attention_blocks,
@@ -859,9 +899,7 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
-    std::map<size_t, CacheType> m_layer_to_cache_type;
-    std::map<CacheType, size_t> m_type_layer_start;  ///< first global layer ID for each registered cache type
-    std::map<CacheType, bool> m_per_layer_control;   ///< per-type flag: layers managed individually or as one
+    bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
 
     void queue_linear_attention_initial_state_zero(CacheType type,

@@ -55,6 +55,19 @@ struct GenerationFinishInfo
     GenerationStatus streaming_finish_status;
 };
 
+// A request finishes with GenerationStatus::IGNORED when the scheduler could not fit it within
+// the available cache budget (out of memory) - this can happen for the prompt or later during
+// generation under overall cache pressure. Call sites that discard GenerationStatus (and would
+// otherwise return an empty result) should use this to surface an actionable error instead.
+// request_id identifies which request was dropped when several are generated together.
+inline void assert_request_was_scheduled(GenerationStatus status, uint64_t request_id) {
+    OPENVINO_ASSERT(status != GenerationStatus::IGNORED,
+                    "Request ", request_id, " was dropped by the scheduler because it did not fit in the "
+                    "available cache budget (out of memory). Increase cache_size / num_kv_blocks, reduce the "
+                    "prompt or generation length, or for hybrid (linear-attention) models raise "
+                    "cache_interval_multiplier to lower per-token cache usage.");
+}
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
@@ -116,14 +129,21 @@ std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_p
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
 extern const std::string PER_MODEL_PROPERTIES;
 
-/// @brief Resolve properties for @p model_role by merging two layers (priority low to high):
-///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES)
-///        2. PER_MODEL_PROPERTIES[model_role]
+/// @brief Resolve properties for @p model_role by merging three layers (priority low to high):
+///        1. global (top-level keys, excluding meta keys PER_MODEL_PROPERTIES
+///           and DEVICE_PROPERTIES if device is specified)
+///        2. DEVICE_PROPERTIES[device] (only when @p device is non-empty)
+///        3. PER_MODEL_PROPERTIES[model_role]
+///        MODEL_PROPERTIES wins over DEVICE_PROPERTIES wins
+///        over globals.
 /// @param properties The main properties map. Not modified.
 /// @param model_role Sub-model role (e.g. "vision_embeddings").
+/// @param device Target device for the compile site. When empty,
+///        DEVICE_PROPERTIES is forwarded as-is (used at read_model sites
+///        which are not bound to a specific device).
 /// @return A new ov::AnyMap with the merged result. The input map is left
 ///         untouched so callers may continue using the meta keys.
-ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role);
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device = "");
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
@@ -309,6 +329,10 @@ T pop_or_default(ov::AnyMap& config, const std::string& key, const T& default_va
 }
 
 const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map, const std::string& key);
+
+/// @brief Throws if `properties[MODEL_PROPERTIES]` contains a role name
+/// not in the known VLM roles. No-op if the key is absent.
+void validate_vlm_model_properties(const ov::AnyMap& properties);
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config = std::nullopt);
 

@@ -47,6 +47,7 @@ import numpy as np
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
+from optimum.intel.utils.import_utils import is_optimum_version
 from huggingface_hub import snapshot_download
 from openvino_genai import (
     VLMPipeline,
@@ -159,6 +160,7 @@ else:
     ]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
+MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -171,6 +173,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
         "optimum-intel-internal-testing/tiny-random-gemma3",
+        MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
         *VIDEO_MODEL_IDS,
     ]
@@ -181,6 +184,7 @@ else:
         "qnguyen3/nanoLLaVA",
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
         "optimum-intel-internal-testing/tiny-random-gemma4-31B",
         *VIDEO_MODEL_IDS,
     ]
@@ -200,6 +204,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
+    MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
@@ -207,6 +212,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
@@ -263,9 +269,11 @@ TEST_IMAGE_URLS = {
 
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
+    MODEL_GEMMA3N,
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     "optimum-intel-internal-testing/tiny-random-gemma4",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
 }
 
@@ -308,6 +316,21 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     ] and is_transformers_version("<", "5.5.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
+        )
+    if model_id in [MODEL_GEMMA3N] and (
+        is_transformers_version("<", "4.57.0")
+        or is_transformers_version(">=", "5.0.0")
+        or is_optimum_version("<", "2.0.0")
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is >= 4.57.0 and < 5.0.0. Supported optimum version is >= 2.0.0."
+        )
+
+    if model_id in [
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
+    ] and is_transformers_version("<", "5.10.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.10.0."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
@@ -462,8 +485,10 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    if "gemma4" in ov_model and ov_backend == "PA":
-        pytest.xfail("gemma4 does not support PA attention backend")
+    if ("gemma4" in ov_model or ov_model == MODEL_GEMMA3N) and ov_backend == "PA" and ov_prompt_lookup:
+        pytest.xfail(f"{ov_model} does not support PA with prompt_lookup=True")
+    if "gemma4-unified" in ov_model and ov_backend == "PA":
+        pytest.xfail("gemma4-unified does not support PA. Ticket: 189844")
 
     models_path = _get_ov_model(ov_model)
 
@@ -1044,6 +1069,9 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
+
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1395,6 +1423,42 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
 
 
 @pytest.mark.skipif(**should_skip_npuw_tests())
+def test_vlm_npu_auto_embeddings_duration(cat_tensor):
+    models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048},
+            "AUTO": {openvino.properties.device.priorities: "CPU"},
+        }
+    }
+
+    npuw_pipe = VLMPipeline(models_path, "NPU", config=properties)
+    cpu_pipe = VLMPipeline(models_path, "CPU")
+
+    npuw_generation_config = _setup_generation_config(npuw_pipe)
+    cpu_generation_config = _setup_generation_config(cpu_pipe)
+
+    npuw_res = npuw_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=npuw_generation_config)
+    cpu_res = cpu_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=cpu_generation_config)
+
+    npuw_perf_metrics = npuw_res.perf_metrics
+    cpu_perf_metrics = cpu_res.perf_metrics
+
+    npuw_embeddings_mean = npuw_perf_metrics.get_prepare_embeddings_duration().mean
+    cpu_embeddings_mean = cpu_perf_metrics.get_prepare_embeddings_duration().mean
+    npuw_embeddings_std = npuw_perf_metrics.get_prepare_embeddings_duration().std
+    cpu_embeddings_std = cpu_perf_metrics.get_prepare_embeddings_duration().std
+
+    assert 0 < npuw_embeddings_mean
+    assert 0 < cpu_embeddings_mean
+    assert npuw_embeddings_std == 0.0
+    assert cpu_embeddings_std == 0.0
+
+    ratio = npuw_embeddings_mean / cpu_embeddings_mean
+    assert 0.8 <= ratio <= 1.2
+
+
+@pytest.mark.skipif(**should_skip_npuw_tests())
 def test_vlm_npu_auto_config(cat_tensor):
     models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
@@ -1430,6 +1494,14 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
+
+    if (
+        "gemma4-moe" in ov_pipe_model.model_id or "gemma4-31B" in ov_pipe_model.model_id
+    ) and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma4 models with token_type_ids and PA. CVS-189726")
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1565,6 +1637,9 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
 
+    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
+        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Why is the Sun yellow?",
@@ -1683,6 +1758,7 @@ else:
         ("qnguyen3/nanoLLaVA", "PA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-moe", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
     ]
@@ -2185,6 +2261,9 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # gemma3 PA cases
     "*tiny-random-gemma3/PA/*": "CVS-167316",
+    # Gemma4 models (with token_type_ids input) PA cases with image input
+    "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
+    "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
     # qwen2vl cases that use 70x70 video resolution
     "*tiny-random-qwen2vl/*/video-70x70": "CVS-180070",
     # qwen2.5-vl cases that use 350x350 image, or 70x70 video resolutions
@@ -2226,6 +2305,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
@@ -2378,7 +2458,9 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
     image_input_resolution: tuple[int, int],
     video_input_resolution: tuple[int, int],
 ):
-    if sys.platform == "win32" or sys.platform == "linux":
+    if (sys.platform == "win32" or sys.platform == "linux") and not _is_videochat_flash_qwen_model(
+        ov_pipe_model.model_id
+    ):
         pytest.xfail("Memory error. Ticket - 185156")
     resized_image = None
     resized_video = None

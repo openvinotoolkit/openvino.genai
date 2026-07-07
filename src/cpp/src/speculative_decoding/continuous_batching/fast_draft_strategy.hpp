@@ -180,13 +180,13 @@ protected:
     std::map<uint64_t, GenerationHandle> m_draft_generations;
 
     void reset_generate_metrics() {
-        m_sd_metrics = SpeculativeDecodingMetrics();
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
         m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
         m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
     }
 
     void drop_requests();
+    virtual void align_request_pair_processed_prefix(uint64_t) {}
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig> init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);

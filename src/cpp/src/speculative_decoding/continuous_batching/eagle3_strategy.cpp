@@ -21,13 +21,14 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // Enable query-to-query bias for Eagle3 main model only
     ov::genai::ModelDesc main_model_desc_with_qq_bias = main_model_desc;
     main_model_desc_with_qq_bias.properties["query_to_query_bias"] = true;
+    auto scheduler_configs = init_speculative_models(main_model_desc_with_qq_bias, draft_model_desc);
+
     if (main_model_desc.inputs_embedder) {
         m_inputs_embedder = main_model_desc.inputs_embedder;
         m_model_input_type = ModelInputType::EMBEDDINGS;
         m_vision_registry = std::make_shared<VisionRegistry>();
     }
 
-    auto scheduler_configs = init_speculative_models(main_model_desc_with_qq_bias, draft_model_desc);
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model);
@@ -146,6 +147,57 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
     return draft_input_ids;
 }
 
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processed_prefix(uint64_t request_id) {
+    auto find_request_by_id = [request_id](const std::vector<SequenceGroup::Ptr>& requests) -> SequenceGroup::Ptr {
+        for (const auto& request : requests) {
+            if (request && request->get_request_id() == request_id) {
+                return request;
+            }
+        }
+        return nullptr;
+    };
+
+    auto main_request = find_request_by_id(m_main_pipeline->get_awaiting_requests());
+    auto draft_request = find_request_by_id(m_draft_pipeline->get_awaiting_requests());
+
+    OPENVINO_ASSERT(main_request && draft_request,
+                    "Failed to find awaiting requests for Eagle3 alignment, request_id=",
+                    request_id,
+                    ", main_found=",
+                    static_cast<bool>(main_request),
+                    ", draft_found=",
+                    static_cast<bool>(draft_request));
+
+    // These values represent the processed-prefix lengths after each pipeline
+    // independently restores cached prompt prefix blocks.
+    const size_t main_processed = main_request->get_num_processed_tokens();
+    const size_t draft_processed = draft_request->get_num_processed_tokens();
+    const size_t common_restored_prefix = std::min(main_processed, draft_processed);
+
+    // Enforce a shared processed prefix to keep main/draft cache states coherent.
+    // For Eagle3 prompt restore, both pipelines must schedule the same number of tokens so
+    // that main exported hidden-state length matches draft imported sequence length.
+    const size_t aligned_main_processed = common_restored_prefix;
+    const size_t aligned_draft_processed = common_restored_prefix;
+
+    if (aligned_main_processed < main_processed) {
+        const bool rewound = m_main_pipeline->rewind_awaiting_request_prefix(request_id, aligned_main_processed);
+        OPENVINO_ASSERT(rewound,
+                        "Failed to rewind main awaiting request for Eagle3 alignment, request_id=",
+                        request_id,
+                        ", target_processed_tokens=",
+                        aligned_main_processed);
+    }
+    if (aligned_draft_processed < draft_processed) {
+        const bool rewound = m_draft_pipeline->rewind_awaiting_request_prefix(request_id, aligned_draft_processed);
+        OPENVINO_ASSERT(rewound,
+                        "Failed to rewind draft awaiting request for Eagle3 alignment, request_id=",
+                        request_id,
+                        ", target_processed_tokens=",
+                        aligned_draft_processed);
+    }
+}
+
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
     auto shape = original_input_embeddings.get_shape();
 
@@ -209,13 +261,19 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         m_inputs_embedder->set_position_ids(main_position_ids);
         m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
     }
-    return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    align_request_pair_processed_prefix(request_id);
+    return main_generation;
 }
 
 GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
                                                                  const ov::genai::GenerationConfig& sampling_params) {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(request_id, prompt, {}, sampling_params);
+    }
+
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -225,7 +283,9 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
     ov::Tensor draft_input_ids = create_draft_input(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
-    return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
+    auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params);
+    align_request_pair_processed_prefix(request_id);
+    return main_generation;
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingImpl::generate(

@@ -20,10 +20,19 @@
     "node": ">=21.0.0"
   },
   "keywords": [
-    "OpenVINO",
-    "OpenVINO GenAI",
-    "GenAI",
-    "LLM"
+    "openvino",
+    "genai",
+    "generative-ai",
+    "llm",
+    "vlm",
+    "rag",
+    "text-generation",
+    "text-embedding",
+    "text-rerank",
+    "image-generation",
+    "image-processing",
+    "speech-generation",
+    "speech-recognition"
   ],
   "scripts": {
     "build": "tsc",
