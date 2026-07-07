@@ -296,9 +296,6 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     # in a single unified iter_schedule() loop, eliminating the previous
     # duplicated if/else branches.
     prompter = BenchPrompter(args)
-    if len(prompter) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-
     active = prompter.active_pairs
     prompt_idx_list = [p_idx for p_idx, _ in active]
     image_text_list = [p for _, p in active]

@@ -243,14 +243,12 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
+
     # Build the prompt schedule via BenchPrompter, which handles both
     # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
     # in a single unified iter_schedule() loop, eliminating the previous
     # duplicated if/else branches.
     prompter = BenchPrompter(args)
-    if len(prompter) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-
     active = prompter.active_pairs
     prompt_idx_list = [p_idx for p_idx, _ in active]
     text_list = [p["prompt"] for _, p in active]

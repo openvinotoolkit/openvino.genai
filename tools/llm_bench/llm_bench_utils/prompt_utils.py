@@ -9,7 +9,7 @@ from PIL import Image
 import logging as log
 from transformers.image_utils import load_image
 from .model_utils import get_param_from_file, resolve_media_file_path
-from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data
+from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data, parse_speech_json_data
 import llm_bench_utils.metrics_print as metrics_print
 from pathlib import Path
 import openvino as ov
@@ -129,12 +129,10 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
 # DONE: move prompt creation functions into BenchPrompter (see static methods
 #       below).
 #
-# Remaining work (in *other* files):
-#   - task/speech_to_text_generation.py  – not yet refactored
-#   - task/super_resolution_generation.py – not yet refactored
-#   - task/video_generation.py            – not yet refactored
-#   NOTE: speech_to_text must keep decoding the raw waveform inside the
-#         iteration loop, not at prompt-construction time.
+# All task files have been migrated to use BenchPrompt / BenchPrompter.
+# NOTE: speech_to_text loads the raw waveform lazily inside the iteration
+#       loop (not at prompt-construction time) since audio decoding is
+#       device-sampling-rate-dependent and cannot be pre-computed.
 #
 
 
@@ -196,9 +194,11 @@ class BenchPrompt(dict):
         if isinstance(data, str):
             self["prompt"] = data
         elif isinstance(data, dict):
-            for key in self.MEDIA_KEYS:
-                if key in data:
-                    self[key] = data[key]
+            # Store all keys so that task-specific extra parameters
+            # (e.g. language/timestamp for speech-to-text, or
+            # steps/width/height for image super-resolution) are
+            # preserved and accessible via normal dict lookups.
+            self.update(data)
         else:
             raise TypeError(f"BenchPrompt: unsupported data type {type(data)!r}. Expected str or dict.")
 
@@ -405,6 +405,9 @@ class BenchPrompter(list):
         list.__init__(self)
         self._args = args
         self._load_prompts()
+        if not self:
+            raise RuntimeError('==Failure prompts is empty ==')
+
 
     def get_prefix(self, num, p_idx):
         if num == 0:
@@ -446,6 +449,14 @@ class BenchPrompter(list):
                 input_key = ["prompt"]
         elif task == "video_gen":
             input_key = ["prompt", "negative_prompt"]
+        elif task == "speech_to_text":
+            # Speech prompts reference an audio file; the key is 'media'
+            # (not 'prompt') to match parse_speech_json_data output.
+            input_key = "media"
+        elif task == "ldm_super_resolution":
+            # Super-resolution prompts reference an image file stored under
+            # the 'prompt' key for backward-compatibility with the JSON schema.
+            input_key = "prompt"
         else:
             # text_gen, code_gen, text_embed, text2speech, text_rerank, ...
             input_key = "prompt"
@@ -462,10 +473,31 @@ class BenchPrompter(list):
                 raw_list = parse_image_json_data(output_data_list)
             elif task == "video_gen":
                 raw_list = parse_video_json_data(output_data_list)
+            elif task == "speech_to_text":
+                raw_list = parse_speech_json_data(output_data_list)
+                if args.get("prompt_file"):
+                    for entry in raw_list:
+                        if "media" in entry:
+                            entry["media"] = resolve_media_file_path(
+                                entry["media"], args["prompt_file"][0]
+                            )
+            elif task == "ldm_super_resolution":
+                raw_list = parse_image_json_data(output_data_list)
+                if args.get("prompt_file"):
+                    for entry in raw_list:
+                        if "prompt" in entry:
+                            entry["prompt"] = resolve_media_file_path(
+                                entry["prompt"], args["prompt_file"][0]
+                            )
             else:
                 raw_list = parse_text_json_data(output_data_list)
         else:
-            raw_list = output_data_list
+            # For speech_to_text the raw value is an audio-file path which
+            # must be stored under 'media' (not 'prompt').
+            if task == "speech_to_text":
+                raw_list = [{"media": item} for item in output_data_list]
+            else:
+                raw_list = output_data_list
 
         if not raw_list:
             raise RuntimeError("BenchPrompter: prompt list is empty")

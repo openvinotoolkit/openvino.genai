@@ -648,9 +648,6 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
     # duplicated if/else branches and fixing the positional-argument bug
     # that existed in the subsequent=True path.
     prompter = BenchPrompter(args)
-    if len(prompter) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-
     active = prompter.active_pairs
     prompt_idx_list = [p_idx for p_idx, _ in active]
     text_list = [p["prompt"] for _, p in active]

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+
 import os
 import time
 import datetime
@@ -12,7 +13,7 @@ import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
+from llm_bench_utils.prompt_utils import BenchPrompter
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
@@ -70,54 +71,41 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     pipe, pretrain_time = FW_UTILS[framework].create_ldm_super_resolution_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
     tm_list = []
-    images = get_ldm_image_prompt(args)
 
-    if args['prompt_index'] is None:
-        prompt_idx_list = [image_id for image_id, input_text in enumerate(images)]
-        image_list = images
-    else:
-        prompt_idx_list = []
-        image_list = []
-        for i in args['prompt_index']:
-            if 0 <= i < len(images):
-                image_list.append(images[i])
-                prompt_idx_list.append(i)
-    if len(image_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
-    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, image nums: {len(image_list)}, prompt idx: {prompt_idx_list}')
+    # Build the prompt schedule via BenchPrompter, which:
+    #   - reads and parses the image prompt file (JSON or plain path)
+    #   - resolves image paths relative to the prompt file
+    #   - honours args['prompt_index'] for selective benchmarking
+    #   - handles both subsequent=False (iter-major) and subsequent=True
+    #     (prompt-major) scheduling in a single unified iter_schedule() loop,
+    #     eliminating the previous duplicated if/else filter blocks.
+    prompter = BenchPrompter(args)
+    active = prompter.active_pairs
+    prompt_idx_list = [p_idx for p_idx, _ in active]
+    image_list = [p for _, p in active]
+
+    log.info(
+        f'Benchmarking iter nums(exclude warm-up): {num_iters}, '
+        f'image nums: {len(prompter)}, prompt idx: {prompt_idx_list}'
+    )
 
     # if num_iters == 0, just output warm-up data
     proc_id = os.getpid()
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
-    for num in range(num_iters + 1):
-        for image_id, img in enumerate(image_list):
-            p_idx = prompt_idx_list[image_id]
-            mem_consumption.update_marker(f"step-{num}-{p_idx}")
-            if num == 0:
-                if args["output_dir"] is not None:
-                    llm_bench_utils.output_file.output_image_input_text(str(img['prompt']), args, p_idx, None, proc_id)
-            log.info(f"[{'warm-up' if num == 0 else num}][P{p_idx}] Input image={img['prompt']}")
-            iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-            run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, prompt_idx_list[image_id], tm_list, proc_id, mem_consumption)
-            iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-            tm_list.clear()
-            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-            log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        if num == 0 and args["output_dir"] is not None:
+            llm_bench_utils.output_file.output_image_input_text(str(prompt['prompt']), args, p_idx, None, proc_id)
+        log.info(f"[{'warm-up' if num == 0 else num}][P{p_idx}] Input image={prompt['prompt']}")
+        iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
+        run_ldm_super_resolution(prompt, num, pipe, args, framework, iter_data_list, p_idx, tm_list, proc_id, mem_consumption)
+        iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+        tm_list.clear()
+        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        log.info(
+            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, "
+            f"end: {iter_timestamp[num][p_idx]['end']}"
+        )
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_ldm_image_prompt(args):
-    images = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, 'prompt')
-    if is_json_data is True:
-        image_param_list = parse_json_data.parse_image_json_data(output_data_list)
-        if len(image_param_list) > 0:
-            for image in image_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    image['prompt'] = os.path.join(os.path.dirname(args['prompt_file'][0]), image['prompt'].replace('./', ''))
-                images.append(image)
-    else:
-        images.append({'prompt': output_data_list[0]})
-    return images

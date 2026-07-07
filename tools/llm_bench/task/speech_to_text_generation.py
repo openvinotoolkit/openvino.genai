@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import os
+
 import time
 import datetime
 import numpy as np
-from pathlib import Path
 import hashlib
 import logging as log
 import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
+from llm_bench_utils.prompt_utils import BenchPrompter
 from llm_bench_utils.hook_forward_whisper import WhisperHook
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
@@ -151,24 +150,30 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
 
 
 def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    iter_data_list = []
-    speech_file_list = get_speech_files(args)
-    if args['prompt_index'] is None:
-        speech_idx_list = [prompt_idx for prompt_idx, speech_data in enumerate(speech_file_list)]
-        speech_list = speech_file_list
-    else:
-        speech_idx_list = []
-        speech_list = []
-        for i in args['prompt_index']:
-            if 0 <= i < len(speech_file_list):
-                speech_list.append(speech_file_list[i])
-                speech_idx_list.append(i)
-    if len(speech_list) == 0:
-        raise RuntimeError('==Failure speech list is empty ==')
-    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
+    # Build the prompt schedule via BenchPrompter, which:
+    #   - reads and parses the speech prompt file (JSON or plain path)
+    #   - resolves media paths relative to the prompt file
+    #   - honours args['prompt_index'] for selective benchmarking
+    #   - handles both subsequent=False (iter-major) and subsequent=True
+    #     (prompt-major) scheduling in a single unified iter_schedule() loop
+    # NOTE: the raw waveform is loaded lazily inside the loop (not at
+    #       prompt-construction time) because decoding depends on the model's
+    #       feature-extractor sampling rate, which is only known after the
+    #       model has been loaded.
+    prompter = BenchPrompter(args)
+    active = prompter.active_pairs
+    speech_idx_list = [p_idx for p_idx, _ in active]
+    speech_list = [p for _, p in active]
+
+    log.info(
+        f'Benchmarking iter nums(exclude warm-up): {num_iters}, '
+        f'speech file nums: {len(prompter)}, speech idx: {speech_idx_list}'
+    )
     mem_consumption.update_marker("model")
-    pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(model_path, device, mem_consumption, **args)
-    md5_list = {num : {} for num in range(num_iters + 1)}
+    pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(
+        model_path, device, mem_consumption, **args
+    )
+    md5_list = {num: {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {
         "pipe": pipe,
@@ -182,36 +187,26 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         whisper_hook.new_generate(pipe)
         whisper_hook.new_text_sample(pipe)
     mem_consumption.activate_cooldown("after model compilation")
-    for num in range(num_iters + 1):
-        for idx, speech_param in enumerate(speech_list):
-            p_idx = speech_idx_list[idx]
-            mem_consumption.update_marker(f"step-{num}-{p_idx}")
-            raw_speech = model_utils.read_wav(speech_param['media'], processor.feature_extractor.sampling_rate)
-            input_param['speech_idx'] = p_idx
-            input_param['speech_param'] = speech_param
-            input_param['iter_idx'] = num
-            input_param['raw_speech'] = raw_speech
-            iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-            run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list)
-            iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-            prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-            log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+    iter_data_list = []
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        # Load audio waveform here (inside the loop) so that a fresh array is
+        # used for every iteration, and because read_wav requires the model's
+        # sampling rate which is only available after model creation.
+        raw_speech = model_utils.read_wav(
+            prompt['media'], processor.feature_extractor.sampling_rate
+        )
+        input_param['speech_idx'] = p_idx
+        input_param['speech_param'] = prompt   # BenchPrompt dict carries language/timestamp
+        input_param['iter_idx'] = num
+        input_param['raw_speech'] = raw_speech
+        iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
+        run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list)
+        iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        log.info(
+            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, "
+            f"end: {iter_timestamp[num][p_idx]['end']}"
+        )
     metrics_print.print_average(iter_data_list, speech_idx_list, 1, True)
-
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_speech_files(args):
-    speech_file_list = []
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, 'media')
-    if is_json_data is True:
-        speech_param_list = parse_json_data.parse_speech_json_data(output_data_list)
-        if len(speech_param_list) > 0:
-            for speech_file in speech_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    speech_file['media'] = os.path.join(os.path.dirname(args['prompt_file'][0]), speech_file['media'].replace('./', ''))
-                    speech_file['media'] = Path(speech_file['media'])
-                speech_file_list.append(speech_file)
-    else:
-        speech_file_list.append({'media': output_data_list[0]})
-    return speech_file_list
