@@ -47,6 +47,7 @@ import numpy as np
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
+from optimum.intel.utils.import_utils import is_optimum_version
 from huggingface_hub import snapshot_download
 from openvino_genai import (
     VLMPipeline,
@@ -159,6 +160,7 @@ else:
     ]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
+MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -171,6 +173,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-llava",
         "optimum-intel-internal-testing/tiny-random-llava-next",
         "optimum-intel-internal-testing/tiny-random-gemma3",
+        MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
         *VIDEO_MODEL_IDS,
     ]
@@ -181,6 +184,7 @@ else:
         "qnguyen3/nanoLLaVA",
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
         "optimum-intel-internal-testing/tiny-random-gemma4-31B",
         *VIDEO_MODEL_IDS,
     ]
@@ -200,6 +204,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
+    MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
@@ -207,6 +212,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
@@ -263,9 +269,11 @@ TEST_IMAGE_URLS = {
 
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
+    MODEL_GEMMA3N,
     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
     "optimum-intel-internal-testing/tiny-random-gemma4",
     "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
 }
 
@@ -308,6 +316,21 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     ] and is_transformers_version("<", "5.5.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
+        )
+    if model_id in [MODEL_GEMMA3N] and (
+        is_transformers_version("<", "4.57.0")
+        or is_transformers_version(">=", "5.0.0")
+        or is_optimum_version("<", "2.0.0")
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is >= 4.57.0 and < 5.0.0. Supported optimum version is >= 2.0.0."
+        )
+
+    if model_id in [
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
+    ] and is_transformers_version("<", "5.10.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.10.0."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
@@ -462,8 +485,10 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    if "gemma4" in ov_model and ov_backend == "PA" and ov_prompt_lookup:
-        pytest.xfail("gemma4 does not support PA with prompt_lookup=True")
+    if ("gemma4" in ov_model or ov_model == MODEL_GEMMA3N) and ov_backend == "PA" and ov_prompt_lookup:
+        pytest.xfail(f"{ov_model} does not support PA with prompt_lookup=True")
+    if "gemma4-unified" in ov_model and ov_backend == "PA":
+        pytest.xfail("gemma4-unified does not support PA. Ticket: 189844")
 
     models_path = _get_ov_model(ov_model)
 
@@ -1727,6 +1752,7 @@ else:
         ("qnguyen3/nanoLLaVA", "PA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-moe", "SDPA"),
+        ("optimum-intel-internal-testing/tiny-random-gemma4-unified-it", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-gemma4-31B", "SDPA"),
         ("optimum-intel-internal-testing/tiny-random-qwen3.5", "SDPA"),
     ]
@@ -2273,6 +2299,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl",
     "optimum-intel-internal-testing/tiny-random-qwen3.5",
+    VIDEOCHAT_FLASH_QWEN_MODEL_ID,
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
