@@ -12,6 +12,7 @@ def main():
     parser = argparse.ArgumentParser(description="Text-to-video generation with TaylorSeer caching optimization")
     parser.add_argument("model_dir", help="Path to the converted OpenVINO model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
+    parser.add_argument("--num-frames", type=int, default=161, help="Number of frames to generate")
     args = parser.parse_args()
 
     device = "CPU"  # GPU can be used as well
@@ -31,6 +32,7 @@ def main():
 
     generate_kwargs = {
         "negative_prompt": negative_prompt,
+        "num_frames": args.num_frames,
         "num_inference_steps": num_inference_steps,
         "callback": callback,
     }

@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <string>
 
 #include "progress_bar.hpp"
 #include "imwrite_video.hpp"
@@ -11,7 +12,12 @@
 #include <openvino/genai/taylorseer_config.hpp>
 
 int main(int argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
+    int64_t num_frames = 161;
+    if (argc >= 4 && std::string(argv[argc - 2]) == "--num-frames") {
+        num_frames = std::stoll(argv[argc - 1]);
+        argc -= 2;
+    }
+    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [--num-frames N]");
 
     const std::string models_path = argv[1];
     const std::string prompt = argv[2];
@@ -31,6 +37,7 @@ int main(int argc, char* argv[]) try {
     auto baseline_output = pipe.generate(
         prompt,
         ov::genai::negative_prompt(negative_prompt),
+        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(num_inference_steps),
         ov::genai::callback(progress_bar)
     );
@@ -59,6 +66,7 @@ int main(int argc, char* argv[]) try {
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt(negative_prompt),
+        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(num_inference_steps),
         ov::genai::callback(progress_bar)
     );
