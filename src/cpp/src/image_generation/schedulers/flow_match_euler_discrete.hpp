@@ -35,7 +35,7 @@ public:
 
     void set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) override;
 
-    void set_timesteps_with_mu(double mu, size_t num_inference_steps, float strength) override;
+    void set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) override;
 
     std::vector<float> get_float_timesteps() override;
 

@@ -19,7 +19,7 @@
 namespace {
 
 // Prepare text IDs for Flux2: (batch_size, text_seq_len, 4) with format (T=0, H=0, W=0, L=0..seq_len-1)
-inline ov::Tensor flux2_prepare_text_ids(size_t batch_size, size_t text_seq_len) {
+inline ov::Tensor flux2_prepare_text_ids(const size_t batch_size, const size_t text_seq_len) {
     ov::Tensor text_ids(ov::element::f32, {batch_size, text_seq_len, 4});
     float* data = text_ids.data<float>();
 
@@ -37,7 +37,7 @@ inline ov::Tensor flux2_prepare_text_ids(size_t batch_size, size_t text_seq_len)
 }
 
 // Prepare latent IDs for Flux2: (batch_size, H*W, 4) with format (T=0, H, W, L=0)
-inline ov::Tensor flux2_prepare_latent_ids(size_t batch_size, size_t height, size_t width) {
+inline ov::Tensor flux2_prepare_latent_ids(const size_t batch_size, const size_t height, const size_t width) {
     const size_t seq_len = height * width;
     ov::Tensor latent_ids(ov::element::f32, {batch_size, seq_len, 4});
     float* data = latent_ids.data<float>();
@@ -58,7 +58,7 @@ inline ov::Tensor flux2_prepare_latent_ids(size_t batch_size, size_t height, siz
 }
 
 // Prepare image IDs for Flux2 reference conditioning: (batch_size, N*H*W, 4) with format (T=scale+scale*i, H, W, L=0)
-inline ov::Tensor flux2_prepare_image_ids(size_t batch_size, const std::vector<std::pair<size_t, size_t>>& image_dims, float scale = 10.0f) {
+inline ov::Tensor flux2_prepare_image_ids(const size_t batch_size, const std::vector<std::pair<size_t, size_t>>& image_dims, const float scale = 10.0f) {
     // Calculate total sequence length across all images
     size_t total_seq_len = 0;
     for (const auto& [h, w] : image_dims) {
@@ -276,7 +276,7 @@ public:
         return pipeline;
     }
 
-    bool do_classifier_free_guidance(float guidance_scale) const {
+    bool do_classifier_free_guidance(const float guidance_scale) const {
         return guidance_scale > 1.0f && !m_is_distilled;
     }
 

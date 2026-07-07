@@ -58,7 +58,7 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, const int& max_sequence_length);
+    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, const bool do_classifier_free_guidance, const int& max_sequence_length);
 
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 

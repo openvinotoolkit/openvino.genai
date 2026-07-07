@@ -92,7 +92,7 @@ Qwen3TextEncoder& Qwen3TextEncoder::compile(const std::string& device, const ov:
     return *this;
 }
 
-ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, const int& max_sequence_length) {
+ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::string& neg_prompt, const bool do_classifier_free_guidance, const int& max_sequence_length) {
     OPENVINO_ASSERT(m_request, "Qwen3 text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;

@@ -283,7 +283,7 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t
     set_timesteps_with_mu(mu, num_inference_steps, strength);
 }
 
-void FlowMatchEulerDiscreteScheduler::set_timesteps_with_mu(double mu, size_t num_inference_steps, float strength) {
+void FlowMatchEulerDiscreteScheduler::set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) {
     m_timesteps.clear();
     m_sigmas.clear();
 

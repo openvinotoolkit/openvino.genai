@@ -9,7 +9,7 @@
 
 // pack_latents: (B, C, H, W) -> (B, (H/2)*(W/2), C*4)
 // Patchifies 2x2 spatial blocks into channels and transposes to sequence form.
-inline ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
+inline ov::Tensor pack_latents(const ov::Tensor latents, const size_t batch_size, const size_t num_channels_latents, const size_t height, const size_t width) {
     size_t h_half = height / 2, w_half = width / 2;
 
     ov::Shape final_shape = {batch_size, h_half * w_half, num_channels_latents * 4};
@@ -41,7 +41,7 @@ inline ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size
 
 // unpack_latents: (B, seq_len, C) -> (B, C/4, H, W)
 // Inverse of pack_latents: un-transposes from sequence form and reconstructs 2x2 spatial patches.
-inline ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width, size_t vae_scale_factor) {
+inline ov::Tensor unpack_latents(const ov::Tensor& latents, const size_t height, const size_t width, const size_t vae_scale_factor) {
     ov::Shape latents_shape = latents.get_shape();
     size_t batch_size = latents_shape[0], channels = latents_shape[2];
 
