@@ -12,6 +12,7 @@ from typing import Literal, Any, Union
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .utils import (
+    OMNI_MODEL_TYPES,
     get_ignore_parameters_flag,
     prepare_default_data_image,
     prepare_default_data_video,
@@ -148,7 +149,6 @@ class VisualTextEvaluator(TextEvaluator):
                 tokenizer=tokenizer,
                 **get_ignore_parameters_flag()
             )
-            from .model_loaders import OMNI_MODEL_TYPES
 
             is_hf_omni = model.config.model_type in OMNI_MODEL_TYPES and not is_optimum_ov
             if is_hf_omni:
