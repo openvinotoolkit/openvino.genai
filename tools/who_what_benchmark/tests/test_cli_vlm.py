@@ -210,7 +210,6 @@ def test_vlm_chat(model_id, model_type, tmp_path):
         "(chat_template image placeholder mismatches image_token_id; empty tokenizer vocab) "
         "and requires transformers>=5.1"
     ),
-    strict=True,
 )
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
