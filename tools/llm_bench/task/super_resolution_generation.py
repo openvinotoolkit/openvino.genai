@@ -85,7 +85,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
 
     log.info(
         f'Benchmarking iter nums(exclude warm-up): {num_iters}, '
-        f'image nums: {len(prompter)}, prompt idx: {prompt_idx_list}'
+        f'image nums: {len(image_list)}, prompt idx: {prompt_idx_list}'
     )
 
     # if num_iters == 0, just output warm-up data

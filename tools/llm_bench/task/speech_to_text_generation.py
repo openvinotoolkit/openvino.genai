@@ -166,7 +166,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
 
     log.info(
         f'Benchmarking iter nums(exclude warm-up): {num_iters}, '
-        f'speech file nums: {len(prompter)}, speech idx: {speech_idx_list}'
+        f'speech file nums: {len(speech_list)}, speech idx: {speech_idx_list}'
     )
     mem_consumption.update_marker("model")
     pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(
@@ -195,7 +195,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         # used for every iteration, and because read_wav requires the model's
         # sampling rate which is only available after model creation.
         raw_speech = model_utils.read_wav(
-            prompt['media'], processor.feature_extractor.sampling_rate
+            prompt['audio'], processor.feature_extractor.sampling_rate
         )
         input_param['speech_idx'] = p_idx
         input_param['speech_param'] = prompt   # BenchPrompt dict carries language/timestamp
