@@ -189,6 +189,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     iter_data_list = []
     for num, p_idx, prompt in prompter.iter_schedule(num_iters):
         mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        prompt.introduce_in_stdout(num, prefix)
         # Load audio waveform here (inside the loop) so that a fresh array is
         # used for every iteration, and because read_wav requires the model's
         # sampling rate which is only available after model creation.
@@ -201,8 +203,9 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         input_param['raw_speech'] = raw_speech
         iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
         run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list)
+        if iter_data_list:
+            iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
         log.info(
             f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, "
             f"end: {iter_timestamp[num][p_idx]['end']}"

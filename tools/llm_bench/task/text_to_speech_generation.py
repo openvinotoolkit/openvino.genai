@@ -278,6 +278,8 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
         gen_fn(prompt["prompt"], num, model, processor, vocoder, args, iter_data_list, md5_list,
                p_idx, tts_hook, model_precision, proc_id, mem_consumption)
+        if iter_data_list:
+            iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
