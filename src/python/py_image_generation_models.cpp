@@ -16,6 +16,8 @@
 #include "openvino/genai/image_generation/unet2d_condition_model.hpp"
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/flux2_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/qwen3_text_encoder.hpp"
 
 #include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -703,6 +705,202 @@ void init_flux_transformer_2d_model(py::module_& m) {
             )");
 }
 
+void init_flux2_transformer_2d_model(py::module_& m) {
+    auto flux2_transformer_2d_model = py::class_<ov::genai::Flux2Transformer2DModel>(m, "Flux2Transformer2DModel", "Flux2Transformer2DModel class.")
+        .def(py::init([](const std::filesystem::path& root_dir) {
+            return std::make_unique<ov::genai::Flux2Transformer2DModel>(root_dir);
+        }),
+        py::arg("root_dir"), "Model root directory",
+        R"(
+            Flux2Transformer2DModel class
+            root_dir (os.PathLike): Model root directory.
+        )")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::Flux2Transformer2DModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            Flux2Transformer2DModel class
+            root_dir (os.PathLike): Model root directory.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](const ov::genai::Flux2Transformer2DModel& model) {
+            return std::make_unique<ov::genai::Flux2Transformer2DModel>(model);
+        }),
+        py::arg("model"), "Flux2Transformer2DModel model"
+        R"(
+            Flux2Transformer2DModel class
+            model (Flux2Transformer2DModel): Flux2Transformer2DModel model
+        )");
+
+    py::class_<ov::genai::Flux2Transformer2DModel::Config>(flux2_transformer_2d_model, "Config", "This class is used for storing Flux2Transformer2DModel config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Flux2Transformer2DModel::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::Flux2Transformer2DModel::Config::in_channels)
+        .def_readwrite("guidance_embeds", &ov::genai::Flux2Transformer2DModel::Config::guidance_embeds)
+        .def_readwrite("default_sample_size", &ov::genai::Flux2Transformer2DModel::Config::default_sample_size);
+
+    flux2_transformer_2d_model.def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::Flux2Transformer2DModel::Config& config,
+            const size_t vae_scale_factor
+        ) {
+            return std::make_unique<ov::genai::Flux2Transformer2DModel>(model, weights, config, vae_scale_factor);
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "Flux2Transformer2DModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        R"(
+            Flux2Transformer2DModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (Flux2Transformer2DModel.Config): Flux2Transformer2DModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+        )")
+        .def(py::init([](
+            const std::string& model,
+            const ov::Tensor& weights,
+            const ov::genai::Flux2Transformer2DModel::Config& config,
+            const size_t vae_scale_factor,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::Flux2Transformer2DModel>(model, weights, config, vae_scale_factor, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("model"), "string with pre-read model",
+        py::arg("weights"), "ov::Tensor with pre-read model weights",
+        py::arg("config"), "Flux2Transformer2DModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            Flux2Transformer2DModel class constructor.
+            model (str): Pre-read model.
+            weights (ov.Tensor): Pre-read model weights tensor.
+            config (Flux2Transformer2DModel.Config): Flux2Transformer2DModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def("get_config", &ov::genai::Flux2Transformer2DModel::get_config)
+        .def("reshape", &ov::genai::Flux2Transformer2DModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
+        .def("infer",
+            &ov::genai::Flux2Transformer2DModel::infer,
+            py::call_guard<py::gil_scoped_release>(),
+            py::arg("latent"),
+            py::arg("timestep"))
+        .def("set_hidden_states", &ov::genai::Flux2Transformer2DModel::set_hidden_states, py::arg("tensor_name"), py::arg("encoder_hidden_states"))
+        .def(
+            "compile",
+            [](ov::genai::Flux2Transformer2DModel& self,
+               const std::string& device,
+               const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device, map);
+                }
+            },
+            py::arg("device"), "device on which inference will be done",
+            R"(
+                Compiles the model.
+                device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+            )");
+}
+
+void init_qwen3_text_encoder(py::module_& m) {
+    auto qwen3_text_encoder = py::class_<ov::genai::Qwen3TextEncoder>(m, "Qwen3TextEncoder", "Qwen3TextEncoder class.")
+        .def(py::init([](const std::filesystem::path& root_dir) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen3TextEncoder>(root_dir);
+        }),
+        py::arg("root_dir"), "Model root directory",
+        R"(
+            Qwen3TextEncoder class
+            root_dir (os.PathLike): Model root directory.
+        )")
+        .def(py::init([](
+            const std::filesystem::path& root_dir,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::Qwen3TextEncoder>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("root_dir"), "Model root directory",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            Qwen3TextEncoder class
+            root_dir (os.PathLike): Model root directory.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](const ov::genai::Qwen3TextEncoder& model) {
+            return std::make_unique<ov::genai::Qwen3TextEncoder>(model);
+        }),
+        py::arg("model"), "Qwen3TextEncoder model"
+        R"(
+            Qwen3TextEncoder class
+            model (Qwen3TextEncoder): Qwen3TextEncoder model
+        )");
+
+    py::class_<ov::genai::Qwen3TextEncoder::Config>(qwen3_text_encoder, "Config", "This class is used for storing Qwen3TextEncoder config.")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Qwen3TextEncoder::Config>(config_path);
+        }),
+        py::arg("config_path"))
+        .def_readwrite("hidden_size", &ov::genai::Qwen3TextEncoder::Config::hidden_size)
+        .def_readwrite("num_hidden_layers", &ov::genai::Qwen3TextEncoder::Config::num_hidden_layers)
+        .def_readwrite("hidden_states_layers", &ov::genai::Qwen3TextEncoder::Config::hidden_states_layers);
+
+    qwen3_text_encoder
+        .def("reshape", &ov::genai::Qwen3TextEncoder::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
+        .def("infer",
+            [](ov::genai::Qwen3TextEncoder& self,
+               const std::string& pos_prompt,
+               const std::string& neg_prompt,
+               bool do_classifier_free_guidance,
+               int max_sequence_length
+            ) {
+                py::gil_scoped_release rel;
+                return self.infer(pos_prompt, neg_prompt, do_classifier_free_guidance, max_sequence_length);
+            },
+            py::arg("pos_prompt"),
+            py::arg("neg_prompt"),
+            py::arg("do_classifier_free_guidance"),
+            py::arg("max_sequence_length"))
+        .def("get_config", &ov::genai::Qwen3TextEncoder::get_config)
+        .def(
+            "compile",
+            [](ov::genai::Qwen3TextEncoder& self,
+               const std::string& device,
+               const py::kwargs& kwargs
+            ) {
+                auto map = pyutils::kwargs_to_any_map(kwargs);
+                {
+                    py::gil_scoped_release rel;
+                    self.compile(device, map);
+                }
+            },
+            py::arg("device"), "device on which inference will be done",
+            R"(
+                Compiles the model.
+                device (str): Device to run the model on (e.g., CPU, GPU).
+                kwargs: Device properties.
+            )");
+}
+
 void init_autoencoder_kl(py::module_& m) {
     auto autoencoder_kl = py::class_<ov::genai::AutoencoderKL>(m, "AutoencoderKL", "AutoencoderKL class.")
         .def(py::init([](const std::filesystem::path& vae_decoder_path) {
@@ -885,7 +1083,8 @@ void init_autoencoder_kl(py::module_& m) {
                 kwargs: Device properties.
             )")
         .def("decode", &ov::genai::AutoencoderKL::decode, py::call_guard<py::gil_scoped_release>(), py::arg("latent"))
-        .def("encode", &ov::genai::AutoencoderKL::encode, py::call_guard<py::gil_scoped_release>(), py::arg("image"), py::arg("generator"))
+        .def("encode", static_cast<ov::Tensor (ov::genai::AutoencoderKL::*)(ov::Tensor, std::shared_ptr<ov::genai::Generator>)>(&ov::genai::AutoencoderKL::encode), py::call_guard<py::gil_scoped_release>(), py::arg("image"), py::arg("generator"))
+        .def("encode", static_cast<ov::Tensor (ov::genai::AutoencoderKL::*)(ov::Tensor)>(&ov::genai::AutoencoderKL::encode), py::call_guard<py::gil_scoped_release>(), py::arg("image"))
         .def("get_config", &ov::genai::AutoencoderKL::get_config)
         .def("get_vae_scale_factor", &ov::genai::AutoencoderKL::get_vae_scale_factor)
         .def("export_model",
