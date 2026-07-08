@@ -66,7 +66,15 @@ std::vector<ov::Output<ov::Node>> get_dflash_annotated_hidden_state_outputs(
     const std::shared_ptr<ov::Model>& model,
     const std::vector<int32_t>& target_layer_ids) {
     if (!model->has_rt_info(DFLASH_HIDDEN_STATES_RT_INFO_KEY)) {
-        return {};
+        auto fallback_outputs =
+            ov::genai::utils::eagle3::find_decoder_layer_hidden_state_outputs(model, target_layer_ids);
+        OPENVINO_ASSERT(fallback_outputs.empty() || fallback_outputs.size() == target_layer_ids.size(),
+                        "DFlash Eagle3 hidden-state fallback found ",
+                        fallback_outputs.size(),
+                        " outputs for ",
+                        target_layer_ids.size(),
+                        " requested target layers.");
+        return fallback_outputs;
     }
 
     const auto annotation = nlohmann::json::parse(model->get_rt_info<std::string>(DFLASH_HIDDEN_STATES_RT_INFO_KEY));
@@ -181,7 +189,8 @@ void expose_target_hidden_states(std::shared_ptr<ov::Model>& model, const std::v
     auto annotated_outputs = get_dflash_annotated_hidden_state_outputs(model, target_layer_ids);
     OPENVINO_ASSERT(!annotated_outputs.empty(),
                     "DFlash requires hidden-state annotations in the target model. "
-                    "Export the target model with Optimum hidden-state annotations.");
+                    "Export the target model with Optimum hidden-state annotations or provide "
+                    "Eagle3-compatible decoder layer names.");
     add_dflash_hidden_state_result(model, annotated_outputs);
 }
 

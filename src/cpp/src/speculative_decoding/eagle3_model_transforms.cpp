@@ -4,6 +4,7 @@
 #include "eagle3_model_transforms.hpp"
 
 #include <fstream>
+#include <string>
 #include <nlohmann/json.hpp>
 
 #include "json_utils.hpp"
@@ -216,6 +217,59 @@ std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::share
     return nullptr;
 }
 
+namespace {
+
+bool is_hidden_state_residual_node(const std::shared_ptr<ov::Node>& node) {
+    if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
+        auto input1 = add->get_input_node_shared_ptr(1);
+        auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
+        if (!matmul) return false;
+        auto matmul_input = matmul->get_input_node_shared_ptr(0);
+        return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
+    }
+    return false;
+}
+
+std::vector<ov::Output<ov::Node>> find_hidden_state_outputs_by_patterns(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<std::string>& patterns) {
+    std::vector<ov::Output<ov::Node>> residual_outputs(patterns.size());
+    std::vector<bool> found_outputs(patterns.size(), false);
+    for (const auto& node : model->get_ordered_ops()) {
+        if (!is_hidden_state_residual_node(node)) continue;
+        const std::string& name = node->get_friendly_name();
+        for (size_t idx = 0; idx < patterns.size(); ++idx) {
+            if (!found_outputs[idx] && name.find(patterns[idx]) != std::string::npos) {
+                residual_outputs[idx] = node->output(0);
+                found_outputs[idx] = true;
+                break;
+            }
+        }
+    }
+
+    std::vector<ov::Output<ov::Node>> ordered_outputs;
+    ordered_outputs.reserve(patterns.size());
+    for (size_t idx = 0; idx < patterns.size(); ++idx) {
+        if (found_outputs[idx]) {
+            ordered_outputs.push_back(residual_outputs[idx]);
+        }
+    }
+    return ordered_outputs;
+}
+
+}  // namespace
+
+std::vector<ov::Output<ov::Node>> find_decoder_layer_hidden_state_outputs(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<int32_t>& decoder_layer_ids) {
+    std::vector<std::string> patterns;
+    patterns.reserve(decoder_layer_ids.size());
+    for (int32_t idx : decoder_layer_ids) {
+        patterns.emplace_back("layers." + std::to_string(idx) + "/");
+    }
+    return find_hidden_state_outputs_by_patterns(model, patterns);
+}
+
 void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector<int32_t>& hidden_layers_to_abstract) {
     if (hidden_layers_to_abstract.empty()) {
         return;
@@ -235,28 +289,11 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         patterns.emplace_back("midlayer"); // draft description
     }
 
-    // Helper: check if node is a residual Add node with expected structure
-    auto is_residual_node = [](const std::shared_ptr<ov::Node>& node) -> bool {
-        if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
-            auto input1 = add->get_input_node_shared_ptr(1);
-            auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
-            if (!matmul) return false;
-            auto matmul_input = matmul->get_input_node_shared_ptr(0);
-            return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
-        }
-        return false;
-    };
-
     std::vector<ov::Output<ov::Node>> residual_outputs;
-    for (const auto& node : model->get_ordered_ops()) {
-        if (!is_residual_node(node)) continue;
-        const std::string& name = node->get_friendly_name();
-        for (const auto& pattern : patterns) {
-            if (name.find(pattern) != std::string::npos) {
-                residual_outputs.push_back(node->output(0));
-                break;
-            }
-        }
+    if (hidden_layers_to_abstract.size() > 1) {
+        residual_outputs = find_decoder_layer_hidden_state_outputs(model, hidden_layers_to_abstract);
+    } else {
+        residual_outputs = find_hidden_state_outputs_by_patterns(model, patterns);
     }
 
     if (!residual_outputs.empty()) {

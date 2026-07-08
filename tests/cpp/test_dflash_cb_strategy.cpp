@@ -10,6 +10,8 @@
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/matmul.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
@@ -40,6 +42,25 @@ std::shared_ptr<ov::Model> make_annotated_hidden_state_model() {
         std::string(R"({"version":1,"layers":{"0":"ov.hidden_states.decoder_layer_0","1":"ov.hidden_states.decoder_layer_1","2":"ov.hidden_states.decoder_layer_2","3":"ov.hidden_states.decoder_layer_3","4":"ov.hidden_states.decoder_layer_4"}})"),
         "hidden_states_decoder_layers");
     return model;
+}
+
+std::shared_ptr<ov::Model> make_eagle3_pattern_hidden_state_model() {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1, 2, 4});
+    ov::Output<ov::Node> current = input->output(0);
+
+    for (size_t layer_idx = 0; layer_idx < 5; ++layer_idx) {
+        auto scale = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1, 2, 4}, 1.0f);
+        auto multiplied = std::make_shared<ov::op::v1::Multiply>(current, scale);
+        auto weight = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{4, 4}, 1.0f);
+        auto projection = std::make_shared<ov::op::v0::MatMul>(multiplied, weight);
+        auto layer = std::make_shared<ov::op::v1::Add>(current, projection);
+        layer->set_friendly_name("model.layers." + std::to_string(layer_idx) + "/residual_add");
+        current = layer->output(0);
+    }
+
+    auto result = std::make_shared<ov::op::v0::Result>(current);
+    result->output(0).set_names({"logits"});
+    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
 }
 
 std::shared_ptr<ov::Model> make_dflash_draft_hidden_states_model(const ov::PartialShape& hidden_states_shape) {
@@ -148,6 +169,16 @@ TEST(DFlashModelTransforms, AddsArbitraryAnnotatedHiddenStatesAsOutput) {
     ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 1);
     const auto hidden_state = model->output("last_hidden_state");
     ASSERT_EQ(hidden_state.get_partial_shape(), ov::PartialShape({1, 2, 20}));
+}
+
+TEST(DFlashModelTransforms, FallsBackToEagle3LayerPatternWithoutAnnotations) {
+    auto model = make_eagle3_pattern_hidden_state_model();
+
+    ov::genai::utils::dflash::expose_target_hidden_states(model, {0, 2, 4});
+
+    ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 1);
+    const auto hidden_state = model->output("last_hidden_state");
+    ASSERT_EQ(hidden_state.get_partial_shape(), ov::PartialShape({1, 2, 12}));
 }
 
 TEST(DFlashModelTransforms, ThrowsForMissingAnnotatedHiddenStateLayer) {

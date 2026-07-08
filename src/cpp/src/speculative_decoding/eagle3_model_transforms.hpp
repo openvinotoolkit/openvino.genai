@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "openvino/core/model.hpp"
 #include "openvino/genai/generation_config.hpp"
 
 #include "openvino/runtime/core.hpp"
@@ -92,6 +93,16 @@ void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::sh
  * @return Constant node containing the mapping table, or nullptr if not found.
  */
 std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model);
+
+/**
+ * @brief Finds decoder-layer hidden-state residual outputs by Eagle3 layer-name patterns.
+ *
+ * Matches residual Add nodes whose friendly names contain `layers.{idx}/` for each requested
+ * decoder layer id. The returned outputs follow the order of the requested layer ids.
+ */
+std::vector<ov::Output<ov::Node>> find_decoder_layer_hidden_state_outputs(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<int32_t>& decoder_layer_ids);
 
 /**
  * @brief Extracts hidden states from specified decoder layers.
