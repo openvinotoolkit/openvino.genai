@@ -316,6 +316,7 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
+    bool m_enable_query_to_query_bias = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     std::unordered_map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
@@ -404,6 +405,7 @@ public:
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
+    void enable_query_to_query_bias(bool on)   { m_enable_query_to_query_bias = on; }
 
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
@@ -721,7 +723,7 @@ public:
                         //   - tokens[3-6] are grandchildren at tree layer 2 (branching from layer 1 nodes)
                         // These IDs compute relative position offsets for parallel evaluation in tree-based speculative decoding (e.g., EAGLE).
                         const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
-                        if (_is_hs_export_only() && !tree_pos_ids.empty()) {
+                        if (_is_hs_export_only() && m_enable_query_to_query_bias && !tree_pos_ids.empty()) {
                             OPENVINO_ASSERT(num_scheduled_tokens <= tree_pos_ids.size(),
                                            "num_scheduled_tokens (", num_scheduled_tokens,
                                            ") exceeds tree_position_ids.size() (", tree_pos_ids.size(),
@@ -850,7 +852,7 @@ public:
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
         }
-        if (_is_hs_export_only()) {
+        if (_is_hs_export_only() && m_enable_query_to_query_bias) {
             _set_query_to_query_tensors(sequence_groups, scheduler_output);
         }
         if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[1] == 1) {
