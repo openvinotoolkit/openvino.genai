@@ -372,9 +372,8 @@ def run_text_reranker_benchmark(
     # in a single unified iter_schedule() loop, eliminating the previous
     # duplicated if/else branches.
     prompter = BenchPrompter(args)
-    active = prompter.active_pairs
-    prompt_idx_list = [p_idx for p_idx, _ in active]
-    text_list = [p["prompt"] for _, p in active]
+    prompt_idx_list = prompter.active_indices
+    text_list = [p["prompt"] for p in prompter.active_items]
 
     if not use_genai:
         text_reranker_pipeline = TextRerankerOptimum(model, tokenizer, args, model_path, mem_consumption)

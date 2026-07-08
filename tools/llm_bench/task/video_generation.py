@@ -376,9 +376,8 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
     #     (prompt-major) scheduling via a single unified iter_schedule() loop,
     #     replacing the previous collect_prompts_step + iteration_step pair.
     prompter = BenchPrompter(args)
-    active = prompter.active_pairs
-    prompt_idx_list = [p_idx for p_idx, _ in active]
-    text_list = [p for _, p in active]
+    prompt_idx_list = prompter.active_indices
+    text_list = prompter.active_items
 
     mem_consumption.update_marker("model")
 

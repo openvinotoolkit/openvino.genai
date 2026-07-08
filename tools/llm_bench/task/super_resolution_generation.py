@@ -80,9 +80,8 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     #     (prompt-major) scheduling in a single unified iter_schedule() loop,
     #     eliminating the previous duplicated if/else filter blocks.
     prompter = BenchPrompter(args)
-    active = prompter.active_pairs
-    prompt_idx_list = [p_idx for p_idx, _ in active]
-    image_list = [p for _, p in active]
+    prompt_idx_list = prompter.active_indices
+    image_list = prompter.active_items
 
     log.info(
         f'Benchmarking iter nums(exclude warm-up): {num_iters}, '

@@ -161,9 +161,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     #       feature-extractor sampling rate, which is only known after the
     #       model has been loaded.
     prompter = BenchPrompter(args)
-    active = prompter.active_pairs
-    speech_idx_list = [p_idx for p_idx, _ in active]
-    speech_list = [p for _, p in active]
+    speech_idx_list = prompter.active_indices
+    speech_list = prompter.active_items
 
     log.info(
         f'Benchmarking iter nums(exclude warm-up): {num_iters}, '
