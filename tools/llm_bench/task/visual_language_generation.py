@@ -14,7 +14,7 @@ from transformers import set_seed
 import llm_bench_utils.output_file
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-from llm_bench_utils.prompt_utils import extract_prompt_data, BenchPrompter
+from llm_bench_utils.prompt_utils import BenchPrompter
 
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
@@ -33,7 +33,7 @@ def run_visual_language_generation_optimum(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, False)
+    prompts, images, videos = BenchPrompter.extract_prompt_data(inputs, decim_frames, False)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -177,7 +177,7 @@ def run_visual_language_generation_genai(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, True)
+    prompts, images, videos = BenchPrompter.extract_prompt_data(inputs, decim_frames, True)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
