@@ -186,15 +186,7 @@ class Qwen3OmniInputsPreprocessor(VLMInputsPreprocessor):
             if not isinstance(video, list):
                 video = [video]
             media += [{"type": "video", "video": v} for v in video]
-
-            if self.chat_mode:
-                if self.videos is None:
-                    self.videos = []
-                self.videos.extend(video)
-            else:
-                self.videos = video
-        elif not self.chat_mode:
-            self.videos = None
+            self.videos = video
 
         if audio is not None:
             media += [{"type": "audio", "audio": audio}]

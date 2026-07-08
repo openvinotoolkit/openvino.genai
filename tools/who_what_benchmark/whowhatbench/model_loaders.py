@@ -560,28 +560,16 @@ def load_visual_text_model(
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
         except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+
+        model_cls = OVModelForVisualCausalLM
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
-            from optimum.intel.openvino import OVModelForOmni
+            from optimum.intel.openvino import OVModelForMultimodalLM
 
-            try:
-                return OVModelForOmni.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
-            except ValueError:
-                return OVModelForOmni.from_pretrained(
-                    model_id,
-                    config=config,
-                    trust_remote_code=True,
-                    use_cache=True,
-                    device=device,
-                    ov_config=ov_config,
-                    **kwargs,
-                )
-
+            model_cls = OVModelForMultimodalLM
         try:
-            model = OVModelForVisualCausalLM.from_pretrained(
-                model_id, device=device, ov_config=ov_config
-            )
+            model = model_cls.from_pretrained(model_id, device=device, ov_config=ov_config)
         except ValueError:
-            model = OVModelForVisualCausalLM.from_pretrained(
+            model = model_cls.from_pretrained(
                 model_id,
                 config=config,
                 trust_remote_code=True,
