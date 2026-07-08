@@ -236,10 +236,13 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     for num, p_idx, prompt in prompter.iter_schedule(num_iters):
         mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        prompt.introduce_in_stdout(num, prefix)
         iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
         image_gen_fn(prompt, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption, callback)
+        if iter_data_list:
+            iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
         log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)

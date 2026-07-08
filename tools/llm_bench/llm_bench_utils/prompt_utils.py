@@ -174,9 +174,10 @@ class BenchPrompt(dict):
         dict.__init__(self)
         self._args = args or {}
         # Lazily filled by probe()
-        self._image_size = None  # (width, height) | None
-        self._video_shape = None  # (frames, height, width) | None
-        self._audio_info = None  # (duration_sec, sample_rate) | None
+        self._image_size = None   # (width, height) | None
+        self._video_shape = None   # (frames, height, width) | None
+        self._audio_info = None    # (duration_sec, sample_rate) | None
+        self._mask_fraction = None # float | None  cached mask coverage % (extra feedback fix)
         self._probed = False
         self._load(data)
 
@@ -228,6 +229,11 @@ class BenchPrompt(dict):
         if self.get("audio"):
             self._audio_info = self._get_audio_info(self["audio"])
 
+        # Cache mask-coverage fraction so _get_mask_fraction is never called
+        # more than once per BenchPrompt instance (extra feedback fix).
+        if self.get("mask_image"):
+            self._mask_fraction = self._get_mask_fraction(self["mask_image"])
+
     # ------------------------------------------------------------------ #
     # Static media helpers                                                 #
     # ------------------------------------------------------------------ #
@@ -243,17 +249,27 @@ class BenchPrompt(dict):
 
     @staticmethod
     def _get_video_shape(path, decim_frames=None):
-        """
-        Return ``(frames, height, width)`` or ``None`` on failure.
+        """Return ``(frames, height, width)`` or ``None`` on failure.
 
-        Delegates to ``make_video_tensor`` so that the same decimation
-        logic used during actual benchmarking is also applied during
-        validation.
+        Uses cv2 container metadata for near-instant probing instead of
+        decoding all frames via ``make_video_tensor``.  This eliminates the
+        significant I/O + CPU overhead that previously occurred on the very
+        first ``repr()`` / ``introduce_in_stdout()`` call before the
+        benchmark loop (REDUCE-4 / CHANGE-3 from analysis).
+
+        Note: the frame count reflects the raw container value and does NOT
+        account for the decimation applied during the actual run.  It is used
+        for informational / display purposes only.
         """
         try:
-            # genai_flag=False -> returns np.ndarray with shape (F, H, W, C)
-            tensor = make_video_tensor(str(path), decim_frames, genai_flag=False)
-            return tuple(tensor.shape[:3])  # (frames, height, width)
+            cap = cv2.VideoCapture(str(path))
+            if not cap.isOpened():
+                raise IOError(f"cv2 could not open video: {path}")
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            return (n, h, w)
         except Exception as exc:
             log.warning(f"BenchPrompt: cannot probe video '{path}': {exc}")
             return None
@@ -314,7 +330,7 @@ class BenchPrompt(dict):
             if self._image_size:
                 w, h = self._image_size
                 if self.get("mask_image"):
-                    frac = self._get_mask_fraction(self["mask_image"])
+                    frac = self._mask_fraction  # pre-computed in probe()
                     if frac is not None:
                         parts.append(f"image:{w}x{h}/{frac:.1f}%")
                     else:
@@ -469,8 +485,24 @@ class BenchPrompter(list):
             # return dicts – both are accepted by BenchPrompt.__init__.
             if task == "visual_text_gen":
                 raw_list = parse_vlm_json_data(output_data_list)
+                # Resolve relative media/video paths against the prompt file
+                # (mirrors the logic in the static get_vlm_prompt() shim).
+                if args.get("prompt_file"):
+                    for entry in raw_list:
+                        if "media" in entry:
+                            entry["media"] = resolve_media_file_path(entry["media"], args["prompt_file"][0])
+                        if "video" in entry:
+                            entry["video"] = resolve_media_file_path(entry["video"], args["prompt_file"][0])
             elif task == "image_gen":
                 raw_list = parse_image_json_data(output_data_list)
+                # Resolve relative media/mask_image paths against the prompt file
+                # (mirrors the logic in the static get_image_prompt() shim).
+                if args.get("prompt_file"):
+                    for entry in raw_list:
+                        if "media" in entry:
+                            entry["media"] = resolve_media_file_path(entry.get("media"), args["prompt_file"][0])
+                        if "mask_image" in entry:
+                            entry["mask_image"] = resolve_media_file_path(entry.get("mask_image"), args["prompt_file"][0])
             elif task == "video_gen":
                 raw_list = parse_video_json_data(output_data_list)
             elif task == "speech_to_text":

@@ -178,6 +178,8 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
         iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
         text_emb_fn(prompt["prompt"], num, model, tokenizer, args, iter_data_list,
                     p_idx, bench_hook, proc_id, mem_consumption)
+        if iter_data_list:
+            iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 

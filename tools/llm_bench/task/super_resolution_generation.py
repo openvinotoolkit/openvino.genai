@@ -94,14 +94,18 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     iter_timestamp = model_utils.init_timestamp(num_iters, image_list, prompt_idx_list)
     for num, p_idx, prompt in prompter.iter_schedule(num_iters):
         mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        # introduce_in_stdout prints prompt['prompt'] (the image path) on
+        # num==0 and always logs repr(prompt) which includes probed dimensions.
+        prompt.introduce_in_stdout(num, prefix)
         if num == 0 and args["output_dir"] is not None:
             llm_bench_utils.output_file.output_image_input_text(str(prompt['prompt']), args, p_idx, None, proc_id)
-        log.info(f"[{'warm-up' if num == 0 else num}][P{p_idx}] Input image={prompt['prompt']}")
         iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
         run_ldm_super_resolution(prompt, num, pipe, args, framework, iter_data_list, p_idx, tm_list, proc_id, mem_consumption)
+        if iter_data_list:
+            iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
         tm_list.clear()
-        prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
         log.info(
             f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, "
             f"end: {iter_timestamp[num][p_idx]['end']}"

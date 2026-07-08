@@ -318,6 +318,8 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
         gen_fn(
             prompt, num, model, processor, args, iter_data_list, md5_list,
             p_idx, bench_hook, model_precision, proc_id, mem_consumption)
+        if iter_data_list:
+            iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
