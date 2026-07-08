@@ -19,8 +19,8 @@
 
 namespace {
 
-ov::genai::TextEmbeddingPipeline::Config get_multimodal_config(const ov::AnyMap& properties) {
-    ov::genai::TextEmbeddingPipeline::Config config(properties);
+ov::genai::EmbeddingPipeline::Config get_multimodal_config(const ov::AnyMap& properties) {
+    ov::genai::EmbeddingPipeline::Config config(properties);
     if (!properties.count(ov::genai::pooling_type.name())) {
         config.pooling_type = ov::genai::TextEmbeddingPipeline::PoolingType::LAST_TOKEN;
     }
@@ -122,7 +122,7 @@ class EmbeddingPipeline::EmbeddingPipelineImpl {
 public:
     EmbeddingPipelineImpl(const std::filesystem::path& models_path,
                           const std::string& device,
-                          const TextEmbeddingPipeline::Config& config,
+                          const EmbeddingPipeline::Config& config,
                           const ov::AnyMap& properties)
         : m_config{config} {
         m_config.validate();
@@ -160,7 +160,7 @@ public:
             try {
                 m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path,
                                                                                    device,
-                                                                                   TextEmbeddingPipeline::Config(properties),
+                                                                                   EmbeddingPipeline::Config(properties),
                                                                                    plugin_properties);
                 m_mode = Mode::TEXT_ONLY;
             } catch (const std::exception& text_error) {
@@ -502,7 +502,7 @@ private:
     Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
-    TextEmbeddingPipeline::Config m_config;
+    EmbeddingPipeline::Config m_config;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
     std::unordered_set<std::string> m_language_model_input_names;
@@ -512,7 +512,7 @@ private:
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const std::string& device,
-                                     const TextEmbeddingPipeline::Config& config,
+                                     const EmbeddingPipeline::Config& config,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, config, properties)) {}
 
