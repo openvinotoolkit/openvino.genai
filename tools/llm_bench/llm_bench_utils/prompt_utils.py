@@ -416,8 +416,11 @@ class BenchPrompter(list):
         elif task == "video_gen":
             input_key = ["prompt", "negative_prompt"]
         elif task == "speech_to_text":
-            # Speech prompts reference an audio file; the key is 'media'
-            # (not 'prompt') to match parse_speech_json_data output.
+            # Speech prompts reference an audio file stored under the 'audio'
+            # key (renamed from 'media' after loading so that BenchPrompt.probe()
+            # correctly calls _get_audio_info() instead of _get_image_size()).
+            # get_param_from_file still uses the 'media' key as the CLI/JSONL
+            # schema key for the audio file path.
             input_key = "media"
         elif task == "ldm_super_resolution":
             # Super-resolution prompts reference an image file stored under
@@ -459,8 +462,11 @@ class BenchPrompter(list):
                 if args.get("prompt_file"):
                     for entry in raw_list:
                         if "media" in entry:
-                            entry["media"] = resolve_media_file_path(
-                                entry["media"], args["prompt_file"][0]
+                            # Rename 'media' -> 'audio' so BenchPrompt.probe()
+                            # correctly calls _get_audio_info() instead of
+                            # _get_image_size() on the audio file path.
+                            entry["audio"] = resolve_media_file_path(
+                                entry.pop("media"), args["prompt_file"][0]
                             )
             elif task == "ldm_super_resolution":
                 raw_list = parse_image_json_data(output_data_list)
@@ -474,9 +480,10 @@ class BenchPrompter(list):
                 raw_list = parse_text_json_data(output_data_list)
         else:
             # For speech_to_text the raw value is an audio-file path which
-            # must be stored under 'media' (not 'prompt').
+            # must be stored under 'audio' (not 'prompt') so that
+            # BenchPrompt.probe() calls _get_audio_info() on it correctly.
             if task == "speech_to_text":
-                raw_list = [{"media": item} for item in output_data_list]
+                raw_list = [{"audio": item} for item in output_data_list]
             else:
                 raw_list = output_data_list
 
