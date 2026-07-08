@@ -296,9 +296,8 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     # in a single unified iter_schedule() loop, eliminating the previous
     # duplicated if/else branches.
     prompter = BenchPrompter(args)
-    active = prompter.active_pairs
-    prompt_idx_list = [p_idx for p_idx, _ in active]
-    image_text_list = [p for _, p in active]
+    prompt_idx_list = prompter.active_indices
+    image_text_list = prompter.active_items
 
     log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
              f'prompt nums: {len(image_text_list)}, prompt idx: {prompt_idx_list}')

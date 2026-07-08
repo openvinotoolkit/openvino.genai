@@ -201,9 +201,8 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     # duplicated if/else branches.  Also fixes the bug in the subsequent=True
     # path where `callback` was not forwarded to image_gen_fn.
     prompter = BenchPrompter(args)
-    active = prompter.active_pairs
-    prompt_idx_list = [p_idx for p_idx, _ in active]
-    image_list = [p for _, p in active]
+    prompt_idx_list = prompter.active_indices
+    image_list = prompter.active_items
 
     # If --static_reshape is specified, we need to get width, height, and guidance scale to drop into args
     # as genai's create_image_gen_model implementation will need those to reshape the pipeline before compile().

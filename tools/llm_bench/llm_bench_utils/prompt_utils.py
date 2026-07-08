@@ -534,6 +534,25 @@ class BenchPrompter(list):
             return list(enumerate(self))
         return [(i, self[i]) for i in prompt_index if 0 <= i < len(self)]
 
+
+    @property
+    def active_indices(self):
+        """Return a plain list of prompt indices that will be benchmarked.
+
+        Convenience shorthand; equivalent to
+        ``[p_idx for p_idx, _ in self.active_pairs]``.
+        """
+        return [p_idx for p_idx, _ in self.active_pairs]
+
+    @property
+    def active_items(self):
+        """Return a plain list of :class:`BenchPrompt` objects to be benchmarked.
+
+        Convenience shorthand; equivalent to
+        ``[p for _, p in self.active_pairs]``.
+        """
+        return [p for _, p in self.active_pairs]
+
     # ------------------------------------------------------------------ #
     # Iteration scheduling                                                 #
     # ------------------------------------------------------------------ #
