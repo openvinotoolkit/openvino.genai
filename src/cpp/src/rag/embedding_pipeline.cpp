@@ -438,18 +438,11 @@ private:
                         batched_output.get_element_type(),
                         ". Export the model with float32 output precision.");
         const size_t output_embed_dim = output_shape[1];
-        std::vector<ov::Tensor> outputs;
-        outputs.reserve(batch_size);
-
-        for (size_t i = 0; i < batch_size; ++i) {
-            ov::Tensor single_output(ov::element::f32, {1, output_embed_dim});
-            const float* src = batched_output.data<const float>() + i * output_embed_dim;
-            float* dst = single_output.data<float>();
-            std::copy_n(src, output_embed_dim, dst);
-            outputs.push_back(single_output);
-        }
-
-        return EmbedResult{stack_tensors(outputs)};
+        ov::Tensor result(ov::element::f32, {batch_size, output_embed_dim});
+        const float* src = batched_output.data<const float>();
+        float* dst = result.data<float>();
+        std::copy_n(src, batch_size * output_embed_dim, dst);
+        return EmbedResult{result};
     }
 
 private:
