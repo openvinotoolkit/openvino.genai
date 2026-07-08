@@ -487,8 +487,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if ("gemma4" in ov_model or ov_model == MODEL_GEMMA3N) and ov_backend == "PA" and ov_prompt_lookup:
         pytest.xfail(f"{ov_model} does not support PA with prompt_lookup=True")
-    if "gemma4-unified" in ov_model and ov_backend == "PA":
-        pytest.xfail("gemma4-unified does not support PA. Ticket: 189844")
 
     models_path = _get_ov_model(ov_model)
 
