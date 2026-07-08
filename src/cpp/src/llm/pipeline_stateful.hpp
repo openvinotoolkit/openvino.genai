@@ -29,10 +29,28 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
+    // Set from the model's config.json ("rope_parameters") when it uses LongRoPE - the
+    // 0-based sequence position at which the model switches from its "short" to "long"
+    // RoPE factor table (== "original_max_position_embeddings"). std::nullopt if the model
+    // doesn't use LongRoPE or config.json wasn't available to inspect.
+    std::optional<size_t> m_longrope_threshold;
+    // Transient, single-use: set by the StringInputs/ChatHistory generate() overloads right
+    // before delegating to the EncodedInputs overload, when this specific turn's cumulative
+    // history was detected to cross m_longrope_threshold. Consumed (read then cleared) at the
+    // top of the EncodedInputs overload - unlike m_use_full_chat_history (permanent, NPU-only)
+    // this only forces a full-history resend + cache reset for the ONE turn that actually
+    // crosses the threshold, so CPU/GPU keep using incremental caching otherwise.
+    bool m_force_longrope_reprefill = false;
     // include reflection of tokens contained in the kv cache and amount of tokens, which are needed to trim from kv cache on the next step of chat
     utils::CacheState m_cache_state;
 
     void reset_state();
+    // True if a chat turn whose cumulative token count is `new_total_len` would cross
+    // m_longrope_threshold for the first time (cache is currently entirely below the
+    // threshold, and this turn's total reaches/exceeds it). False if the model isn't
+    // LongRoPE, or the threshold was already crossed by a previous turn (no NEW crossing -
+    // incremental caching remains consistent once fully in one regime).
+    bool should_force_longrope_reprefill(size_t new_total_len);
 public:
 
     StatefulLLMPipeline(
@@ -61,6 +79,18 @@ public:
         const std::string& device,
         const ov::AnyMap& plugin_config
     );
+
+    // Detects whether the model uses LongRoPE (from "rope_parameters" in config.json under
+    // models_path) and, if so, records the short/long-factor switch-over threshold so that a
+    // chat turn crossing it triggers a one-off full-history resend + cache reset (see
+    // should_force_longrope_reprefill) and a mid-generation crossing within a turn triggers
+    // the LongRopeThresholdStreamer mitigation. Unlike NPU's m_use_full_chat_history this does
+    // NOT force full-history resend on every turn - incremental caching is kept otherwise.
+    // No-op if models_path is empty, config.json is missing/unparseable, or the model doesn't
+    // use LongRoPE. Needed because the real construction path (StatefulPipeline::create in
+    // llm/pipeline.cpp) already has models_path available but doesn't go through the
+    // models_path-taking constructor above.
+    void set_longrope_threshold(const std::filesystem::path& models_path);
 
     DecodedResults generate(
         StringInputs inputs,

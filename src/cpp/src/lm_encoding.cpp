@@ -34,7 +34,7 @@ void update_position_ids(ov::Tensor&& position_ids, const ov::Tensor&& attention
 void update_3d_position_ids(ov::Tensor&& position_ids, const ov::Tensor& attention_mask, const int64_t rope_delta) {
     constexpr size_t thw_dim_size = 3;
     constexpr size_t text_thw_dim_size = 4;
-    
+
     const size_t batch_size = attention_mask.get_shape().at(0);
     const size_t sequence_length = attention_mask.get_shape().at(1);
     const size_t dim_0_size = position_ids.get_shape().at(0);
@@ -370,7 +370,7 @@ TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils:
     TokenizedInputs encoded_input;
     size_t cache_len = cache_state.get_state().size();
     if (
-        cache_len == 0 
+        cache_len == 0
         || cache_state.needs_reset()  // models with linear attention need full input if prefix is altered
     ) {
         encoded_input.input_ids = new_chat_tokens;

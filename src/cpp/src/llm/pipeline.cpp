@@ -58,7 +58,7 @@ bool should_use_stateful_pipeline(bool is_npu_requested,
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
                 std::function<ov::genai::DecodedResults(void)> generate_callable) {
-                    
+
     std::shared_ptr<ov::genai::TextParserStreamer> parser_streamer;
     // If streamer is of StreamerBase type, and it is TextParserStreamer, get parsed message
     // Streaming is available only for batch size 1 therefore only parsed[0]
@@ -74,7 +74,7 @@ ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGen
     }
 
     auto res = generate_callable();
-    
+
     if (parser_streamer) {
         res.parsed.resize(1);
         res.parsed[0] = parser_streamer->get_parsed_message();
@@ -84,10 +84,10 @@ ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGen
     if (!generation_config.has_value() || generation_config->parsers.empty()) {
         return res;
     }
-    
+
     std::vector<std::shared_ptr<ov::genai::Parser>> parsers = generation_config->parsers;
     res.parsed.resize(res.texts.size());
-    
+
     // Apply Base parsers sequentially even if IncrementalParser has run.
     for (size_t i = 0; i < res.texts.size(); ++i) {
         auto& msg = res.parsed[i];
@@ -95,7 +95,7 @@ ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGen
             // Initialize msg with content
             msg["content"] = res.texts[i];
         }
-        
+
         for (auto& parser: parsers) {
             parser->parse(msg);
         }
@@ -216,11 +216,13 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
         }
     }
 
-    return std::make_unique<StatefulLLMPipeline>(main_model_descr.model,
+    auto stateful_pipeline = std::make_unique<StatefulLLMPipeline>(main_model_descr.model,
                                                  main_model_descr.tokenizer,
                                                  main_model_descr.device,
                                                  main_model_descr.properties,
                                                  main_model_descr.generation_config);
+    stateful_pipeline->set_longrope_threshold(models_path);
+    return stateful_pipeline;
 }
 };
 
@@ -273,7 +275,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (m_pimpl == nullptr) {
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
+        auto stateful_pipeline = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
+        stateful_pipeline->set_longrope_threshold(models_path);
+        m_pimpl = std::move(stateful_pipeline);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -319,7 +323,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     if (m_pimpl == nullptr) {
         // FIXME: Switch to StatefulPipeline::create after resolving issues
         //        with GPU and CPU for StatefulSpeculativeLLMPipeline
-        m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
+        auto stateful_pipeline = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
+        stateful_pipeline->set_longrope_threshold(models_path);
+        m_pimpl = std::move(stateful_pipeline);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -396,7 +402,7 @@ DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config
     GenerationConfig config = config_arg.value_or(get_generation_config());
     config.update_generation_config(config_map);
     auto streamer = utils::get_streamer_from_map(config_map);
-    
+
     return run_generate_with_parsers(config_arg, streamer, [&]() -> DecodedResults {
         return m_pimpl->generate(text, config, streamer);
     });
