@@ -344,8 +344,7 @@ class BenchPrompter(list):
     ----------------
     ``subsequent=False`` *(default)*
         Outer loop = iteration numbers, inner loop = prompts.
-        Prompts are processed in interleaved manner. Prompts are processed in subsequent manner.
-        All prompts are run before advancing to the next iteration.
+        All prompts are run in interleaved fashion within each iteration.
     ``subsequent=True``
         Outer loop = prompts, inner loop = iteration numbers.
         Prompts are processed in subsequent manner. All iterations for one prompt complete before moving to the next.
