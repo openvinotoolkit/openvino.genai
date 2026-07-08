@@ -19,8 +19,13 @@
 
 namespace {
 
-ov::genai::EmbeddingPipeline::Config get_multimodal_config(const ov::AnyMap& properties) {
-    ov::genai::EmbeddingPipeline::Config config(properties);
+ov::genai::TextEmbeddingPipeline::Config get_multimodal_config(const ov::AnyMap& properties) {
+    if (properties.count(ov::genai::text_embedding_pipeline_config.name())) {
+        return properties.at(ov::genai::text_embedding_pipeline_config.name())
+            .as<ov::genai::TextEmbeddingPipeline::Config>();
+    }
+    
+    ov::genai::TextEmbeddingPipeline::Config config(properties);
     if (!properties.count(ov::genai::pooling_type.name())) {
         config.pooling_type = ov::genai::TextEmbeddingPipeline::PoolingType::LAST_TOKEN;
     }
@@ -122,33 +127,6 @@ class EmbeddingPipeline::EmbeddingPipelineImpl {
 public:
     EmbeddingPipelineImpl(const std::filesystem::path& models_path,
                           const std::string& device,
-                          const EmbeddingPipeline::Config& config,
-                          const ov::AnyMap& properties)
-        : m_config{config} {
-        m_config.validate();
-        const ov::AnyMap plugin_properties = utils::remove_config_properties(properties);
-        try {
-            init_multimodal(models_path, device, plugin_properties);
-            m_mode = Mode::MULTIMODAL;
-        } catch (const std::exception& multimodal_error) {
-            try {
-                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path,
-                                                                                   device,
-                                                                                   m_config,
-                                                                                   plugin_properties);
-                m_mode = Mode::TEXT_ONLY;
-            } catch (const std::exception& text_error) {
-                OPENVINO_THROW("EmbeddingPipeline initialization failed. "
-                               "Multimodal initialization error: ",
-                               multimodal_error.what(),
-                               ". TextEmbeddingPipeline fallback error: ",
-                               text_error.what());
-            }
-        }
-    }
-
-    EmbeddingPipelineImpl(const std::filesystem::path& models_path,
-                          const std::string& device,
                           const ov::AnyMap& properties)
         : m_config{get_multimodal_config(properties)} {
         m_config.validate();
@@ -160,7 +138,7 @@ public:
             try {
                 m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path,
                                                                                    device,
-                                                                                   EmbeddingPipeline::Config(properties),
+                                                                                   TextEmbeddingPipeline::Config(properties),
                                                                                    plugin_properties);
                 m_mode = Mode::TEXT_ONLY;
             } catch (const std::exception& text_error) {
@@ -438,11 +416,18 @@ private:
                         batched_output.get_element_type(),
                         ". Export the model with float32 output precision.");
         const size_t output_embed_dim = output_shape[1];
-        ov::Tensor result(ov::element::f32, {batch_size, output_embed_dim});
-        const float* src = batched_output.data<const float>();
-        float* dst = result.data<float>();
-        std::copy_n(src, batch_size * output_embed_dim, dst);
-        return EmbedResult{result};
+        std::vector<ov::Tensor> outputs;
+        outputs.reserve(batch_size);
+
+        for (size_t i = 0; i < batch_size; ++i) {
+            ov::Tensor single_output(ov::element::f32, {1, output_embed_dim});
+            const float* src = batched_output.data<const float>() + i * output_embed_dim;
+            float* dst = single_output.data<float>();
+            std::copy_n(src, output_embed_dim, dst);
+            outputs.push_back(single_output);
+        }
+
+        return EmbedResult{stack_tensors(outputs)};
     }
 
 private:
@@ -495,19 +480,13 @@ private:
     Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
-    EmbeddingPipeline::Config m_config;
+    TextEmbeddingPipeline::Config m_config;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
     std::unordered_set<std::string> m_language_model_input_names;
     std::unordered_set<std::string> m_language_model_output_names;
     std::string m_embedding_output_name;
 };
-
-EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
-                                     const std::string& device,
-                                     const EmbeddingPipeline::Config& config,
-                                     const ov::AnyMap& properties)
-    : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, config, properties)) {}
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const std::string& device,

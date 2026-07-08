@@ -32,20 +32,6 @@ struct OPENVINO_GENAI_EXPORTS EmbedResult {
  */
 class OPENVINO_GENAI_EXPORTS EmbeddingPipeline {
 public:
-    using Config = TextEmbeddingPipeline::Config;
-
-    /**
-     * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
-     *
-     * @param models_path Path to the directory containing model xml/bin files and tokenizer.
-     * @param device Device.
-     * @param config Pipeline configuration.
-     * @param properties Optional plugin properties to pass to ov::Core::compile_model().
-     */
-    EmbeddingPipeline(const std::filesystem::path& models_path,
-                      const std::string& device,
-                      const Config& config,
-                      const ov::AnyMap& properties = {});
 
     /**
      * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
@@ -114,5 +100,9 @@ static constexpr ov::Property<std::variant<std::string, std::vector<std::string>
  */
 static constexpr ov::Property<std::string> prompt{"prompt"};
 
+/**
+ * @brief Configuration for the text embedding pipeline.
+ */
+static constexpr ov::Property<TextEmbeddingPipeline::Config> text_embedding_pipeline_config{"text_embedding_pipeline_config"};
 }  // namespace genai
 }  // namespace ov

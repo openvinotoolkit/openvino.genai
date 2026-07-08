@@ -14,7 +14,6 @@ from transformers import (
     AutoProcessor,
     AutoTokenizer,
     AutoModelForCausalLM,
-    AutoVideoProcessor,
 )
 from transformers import GenerationConfig as HFGenerationConfig
 
@@ -277,7 +276,7 @@ def convert_models(
     # save generation config
     if opt_model.generation_config:
         opt_model.generation_config.save_pretrained(str(models_path))
-    
+
     opt_model.config.save_pretrained(str(models_path))
 
     # to store tokenizer config jsons with special tokens
@@ -288,9 +287,9 @@ def convert_models(
 
     if not model_id:
         return
-    
+
     # to store preprocessor_config.json, processor_config.json etc. if they exist
-    for auto_cls in (AutoProcessor, AutoVideoProcessor, AutoImageProcessor):
+    for auto_cls in (AutoProcessor, AutoImageProcessor):
         try:
             processor = auto_cls.from_pretrained(model_id)
             processor.save_pretrained(str(models_path))
