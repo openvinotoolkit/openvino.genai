@@ -4,12 +4,16 @@
 import os
 import pytest
 import sys
+from importlib import metadata
 from pathlib import Path
 
 from test_utils import run_sample
 from data.models import GGUF_MODEL_LIST
 from utils.hugging_face import download_gguf_model
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
+
+
+_TRANSFORMERS_VERSION = tuple(int(p) for p in metadata.version("transformers").split(".")[:2])
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
@@ -613,5 +617,33 @@ class TestBenchmarkLLM:
             convert_model,
             "-pf",
             generate_llm_bench_input_generation_jsonl,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.skipif(
+        _TRANSFORMERS_VERSION < (5, 1),
+        reason="Requires transformers >= 5.1",
+    )
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "visual_text_gen", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "visual_text_gen", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_visual_text_gen(self, download_test_content, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "What animal is in this image?",
         ] + sample_args
         run_sample(benchmark_py_command)
