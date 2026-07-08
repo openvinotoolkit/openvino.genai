@@ -4,16 +4,13 @@
 import os
 import pytest
 import sys
-from importlib import metadata
 from pathlib import Path
 
 from test_utils import run_sample
 from data.models import GGUF_MODEL_LIST
 from utils.hugging_face import download_gguf_model
-from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
+from conftest import SAMPLES_PY_DIR, convert_model, download_test_content, TRANSFORMERS_VERSION
 
-
-_TRANSFORMERS_VERSION = tuple(int(p) for p in metadata.version("transformers").split(".")[:2])
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
@@ -622,7 +619,7 @@ class TestBenchmarkLLM:
 
     @pytest.mark.samples
     @pytest.mark.skipif(
-        _TRANSFORMERS_VERSION < (5, 1),
+        TRANSFORMERS_VERSION is None or TRANSFORMERS_VERSION < (5, 1),
         reason="Requires transformers >= 5.1",
     )
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
