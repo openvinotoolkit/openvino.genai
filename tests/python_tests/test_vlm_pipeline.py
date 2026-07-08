@@ -157,6 +157,10 @@ else:
         "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
         "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     ]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
@@ -182,10 +186,6 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
-        "optimum-intel-internal-testing/tiny-random-gemma4",
-        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
-        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
-        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
         *VIDEO_MODEL_IDS,
     ]
 
@@ -225,6 +225,10 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
