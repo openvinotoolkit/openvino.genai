@@ -12,6 +12,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/visibility.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
 

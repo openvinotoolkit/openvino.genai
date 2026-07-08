@@ -66,7 +66,7 @@ Attributes:
 const auto embedding_pipeline_docstring = R"(
 Embedding pipeline.
 
-Computes a single embedding vector for:
+Computes embedding vector for:
 - text only
 - text + images
 - text + images + videos
@@ -120,7 +120,7 @@ void init_rag_pipelines(py::module_& m) {
                 return pipe.embed(properties);
             },
             "Computes embedding vectors using properties "
-            "(texts=..., images=..., videos=..., videos_metadata=..., prompt=...).")
+            "(text=..., images=..., videos=..., videos_metadata=..., prompt=...).")
         ;
 
     auto text_embedding_pipeline =

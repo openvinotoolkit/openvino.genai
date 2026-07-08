@@ -1214,7 +1214,7 @@ class EmbeddingPipeline:
     
     Embedding pipeline.
     
-    Computes a single embedding vector for:
+    Computes embedding vector for:
     - text only
     - text + images
     - text + images + videos
@@ -1231,7 +1231,7 @@ class EmbeddingPipeline:
     @typing.overload
     def embed(self, **kwargs) -> EmbedResult:
         """
-        Computes embedding vectors using properties (texts=..., images=..., videos=..., videos_metadata=..., prompt=...).
+        Computes embedding vectors using properties (text=..., images=..., videos=..., videos_metadata=..., prompt=...).
         """
 class EncodedGenerationResult:
     """

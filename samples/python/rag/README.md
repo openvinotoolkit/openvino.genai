@@ -70,6 +70,7 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 ### 3. Image and Video Embedding Sample (`image_video_embedding.py`)
 - **Description:**
   Demonstrates multimodal retrieval with OpenVINO GenAI `EmbeddingPipeline`. Embeds a user text query and multiple image or video inputs, ranks the inputs by cosine similarity, and prints the most similar image or video.
+- **Dependencies:** Requires `opencv-python` for video decoding (`cv2`).
 - **Run Command:**
   ```sh
   python image_video_embedding.py <MODEL_DIR> --query "<QUERY>" --images <IMAGE_PATH_1> [<IMAGE_PATH_2> ...] --videos <VIDEO_PATH_1> [<VIDEO_PATH_2> ...] [--num-video-frames 8] [--device CPU]

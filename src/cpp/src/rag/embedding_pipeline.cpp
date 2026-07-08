@@ -24,7 +24,7 @@ ov::genai::TextEmbeddingPipeline::Config get_multimodal_config(const ov::AnyMap&
         return properties.at(ov::genai::text_embedding_pipeline_config.name())
             .as<ov::genai::TextEmbeddingPipeline::Config>();
     }
-    
+
     ov::genai::TextEmbeddingPipeline::Config config(properties);
     if (!properties.count(ov::genai::pooling_type.name())) {
         config.pooling_type = ov::genai::TextEmbeddingPipeline::PoolingType::LAST_TOKEN;
@@ -39,39 +39,6 @@ ov::Tensor make_text_position_ids(size_t sequence_length) {
         std::iota(data, data + sequence_length, 0);
     }
     return position_ids;
-}
-
-ov::Tensor stack_tensors(const std::vector<ov::Tensor>& tensors) {
-    if (tensors.empty()) {
-        return ov::Tensor(ov::element::f32, {0, 0});
-    }
-
-    const ov::Shape first_shape = tensors.front().get_shape();
-    OPENVINO_ASSERT(first_shape.size() == 2 && first_shape[0] == 1,
-                    "Expected rank-2 single embedding tensor");
-    const size_t embedding_size = first_shape[1];
-    const ov::element::Type element_type = tensors.front().get_element_type();
-    ov::Tensor result(element_type, {tensors.size(), embedding_size});
-    auto* result_data = static_cast<unsigned char*>(result.data());
-    const size_t row_bytes = embedding_size * element_type.size();
-
-    for (size_t row_idx = 0; row_idx < tensors.size(); ++row_idx) {
-        const ov::Tensor& tensor = tensors[row_idx];
-        const ov::Shape shape = tensor.get_shape();
-        OPENVINO_ASSERT(tensor.get_element_type() == element_type,
-                        "Expected all embeddings to have element type ",
-                        element_type,
-                        ", got ",
-                        tensor.get_element_type());
-        OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1 && shape[1] == embedding_size,
-                        "Expected all embeddings to have shape [1, ",
-                        embedding_size,
-                        "]");
-        const auto* src = static_cast<const unsigned char*>(tensor.data());
-        std::copy_n(src, row_bytes, result_data + row_idx * row_bytes);
-    }
-
-    return result;
 }
 
 ov::Tensor embedding_results_to_tensor(const ov::genai::EmbeddingResults& embedding_results) {
@@ -238,13 +205,9 @@ private:
             m_language_model_output_names.insert(output_names.begin(), output_names.end());
         }
 
-        if (has_lm_output("logits")) {
-            m_embedding_output_name = "logits";
-        } else {
-            // Some embedding-style exports expose the sequence embedding under 'last_hidden_state',
-            // but it is in text only models, but multimodal models expose it under 'logits'.
-            OPENVINO_THROW("Language model must expose 'logits' output for EmbeddingPipeline");
-        }
+        OPENVINO_ASSERT(has_lm_output("logits"),
+                        "Language model must expose 'logits' output for EmbeddingPipeline");
+        m_embedding_output_name = "logits";
 
         OPENVINO_ASSERT(has_lm_input("inputs_embeds"),
                         "Language model must expose 'inputs_embeds' input for EmbeddingPipeline");
@@ -325,7 +288,7 @@ private:
         }
 
         std::optional<ov::Tensor> batched_position_ids;
-        if (batch_items[0].position_ids.has_value()) {
+        if (batch_items[0].position_ids.has_value() && has_lm_input("position_ids")) {
             const auto& first_pos_shape = batch_items[0].position_ids->get_shape();
             OPENVINO_ASSERT(first_pos_shape.size() == 3,
                             "Expected position_ids to have rank 3, got rank ", first_pos_shape.size());
@@ -340,6 +303,9 @@ private:
             const auto& item = batch_items[i];
             const size_t seq_length = item.inputs_embeds.get_shape().at(1);
 
+            OPENVINO_ASSERT(item.inputs_embeds.get_element_type() == ov::element::f32,
+                             "inputs_embeds must be float32 for EmbeddingPipeline batching, got ",
+                             item.inputs_embeds.get_element_type());
             // Copy inputs_embeds
             float* dst_embeds = batched_inputs_embeds.data<float>() + i * max_seq_length * embed_dim;
             const float* src_embeds = item.inputs_embeds.data<const float>();
@@ -356,7 +322,7 @@ private:
                 std::copy_n(src_tti, seq_length, dst_tti);
             }
 
-            if (item.position_ids.has_value()) {
+            if (batched_position_ids.has_value() && item.position_ids.has_value()) {
                 const size_t num_dims = batched_position_ids->get_shape()[0];
                 const int64_t* src_pos = item.position_ids->data<const int64_t>();
                 for (size_t dim_idx = 0; dim_idx < num_dims; ++dim_idx) {
@@ -416,18 +382,9 @@ private:
                         batched_output.get_element_type(),
                         ". Export the model with float32 output precision.");
         const size_t output_embed_dim = output_shape[1];
-        std::vector<ov::Tensor> outputs;
-        outputs.reserve(batch_size);
-
-        for (size_t i = 0; i < batch_size; ++i) {
-            ov::Tensor single_output(ov::element::f32, {1, output_embed_dim});
-            const float* src = batched_output.data<const float>() + i * output_embed_dim;
-            float* dst = single_output.data<float>();
-            std::copy_n(src, output_embed_dim, dst);
-            outputs.push_back(single_output);
-        }
-
-        return EmbedResult{stack_tensors(outputs)};
+        ov::Tensor output_copy(ov::element::f32, output_shape);
+        std::copy_n(batched_output.data<const float>(), batch_size * output_embed_dim, output_copy.data<float>());
+        return EmbedResult{std::move(output_copy)};
     }
 
 private:
@@ -444,6 +401,11 @@ private:
         if (!prompt.has_value()) {
             return append_added_special_tokens(tokenizer, text);
         }
+        
+        if (tokenizer.get_chat_template().empty()) {
+             return append_added_special_tokens(tokenizer, *prompt + text);
+        }
+
         ChatHistory history({{{"role", "system"}, {"content", *prompt}}, {{"role", "user"}, {"content", text}}});
         constexpr bool add_generation_prompt = false;
         return append_added_special_tokens(tokenizer, tokenizer.apply_chat_template(history, add_generation_prompt));
@@ -510,7 +472,19 @@ EmbedResult EmbeddingPipeline::embed(const ov::AnyMap& properties) {
     utils::read_anymap_param(properties, ov::genai::images.name(), images_vec);
     utils::read_anymap_param(properties, ov::genai::videos.name(), videos_vec);
     utils::read_anymap_param(properties, ov::genai::videos_metadata.name(), videos_metadata_vec);
-    utils::read_anymap_param(properties, ov::genai::text.name(), text_variant);
+    
+    const auto text_it = properties.find(ov::genai::text.name());
+    if (text_it != properties.end() && !text_it->second.empty()) {
+        if (text_it->second.is<std::string>()) {
+            text_variant = text_it->second.as<std::string>();
+        } else if (text_it->second.is<std::vector<std::string>>()) {
+            text_variant = text_it->second.as<std::vector<std::string>>();
+        } else if (text_it->second.is<std::variant<std::string, std::vector<std::string>>>()) {
+            text_variant = text_it->second.as<std::variant<std::string, std::vector<std::string>>>();
+        } else {
+            OPENVINO_THROW("Unsupported type for 'text' property. Expected std::string or std::vector<std::string>.");
+        }
+    }
 
     StringInputs text_input = text_variant;
 

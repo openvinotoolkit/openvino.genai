@@ -10,6 +10,7 @@
 #include "openvino/opsets/opset3.hpp"
 #include "openvino/opsets/opset8.hpp"
 #include "utils.hpp"
+#include <openvino/genai/rag/embedding_pipeline.hpp>
 
 namespace {
 
@@ -138,6 +139,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(embed_instruction.name());
     properties_copy.erase(query_instruction.name());
     properties_copy.erase(padding_side.name());
+    properties_copy.erase(text_embedding_pipeline_config.name());
 
     return properties_copy;
 }

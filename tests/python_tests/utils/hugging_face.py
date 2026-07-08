@@ -271,6 +271,7 @@ def convert_models(
     hf_tokenizer: AutoTokenizer,
     models_path: Path,
     model_id: str | None = None,
+    trust_remote_code: bool = False,
 ) -> None:
     opt_model.save_pretrained(str(models_path))
     # save generation config
@@ -291,9 +292,9 @@ def convert_models(
     # to store preprocessor_config.json, processor_config.json etc. if they exist
     for auto_cls in (AutoProcessor, AutoImageProcessor):
         try:
-            processor = auto_cls.from_pretrained(model_id)
+            processor = auto_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code)
             processor.save_pretrained(str(models_path))
-        except Exception:
+        except (OSError, ValueError):
             # ignore if processor is not available for the model
             pass
 
@@ -415,7 +416,7 @@ def download_and_convert_model_class(
                 hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
             def convert_to_temp(temp_path: Path) -> None:
-                convert_models(opt_model, hf_tokenizer, temp_path, model_id)
+                convert_models(opt_model, hf_tokenizer, temp_path, model_id, trust_remote_code)
 
             manager.execute(convert_to_temp)
 
