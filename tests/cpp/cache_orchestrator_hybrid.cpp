@@ -358,7 +358,15 @@ TEST(TestCacheOrchestratorHybrid, CreateIgnoresCacheIntervalMultiplierWithoutLin
                                               }));
 }
 
-/// required_tokens_count() returns the maximum deficit across cache types.
+/// @test RequiredTokens_UsesMax
+/// Verify that required_tokens_count() returns the maximum deficit across all cache types.
+///
+/// Setup: hybrid orchestrator with variable-size KV cache and fixed-size linear-attention cache.
+///
+/// Scenario: build a sequence group with two running sequences and compare the orchestrator
+/// result against direct per-type calculations.
+///
+/// Expected: required_tokens_count() equals max(kv_required_tokens_count, la_required_tokens_count).
 TEST(TestCacheOrchestratorHybrid, RequiredTokens_UsesMax) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/4,
@@ -390,7 +398,13 @@ TEST(TestCacheOrchestratorHybrid, RequiredTokens_UsesMax) {
     orchestrator->free_sequence(seq2->get_id());
 }
 
-/// num_free_blocks() returns the minimum free count across cache types.
+/// @test NumFreeBlocks_UsesMin
+/// Verify that num_free_blocks() returns the minimum free blocks across all cache types.
+///
+/// Scenario:
+///   1. Initially: KV has 8 free blocks, LA has 4 free blocks, so min is 4.
+///   2. Allocate 2 sequences: fixed-size LA has 2 free blocks, so min is 2.
+///   3. Free 1 sequence: fixed-size LA has 3 free blocks, so min is 3.
 TEST(TestCacheOrchestratorHybrid, NumFreeBlocks_UsesMin) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/8,
@@ -415,7 +429,11 @@ TEST(TestCacheOrchestratorHybrid, NumFreeBlocks_UsesMin) {
     orchestrator->free_sequence(running_1[1]->get_id());
 }
 
-/// grow_fixed_size_capacity() affects fixed-size caches only.
+/// @test GrowFixedSize_OnlyAffectsFixed
+/// Verify that grow_fixed_size_capacity() only affects fixed-size-per-sequence cache types,
+/// not variable-size types like KV.
+///
+/// Expected: LA capacity grows by the requested number of sequence slots, while KV is unchanged.
 TEST(TestCacheOrchestratorHybrid, GrowFixedSize_OnlyAffectsFixed) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/4,
@@ -439,7 +457,11 @@ TEST(TestCacheOrchestratorHybrid, GrowFixedSize_OnlyAffectsFixed) {
     EXPECT_EQ(final_la_blocks, initial_la_blocks + 3);
 }
 
-/// ensure_sequence_token_capacity() skips fixed-size caches.
+/// @test EnsureSequenceTokenCapacity_SkipsFixed
+/// Verify that ensure_sequence_token_capacity() only affects variable-size cache types,
+/// not fixed-size types like linear-attention cache.
+///
+/// Expected: KV cache grows to fit the requested token capacity, while LA capacity is unchanged.
 TEST(TestCacheOrchestratorHybrid, EnsureSequenceTokenCapacity_SkipsFixed) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/4,
@@ -463,7 +485,10 @@ TEST(TestCacheOrchestratorHybrid, EnsureSequenceTokenCapacity_SkipsFixed) {
     EXPECT_EQ(final_la_blocks, initial_la_blocks);
 }
 
-/// get_total_cache_size_in_bytes() aggregates all cache types.
+/// @test TotalCacheBytes_IncludesAll
+/// Verify that get_total_cache_size_in_bytes() aggregates memory from all registered cache types.
+///
+/// Expected: total bytes equals KV cache bytes plus linear-attention cache bytes.
 TEST(TestCacheOrchestratorHybrid, TotalCacheBytes_IncludesAll) {
     const size_t num_kv_blocks = 8;
     const size_t num_la_blocks = 4;
@@ -489,7 +514,8 @@ TEST(TestCacheOrchestratorHybrid, TotalCacheBytes_IncludesAll) {
     EXPECT_EQ(actual_total, expected_total);
 }
 
-/// Provisions one sequence and returns its live sequence id.
+/// Provision a sequence group's KV + LA workspace through the orchestrator and return
+/// the live sequence id. The owned LA set is established by allocate_tokens.
 namespace {
 uint64_t provision_single_sequence(const std::shared_ptr<CacheOrchestrator>& orchestrator,
                                    uint64_t request_id) {
@@ -500,7 +526,9 @@ uint64_t provision_single_sequence(const std::shared_ptr<CacheOrchestrator>& orc
 }
 }  // namespace
 
-/// Admission reserves 1 + N non-prefix LA rows per sequence.
+/// @test LinearAttentionWorkspace_ReservesOnePlusN
+/// Admission reserves exactly 1 + num_assistant_tokens LA rows per sequence in non-prefix mode.
+/// With N = 0, the footprint is a single row as in plain continuous batching.
 TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ReservesOnePlusN) {
     for (size_t n : {size_t{0}, size_t{1}, size_t{3}}) {
         const size_t fixed_blocks = 1 + n;
@@ -523,7 +551,9 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ReservesOnePlusN) {
     }
 }
 
-/// Live LA block defaults to block_table[0] and round-trips through setter.
+/// @test LinearAttentionWorkspace_LiveBlockDefaultsToFrontAndRoundTrips
+/// The live block defaults to the prefill row (block_table[0]) on first query, and
+/// set_linear_attention_live_block then get_linear_attention_live_block round-trips.
 TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_LiveBlockDefaultsToFrontAndRoundTrips) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/16,
@@ -590,7 +620,9 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_DefaultLiveBlockTrack
     orchestrator->free_sequence(parent_id);
 }
 
-/// Scratch rows are owned LA rows excluding the live row.
+/// @test LinearAttentionWorkspace_ScratchBlocksAreOwnedSetMinusLive
+/// The scratch set is exactly the owned LA rows other than the current live row.
+/// After promoting a scratch row to live, the old live row becomes scratch-eligible.
 TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ScratchBlocksAreOwnedSetMinusLive) {
     const size_t n = 3;
     const size_t fixed_blocks = 1 + n;
@@ -632,7 +664,9 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ScratchBlocksAreOwned
     orchestrator->free_sequence(seq_id);
 }
 
-/// Live LA registry survives cleanup while sequence runs.
+/// @test LinearAttentionWorkspace_OwnedSetNotReapedByCleanup
+/// The owned set is never reaped by free_empty_physical_blocks while the sequence runs,
+/// and the live-block registry survives cleanup.
 TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_OwnedSetNotReapedByCleanup) {
     const size_t fixed_blocks = 1 + 3;
     auto orchestrator = create_hybrid_orchestrator(
@@ -664,6 +698,9 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_OwnedSetNotReapedByCl
     orchestrator->free_sequence(seq_id);
 }
 
+/// @test PartialPreemptionIsDisallowedWhenFixedSizeTargetNeedsBlocks
+/// Partial preemption is rejected when the target would need fixed-size LA blocks.
+/// Fixed-size LA state is sequence-level state, so token-level partial preemption cannot satisfy it.
 TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeTargetNeedsBlocks) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/8,
@@ -683,6 +720,9 @@ TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeTarg
     orchestrator->free_sequence(victim_seq->get_id());
 }
 
+/// @test PartialPreemptionIsDisallowedWhenFixedSizeVictimHasState
+/// Partial preemption is rejected even when the target already owns LA state, because the victim's
+/// fixed-size LA state cannot be represented by token-level rollback.
 TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeVictimHasState) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/16,
@@ -708,7 +748,9 @@ TEST(TestCacheOrchestratorHybrid, PartialPreemptionIsDisallowedWhenFixedSizeVict
     orchestrator->free_sequence(target_seq->get_id());
 }
 
-/// Live LA block must belong to the sequence-owned table.
+/// @test LinearAttentionWorkspace_SetLiveBlockRejectsNonOwnedBlock
+/// The live-block setter is the single source of truth; recording an index outside the
+/// sequence's owned block table must fail loudly rather than poison the next paging step.
 TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_SetLiveBlockRejectsNonOwnedBlock) {
     const size_t fixed_blocks = 1 + 3;
     auto orchestrator = create_hybrid_orchestrator(
@@ -736,7 +778,9 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_SetLiveBlockRejectsNo
     orchestrator->free_sequence(seq_id);
 }
 
-/// Fork is rejected after live LA row moves off prefill row.
+/// @test LinearAttentionWorkspace_ForkRejectedWhenLiveRowMovedOffPrefill
+/// Forking shares block tables KV-style, which is unsafe once a speculative live row has
+/// moved off the prefill row. A live row still at block_table[0] forks as before.
 TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ForkRejectedWhenLiveRowMovedOffPrefill) {
     const size_t fixed_blocks = 1 + 3;
     auto orchestrator = create_hybrid_orchestrator(

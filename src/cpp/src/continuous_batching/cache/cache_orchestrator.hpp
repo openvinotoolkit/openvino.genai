@@ -158,7 +158,7 @@ public:
     // -----------------------------------------------------------------------
 
     const std::vector<BlocksPerLayer>& get_kv_block_tables(uint64_t seq_id) const {
-        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        const auto it = m_block_managers.find(CacheType::KV_CACHE);
         OPENVINO_ASSERT(it != m_block_managers.end(), "No KV cache registered");
         return it->second->get_block_tables(seq_id);
     }
@@ -240,7 +240,7 @@ public:
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
         // LA rows are mutated in place; fork only while live row remains the prefill row.
         if (has_linear_attention_cache()) {
-            auto live_it = m_linear_attention_live_block.find(parent_id);
+            const auto live_it = m_linear_attention_live_block.find(parent_id);
             if (live_it != m_linear_attention_live_block.end()) {
                 const BlocksPerLayer& owned = get_linear_attention_block_table(parent_id);
                 OPENVINO_ASSERT(!owned.empty() && static_cast<size_t>(owned.front()->get_index()) == live_it->second,
@@ -259,8 +259,8 @@ public:
             return;
         }
 
-        auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
-        auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
+        const auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
             auto& kv_block_mgr = *kv_it->second;
             auto& la_block_mgr = *la_it->second;
@@ -336,7 +336,7 @@ public:
     void free_blocks_from_sequence(size_t seq_id,
                                    const std::vector<std::set<size_t>>& per_layer_logical_block_indices,
                                    CacheType cache_type) {
-        auto it = m_block_managers.find(cache_type);
+        const auto it = m_block_managers.find(cache_type);
         OPENVINO_ASSERT(it != m_block_managers.end(), "Cache type not registered");
         it->second->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices);
     }
@@ -362,7 +362,7 @@ public:
 
     /// @return Number of KV cache blocks currently allocated for the given sequence group or 0 if model does not have KV cache.
     size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
-        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        const auto it = m_block_managers.find(CacheType::KV_CACHE);
         return it != m_block_managers.end() ? it->second->get_num_logical_blocks(seq_group) : 0;
     }
 
@@ -588,7 +588,7 @@ public:
      * @return Whether the reservation was raised.
      */
     bool ensure_linear_attention_fixed_blocks_per_sequence(size_t fixed_blocks_per_sequence) {
-        auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        const auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
         if (it == m_block_managers.end() || !it->second->is_fixed_size_per_sequence()) {
             return false;
         }
@@ -735,7 +735,7 @@ public:
 
     void commit_linear_attention_checkpoint_transaction(uint64_t seq_id, size_t checkpoint_slot) {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        auto it = m_linear_attention_checkpoint_transactions.find(seq_id);
+        const auto it = m_linear_attention_checkpoint_transactions.find(seq_id);
         OPENVINO_ASSERT(it != m_linear_attention_checkpoint_transactions.end(),
                         "No active linear attention checkpoint transaction for sequence ", seq_id);
         const auto& transaction = it->second;
@@ -766,7 +766,7 @@ public:
     ///         defaulting to the prefill row (block_table[0]) when no promotion was recorded.
     size_t get_linear_attention_live_block(uint64_t seq_id) const {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        auto it = m_linear_attention_live_block.find(seq_id);
+        const auto it = m_linear_attention_live_block.find(seq_id);
         if (it != m_linear_attention_live_block.end()) {
             return it->second;
         }
@@ -792,7 +792,7 @@ public:
 
     /// @return Number of KV attention layers only (excluding other cache types).
     size_t get_num_kv_layers() const {
-        auto it = m_cache_managers.find(CacheType::KV_CACHE);
+        const auto it = m_cache_managers.find(CacheType::KV_CACHE);
         return it != m_cache_managers.end() ? it->second->get_num_layers() : 0;
     }
 
