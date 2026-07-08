@@ -635,13 +635,12 @@ private:
         if (checkpoint_it != m_linear_attention_checkpoint_counts.end()) {
             OPENVINO_ASSERT(!m_config.enable_prefix_caching,
                             "Linear attention checkpoint paging currently supports fixed one-block state only");
-            const size_t checkpoint_count = checkpoint_it->second;
-            OPENVINO_ASSERT(checkpoint_count == num_scheduled_tokens,
-                            "Linear attention checkpoint count must match scheduled tokens for sequence ", seq_id,
-                            ": checkpoints ", checkpoint_count, ", scheduled tokens ", num_scheduled_tokens);
+            OPENVINO_ASSERT(num_scheduled_tokens <= checkpoint_it->second,
+                            "Linear attention checkpoint count must cover scheduled tokens for sequence ", seq_id,
+                            ": checkpoints ", checkpoint_it->second, ", scheduled tokens ", num_scheduled_tokens);
             const int32_t committed_block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
             const auto temporary_block_indices =
-                m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, checkpoint_count);
+                m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, num_scheduled_tokens);
 
             paging_data.block_indices.reserve(1 + temporary_block_indices.size());
             paging_data.block_indices.push_back(committed_block_index);
