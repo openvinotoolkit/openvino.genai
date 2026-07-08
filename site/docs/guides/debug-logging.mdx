@@ -55,27 +55,29 @@ EXECUTION_DEVICES:
 CPU: Intel(R) Xeon(R) Platinum 8468
 ```
 
-When Speculative Decoding ot Prompt Lookup pipeline is executed, performance metrics will be also printed.
+When Speculative Decoding or Prompt Lookup pipeline is executed, performance metrics will also be printed.
 
 ```sh title="Output:"
 ===============================
+Generated tokens: 100
 Total duration, sec: 26.6217
 Draft model duration, sec: 1.60329
 Main model duration, sec: 25.0184
 Draft model duration, %: 6.02248
 Main model duration, %: 93.9775
+Token per sec: 3.75633
 AVG acceptance rate, %: 21.6809
 ===============================
 REQUEST_ID: 0
 Main model iterations: 47
-Token per sec: 3.75633
 AVG acceptance rate, %: 21.6809
-Accepted tokens by draft model: 51
-Generated tokens: 100
+Generated tokens by draft model: 100
 Accepted token rate, %: 51
 ===============================
 Request_id: 0 ||| 40 0 40 20 0 0 40 40 0 20 20 20 0 40 0 0 20 80 0 80 20 0 0 0 40 80 0 40 60 40 80 0 0 0 0 40 20 20 0 40 20 40 0 20 0 0 0
 ```
+
+For user-facing speculative decoding metrics, prefer `SDPerModelsPerfMetrics` from `extended_perf_metrics`. It exposes accepted, rejected, and total draft candidate tokens, plus `get_draft_acceptance_rate()`. The draft model's generated-token counter reports draft-model processing work and can include non-candidate work such as cache or state alignment.
 
 When a GGUF model is passed to the pipeline, the detailed debug info will also be printed.
 

@@ -451,10 +451,13 @@ def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_dev
     # Check that tokens were accepted (proves speculative decoding worked)
     num_accepted = extended_perf_metrics.get_num_accepted_tokens()
     assert num_accepted > 0, "No tokens were accepted from draft model"
-    assert num_accepted <= num_draft_generated
+    num_draft_tokens = extended_perf_metrics.get_num_draft_tokens()
+    assert num_draft_tokens > 0, "Draft model did not produce validation candidates"
+    assert num_accepted <= num_draft_tokens
+    assert extended_perf_metrics.get_num_rejected_tokens() == num_draft_tokens - num_accepted
 
     # Calculate and verify acceptance rate is reasonable for Eagle3
-    acceptance_rate = num_accepted / num_draft_generated if num_draft_generated > 0 else 0
+    acceptance_rate = extended_perf_metrics.get_draft_acceptance_rate()
     assert 0 <= acceptance_rate <= 1
     assert acceptance_rate > 0.1, f"Acceptance rate too low ({acceptance_rate:.2%}), Eagle3 may not be working properly"
 
