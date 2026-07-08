@@ -43,4 +43,11 @@ private:
   std::string library_path_;
 };
 
+/// Raw IPA phonemization without Misaki normalization (no diphthong tie-merging, no
+/// symbol remapping) — for consumers needing espeak-ng's individual IPA codepoints
+/// untouched (e.g. Piper TTS, which encodes each IPA codepoint as a separate token id).
+std::optional<std::string> raw_espeak_ipa_phonemize(const std::string& text,
+                                                     const std::string& voice_name,
+                                                     std::string library_path = {});
+
 } // namespace misaki
