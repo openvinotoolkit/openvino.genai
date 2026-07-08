@@ -110,4 +110,14 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
       'https://huggingface.co/shuttleai/shuttle-jaguar',
     ],
   },
+  {
+    architecture: 'FLUX.2 [klein]',
+    textToImage: true,
+    imageToImage: true,
+    inpainting: false,
+    loraSupport: true,
+    links: [
+      'https://huggingface.co/black-forest-labs/FLUX.2-klein-4B',
+    ],
+  },
 ];

@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen3TextEncoder', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -70,8 +70,9 @@ class ASRGenerationConfig(GenerationConfig):
     
         Common parameters:
     
-        :param language: Language token to use for generation in the form of <|en|>.
-                         Can be set for multilingual models only.
+        :param language: Language token to use for generation.
+                         In the form of <|en|> for Whisper models. Can be set for multilingual models only.
+                         In the form of English for Qwen3-ASR models.
         :type language: Optional[str]
     
         :param return_timestamps: Whether to return segment-level timestamps.
@@ -149,9 +150,15 @@ class ASRGenerationConfig(GenerationConfig):
                            #  He has gone and gone for good answered Polychrome who...
         :type hotwords: Optional[str]
     
+        Qwen3-ASR parameters:
+    
+        :param context: System prompt context prepended to Qwen3-ASR transcription requests.
+        :type context: Optional[str]
+    
         For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
         see GenerationConfig documentation.
     """
+    context: str | None
     hotwords: str | None
     initial_prompt: str | None
     is_multilingual: bool
@@ -246,6 +253,12 @@ class ASRPerfMetrics(PerfMetrics):
         :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
         :type get_word_level_timestamps_processing_duration: MeanStdPair
     
+        :param get_encode_inference_duration: Returns mean and standard deviation of encoder inference duration in milliseconds
+        :type get_encode_inference_duration: MeanStdPair
+    
+        :param get_decode_inference_duration: Returns mean and standard deviation of decoder inference duration in milliseconds
+        :type get_decode_inference_duration: MeanStdPair
+    
         :param asr_raw_metrics: ASR specific raw metrics
         :type ASRRawPerfMetrics:
     """
@@ -297,8 +310,9 @@ class ASRPipeline:
         
             Common parameters:
         
-            :param language: Language token to use for generation in the form of <|en|>.
-                             Can be set for multilingual models only.
+            :param language: Language token to use for generation.
+                             In the form of <|en|> for Whisper models. Can be set for multilingual models only.
+                             In the form of English for Qwen3-ASR models.
             :type language: Optional[str]
         
             :param return_timestamps: Whether to return segment-level timestamps.
@@ -376,6 +390,11 @@ class ASRPipeline:
                                #  He has gone and gone for good answered Polychrome who...
             :type hotwords: Optional[str]
         
+            Qwen3-ASR parameters:
+        
+            :param context: System prompt context prepended to Qwen3-ASR transcription requests.
+            :type context: Optional[str]
+        
             For generic generation parameters (max_length, max_new_tokens, num_beams, temperature, etc.)
             see GenerationConfig documentation.
         """
@@ -395,6 +414,12 @@ class ASRRawPerfMetrics:
     
         :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
         :type word_level_timestamps_processing_durations: list[MicroSeconds]
+    
+        :param encode_inference_durations: Duration for each encoder inference call.
+        :type encode_inference_durations: list[MicroSeconds]
+    
+        :param decode_inference_durations: Duration for each decoder inference call during token generation.
+        :type decode_inference_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
         ...
@@ -705,7 +730,11 @@ class AutoencoderKL:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
+    @typing.overload
     def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
+        ...
+    @typing.overload
+    def encode(self, image: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
     def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         """
@@ -1361,6 +1390,84 @@ class ExtendedPerfMetrics:
         ...
     @property
     def raw_metrics(self) -> RawPerfMetrics:
+        ...
+class Flux2Transformer2DModel:
+    """
+    Flux2Transformer2DModel class.
+    """
+    class Config:
+        """
+        This class is used for storing Flux2Transformer2DModel config.
+        """
+        guidance_embeds: bool
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def default_sample_size(self) -> int:
+            ...
+        @default_sample_size.setter
+        def default_sample_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def in_channels(self) -> int:
+            ...
+        @in_channels.setter
+        def in_channels(self, arg0: typing.SupportsInt) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
+        """
+                    Flux2Transformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                    Flux2Transformer2DModel class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: Flux2Transformer2DModel) -> None:
+        """
+        Flux2Transformer2DModel model
+                    Flux2Transformer2DModel class
+                    model (Flux2Transformer2DModel): Flux2Transformer2DModel model
+        """
+    @typing.overload
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: Flux2Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt) -> None:
+        """
+                    Flux2Transformer2DModel class constructor.
+                    model (str): Pre-read model.
+                    weights (ov.Tensor): Pre-read model weights tensor.
+                    config (Flux2Transformer2DModel.Config): Flux2Transformer2DModel configuration.
+                    vae_scale_factor (int): VAE scale factor.
+        """
+    @typing.overload
+    def __init__(self, model: str, weights: openvino._pyopenvino.Tensor, config: Flux2Transformer2DModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
+        """
+                    Flux2Transformer2DModel class constructor.
+                    model (str): Pre-read model.
+                    weights (ov.Tensor): Pre-read model weights tensor.
+                    config (Flux2Transformer2DModel.Config): Flux2Transformer2DModel configuration.
+                    vae_scale_factor (int): VAE scale factor.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_config(self) -> Flux2Transformer2DModel.Config:
+        ...
+    def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, tokenizer_model_max_length: typing.SupportsInt) -> Flux2Transformer2DModel:
+        ...
+    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
 class FluxTransformer2DModel:
     """
@@ -2791,6 +2898,67 @@ class PipelineMetrics:
     @property
     def scheduled_requests(self) -> int:
         ...
+class Qwen3TextEncoder:
+    """
+    Qwen3TextEncoder class.
+    """
+    class Config:
+        """
+        This class is used for storing Qwen3TextEncoder config.
+        """
+        def __init__(self, config_path: os.PathLike | str | bytes) -> None:
+            ...
+        @property
+        def hidden_size(self) -> int:
+            ...
+        @hidden_size.setter
+        def hidden_size(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def hidden_states_layers(self) -> list[int]:
+            ...
+        @hidden_states_layers.setter
+        def hidden_states_layers(self, arg0: collections.abc.Sequence[typing.SupportsInt]) -> None:
+            ...
+        @property
+        def num_hidden_layers(self) -> int:
+            ...
+        @num_hidden_layers.setter
+        def num_hidden_layers(self, arg0: typing.SupportsInt) -> None:
+            ...
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
+        """
+                    Qwen3TextEncoder class
+                    root_dir (os.PathLike): Model root directory.
+        """
+    @typing.overload
+    def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+                    Qwen3TextEncoder class
+                    root_dir (os.PathLike): Model root directory.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, model: Qwen3TextEncoder) -> None:
+        """
+        Qwen3TextEncoder model
+                    Qwen3TextEncoder class
+                    model (Qwen3TextEncoder): Qwen3TextEncoder model
+        """
+    def compile(self, device: str, **kwargs) -> None:
+        """
+                        Compiles the model.
+                        device (str): Device to run the model on (e.g., CPU, GPU).
+                        kwargs: Device properties.
+        """
+    def get_config(self) -> Qwen3TextEncoder.Config:
+        ...
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+        ...
+    def reshape(self, batch_size: typing.SupportsInt, max_sequence_length: typing.SupportsInt) -> Qwen3TextEncoder:
+        ...
 class RawImageGenerationPerfMetrics:
     """
     
@@ -3118,7 +3286,11 @@ class SchedulerConfig:
                                     Only applicable for models with linear attention cache inputs.
         cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                     The internal interval is KV cache block size * cache_interval_multiplier.
-                                    When unset, the default value 8 is used for hybrid models with prefix caching.
+                                    When unset, the multiplier is derived adaptively from the model's linear-attention
+                                    state size so one checkpoint costs roughly one KV block (>= the default of 8); this
+                                    prevents the recurrent-state cache of large hybrid SSM models from exhausting the
+                                    cache budget on long prompts. Larger values reduce memory at the cost of coarser
+                                    prefix-cache reuse.
                                     For models without linear attention cache inputs, this parameter is ignored.
                                     0 is valid only when prefix caching is disabled.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.

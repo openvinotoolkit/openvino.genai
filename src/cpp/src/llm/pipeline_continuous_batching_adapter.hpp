@@ -113,6 +113,7 @@ public:
         std::vector<float> plain_scores;
         std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
+            utils::assert_request_was_scheduled(res.m_status, res.m_request_id);
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
@@ -172,6 +173,7 @@ public:
         std::vector<float> plain_scores;
         std::vector<GenerationFinishReason> plain_finish_reasons;
         for (GenerationResult& res : generated) {
+            utils::assert_request_was_scheduled(res.m_status, res.m_request_id);
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
@@ -274,6 +276,7 @@ public:
         std::vector<float> plain_scores;
         std::vector<GenerationFinishReason> plain_finish_reasons;
         for (EncodedGenerationResult& res : generated) {
+            utils::assert_request_was_scheduled(res.m_status, res.m_request_id);
             OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
             std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_tokens));
             std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));

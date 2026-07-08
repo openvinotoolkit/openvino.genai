@@ -85,6 +85,59 @@ void extract_patches(const clip_image_f32& float_image,
     }
 }
 
+size_t get_static_pixel_values_patch_dim(ov::InferRequest& encoder) {
+    ov::PartialShape pixel_values_shape = encoder.get_compiled_model().input("pixel_values").get_partial_shape();
+    OPENVINO_ASSERT(pixel_values_shape.rank().is_static() && pixel_values_shape.rank().get_length() == 3,
+                    "Gemma4 vision embeddings pixel_values input must be rank 3, got ",
+                    pixel_values_shape);
+    OPENVINO_ASSERT(pixel_values_shape[2].is_static(),
+                    "Gemma4 vision embeddings pixel_values patch dimension must be static, got ",
+                    pixel_values_shape);
+    return static_cast<size_t>(pixel_values_shape[2].get_length());
+}
+
+enum class PatchExtractionMode {
+    UnmergedPatches,
+    MergedPatches,
+};
+
+struct PatchExtractionConfig {
+    PatchExtractionMode mode;
+    size_t patch_size;
+    size_t max_patches;
+    size_t patch_dim;
+};
+
+PatchExtractionConfig get_patch_extraction_config(const ov::genai::ProcessorConfig& config, size_t patch_dim) {
+    const size_t model_patch_size = config.patch_size * config.pooling_kernel_size;
+    const size_t patch_dim_for_patch_size = config.patch_size * config.patch_size * 3;
+    const size_t patch_dim_for_model_patch_size = model_patch_size * model_patch_size * 3;
+    OPENVINO_ASSERT(patch_dim == patch_dim_for_patch_size || patch_dim == patch_dim_for_model_patch_size,
+                    "Gemma4 vision embeddings pixel_values patch dimension ",
+                    patch_dim,
+                    " does not match patch_size dimension ",
+                    patch_dim_for_patch_size,
+                    " or merged patch dimension ",
+                    patch_dim_for_model_patch_size);
+
+    if (patch_dim == patch_dim_for_patch_size) {
+        const size_t max_unmerged_patches =
+            config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
+        return {PatchExtractionMode::UnmergedPatches, config.patch_size, max_unmerged_patches, patch_dim};
+    }
+    return {PatchExtractionMode::MergedPatches, model_patch_size, config.max_soft_tokens, patch_dim};
+}
+
+size_t get_num_valid_soft_tokens(const PatchExtractionConfig& patch_config,
+                                 size_t output_tokens,
+                                 size_t num_patches_h,
+                                 size_t num_patches_w) {
+    if (patch_config.mode == PatchExtractionMode::UnmergedPatches) {
+        return output_tokens;
+    }
+    return num_patches_h * num_patches_w;
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -96,11 +149,12 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     // 2. Compute aspect-ratio-preserving target size
-    const size_t max_patches = config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
+    const size_t max_unmerged_patches =
+        config.max_soft_tokens * config.pooling_kernel_size * config.pooling_kernel_size;
     const auto [target_height, target_width] = get_aspect_ratio_preserving_size(static_cast<size_t>(input_image.ny),
                                                                                 static_cast<size_t>(input_image.nx),
                                                                                 config.patch_size,
-                                                                                max_patches,
+                                                                                max_unmerged_patches,
                                                                                 config.pooling_kernel_size);
 
     // 3. Bicubic resize
@@ -114,23 +168,24 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
     std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
     clip_image_f32 float_image = clip_image_preprocess(ctx, resized_image);
 
-    // 5. Extract patches: (num_patches, patch_size*patch_size*3)
-    const size_t num_patches_h = target_height / config.patch_size;
-    const size_t num_patches_w = target_width / config.patch_size;
-    const size_t patch_dim = config.patch_size * config.patch_size * 3;
+    // 5. Extract patches in the format expected by the exported vision embeddings model.
+    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
+    ov::InferRequest& encoder = infer_request_guard.get();
+    const size_t patch_dim = get_static_pixel_values_patch_dim(encoder);
+    const PatchExtractionConfig patch_config = get_patch_extraction_config(config, patch_dim);
+    const size_t num_patches_h = target_height / patch_config.patch_size;
+    const size_t num_patches_w = target_width / patch_config.patch_size;
 
-    // Create padded pixel_values tensor [1, max_patches, patch_dim]
-    ov::Tensor pixel_values(ov::element::f32, {1, max_patches, patch_dim});
+    ov::Tensor pixel_values(ov::element::f32, {1, patch_config.max_patches, patch_config.patch_dim});
     float* pv_data = pixel_values.data<float>();
-    std::fill(pv_data, pv_data + max_patches * patch_dim, 0.0f);
+    std::fill(pv_data, pv_data + patch_config.max_patches * patch_config.patch_dim, 0.0f);
 
-    extract_patches(float_image, config.patch_size, pv_data, num_patches_h, num_patches_w);
+    extract_patches(float_image, patch_config.patch_size, pv_data, num_patches_h, num_patches_w);
 
-    // 6. Compute 2D position IDs: meshgrid(arange(patch_w), arange(patch_h), indexing="xy")
-    // Then pad to max_patches with -1
-    ov::Tensor image_position_ids(ov::element::i64, {1, max_patches, 2});
+    // 6. Compute 2D patch position IDs and pad unused positions with -1
+    ov::Tensor image_position_ids(ov::element::i64, {1, patch_config.max_patches, 2});
     int64_t* pos_data = image_position_ids.data<int64_t>();
-    std::fill(pos_data, pos_data + max_patches * 2, int64_t{-1});
+    std::fill(pos_data, pos_data + patch_config.max_patches * 2, int64_t{-1});
 
     for (size_t py = 0; py < num_patches_h; py++) {
         for (size_t px = 0; px < num_patches_w; px++) {
@@ -141,19 +196,29 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
     }
 
     // 7. Run vision encoder
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
-    ov::InferRequest& encoder = infer_request_guard.get();
     encoder.set_tensor("pixel_values", pixel_values);
     encoder.set_tensor("image_position_ids", image_position_ids);
     encoder.infer();
 
-    // 8. Output shape is [num_soft_tokens, hidden_size] → reshape to [1, num_soft_tokens, hidden_size]
+    // 8. Output shape is [num_soft_tokens, hidden_size] or [1, max_soft_tokens, hidden_size].
     const ov::Tensor& infer_output = encoder.get_output_tensor();
-    const size_t num_soft_tokens = infer_output.get_shape()[0];
-    const size_t hidden_size = infer_output.get_shape()[1];
+    const ov::Shape& output_shape = infer_output.get_shape();
+    OPENVINO_ASSERT(output_shape.size() == 3 || output_shape.size() == 2,
+                    "Gemma4 vision embeddings output rank must be 2 or 3, got ",
+                    output_shape.size());
 
-    ov::Tensor image_features(infer_output.get_element_type(), {1, num_soft_tokens, hidden_size});
-    std::memcpy(image_features.data(), infer_output.data(), infer_output.get_byte_size());
+    const size_t output_tokens = output_shape.size() == 3 ? output_shape[1] : output_shape[0];
+    const size_t hidden_size = output_shape.size() == 3 ? output_shape[2] : output_shape[1];
+    const size_t num_valid_soft_tokens =
+        get_num_valid_soft_tokens(patch_config, output_tokens, num_patches_h, num_patches_w);
+    OPENVINO_ASSERT(num_valid_soft_tokens <= output_tokens,
+                    "Gemma4 valid soft token count ",
+                    num_valid_soft_tokens,
+                    " exceeds vision output token count ",
+                    output_tokens);
+
+    ov::Tensor image_features(infer_output.get_element_type(), {1, num_valid_soft_tokens, hidden_size});
+    std::memcpy(image_features.data(), infer_output.data(), image_features.get_byte_size());
 
     return {std::move(image_features)};
 }
@@ -170,7 +235,9 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
 
     auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
     auto compiled = utils::singleton_core().compile_model(
-        per_layer_model_path, device, utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
+        per_layer_model_path,
+        device,
+        utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
@@ -196,7 +263,10 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
     OPENVINO_ASSERT(it != models_map.end(), "Per-layer text embeddings model not found in models map");
     const auto& [model_str, weights] = it->second;
     auto compiled = utils::singleton_core().compile_model(
-        model_str, weights, device, utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
+        model_str,
+        weights,
+        device,
+        utils::get_model_properties(device_config, "text_embeddings_per_layer", device));
     ov::genai::utils::print_compiled_model_properties(compiled, "VLM per-layer text embeddings model");
     m_per_layer_embeddings_requests = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),

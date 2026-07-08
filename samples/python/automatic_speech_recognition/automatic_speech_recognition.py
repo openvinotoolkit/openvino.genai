@@ -31,15 +31,20 @@ def main():
         # next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache()
 
-    # Word timestamps require decomposition of cross-attention decoder SDPA layers,
-    # so word_timestamps must be passed to the pipeline constructor (not just in generation config)
+    # Word timestamps supported by Whisper models only
+    # Must be passed to ASRPipeline constructor as a property
     ov_config["word_timestamps"] = True
 
     pipe = openvino_genai.ASRPipeline(args.model_dir, args.device, **ov_config)
 
     config = pipe.get_generation_config()
-    # 'task' and 'language' parameters are supported for multilingual models only
-    config.language = "<|en|>"  # can switch to <|zh|> for Chinese language
+
+    # If language is known in advance it can be passed to the pipeline
+    # In the form of "<|en|>" for Whisper models. Supported by multilingual models only
+    # In the form of "English" for Qwen3-ASR models.
+    config.language = "<|en|>"
+
+    # Whisper models parameters. Ignored for Qwen3-ASR models
     config.task = "transcribe"
     config.return_timestamps = True
     config.word_timestamps = True
