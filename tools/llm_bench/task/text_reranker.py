@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import json
@@ -386,6 +386,8 @@ def run_text_reranker_benchmark(
 
     for num, p_idx, prompt in prompter.iter_schedule(num_iters):
         mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        prompt.introduce_in_stdout(num, prefix)
         iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, prompt["prompt"], proc_id, bench_hook))
         if iter_data_list:
             iter_data_list[-1]["prompt_repr"] = repr(prompt)
