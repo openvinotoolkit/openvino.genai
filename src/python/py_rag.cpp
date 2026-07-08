@@ -18,6 +18,7 @@ using ov::genai::EmbeddingResult;
 using ov::genai::EmbeddingResults;
 using ov::genai::EmbedResult;
 using ov::genai::EmbeddingPipeline;
+using ov::genai::StringInputs;
 using ov::genai::TextEmbeddingPipeline;
 using ov::genai::TextRerankPipeline;
 
@@ -105,7 +106,7 @@ void init_rag_pipelines(py::module_& m) {
         .def(
             "embed",
             [](EmbeddingPipeline& pipe,
-               const EmbeddingPipeline::TextInput& text,
+               const StringInputs text,
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
@@ -127,7 +128,8 @@ void init_rag_pipelines(py::module_& m) {
                 py::gil_scoped_release rel;
                 return pipe.embed(properties);
             },
-            "Computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).")
+            "Computes embedding vectors using properties "
+            "(texts=..., images=..., videos=..., videos_metadata=..., prompt=...).")
         ;
 
     auto text_embedding_pipeline =

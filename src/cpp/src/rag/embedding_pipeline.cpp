@@ -173,7 +173,7 @@ public:
         }
     }
 
-    EmbedResult embed(const EmbeddingPipeline::TextInput& text, const ov::AnyMap& properties) {
+    EmbedResult embed(const StringInputs text, const ov::AnyMap& properties) {
         std::optional<std::string> prompt;
         utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt);
         if (m_mode == Mode::TEXT_ONLY) {
@@ -197,10 +197,10 @@ public:
 
         std::vector<EncodedImage> encoded_images;
         std::vector<EncodedVideo> encoded_videos;
-        return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
+        return multimodal_embed(texts, encoded_images, encoded_videos, prompt);
     }
 
-    EmbedResult embed(const EmbeddingPipeline::TextInput& text,
+    EmbedResult embed(const StringInputs& text,
                      const std::vector<ov::Tensor>& images,
                      const std::vector<ov::Tensor>& videos,
                      const std::vector<VideoMetadata>& videos_metadata,
@@ -227,7 +227,7 @@ public:
             ? std::vector<std::string>{std::get<std::string>(text)}
             : std::get<std::vector<std::string>>(text);
 
-        return extract_multimodal_batch(texts, encoded_images, encoded_videos, prompt);
+        return multimodal_embed(texts, encoded_images, encoded_videos, prompt);
     }
 
 private:
@@ -260,20 +260,19 @@ private:
             m_language_model_output_names.insert(output_names.begin(), output_names.end());
         }
 
-        if (has_lm_output("last_hidden_state")) {
-            m_embedding_output_name = "last_hidden_state";
-        } else if (has_lm_output("logits")) {
-            // Some embedding-style exports expose the sequence embedding under 'logits'.
+        if (has_lm_output("logits")) {
             m_embedding_output_name = "logits";
         } else {
-            OPENVINO_THROW("Language model must expose 'last_hidden_state' or 'logits' output for EmbeddingPipeline");
+            // Some embedding-style exports expose the sequence embedding under 'last_hidden_state',
+            // but it is in text only models, but multimodal models expose it under 'logits'.
+            OPENVINO_THROW("Language model must expose 'logits' output for EmbeddingPipeline");
         }
 
         OPENVINO_ASSERT(has_lm_input("inputs_embeds"),
                         "Language model must expose 'inputs_embeds' input for EmbeddingPipeline");
     }
 
-    EmbedResult extract_multimodal_batch(const std::vector<std::string>& texts,
+    EmbedResult multimodal_embed(const std::vector<std::string>& texts,
                                         const std::vector<EncodedImage>& encoded_images,
                                         const std::vector<EncodedVideo>& encoded_videos,
                                         const std::optional<std::string>& prompt) {
@@ -379,7 +378,6 @@ private:
                 std::copy_n(src_tti, seq_length, dst_tti);
             }
 
-            // Copy position_ids if present; shape is [3, batch_size, max_seq_length]
             if (item.position_ids.has_value()) {
                 const size_t num_dims = batched_position_ids->get_shape()[0];
                 const int64_t* src_pos = item.position_ids->data<const int64_t>();
@@ -510,7 +508,7 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-EmbedResult EmbeddingPipeline::embed(const EmbeddingPipeline::TextInput& text,
+EmbedResult EmbeddingPipeline::embed(const StringInputs text,
                                     const std::vector<ov::Tensor>& images,
                                     const std::vector<ov::Tensor>& videos,
                                     const std::vector<VideoMetadata>& videos_metadata,
@@ -522,12 +520,18 @@ EmbedResult EmbeddingPipeline::embed(const ov::AnyMap& properties) {
     std::vector<ov::Tensor> images_vec;
     std::vector<ov::Tensor> videos_vec;
     std::vector<VideoMetadata> videos_metadata_vec;
+    std::vector<std::string> texts_vec;
 
     utils::read_anymap_param(properties, ov::genai::images.name(), images_vec);
     utils::read_anymap_param(properties, ov::genai::videos.name(), videos_vec);
     utils::read_anymap_param(properties, ov::genai::videos_metadata.name(), videos_metadata_vec);
+    utils::read_anymap_param(properties, ov::genai::texts.name(), texts_vec);
 
-    return m_impl->embed(std::string{}, images_vec, videos_vec, videos_metadata_vec, properties);
+    StringInputs text_input =
+        texts_vec.empty() ? StringInputs{std::string{}}
+                          : StringInputs{texts_vec};
+
+    return m_impl->embed(text_input, images_vec, videos_vec, videos_metadata_vec, properties);
 }
 
 EmbeddingPipeline::~EmbeddingPipeline() = default;

@@ -1227,7 +1227,7 @@ class EmbeddingPipeline:
     @typing.overload
     def embed(self, **kwargs) -> EmbedResult:
         """
-        Computes embedding vectors using properties (images=..., videos=..., videos_metadata=..., prompt=...).
+        Computes embedding vectors using properties (texts=..., images=..., videos=..., videos_metadata=..., prompt=...).
         """
 class EncodedGenerationResult:
     """

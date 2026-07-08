@@ -17,6 +17,8 @@
 namespace ov {
 namespace genai {
 
+using StringInputs = std::variant<std::string, std::vector<std::string>>;
+
 /**
  * @brief Result of an embedding computation.
  */
@@ -31,8 +33,6 @@ struct OPENVINO_GENAI_EXPORTS EmbedResult {
  */
 class OPENVINO_GENAI_EXPORTS EmbeddingPipeline {
 public:
-    using TextInput = std::variant<std::string, std::vector<std::string>>;
-
     /**
      * @brief Constructs a pipeline from a folder containing tokenizer and VLM IRs.
      *
@@ -60,38 +60,36 @@ public:
     /**
     * @brief Computes embedding vectors for text or a batch of texts with images and videos.
     *
-    * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
-    * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
-    * @param videos_metadata Video metadata for the videos provided.
-    * @param properties Generation arguments (e.g. ov::genai::prompt).
-    * @return Embedding tensor.
-    */
-    EmbedResult embed(const TextInput& text,
-                           const std::vector<ov::Tensor>& images = {},
-                           const std::vector<ov::Tensor>& videos = {},
-                           const std::vector<VideoMetadata>& videos_metadata = {},
-                           const ov::AnyMap& properties = {});
-
-    /**
-    * @brief Computes embedding vectors using properties.
-    *
-    * @param properties Generation arguments and inputs (e.g. ov::genai::images, ov::genai::videos,
-    *                   ov::genai::videos_metadata, ov::genai::prompt).
-    * @return Embedding tensor.
-    */
-    EmbedResult embed(const ov::AnyMap& properties);
-
-    /**
-    * @brief Computes embedding vectors for text or a batch of texts with images and videos.
-    *
     * @param text Text or a batch of texts for which embedding is computed.
     * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
     * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
     * @param videos_metadata Video metadata for the videos provided.
-    * @param prompt Prompt to use for embedding computation.
-    * @return EmbeddingResults.
+    * @param properties Generation arguments (e.g. ov::genai::prompt).
+    * @return EmbedResult.
     */
-     template <typename... Properties,
+    EmbedResult embed(const StringInputs text,
+                      const std::vector<ov::Tensor>& images = {},
+                      const std::vector<ov::Tensor>& videos = {},
+                      const std::vector<VideoMetadata>& videos_metadata = {},
+                      const ov::AnyMap& properties = {});
+
+    /**
+    * @brief Computes embedding vectors using properties.
+    *
+    * @param properties Generation arguments and inputs (e.g. ov::genai::texts(...), ov::genai::images(...),
+    *                   ov::genai::videos(...), ov::genai::videos_metadata(...), ov::genai::prompt(...)).
+    * @return EmbedResult.
+    */
+    EmbedResult embed(const ov::AnyMap& properties);
+
+    /**
+    * @brief Computes embedding vectors using keyword properties.
+    *
+    * @param properties Generation arguments and inputs (e.g. ov::genai::texts(...), ov::genai::images(...),
+    *                   ov::genai::prompt(...)).
+    * @return EmbedResult.
+    */
+    template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     EmbedResult embed(Properties&&... properties) {
         return embed(ov::AnyMap{std::forward<Properties>(properties)...});
@@ -103,6 +101,11 @@ private:
     class EmbeddingPipelineImpl;
     std::unique_ptr<EmbeddingPipelineImpl> m_impl;
 };
+
+/**
+ * @brief Text or batch of texts to embed via EmbeddingPipeline::embed(AnyMap).
+ */
+static constexpr ov::Property<std::vector<std::string>> texts{"texts"};
 
 /**
  * @brief Instruction for encoding a document or query.
