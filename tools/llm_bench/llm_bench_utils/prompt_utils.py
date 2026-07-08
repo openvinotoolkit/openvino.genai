@@ -194,9 +194,16 @@ class BenchPrompt(dict):
 
     @staticmethod
     def _get_image_size(path):
-        """Return ``(width, height)`` or ``None`` on failure."""
+        """Return ``(width, height)`` or ``None`` on failure.
+
+        Uses :func:`~transformers.image_utils.load_image` which handles both
+        local filesystem paths and HTTP(S) URLs.  The previous
+        ``Image.open()`` call could not resolve HTTP URLs and emitted a
+        misleading ``[Errno 2] No such file or directory`` warning for
+        web-hosted prompt images (e.g. GitHub asset URLs in VLM benchmarks).
+        """
         try:
-            return Image.open(path).size
+            return load_image(str(path)).size
         except Exception as exc:
             log.warning(f"BenchPrompt: cannot probe image '{path}': {exc}")
             return None
@@ -610,14 +617,27 @@ class BenchPrompter(list):
                     video_tensor = make_video_tensor(entry, required_frames, genai_flag)
                     videos.append(video_tensor)
             if input_data.get("media") is not None:
-                func_load_image = load_image_genai if genai_flag else load_image
                 entry = Path(input_data["media"])
                 if entry.is_dir():
                     for file in sorted(entry.iterdir()):
-                        img = func_load_image(str(file))
+                        pil_img = load_image(str(file))
+                        img = ov.Tensor(np.array(pil_img)[None]) if genai_flag else pil_img
                         images.append(img)
                 else:
-                    img = func_load_image(input_data["media"])
+                    # Always load as PIL first so we can update the BenchPrompt
+                    # repr metadata with actual image dimensions after the real
+                    # media file has been fetched (handles HTTP(S) URLs and local
+                    # paths uniformly).  This satisfies Sofia's review point:
+                    # "representation should be updated after real media files
+                    # are loaded" — the _image_size cached by probe() (which
+                    # runs before inference in introduce_in_stdout) is
+                    # overwritten here with the value from the truly loaded
+                    # image, so the final prompt_repr in the JSON report is
+                    # always accurate.
+                    pil_img = load_image(input_data["media"])
+                    if isinstance(input_data, BenchPrompt):
+                        input_data._image_size = pil_img.size
+                    img = ov.Tensor(np.array(pil_img)[None]) if genai_flag else pil_img
                     images.append(img)
             prompts.append(input_data["prompt"])
         return prompts, images, videos
