@@ -638,19 +638,24 @@ private:
             OPENVINO_ASSERT(num_scheduled_tokens <= checkpoint_it->second,
                             "Linear attention checkpoint count must cover scheduled tokens for sequence ", seq_id,
                             ": checkpoints ", checkpoint_it->second, ", scheduled tokens ", num_scheduled_tokens);
-            const int32_t committed_block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
-            const auto temporary_block_indices =
-                m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, num_scheduled_tokens);
+            if (num_scheduled_tokens == 0) {
+                m_linear_attention_checkpoint_counts.erase(checkpoint_it);
+                m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
+            } else {
+                const int32_t committed_block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
+                const auto temporary_block_indices =
+                    m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, num_scheduled_tokens);
 
-            paging_data.block_indices.reserve(1 + temporary_block_indices.size());
-            paging_data.block_indices.push_back(committed_block_index);
-            for (int block_index : temporary_block_indices) {
-                paging_data.block_indices.push_back(checked_block_index_to_int32(block_index, seq_id));
+                paging_data.block_indices.reserve(1 + temporary_block_indices.size());
+                paging_data.block_indices.push_back(committed_block_index);
+                for (int block_index : temporary_block_indices) {
+                    paging_data.block_indices.push_back(checked_block_index_to_int32(block_index, seq_id));
+                }
+                paging_data.cache_interval = 1;
+                scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+                m_linear_attention_checkpoint_counts.erase(checkpoint_it);
+                return;
             }
-            paging_data.cache_interval = 1;
-            scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
-            m_linear_attention_checkpoint_counts.erase(checkpoint_it);
-            return;
         }
 
         if (!m_config.enable_prefix_caching) {
