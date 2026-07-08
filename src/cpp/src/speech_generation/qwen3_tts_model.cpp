@@ -473,6 +473,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
 
         if (predictor_static) {
             std::cout << "Using static all-heads code predictor variant (explicit KV cache)" << std::endl;
+            reshape_predictor_to_static(predictor_model);
             // Plain static compile (works identically on NPU/GPU/CPU). Host manages
             // the explicit KV cache; see infer_predictor / generate_codec_groups.
             init_static_predictor_meta(predictor_model);
@@ -574,6 +575,7 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
     m_ids.codec_think_eos_id = talker.value("codec_think_eos_id", -1);
     m_ids.num_code_groups = talker.value("num_code_groups", 16);
     m_ids.talker_vocab_size = talker.value("vocab_size", 3072);
+    m_talker_hidden_size = talker.value("hidden_size", 1024);
 
     if (config.contains("speaker_encoder_config") && config["speaker_encoder_config"].is_object()) {
         m_speaker_embedding_dim = config["speaker_encoder_config"].value("enc_dim", static_cast<size_t>(talker.value("hidden_size", 1024)));
@@ -909,6 +911,77 @@ ov::Tensor Qwen3TTSImpl::infer_talker_hidden(const ov::Tensor& inputs_embeds,
 //                                       when the exporter slices to just the new token)
 // where kv_len = past_len + 1. The graph hard-wires cache_position = [past_len],
 // so the freshly produced token always lands at the last present slot.
+
+// Newer exporters emit the all-heads code predictor with fully dynamic shapes
+// (e.g. inputs_embeds [?,?,?], past_key_values [?,n_kv,?,head_dim], logits
+// [num_heads,?,?,V]). The runtime host-KV logic (init_static_predictor_meta /
+// infer_predictor) requires a single fixed shape, so specialize the IR here. The
+// export still pins the structurally-fixed dims (n_kv, head_dim on the KV inputs;
+// num_heads, V on logits); the KV window is derived as past_len = num_heads and
+// kv_len = past_len + 1, matching the static export contract above. No-op when the
+// IR is already static.
+void Qwen3TTSImpl::reshape_predictor_to_static(const std::shared_ptr<ov::Model>& model) {
+    bool is_dynamic = false;
+    for (const auto& in : model->inputs()) {
+        if (in.get_partial_shape().is_dynamic()) {
+            is_dynamic = true;
+            break;
+        }
+    }
+    if (!is_dynamic) {
+        return;  // already static (reshaped at export time)
+    }
+
+    // Fixed dims the dynamic export still pins.
+    size_t n_kv = 0, head_dim = 0, num_heads = 0;
+    for (const auto& in : model->inputs()) {
+        const auto name = in.get_any_name();
+        if (name.rfind("past_key_values.", 0) == 0 && name.find(".key") != std::string::npos) {
+            const auto& ps = in.get_partial_shape();  // [?, n_kv, ?, head_dim]
+            OPENVINO_ASSERT(ps.rank().is_static() && ps.size() == 4 && ps[1].is_static() && ps[3].is_static(),
+                            "Unexpected code predictor past_key_values shape: ", ps);
+            n_kv = static_cast<size_t>(ps[1].get_length());
+            head_dim = static_cast<size_t>(ps[3].get_length());
+            break;
+        }
+    }
+    for (const auto& out : model->outputs()) {
+        if (out.get_any_name() == "logits") {
+            const auto& ps = out.get_partial_shape();  // [num_heads, ?, ?, V]
+            OPENVINO_ASSERT(ps.rank().is_static() && ps.size() == 4 && ps[0].is_static(),
+                            "Unexpected code predictor logits shape: ", ps);
+            num_heads = static_cast<size_t>(ps[0].get_length());
+            break;
+        }
+    }
+    OPENVINO_ASSERT(n_kv > 0 && head_dim > 0 && num_heads > 0,
+                    "Could not derive static code predictor dims (n_kv=",
+                    n_kv, " head_dim=", head_dim, " num_heads=", num_heads, ")");
+
+    const int64_t past_len = static_cast<int64_t>(num_heads);  // KV window = one slot per prior head
+    const int64_t kv_len = past_len + 1;
+    const int64_t hidden = static_cast<int64_t>(m_talker_hidden_size);
+
+    std::map<std::string, ov::PartialShape> shapes;
+    for (const auto& in : model->inputs()) {
+        const auto name = in.get_any_name();
+        if (name == "inputs_embeds") {
+            shapes[name] = ov::PartialShape{1, 1, hidden};
+        } else if (name == "attention_mask") {
+            shapes[name] = ov::PartialShape{1, kv_len};
+        } else if (name == "position_ids") {
+            shapes[name] = ov::PartialShape{1, 1};
+        } else if (name.rfind("past_key_values.", 0) == 0) {
+            shapes[name] = ov::PartialShape{1, static_cast<int64_t>(n_kv), past_len, static_cast<int64_t>(head_dim)};
+        }
+    }
+
+    std::cout << "Reshaping dynamic code predictor to static: inputs_embeds=[1,1," << hidden
+              << "] attention_mask=[1," << kv_len << "] past_key_values=[1," << n_kv << "," << past_len << ","
+              << head_dim << "]" << std::endl;
+    model->reshape(shapes);
+}
+
 void Qwen3TTSImpl::init_static_predictor_meta(const std::shared_ptr<ov::Model>& model) {
     m_pred_num_layers = 0;
     for (const auto& in : model->inputs()) {

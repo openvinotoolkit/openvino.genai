@@ -80,6 +80,10 @@ private:
     ov::Tensor select_predictor_head(const ov::Tensor& all_logits, size_t head) const;
     // Read static-predictor dims from the IR and (re)allocate host KV buffers.
     void init_static_predictor_meta(const std::shared_ptr<ov::Model>& model);
+    // Reshape a dynamically-exported code predictor IR to the required static
+    // shapes (no-op if the IR is already static). Derives the KV window from the
+    // stacked-heads `logits` output and the fixed n_kv/head_dim of past_key_values.
+    void reshape_predictor_to_static(const std::shared_ptr<ov::Model>& model);
     // Zero host KV buffers and reset the running absolute-position counter.
     void reset_predictor_state();
     ov::Tensor infer_predictor_embedding(int64_t token_id, int64_t generation_step);
@@ -128,6 +132,7 @@ private:
     QwenIds m_ids;
     std::string m_tts_model_type = "custom_voice";
     size_t m_speaker_embedding_dim = 1024;
+    size_t m_talker_hidden_size = 1024;  // talker hidden_size; predictor inputs_embeds width
 
     ov::InferRequest m_talker;
     ov::InferRequest m_talker_embedding;
