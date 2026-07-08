@@ -424,7 +424,20 @@ private:
 
         // Extract individual embeddings from batched output
         const ov::Shape output_shape = batched_output.get_shape();
-        const size_t output_embed_dim = output_shape.back();
+        OPENVINO_ASSERT(output_shape.size() == 2,
+                        "Expected rank-2 language model output after pooling (shape [batch, embed_dim]), got rank ",
+                        output_shape.size(),
+                        ". Verify that apply_postprocessing reduces the sequence dimension.");
+        OPENVINO_ASSERT(output_shape[0] == batch_size,
+                        "Language model output batch dimension mismatch: expected ",
+                        batch_size,
+                        ", got ",
+                        output_shape[0]);
+        OPENVINO_ASSERT(batched_output.get_element_type() == ov::element::f32,
+                        "Language model output must be float32, got ",
+                        batched_output.get_element_type(),
+                        ". Export the model with float32 output precision.");
+        const size_t output_embed_dim = output_shape[1];
         std::vector<ov::Tensor> outputs;
         outputs.reserve(batch_size);
 
