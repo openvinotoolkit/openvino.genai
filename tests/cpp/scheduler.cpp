@@ -747,7 +747,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_too_la
 //
 // These tests drive the scheduler through several back-to-back speculative
 // validation windows, mimicking the post-sampling promotion (Step 4's hook) by
-// calling set_linear_attention_live_block(seq_id, block_indices[advance]) with a
+// calling commit_linear_attention_checkpoint_transaction(seq_id, advance) with a
 // chosen advance. They assert the reuse that emerges from Steps 1+2+4: the
 // owned LA set never grows, per-step aliasing holds, a promoted scratch row
 // becomes the next step's live (with the previous live recycled as scratch), and
@@ -831,13 +831,13 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_steady_state_no_growth_mi
                 << "duplicate scratch row at step " << step;
         }
 
-        // Mimic Step 4's promotion: pick block_indices[advance] (selection guard: advance <= N+1).
+        // Mimic Step 4's promotion: commit block_indices[advance] (selection guard: advance <= N+1).
         const size_t advance = advances[step];
         ASSERT_LT(advance, pd.block_indices.size());
         const int32_t chosen = pd.block_indices[advance];
         // Invariant 3 / selection guard: the promoted block is always within this step's write set.
         EXPECT_TRUE(std::find(pd.block_indices.begin(), pd.block_indices.end(), chosen) != pd.block_indices.end());
-        scheduler.set_linear_attention_live_block(seq_id, static_cast<size_t>(chosen));
+        scheduler.commit_linear_attention_checkpoint_transaction(seq_id, advance);
 
         // Commit the step: advance processed tokens, finish, extend content by one accepted token.
         seq_group->finish_iteration();
@@ -3015,97 +3015,108 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
 }
 
 // ---------------------------------------------------------------------------
-// Step 4: post-sampling live-block promotion math (ContinuousBatchingImpl::_select_linear_attention_live_block)
+// Step 4: post-sampling checkpoint transaction commit.
 // ---------------------------------------------------------------------------
-
-// Test seam: ContinuousBatchingImpl is a protected nested type of ContinuousBatchingPipeline and
-// _select_linear_attention_live_block is a protected static member. Reaching both requires deriving
-// the seam from ContinuousBatchingPipeline (mirrors CBForSDTest in speculative_decoding.cpp). The
-// thin subclass surfaces the pure promotion math (advance bounds + "no-zeroing" write-window guard)
-// so it is unit-testable without constructing a model / scheduler / orchestrator.
 namespace {
-struct LiveBlockSelectorSeam : public ContinuousBatchingPipeline {
-    class LiveBlockSelectorAccessor : public ContinuousBatchingImpl {
-    public:
-        using ContinuousBatchingImpl::_select_linear_attention_live_block;
-    };
+struct LinearAttentionTransactionTestContext {
+    std::shared_ptr<CacheOrchestrator> orchestrator;
+    uint64_t seq_id = 0;
 };
-using LiveBlockSelectorAccessor = LiveBlockSelectorSeam::LiveBlockSelectorAccessor;
 
-Scheduler::Output::LinearAttentionPagingData make_speculative_paging_data(
-    const std::vector<int32_t>& block_indices,
-    size_t num_processed_tokens_before) {
-    Scheduler::Output::LinearAttentionPagingData paging_data;
-    paging_data.block_indices = block_indices;
-    paging_data.cache_interval = 1;
-    paging_data.is_speculative = true;
-    paging_data.num_processed_tokens_before = num_processed_tokens_before;
-    return paging_data;
+LinearAttentionTransactionTestContext make_linear_attention_transaction_test_context(size_t checkpoint_count) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    orchestrator->ensure_linear_attention_fixed_blocks_per_sequence(1 + checkpoint_count);
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    auto seq = seq_group->get_running_sequences()[0];
+    orchestrator->allocate_tokens(seq, seq_group, 1, seq_group->get_prompt_len());
+
+    return {orchestrator, seq->get_id()};
 }
 }  // namespace
 
-// @test live_block_promotion_advance_zero_and_one_keep_old_live_via_aliasing
+// @test checkpoint_transaction_commit_slots_zero_and_one_keep_old_live_via_aliasing
 // block_indices = [live, live, s1, s2, s3]. advance 0 (counter reads 0 on full rejection) and
 // advance 1 both index the aliased read slot, so the promoted row stays the old live row.
-TEST(TestScheduler, live_block_promotion_advance_zero_and_one_keep_old_live_via_aliasing) {
-    constexpr int32_t old_live = 7;
-    const std::vector<int32_t> block_indices = {old_live, old_live, 10, 11, 12};  // N = 3
-    constexpr size_t processed_before = 100;
+TEST(TestScheduler, checkpoint_transaction_commit_slots_zero_and_one_keep_old_live_via_aliasing) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
+    const size_t old_live = context.orchestrator->get_linear_attention_live_block(context.seq_id);
 
-    const auto paging_data = make_speculative_paging_data(block_indices, processed_before);
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    EXPECT_EQ(static_cast<size_t>(transaction.block_indices[0]), old_live);
+    EXPECT_EQ(transaction.block_indices[0], transaction.block_indices[1]);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 0);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), old_live);
 
-    // advance == 0
-    EXPECT_EQ(LiveBlockSelectorAccessor::_select_linear_attention_live_block(paging_data, processed_before),
-              old_live);
-    // advance == 1
-    EXPECT_EQ(LiveBlockSelectorAccessor::_select_linear_attention_live_block(paging_data, processed_before + 1),
-              old_live);
+    transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 1);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), old_live);
+
+    context.orchestrator->free_sequence(context.seq_id);
 }
 
-// @test live_block_promotion_middle_advance_selects_scratch_row
+// @test checkpoint_transaction_commit_middle_slot_selects_scratch_row
 // advance == 2 (middle) promotes the freshly-written scratch_2 row (block_indices[2]).
-TEST(TestScheduler, live_block_promotion_middle_advance_selects_scratch_row) {
-    const std::vector<int32_t> block_indices = {7, 7, 10, 11, 12};  // N = 3
-    constexpr size_t processed_before = 100;
-    const auto paging_data = make_speculative_paging_data(block_indices, processed_before);
+TEST(TestScheduler, checkpoint_transaction_commit_middle_slot_selects_scratch_row) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
 
-    EXPECT_EQ(LiveBlockSelectorAccessor::_select_linear_attention_live_block(paging_data, processed_before + 2),
-              block_indices[2]);  // 10
-    EXPECT_EQ(LiveBlockSelectorAccessor::_select_linear_attention_live_block(paging_data, processed_before + 3),
-              block_indices[3]);  // 11
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    const size_t first_scratch = static_cast<size_t>(transaction.block_indices[2]);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 2);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), first_scratch);
+
+    transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    const size_t second_scratch = static_cast<size_t>(transaction.block_indices[3]);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), second_scratch);
+
+    context.orchestrator->free_sequence(context.seq_id);
 }
 
-// @test live_block_promotion_full_acceptance_advance_n_plus_one_selects_last_scratch
+// @test checkpoint_transaction_commit_full_acceptance_slot_selects_last_scratch
 // advance == N+1 (all candidates accepted) promotes the last scratch row (block_indices.back()).
-TEST(TestScheduler, live_block_promotion_full_acceptance_advance_n_plus_one_selects_last_scratch) {
-    const std::vector<int32_t> block_indices = {7, 7, 10, 11, 12};  // N = 3, window N+1 = 4
-    constexpr size_t processed_before = 100;
-    const auto paging_data = make_speculative_paging_data(block_indices, processed_before);
+TEST(TestScheduler, checkpoint_transaction_commit_full_acceptance_slot_selects_last_scratch) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    const size_t last_scratch = static_cast<size_t>(transaction.block_indices.back());
 
     // advance == N + 1 == 4 == block_indices.size() - 1 (last valid index)
-    EXPECT_EQ(LiveBlockSelectorAccessor::_select_linear_attention_live_block(paging_data, processed_before + 4),
-              block_indices.back());  // 12
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 4);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), last_scratch);
+
+    context.orchestrator->free_sequence(context.seq_id);
 }
 
-// @test live_block_promotion_out_of_range_advance_asserts
+// @test checkpoint_transaction_commit_out_of_range_slot_asserts
 // advance > N+1 indexes past the current step's write window and must fail loud (no silent
 // selection of a row outside this step's writes).
-TEST(TestScheduler, live_block_promotion_out_of_range_advance_asserts) {
-    const std::vector<int32_t> block_indices = {7, 7, 10, 11, 12};  // size 5, last valid advance 4
-    constexpr size_t processed_before = 100;
-    const auto paging_data = make_speculative_paging_data(block_indices, processed_before);
+TEST(TestScheduler, checkpoint_transaction_commit_out_of_range_slot_asserts) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
 
-    EXPECT_THROW(LiveBlockSelectorAccessor::_select_linear_attention_live_block(paging_data, processed_before + 5),
+    EXPECT_THROW(context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 5),
                  ov::Exception);
-}
-
-// @test live_block_promotion_processed_decrease_asserts
-// processed_after below the pre-forward count is impossible (would underflow advance); fail loud.
-TEST(TestScheduler, live_block_promotion_processed_decrease_asserts) {
-    const std::vector<int32_t> block_indices = {7, 7, 10, 11, 12};
-    constexpr size_t processed_before = 100;
-    const auto paging_data = make_speculative_paging_data(block_indices, processed_before);
-
-    EXPECT_THROW(LiveBlockSelectorAccessor::_select_linear_attention_live_block(paging_data, processed_before - 1),
-                 ov::Exception);
+    context.orchestrator->abort_linear_attention_checkpoint_transaction(context.seq_id);
+    context.orchestrator->free_sequence(context.seq_id);
 }

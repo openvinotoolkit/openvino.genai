@@ -105,11 +105,8 @@ protected:
     /// Reserves LA live + scratch rows for speculative verification.
     void _reserve_linear_attention_scratch();
 
-    /// Promotes committed LA state after sampling.
-    virtual void _update_linear_attention_live_blocks(const Scheduler::Output& scheduler_output);
-
-    static int32_t _select_linear_attention_live_block(const Scheduler::Output::LinearAttentionPagingData& paging_data,
-                                                       size_t processed_after);
+    /// Commits speculative LA checkpoint transactions after sampling.
+    virtual void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output);
 
     virtual void drop_requests();
 

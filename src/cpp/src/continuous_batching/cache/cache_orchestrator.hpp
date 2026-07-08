@@ -25,6 +25,12 @@
 
 namespace ov::genai {
 
+struct LinearAttentionCheckpointTransaction {
+    uint64_t seq_id = 0;
+    size_t checkpoint_count = 0;
+    std::vector<int32_t> block_indices;
+};
+
 /**
  * @brief Aggregates multiple cache type managers and block managers, presenting a unified,
  *        cache-type-agnostic interface.
@@ -143,6 +149,8 @@ public:
         for (auto& [type, block_mgr] : m_block_managers) {
             block_mgr->clear();
         }
+        m_linear_attention_live_block.clear();
+        m_linear_attention_checkpoint_transactions.clear();
     }
 
     // -----------------------------------------------------------------------
@@ -226,6 +234,7 @@ public:
             }
         }
         m_linear_attention_live_block.erase(seq_id);
+        m_linear_attention_checkpoint_transactions.erase(seq_id);
     }
 
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
@@ -680,16 +689,77 @@ public:
     }
 
     // -----------------------------------------------------------------------
-    //  Linear attention live/scratch block registry: single source of truth for which owned
-    //  state row holds a sequence's committed ("live") recurrent state. Owned set = the
-    //  sequence's LA block table (size 1 + num_assistant_tokens); live vs. scratch are index
-    //  roles within it. The registry stores an entry only after an explicit promotion
-    //  (set_linear_attention_live_block, speculative steps); a sequence with no recorded
-    //  promotion has its live index resolved from the current prefill row (block_table[0]) on
-    //  each query. A recorded entry cannot go stale across reallocation: non-speculative
-    //  sequences (e.g. beam search) never get an entry; partial preemption skips fixed-size LA
-    //  rows (block table unchanged); and full preemption (recompute) frees the sequence, which
-    //  erases its entry via free_sequence().
+    //  Linear attention checkpoint transactions.
+    //
+    //  Non-prefix speculative verification writes candidate recurrent states into scratch
+    //  rows owned by the sequence. A transaction exposes the model-runner paging window and
+    //  keeps the live/scratch mechanics inside the scheduler/cache boundary.
+    // -----------------------------------------------------------------------
+
+    LinearAttentionCheckpointTransaction begin_linear_attention_checkpoint_transaction(uint64_t seq_id,
+                                                                                       size_t checkpoint_count) {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        OPENVINO_ASSERT(checkpoint_count > 0,
+                        "Linear attention checkpoint transaction for sequence ", seq_id,
+                        " must contain at least one checkpoint");
+        OPENVINO_ASSERT(m_linear_attention_checkpoint_transactions.count(seq_id) == 0,
+                        "Linear attention checkpoint transaction already active for sequence ", seq_id);
+
+        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
+        const int32_t live_block = checked_linear_attention_block_index_to_int32(
+            get_linear_attention_live_block(seq_id), seq_id);
+
+        LinearAttentionCheckpointTransaction transaction;
+        transaction.seq_id = seq_id;
+        transaction.checkpoint_count = checkpoint_count;
+        transaction.block_indices.reserve(checkpoint_count + 2);
+        transaction.block_indices.push_back(live_block);
+        transaction.block_indices.push_back(live_block);
+
+        for (const auto& block : owned) {
+            if (transaction.block_indices.size() == checkpoint_count + 2) {
+                break;
+            }
+            const int32_t scratch_block = checked_linear_attention_block_index_to_int32(block->get_index(), seq_id);
+            if (scratch_block != live_block) {
+                transaction.block_indices.push_back(scratch_block);
+            }
+        }
+
+        OPENVINO_ASSERT(transaction.block_indices.size() == checkpoint_count + 2,
+                        "Linear attention scratch rows insufficient for checkpoint transaction of sequence ", seq_id,
+                        ": need ", checkpoint_count, " scratch rows beyond the live row, owned table has ", owned.size());
+        m_linear_attention_checkpoint_transactions[seq_id] = transaction;
+        return transaction;
+    }
+
+    void commit_linear_attention_checkpoint_transaction(uint64_t seq_id, size_t checkpoint_slot) {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        auto it = m_linear_attention_checkpoint_transactions.find(seq_id);
+        OPENVINO_ASSERT(it != m_linear_attention_checkpoint_transactions.end(),
+                        "No active linear attention checkpoint transaction for sequence ", seq_id);
+        const auto& transaction = it->second;
+        OPENVINO_ASSERT(checkpoint_slot < transaction.block_indices.size(),
+                        "Linear attention checkpoint commit slot ", checkpoint_slot, " out of range [0, ",
+                        transaction.block_indices.size() - 1, "] for sequence ", seq_id);
+
+        const int32_t new_live = transaction.block_indices[checkpoint_slot];
+        OPENVINO_ASSERT(new_live >= 0,
+                        "Linear attention checkpoint commit selected a negative physical block index for sequence ",
+                        seq_id, ": ", new_live);
+        set_linear_attention_live_block(seq_id, static_cast<size_t>(new_live));
+        m_linear_attention_checkpoint_transactions.erase(it);
+    }
+
+    void abort_linear_attention_checkpoint_transaction(uint64_t seq_id) {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        m_linear_attention_checkpoint_transactions.erase(seq_id);
+    }
+
+    // -----------------------------------------------------------------------
+    //  Linear attention live/scratch block registry: low-level compatibility
+    //  helpers for tests and edge cases. Prefer checkpoint transactions for
+    //  speculative verification.
     // -----------------------------------------------------------------------
 
     /// @return Physical block index of the sequence's live linear-attention state row,
@@ -766,6 +836,13 @@ public:
     }
 
 private:
+    static int32_t checked_linear_attention_block_index_to_int32(size_t block_index, uint64_t seq_id) {
+        OPENVINO_ASSERT(block_index <= static_cast<size_t>(std::numeric_limits<int32_t>::max()),
+                        "Linear attention block index for sequence ", seq_id,
+                        " exceeds int32_t maximum: ", block_index);
+        return static_cast<int32_t>(block_index);
+    }
+
     bool has_registered_types() const {
         return !m_cache_managers.empty();
     }
@@ -972,6 +1049,7 @@ private:
     // seq_id -> physical block index of the live linear-attention state row.
     // Holds only explicit promotions (speculative steps); absent => sequence lives on the prefill row.
     std::map<uint64_t, size_t> m_linear_attention_live_block;
+    std::map<uint64_t, LinearAttentionCheckpointTransaction> m_linear_attention_checkpoint_transactions;
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,

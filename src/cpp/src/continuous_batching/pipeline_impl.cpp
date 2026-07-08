@@ -394,27 +394,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reserve_linear_attenti
     m_scheduler->ensure_linear_attention_fixed_blocks_per_sequence(1 + max_num_assistant_tokens);
 }
 
-int32_t ContinuousBatchingPipeline::ContinuousBatchingImpl::_select_linear_attention_live_block(
-    const Scheduler::Output::LinearAttentionPagingData& paging_data,
-    size_t processed_after) {
-    // block_indices = [live, live, scratch_1, ..., scratch_N] (size N+2).
-    // advance = how many scheduled inputs the committed state moved past after rejection.
-    OPENVINO_ASSERT(processed_after >= paging_data.num_processed_tokens_before,
-                    "Linear-attention promotion: processed tokens cannot decrease below the pre-forward count (processed_after=",
-                    processed_after, ", processed_before=", paging_data.num_processed_tokens_before, ").");
-    const size_t advance = processed_after - paging_data.num_processed_tokens_before;
-
-    OPENVINO_ASSERT(advance < paging_data.block_indices.size(),
-                    "Linear-attention promotion: advance ", advance, " out of range [0, ",
-                    paging_data.block_indices.size() - 1, "] for block_indices [live, live, scratch...].");
-
-    const int32_t new_live = paging_data.block_indices[advance];
-    OPENVINO_ASSERT(new_live >= 0,
-                    "Linear-attention promotion: selected physical block index must be non-negative, got ", new_live, ".");
-    return new_live;
-}
-
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_update_linear_attention_live_blocks(
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
     const Scheduler::Output& scheduler_output) {
     if (!m_scheduler->has_linear_attention_cache()) {
         return;
@@ -434,8 +414,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_update_linear_attentio
                 continue;
             }
 
-            const int32_t new_live = _select_linear_attention_live_block(paging_data, processed_after);
-            m_scheduler->set_linear_attention_live_block(seq_id, static_cast<size_t>(new_live));
+            OPENVINO_ASSERT(processed_after >= paging_data.num_processed_tokens_before,
+                            "Linear-attention checkpoint commit: processed tokens cannot decrease below the pre-forward count (processed_after=",
+                            processed_after, ", processed_before=", paging_data.num_processed_tokens_before, ").");
+            const size_t checkpoint_slot = processed_after - paging_data.num_processed_tokens_before;
+            m_scheduler->commit_linear_attention_checkpoint_transaction(seq_id, checkpoint_slot);
         }
     }
 }
@@ -534,7 +517,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     // speculative sequence. Must run after sample() (which rewound get_num_processed_tokens()
     // to the accepted prefix) and before the fork/free loop (which would free LA rows of
     // sequences that accepted tokens and also hit EOS this step). No-op for pure-KV models.
-    _update_linear_attention_live_blocks(scheduler_output);
+    _commit_linear_attention_checkpoint_transactions(scheduler_output);
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
     {

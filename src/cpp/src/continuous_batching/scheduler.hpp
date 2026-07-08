@@ -275,6 +275,14 @@ public:
         m_cache_orchestrator->set_linear_attention_live_block(seq_id, physical_block_index);
     }
 
+    void commit_linear_attention_checkpoint_transaction(uint64_t seq_id, size_t checkpoint_slot) {
+        m_cache_orchestrator->commit_linear_attention_checkpoint_transaction(seq_id, checkpoint_slot);
+    }
+
+    void abort_linear_attention_checkpoint_transaction(uint64_t seq_id) {
+        m_cache_orchestrator->abort_linear_attention_checkpoint_transaction(seq_id);
+    }
+
     /// @brief Raises non-prefix linear-attention rows per sequence.
     bool ensure_linear_attention_fixed_blocks_per_sequence(size_t fixed_blocks_per_sequence) {
         return m_cache_orchestrator->ensure_linear_attention_fixed_blocks_per_sequence(fixed_blocks_per_sequence);
@@ -761,11 +769,10 @@ private:
 
         paging_data.past_length = checked_size_to_int32(num_processed_tokens, "past length", seq_id);
         if (!m_config.enable_prefix_caching) {
-            // Non-prefix LA uses the live-block registry instead of assuming block_table[0].
-            const int32_t live_block = checked_size_to_int32(get_linear_attention_live_block(seq_id), "live block index", seq_id);
             const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
             if (num_tokens_to_validate == 0) {
                 // Non-speculative step: read and write the live row.
+                const int32_t live_block = checked_size_to_int32(get_linear_attention_live_block(seq_id), "live block index", seq_id);
                 paging_data.block_indices.push_back(live_block);
                 paging_data.block_indices.push_back(live_block);
                 paging_data.cache_interval = 0;
@@ -779,22 +786,9 @@ private:
                             "Speculative linear-attention validation window was not scheduled atomically for sequence ", seq_id,
                             ": scheduled ", num_scheduled_tokens, " tokens, expected ", num_tokens_to_validate + 1,
                             " (", num_tokens_to_validate, " candidates + 1 base token)");
-            // Scratch rows are owned LA rows other than the live one.
-            paging_data.block_indices.reserve(num_tokens_to_validate + 2);
-            paging_data.block_indices.push_back(live_block);
-            paging_data.block_indices.push_back(live_block);
-            for (const auto& block : la_blocks) {
-                if (paging_data.block_indices.size() == num_tokens_to_validate + 2) {
-                    break;
-                }
-                const int32_t scratch_block = checked_block_index_to_int32(block->get_index(), seq_id);
-                if (scratch_block != live_block) {
-                    paging_data.block_indices.push_back(scratch_block);
-                }
-            }
-            OPENVINO_ASSERT(paging_data.block_indices.size() == num_tokens_to_validate + 2,
-                            "Linear attention scratch rows insufficient for speculative validation of sequence ", seq_id,
-                            ": need ", num_tokens_to_validate, " scratch rows beyond the live row, owned table has ", la_blocks.size());
+            const auto transaction =
+                m_cache_orchestrator->begin_linear_attention_checkpoint_transaction(seq_id, num_tokens_to_validate);
+            paging_data.block_indices = transaction.block_indices;
             paging_data.cache_interval = 1;
             paging_data.is_speculative = true;
             paging_data.num_processed_tokens_before = num_processed_tokens;
