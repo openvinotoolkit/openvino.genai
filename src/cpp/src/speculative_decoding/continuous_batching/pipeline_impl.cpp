@@ -367,7 +367,7 @@ reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t c
         m_scheduler->reserve_linear_attention_checkpoints_for_next_schedule(seq_id, checkpoint_count);
         return seq_id;
     }
-    OPENVINO_THROW("Cannot reserve linear attention checkpoints: request ", request_id, " was not found.");
+    OPENVINO_ASSERT(false, "Cannot reserve linear attention checkpoints: request ", request_id, " was not found.");
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
