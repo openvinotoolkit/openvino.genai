@@ -1,6 +1,9 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <iomanip>
+#include <iostream>
+
 #include "audio_utils.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
@@ -51,6 +54,8 @@ int main(int argc, char* argv[]) try {
 
     std::cout << result << "\n";
 
+    const std::ios_base::fmtflags cout_flags = std::cout.flags();
+    const std::streamsize cout_precision = std::cout.precision();
     std::cout << std::fixed << std::setprecision(2);
     if (result.chunks.has_value()) {
         for (auto& chunk : (*result.chunks)[0]) {
@@ -63,6 +68,8 @@ int main(int argc, char* argv[]) try {
             std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.text << "\n";
         }
     }
+    std::cout.flags(cout_flags);
+    std::cout.precision(cout_precision);
 
 } catch (const std::exception& error) {
     try {

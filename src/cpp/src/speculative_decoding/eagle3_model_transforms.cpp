@@ -493,7 +493,7 @@ void apply_eagle3_attention_mask_transform(std::shared_ptr<ov::Model>& model) {
     }
 
     // 6. Add the new parameter to the model
-    model->add_parameters({eagle_tree_mask_param});
+    model->add_parameters(ov::ParameterVector{std::move(eagle_tree_mask_param)});
 
     // 7. Validate the model
     model->validate_nodes_and_infer_types();
