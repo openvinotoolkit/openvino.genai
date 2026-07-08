@@ -19,6 +19,7 @@ from optimum.intel.openvino import (
     OVDiffusionPipeline,
     OVModelForSpeechSeq2Seq,
     OVModelForVisualCausalLM,
+    OVModelForMultimodalLM,
     OVPipelineForInpainting,
     OVPipelineForImage2Image,
     OVModelForFeatureExtraction,
@@ -171,7 +172,8 @@ USE_CASES = {
                 "videochat-flash-qwen",
                 "gemma4",
             ]
-        )
+        ),
+        UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "speech_to_text": [UseCaseSpeech2Text(["whisper"])],
     "image_cls": [UseCaseImageCls(["vit"])],
