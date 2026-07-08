@@ -66,7 +66,7 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
                                        const SchedulerConfig& scheduler_config) {
-    const bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
+    const bool need_per_layer_kv_cache_control = scheduler_config.use_cache_eviction;
     const bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     const bool allow_xattention = scheduler_config.use_sparse_attention &&
                                   scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
@@ -74,8 +74,8 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
     const bool allow_adaptive_rkv = scheduler_config.use_cache_eviction &&
                                     scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
 
-    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control,
-                                   is_need_per_layer_cache_control,
+    ov::pass::SDPAToPagedAttention(need_per_layer_kv_cache_control,
+                                   need_per_layer_kv_cache_control,
                                    allow_score_aggregation,
                                    allow_cache_rotation,
                                    allow_xattention,
@@ -111,6 +111,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const ov::genai::GenerationConfig& generation_config,
     bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
     m_inputs_embedder = inputs_embedder;
+    
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
@@ -146,8 +147,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     SchedulerConfig normalized_config = scheduler_config;
     normalized_config.validate();
 
+    // Resolve per-role MODEL_PROPERTIES overlay for the language model and
+    // strip the GenAI-only MODEL_PROPERTIES meta key before reaching the OV plugin.
+    const auto language_model_properties = utils::get_model_properties(properties, "language_model", device);
+
     // apply LoRA
-    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    auto filtered_properties = extract_adapters_from_properties(language_model_properties, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
@@ -193,7 +198,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     // Scheduler and Model Runner instantiation
     bool is_use_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool is_use_cache_eviction = scheduler_config.use_cache_eviction;
-    bool is_use_per_layer_cache_control = cache_orchestrator->needs_per_layer_block_indices();
+    bool is_use_per_layer_kv_block_indices = cache_orchestrator->needs_per_layer_kv_block_indices();
     const size_t kv_block_size = cache_orchestrator->get_block_size(CacheType::KV_CACHE);
     if (is_use_cache_eviction) {
         const auto& eviction_config = scheduler_config.cache_eviction_config;
@@ -205,7 +210,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        kv_block_size,
                                                        m_num_decoder_layers,
                                                        /* collect_attention_scores = */ true,
-                                                       is_use_per_layer_cache_control,
+                                                       is_use_per_layer_kv_block_indices,
                                                        /* is_use_rotation_inputs = */ is_apply_rotation,
                                                        /* is_aggregate_attention_scores = */ true,
                                                        is_use_xattention,
@@ -219,7 +224,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         m_model_runner =
             std::make_shared<ModelRunner>(infer_request, kv_block_size, m_num_decoder_layers,
                                                        /* collect_attention_scores = */ false,
-                                                       is_use_per_layer_cache_control,
+                                                       is_use_per_layer_kv_block_indices,
                                                        /* is_use_rotation_inputs = */ false,
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention,
@@ -428,7 +433,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     {
         static ManualTimer timer("sample");
         timer.start();
+        const auto sample_start = std::chrono::steady_clock::now();
         sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
+        m_pipeline_metrics.sampling_duration =
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start);
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }
@@ -458,9 +466,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         candidates_timer.end();
     }
 
-    // append embeddings for generated tokens
-    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+    // Append embeddings for tokens produced in this step.
+    // Validation mode usually skips this because speculative validation reuses/rewinds
+    // candidate tokens instead of committing them here. prompt_lookup is the exception:
+    // it appends validation candidates after sampling and must keep embeddings in sync
+    // before the next scheduling/hash step.
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
         m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     // notify requests dropped by handle
     {
@@ -575,6 +588,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                 raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
                 raw_perf_counters.m_new_token_times.emplace_back(infer_end);
                 raw_perf_counters.m_batch_sizes.emplace_back(m_batch_size);
+                raw_perf_counters.m_sampling_durations.emplace_back(m_pipeline_metrics.sampling_duration);
             }
         } catch (...) {
             drop_requests(); // remove all requests from pipeline state in case of exception
@@ -719,7 +733,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 
         for (size_t i = 0; i < num_running_sequences; ++i) {
             Sequence::CPtr sequence = running_sequences[i];
-            size_t num_blocks = m_scheduler->get_num_logical_blocks(sequence_group);
+            size_t num_blocks = m_scheduler->get_num_kv_logical_blocks(sequence_group);
             size_t seq_id = sequence->get_id();
             OPENVINO_ASSERT(live_seq_ids_to_num_occupied_blocks.find(seq_id) == live_seq_ids_to_num_occupied_blocks.end(),
                     "duplicate seq_id ", seq_id, " among sequence groups");
@@ -799,17 +813,13 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         }
         auto& cache_eviction_algo = m_seq_group_id_to_cache_eviction_algo_map[seq_id];
         std::set<size_t> skip_set;
-        if (scheduler_output.m_apply_sparse_attention_mask) {
-            const auto& skip_map = scheduler_output.m_sparse_attention_skipped_logical_blocks;
-            auto it = skip_map.find(seq_id);
-            if (it != skip_map.end()) {
-                skip_set = it->second;
-            }
+        if (scheduler_output.get_kv_paged_attention_global_data().apply_sparse_attention_mask) {
+            skip_set = scheduler_output.get_sparse_attention_skipped_logical_blocks(seq_id);
         }
 
         if (skip_set.empty()) {
             // For now, will only register token scores from the dense attention stages
-            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set, scheduler_output.m_score_aggregation_windows.at(seq_id));
+            cache_eviction_algo.register_new_token_scores(attention_scores_for_all_decoder_layers, skip_set, scheduler_output.get_score_aggregation_window(seq_id));
         }
 
         auto seq_group_ptr_it = std::find_if(m_requests.begin(), m_requests.end(), [seq_id](const SequenceGroup::Ptr& val) { return val->has_sequence_with_id(seq_id); });
@@ -829,7 +839,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
             }
         }
 
-        m_previous_num_blocks_before_eviction_per_sequence[seq_id] = m_scheduler->get_num_logical_blocks(seq_group_ptr);
+        m_previous_num_blocks_before_eviction_per_sequence[seq_id] = m_scheduler->get_num_kv_logical_blocks(seq_group_ptr);
 
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
         m_previous_evicted_block_logical_indices_per_sequence[seq_id] = logical_blocks_to_evict;

@@ -5,7 +5,8 @@ from transformers import (
     PreTrainedTokenizer,
 )
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Any
+import torch
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class Phi3MMInputsPreprocessor(VLMInputsPreprocessor):
-    def __init__(self, chat_mode: bool = False):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         self.image_offset = 1
         super().__init__(chat_mode)
 
@@ -62,3 +63,26 @@ class Phi3MMInputsPreprocessor(VLMInputsPreprocessor):
 
         inputs = processor(images=self.images, text=text, return_tensors="pt")
         return inputs
+
+    def align_inputs_with_cache(self, model: Any, inputs: dict, full_tokenized_chat: torch.Tensor, prefix_len: int):
+        if "input_image_embeds" not in inputs:
+            return inputs
+
+        # phi3 uses negative image tokens to indicate, which start with -1 and increment each new image
+        # but if we would like to pass only new inputs, we should start count image with -1
+        new_inputs_tokens = full_tokenized_chat[0, prefix_len:]
+        neg_mask = (new_inputs_tokens < 0) & (new_inputs_tokens > -int(1e9))
+        new_image_indices = sorted({-int(v) for v in new_inputs_tokens[neg_mask].tolist()})
+
+        if new_image_indices:
+            keep = [k - 1 for k in new_image_indices]
+            inputs["pixel_values"] = inputs["pixel_values"][keep]
+            inputs["image_sizes"] = inputs["image_sizes"][keep]
+        else:
+            inputs.pop("pixel_values", None)
+            inputs.pop("image_sizes", None)
+
+        return inputs
+
+    def is_image_token(self, tokenized_input: list, idx: int) -> bool:
+        return tokenized_input[idx] < 0 and tokenized_input[idx] > -int(1e9)

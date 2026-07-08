@@ -194,11 +194,13 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
     std::optional<bool> skip_special_tokens_flag = true;
     std::optional<int32_t> max_length_val;
     std::optional<bool> pad_to_max_length_val = false;
+    std::optional<bool> truncation_val = false;
     std::optional<std::string> padding_side_val = std::nullopt;
     
     ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
     ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
     ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
+    ov::genai::utils::read_anymap_param(params, truncation.name(), truncation_val);
     ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
     ov::genai::utils::read_anymap_param(params, padding_side.name(), padding_side_val);
     std::optional<bool> pad_right;
@@ -213,8 +215,6 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
         pad_right = (*padding_side_val == "right") ? true : false;
     }
 
-    std::optional<bool> is_max_length_set_val = max_length_val.has_value();
-
     ov::AnyMap& state_flags = m_request_to_state_flags[&infer_request_guard.get()];
 
     for (auto& state : infer_request_guard.get().query_state()) {
@@ -228,8 +228,8 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
             set_state_value(state, max_length_val, state_flags);
         } else if (name == PAD_TO_MAX_LENGTH_VAR_ID) {
             set_state_value(state, pad_to_max_length_val, state_flags);
-        } else if (name == IS_MAX_LENGTH_SET) {
-            set_state_value(state, is_max_length_set_val, state_flags);
+        } else if (name == TRUNCATION_VAR_ID) {
+            set_state_value(state, truncation_val, state_flags);
         } else if (name == PAD_RIGHT_VAR_ID) {
             set_state_value(state, pad_right, state_flags);
         }

@@ -118,7 +118,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         "++SHARED_HEAD_CONFIG",
         "++NPUW_LLM_GENERATE_CONFIG",
         "++NPUW_LLM_PREFILL_CONFIG",
-        "++NPUW_LLM_SHARED_HEAD_CONFIG"
+        "++NPUW_LLM_SHARED_HEAD_CONFIG",
+        "MODEL_PROPERTIES",
+        "DEVICE_PROPERTIES"
     };
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");

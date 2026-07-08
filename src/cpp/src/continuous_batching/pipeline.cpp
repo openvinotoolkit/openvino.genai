@@ -19,6 +19,7 @@
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "speculative_decoding/dflash_model_transforms.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/vision_properties.hpp"
 #include "json_utils.hpp"
@@ -54,13 +55,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
                                                         const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
 
+    utils::validate_vlm_model_properties(properties_without_draft_model);
+
     utils::extract_extensions_to_core(properties_without_draft_model);
-    auto model = utils::read_model(models_path, properties_without_draft_model);
+    auto model = utils::read_model(models_path,
+        utils::get_model_properties(properties_without_draft_model, "language_model"));
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
@@ -69,8 +73,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
-        auto vision_props = utils::get_model_properties(non_adapter_properties.fork(), "vision_embeddings");
-        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_props);
+        embedder = std::make_shared<InputsEmbedder>(models_path, device, non_adapter_properties.fork());
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -87,8 +90,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
@@ -113,10 +120,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
                                                        const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
+
+    utils::validate_vlm_model_properties(properties_without_draft_model);
 
     auto model = language_model;
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
@@ -127,8 +136,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     std::shared_ptr<InputsEmbedder> embedder;
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
-        auto vision_props = utils::get_model_properties(non_adapter_properties.fork(), "vision_embeddings");
-        embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_props);
+        embedder = std::make_shared<InputsEmbedder>(models_path, device, non_adapter_properties.fork());
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -145,8 +153,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
@@ -169,13 +181,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
 
+    utils::validate_vlm_model_properties(properties_without_draft_model);
+
     utils::extract_extensions_to_core(properties_without_draft_model);
-    auto model = utils::read_model(models_path, properties_without_draft_model);
+    auto model = utils::read_model(models_path,
+        utils::get_model_properties(properties_without_draft_model, "language_model"));
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
@@ -196,11 +211,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
-        // Eagle speculative decoding does not support dynamic_split_fuse mode
-        // because it requires hidden state interaction from main model to draft model
-        // to be implemented future
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
@@ -226,7 +242,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, model_config_dir_path);
@@ -267,10 +283,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, std::filesystem::path(model_str));
+
+    utils::validate_vlm_model_properties(properties_without_draft_model);
 
     utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
@@ -297,8 +315,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
@@ -324,10 +346,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto model_pair = utils::get_model_weights_pair(models_map, "language");
+
+    utils::validate_vlm_model_properties(properties_without_draft_model);
 
     utils::extract_extensions_to_core(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_pair.first, model_pair.second);
@@ -383,9 +407,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
+
+    utils::validate_vlm_model_properties(properties_without_draft_model);
+
     auto model = language_model;
 
     auto rt_info = model->get_rt_info();

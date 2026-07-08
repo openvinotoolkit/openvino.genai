@@ -28,7 +28,9 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_5", VLMModelType::QWEN3_5},
         {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
         {"gemma3", VLMModelType::GEMMA3},
+        {"gemma3n", VLMModelType::GEMMA3N},
         {"gemma4", VLMModelType::GEMMA4},
+        {"gemma4_unified", VLMModelType::GEMMA4_UNIFIED},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
     };
 
@@ -83,11 +85,8 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // gemma4
     read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
     // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean
-    if (
-        parsed.contains("text_config")
-        && parsed.at("text_config").contains("use_bidirectional_attention")
-        && parsed.at("text_config").at("use_bidirectional_attention").is_string()
-    ) {
+    if (parsed.contains("text_config") && parsed.at("text_config").contains("use_bidirectional_attention") &&
+        parsed.at("text_config").at("use_bidirectional_attention").is_string()) {
         read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
     }
 }

@@ -21,6 +21,7 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
+#include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 
@@ -353,7 +354,11 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
+        m_impl = std::make_shared<InputsEmbedderGemma3n>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
+        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA4_UNIFIED) {
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, device, device_config);
@@ -395,7 +400,11 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
+        m_impl = std::make_shared<InputsEmbedderGemma3n>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
+        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GEMMA4_UNIFIED) {
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config); 

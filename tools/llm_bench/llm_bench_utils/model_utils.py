@@ -11,6 +11,11 @@ from llm_bench_utils.config_class import (
     PA_ATTENTION_BACKEND,
     SDPA_ATTENTION_BACKEND,
 )
+from llm_bench_utils.tts_utils import (
+    SPEECHT5_SPEAKER_EMB_SHAPE,
+    KOKORO_SPEAKER_EMB_SHAPE,
+    is_kokoro_model_id,
+)
 import librosa
 
 KNOWN_PRECISIONS = [
@@ -139,11 +144,13 @@ def analyze_args(args):
     model_args["num_frames"] = args.num_frames
     model_args["frame_rate"] = args.frame_rate
     model_args["negative_prompt"] = args.negative_prompt
-    model_args['mask_image'] = args.mask_image
-    model_args['task'] = args.task
-    model_args['strength'] = args.strength
-    model_args['emb_pooling_type'] = args.embedding_pooling
-    model_args['emb_normalize'] = args.embedding_normalize
+    model_args["mask_image"] = args.mask_image
+    model_args["task"] = args.task
+    model_args["speech_language"] = args.speech_language
+    model_args["speech_voice"] = args.speech_voice
+    model_args["strength"] = args.strength
+    model_args["emb_pooling_type"] = args.embedding_pooling
+    model_args["emb_normalize"] = args.embedding_normalize
     model_args["emb_max_length"] = args.embedding_max_length
     model_args["emb_padding_side"] = args.embedding_padding_side
     model_args["emb_pad_to_max_length"] = args.embedding_pad_to_max_length
@@ -197,10 +204,11 @@ def analyze_args(args):
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
-    model_args['use_case'] = use_case
-    if use_case.task == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
-        model_args['prompt'] = 'def print_hello_world():'
-    model_args['config'] = {}
+    model_args["use_case"] = use_case
+    model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
+    if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
+        model_args["prompt"] = "def print_hello_world():"
+    model_args["config"] = {}
     if args.load_config is not None:
         config = get_config(args.load_config)
         if type(config) is dict and len(config) > 0:
@@ -231,16 +239,25 @@ def analyze_args(args):
     if args.draft_cb_config:
         draft_cb_config = get_config(args.draft_cb_config)
     model_args["draft_cb_config"] = draft_cb_config
-    model_args['num_assistant_tokens'] = args.num_assistant_tokens
-    model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
-    model_args['max_ngram_size'] = args.max_ngram_size
+    model_args["num_assistant_tokens"] = args.num_assistant_tokens
+    model_args["assistant_confidence_threshold"] = args.assistant_confidence_threshold
+    model_args["max_ngram_size"] = args.max_ngram_size
+    sd_generation_config = None
+    if args.sd_generation_config:
+        sd_generation_config = get_config(args.sd_generation_config)
+        if not isinstance(sd_generation_config, dict):
+            raise ValueError(f"--sd_generation_config must be a JSON object, got {type(sd_generation_config).__name__}")
+    model_args["sd_generation_config"] = sd_generation_config
 
     model_args['speaker_embeddings'] = None
     if args.speaker_embeddings:
-        model_args['speaker_embeddings'] = get_speaker_embeddings(args.speaker_embeddings)
-    model_args['vocoder_path'] = args.vocoder_path
-    if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
-        raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
+        expected_shape = KOKORO_SPEAKER_EMB_SHAPE if model_args["is_kokoro_model"] else SPEECHT5_SPEAKER_EMB_SHAPE
+        model_args["speaker_embeddings"] = get_speaker_embeddings(
+            args.speaker_embeddings, expected_shape=expected_shape
+        )
+    model_args["vocoder_path"] = args.vocoder_path
+    if model_args["vocoder_path"] and not Path(model_args["vocoder_path"]).exists():
+        raise RuntimeError(f"==Failure FOUND==: Incorrect vocoder path:{model_args['vocoder_path']}")
     return model_path, model_framework, model_args
 
 
