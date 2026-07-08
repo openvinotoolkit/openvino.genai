@@ -1143,10 +1143,14 @@ jobs:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_nodejs_tests:
-    name: Node.js bindings tests
+    name: Node.js bindings tests (Node ${{ matrix.nodejs-version }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        nodejs-version: [22, 24, 26]
     defaults:
       run:
         shell: pwsh
@@ -1155,7 +1159,7 @@ jobs:
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
       INSTALL_DIR: ${{ github.workspace }}/install
-      NODE_VERSION: 21
+      NODE_VERSION: ${{ matrix.nodejs-version }}
 
     steps:
       - name: Clone openvino.genai

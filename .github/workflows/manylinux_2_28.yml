@@ -740,10 +740,14 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
 
   genai_nodejs_tests:
-    name: Node.js bindings tests
+    name: Node.js bindings tests (Node ${{ matrix.nodejs-version }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        nodejs-version: [22, 24, 26]
     defaults:
       run:
         shell: bash
@@ -758,7 +762,7 @@ jobs:
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
-      NODE_VERSION: 22
+      NODE_VERSION: ${{ matrix.nodejs-version }}
       PY_INSTALL_DIR: ${{ github.workspace }}/install
 
     steps:
