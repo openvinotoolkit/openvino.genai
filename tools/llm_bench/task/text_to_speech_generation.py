@@ -275,12 +275,25 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         mem_consumption.update_marker(f"step-{num}-{p_idx}")
         prefix = prompter.get_prefix(num, p_idx)
         prompt.introduce_in_stdout(num, prefix)
-        iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-        gen_fn(prompt["prompt"], num, model, processor, vocoder, args, iter_data_list, md5_list,
-               p_idx, tts_hook, model_precision, proc_id, mem_consumption)
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        gen_fn(
+            prompt["prompt"],
+            num,
+            model,
+            processor,
+            vocoder,
+            args,
+            iter_data_list,
+            md5_list,
+            p_idx,
+            tts_hook,
+            model_precision,
+            proc_id,
+            mem_consumption,
+        )
         if iter_data_list:
             iter_data_list[-1]["prompt_repr"] = repr(prompt)
-        iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     return iter_data_list, pretrain_time, iter_timestamp

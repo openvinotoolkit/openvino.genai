@@ -165,8 +165,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     speech_list = prompter.active_items
 
     log.info(
-        f'Benchmarking iter nums(exclude warm-up): {num_iters}, '
-        f'speech file nums: {len(speech_list)}, speech idx: {speech_idx_list}'
+        f"Benchmarking iter nums(exclude warm-up): {num_iters}, "
+        f"speech file nums: {len(speech_list)}, speech idx: {speech_idx_list}"
     )
     mem_consumption.update_marker("model")
     pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(
@@ -194,21 +194,18 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         # Load audio waveform here (inside the loop) so that a fresh array is
         # used for every iteration, and because read_wav requires the model's
         # sampling rate which is only available after model creation.
-        raw_speech = model_utils.read_wav(
-            prompt['audio'], processor.feature_extractor.sampling_rate
-        )
-        input_param['speech_idx'] = p_idx
-        input_param['speech_param'] = prompt   # BenchPrompt dict carries language/timestamp
-        input_param['iter_idx'] = num
-        input_param['raw_speech'] = raw_speech
-        iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
+        raw_speech = model_utils.read_wav(prompt["audio"], processor.feature_extractor.sampling_rate)
+        input_param["speech_idx"] = p_idx
+        input_param["speech_param"] = prompt  # BenchPrompt dict carries language/timestamp
+        input_param["iter_idx"] = num
+        input_param["raw_speech"] = raw_speech
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
         run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list)
         if iter_data_list:
             iter_data_list[-1]["prompt_repr"] = repr(prompt)
-        iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(
-            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, "
-            f"end: {iter_timestamp[num][p_idx]['end']}"
+            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
         )
     metrics_print.print_average(iter_data_list, speech_idx_list, 1, True)
     return iter_data_list, pretrain_time, iter_timestamp

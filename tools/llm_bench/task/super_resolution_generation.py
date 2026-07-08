@@ -84,8 +84,8 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     image_list = prompter.active_items
 
     log.info(
-        f'Benchmarking iter nums(exclude warm-up): {num_iters}, '
-        f'image nums: {len(image_list)}, prompt idx: {prompt_idx_list}'
+        f"Benchmarking iter nums(exclude warm-up): {num_iters}, "
+        f"image nums: {len(image_list)}, prompt idx: {prompt_idx_list}"
     )
 
     # if num_iters == 0, just output warm-up data
@@ -99,16 +99,17 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         # num==0 and always logs repr(prompt) which includes probed dimensions.
         prompt.introduce_in_stdout(num, prefix)
         if num == 0 and args["output_dir"] is not None:
-            llm_bench_utils.output_file.output_image_input_text(str(prompt['prompt']), args, p_idx, None, proc_id)
-        iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-        run_ldm_super_resolution(prompt, num, pipe, args, framework, iter_data_list, p_idx, tm_list, proc_id, mem_consumption)
+            llm_bench_utils.output_file.output_image_input_text(str(prompt["prompt"]), args, p_idx, None, proc_id)
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        run_ldm_super_resolution(
+            prompt, num, pipe, args, framework, iter_data_list, p_idx, tm_list, proc_id, mem_consumption
+        )
         if iter_data_list:
             iter_data_list[-1]["prompt_repr"] = repr(prompt)
-        iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         tm_list.clear()
         log.info(
-            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, "
-            f"end: {iter_timestamp[num][p_idx]['end']}"
+            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
         )
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
     return iter_data_list, pretrain_time, iter_timestamp

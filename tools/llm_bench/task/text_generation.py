@@ -692,7 +692,7 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
         # Attach the prompt representation to the iter_data entry just appended
         # so it is available for JSON report output.
         if iter_data_list:
-            iter_data_list[-1]["prompt_repr"] =  repr(prompt)
+            iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
