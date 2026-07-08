@@ -118,8 +118,10 @@ public:
 
         auto input_ids = build_input_ids(seed_token, candidate_count);
         auto position_ids = build_position_ids(hidden_delta_length, candidate_count);
+        auto attention_mask = build_attention_mask(hidden_delta_length, candidate_count);
         m_request.set_tensor("hidden_states", hidden_delta);
         m_request.set_tensor("position_ids", position_ids);
+        m_request.set_tensor("attention_mask", attention_mask);
         // After load-time transforms the draft is always input_ids-native (target embedding
         // attached in-graph when needed), so feed token ids directly.
         m_request.set_tensor("input_ids", input_ids);
@@ -158,6 +160,8 @@ private:
                         "DFlash CB/PA draft model must have 'hidden_states' input.");
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "input_ids"),
                         "DFlash CB/PA draft model must have an 'input_ids' input after load-time transforms.");
+        OPENVINO_ASSERT(utils::has_input(model_desc.model, "attention_mask"),
+                        "DFlash CB/PA draft model must have an 'attention_mask' input.");
         if (model_desc.device == "NPU") {
             auto kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
             auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, model_desc.properties, kv_axes_pos);
@@ -174,6 +178,10 @@ private:
 
     ov::Tensor build_position_ids(size_t hidden_delta_length, size_t candidate_count) const {
         return dflash_cb::build_draft_position_ids(m_committed_context_length, hidden_delta_length, candidate_count);
+    }
+
+    ov::Tensor build_attention_mask(size_t hidden_delta_length, size_t candidate_count) const {
+        return dflash_cb::build_draft_attention_mask(m_committed_context_length, hidden_delta_length, candidate_count);
     }
 
     std::vector<DraftCandidateToken> sample_one_candidate(const ov::Tensor& logits) {

@@ -165,6 +165,16 @@ inline ov::Tensor build_draft_position_ids(size_t committed_context_length,
     return position_ids;
 }
 
+inline ov::Tensor build_draft_attention_mask(size_t committed_context_length,
+                                             size_t hidden_delta_length,
+                                             size_t candidate_count) {
+    OPENVINO_ASSERT(candidate_count > 0, "DFlash candidate_count must be greater than 0.");
+    const size_t attention_mask_length = committed_context_length + hidden_delta_length + candidate_count + 1;
+    ov::Tensor attention_mask(ov::element::i64, {1, attention_mask_length});
+    std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
+    return attention_mask;
+}
+
 inline size_t draft_candidate_count(size_t num_assistant_tokens, size_t generated_len, size_t max_new_tokens) {
     OPENVINO_ASSERT(num_assistant_tokens > 0, "DFlash num_assistant_tokens must be greater than 0.");
     if (generated_len >= max_new_tokens) {

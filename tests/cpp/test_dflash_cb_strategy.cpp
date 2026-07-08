@@ -246,6 +246,13 @@ TEST(DFlashCBDraftInputs, BuildsPositionIdsFromCommittedLength) {
     ASSERT_EQ(int64_tensor_values(position_ids), (std::vector<int64_t>{5, 6, 7, 8, 9, 10}));
 }
 
+TEST(DFlashCBDraftInputs, BuildsAttentionMaskForFullDraftContext) {
+    auto attention_mask = ov::genai::dflash_cb::build_draft_attention_mask(5, 2, 3);
+
+    ASSERT_EQ(attention_mask.get_shape(), ov::Shape({1, 11}));
+    ASSERT_EQ(int64_tensor_values(attention_mask), (std::vector<int64_t>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
+}
+
 TEST(DFlashCBGenerationConfig, DefaultsAssistantTokensToFive) {
     ov::genai::GenerationConfig config;
 
