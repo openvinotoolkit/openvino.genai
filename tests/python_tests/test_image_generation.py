@@ -10,6 +10,7 @@ from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 FLUX_MODEL_ID = "tiny-random-flux"
+FLUX2_KLEIN_MODEL_ID = "tiny-random-flux.2-klein"
 SD3_MODEL_ID = "tiny-random-sd3"
 SDXL_MODEL_ID = "tiny-random-sdxl"
 
@@ -165,6 +166,22 @@ class TestImageGenerationCallback:
         assert image is not None
 
 
+    def test_callback_exception_does_not_crash(self, image_generation_model):
+        # Regression test for: crash when generate() throws while a callback thread is running.
+        # Destroying a joinable std::thread calls std::terminate(); the fix adds a destructor
+        # to ThreadedCallbackWrapper that calls end() to join the thread before destruction.
+        def callback(step, num_steps, latent):
+            return False
+
+        # Pass a tensor with wrong element type (f16 instead of u8) to trigger an exception
+        # inside generate() while the callback thread is alive.
+        wrong_type_image = ov.Tensor(np.zeros((1, 64, 64, 3), dtype=np.float16))
+
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+        with pytest.raises(Exception):
+            pipe.generate("test prompt", wrong_type_image, callback=callback, num_inference_steps=2)
+
+
 class TestTaylorSeerImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
     def test_flux_text2image_taylorseer_with_callback(self, image_generation_model):
@@ -246,3 +263,81 @@ class TestImageGenerationOnNpuByNpuwCpu:
 
         assert cpu_image.data.shape == imported_npuw_image.data.shape
         assert (cpu_image.data == imported_npuw_image.data).all()
+
+
+class TestFlux2KleinImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_text2image(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_text2image_with_callback(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            callback=callback,
+        )
+
+        assert len(callback_calls) > 0, "Callback should be called at least once"
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_image2image(self, image_generation_model):
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        input_image = get_random_image()
+
+        image = pipe.generate(
+            "test prompt",
+            input_image,
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_image2image_with_callback(self, image_generation_model):
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        input_image = get_random_image()
+
+        image = pipe.generate(
+            "test prompt",
+            input_image,
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            callback=callback,
+        )
+
+        assert len(callback_calls) > 0, "Callback should be called at least once"
+        assert image is not None

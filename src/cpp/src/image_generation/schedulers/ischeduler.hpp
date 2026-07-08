@@ -32,6 +32,10 @@ public:
         OPENVINO_THROW("Scheduler doesn't support `set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength)` method");
     }
 
+    virtual void set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) {
+        OPENVINO_THROW("Scheduler doesn't support `set_timesteps_with_mu` method");
+    }
+
     virtual std::vector<std::int64_t> get_timesteps() const {
          OPENVINO_THROW("Scheduler doesn't support int timesteps");
     }
