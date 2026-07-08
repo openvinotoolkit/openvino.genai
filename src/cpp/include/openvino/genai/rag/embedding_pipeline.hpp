@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "openvino/core/any.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/runtime/tensor.hpp"
@@ -16,8 +17,6 @@
 
 namespace ov {
 namespace genai {
-
-using StringInputs = std::variant<std::string, std::vector<std::string>>;
 
 /**
  * @brief Result of an embedding computation.
@@ -69,7 +68,7 @@ public:
     * @param properties Generation arguments (e.g. ov::genai::prompt).
     * @return EmbedResult.
     */
-    EmbedResult embed(const StringInputs text,
+    EmbedResult embed(const StringInputs& text,
                       const std::vector<ov::Tensor>& images = {},
                       const std::vector<ov::Tensor>& videos = {},
                       const std::vector<VideoMetadata>& videos_metadata = {},
@@ -78,7 +77,7 @@ public:
     /**
     * @brief Computes embedding vectors using properties.
     *
-    * @param properties Generation arguments and inputs (e.g. ov::genai::texts(...), ov::genai::images(...),
+    * @param properties Generation arguments and inputs (e.g. ov::genai::text(...), ov::genai::images(...),
     *                   ov::genai::videos(...), ov::genai::videos_metadata(...), ov::genai::prompt(...)).
     * @return EmbedResult.
     */
@@ -87,7 +86,7 @@ public:
     /**
     * @brief Computes embedding vectors using keyword properties.
     *
-    * @param properties Generation arguments and inputs (e.g. ov::genai::texts(...), ov::genai::images(...),
+    * @param properties Generation arguments and inputs (e.g. ov::genai::text(...), ov::genai::images(...),
     *                   ov::genai::prompt(...)).
     * @return EmbedResult.
     */
@@ -107,7 +106,7 @@ private:
 /**
  * @brief Text or batch of texts to embed via EmbeddingPipeline::embed(AnyMap).
  */
-static constexpr ov::Property<std::vector<std::string>> texts{"texts"};
+static constexpr ov::Property<std::variant<std::string, std::vector<std::string>>> text{"text"};
 
 /**
  * @brief Instruction for encoding a document or query.

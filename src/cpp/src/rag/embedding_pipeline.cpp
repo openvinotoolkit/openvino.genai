@@ -173,7 +173,7 @@ public:
         }
     }
 
-    EmbedResult embed(const StringInputs text, const ov::AnyMap& properties) {
+    EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) {
         std::optional<std::string> prompt;
         utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt);
         if (m_mode == Mode::TEXT_ONLY) {
@@ -521,7 +521,7 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const ov::AnyMap& properties)
     : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
 
-EmbedResult EmbeddingPipeline::embed(const StringInputs text,
+EmbedResult EmbeddingPipeline::embed(const StringInputs& text,
                                     const std::vector<ov::Tensor>& images,
                                     const std::vector<ov::Tensor>& videos,
                                     const std::vector<VideoMetadata>& videos_metadata,
@@ -533,16 +533,14 @@ EmbedResult EmbeddingPipeline::embed(const ov::AnyMap& properties) {
     std::vector<ov::Tensor> images_vec;
     std::vector<ov::Tensor> videos_vec;
     std::vector<VideoMetadata> videos_metadata_vec;
-    std::vector<std::string> texts_vec;
+    std::variant<std::string, std::vector<std::string>> text_variant{std::string{}};
 
     utils::read_anymap_param(properties, ov::genai::images.name(), images_vec);
     utils::read_anymap_param(properties, ov::genai::videos.name(), videos_vec);
     utils::read_anymap_param(properties, ov::genai::videos_metadata.name(), videos_metadata_vec);
-    utils::read_anymap_param(properties, ov::genai::texts.name(), texts_vec);
+    utils::read_anymap_param(properties, ov::genai::text.name(), text_variant);
 
-    StringInputs text_input =
-        texts_vec.empty() ? StringInputs{std::string{}}
-                          : StringInputs{texts_vec};
+    StringInputs text_input = text_variant;
 
     return m_impl->embed(text_input, images_vec, videos_vec, videos_metadata_vec, properties);
 }

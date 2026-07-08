@@ -50,7 +50,8 @@ void apply_missing_qwen_processor_params(Config& config,
     const bool parsed_has_temporal_patch_size = parsed.contains("temporal_patch_size") ||
         (parsed.contains("vision_config") && parsed.at("vision_config").contains("temporal_patch_size"));
     const bool parsed_has_merge_size = parsed.contains("merge_size") ||
-        (parsed.contains("vision_config") && parsed.at("vision_config").contains("merge_size"));
+        (parsed.contains("vision_config") && (parsed.at("vision_config").contains("merge_size") ||
+                                    parsed.at("vision_config").contains("spatial_merge_size")));
 
     if (!parsed_has_patch_size) {
         using ov::genai::utils::read_json_param;
@@ -62,6 +63,8 @@ void apply_missing_qwen_processor_params(Config& config,
     }
     if (!parsed_has_merge_size) {
         using ov::genai::utils::read_json_param;
+         read_json_param(fallback, "vision_config.spatial_merge_size", config.merge_size);
+         read_json_param(fallback, "spatial_merge_size", config.merge_size);
         read_json_param(fallback, "merge_size", config.merge_size);
     }
 

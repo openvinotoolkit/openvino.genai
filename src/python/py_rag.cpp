@@ -106,7 +106,7 @@ void init_rag_pipelines(py::module_& m) {
         .def(
             "embed",
             [](EmbeddingPipeline& pipe,
-               const StringInputs text,
+               const StringInputs& text,
                const std::vector<ov::Tensor>& images,
                const std::vector<ov::Tensor>& videos,
                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
