@@ -86,54 +86,8 @@ def load_image_genai(image_path):
 
 
 # ---------------------------------------------------------------------------
-# Module-level backward-compat shims
-#
-# The canonical implementations now live as static methods on BenchPrompter
-# (see below).  These thin wrappers are kept so that existing task files that
-# do ``from llm_bench_utils.prompt_utils import get_video_gen_prompt`` (etc.)
-# continue to work without modification.
-# ---------------------------------------------------------------------------
-
-def get_text_prompt(args):
-    """Backward-compat wrapper – delegates to :meth:`BenchPrompter.get_text_prompt`."""
-    return BenchPrompter.get_text_prompt(args)
-
-
-def get_vlm_prompt(args):
-    """Backward-compat wrapper – delegates to :meth:`BenchPrompter.get_vlm_prompt`."""
-    return BenchPrompter.get_vlm_prompt(args)
-
-
-def get_image_prompt(args):
-    """Backward-compat wrapper – delegates to :meth:`BenchPrompter.get_image_prompt`."""
-    return BenchPrompter.get_image_prompt(args)
-
-
-def get_video_gen_prompt(args):
-    """Backward-compat wrapper – delegates to :meth:`BenchPrompter.get_video_gen_prompt`."""
-    return BenchPrompter.get_video_gen_prompt(args)
-
-
-def extract_prompt_data(inputs, required_frames, genai_flag):
-    """Backward-compat wrapper – delegates to :meth:`BenchPrompter.extract_prompt_data`."""
-    return BenchPrompter.extract_prompt_data(inputs, required_frames, genai_flag)
-
-
-# ---------------------------------------------------------------------------
 # BenchPrompt  &  BenchPrompter
-# ---------------------------------------------------------------------------
-#
-# DONE: implement BenchPrompt and BenchPrompter
-# DONE: refactor code in tools/llm_bench/task/text_generation.py to use new
-#       classes.
-# DONE: move prompt creation functions into BenchPrompter (see static methods
-#       below).
-#
-# All task files have been migrated to use BenchPrompt / BenchPrompter.
-# NOTE: speech_to_text loads the raw waveform lazily inside the iteration
-#       loop (not at prompt-construction time) since audio decoding is
-#       device-sampling-rate-dependent and cannot be pre-computed.
-#
+# ---------------------------------------------------------------------------#
 
 
 class BenchPrompt(dict):
@@ -306,24 +260,24 @@ class BenchPrompt(dict):
 
         Format (``+`` separates modalities):
 
-            BenchPrompt(text:7t)
-            BenchPrompt(text:7t + image:512x512)
-            BenchPrompt(text:7t + video:640x480@30f)
-            BenchPrompt(text:7t + audio:30.0s@44100Hz)
-            BenchPrompt(text:7t + image:512x512/35.2%)
-            BenchPrompt(text:7t + image:1024x768 + video:640x480@16f)
-            BenchPrompt(audio:30.0s@44100Hz)      <- no text prompt
+            text:7w
+            text:7w + image:512x512
+            text:7w + video:640x480@30f
+            text:7w + audio:30.0s@44100Hz
+            text:7w + image:512x512/35.2%
+            text:7w + image:1024x768 + video:640x480@16f
+            audio:30.0s@44100Hz      <- no text prompt
 
-        Token count is estimated as the whitespace-split word count of the
-        text prompt (exact token count would require the tokenizer).
+        Word count (whitespace-split) of the text prompt is shown with a
+        ``w`` suffix.  Exact token count would require the model tokenizer.
         """
         self.probe()
         parts = []
 
         # ---- text (optional) ----
         if self.get("prompt"):
-            token_est = len(self["prompt"].split())
-            parts.append(f"text:{token_est}t")
+            word_count = len(self["prompt"].split())
+            parts.append(f"text:{word_count}w")
 
         # ---- image (optionally decorated with mask coverage fraction) ----
         if self.get("media"):
@@ -383,12 +337,11 @@ class BenchPrompter(list):
     ----------------
     ``subsequent=False`` *(default)*
         Outer loop = iteration numbers, inner loop = prompts.
+        Prompts are processed in interleaved manner. Prompts are processed in subsequent manner.
         All prompts are run before advancing to the next iteration.
-
     ``subsequent=True``
         Outer loop = prompts, inner loop = iteration numbers.
-        All iterations for one prompt complete before moving to the next.
-
+        Prompts are processed in subsequent manner. All iterations for one prompt complete before moving to the next.
     In both modes ``num=0`` is the warm-up iteration.
 
     Parameters
@@ -397,24 +350,12 @@ class BenchPrompter(list):
         Full benchmark args dict (as produced by
         ``model_utils.analyze_args``). Relevant keys:
 
-            'use_case'      - object with a ``.task`` attribute
+            'use_case'      - object describing a pipeline type includes classes for handling the pipeline
+                              in optimum/PyTorch scenarios and the name of the pipeline type (``.task`` attribute)
             'prompt_index'  - ``list[int]`` or ``None`` (prompt subset)
             'subsequent'    - ``bool`` (scheduling mode)
             'batch_size'    - ``int``
             'video_frames'  - ``int`` or ``None`` (video decimation)
-
-    Static prompt-loading helpers
-    ------------------------------
-    The following ``@staticmethod`` methods replace the legacy module-level
-    functions of the same name.  They return raw ``list[str | dict]``
-    suitable for tasks that have not yet been migrated to use
-    :class:`BenchPrompter` directly.
-
-        - :meth:`get_text_prompt`
-        - :meth:`get_vlm_prompt`
-        - :meth:`get_image_prompt`
-        - :meth:`get_video_gen_prompt`
-        - :meth:`extract_prompt_data`
     """
 
     def __init__(self, args):
@@ -444,7 +385,9 @@ class BenchPrompter(list):
         """
         args = self._args
         use_case = args.get("use_case")
-        task = getattr(use_case, "task", "text_gen") if use_case else "text_gen"
+        task = getattr(use_case, "task", None) if use_case else None
+        if task is None:
+            raise ValueError("(obligatory) task is not specified!")
 
         # ---- pick input keys based on task ----
         if task == "visual_text_gen":
@@ -485,8 +428,7 @@ class BenchPrompter(list):
             # return dicts – both are accepted by BenchPrompt.__init__.
             if task == "visual_text_gen":
                 raw_list = parse_vlm_json_data(output_data_list)
-                # Resolve relative media/video paths against the prompt file
-                # (mirrors the logic in the static get_vlm_prompt() shim).
+                # Resolve relative media/video paths against the prompt file.
                 if args.get("prompt_file"):
                     for entry in raw_list:
                         if "media" in entry:
@@ -495,8 +437,7 @@ class BenchPrompter(list):
                             entry["video"] = resolve_media_file_path(entry["video"], args["prompt_file"][0])
             elif task == "image_gen":
                 raw_list = parse_image_json_data(output_data_list)
-                # Resolve relative media/mask_image paths against the prompt file
-                # (mirrors the logic in the static get_image_prompt() shim).
+                # Resolve relative media/mask_image paths against the prompt file.
                 if args.get("prompt_file"):
                     for entry in raw_list:
                         if "media" in entry:
@@ -504,6 +445,7 @@ class BenchPrompter(list):
                         if "mask_image" in entry:
                             entry["mask_image"] = resolve_media_file_path(entry.get("mask_image"), args["prompt_file"][0])
             elif task == "video_gen":
+                # prompt/negative_prompt are plain text — no path resolution needed.
                 raw_list = parse_video_json_data(output_data_list)
             elif task == "speech_to_text":
                 raw_list = parse_speech_json_data(output_data_list)
@@ -628,158 +570,14 @@ class BenchPrompter(list):
                     yield num, p_idx, prompt
 
     # ------------------------------------------------------------------ #
-    # Static prompt-loading helpers (moved from module level)             #
+    # Static helper                                                        #
     # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def get_text_prompt(args):
-        """
-        Load text-only prompts and return them as a flat ``list[str]``.
-
-        This is the canonical implementation; the module-level
-        ``get_text_prompt()`` is a thin wrapper around this method.
-
-        Parameters
-        ----------
-        args : dict
-            Benchmark args dict (must contain ``'prompt'`` / ``'prompt_file'``
-            keys understood by :func:`get_param_from_file`).
-
-        Returns
-        -------
-        list[str]
-            One entry per prompt.
-        """
-        text_list = []
-        output_data_list, is_json_data = get_param_from_file(args, 'prompt')
-        if is_json_data:
-            text_param_list = parse_text_json_data(output_data_list)
-            if len(text_param_list) > 0:
-                for text in text_param_list:
-                    text_list.append(text)
-        else:
-            text_list.append(output_data_list[0])
-        return text_list
-
-    @staticmethod
-    def get_vlm_prompt(args):
-        """
-        Load visual-language model prompts and return them as a ``list[dict]``.
-
-        Each dict may contain ``'prompt'``, ``'media'``, and/or ``'video'``
-        keys.  Media paths are resolved relative to the prompt file when a
-        ``'prompt_file'`` arg is provided.
-
-        This is the canonical implementation; the module-level
-        ``get_vlm_prompt()`` is a thin wrapper around this method.
-
-        Parameters
-        ----------
-        args : dict
-            Benchmark args dict.
-
-        Returns
-        -------
-        list[dict | str]
-        """
-        vlm_file_list = []
-        output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
-        if is_json_data:
-            vlm_param_list = parse_vlm_json_data(output_data_list)
-            if len(vlm_param_list) > 0:
-                for vlm_file in vlm_param_list:
-                    if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'media' in vlm_file:
-                        vlm_file['media'] = resolve_media_file_path(vlm_file.get('media'), args['prompt_file'][0])
-                    if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'video' in vlm_file:
-                        vlm_file['video'] = resolve_media_file_path(vlm_file.get('video'), args['prompt_file'][0])
-                    vlm_file_list.append(vlm_file)
-        else:
-            vlm_file_list.append(output_data_list)
-        return vlm_file_list
-
-    @staticmethod
-    def get_image_prompt(args):
-        """
-        Load image-generation prompts and return them as a ``list[dict | str]``.
-
-        The correct ``input_key`` (plain prompt, img2img, or inpainting) is
-        selected automatically from ``args``.
-
-        This is the canonical implementation; the module-level
-        ``get_image_prompt()`` is a thin wrapper around this method.
-
-        Parameters
-        ----------
-        args : dict
-            Benchmark args dict.
-
-        Returns
-        -------
-        list[dict | str]
-        """
-        input_image_list = []
-
-        input_key = ["prompt"]
-        if args.get("task") == args["use_case"].TASK["inpainting"]["name"] or (
-            (args.get("media") or args.get("images")) and args.get("mask_image")
-        ):
-            input_key = ["media", "mask_image", "prompt"]
-        elif args.get("task") == args["use_case"].TASK["img2img"]["name"] or args.get("media") or args.get("images"):
-            input_key = ["media", "prompt"]
-
-        output_data_list, is_json_data = get_param_from_file(args, input_key)
-        if is_json_data:
-            image_param_list = parse_image_json_data(output_data_list)
-            if len(image_param_list) > 0:
-                for image_data in image_param_list:
-                    if args["prompt_file"] is not None and len(args["prompt_file"]) > 0:
-                        image_data["media"] = resolve_media_file_path(image_data.get("media"), args["prompt_file"][0])
-                        image_data["mask_image"] = resolve_media_file_path(
-                            image_data.get("mask_image"), args["prompt_file"][0]
-                        )
-                    input_image_list.append(image_data)
-        else:
-            input_image_list.append(output_data_list[0])
-        return input_image_list
-
-    @staticmethod
-    def get_video_gen_prompt(args):
-        """
-        Load video-generation prompts and return them as a ``list[dict | str]``.
-
-        Each dict may contain ``'prompt'`` and/or ``'negative_prompt'`` keys.
-
-        This is the canonical implementation; the module-level
-        ``get_video_gen_prompt()`` is a thin wrapper around this method.
-
-        Parameters
-        ----------
-        args : dict
-            Benchmark args dict.
-
-        Returns
-        -------
-        list[dict | str]
-        """
-        input_list = []
-        output_data_list, is_json_data = get_param_from_file(args, ["prompt", "negative_prompt"])
-        if is_json_data:
-            media_param_list = parse_video_json_data(output_data_list)
-            if len(media_param_list) > 0:
-                for text in media_param_list:
-                    input_list.append(text)
-        else:
-            input_list.append(output_data_list[0])
-        return input_list
 
     @staticmethod
     def extract_prompt_data(inputs, required_frames, genai_flag):
         """
         Unpack a list of prompt dicts into separate ``(prompts, images, videos)``
         lists, loading each media file on the fly.
-
-        This is the canonical implementation; the module-level
-        ``extract_prompt_data()`` is a thin wrapper around this method.
 
         Parameters
         ----------
