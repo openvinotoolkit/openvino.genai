@@ -388,7 +388,9 @@ def run_text_reranker_benchmark(
         mem_consumption.update_marker(f"step-{num}-{p_idx}")
         prefix = prompter.get_prefix(num, p_idx)
         prompt.introduce_in_stdout(num, prefix)
-        iter_data_list.append(launch(text_reranker_pipeline, num, p_idx, iter_timestamp, prompt["prompt"], proc_id, bench_hook))
+        iter_data_list.append(
+            launch(text_reranker_pipeline, num, p_idx, iter_timestamp, prompt["prompt"], proc_id, bench_hook)
+        )
         if iter_data_list:
             iter_data_list[-1]["prompt_repr"] = repr(prompt)
 

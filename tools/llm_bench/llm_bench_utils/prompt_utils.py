@@ -9,7 +9,13 @@ from PIL import Image
 import logging as log
 from transformers.image_utils import load_image
 from .model_utils import get_param_from_file, resolve_media_file_path
-from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data, parse_speech_json_data
+from .parse_json_data import (
+    parse_text_json_data,
+    parse_vlm_json_data,
+    parse_image_json_data,
+    parse_video_json_data,
+    parse_speech_json_data,
+)
 import llm_bench_utils.metrics_print as metrics_print
 from pathlib import Path
 import openvino as ov
@@ -128,10 +134,10 @@ class BenchPrompt(dict):
         dict.__init__(self)
         self._args = args or {}
         # Lazily filled by probe()
-        self._image_size = None   # (width, height) | None
-        self._video_shape = None   # (frames, height, width) | None
-        self._audio_info = None    # (duration_sec, sample_rate) | None
-        self._mask_fraction = None # float | None  cached mask coverage % (extra feedback fix)
+        self._image_size = None  # (width, height) | None
+        self._video_shape = None  # (frames, height, width) | None
+        self._audio_info = None  # (duration_sec, sample_rate) | None
+        self._mask_fraction = None  # float | None  cached mask coverage % (extra feedback fix)
         self._probed = False
         self._load(data)
 
@@ -369,8 +375,7 @@ class BenchPrompter(list):
         self._args = args
         self._load_prompts()
         if not self:
-            raise RuntimeError('==Failure prompts is empty ==')
-
+            raise RuntimeError("==Failure prompts is empty ==")
 
     def get_prefix(self, num, p_idx):
         if num == 0:
@@ -452,7 +457,9 @@ class BenchPrompter(list):
                         if "media" in entry:
                             entry["media"] = resolve_media_file_path(entry.get("media"), args["prompt_file"][0])
                         if "mask_image" in entry:
-                            entry["mask_image"] = resolve_media_file_path(entry.get("mask_image"), args["prompt_file"][0])
+                            entry["mask_image"] = resolve_media_file_path(
+                                entry.get("mask_image"), args["prompt_file"][0]
+                            )
             elif task == "video_gen":
                 # prompt/negative_prompt are plain text — no path resolution needed.
                 raw_list = parse_video_json_data(output_data_list)
@@ -464,17 +471,13 @@ class BenchPrompter(list):
                             # Rename 'media' -> 'audio' so BenchPrompt.probe()
                             # correctly calls _get_audio_info() instead of
                             # _get_image_size() on the audio file path.
-                            entry["audio"] = resolve_media_file_path(
-                                entry.pop("media"), args["prompt_file"][0]
-                            )
+                            entry["audio"] = resolve_media_file_path(entry.pop("media"), args["prompt_file"][0])
             elif task == "ldm_super_resolution":
                 raw_list = parse_image_json_data(output_data_list)
                 if args.get("prompt_file"):
                     for entry in raw_list:
                         if "prompt" in entry:
-                            entry["prompt"] = resolve_media_file_path(
-                                entry["prompt"], args["prompt_file"][0]
-                            )
+                            entry["prompt"] = resolve_media_file_path(entry["prompt"], args["prompt_file"][0])
             else:
                 raw_list = parse_text_json_data(output_data_list)
         else:
@@ -520,7 +523,6 @@ class BenchPrompter(list):
         if prompt_index is None:
             return list(enumerate(self))
         return [(i, self[i]) for i in prompt_index if 0 <= i < len(self)]
-
 
     @property
     def active_indices(self):
