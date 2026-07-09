@@ -403,9 +403,9 @@ def parse_args():
         "--speech-voice",
         type=str,
         default="",
-        help="Speech-generation voice name (for example, af_heart for Kokoro). This is currently used only for Kokoro. \n"
-        "For other TTS models (such as SpeechT5), please use --speaker_embeddings parameter to specify the voice. "
-        "If omitted for Kokoro, the default voice used is 'af_heart'",
+        help="Speech-generation voice name (for example, af_heart for Kokoro or Ethan for Qwen3-Omni). \n"
+        "For SpeechT5, please use --speaker_embeddings parameter to specify the voice. "
+        "If omitted, WWB uses the model-specific default speaker/voice.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",

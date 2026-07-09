@@ -212,7 +212,15 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
     if device.lower() == "gpu":
         device = "cuda"
     device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
-    model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
+    load_kwargs = {
+        "trust_remote_code": trust_remote_code,
+        "device_map": device_map,
+    }
+    # For Qwen3-Omni dense model thinker and talker are currently in different precisions
+    # cast them explicitly to float32 to avoid issues with mixed precision matmul
+    load_kwargs["torch_dtype"] = torch.float32
+
+    model = model_cls.from_pretrained(model_id, **load_kwargs)
 
     if kwargs.get("adapters") is not None:
         model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
