@@ -19,7 +19,6 @@ from optimum.intel.openvino import (
     OVDiffusionPipeline,
     OVModelForSpeechSeq2Seq,
     OVModelForVisualCausalLM,
-    OVModelForMultimodalLM,
     OVPipelineForInpainting,
     OVPipelineForImage2Image,
     OVModelForFeatureExtraction,
@@ -173,7 +172,6 @@ USE_CASES = {
                 "gemma4",
             ]
         ),
-        UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "speech_to_text": [UseCaseSpeech2Text(["whisper"])],
     "image_cls": [UseCaseImageCls(["vit"])],
@@ -252,6 +250,13 @@ USE_CASES = {
     "text_rerank": [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     "text_to_speech": [UseCaseTextToSpeech(["speecht5", "kokoro"])],
 }
+
+try:
+    from optimum.intel.openvino import OVModelForMultimodalLM
+except ImportError:
+    pass
+else:
+    USE_CASES["visual_text_gen"].append(UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM))
 
 PA_ATTENTION_BACKEND = "PA"
 SDPA_ATTENTION_BACKEND = "SDPA"
