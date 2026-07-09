@@ -561,6 +561,7 @@ reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t c
         return seq_id;
     }
     OPENVINO_ASSERT(false, "Cannot reserve linear attention checkpoints: request ", request_id, " was not found.");
+    return std::nullopt;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
