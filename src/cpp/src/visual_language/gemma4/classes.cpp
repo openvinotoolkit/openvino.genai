@@ -153,6 +153,12 @@ void fill_video_metadata(
     size_t total_num_frames,
     const ov::genai::VideoProcessorConfig& video_config
 ) {
+    if (video_metadata.fps == 0.0f) {
+        GENAI_WARN("Gemma4 requires frame timestamps to construct prompts, but fps is not set. "
+               "Defaulting to 24 fps. Please provide VideoMetadata with fps for more accurate results.");
+        video_metadata.fps = DEFAULT_METADATA_FPS;
+    }
+
     if (!video_metadata.frames_indices.empty()) {
         GENAI_WARN("Frames indices already provided in video metadata, skipping Gemma4 model-specific sampling.");
         return;
@@ -162,12 +168,6 @@ void fill_video_metadata(
         video_metadata.frames_indices.resize(total_num_frames);
         std::iota(video_metadata.frames_indices.begin(), video_metadata.frames_indices.end(), 0);
         return;
-    }
-
-    if (video_metadata.fps == 0.0f) {
-        GENAI_WARN("Gemma4 requires frame timestamps to construct prompts, but fps is not set. "
-               "Defaulting to 24 fps. Please provide VideoMetadata with fps for more accurate results.");
-        video_metadata.fps = DEFAULT_METADATA_FPS;
     }
 
     size_t num_frames = video_config.num_frames;
@@ -186,10 +186,9 @@ void fill_video_metadata(
     }
 
     video_metadata.frames_indices.reserve(num_frames);
+    const double step = static_cast<double>(total_num_frames) / static_cast<double>(num_frames);
     for (size_t i = 0; i < num_frames; ++i) {
-        size_t frame_idx = static_cast<size_t>(std::round(
-            static_cast<double>(i) * static_cast<double>(total_num_frames - 1) / static_cast<double>(num_frames - 1)));
-        video_metadata.frames_indices.push_back(frame_idx);
+        video_metadata.frames_indices.push_back(static_cast<size_t>(static_cast<double>(i) * step));
     }
 }
 
@@ -461,11 +460,18 @@ void InputsEmbedderGemma4::expand_video_tags_in_prompt(
     const auto& eoi = m_vlm_config.eoi_token;
     const auto& video_token = m_vlm_config.video_token;
 
+    size_t search_offset = 0;
     for (size_t video_id : videos_sequence) {
         const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
         OPENVINO_ASSERT(encoded_video.frame_num > 0, "Video must contain at least one frame.");
-        OPENVINO_ASSERT(!encoded_video.metadata.frames_indices.empty(),
-            "Video metadata frames_indices must be populated for timestamp calculation.");
+        OPENVINO_ASSERT(encoded_video.metadata.frames_indices.size() >= encoded_video.frame_num,
+            "Video metadata frames_indices size (", encoded_video.metadata.frames_indices.size(),
+            ") must be >= frame_num (", encoded_video.frame_num, ")");
+        OPENVINO_ASSERT(encoded_video.num_video_tokens % encoded_video.frame_num == 0,
+            "num_video_tokens (", encoded_video.num_video_tokens,
+            ") must be divisible by frame_num (", encoded_video.frame_num, ")");
+        OPENVINO_ASSERT(encoded_video.metadata.fps > 0.0f,
+            "Video metadata fps must be positive for timestamp calculation");
 
         const size_t tokens_per_frame = encoded_video.num_video_tokens / encoded_video.frame_num;
 
@@ -492,9 +498,10 @@ void InputsEmbedderGemma4::expand_video_tags_in_prompt(
             }
         }
 
-        const size_t pos = unified_prompt.find(video_token);
+        const size_t pos = unified_prompt.find(video_token, search_offset);
         OPENVINO_ASSERT(pos != std::string::npos, "Failed to find video token in prompt during expansion");
         unified_prompt.replace(pos, video_token.length(), expanded);
+        search_offset = pos + expanded.size();
     }
 }
 
