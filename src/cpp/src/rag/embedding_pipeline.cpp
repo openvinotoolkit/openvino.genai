@@ -103,11 +103,11 @@ public:
             m_mode = Mode::MULTIMODAL;
         } catch (const std::exception& multimodal_error) {
             try {
-                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path,
-                                                                                   device,
-                                                                                   TextEmbeddingPipeline::Config(properties),
-                                                                                   plugin_properties);
-                m_mode = Mode::TEXT_ONLY;
+                const TextEmbeddingPipeline::Config text_config =
+                    properties.count(ov::genai::text_embedding_pipeline_config.name())
+                        ? properties.at(ov::genai::text_embedding_pipeline_config.name()).as<TextEmbeddingPipeline::Config>()
+                        : TextEmbeddingPipeline::Config(properties);
+                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path, device, text_config, plugin_properties);
             } catch (const std::exception& text_error) {
                 OPENVINO_THROW("EmbeddingPipeline initialization failed. "
                                "Multimodal initialization error: ",
@@ -429,15 +429,8 @@ private:
         }
 
         const int64_t* with_data = with_special_tokens.data<const int64_t>();
-        const int64_t* without_data = without_special_tokens.data<const int64_t>();
-        for (size_t idx = 0; idx < without_shape[1]; ++idx) {
-            OPENVINO_ASSERT(with_data[idx] == without_data[idx],
-                            "Tokenizer special tokens are expected only at the end of the prompt");
-        }
-
-        std::vector<int64_t> added_tokens(with_data + without_shape[1], with_data + with_shape[1]);
-        return text + tokenizer.decode(added_tokens, ov::genai::skip_special_tokens(false));
-    }
+        std::vector<int64_t> all_tokens(with_data, with_data + with_shape[1]);
+        return tokenizer.decode(all_tokens, ov::genai::skip_special_tokens(false));
 
     Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
