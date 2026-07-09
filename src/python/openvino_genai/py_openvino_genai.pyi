@@ -1226,12 +1226,12 @@ class EmbeddingPipeline:
     @typing.overload
     def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], **kwargs) -> EmbedResult:
         """
-        Computes embedding vectors for text or a batch of texts with images and videos. Generation arguments (e.g. prompt=...) can be passed as keyword arguments.
+        Computes embedding vectors for text or a batch of texts with images and videos. Generation arguments (e.g. embedding_prompt=...) can be passed as keyword arguments.
         """
     @typing.overload
     def embed(self, **kwargs) -> EmbedResult:
         """
-        Computes embedding vectors using properties (text=..., images=..., videos=..., videos_metadata=..., prompt=...).
+        Computes embedding vectors using properties (text=..., images=..., videos=..., videos_metadata=..., embedding_prompt=...).
         """
 class EncodedGenerationResult:
     """

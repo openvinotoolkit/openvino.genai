@@ -111,7 +111,7 @@ void init_rag_pipelines(py::module_& m) {
             py::arg("videos") = std::vector<ov::Tensor>{},
             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
             "Computes embedding vectors for text or a batch of texts with images and videos. "
-            "Generation arguments (e.g. prompt=...) can be passed as keyword arguments.")
+            "Generation arguments (e.g. embedding_prompt=...) can be passed as keyword arguments.")
         .def(
             "embed",
             [](EmbeddingPipeline& pipe, const py::kwargs& kwargs) -> EmbedResult {
@@ -120,7 +120,7 @@ void init_rag_pipelines(py::module_& m) {
                 return pipe.embed(properties);
             },
             "Computes embedding vectors using properties "
-            "(text=..., images=..., videos=..., videos_metadata=..., prompt=...).")
+            "(text=..., images=..., videos=..., videos_metadata=..., embedding_prompt=...).")
         ;
 
     auto text_embedding_pipeline =

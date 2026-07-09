@@ -39,7 +39,8 @@ public:
      *
      * @param models_path Path to the directory containing model xml/bin files and tokenizer.
      * @param device Device.
-     * @param properties Optional plugin properties to pass to ov::Core::compile_model().
+     * @param properties Optional plugin and pipeline properties to pass to ov::Core::compile_model().
+     * e.g ov::AnyMap{{"CACHE_DIR", "/path/to/cache"}, {ov::genai::text_embedding_config, config}}.
      */
     EmbeddingPipeline(const std::filesystem::path& models_path,
                       const std::string& device,
@@ -99,11 +100,11 @@ static constexpr ov::Property<std::variant<std::string, std::vector<std::string>
  * @brief Instruction for encoding a document or query.
  * If the model has a chat template, the prompt is added to the system message; otherwise it is prepended to the text.
  */
-static constexpr ov::Property<std::string> prompt{"prompt"};
+static constexpr ov::Property<std::string> embedding_prompt{"prompt"};
 
 /**
  * @brief Configuration for the text embedding pipeline.
  */
-static constexpr ov::Property<TextEmbeddingPipeline::Config> text_embedding_pipeline_config{"text_embedding_pipeline_config"};
+static constexpr ov::Property<TextEmbeddingPipeline::Config> text_embedding_config{"text_embedding_config"};
 }  // namespace genai
 }  // namespace ov

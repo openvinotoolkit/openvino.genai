@@ -968,11 +968,11 @@ def test_embedding_constructors(emb_model):
     )
 
     EmbeddingPipeline(models_path, "CPU")
-    EmbeddingPipeline(models_path, "CPU", text_embedding_pipeline_config=TextEmbeddingPipeline.Config())
+    EmbeddingPipeline(models_path, "CPU", text_embedding_config=TextEmbeddingPipeline.Config())
     EmbeddingPipeline(
         models_path,
         "CPU",
-        text_embedding_pipeline_config=TextEmbeddingPipeline.Config(),
+        text_embedding_config=TextEmbeddingPipeline.Config(),
         PERFORMANCE_HINT_NUM_REQUESTS=2,
     )
     EmbeddingPipeline(

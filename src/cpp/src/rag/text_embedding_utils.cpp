@@ -139,7 +139,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(embed_instruction.name());
     properties_copy.erase(query_instruction.name());
     properties_copy.erase(padding_side.name());
-    properties_copy.erase(text_embedding_pipeline_config.name());
+    properties_copy.erase(text_embedding_config.name());
 
     return properties_copy;
 }

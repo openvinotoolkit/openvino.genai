@@ -20,8 +20,8 @@
 namespace {
 
 ov::genai::TextEmbeddingPipeline::Config get_multimodal_config(const ov::AnyMap& properties) {
-    if (properties.count(ov::genai::text_embedding_pipeline_config.name())) {
-        return properties.at(ov::genai::text_embedding_pipeline_config.name())
+    if (properties.count(ov::genai::text_embedding_config.name())) {
+        return properties.at(ov::genai::text_embedding_config.name())
             .as<ov::genai::TextEmbeddingPipeline::Config>();
     }
 
@@ -120,7 +120,7 @@ public:
 
     EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) {
         std::optional<std::string> prompt;
-        utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt);
+        utils::read_anymap_param(properties, ov::genai::embedding_prompt.name(), prompt);
         if (m_mode == Mode::TEXT_ONLY) {
             if (std::holds_alternative<std::string>(text)) {
                 const std::vector<std::string> texts{std::get<std::string>(text)};
@@ -156,7 +156,7 @@ public:
             return embed(text, properties);
         }
         std::optional<std::string> prompt;
-        utils::read_anymap_param(properties, ov::genai::prompt.name(), prompt);
+        utils::read_anymap_param(properties, ov::genai::embedding_prompt.name(), prompt);
 
         OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
                         "videos_metadata size (",
