@@ -490,8 +490,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    if ("gemma4" in ov_model or ov_model == MODEL_GEMMA3N) and ov_backend == "PA" and ov_prompt_lookup:
-        pytest.xfail(f"{ov_model} does not support PA with prompt_lookup=True")
     if "gemma4-unified" in ov_model and ov_backend == "PA":
         pytest.xfail("gemma4-unified does not support PA. Ticket: 189844")
 
@@ -1499,11 +1497,6 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
-    if (
-        "gemma4-moe" in ov_pipe_model.model_id or "gemma4-31B" in ov_pipe_model.model_id
-    ) and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("Outputs don't match for Gemma4 models with token_type_ids and PA. CVS-189726")
-
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
