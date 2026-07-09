@@ -175,6 +175,27 @@ def get_argparser():
         type=str,
         help="Path to store memory consumption logs and chart.",
     )
+    parser.add_argument(
+        "--memory_sampler",
+        default="5",
+        choices=["5", "W"],
+        required=False,
+        help="Memory sampler implementation to use when process-based monitoring is active\n"
+        "(--memory_consumption 3 or 4).\n"
+        "Possible values:\n"
+        "  5 (default) — MemorySampler5: cross-platform sampler built on top of\n"
+        "                psutil.memory_full_info(). Collects RSS, USS, Private\n"
+        "                and system-wide RAM. Works on Linux, macOS and Windows.\n"
+        "  W           — MemorySamplerW: Windows-native sampler that calls\n"
+        "                GetProcessMemoryInfo (psapi.dll) directly. Collects\n"
+        "                Working Set, Private Bytes, Page-File Usage and\n"
+        "                system-wide RAM. When the optional *wmi* package is\n"
+        "                installed (pip install wmi), one additional gpu_<index>\n"
+        "                metric is emitted per physical GPU adapter, sourced from\n"
+        "                Win32_VideoController.DedicatedUsage (Windows 10 1803+).\n"
+        "                Falls back to MemorySampler5 automatically when used on\n"
+        "                a non-Windows platform.",
+    )
     parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
     parser.add_argument(
         "--num_beams",

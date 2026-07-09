@@ -1298,16 +1298,26 @@ class MemorySampler5(MemorySampler):
 
 
 class MemoryMarkerMonitor(list):
-    def __init__(self, marker_queue, process_id, sampling_interval, path_prefix):
-        # Select the platform-appropriate sampler:
-        #   - Windows: MemorySamplerW uses GetProcessMemoryInfo (psapi.dll) directly,
-#              providing WorkingSet, PrivateBytes and PagefileUsage natively.
-#              When the wmi module is available, per-GPU dedicated memory
-#              (gpu_<index> metrics) is also collected via Win32_VideoController.
-        #   - Linux / macOS: MemorySampler5 uses psutil.memory_full_info() which
-        #              provides RSS, USS and Private bytes via /proc (Linux) or
-        #              task_info() (macOS).
-        if sys.platform == "win32":
+    def __init__(self, marker_queue, process_id, sampling_interval, path_prefix, sampler_type="5"):
+        # Select the sampler based on *sampler_type* (the value of --memory_sampler):
+        #   "5" → MemorySampler5: cross-platform, uses psutil.memory_full_info().
+        #          Provides RSS, USS, Private and system-wide RAM.
+        #          Works on Linux, macOS and Windows.
+        #   "W" → MemorySamplerW: Windows-native, calls GetProcessMemoryInfo
+        #          (psapi.dll) directly.  Provides Working Set, Private Bytes,
+        #          Page-File Usage and system-wide RAM.  When the optional *wmi*
+        #          package is installed, per-GPU dedicated memory (gpu_<index>)
+        #          is also collected via Win32_VideoController.DedicatedUsage.
+        #          If "W" is requested on a non-Windows platform the code falls
+        #          back to MemorySampler5 with a warning.
+        _use_w = sampler_type == "W"
+        if _use_w and sys.platform != "win32":
+            log.warning(
+                "Memory worker: --memory_sampler W requested but MemorySamplerW is "
+                "only available on Windows — falling back to MemorySampler5."
+            )
+            _use_w = False
+        if _use_w:
             log.info("Memory worker: MemorySamplerW (Windows native GetProcessMemoryInfo) init...")
             self.sampler = MemorySamplerW(process_id)
         else:
@@ -1451,13 +1461,14 @@ class MemoryMarkerHandler:
         cooldown = args.memory_consumption_cooldown
         interval = args.memory_consumption_interval
         report_path = args.memory_consumption_dir
+        sampler_type = getattr(args, "memory_sampler", "5")
 
         parent_pid = os.getpid()
         self.marker_queue = multiprocessing.Queue(maxsize=1000)
         self.s_event = multiprocessing.Event()
 
         time.sleep(max(cooldown or 0, 1))  # needed for some machines
-        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event
+        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event, sampler_type
         self.background_process = mProcess(target=self.background_worker, args=pargs, daemon=True)
         self.background_process.start()
         self.update_marker("start")
@@ -1514,9 +1525,9 @@ class MemoryMarkerHandler:
                 time.sleep(0.1)
 
     @staticmethod
-    def background_worker(conn, pid, interval, path, mode, cooldown, s_event):
+    def background_worker(conn, pid, interval, path, mode, cooldown, s_event, sampler_type="5"):
         try:
-            mmm = MemoryMarkerMonitor(conn, pid, interval, path)
+            mmm = MemoryMarkerMonitor(conn, pid, interval, path, sampler_type)
         except Exception:
             print("Error in background worker:", file=sys.stderr)
             traceback.print_exc()
