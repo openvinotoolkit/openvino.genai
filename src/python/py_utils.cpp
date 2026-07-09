@@ -426,7 +426,11 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                || py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj)
                || py::isinstance<ov::genai::StructuredOutputConfig::Tag>(py_obj)
                || py::isinstance<ov::genai::StructuredOutputConfig::TriggeredTags>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::TagsWithSeparator>(py_obj)) {
+               || py::isinstance<ov::genai::StructuredOutputConfig::TagsWithSeparator>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::Optional>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::Plus>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::Star>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::Repeat>(py_obj)) {
         // For structural_tags_config property, wrap in variant
         if (property_name == "structural_tags_config") {
             std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value = 
@@ -596,6 +600,14 @@ StructuredOutputConfig::StructuralTag py_obj_to_structural_tag(const py::object&
         return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>>(py_obj);
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::TagsWithSeparator>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Optional>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Optional>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Plus>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Plus>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Star>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Star>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Repeat>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Repeat>>(py_obj);
     } else {
         OPENVINO_THROW(py_obj.get_type(), " type isn't supported for StructuralTag: ", py::str(py_obj));
     }

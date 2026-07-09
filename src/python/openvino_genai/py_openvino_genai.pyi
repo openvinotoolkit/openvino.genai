@@ -3802,15 +3802,22 @@ class StructuredOutputConfig:
         """
         
             AnyText structural tag allows any text for the portion of output
-            covered by this tag.
+            covered by this tag. The excludes list prevents selected strings
+            from appearing in that free-text span.
         """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
-        def __init__(self) -> None:
+        def __init__(self, excludes: collections.abc.Sequence[str] = []) -> None:
             ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
+            ...
+        @property
+        def excludes(self) -> list[str]:
+            ...
+        @excludes.setter
+        def excludes(self, arg0: collections.abc.Sequence[str]) -> None:
             ...
     class Concat:
         """
@@ -3834,10 +3841,10 @@ class StructuredOutputConfig:
         def __repr__(self) -> str:
             ...
         @property
-        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]:
+        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat]:
             ...
         @elements.setter
-        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]) -> None:
+        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat]) -> None:
             ...
     class ConstString:
         """
@@ -3873,11 +3880,45 @@ class StructuredOutputConfig:
         
             JSONSchema structural tag constrains output to a JSON document that
             must conform to the provided JSON Schema string.
+        
+            Optional parameters:
+            style: one of "json", "qwen_xml", "minimax_xml", "deepseek_xml", or "glm_xml".
+            any_order: whether object properties may be generated in any order.
         """
+        any_order: bool
+        style: str
         value: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
-        def __init__(self, arg0: str) -> None:
+        def __init__(self, value: str, style: str = 'json', any_order: bool = False) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Optional:
+        """
+        
+            Optional composes a structural tag that can appear zero or one time.
+        """
+        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Plus:
+        """
+        
+            Plus composes a structural tag that can appear one or more times.
+        """
+        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat) -> None:
             ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
@@ -3913,6 +3954,46 @@ class StructuredOutputConfig:
             ...
         def __repr__(self) -> str:
             ...
+    class Repeat:
+        """
+        
+            Repeat composes a structural tag that can appear between min and max times.
+        """
+        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat, min: typing.SupportsInt, max: typing.SupportsInt) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def max(self) -> int:
+            ...
+        @max.setter
+        def max(self, arg0: typing.SupportsInt) -> None:
+            ...
+        @property
+        def min(self) -> int:
+            ...
+        @min.setter
+        def min(self, arg0: typing.SupportsInt) -> None:
+            ...
+    class Star:
+        """
+        
+            Star composes a structural tag that can appear zero or more times.
+        """
+        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
     class Tag:
         """
         
@@ -3924,11 +4005,11 @@ class StructuredOutputConfig:
             Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output.
         """
         begin: str
-        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator
+        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat
         end: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
-        def __init__(self, begin: str, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator, end: str) -> None:
+        def __init__(self, begin: str, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat, end: str) -> None:
             ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
@@ -3973,11 +4054,17 @@ class StructuredOutputConfig:
         stop_after_first: bool
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
-        def __init__(self, triggers: collections.abc.Sequence[str], tags: collections.abc.Sequence[StructuredOutputConfig.Tag], at_least_one: bool = False, stop_after_first: bool = False) -> None:
+        def __init__(self, triggers: collections.abc.Sequence[str], tags: collections.abc.Sequence[StructuredOutputConfig.Tag], at_least_one: bool = False, stop_after_first: bool = False, excludes: collections.abc.Sequence[str] = []) -> None:
             ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
+            ...
+        @property
+        def excludes(self) -> list[str]:
+            ...
+        @excludes.setter
+        def excludes(self, arg0: collections.abc.Sequence[str]) -> None:
             ...
         @property
         def tags(self) -> list[StructuredOutputConfig.Tag]:
@@ -4011,10 +4098,10 @@ class StructuredOutputConfig:
         def __repr__(self) -> str:
             ...
         @property
-        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]:
+        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat]:
             ...
         @elements.setter
-        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]) -> None:
+        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat]) -> None:
             ...
     @typing.overload
     def __init__(self) -> None:
@@ -4025,12 +4112,12 @@ class StructuredOutputConfig:
     def __repr__(self) -> str:
         ...
     @property
-    def compound_grammar(self) -> str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | None:
+    def compound_grammar(self) -> str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat | None:
         """
         Compound grammar for structured output generation
         """
     @compound_grammar.setter
-    def compound_grammar(self, arg0: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | None) -> None:
+    def compound_grammar(self, arg0: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
