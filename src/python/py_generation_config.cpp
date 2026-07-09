@@ -18,6 +18,7 @@ using ov::genai::StructuralTagItem;
 using ov::genai::StructuralTagsConfig;
 using ov::genai::StructuredOutputConfig;
 using ov::genai::GenerationConfig;
+using ov::genai::JsonContainer;
 
 namespace {
 
@@ -428,6 +429,30 @@ void init_generation_config(py::module_& m) {
         .def(py::init([](py::kwargs kwargs) {
             return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs));
         }))
+        .def_static("from_model_format",
+            [](const std::string& model_format,
+               py::object tools,
+               py::object tool_choice,
+               bool reasoning,
+               bool any_order,
+               bool exclude_special_tokens) {
+                const JsonContainer tools_json = pyutils::py_object_to_json_container(tools);
+                const JsonContainer tool_choice_json =
+                    tool_choice.is_none() ? JsonContainer(nullptr) : pyutils::py_object_to_json_container(tool_choice);
+                const std::string options_json =
+                    std::string("{\"reasoning\": ") + (reasoning ? "true" : "false") +
+                    ", \"any_order\": " + (any_order ? "true" : "false") +
+                    ", \"exclude_special_tokens\": " + (exclude_special_tokens ? "true" : "false") + "}";
+                return StructuredOutputConfig::from_model_format(
+                    model_format, tools_json, tool_choice_json, JsonContainer::from_json_string(options_json));
+            },
+            py::arg("model_format"),
+            py::arg("tools") = py::list(),
+            py::arg("tool_choice") = py::str("auto"),
+            py::arg("reasoning") = true,
+            py::arg("any_order") = false,
+            py::arg("exclude_special_tokens") = true,
+            "Build a StructuredOutputConfig from a built-in model structural tag format.")
         .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
         .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
         .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation")

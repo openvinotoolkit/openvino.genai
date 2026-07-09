@@ -17,6 +17,7 @@
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/parsers.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace ov {
 namespace genai {
@@ -103,6 +104,20 @@ public:
     */
     StructuredOutputConfig(const ov::AnyMap& properties);
     StructuredOutputConfig() = default;
+
+    /**
+     * @brief Build a structured output configuration for a registered model tool-call format.
+     *
+     * @param model_format One of the built-in model format keys, such as "llama", "qwen_3", or "harmony".
+     * @param tools OpenAI-compatible tools JSON array. Function tools use
+     *        {"type":"function","function":{...}}; builtin tools use {"type":..., "name":..., "parameters":...}.
+     * @param tool_choice OpenAI-compatible tool choice. Missing/null is treated as "auto".
+     * @param options JSON object with optional booleans: reasoning, any_order, exclude_special_tokens.
+     */
+    static StructuredOutputConfig from_model_format(const std::string& model_format,
+                                                    const JsonContainer& tools = JsonContainer::array(),
+                                                    const JsonContainer& tool_choice = JsonContainer("auto"),
+                                                    const JsonContainer& options = JsonContainer::object());
 
     static std::string format_for_json(const std::string& input) {
         std::ostringstream stream;
@@ -460,14 +475,26 @@ public:
         std::string begin;
         StructuralTag content;
         std::string end;
+        std::vector<std::string> end_alternatives;
 
         Tag() = default;
         Tag(const std::string& begin, StructuralTag content, const std::string& end) : begin(begin), content(std::move(content)), end(end) {};
+        Tag(const std::string& begin, StructuralTag content, const std::vector<std::string>& end_alternatives)
+            : begin(begin),
+              content(std::move(content)),
+              end(end_alternatives.empty() ? std::string() : end_alternatives.front()),
+              end_alternatives(end_alternatives) {};
         std::string to_json() const {
             std::ostringstream oss;
             oss << "{\"type\": \"tag\", \"begin\": " << format_for_json(begin) << ", \"content\": " <<
                    std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) <<
-                   ", \"end\": " << format_for_json(end) << "}";
+                   ", \"end\": ";
+            if (end_alternatives.empty()) {
+                oss << format_for_json(end);
+            } else {
+                oss << vector_to_json_array(end_alternatives);
+            }
+            oss << "}";
             return oss.str();
         };
         std::string to_string() const {
@@ -478,7 +505,8 @@ public:
             return oss.str();
         };
         bool operator==(const Tag& other) const {
-            return begin == other.begin && content == other.content && end == other.end;
+            return begin == other.begin && content == other.content && end == other.end &&
+                   end_alternatives == other.end_alternatives;
         }
     };
 
