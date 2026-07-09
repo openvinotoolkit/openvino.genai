@@ -154,6 +154,12 @@ private:
     size_t m_pred_position = 0;   // running absolute position within a frame
     std::vector<ov::Tensor> m_pred_past_k;  // per-layer host KV buffers
     std::vector<ov::Tensor> m_pred_past_v;
+    // Pre-allocated reusable tensors for infer_predictor (avoid repeated allocations)
+    ov::Tensor m_pred_attn;   // attention_mask, reused across calls
+    ov::Tensor m_pred_pos;    // position_ids, reused across calls
+    // Pre-allocated reusable tensors for infer_predictor_embedding (avoid repeated allocations)
+    ov::Tensor m_pred_emb_ids;  // token ids input, reused across calls
+    ov::Tensor m_pred_emb_step;  // generation_steps input, reused across calls
     ov::InferRequest m_speech_tokenizer_decoder;
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;

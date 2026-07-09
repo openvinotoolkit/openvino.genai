@@ -471,6 +471,15 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
                                                       predictor_device,
                                                       predictor_properties);
             m_perf_device["code_predictor"] = device_of(m_talker_code_predictor, predictor_device);
+
+            // Cache KV tensors infer request.
+            // These are set once and reused via memset/memcpy without further set_tensor calls.
+            for (size_t i = 0; i < m_pred_num_layers; ++i) {
+                m_pred_past_k.emplace_back(m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".key"));
+                m_pred_past_v.emplace_back(m_talker_code_predictor.get_tensor("past_key_values." + std::to_string(i) + ".value"));
+            }
+            m_pred_attn = m_talker_code_predictor.get_tensor("attention_mask");
+            m_pred_pos = m_talker_code_predictor.get_tensor("position_ids");
         } else {
             // The legacy stateful/NPUW predictor path has been removed; only the
             // static all-heads layout is supported. Fail fast here with an
@@ -485,6 +494,18 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
                                                     roles::CODE_PREDICTOR_EMBEDDING);
     m_perf_device["code_predictor_embedding"] =
         device_of(m_talker_code_predictor_embedding, default_device_for_role(device, m_is_npu, roles::CODE_PREDICTOR_EMBEDDING));
+
+    // Bind fixed-shape input tensors for the code-predictor embedding once. Unlike
+    // the code predictor (reshaped to static), this embedding model may be dynamic,
+    // so a get_tensor() default can have zero-sized dims and set_shape() on it does
+    // not reliably re-bind the new shape into the request. We instead own buffers
+    // with the exact shapes the original per-call path used (input_ids=[1,1],
+    // generation_steps=scalar) and set_tensor them a single time here. Subsequent
+    // inferences only rewrite the data in place -- no per-call set_tensor.
+    m_pred_emb_ids = ov::Tensor(ov::element::i64, ov::Shape{1, 1});
+    m_pred_emb_step = ov::Tensor(ov::element::i64, ov::Shape{});
+    m_talker_code_predictor_embedding.set_tensor("input_ids", m_pred_emb_ids);
+    m_talker_code_predictor_embedding.set_tensor("generation_steps", m_pred_emb_step);
     {
         // The speech-tokenizer decoder is always fed fixed-size [1, DECODER_TRACE_LEN,
         // num_quantizers] code chunks (decode_speech_tokenizer zero-pads shorter
@@ -875,8 +896,11 @@ ov::Tensor Qwen3TTSImpl::infer_talker(const ov::Tensor& inputs_embeds,
     } else {
         run_and_time([&]{ m_talker.infer(); }, "talker_generate", m_perf_ms, m_perf_calls);
     }
-    auto logits = clone_tensor(m_talker.get_tensor("logits"));
-    return logits;
+    // Return the request's own logits output tensor (no clone). Valid until the
+    // next m_talker.infer(). The decode loop samples from it before issuing the
+    // next talker infer, so this is safe. Do NOT reorder a talker infer ahead of
+    // consuming a previously returned logits tensor.
+    return m_talker.get_tensor("logits");
 }
 
 ov::Tensor Qwen3TTSImpl::infer_talker_hidden(const ov::Tensor& inputs_embeds,
@@ -996,15 +1020,11 @@ void Qwen3TTSImpl::init_static_predictor_meta(const std::shared_ptr<ov::Model>& 
                     m_pred_num_layers, " kv_len=", m_pred_kv_len, " past_len=", m_pred_past_len);
 
     // Allocate persistent host KV buffers; reset_predictor_state() zero-fills them.
+    // Tensors will be cached from InferRequest after compilation.
     m_pred_past_k.clear();
     m_pred_past_v.clear();
     m_pred_past_k.reserve(m_pred_num_layers);
     m_pred_past_v.reserve(m_pred_num_layers);
-    const ov::Shape kv_shape{1, m_pred_n_kv, m_pred_past_len, m_pred_head_dim};
-    for (size_t i = 0; i < m_pred_num_layers; ++i) {
-        m_pred_past_k.emplace_back(ov::element::f32, kv_shape);
-        m_pred_past_v.emplace_back(ov::element::f32, kv_shape);
-    }
     reset_predictor_state();
 
     std::cout << "static code predictor: layers=" << m_pred_num_layers
@@ -1036,27 +1056,20 @@ ov::Tensor Qwen3TTSImpl::infer_predictor(const ov::Tensor& inputs_embeds, bool r
 
     m_talker_code_predictor.set_tensor("inputs_embeds", inputs_embeds);
 
-    // attention_mask: valid kv slots are the p real past tokens (slots 0..p-1)
-    // plus the current token, which the graph appends at slot index past_len.
-    ov::Tensor attn(ov::element::i64, ov::Shape{1, m_pred_kv_len});
-    int64_t* attn_ptr = attn.data<int64_t>();
+    // Update attention_mask data in-place (tensor already set on infer request).
+    // Valid kv slots are the p real past tokens (slots 0..p-1) plus the current
+    // token, which the graph appends at slot index past_len.
+    int64_t* attn_ptr = m_pred_attn.data<int64_t>();
     std::fill_n(attn_ptr, m_pred_kv_len, static_cast<int64_t>(0));
     for (size_t j = 0; j < p; ++j) {
         attn_ptr[j] = 1;
     }
     attn_ptr[m_pred_past_len] = 1;  // current token slot (= kv_len - 1)
-    m_talker_code_predictor.set_tensor("attention_mask", attn);
 
-    // position_ids: current token's RoPE position (2D [1,1] for the predictor).
-    ov::Tensor pos(ov::element::i64, ov::Shape{1, 1});
-    pos.data<int64_t>()[0] = static_cast<int64_t>(p);
-    m_talker_code_predictor.set_tensor("position_ids", pos);
+    // Update position_ids data in-place (tensor already set on infer request).
+    m_pred_pos.data<int64_t>()[0] = static_cast<int64_t>(p);
 
-    for (size_t i = 0; i < m_pred_num_layers; ++i) {
-        m_talker_code_predictor.set_tensor("past_key_values." + std::to_string(i) + ".key", m_pred_past_k[i]);
-        m_talker_code_predictor.set_tensor("past_key_values." + std::to_string(i) + ".value", m_pred_past_v[i]);
-    }
-
+    // Past KV tensors already set on infer request; no need to call set_tensor.
     run_and_time([&]{ m_talker_code_predictor.infer(); }, "code_predictor", m_perf_ms, m_perf_calls);
 
     // Copy the freshly produced token into host past slot p so the next step
@@ -1090,35 +1103,36 @@ ov::Tensor Qwen3TTSImpl::infer_predictor(const ov::Tensor& inputs_embeds, bool r
     }
     ++m_pred_position;
 
-    return clone_tensor(m_talker_code_predictor.get_tensor("logits"));  // [num_heads,1,1,V]
+    return m_talker_code_predictor.get_tensor("logits");  // [num_heads,1,1,V]
 }
 
 // Slice a single code-group head out of the stacked all-heads logits
 // [num_heads, 1, 1, V] into a [1, 1, V] tensor that sample_token_from_logits
 // expects. `head` is the 0-based MTP head index (= code_group - 1).
+// The head slice is the outermost dimension, so its V elements are contiguous
+// in memory; we wrap that memory in a zero-copy 3D view (no allocation/copy).
+// Safe because the caller keeps `all_logits` alive while the result is used.
 ov::Tensor Qwen3TTSImpl::select_predictor_head(const ov::Tensor& all_logits, size_t head) const {
     const auto& shape = all_logits.get_shape();  // [num_heads,1,1,V]
     OPENVINO_ASSERT(shape.size() == 4 && head < shape[0],
                     "select_predictor_head: bad shape/head (heads=", shape[0], " head=", head, ")");
     const size_t vocab = shape[3];
-    ov::Tensor out(all_logits.get_element_type(), ov::Shape{1, 1, vocab});
-    std::memcpy(out.data(),
-                static_cast<const uint8_t*>(all_logits.data()) + head * vocab * all_logits.get_element_type().size(),
-                vocab * all_logits.get_element_type().size());
-    return out;
+    const auto et = all_logits.get_element_type();
+    auto* base = static_cast<uint8_t*>(const_cast<void*>(all_logits.data()));
+    void* head_ptr = base + head * vocab * et.size();
+    return ov::Tensor(et, ov::Shape{1, 1, vocab}, head_ptr);  // zero-copy view [1,1,V]
 }
 
 ov::Tensor Qwen3TTSImpl::infer_predictor_embedding(int64_t token_id, int64_t generation_step) {
-    ov::Tensor ids(ov::element::i64, ov::Shape{1, 1});
-    ids.data<int64_t>()[0] = token_id;
-    ov::Tensor generation_steps(ov::element::i64, ov::Shape{});
-    generation_steps.data<int64_t>()[0] = generation_step;
+    // Update pre-allocated id tensors in-place (tensors already set on infer request).
+    m_pred_emb_ids.data<int64_t>()[0] = token_id;
+    m_pred_emb_step.data<int64_t>()[0] = generation_step;
 
-    m_talker_code_predictor_embedding.set_tensor("input_ids", ids);
-    m_talker_code_predictor_embedding.set_tensor("generation_steps", generation_steps);
     run_and_time([&]{ m_talker_code_predictor_embedding.infer(); }, "code_predictor_embedding", m_perf_ms, m_perf_calls);
-    auto out = clone_tensor(m_talker_code_predictor_embedding.get_output_tensor(0));
-    return out;
+    // Return the request's own output tensor (no clone). Valid until the next
+    // m_talker_code_predictor_embedding.infer(). Every caller consumes it (copies
+    // or uses it as the predictor input) before the next embedding infer.
+    return m_talker_code_predictor_embedding.get_output_tensor(0);
 }
 
 ov::Tensor Qwen3TTSImpl::infer_predictor_embedding_seq(const std::vector<int64_t>& token_ids, int64_t generation_step) {
@@ -1245,6 +1259,10 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
                                                          int64_t first_codec_token,
                                                          const SpeechGenerationConfig& generation_config,
                                                          std::mt19937& rng) {
+    // Measure wall-clock time and inference time separately to compute overhead per-call.
+    auto wall_start = std::chrono::high_resolution_clock::now();
+    auto code_predictor_ms_before = m_perf_ms["code_predictor"];
+
     SpeechGenerationConfig predictor_config = generation_config;
     predictor_config.do_sample = generation_config.subtalker_dosample;
     predictor_config.top_k = generation_config.subtalker_top_k;
@@ -1266,7 +1284,15 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     // The model emits ALL code-group heads stacked as logits [num_heads,1,1,V]; we pick
     // head index (group-1) on the host via select_predictor_head. Group `g` is predicted
     // from the hidden state produced AFTER consuming token (g-1)'s embedding.
-    auto first_id_hidden = infer_embedding(m_talker_embedding, first_codec_token);
+
+    // === First embedding lookup ===
+    ov::Tensor first_id_hidden;
+    run_and_time(
+        [&]() { first_id_hidden = infer_embedding(m_talker_embedding, first_codec_token); },
+        "codec_groups_first_embedding",
+        m_perf_ms,
+        m_perf_calls);
+
     ov::Shape ph_shape = past_hidden.get_shape();
     ov::Shape hid_shape = first_id_hidden.get_shape();
     OPENVINO_ASSERT(ph_shape.size() == 3 && hid_shape.size() == 3, "Unexpected hidden shape in code predictor prefill");
@@ -1276,7 +1302,9 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     const size_t prefill_tokens = ph_shape[1] + hid_shape[1];  // talker context + first-id (normally 2)
 
     auto feed_token = [&](const float* src, bool reset) -> ov::Tensor {
-        ov::Tensor tok(ov::element::f32, ov::Shape{1, 1, hidden});
+        // Use pre-allocated inputs_embeds tensor from infer_request,
+        // instead of allocating our own unaligned memory. Copy data directly into it.
+        ov::Tensor tok = m_talker_code_predictor.get_tensor("inputs_embeds");
         std::memcpy(tok.data(), src, hidden * sizeof(float));
         return infer_predictor(tok, reset);
     };
@@ -1286,38 +1314,72 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
     const float* ph_ptr = past_hidden.data<const float>();
     const float* hid_ptr = first_id_hidden.data<const float>();
     ov::Tensor logits;
-    for (size_t t = 0; t < prefill_tokens; ++t) {
-        const bool is_last_ctx = (t + 1 == ph_shape[1]);  // last talker-context token
-        const float* src = (t < ph_shape[1]) ? (ph_ptr + t * hidden) : hid_ptr;
-        logits = feed_token(src, /*reset=*/t == 0);
-        (void)is_last_ctx;
-    }
+    run_and_time(
+        [&]() {
+            for (size_t t = 0; t < prefill_tokens; ++t) {
+                const bool is_last_ctx = (t + 1 == ph_shape[1]);  // last talker-context token
+                const float* src = (t < ph_shape[1]) ? (ph_ptr + t * hidden) : hid_ptr;
+                logits = feed_token(src, /*reset=*/t == 0);
+                (void)is_last_ctx;
+            }
+        },
+        "codec_groups_prefill_loop",
+        m_perf_ms,
+        m_perf_calls);
 
     std::vector<int64_t> generated;
     generated.reserve(m_ids.num_code_groups - 1);
 
     std::vector<bool> predictor_suppressed(2048, false);
-    // Group 1 from head 0 of the last prefill token's logits.
-    auto head0 = select_predictor_head(logits, 0);
-    int64_t next = sample_token_from_logits(head0, predictor_config, generated, predictor_suppressed, rng);
+
+    // === Prefill sampling: select head 0 and sample group 1 ===
+    int64_t next;
+    run_and_time(
+        [&]() {
+            auto head0 = select_predictor_head(logits, 0);
+            next = sample_token_from_logits(head0, predictor_config, generated, predictor_suppressed, rng);
+        },
+        "codec_groups_prefill_sampling",
+        m_perf_ms,
+        m_perf_calls);
     generated.push_back(next);
 
-    for (size_t g = 1; g < m_ids.num_code_groups - 1; ++g) {
-        // Embed the previous residual token, advance one position, predict group g+1
-        // from head index g.
-        auto emb = infer_predictor_embedding(next, static_cast<int64_t>(g - 1));
-        OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
-                        "Code predictor residual embedding must be a single token");
-        auto all_lg = infer_predictor(emb, /*reset=*/false);
-        auto head_lg = select_predictor_head(all_lg, g);
-        next = sample_token_from_logits(head_lg, predictor_config, generated, predictor_suppressed, rng);
-        generated.push_back(next);
-    }
+    // === Residual loops: embedding + head selection + sampling per group ===
+    run_and_time(
+        [&]() {
+            for (size_t g = 1; g < m_ids.num_code_groups - 1; ++g) {
+                // Embed the previous residual token, advance one position, predict group g+1
+                // from head index g.
+                auto emb = infer_predictor_embedding(next, static_cast<int64_t>(g - 1));
+                OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
+                                "Code predictor residual embedding must be a single token");
+                auto all_lg = infer_predictor(emb, /*reset=*/false);
+                auto head_lg = select_predictor_head(all_lg, g);
+                next = sample_token_from_logits(head_lg, predictor_config, generated, predictor_suppressed, rng);
+                generated.push_back(next);
+            }
+        },
+        "codec_groups_residual_loop",
+        m_perf_ms,
+        m_perf_calls);
 
     groups.insert(groups.end(), generated.begin(), generated.end());
     while (groups.size() < m_ids.num_code_groups) {
         groups.push_back(m_ids.codec_pad_id);
     }
+
+    // Record timing: total wall-clock time and nested inference time separately.
+    auto wall_end = std::chrono::high_resolution_clock::now();
+    double wall_ms = std::chrono::duration<double, std::milli>(wall_end - wall_start).count();
+    double code_predictor_ms_after = m_perf_ms["code_predictor"];
+    double inference_ms = code_predictor_ms_after - code_predictor_ms_before;
+    double overhead_ms = wall_ms - inference_ms;
+
+    m_perf_ms["generate_codec_groups"] += wall_ms;
+    m_perf_calls["generate_codec_groups"]++;
+    m_perf_ms["codec_groups_overhead"] += overhead_ms;
+    m_perf_calls["codec_groups_overhead"]++;
+
     return groups;
 }
 
@@ -1331,7 +1393,9 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     auto prefill_mask = make_attention_mask(talker_prefill.get_shape()[1]);
     auto prefill_pos = make_position_ids_prefill(talker_prefill.get_shape()[1]);
     auto logits = infer_talker(talker_prefill, prefill_mask, prefill_pos, true);
-    auto hidden_states = clone_tensor(m_talker.get_tensor("hidden_states"));
+    // Hold the talker's own hidden_states output (no clone). We only read its last
+    // row into past_hidden below, which happens before the next m_talker.infer().
+    auto hidden_states = m_talker.get_tensor("hidden_states");
 
     std::vector<int64_t> generated_main;
     std::vector<int64_t> all_codes;
@@ -1380,7 +1444,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
         auto attn = make_attention_mask(absolute_pos + 1);
         auto pos = make_position_ids_decode(absolute_pos);
         logits = infer_talker(token_embed, attn, pos, false);
-        hidden_states = clone_tensor(m_talker.get_tensor("hidden_states"));
+        hidden_states = m_talker.get_tensor("hidden_states");
         ++absolute_pos;
     }
 
