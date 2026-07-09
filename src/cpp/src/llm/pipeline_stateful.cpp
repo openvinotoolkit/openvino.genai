@@ -61,16 +61,29 @@ public:
     ov::genai::StreamingStatus write(int64_t token) override {
         ov::genai::StreamingStatus status = m_base ? m_base->write(token) : ov::genai::StreamingStatus::RUNNING;
         ++m_total_len;
+        m_last_write_stopped_by_us = false;
         // total_len == threshold + 1  <=>  the just-appended token's 0-based position
         // (total_len - 1) equals `threshold`.
         if (status == ov::genai::StreamingStatus::RUNNING && m_total_len == m_threshold + 1) {
             m_threshold_reached = true;
+            m_last_write_stopped_by_us = true;
             return ov::genai::StreamingStatus::STOP;
         }
         return status;
     }
 
+    // get_lm_encoded_results() calls end() once per call. If OUR own threshold check is what
+    // just stopped generation, a continuation phase follows, so forwarding end() here would
+    // close the wrapped streamer prematurely - suppress it; the call site flushes it via
+    // flush_end() once it knows no continuation will run after all. Otherwise (generation
+    // ended for any other reason - EOS, cancel, etc. - with no continuation to follow),
+    // forward immediately as usual.
     void end() override {
+        if (!m_last_write_stopped_by_us)
+            flush_end();
+    }
+
+    void flush_end() {
         if (m_base)
             m_base->end();
     }
@@ -84,6 +97,7 @@ private:
     size_t m_total_len;
     size_t m_threshold;
     bool m_threshold_reached = false;
+    bool m_last_write_stopped_by_us = false;
 };
 
 }  // namespace
@@ -126,6 +140,7 @@ void StatefulLLMPipeline::set_longrope_threshold(const std::filesystem::path& mo
     if (models_path.empty()) {
         m_longrope_threshold = std::nullopt;
         m_force_longrope_reprefill = false;
+        m_longrope_reprefill_pending = false;
         return;
     }
     m_longrope_threshold = detect_longrope_threshold(models_path);
@@ -134,6 +149,13 @@ void StatefulLLMPipeline::set_longrope_threshold(const std::filesystem::path& mo
 bool StatefulLLMPipeline::should_force_longrope_reprefill(size_t new_total_len) {
     if (!m_is_npu || !m_longrope_threshold.has_value())
         return false;
+    // A previous call's mid-generation crossing landed on the very last allowed token, so no
+    // continuation re-prefill ran then - force one now, unconditionally, regardless of the
+    // transition check below (the cache is known-inconsistent until this fires once).
+    if (m_longrope_reprefill_pending) {
+        m_longrope_reprefill_pending = false;
+        return true;
+    }
     const size_t prev_total_len = m_cache_state.get_state().size();
     return prev_total_len < *m_longrope_threshold && new_total_len >= *m_longrope_threshold;
 }
@@ -393,6 +415,9 @@ DecodedResults StatefulLLMPipeline::generate(
         reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_cache_state.reset_state();
+        // A brand new/unrelated conversation - any pending LongRoPE reprefill obligation from
+        // whatever conversation was previously in the cache no longer applies.
+        m_longrope_reprefill_pending = false;
     }
 
     m_history = history;
@@ -442,6 +467,7 @@ EncodedResults StatefulLLMPipeline::generate(
         reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_cache_state.reset_state();
+        m_longrope_reprefill_pending = false;
     }
 
     auto start_time = std::chrono::steady_clock::now();
@@ -621,7 +647,15 @@ EncodedResults StatefulLLMPipeline::generate(
         size_t remaining_new_tokens = total_max_new_tokens > generated_so_far.size() ?
             total_max_new_tokens - generated_so_far.size() : 0;
 
-        if (remaining_new_tokens > 0) {
+        if (remaining_new_tokens == 0) {
+            // The threshold-crossing token was also the last one allowed by max_new_tokens, so
+            // no continuation phase runs below - the KV cache is left holding that token still
+            // encoded under the pre-crossing RoPE factor. Nothing else will call end() on the
+            // wrapped streamer, so flush it now. Record that a reprefill is still owed so the
+            // very next call for this conversation forces one (see should_force_longrope_reprefill()).
+            threshold_streamer->flush_end();
+            m_longrope_reprefill_pending = true;
+        } else {
             PerfMetrics first_phase_metrics = finish_info.results.perf_metrics;
 
             reset_state();
@@ -641,7 +675,7 @@ EncodedResults StatefulLLMPipeline::generate(
                 std::make_shared<SequenceGroup>(0, full_ids, continuation_config)
             };
 
-            finish_info = get_lm_encoded_results(m_model_runner, continuation_input_ids, continuation_attention_mask, streamer_ptr, m_sampler,
+            finish_info = get_lm_encoded_results(m_model_runner, continuation_input_ids, continuation_attention_mask, effective_streamer_ptr, m_sampler,
                                                   continuation_requests, continuation_position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
 
             // PerfMetrics::operator+ does not merge m_new_token_times, so capture the
@@ -733,6 +767,7 @@ void StatefulLLMPipeline::finish_chat() {
         m_history.clear();
         m_tokenized_chat_history.clear();
         m_cache_state.reset_state();
+        m_longrope_reprefill_pending = false;
     }
 }
 
