@@ -35,6 +35,13 @@ using namespace ov::genai;
 
 namespace {
 
+std::string get_class_name(const std::filesystem::path& root_dir) {
+    const std::filesystem::path model_index_path = root_dir / "model_index.json";
+    std::ifstream file(model_index_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
+    return nlohmann::json::parse(file)["_class_name"].get<std::string>();
+}
+
 const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt,            // negative_prompt
     1,                       // num_videos_per_prompt
@@ -489,8 +496,6 @@ public:
 
         nlohmann::json data = nlohmann::json::parse(file);
 
-        OPENVINO_ASSERT("LTXPipeline" == data["_class_name"].get<std::string>());
-
         m_scheduler = cast_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string t5_text_encoder = data["text_encoder"][1].get<std::string>();
@@ -558,10 +563,6 @@ public:
         m_compile_properties = properties;
         m_is_compiled = true;
         update_adapters_from_properties(properties, m_generation_config.adapters);
-        const std::filesystem::path model_index_path = models_dir / "model_index.json";
-        std::ifstream file(model_index_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
-        OPENVINO_ASSERT("LTXPipeline" == nlohmann::json::parse(file)["_class_name"].get<std::string>());
         m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
