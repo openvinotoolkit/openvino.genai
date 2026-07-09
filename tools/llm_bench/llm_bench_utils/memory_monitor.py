@@ -884,7 +884,12 @@ class MemorySampler(dict, SamplerTiming):
 
 
 # ---------------------------------------------------------------------------
-# Windows-specific ctypes setup for MemorySamplerW
+
+# Sentinels — always defined so non-Windows imports never raise NameError.
+_wmi_available = False
+_wmi_module    = None
+
+# Windows-specific ctypes + WMI setup for MemorySamplerW
 #
 # All objects are defined at module level so they are created only once and
 # reused across every collect() call, keeping sampling overhead minimal.
@@ -898,6 +903,10 @@ class MemorySampler(dict, SamplerTiming):
 #
 # PROCESS_MEMORY_COUNTERS_EX lives in psapi.dll (also re-exported by
 # kernel32.dll on modern Windows) and mirrors the C struct from psapi.h.
+#
+# WMI (Windows Management Instrumentation) is used for GPU memory monitoring.
+# The wmi module queries Win32_VideoController.DedicatedUsage (Win10 1803+)
+# to obtain per-adapter dedicated GPU memory currently in use.
 # ---------------------------------------------------------------------------
 if sys.platform == "win32":
     import ctypes
@@ -956,6 +965,23 @@ if sys.platform == "win32":
         _wintypes.DWORD,                               # cb  (struct size)
     ]
 
+    # ── WMI — GPU memory monitoring ──────────────────────────────────────────
+    # The wmi module is optional: if it is absent, GPU metrics are silently
+    # skipped.  Install with:  pip install wmi
+    try:
+        import wmi as _wmi_module  # type: ignore[import]
+        _wmi_available = True
+        log.debug(
+            "MemorySamplerW: wmi module loaded "
+            "— GPU memory metrics (gpu_<index>) enabled."
+        )
+    except ImportError:
+        log.warning(
+            "MemorySamplerW: wmi module not found "
+            "— GPU memory metrics (gpu_<index>) will be disabled. "
+            "Install it with:  pip install wmi"
+        )
+
 
 class MemorySamplerW(MemorySampler):
     """
@@ -1011,9 +1037,38 @@ class MemorySamplerW(MemorySampler):
       guard above) so the per-call overhead is limited to one
       ``OpenProcess`` + ``GetProcessMemoryInfo`` + ``CloseHandle`` round
       trip per PID.
+
+    gpu_<index>
+        **Dedicated GPU memory in use** for the adapter at position
+        *<index>* in the WMI ``Win32_VideoController`` enumeration (e.g.
+        ``gpu_0``, ``gpu_1``).  Sourced from the ``DedicatedUsage`` WMI
+        field (bytes, Windows 10 1803+).  One metric is registered per
+        physical GPU detected at construction time.  Vendor-agnostic:
+        works with NVIDIA, AMD, and Intel Arc adapters alike.
+        Present only when the ``wmi`` package is installed and at least
+        one GPU adapter is detected.
+
+    Notes
+    -----
+    * Only available on ``sys.platform == "win32"``.  The
+      :meth:`_query_win_mem` helper returns ``(0, 0, 0)`` on other
+      platforms so the class is safe to import everywhere.
+    * DLL handles and the ``PROCESS_MEMORY_COUNTERS_EX`` ctypes structure
+      are defined at module level (inside the ``if sys.platform == "win32"``
+      guard above) so the per-call overhead is limited to one
+      ``OpenProcess`` + ``GetProcessMemoryInfo`` + ``CloseHandle`` round
+      trip per PID.
+    * The WMI connection (``wmi.WMI()`` instance) is established once in
+      ``__init__`` and cached in ``self._wmi_conn``; re-using it avoids
+      the COM initialisation overhead on every :meth:`collect` call.
+      Note that WMI polling itself can take 100–500 ms per call — see
+      ``~/gpu-mem-research.txt`` section 3 for details.
     """
 
     chunk_size = 8192
+    # Base metrics — fixed, vendor-independent process/system counters.
+    # gpu_<index> entries are appended dynamically in __init__ after WMI
+    # GPU discovery, so this dict must NOT be mutated directly.
     metrics = OrderedDict(
         [
             # fmt: off
@@ -1027,12 +1082,89 @@ class MemorySamplerW(MemorySampler):
     )
 
     def __init__(self, process_id):
-        MemorySampler.__init__(self)
         self.process_id = process_id
 
+        # Build an *instance-level* metrics OrderedDict so that gpu_<index>
+        # entries (whose count is only known at runtime) can be appended
+        # without mutating the class-level dict shared by all instances.
+        self.metrics = OrderedDict(MemorySamplerW.metrics)
+
+        # ── WMI GPU discovery ────────────────────────────────────────────
+        # Establish the WMI connection once and cache it.  Each detected GPU
+        # adapter gets a dedicated gpu_<index> metric slot appended to
+        # self.metrics in enumeration order.
+        self._wmi_conn  = None
+        self._gpu_count = 0
+        if _wmi_available:
+            try:
+                self._wmi_conn  = _wmi_module.WMI()
+                self._gpu_count = len(self._wmi_conn.Win32_VideoController())
+                if self._gpu_count > 0:
+                    log.info(
+                        f"MemorySamplerW: WMI detected {self._gpu_count} GPU adapter(s) "
+                        f"— metrics: gpu_0 … gpu_{self._gpu_count - 1}."
+                    )
+                else:
+                    log.info(
+                        "MemorySamplerW: WMI found no GPU adapters "
+                        "— gpu_<index> metrics skipped."
+                    )
+            except Exception as exc:
+                log.warning(
+                    f"MemorySamplerW: WMI GPU detection failed ({exc}) "
+                    "— gpu_<index> metrics disabled."
+                )
+
+        for i in range(self._gpu_count):
+            self.metrics[f"gpu_{i}"] = {
+                "denom":  1_048_576,   # bytes → MiB
+                "unit":   "MiB",
+                "digits": 3,
+                "cv":     True,
+            }
+
+        # Call parent __init__ *after* self.metrics is fully populated so
+        # that make_header() already sees all entries, including gpu_N ones.
+        MemorySampler.__init__(self)
+
     # ------------------------------------------------------------------
-    # Internal helper
+    # Internal helpers
     # ------------------------------------------------------------------
+
+    def _collect_gpu_mem(self):
+        """
+        Query dedicated GPU memory currently in use for every detected
+        adapter via the WMI ``Win32_VideoController`` class.
+
+        The ``DedicatedUsage`` field (Windows 10 version 1803 and later)
+        reports the number of bytes of dedicated video memory currently
+        consumed by the adapter.  The cached ``self._wmi_conn`` is reused
+        on every call to avoid COM re-initialisation overhead.
+
+        One value is returned **per GPU index**, in the same order as the
+        ``gpu_<index>`` metrics registered in ``self.metrics``.  This
+        guarantees that the tuple length always matches what
+        :meth:`aggregate_and_format` expects.
+
+        :returns: A tuple of ``int`` values in **bytes**, one per GPU.
+                  Returns an empty tuple when WMI is unavailable or no
+                  adapters were found.  Returns a tuple of zeros (length
+                  ``self._gpu_count``) when the WMI query fails at
+                  runtime, so sampling continues without crashing.
+        """
+        if self._wmi_conn is None or self._gpu_count == 0:
+            return ()
+        try:
+            return tuple(
+                int(getattr(gpu, "DedicatedUsage", None) or 0)
+                for gpu in self._wmi_conn.Win32_VideoController()
+            )
+        except Exception as exc:
+            log.debug(
+                f"MemorySamplerW: WMI GPU memory query failed ({exc})"
+                " — returning zeros."
+            )
+            return tuple(0 for _ in range(self._gpu_count))
 
     @staticmethod
     def _query_win_mem(pid):
@@ -1123,7 +1255,8 @@ class MemorySamplerW(MemorySampler):
         sys_mem  = vm.total - vm.available
         nsys_mem = 100.0 * sys_mem / vm.total
 
-        vals = wset_total, priv_total, pagefile_total, sys_mem, nsys_mem
+        # ── GPU memory (one value per adapter, via WMI) ──────────────────
+        vals = (wset_total, priv_total, pagefile_total, sys_mem, nsys_mem, *self._collect_gpu_mem())
         return self.aggregate_and_format(marker, vals)
 
 
@@ -1168,7 +1301,9 @@ class MemoryMarkerMonitor(list):
     def __init__(self, marker_queue, process_id, sampling_interval, path_prefix):
         # Select the platform-appropriate sampler:
         #   - Windows: MemorySamplerW uses GetProcessMemoryInfo (psapi.dll) directly,
-        #              providing WorkingSet, PrivateBytes and PagefileUsage natively.
+#              providing WorkingSet, PrivateBytes and PagefileUsage natively.
+#              When the wmi module is available, per-GPU dedicated memory
+#              (gpu_<index> metrics) is also collected via Win32_VideoController.
         #   - Linux / macOS: MemorySampler5 uses psutil.memory_full_info() which
         #              provides RSS, USS and Private bytes via /proc (Linux) or
         #              task_info() (macOS).
