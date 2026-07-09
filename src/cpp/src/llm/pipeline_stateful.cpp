@@ -17,17 +17,15 @@
 
 namespace {
 
-// Step 1 (still not the final fix - see models/phi-4-mini/LONGROPE_GENERATION_BORDER_BUG.md)
-// towards a less invasive mitigation for the LongRoPE short/long-factor KV-cache-consistency
-// bug: once the cumulative sequence length reaches this boundary (== the model's
-// original_max_position_embeddings), the model's internal RoPE branch selection flips
-// (short -> long factor) but previously cached KV entries remain encoded with the OLD
-// (short) factor, corrupting attention.
+// Mitigates a LongRoPE short/long-factor KV-cache-consistency issue: once the cumulative
+// sequence length reaches original_max_position_embeddings, the model's RoPE branch
+// selection switches from the "short" to the "long" factor table, but previously cached KV
+// entries remain encoded with the "short" factor, corrupting attention. NPU only (see the
+// m_is_npu checks at the two call sites below).
 //
-// Reads the threshold straight out of the model's config.json instead of hardcoding it -
-// present whenever the model uses LongRoPE (HF "rope_parameters"/"rope_scaling" with
-// rope_type/type == "longrope", e.g. Phi-4-mini). Returns std::nullopt for any other model,
-// or if config.json isn't present/parseable.
+// Detects the threshold from the model's config.json ("rope_parameters", rope_type/type ==
+// "longrope", e.g. Phi-4-mini). Returns std::nullopt for models that don't use LongRoPE, or
+// if config.json isn't present/parseable.
 std::optional<size_t> detect_longrope_threshold(const std::filesystem::path& models_path) {
     std::ifstream config_file(models_path / "config.json");
     if (!config_file.is_open())
@@ -53,10 +51,8 @@ std::optional<size_t> detect_longrope_threshold(const std::filesystem::path& mod
 
 // Wraps the caller-supplied streamer (if any) and, in addition to forwarding every token to
 // it, requests ov::genai::StreamingStatus::STOP once the newly generated token's 0-based
-// position reaches `threshold` - i.e. it is the very first token that falls into the "long"
-// RoPE regime. This lets the call site (StatefulLLMPipeline::generate) detect the crossing
-// via threshold_reached() and re-run generation from a fully re-prefilled, consistent KV-cache,
-// instead of reaching into get_lm_encoded_results()'s generation loop directly.
+// position reaches `threshold`. Lets the caller detect a mid-generation LongRoPE crossing via
+// threshold_reached() and re-run generation from a fully re-prefilled, consistent KV-cache.
 class LongRopeThresholdStreamer : public ov::genai::StreamerBase {
 public:
     LongRopeThresholdStreamer(std::shared_ptr<ov::genai::StreamerBase> base, size_t prompt_length, size_t threshold)
@@ -127,18 +123,16 @@ StatefulLLMPipeline::StatefulLLMPipeline(
 }
 
 void StatefulLLMPipeline::set_longrope_threshold(const std::filesystem::path& models_path) {
-    if (models_path.empty())
+    if (models_path.empty()) {
+        m_longrope_threshold = std::nullopt;
+        m_force_longrope_reprefill = false;
         return;
+    }
     m_longrope_threshold = detect_longrope_threshold(models_path);
-    // Deliberately NOT forcing m_use_full_chat_history here (unlike the NPU case above) -
-    // that would force a full reset + full-history resend on EVERY turn, which is wasteful
-    // for CPU/GPU incremental caching. Instead, should_force_longrope_reprefill() decides,
-    // per turn, whether THIS turn actually crosses the threshold and only then forces a
-    // one-off full reprefill - see its use in the StringInputs/ChatHistory generate() overloads.
 }
 
 bool StatefulLLMPipeline::should_force_longrope_reprefill(size_t new_total_len) {
-    if (!m_longrope_threshold.has_value())
+    if (!m_is_npu || !m_longrope_threshold.has_value())
         return false;
     const size_t prev_total_len = m_cache_state.get_state().size();
     return prev_total_len < *m_longrope_threshold && new_total_len >= *m_longrope_threshold;
@@ -439,11 +433,9 @@ EncodedResults StatefulLLMPipeline::generate(
         OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.last()["role"] == "user",
                         "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
 
-    // Single-use: set by the StringInputs/ChatHistory overloads right before calling into this
-    // one, when THIS turn's cumulative history was detected to cross the LongRoPE threshold.
-    // Consumed here so it doesn't leak into unrelated future calls (e.g. direct EncodedInputs
-    // calls, which never set it and so always get false/incremental-caching behavior).
-    const bool force_longrope_reprefill = m_force_longrope_reprefill;
+    // Set by the StringInputs/ChatHistory overloads before delegating here; consumed once so
+    // it doesn't leak into unrelated future calls.
+    bool force_longrope_reprefill = m_force_longrope_reprefill;
     m_force_longrope_reprefill = false;
 
     if (!is_chat_conversation) {
@@ -485,8 +477,12 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
+    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
+        // Called directly with EncodedInputs (not via StringInputs/ChatHistory), so compute
+        // the crossing check here instead of relying on the caller to have set it.
+        force_longrope_reprefill = force_longrope_reprefill || should_force_longrope_reprefill(m_tokenized_chat_history.size());
+    }
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);
 
@@ -602,7 +598,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     std::shared_ptr<LongRopeThresholdStreamer> threshold_streamer;
     std::shared_ptr<StreamerBase> effective_streamer_ptr = streamer_ptr;
-    if (m_longrope_threshold.has_value()) {
+    if (m_is_npu && m_longrope_threshold.has_value()) {
         threshold_streamer = std::make_shared<LongRopeThresholdStreamer>(
             streamer_ptr, concatenated_attention_mask.get_shape().at(1), *m_longrope_threshold);
         effective_streamer_ptr = threshold_streamer;
@@ -612,12 +608,11 @@ EncodedResults StatefulLLMPipeline::generate(
                                                                                 requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
 
     if (threshold_streamer && threshold_streamer->threshold_reached()) {
-        // The generation loop was stopped right after the token whose 0-based position
-        // reached the LongRoPE threshold (that token was already sampled/decided - it's part
-        // of the result). Drop the KV cache and re-run a full prefill over the entire
-        // history (original prompt + everything generated so far), so all cached keys get
-        // consistently re-encoded under the "long" RoPE factor, then continue generating
-        // the remaining budget of tokens.
+        // Generation was stopped right after the token at the LongRoPE threshold position
+        // (that token was already sampled - keep it). Reset the KV cache and re-run a full
+        // prefill over the whole history (original prompt + everything generated so far) so
+        // all keys are consistently re-encoded under the "long" RoPE factor, then continue
+        // generating the remaining token budget.
         TokenIds generated_so_far = finish_info.results.tokens.at(0);
         TokenIds full_ids = requests.at(0)->get_prompt_ids();
         full_ids.insert(full_ids.end(), generated_so_far.begin(), generated_so_far.end());
@@ -649,19 +644,13 @@ EncodedResults StatefulLLMPipeline::generate(
             finish_info = get_lm_encoded_results(m_model_runner, continuation_input_ids, continuation_attention_mask, streamer_ptr, m_sampler,
                                                   continuation_requests, continuation_position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
 
-            // PerfMetrics::operator+ (used below) does NOT merge m_new_token_times - it's
-            // designed for combining already-evaluated benchmark stats, where that raw field
-            // is no longer needed. We still need the FULL, correctly-ordered sequence for the
-            // final evaluate_statistics() call (at the end of this function) to compute
-            // ttft/tpot/num_generated_tokens correctly for the whole call, not just the first
-            // phase - so capture the continuation's own entries before they get overwritten by
-            // the merge below, and re-append them manually afterwards.
+            // PerfMetrics::operator+ does not merge m_new_token_times, so capture the
+            // continuation's entries before they're overwritten by the merge below and
+            // re-append them afterwards.
             auto continuation_new_token_times = finish_info.results.perf_metrics.raw_metrics.m_new_token_times;
 
-            // Stitch the two phases together: tokens/perf-metrics generated before the reset,
-            // followed by the post-reset continuation (PerfMetrics::operator+ concatenates
-            // the underlying raw counters, same mechanism used elsewhere to combine metrics
-            // across multiple internal generate() calls).
+            // Stitch tokens/perf-metrics generated before the reset with the post-reset
+            // continuation.
             finish_info.results.tokens[0].insert(finish_info.results.tokens[0].begin(), generated_so_far.begin(), generated_so_far.end());
             finish_info.results.perf_metrics = first_phase_metrics + finish_info.results.perf_metrics;
 
@@ -669,14 +658,10 @@ EncodedResults StatefulLLMPipeline::generate(
             merged_new_token_times.insert(merged_new_token_times.end(),
                 continuation_new_token_times.begin(), continuation_new_token_times.end());
 
-            // m_inference_durations is a single running TOTAL per get_lm_encoded_results()
-            // call (unlike the other, genuinely per-step raw counters), so operator+ above left
-            // it holding both phases' individual totals as two separate entries - which would
-            // then be AVERAGED by calc_mean_and_std() instead of summed, under-reporting total
-            // inference time. Collapse it back into one entry (the sum) so the re-prefill's
-            // time is fully counted towards the reported total inference duration for this
-            // generate() call (the per-token TPOT distribution is intentionally left as-is -
-            // it already includes the re-prefill as one long inter-token gap).
+            // m_inference_durations is a single running total per get_lm_encoded_results()
+            // call, so operator+ above left it holding both phases' totals as two separate
+            // entries, which calc_mean_and_std() would average instead of sum. Collapse it
+            // back into one summed entry.
             auto& merged_inference_durations = finish_info.results.perf_metrics.raw_metrics.m_inference_durations;
             if (merged_inference_durations.size() > 1) {
                 MicroSeconds total_inference_duration{0.0f};
