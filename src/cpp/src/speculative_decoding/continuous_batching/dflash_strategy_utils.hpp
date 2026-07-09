@@ -54,7 +54,7 @@ public:
         m_chunks.reserve(INITIAL_CHUNK_CAPACITY);
     }
 
-    void append(const ov::Tensor& hidden_delta) {
+    void append(const ov::Tensor& hidden_delta, bool copy_data = false) {
         if (!hidden_delta || hidden_delta.get_size() == 0) {
             return;
         }
@@ -66,7 +66,13 @@ public:
             return;
         }
 
-        m_chunks.push_back(hidden_delta);
+        if (copy_data) {
+            ov::Tensor owned(hidden_delta.get_element_type(), shape);
+            copy_tensor_bytes(hidden_delta, owned);
+            m_chunks.push_back(owned);
+        } else {
+            m_chunks.push_back(hidden_delta);
+        }
         m_token_count += token_count;
     }
 

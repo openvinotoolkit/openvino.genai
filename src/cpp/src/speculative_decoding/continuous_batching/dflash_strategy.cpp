@@ -323,8 +323,9 @@ GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_gene
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::append_pending_hidden_delta(RequestState& state,
-                                                                                const ov::Tensor& hidden_delta) {
-    state.pending_hidden_deltas.append(hidden_delta);
+                                                                                const ov::Tensor& hidden_delta,
+                                                                                bool copy_data) {
+    state.pending_hidden_deltas.append(hidden_delta, copy_data);
 }
 
 bool ContinuousBatchingPipeline::DFlashDecodingImpl::has_pending_hidden_delta(const RequestState& state) {
@@ -425,15 +426,19 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     std::map<uint64_t, size_t> draft_generated_by_request;
     const auto draft_start = std::chrono::steady_clock::now();
     for (auto& [request_id, state] : m_request_states) {
-        if (state.finished ||
-            !has_pending_hidden_delta(state) ||
-            state.generated_tokens.empty()) {
+        if (state.finished) {
+            clear_pending_hidden_delta(state);
+            state.draft_generated = 0;
+            continue;
+        }
+        if (!has_pending_hidden_delta(state) || state.generated_tokens.empty()) {
             state.draft_generated = 0;
             continue;
         }
 
         const size_t generated_len = state.generated_tokens.size();
         if (generated_len >= state.generation_config.max_new_tokens) {
+            clear_pending_hidden_delta(state);
             state.draft_generated = 0;
             continue;
         }
@@ -445,6 +450,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         const size_t validation_count =
             dflash_cb::validation_candidate_count(draft_count, generated_len, state.generation_config.max_new_tokens);
         if (validation_count == 0) {
+            clear_pending_hidden_delta(state);
             state.draft_generated = 0;
             continue;
         }
@@ -575,7 +581,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
 
         auto hidden_delta = dflash_cb::truncate_normalized_hidden_state_from_end(generated_sequence.hidden_states,
                                                                                  accounting.rejected);
-        append_pending_hidden_delta(state, hidden_delta);
+        append_pending_hidden_delta(state, hidden_delta, generated_sequence.token_ids.empty());
         state.generated_tokens = generated_sequence.token_ids;
         m_draft->sync_generated_tokens(state.generated_tokens);
         state.draft_generated = 0;
