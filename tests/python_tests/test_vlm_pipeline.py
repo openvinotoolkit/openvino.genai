@@ -463,6 +463,11 @@ def _get_ov_model(model_id: str) -> str:
         else:
             processor.audio_tokenizer = None
 
+        # FIXME Remove this once video processor patch_size is aligned with image processor patch_size for tiny-random-gemma4.
+        # https://huggingface.co/optimum-intel-internal-testing/tiny-random-gemma4/discussions/1
+        if model_id == "optimum-intel-internal-testing/tiny-random-gemma4":
+            processor.video_processor.patch_size = processor.image_processor.patch_size
+
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
