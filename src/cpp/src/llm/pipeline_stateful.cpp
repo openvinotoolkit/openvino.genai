@@ -655,6 +655,16 @@ EncodedResults StatefulLLMPipeline::generate(
             // very next call for this conversation forces one (see should_force_longrope_reprefill()).
             threshold_streamer->flush_end();
             m_longrope_reprefill_pending = true;
+
+            // The internal LongRopeThresholdStreamer's own STOP is what stopped generation
+            // (StreamingStatus::STOP -> GenerationStatus::STOP via GenerationStream::stop()),
+            // even though generation actually completed normally by exhausting max_new_tokens
+            // (that's exactly what remaining_new_tokens == 0 means). The per-sequence
+            // GenerationFinishReason is unaffected (the sampler already marks it LENGTH before
+            // this streamer ever runs, and that's only overwritten when still NONE) - but the
+            // overall stream status needs the same normalization so it doesn't leak our
+            // internal implementation detail to callers.
+            finish_info.streaming_finish_status = ov::genai::GenerationStatus::FINISHED;
         } else {
             PerfMetrics first_phase_metrics = finish_info.results.perf_metrics;
 
