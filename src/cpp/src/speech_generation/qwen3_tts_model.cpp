@@ -63,27 +63,16 @@ constexpr const char* SPEAKER_ENCODER = "speaker_encoder";
 constexpr const char* MEL_PREPROCESS = "mel_preprocess";
 }  // namespace roles
 
-// Default device policy for a component. For non-NPU targets every component
-// stays on the requested device (preserving existing CPU/GPU behavior). On NPU
-// only the talker language model, code predictor, and the speech-tokenizer decoder run on the
-// accelerator:
-//   * the talker uses the dedicated NPUW static-reshape path
-//     (compile_talker_for_npu);
-//   * the code predictor is exported as a static all-heads graph with an
-//     explicit fixed-size KV cache, so it is compiled directly (no NPUW) and
-//     its KV cache is managed on the host (see infer_predictor);
-//   * the decoder is always fed fixed-size code chunks (DECODER_TRACE_LEN
-//     frames -- decode_speech_tokenizer zero-pads shorter chunks), so it can be
-//     trivially reshaped to a single static shape.
-// Every other component is fed data-dependent input shapes -- the
-// embedding/projection models see variable-length token sequences and the
-// speaker/speech-tokenizer encoders and mel preprocessing depend on the
-// reference-audio length -- so they cannot be reshaped to one static shape and
-// default to CPU. Callers can still override any component through the
-// per-device `ov::device::properties` map.
+// Default device policy for a component. The Qwen3-TTS pipeline can place each submodel on a different device,
+// and so here we define the default device for each role.
 std::string default_device_for_role(const std::string& base_device, bool is_npu, const std::string& role) {
     // Keep predictor embedding on CPU (short, data-dependent lookup path).
     if (role == roles::CODE_PREDICTOR_EMBEDDING) {
+        return "CPU";
+    }
+
+    // There seems to be accuracy issues running code predictor on GPU, so force it to CPU for now.
+    if( base_device.find("GPU") != std::string::npos && role == roles::CODE_PREDICTOR) {
         return "CPU";
     }
 
