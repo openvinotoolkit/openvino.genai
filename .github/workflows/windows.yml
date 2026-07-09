@@ -45,11 +45,15 @@ jobs:
         with:
           sparse-checkout: .github
 
+      - name: Create Smart CI dependency constraints
+        run: echo "fastcore==1.12.1" > "$RUNNER_TEMP/smart-ci-constraints.txt"
+        shell: bash
+
       - name: Get affected components
         id: smart_ci
         uses: openvinotoolkit/openvino/.github/actions/smart-ci@46c59b29a3cbdaf30e9eaacf5c04686b196d9a0f
         env:
-          PIP_CONSTRAINT: ${{ github.workspace }}/.github/smart-ci-constraints.txt
+          PIP_CONSTRAINT: ${{ runner.temp }}/smart-ci-constraints.txt
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
