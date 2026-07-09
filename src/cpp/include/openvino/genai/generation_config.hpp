@@ -84,6 +84,12 @@ public:
     std::vector<std::string> triggers;
 };
 
+struct OPENVINO_GENAI_EXPORTS ModelStructuralTagOptions {
+    bool reasoning = true;
+    bool any_order = false;
+    bool exclude_special_tokens = true;
+};
+
 /* 
 * Structured output parameters:
 * @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
@@ -112,12 +118,12 @@ public:
      * @param tools OpenAI-compatible tools JSON array. Function tools use
      *        {"type":"function","function":{...}}; builtin tools use {"type":..., "name":..., "parameters":...}.
      * @param tool_choice OpenAI-compatible tool choice. Missing/null is treated as "auto".
-     * @param options JSON object with optional booleans: reasoning, any_order, exclude_special_tokens.
+     * @param options Options controlling reasoning tags, JSON object property ordering, and special-token exclusion.
      */
     static StructuredOutputConfig from_model_format(const std::string& model_format,
                                                     const JsonContainer& tools = JsonContainer::array(),
                                                     const JsonContainer& tool_choice = JsonContainer("auto"),
-                                                    const JsonContainer& options = JsonContainer::object());
+                                                    const ModelStructuralTagOptions& options = {});
 
     static std::string format_for_json(const std::string& input) {
         std::ostringstream stream;

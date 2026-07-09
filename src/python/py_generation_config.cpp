@@ -19,6 +19,7 @@ using ov::genai::StructuralTagsConfig;
 using ov::genai::StructuredOutputConfig;
 using ov::genai::GenerationConfig;
 using ov::genai::JsonContainer;
+using ov::genai::ModelStructuralTagOptions;
 
 namespace {
 
@@ -439,12 +440,13 @@ void init_generation_config(py::module_& m) {
                 const JsonContainer tools_json = pyutils::py_object_to_json_container(tools);
                 const JsonContainer tool_choice_json =
                     tool_choice.is_none() ? JsonContainer(nullptr) : pyutils::py_object_to_json_container(tool_choice);
-                const std::string options_json =
-                    std::string("{\"reasoning\": ") + (reasoning ? "true" : "false") +
-                    ", \"any_order\": " + (any_order ? "true" : "false") +
-                    ", \"exclude_special_tokens\": " + (exclude_special_tokens ? "true" : "false") + "}";
+                ModelStructuralTagOptions options{
+                    reasoning,
+                    any_order,
+                    exclude_special_tokens
+                };
                 return StructuredOutputConfig::from_model_format(
-                    model_format, tools_json, tool_choice_json, JsonContainer::from_json_string(options_json));
+                    model_format, tools_json, tool_choice_json, options);
             },
             py::arg("model_format"),
             py::arg("tools") = py::list(),

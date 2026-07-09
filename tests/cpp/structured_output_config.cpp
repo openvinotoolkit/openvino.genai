@@ -40,11 +40,10 @@ JsonContainer weather_tools() {
     ])");
 }
 
-JsonContainer options(bool reasoning = true, bool any_order = false, bool exclude_special_tokens = true) {
-    return JsonContainer::from_json_string(
-        std::string("{\"reasoning\": ") + (reasoning ? "true" : "false") +
-        ", \"any_order\": " + (any_order ? "true" : "false") +
-        ", \"exclude_special_tokens\": " + (exclude_special_tokens ? "true" : "false") + "}");
+ov::genai::ModelStructuralTagOptions options(bool reasoning = true,
+                                             bool any_order = false,
+                                             bool exclude_special_tokens = true) {
+    return {reasoning, any_order, exclude_special_tokens};
 }
 
 std::string structural_tag_json(const StructuredOutputConfig& config) {

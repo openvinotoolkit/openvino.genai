@@ -46,11 +46,7 @@ struct NormalizedTools {
     ToolChoice choice = "auto";
 };
 
-struct ModelFormatOptions {
-    bool reasoning = true;
-    bool any_order = false;
-    bool exclude_special_tokens = true;
-};
+using ModelFormatOptions = ModelStructuralTagOptions;
 
 const Json& as_json(const JsonContainer& value) {
     return *static_cast<const Json*>(value._get_json_value_ptr());
@@ -144,23 +140,6 @@ std::shared_ptr<SOC::TriggeredTags> triggered(const std::vector<std::string>& tr
                                               const std::vector<std::string>& excludes,
                                               bool at_least_one = false) {
     return std::make_shared<SOC::TriggeredTags>(triggers, tags, at_least_one, false, excludes);
-}
-
-ModelFormatOptions parse_options(const JsonContainer& options_container) {
-    const Json& options = as_json(options_container);
-    OPENVINO_ASSERT(options.is_object(), "options must be a JSON object, but got ", json_type(options), ".");
-    ModelFormatOptions result;
-    auto read_bool = [&](const std::string& key, bool& target) {
-        if (!options.contains(key) || options.at(key).is_null()) {
-            return;
-        }
-        OPENVINO_ASSERT(options.at(key).is_boolean(), "options.", key, " must be a boolean.");
-        target = options.at(key).get<bool>();
-    };
-    read_bool("reasoning", result.reasoning);
-    read_bool("any_order", result.any_order);
-    read_bool("exclude_special_tokens", result.exclude_special_tokens);
-    return result;
 }
 
 FunctionTool parse_function_tool(const Json& tool) {
@@ -951,7 +930,7 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
 StructuredOutputConfig StructuredOutputConfig::from_model_format(const std::string& model_format,
                                                                   const JsonContainer& tools,
                                                                   const JsonContainer& tool_choice,
-                                                                  const JsonContainer& options) {
+                                                                  const ModelStructuralTagOptions& options) {
     const auto& builders = registry();
     const auto it = builders.find(model_format);
     OPENVINO_ASSERT(it != builders.end(),
@@ -959,7 +938,7 @@ StructuredOutputConfig StructuredOutputConfig::from_model_format(const std::stri
                     ", supported types: ", supported_model_formats_string());
 
     StructuredOutputConfig config;
-    config.structural_tags_config = it->second(normalize_tool_choice(tools, tool_choice), parse_options(options));
+    config.structural_tags_config = it->second(normalize_tool_choice(tools, tool_choice), options);
     return config;
 }
 
