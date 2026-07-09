@@ -8,6 +8,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <numeric>
+#include <type_traits>
 
 #include <openvino/op/convert.hpp>
 #include <openvino/op/maximum.hpp>
