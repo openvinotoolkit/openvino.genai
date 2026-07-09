@@ -431,6 +431,7 @@ private:
         const int64_t* with_data = with_special_tokens.data<const int64_t>();
         std::vector<int64_t> all_tokens(with_data, with_data + with_shape[1]);
         return tokenizer.decode(all_tokens, ov::genai::skip_special_tokens(false));
+    }
 
     Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
