@@ -16,12 +16,21 @@ if TYPE_CHECKING:
 
 class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
     def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
-        if chat_mode:
-            raise ValueError("gemma4_unified does not currently support chat mode.")
         super().__init__(chat_mode)
 
     def update_chat_history_with_answer(self, answer):
-        pass
+        self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
+
+    def _preprocess_non_chat_template(
+        self,
+        text: str,
+        image: Optional[Union["Image", list["Image"]]] = None,
+        processor: Optional[AutoImageProcessor] = None,
+    ):
+        if image is not None:
+            image_token = getattr(processor, "image_token", "<|image|>")
+            text = f"{image_token}{text}"
+        return processor(images=image, text=text, return_tensors="pt")
 
     def preprocess_inputs(
         self,
@@ -40,11 +49,40 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
-        if image is not None:
-            image_token = getattr(processor, "image_token", "<|image|>")
-            text = f"{image_token}{text}"
+        self.update_images(image)
+        if getattr(processor, "chat_template", None) is None:
+            return self._preprocess_non_chat_template(text, self.images, processor)
 
-        return processor(images=image, text=text, return_tensors="pt")
+        content = []
+        if image is not None:
+            if not isinstance(image, list):
+                image = [image]
+            content.extend({"type": "image", "image": img} for img in image)
+        content.append({"type": "text", "text": text})
+
+        new_message = {"role": "user", "content": content}
+        if self.chat_mode:
+            self.chat_history.append(new_message)
+            messages = self.chat_history
+        else:
+            messages = [new_message]
+
+        # switch off add_bos_token if chat template already includes it
+        orig_add_bos_token = processor.tokenizer.add_bos_token
+        if getattr(processor.tokenizer, "chat_template", None) and "bos_token" in processor.tokenizer.chat_template:
+            processor.tokenizer.add_bos_token = False
+
+        inputs = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+
+        # recover add_bos_token flag in tokenizer
+        processor.tokenizer.add_bos_token = orig_add_bos_token
+        return inputs
 
 
 class Gemma4InputsPreprocessor(Gemma3InputsPreprocessor):

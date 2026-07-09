@@ -22,6 +22,7 @@ public:
         float base_shift = 0.5f, max_shift = 1.15f;
         int32_t base_image_seq_len = 256, max_image_seq_len = 4096;
         std::optional<float> shift_terminal;  /// Stretches and shifts the timestep schedule to ensure it terminates at shift_terminal. Used by Lightricks/LTX-Video
+        std::string time_shift_type = "linear";  /// "linear" or "exponential"
 
         Config() = default;
         explicit Config(const std::filesystem::path& scheduler_config_path);
@@ -33,6 +34,8 @@ public:
     void set_timesteps(size_t num_inference_steps, float strength) override;
 
     void set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) override;
+
+    void set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) override;
 
     std::vector<float> get_float_timesteps() override;
 
@@ -63,6 +66,7 @@ private:
     double sigma_to_t(double sigma);
     size_t _index_for_timestep(float timestep);
     double calculate_shift(size_t image_seq_len);
+    double compute_empirical_mu(const size_t image_seq_len, const size_t num_inference_steps);
 };
 
 } // namespace genai
