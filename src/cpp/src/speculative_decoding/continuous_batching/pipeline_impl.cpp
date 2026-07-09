@@ -544,10 +544,10 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl:
     return m_batch_size;
 }
 
-uint64_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
+std::optional<uint64_t> ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
 reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t checkpoint_count) {
     if (!m_scheduler || !m_scheduler->has_linear_attention_cache()) {
-        return std::numeric_limits<uint64_t>::max();
+        return std::nullopt;
     }
     for (const auto& request : m_requests) {
         if (request->get_request_id() != request_id) {
@@ -564,19 +564,19 @@ reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t c
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
-promote_linear_attention_checkpoint_for_sequence(uint64_t seq_id, size_t checkpoint_slot) {
-    if (!m_scheduler || seq_id == std::numeric_limits<uint64_t>::max()) {
+promote_linear_attention_checkpoint_for_sequence(std::optional<uint64_t> seq_id, size_t checkpoint_slot) {
+    if (!m_scheduler || !seq_id) {
         return;
     }
-    m_scheduler->promote_linear_attention_checkpoint(seq_id, checkpoint_slot);
+    m_scheduler->promote_linear_attention_checkpoint(*seq_id, checkpoint_slot);
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
-release_linear_attention_checkpoints_for_sequence(uint64_t seq_id) {
-    if (!m_scheduler || seq_id == std::numeric_limits<uint64_t>::max()) {
+release_linear_attention_checkpoints_for_sequence(std::optional<uint64_t> seq_id) {
+    if (!m_scheduler || !seq_id) {
         return;
     }
-    m_scheduler->release_linear_attention_checkpoints(seq_id);
+    m_scheduler->release_linear_attention_checkpoints(*seq_id);
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::rewind_awaiting_request_prefix(

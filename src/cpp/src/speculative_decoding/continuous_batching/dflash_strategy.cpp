@@ -4,7 +4,6 @@
 #include "dflash_strategy.hpp"
 
 #include <algorithm>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -160,6 +159,8 @@ private:
                         "DFlash CB/PA draft model must have 'hidden_states' input.");
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "input_ids"),
                         "DFlash CB/PA draft model must have an 'input_ids' input after load-time transforms.");
+        OPENVINO_ASSERT(utils::has_input(model_desc.model, "position_ids"),
+                        "DFlash CB/PA draft model must have a 'position_ids' input.");
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "attention_mask"),
                         "DFlash CB/PA draft model must have an 'attention_mask' input.");
         if (model_desc.device == "NPU") {
@@ -488,7 +489,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     } catch (...) {
         for (auto& [_, state] : m_request_states) {
             m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+            state.target_la_checkpoint_sequence_id.reset();
         }
         throw;
     }
@@ -502,7 +503,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     for (auto& [request_id, state] : m_request_states) {
         if (main_generated_requests.find(request_id) == main_generated_requests.end()) {
             m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+            state.target_la_checkpoint_sequence_id.reset();
             state.finished = true;
         }
     }
@@ -515,14 +516,14 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         auto& state = state_it->second;
         if (draft_generated == 0 || state.generated_tokens.size() <= state.generated_before_draft) {
             m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+            state.target_la_checkpoint_sequence_id.reset();
             continue;
         }
         const auto accounting =
             dflash_cb::validation_accounting(draft_generated, state.generated_before_draft, state.generated_tokens.size());
         if (!accounting.target_extended) {
             m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+            state.target_la_checkpoint_sequence_id.reset();
             continue;
         }
         const size_t checkpoint_slot =
@@ -531,7 +532,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
                 /*validation_input_includes_seed_token=*/true);
         m_main_pipeline->promote_linear_attention_checkpoint_for_sequence(state.target_la_checkpoint_sequence_id,
                                                                          checkpoint_slot);
-        state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+        state.target_la_checkpoint_sequence_id.reset();
         const float acceptance_rate =
             draft_generated > 0 ? static_cast<float>(accounting.accepted) / draft_generated * 100.0f : 0.0f;
         m_sd_metrics.update_draft_generated_len(request_id, draft_generated);
@@ -585,7 +586,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::drop_requests() {
     for (auto& [_, state] : m_request_states) {
         if (m_main_pipeline) {
             m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+            state.target_la_checkpoint_sequence_id.reset();
         }
     }
     if (m_main_pipeline) {

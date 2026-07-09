@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdint>
-#include <limits>
+#include <optional>
 
 #include "fast_draft_strategy.hpp"
 #include "speculative_decoding/continuous_batching/dflash_strategy_utils.hpp"
@@ -50,7 +50,7 @@ private:
         size_t prompt_len = 0;
         size_t generated_before_draft = 0;
         size_t draft_generated = 0;
-        uint64_t target_la_checkpoint_sequence_id = std::numeric_limits<uint64_t>::max();
+        std::optional<uint64_t> target_la_checkpoint_sequence_id;
         bool finished = false;
         GenerationConfig generation_config;
     };
