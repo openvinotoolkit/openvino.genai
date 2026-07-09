@@ -95,6 +95,9 @@ size_t ov::genai::SDPerModelsPerfMetrics::get_num_draft_tokens() {
 
 size_t ov::genai::SDPerModelsPerfMetrics::get_num_rejected_tokens() {
     evaluate_statistics();
+    if (num_draft_tokens == 0) {
+        return 0;
+    }
     OPENVINO_ASSERT(num_draft_tokens >= num_accepted_tokens,
                     "The number of accepted draft tokens cannot exceed the number of draft candidate tokens.");
     return num_draft_tokens - num_accepted_tokens;

@@ -1,6 +1,7 @@
 // Copyright (C) 2024-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include "gtest/gtest.h"
 
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"

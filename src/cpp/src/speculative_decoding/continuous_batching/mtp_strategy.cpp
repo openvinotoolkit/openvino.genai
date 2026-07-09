@@ -183,9 +183,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
                         "MTP only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f).");
         OPENVINO_ASSERT(main_cfg.is_greedy_decoding() && main_cfg.num_return_sequences == 1,
                         "MTP speculative decoding currently supports only greedy, batch-1 generation.");
-        if (main_cfg.num_assistant_tokens == 0) {
-            main_cfg.num_assistant_tokens = 1;
-        }
+        OPENVINO_ASSERT(main_cfg.num_assistant_tokens > 0,
+                        "MTP speculative decoding requires num_assistant_tokens > 0.");
         draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         draft_cfg.ignore_eos = true;
         draft_cfg.stop_strings = {};
