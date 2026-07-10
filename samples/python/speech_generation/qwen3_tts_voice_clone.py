@@ -64,12 +64,7 @@ def main():
     parser.add_argument(
         "--ref_text",
         default="",
-        help="Reference transcript used for ICL mode",
-    )
-    parser.add_argument(
-        "--x_vector_only_mode",
-        action="store_true",
-        help="Use embedding-only voice cloning (no ICL prompt conditioning)",
+        help="Reference transcript used for ICL mode (enables ICL when set)",
     )
     parser.add_argument("--language", default="english", help="Generation language")
     parser.add_argument("--device", default="CPU", help="OpenVINO device (default: CPU)")
@@ -84,14 +79,16 @@ def main():
 
     generation_properties = {
         "language": args.language,
-        "voice_clone_x_vector_only_mode": bool(args.x_vector_only_mode),
     }
 
-    if not args.x_vector_only_mode:
+    # ICL mode is automatically selected when ref_text or ref_code is provided.
+    # Providing ref_audio alone uses x-vector (embedding) mode.
+    icl_mode = bool(args.ref_text.strip()) or bool(args.ref_code_file_path)
+    if icl_mode:
         if not args.ref_text.strip():
-            raise RuntimeError("--ref_text is required when --x_vector_only_mode is not set")
+            raise RuntimeError("--ref_text is required when --ref_code_file_path is provided")
         if not args.ref_code_file_path:
-            raise RuntimeError("--ref_code_file_path is required when --x_vector_only_mode is not set")
+            raise RuntimeError("--ref_code_file_path is required when --ref_text is provided")
         generation_properties["voice_clone_ref_text"] = args.ref_text
         generation_properties["voice_clone_ref_codec_ids"] = _load_ref_code_tensor(args.ref_code_file_path)
 

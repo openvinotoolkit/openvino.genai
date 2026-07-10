@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) try {
         args.size() >= 3,
         "Usage: ",
         args[0],
-        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--speaker_embedding_file_path <PATH>] [--voice_clone_ref_audio_wav_path <PATH.wav>] [--language <LANG>] [--speaker <NAME>] [--instruct <TEXT>] [--speed <FLOAT>] [--non_streaming_mode <true|false>] [--subtalker_dosample <true|false>] [--subtalker_top_k <INT>] [--subtalker_top_p <FLOAT>] [--subtalker_temperature <FLOAT>] [--do_sample <true|false>] [--top_k <INT>] [--top_p <FLOAT>] [--temperature <FLOAT>] [--repetition_penalty <FLOAT>] [--seed <INT>] [--max_new_tokens <INT>] [--voice_clone_x_vector_only_mode <true|false>] [--voice_clone_ref_text <TEXT>] [--voice_clone_ref_codec_ids_file_path <PATH.npy>] [--device <DEVICE>]");
+        " <MODEL_DIR> \"<PROMPT>\" [<SPEAKER_EMBEDDING_BIN_FILE>] [--speaker_embedding_file_path <PATH>] [--voice_clone_ref_audio_wav_path <PATH.wav>] [--language <LANG>] [--speaker <NAME>] [--instruct <TEXT>] [--speed <FLOAT>] [--non_streaming_mode <true|false>] [--subtalker_dosample <true|false>] [--subtalker_top_k <INT>] [--subtalker_top_p <FLOAT>] [--subtalker_temperature <FLOAT>] [--do_sample <true|false>] [--top_k <INT>] [--top_p <FLOAT>] [--temperature <FLOAT>] [--repetition_penalty <FLOAT>] [--seed <INT>] [--max_new_tokens <INT>] [--voice_clone_ref_text <TEXT>] [--voice_clone_ref_codec_ids_file_path <PATH.npy>] [--device <DEVICE>]");
 
     const std::string models_path = args[1], prompt = args[2];
     std::string device = "CPU";
@@ -191,7 +191,6 @@ int main(int argc, char* argv[]) try {
     float repetition_penalty = 1.05f;
     uint32_t seed = 0;
     int max_new_tokens = 4096;  // Match Python default instead of C++ default (2048)
-    bool voice_clone_x_vector_only_mode = true;
     std::string voice_clone_ref_text;
     std::optional<std::string> qwen_ref_audio_wav_path;
     std::optional<std::string> qwen_ref_code_file_path;
@@ -253,8 +252,6 @@ int main(int argc, char* argv[]) try {
             seed = static_cast<uint32_t>(std::stoul(value));
         } else if (option == "--max_new_tokens") {
             max_new_tokens = std::stoi(value);
-        } else if (option == "--voice_clone_x_vector_only_mode") {
-            voice_clone_x_vector_only_mode = parse_bool(value);
         } else if (option == "--voice_clone_ref_text") {
             voice_clone_ref_text = value;
         } else if (option == "--voice_clone_ref_audio_wav_path") {
@@ -267,8 +264,6 @@ int main(int argc, char* argv[]) try {
             OPENVINO_THROW("Unknown option: ", option);
         }
     }
-
-    std::cout << "voice_clone_ref_text = " << voice_clone_ref_text << std::endl;
 
     ov::AnyMap ov_properties;
     if( device == "NPU") {
@@ -318,19 +313,10 @@ int main(int argc, char* argv[]) try {
     if (qwen_ref_code_file_path.has_value() && voice_clone_ref_text.empty()) {
         OPENVINO_THROW("--voice_clone_ref_text is required when --voice_clone_ref_codec_ids_file_path is provided.");
     }
-    if (!voice_clone_x_vector_only_mode) {
-        OPENVINO_ASSERT(!voice_clone_ref_text.empty(), "--voice_clone_ref_text is required when --voice_clone_x_vector_only_mode=false.");
-        OPENVINO_ASSERT(qwen_ref_code_file_path.has_value() || qwen_ref_audio_wav_path.has_value(),
-                        "When --voice_clone_x_vector_only_mode=false, provide either --voice_clone_ref_codec_ids_file_path <PATH.npy> "
-                        "or --voice_clone_ref_codec_ids_file_path <PATH.npy> "
-                        "or --qwen_ref_audio_wav_path <PATH.wav>.");
-    }
 
     if (!voice_clone_ref_text.empty()) {
         properties["voice_clone_ref_text"] = voice_clone_ref_text;
     }
-    std::cout << "setting voice_clone_x_vector_only_mode = " << (voice_clone_x_vector_only_mode ? "true" : "false") << std::endl;
-    properties["voice_clone_x_vector_only_mode"] = voice_clone_x_vector_only_mode;
     if (qwen_ref_audio_wav_path.has_value()) {
         properties["voice_clone_ref_audio"] = utils::audio::read_wav_mono_f32(*qwen_ref_audio_wav_path, 24000);
     }
@@ -354,7 +340,6 @@ int main(int argc, char* argv[]) try {
               << " repetition_penalty=" << repetition_penalty
               << " seed=" << seed
               << " max_new_tokens=" << max_new_tokens
-              << " voice_clone_x_vector_only_mode=" << (voice_clone_x_vector_only_mode ? "true" : "false")
               << " voice_clone_ref_text_len=" << voice_clone_ref_text.size()
               << " voice_clone_ref_audio_wav_path='" << (qwen_ref_audio_wav_path.has_value() ? *qwen_ref_audio_wav_path : "") << "'"
               << " voice_clone_ref_codec_ids_file_path='" << (qwen_ref_code_file_path.has_value() ? *qwen_ref_code_file_path : "") << "'"

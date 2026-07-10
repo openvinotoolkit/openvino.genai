@@ -101,8 +101,6 @@ auto speech_generation_config_docstring = R"(
     :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
     :type voice_clone_ref_codec_ids: openvino.Tensor
 
-    :param voice_clone_x_vector_only_mode: set True to force embedding-only clone mode.
-    :type voice_clone_x_vector_only_mode: bool
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -189,7 +187,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("voice_clone_ref_text", &SpeechGenerationConfig::voice_clone_ref_text)
         .def_readwrite("voice_clone_ref_audio", &SpeechGenerationConfig::voice_clone_ref_audio)
         .def_readwrite("voice_clone_ref_codec_ids", &SpeechGenerationConfig::voice_clone_ref_codec_ids)
-        .def_readwrite("voice_clone_x_vector_only_mode", &SpeechGenerationConfig::voice_clone_x_vector_only_mode)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });

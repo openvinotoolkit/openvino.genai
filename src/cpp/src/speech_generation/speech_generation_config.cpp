@@ -40,7 +40,6 @@ SpeechGenerationConfig::SpeechGenerationConfig(const std::filesystem::path& json
         read_json_param(data, "subtalker_temperature", subtalker_temperature);
         read_json_param(data, "seed", seed);
         read_json_param(data, "voice_clone_ref_text", voice_clone_ref_text);
-        read_json_param(data, "voice_clone_x_vector_only_mode", voice_clone_x_vector_only_mode);
     }
     validate();
 }
@@ -67,7 +66,6 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
     read_anymap_param(config_map, "voice_clone_ref_text", voice_clone_ref_text);
     read_anymap_param(config_map, "voice_clone_ref_audio", voice_clone_ref_audio);
     read_anymap_param(config_map, "voice_clone_ref_codec_ids", voice_clone_ref_codec_ids);
-    read_anymap_param(config_map, "voice_clone_x_vector_only_mode", voice_clone_x_vector_only_mode);
 
     GenerationConfig::update_generation_config(config_map);
 }

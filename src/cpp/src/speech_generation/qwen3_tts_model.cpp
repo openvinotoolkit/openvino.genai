@@ -1609,25 +1609,25 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         OPENVINO_THROW("voice_clone_ref_text/voice_clone_ref_audio/voice_clone_ref_codec_ids are supported only for Qwen3 Base models");
     }
 
-    // x-vector-only mode: use just the speaker embedding for voice conditioning, no ICL.
-    // Resolve the embedding from qwen_ref_audio if no direct tensor was provided, then
-    // fall through to the normal synthesis loop below (no generate_voice_clone call).
+    // Derive x-vector-only vs ICL mode from the inputs provided.
+    // ICL mode requires ref_text (transcript) or pre-computed ref_codec_ids.
+    // ref_audio alone implies x-vector-only mode (embedding extraction only, no ICL prompt).
+    const bool x_vector_only_mode = base_model &&
+        generation_config.voice_clone_ref_text.empty() &&
+        !static_cast<bool>(generation_config.voice_clone_ref_codec_ids);
+
     ov::Tensor effective_speaker_embedding = speaker_embedding;
-    if (base_model && generation_config.voice_clone_x_vector_only_mode) {
-        if (!effective_speaker_embedding && generation_config.voice_clone_ref_audio) {
-            OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
-                            "voice_clone_ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
-            effective_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.voice_clone_ref_audio);
-        }
-        OPENVINO_ASSERT(effective_speaker_embedding,
-                        "voice_clone_x_vector_only_mode requires either speaker_embedding or voice_clone_ref_audio");
+    if (base_model && x_vector_only_mode && !effective_speaker_embedding && generation_config.voice_clone_ref_audio) {
+        OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
+                        "voice_clone_ref_audio assumes 24000 Hz waveform input. OV GenAI does not resample");
+        effective_speaker_embedding = extract_qwen3_speaker_embedding_from_audio(generation_config.voice_clone_ref_audio);
         // Falls through to the normal synthesis loop with effective_speaker_embedding.
     }
 
-    // ICL voice-clone path: only when x_vector_only_mode is NOT set.
+    // ICL voice-clone path: triggered when ref_text or ref_codec_ids is provided.
     const bool has_qwen_voice_clone_props =
         base_model &&
-        !generation_config.voice_clone_x_vector_only_mode &&
+        !x_vector_only_mode &&
         (!generation_config.voice_clone_ref_text.empty() ||
          static_cast<bool>(generation_config.voice_clone_ref_audio) ||
          static_cast<bool>(generation_config.voice_clone_ref_codec_ids));

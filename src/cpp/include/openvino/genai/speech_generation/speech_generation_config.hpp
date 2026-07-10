@@ -101,11 +101,6 @@ public:
     // Expected shape: [T, G] or [1, T, G].
     ov::Tensor voice_clone_ref_codec_ids;
 
-    // Qwen3 Base embedding-only voice cloning switch.
-    // true: x-vector only mode (ignore ICL prompt artifacts).
-    // false: use ICL prompt artifacts when provided.
-    bool voice_clone_x_vector_only_mode = false;
-
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
@@ -140,7 +135,6 @@ static constexpr ov::Property<uint32_t> seed{"seed"};
 static constexpr ov::Property<std::string> voice_clone_ref_text{"voice_clone_ref_text"};
 static constexpr ov::Property<ov::Tensor> voice_clone_ref_audio{"voice_clone_ref_audio"};
 static constexpr ov::Property<ov::Tensor> voice_clone_ref_codec_ids{"voice_clone_ref_codec_ids"};
-static constexpr ov::Property<bool> voice_clone_x_vector_only_mode{"voice_clone_x_vector_only_mode"};
 
 }  // namespace genai
 }  // namespace ov
