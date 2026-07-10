@@ -134,10 +134,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     auto free_non_running_requests = [&streamer_ptr, &generations, &active_sequence_groups, &max_kv_cache_size]() {
         for (auto& sg : active_sequence_groups) {
             for (auto& seq : sg->get_sequences()) {
-                std::cout << "Request " << sg->get_request_id() << ", sequence " << seq->get_id() << ", prompt_len: " << sg->get_prompt_len()
-                          << ", generated_len: " << seq->get_generated_len() << ", total_len: " << sg->get_prompt_len() + seq->get_generated_len()
-                          << ", max_kv_cache_size: " << max_kv_cache_size
-                          << std::endl;
                 if (sg->get_prompt_len() + seq->get_generated_len() - 1 == max_kv_cache_size) {
                     seq->set_status(SequenceStatus::OUT_OF_MEMORY);
                 }

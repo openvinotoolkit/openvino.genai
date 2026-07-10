@@ -121,7 +121,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_is_npu = true;
         m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
-        m_max_kv_cache_size = m_max_prompt_len + min_response_len;
+        const auto max_generation_token_len = std::max(1u, compiled_model.get_property("NPUW_LLM_MAX_GENERATION_TOKEN_LEN").as<uint32_t>());
+        m_max_kv_cache_size = m_max_prompt_len + min_response_len - max_generation_token_len;
     }
 }
 
@@ -628,8 +629,6 @@ EncodedResults StatefulLLMPipeline::generate(
 
     std::shared_ptr<LongRopeThresholdStreamer> threshold_streamer;
     std::shared_ptr<StreamerBase> effective_streamer_ptr = streamer_ptr;
-    std::cout << "m_longrope_threshold: " << (m_longrope_threshold.has_value() ? std::to_string(*m_longrope_threshold) : "none") << std::endl;
-    std::cout << "m_max_kv_cache_size: " << m_max_kv_cache_size << std::endl;
     if (m_is_npu && m_longrope_threshold.has_value()) {
         threshold_streamer = std::make_shared<LongRopeThresholdStreamer>(
             streamer_ptr, concatenated_attention_mask.get_shape().at(1), *m_longrope_threshold);
@@ -653,7 +652,8 @@ EncodedResults StatefulLLMPipeline::generate(
         size_t remaining_new_tokens = total_max_new_tokens > generated_so_far.size() ?
             total_max_new_tokens - generated_so_far.size() : 0;
 
-        // if threshold is reached but not stoped by us we need to postone the reprefill until the next call to generate
+        // If the threshold is reached but generation was not stopped by us,
+        // postpone the reprefill until the next call to generate.
         m_longrope_reprefill_pending = remaining_new_tokens == 0 || !threshold_streamer->last_write_stopped_by_us();
         if (remaining_new_tokens == 0 && threshold_streamer->last_write_stopped_by_us()) {
             // notify base streamer that generation is finished, so it can flush the last token
