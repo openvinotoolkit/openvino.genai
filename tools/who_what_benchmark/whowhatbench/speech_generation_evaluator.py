@@ -425,7 +425,7 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
 
         import torch
 
-        # Ensure deterministic output for fair benchmarking
+        # Ensure pseudo-deterministic output for benchmarking
         torch.manual_seed(42)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
@@ -452,13 +452,17 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
             # HF rejects temperature=0, so use do_sample=False
             # Optimum ignores do_sample, so use temperature=0 for greedy
             is_hf = type(self.model).__module__.startswith("transformers")
-            talker_kwargs = {"talker_do_sample": False} if is_hf else {"talker_temperature": 0, "talker_seed": 42}
+            talker_kwargs = (
+                {"thinker_do_sample": False, "talker_do_sample": False}
+                if is_hf
+                else {"thinker_temperature": 0, "talker_temperature": 0}
+            )
             output = self.model.generate(
                 **inputs,
                 speaker=speaker,
                 return_audio=True,
-                do_sample=False,
                 thinker_max_new_tokens=128,
+                thinker_eos_token_id=151645,
                 **talker_kwargs,
             )
 
@@ -492,7 +496,7 @@ class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
         import torch
         import numpy as np
 
-        # Ensure deterministic output for fair benchmarking
+        # Ensure pseudo-deterministic output for benchmarking
         torch.manual_seed(42)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
