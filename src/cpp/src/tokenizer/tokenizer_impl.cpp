@@ -790,17 +790,24 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
 std::shared_ptr<const minja::chat_template> Tokenizer::TokenizerImpl::get_cached_minja_chat_template(const std::string& chat_template) const {
     constexpr size_t max_cached_templates = 4;
 
+    {
+        std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
+        auto iter = m_minja_chat_template_cache.find(chat_template);
+        if (iter != m_minja_chat_template_cache.end()) {
+            return iter->second;
+        }
+    }
+
+    auto minja_template = std::make_shared<minja::chat_template>(chat_template, m_bos_token, m_eos_token);
+
     std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
     auto iter = m_minja_chat_template_cache.find(chat_template);
     if (iter != m_minja_chat_template_cache.end()) {
         return iter->second;
     }
-
     if (m_minja_chat_template_cache.size() >= max_cached_templates) {
         m_minja_chat_template_cache.clear();
     }
-
-    auto minja_template = std::make_shared<minja::chat_template>(chat_template, m_bos_token, m_eos_token);
     m_minja_chat_template_cache.emplace(chat_template, minja_template);
     return minja_template;
 }
@@ -866,9 +873,11 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
 }
 
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
+    auto remapped_chat_template = remap_template(chat_template);
+
     std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
     m_original_chat_template = chat_template;
-    m_chat_template = remap_template(chat_template);
+    m_chat_template = std::move(remapped_chat_template);
     m_minja_chat_template_cache.clear();
 }
 
