@@ -8,6 +8,18 @@ type WhisperModelType = {
 
 export const WHISPER_MODELS: WhisperModelType[] = [
   {
+    architecture: 'Qwen3ASRForConditionalGeneration',
+    models: [
+      {
+        name: 'Qwen3-ASR',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-ASR-0.6B',
+          'https://huggingface.co/Qwen/Qwen3-ASR-1.7B',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'WhisperForConditionalGeneration',
     models: [
       {
