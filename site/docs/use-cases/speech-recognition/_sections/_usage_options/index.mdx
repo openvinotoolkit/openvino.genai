@@ -148,7 +148,7 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
 Beam search support depends on the selected model architecture. Qwen3-ASR models do not support beam search decoding.
 :::
 
-### Transcription
+#### Transcription
 
 ASR models can automatically detect the language of the input audio, or you can specify the language to improve accuracy. The detected (or specified) language is available in the result via the `languages` field:
 
@@ -210,7 +210,13 @@ ASR models can automatically detect the language of the input audio, or you can 
     </TabItemJS>
 </LanguageTabs>
 
-### Whisper Translation
+### Whisper-specific Features
+
+:::info
+These features are specific to Whisper models used with `ASRPipeline`. They may not apply to other ASR model architectures.
+:::
+
+#### Translation
 
 By default, Whisper performs transcription, keeping the output in the same language as the input.
 To translate non-English speech to English, use the `translate` task:
@@ -247,7 +253,7 @@ To translate non-English speech to English, use the `translate` task:
     </TabItemJS>
 </LanguageTabs>
 
-### Whisper Timestamps Prediction
+#### Timestamps Prediction
 
 Whisper can predict timestamps for each segment of speech, which is useful for synchronization or creating subtitles:
 
@@ -296,7 +302,7 @@ Whisper can predict timestamps for each segment of speech, which is useful for s
     </TabItemJS>
 </LanguageTabs>
 
-### Whisper Word-level Timestamps Prediction
+#### Word-level Timestamps Prediction
 
 Whisper can predict timestamps for each word of speech, which provides more granular timing information compared to segment-level timestamps.
 
@@ -351,7 +357,7 @@ Whisper can predict timestamps for each word of speech, which provides more gran
     </TabItemJS>
 </LanguageTabs>
 
-### Long-Form Audio Processing
+#### Long-Form Audio Processing
 
 Whisper models are designed for audio segments up to 30 seconds in length.
 For longer audio, the OpenVINO GenAI ASR pipeline automatically handles Whisper processing using a sequential chunking algorithm ("sliding window"):
@@ -362,7 +368,7 @@ For longer audio, the OpenVINO GenAI ASR pipeline automatically handles Whisper 
 
 This happens automatically when you input longer audio files.
 
-### Using Initial Prompts and Hotwords
+#### Using Initial Prompts and Hotwords
 
 You can improve transcription quality and guide the model's output style by providing initial prompts or hotwords using the following parameters:
 
