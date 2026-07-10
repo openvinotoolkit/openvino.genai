@@ -17,12 +17,11 @@ namespace genai {
 
 class Qwen3TTSImpl : public Text2SpeechPipelineImpl {
 public:
-    // Internal voice-clone prompt used by the generate() dispatch path.
+    // Internal voice-clone prompt used by the generate() dispatch path (ICL mode only).
     struct Qwen3VoiceClonePrompt {
         ov::Tensor ref_spk_embedding;
         ov::Tensor ref_code;
         std::string ref_text;
-        bool x_vector_only_mode = false;
     };
     Qwen3TTSImpl(const std::filesystem::path& models_path,
                  const std::string& device,
