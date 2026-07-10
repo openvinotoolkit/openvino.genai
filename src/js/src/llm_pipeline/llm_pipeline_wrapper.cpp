@@ -65,7 +65,8 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(info[3].IsFunction(), "generate callback is not a function");
         auto callback = info[3].As<Napi::Function>();
 
-        auto* context = new InferenceThreadContext(this->is_generating, "performInferenceThread");
+        auto* context =
+            new InferenceThreadContext(this->is_generating, "performInferenceThread", "Streamer exceptions occurred:");
         auto pipe = this->pipe;
         context->run_generate = [context, pipe, inputs = std::move(inputs),
                                  generation_config = std::move(generation_config)]() mutable -> JsResultProducer {
@@ -100,7 +101,9 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
                                                               0,
                                                               1,
                                                               [context](Napi::Env) {
-                                                                  context->native_thread.join();
+                                                                  if (context->native_thread.joinable()) {
+                                                                      context->native_thread.join();
+                                                                  }
                                                                   delete context;
                                                               });
         if (streamer_arg.IsFunction()) {

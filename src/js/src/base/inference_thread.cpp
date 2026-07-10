@@ -35,10 +35,12 @@ void report_inference_thread_error(InferenceThreadContext* context, const std::s
 
 // Releases the ThreadSafeFunctions held by the context once the inference thread is done.
 void release_inference_thread_safe_functions(InferenceThreadContext* context) {
-    context->callback_tsfn.Release();
     if (context->streamer_tsfn.has_value()) {
         context->streamer_tsfn->Release();
     }
+    // callback_tsfn's finalizer joins the worker thread and deletes the context, so its Release() must be the last
+    // action that touches the context.
+    context->callback_tsfn.Release();
 }
 
 // Joins the exceptions collected from JS callbacks into a single message prefixed with the given header.

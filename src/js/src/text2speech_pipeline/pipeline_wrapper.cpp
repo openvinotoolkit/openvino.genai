@@ -3,6 +3,8 @@
 
 #include "include/text2speech_pipeline/pipeline_wrapper.hpp"
 
+#include <iostream>
+#include <memory>
 #include <thread>
 
 #include "include/base/inference_thread.hpp"
@@ -74,7 +76,9 @@ Napi::Value Text2SpeechPipelineWrapper::generate(const Napi::CallbackInfo& info)
         OPENVINO_ASSERT(info[3].IsFunction(), "generate callback is not a function");
         Napi::Function callback = info[3].As<Napi::Function>();
 
-        auto* context = new InferenceThreadContext(this->is_generating, "text2speechPerformInferenceThread");
+        auto* context = new InferenceThreadContext(this->is_generating,
+                                                   "text2speechPerformInferenceThread",
+                                                   "Streamer exceptions occurred:");
         auto pipe = this->pipe;
         context->run_generate = [pipe, inputs = std::move(inputs), speaker_embedding = std::move(speaker_embedding),
                                  properties = std::move(properties)]() mutable -> JsResultProducer {
@@ -93,7 +97,9 @@ Napi::Value Text2SpeechPipelineWrapper::generate(const Napi::CallbackInfo& info)
 
         context->callback_tsfn =
             Napi::ThreadSafeFunction::New(env, callback, "Text2Speech_generate_callback", 0, 1, [context](Napi::Env) {
-                context->native_thread.join();
+                if (context->native_thread.joinable()) {
+                    context->native_thread.join();
+                }
                 delete context;
             });
 

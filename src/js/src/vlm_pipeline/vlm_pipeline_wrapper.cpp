@@ -71,7 +71,8 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(info[5].IsFunction(), "generate callback is not a function");
         auto callback = info[5].As<Napi::Function>();
 
-        auto* context = new InferenceThreadContext(this->is_generating, "vlmPerformInferenceThread");
+        auto* context =
+            new InferenceThreadContext(this->is_generating, "vlmPerformInferenceThread", "Streamer exceptions occurred:");
         auto pipe = this->pipe;
         context->run_generate = [context, pipe, inputs = std::move(inputs), images = std::move(images),
                                  videos = std::move(videos),
@@ -104,7 +105,9 @@ Napi::Value VLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
                                                               0,
                                                               1,
                                                               [context](Napi::Env) {
-                                                                  context->native_thread.join();
+                                                                  if (context->native_thread.joinable()) {
+                                                                      context->native_thread.join();
+                                                                  }
                                                                   delete context;
                                                               });
         if (!streamer_arg.IsUndefined()) {

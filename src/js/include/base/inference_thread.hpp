@@ -24,9 +24,12 @@ using JsResultProducer = std::function<Napi::Value(Napi::Env)>;
 // reporting the result or an error back to JS through ThreadSafeFunctions. Every pipeline fills run_generate and,
 // when needed, on_finished with its own logic; perform_generate_thread drives the identical worker loop for all.
 struct InferenceThreadContext {
-    InferenceThreadContext(std::shared_ptr<std::atomic<bool>> is_generating, std::string thread_name)
+    InferenceThreadContext(std::shared_ptr<std::atomic<bool>> is_generating,
+                           std::string thread_name,
+                           std::string streamer_exception_header = "Streamer exceptions occurred:")
         : is_generating(std::move(is_generating)),
-          thread_name(std::move(thread_name)) {}
+          thread_name(std::move(thread_name)),
+          streamer_exception_header(std::move(streamer_exception_header)) {}
 
     std::thread native_thread;
     Napi::ThreadSafeFunction callback_tsfn;
@@ -43,7 +46,7 @@ struct InferenceThreadContext {
     std::string thread_name;
     // Header prefixing the collected callback exceptions reported back to JS. Image-generation pipelines override it
     // because they collect exceptions from a step callback instead of a streamer.
-    std::string streamer_exception_header = "Streamer exceptions occurred:";
+    std::string streamer_exception_header;
 };
 
 // Builds a text streamer that forwards each produced word to the JS streamer ThreadSafeFunction and returns the

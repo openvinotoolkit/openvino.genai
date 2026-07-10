@@ -87,7 +87,9 @@ Napi::Value WhisperPipelineWrapper::generate(const Napi::CallbackInfo& info) {
 
         context->callback_tsfn =
             Napi::ThreadSafeFunction::New(env, callback, "Whisper_generate_callback", 0, 1, [context](Napi::Env) {
-                context->native_thread.join();
+                if (context->native_thread.joinable()) {
+                    context->native_thread.join();
+                }
                 delete context;
             });
 
