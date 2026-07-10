@@ -64,8 +64,8 @@ public:
         m_last_write_stopped_by_us = false;
         // total_len == threshold + 1  <=>  the just-appended token's 0-based position
         // (total_len - 1) equals `threshold`.
-        if (status == ov::genai::StreamingStatus::RUNNING && m_total_len == m_threshold + 1) {
-            m_threshold_reached = true;
+        m_threshold_reached = m_total_len == m_threshold + 1;
+        if (status == ov::genai::StreamingStatus::RUNNING && m_threshold_reached) {
             m_last_write_stopped_by_us = true;
             return ov::genai::StreamingStatus::STOP;
         }
@@ -90,6 +90,10 @@ public:
 
     bool threshold_reached() const {
         return m_threshold_reached;
+    }
+
+    bool last_write_stopped_by_us() const {
+        return m_last_write_stopped_by_us;
     }
 
 private:
@@ -624,6 +628,8 @@ EncodedResults StatefulLLMPipeline::generate(
 
     std::shared_ptr<LongRopeThresholdStreamer> threshold_streamer;
     std::shared_ptr<StreamerBase> effective_streamer_ptr = streamer_ptr;
+    std::cout << "m_longrope_threshold: " << (m_longrope_threshold.has_value() ? std::to_string(*m_longrope_threshold) : "none") << std::endl;
+    std::cout << "m_max_kv_cache_size: " << m_max_kv_cache_size << std::endl;
     if (m_is_npu && m_longrope_threshold.has_value()) {
         threshold_streamer = std::make_shared<LongRopeThresholdStreamer>(
             streamer_ptr, concatenated_attention_mask.get_shape().at(1), *m_longrope_threshold);
@@ -647,25 +653,16 @@ EncodedResults StatefulLLMPipeline::generate(
         size_t remaining_new_tokens = total_max_new_tokens > generated_so_far.size() ?
             total_max_new_tokens - generated_so_far.size() : 0;
 
-        if (remaining_new_tokens == 0) {
-            // The threshold-crossing token was also the last one allowed by max_new_tokens, so
-            // no continuation phase runs below - the KV cache is left holding that token still
-            // encoded under the pre-crossing RoPE factor. Nothing else will call end() on the
-            // wrapped streamer, so flush it now. Record that a reprefill is still owed so the
-            // very next call for this conversation forces one (see should_force_longrope_reprefill()).
+        // if threshold is reached but not stoped by us we need to postone the reprefill until the next call to generate
+        m_longrope_reprefill_pending = remaining_new_tokens == 0 || !threshold_streamer->last_write_stopped_by_us();
+        if (remaining_new_tokens == 0 && threshold_streamer->last_write_stopped_by_us()) {
+            // notify base streamer that generation is finished, so it can flush the last token
             threshold_streamer->flush_end();
-            m_longrope_reprefill_pending = true;
 
-            // The internal LongRopeThresholdStreamer's own STOP is what stopped generation
-            // (StreamingStatus::STOP -> GenerationStatus::STOP via GenerationStream::stop()),
-            // even though generation actually completed normally by exhausting max_new_tokens
-            // (that's exactly what remaining_new_tokens == 0 means). The per-sequence
-            // GenerationFinishReason is unaffected (the sampler already marks it LENGTH before
-            // this streamer ever runs, and that's only overwritten when still NONE) - but the
-            // overall stream status needs the same normalization so it doesn't leak our
-            // internal implementation detail to callers.
+            // Generation was stopped right after the token at the LongRoPE threshold position
+            // need set correct finish status
             finish_info.streaming_finish_status = ov::genai::GenerationStatus::FINISHED;
-        } else {
+        } else if (threshold_streamer->last_write_stopped_by_us()){
             PerfMetrics first_phase_metrics = finish_info.results.perf_metrics;
 
             reset_state();
