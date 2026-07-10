@@ -88,21 +88,21 @@ auto speech_generation_config_docstring = R"(
     :type seed: int
 
     Qwen3 Base voice-clone over ``generate``:
-    :param qwen_ref_text: reference transcript for ICL mode.
-    :type qwen_ref_text: str
+    :param voice_clone_ref_text: reference transcript for ICL mode.
+    :type voice_clone_ref_text: str
 
-    :param qwen_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+    :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
                            Expected shape: [T], [1, T], or [1, 1, T].
                            Expected dtype: float32.
                            Expected sample rate: 24000 Hz.
                            OV GenAI does not decode audio files or resample this tensor.
-    :type qwen_ref_audio: openvino.Tensor
+    :type voice_clone_ref_audio: openvino.Tensor
 
-    :param qwen_ref_code: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
-    :type qwen_ref_code: openvino.Tensor
+    :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+    :type voice_clone_ref_codec_ids: openvino.Tensor
 
-    :param qwen_x_vector_only_mode: set True to force embedding-only clone mode.
-    :type qwen_x_vector_only_mode: bool
+    :param voice_clone_x_vector_only_mode: set True to force embedding-only clone mode.
+    :type voice_clone_x_vector_only_mode: bool
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -186,10 +186,10 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("subtalker_top_p", &SpeechGenerationConfig::subtalker_top_p)
         .def_readwrite("subtalker_temperature", &SpeechGenerationConfig::subtalker_temperature)
         .def_readwrite("seed", &SpeechGenerationConfig::seed)
-        .def_readwrite("qwen_ref_text", &SpeechGenerationConfig::qwen_ref_text)
-        .def_readwrite("qwen_ref_audio", &SpeechGenerationConfig::qwen_ref_audio)
-        .def_readwrite("qwen_ref_code", &SpeechGenerationConfig::qwen_ref_code)
-        .def_readwrite("qwen_x_vector_only_mode", &SpeechGenerationConfig::qwen_x_vector_only_mode)
+        .def_readwrite("voice_clone_ref_text", &SpeechGenerationConfig::voice_clone_ref_text)
+        .def_readwrite("voice_clone_ref_audio", &SpeechGenerationConfig::voice_clone_ref_audio)
+        .def_readwrite("voice_clone_ref_codec_ids", &SpeechGenerationConfig::voice_clone_ref_codec_ids)
+        .def_readwrite("voice_clone_x_vector_only_mode", &SpeechGenerationConfig::voice_clone_x_vector_only_mode)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });

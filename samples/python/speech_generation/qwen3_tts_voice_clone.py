@@ -84,7 +84,7 @@ def main():
 
     generation_properties = {
         "language": args.language,
-        "qwen_x_vector_only_mode": bool(args.x_vector_only_mode),
+        "voice_clone_x_vector_only_mode": bool(args.x_vector_only_mode),
     }
 
     if not args.x_vector_only_mode:
@@ -92,8 +92,8 @@ def main():
             raise RuntimeError("--ref_text is required when --x_vector_only_mode is not set")
         if not args.ref_code_file_path:
             raise RuntimeError("--ref_code_file_path is required when --x_vector_only_mode is not set")
-        generation_properties["qwen_ref_text"] = args.ref_text
-        generation_properties["qwen_ref_code"] = _load_ref_code_tensor(args.ref_code_file_path)
+        generation_properties["voice_clone_ref_text"] = args.ref_text
+        generation_properties["voice_clone_ref_codec_ids"] = _load_ref_code_tensor(args.ref_code_file_path)
 
     result = pipe.generate(args.text, speaker_embedding, **generation_properties)
 
