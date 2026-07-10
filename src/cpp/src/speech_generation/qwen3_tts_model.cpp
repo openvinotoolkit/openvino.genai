@@ -1417,7 +1417,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     generated_main.reserve(std::min(max_steps, size_t(8192)));
     all_codes.reserve(std::min(max_steps, size_t(8192)) * m_ids.num_code_groups);
 
-    std::mt19937 rng(generation_config.seed != 0 ? generation_config.seed : std::random_device{}());
+    std::mt19937 rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed) : std::random_device{}());
     size_t absolute_pos = talker_prefill.get_shape()[1];
 
     for (size_t step = 0; step < max_steps; ++step) {

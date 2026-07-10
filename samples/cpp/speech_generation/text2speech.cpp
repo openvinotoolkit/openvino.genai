@@ -306,7 +306,7 @@ int main(int argc, char* argv[]) try {
     properties["temperature"] = temperature;
     properties["repetition_penalty"] = repetition_penalty;
     if (seed != 0) {
-        properties["seed"] = seed;
+        properties["rng_seed"] = static_cast<size_t>(seed);
     }
     properties["max_new_tokens"] = max_new_tokens;
 

@@ -83,10 +83,6 @@ public:
     // Temperature for subtalker sampling.
     float subtalker_temperature = 0.9f;
 
-    // Random seed for deterministic sampling (0 = random/non-deterministic).
-    // Only used when do_sample=true; ignored when do_sample=false (argmax sampling).
-    uint32_t seed = 0;
-
     // Qwen3 Base voice-clone reference transcript for ICL mode.
     std::string voice_clone_ref_text;
 
@@ -130,7 +126,6 @@ static constexpr ov::Property<bool> subtalker_dosample{"subtalker_dosample"};
 static constexpr ov::Property<uint32_t> subtalker_top_k{"subtalker_top_k"};
 static constexpr ov::Property<float> subtalker_top_p{"subtalker_top_p"};
 static constexpr ov::Property<float> subtalker_temperature{"subtalker_temperature"};
-static constexpr ov::Property<uint32_t> seed{"seed"};
 
 static constexpr ov::Property<std::string> voice_clone_ref_text{"voice_clone_ref_text"};
 static constexpr ov::Property<ov::Tensor> voice_clone_ref_audio{"voice_clone_ref_audio"};

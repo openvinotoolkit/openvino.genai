@@ -84,9 +84,6 @@ auto speech_generation_config_docstring = R"(
     :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
     :type subtalker_temperature: float
 
-    :param seed: random seed for deterministic Qwen3 sampling when ``do_sample=True``.
-    :type seed: int
-
     Qwen3 Base voice-clone over ``generate``:
     :param voice_clone_ref_text: reference transcript for ICL mode.
     :type voice_clone_ref_text: str
@@ -183,7 +180,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("subtalker_top_k", &SpeechGenerationConfig::subtalker_top_k)
         .def_readwrite("subtalker_top_p", &SpeechGenerationConfig::subtalker_top_p)
         .def_readwrite("subtalker_temperature", &SpeechGenerationConfig::subtalker_temperature)
-        .def_readwrite("seed", &SpeechGenerationConfig::seed)
         .def_readwrite("voice_clone_ref_text", &SpeechGenerationConfig::voice_clone_ref_text)
         .def_readwrite("voice_clone_ref_audio", &SpeechGenerationConfig::voice_clone_ref_audio)
         .def_readwrite("voice_clone_ref_codec_ids", &SpeechGenerationConfig::voice_clone_ref_codec_ids)
