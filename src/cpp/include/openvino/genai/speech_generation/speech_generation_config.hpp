@@ -106,7 +106,7 @@ public:
     // false: use ICL prompt artifacts when provided.
     bool voice_clone_x_vector_only_mode = false;
 
-    void update_generation_config(const ov::AnyMap& config_map = {});
+    void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
@@ -115,7 +115,7 @@ public:
 
     /// @brief checks that are no conflicting parameters.
     /// @throws Exception if config is invalid.
-    void validate() const;
+    void validate() const override;
 };
 
 static constexpr ov::Property<float> minlenratio{"minlenratio"};
