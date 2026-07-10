@@ -7,6 +7,7 @@
 #include <typeindex>
 
 #include "include/addon.hpp"
+#include "include/asr_pipeline/perf_metrics.hpp"
 #include "include/chat_history.hpp"
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
@@ -24,6 +25,8 @@ constexpr const char* PARSERS_KEY = "parsers";
 constexpr const char* STOP_CRITERIA_KEY = "stop_criteria";
 constexpr const char* LANG_TO_ID_KEY = "lang_to_id";
 constexpr const char* ALIGNMENT_HEADS_KEY = "alignment_heads";
+constexpr const char* SUPPRESS_TOKENS_KEY = "suppress_tokens";
+constexpr const char* BEGIN_SUPPRESS_TOKENS_KEY = "begin_suppress_tokens";
 
 // Safe integer range for JS Number: -(2^53 - 1) .. (2^53 - 1).
 constexpr int64_t NAPI_NUMBER_MIN_INTEGER = -(1LL << 53) + 1;
@@ -270,6 +273,10 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
             result_map[key_name] = js_to_cpp<std::map<std::string, int64_t>>(env, value_by_key);
         } else if (key_name == ALIGNMENT_HEADS_KEY) {
             result_map[key_name] = js_to_cpp<std::vector<std::pair<size_t, size_t>>>(env, value_by_key);
+        } else if (key_name == SUPPRESS_TOKENS_KEY || key_name == BEGIN_SUPPRESS_TOKENS_KEY) {
+            // Force int64 element typing so empty arrays (used to clear suppression) don't
+            // become std::vector<ov::Any>, which the generation config can't consume.
+            result_map[key_name] = js_to_cpp<std::vector<int64_t>>(env, value_by_key);
         } else {
             result_map[key_name] = js_to_cpp<ov::Any>(env, value_by_key);
         }
@@ -832,6 +839,17 @@ ov::genai::WhisperPerfMetrics& unwrap<ov::genai::WhisperPerfMetrics>(const Napi:
     OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
                     "Passed argument is not of type WhisperPerfMetrics");
     const auto js_metrics = Napi::ObjectWrap<WhisperPerfMetricsWrapper>::Unwrap(obj);
+    return js_metrics->get_value();
+}
+
+template <>
+ov::genai::ASRPerfMetrics& unwrap<ov::genai::ASRPerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->asr_perf_metrics;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type ASRPerfMetrics");
+    const auto js_metrics = Napi::ObjectWrap<ASRPerfMetricsWrapper>::Unwrap(obj);
     return js_metrics->get_value();
 }
 
@@ -1484,6 +1502,87 @@ Napi::Value cpp_to_js<ov::genai::WhisperGenerationConfig, Napi::Value>(
 }
 
 template <>
+Napi::Value cpp_to_js<ov::genai::ASRGenerationConfig, Napi::Value>(const Napi::Env& env,
+                                                                   const ov::genai::ASRGenerationConfig& config) {
+    Napi::Object obj = cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config).As<Napi::Object>();
+    if (config.language.has_value()) {
+        obj.Set("language", Napi::String::New(env, config.language.value()));
+    } else {
+        obj.Set("language", env.Undefined());
+    }
+    if (config.task.has_value()) {
+        obj.Set("task", Napi::String::New(env, config.task.value()));
+    } else {
+        obj.Set("task", env.Undefined());
+    }
+    obj.Set("return_timestamps", Napi::Boolean::New(env, config.return_timestamps));
+    obj.Set("word_timestamps", Napi::Boolean::New(env, config.word_timestamps));
+    obj.Set("decoder_start_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.decoder_start_token_id));
+    obj.Set("pad_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.pad_token_id));
+    obj.Set("translate_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.translate_token_id));
+    obj.Set("transcribe_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.transcribe_token_id));
+    obj.Set("prev_sot_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.prev_sot_token_id));
+    obj.Set("no_timestamps_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.no_timestamps_token_id));
+    obj.Set("max_initial_timestamp_index", cpp_to_js<size_t, Napi::Value>(env, config.max_initial_timestamp_index));
+    obj.Set("is_multilingual", Napi::Boolean::New(env, config.is_multilingual));
+    if (!config.lang_to_id.empty()) {
+        Napi::Object lang_to_id = Napi::Object::New(env);
+        for (const auto& [k, v] : config.lang_to_id) {
+            lang_to_id.Set(k, cpp_to_js<int64_t, Napi::Value>(env, v));
+        }
+        obj.Set("lang_to_id", lang_to_id);
+    } else {
+        obj.Set("lang_to_id", env.Undefined());
+    }
+    if (!config.alignment_heads.empty()) {
+        Napi::Array arr = Napi::Array::New(env, config.alignment_heads.size());
+        for (size_t i = 0; i < config.alignment_heads.size(); ++i) {
+            Napi::Array pair = Napi::Array::New(env, 2);
+            pair[0u] = cpp_to_js<size_t, Napi::Value>(env, config.alignment_heads[i].first);
+            pair[1u] = cpp_to_js<size_t, Napi::Value>(env, config.alignment_heads[i].second);
+            arr[static_cast<uint32_t>(i)] = pair;
+        }
+        obj.Set("alignment_heads", arr);
+    } else {
+        obj.Set("alignment_heads", env.Undefined());
+    }
+    if (config.initial_prompt.has_value()) {
+        obj.Set("initial_prompt", Napi::String::New(env, config.initial_prompt.value()));
+    } else {
+        obj.Set("initial_prompt", env.Undefined());
+    }
+    if (config.hotwords.has_value()) {
+        obj.Set("hotwords", Napi::String::New(env, config.hotwords.value()));
+    } else {
+        obj.Set("hotwords", env.Undefined());
+    }
+    if (config.context.has_value()) {
+        obj.Set("context", Napi::String::New(env, config.context.value()));
+    } else {
+        obj.Set("context", env.Undefined());
+    }
+    if (!config.begin_suppress_tokens.empty()) {
+        Napi::Array arr = Napi::Array::New(env, config.begin_suppress_tokens.size());
+        for (size_t i = 0; i < config.begin_suppress_tokens.size(); ++i) {
+            arr[static_cast<uint32_t>(i)] = cpp_to_js<int64_t, Napi::Value>(env, config.begin_suppress_tokens[i]);
+        }
+        obj.Set("begin_suppress_tokens", arr);
+    } else {
+        obj.Set("begin_suppress_tokens", env.Undefined());
+    }
+    if (!config.suppress_tokens.empty()) {
+        Napi::Array arr = Napi::Array::New(env, config.suppress_tokens.size());
+        for (size_t i = 0; i < config.suppress_tokens.size(); ++i) {
+            arr[static_cast<uint32_t>(i)] = cpp_to_js<int64_t, Napi::Value>(env, config.suppress_tokens[i]);
+        }
+        obj.Set("suppress_tokens", arr);
+    } else {
+        obj.Set("suppress_tokens", env.Undefined());
+    }
+    return obj;
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::SpeechGenerationConfig, Napi::Value>(
     const Napi::Env& env,
     const ov::genai::SpeechGenerationConfig& config) {
@@ -1694,6 +1793,44 @@ Napi::Object to_whisper_decoded_result(const Napi::Env& env, const ov::genai::Wh
             words[i] = wordObj;
         }
         obj.Set("words", words);
+    }
+    return obj;
+}
+
+Napi::Object to_asr_decoded_result(const Napi::Env& env, const ov::genai::ASRDecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("languages", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.languages));
+    obj.Set("perfMetrics", ASRPerfMetricsWrapper::wrap(env, results.perf_metrics));
+
+    auto to_nested_chunks = [&env](const std::vector<std::vector<ov::genai::ASRDecodedResultChunk>>& batched_chunks) {
+        Napi::Array batches = Napi::Array::New(env, batched_chunks.size());
+        for (size_t b = 0; b < batched_chunks.size(); ++b) {
+            const auto& batch = batched_chunks[b];
+            Napi::Array chunks = Napi::Array::New(env, batch.size());
+            for (size_t i = 0; i < batch.size(); ++i) {
+                const auto& c = batch[i];
+                Napi::Object chunk = Napi::Object::New(env);
+                chunk.Set("text", Napi::String::New(env, c.text));
+                chunk.Set("startTs", cpp_to_js<float, Napi::Value>(env, c.start_ts));
+                chunk.Set("endTs", cpp_to_js<float, Napi::Value>(env, c.end_ts));
+                const size_t token_ids_size = c.token_ids.size();
+                auto token_ids_buffer = Napi::ArrayBuffer::New(env, token_ids_size * sizeof(int64_t));
+                std::memcpy(token_ids_buffer.Data(), c.token_ids.data(), token_ids_size * sizeof(int64_t));
+                chunk.Set("tokenIds", Napi::BigInt64Array::New(env, token_ids_size, token_ids_buffer, 0));
+                chunks[i] = chunk;
+            }
+            batches[b] = chunks;
+        }
+        return batches;
+    };
+
+    if (results.chunks.has_value()) {
+        obj.Set("chunks", to_nested_chunks(results.chunks.value()));
+    }
+    if (results.words.has_value()) {
+        obj.Set("words", to_nested_chunks(results.words.value()));
     }
     return obj;
 }

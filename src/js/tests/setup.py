@@ -43,6 +43,10 @@ TEST_MODELS = {
         "model_id": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "model_class": OVModelForSequenceClassification,
     },
+    "ASR_MODEL": {
+        "model_id": "optimum-intel-internal-testing/tiny-random-qwen3-asr",
+        "model_class": OVModelForSpeechSeq2Seq,
+    },
     "WHISPER_MODEL": {
         "model_id": "openai/whisper-tiny",
         "model_class": OVModelForSpeechSeq2Seq,
