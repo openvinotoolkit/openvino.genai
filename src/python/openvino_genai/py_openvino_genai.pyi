@@ -4104,11 +4104,10 @@ class StructuredOutputConfig:
         def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat]) -> None:
             ...
     @staticmethod
-    def from_model_format(model_format: str, tools: list[dict[str, typing.Any]] = [], tool_choice: str | dict[str, typing.Any] | None = 'auto', reasoning: bool = True, any_order: bool = False, exclude_special_tokens: bool = True) -> StructuredOutputConfig:
+    def from_model_format(model_format: str, tools: typing.Any = [], tool_choice: typing.Any = 'auto', reasoning: bool = True, any_order: bool = False, exclude_special_tokens: bool = True) -> StructuredOutputConfig:
         """
         Build a StructuredOutputConfig from a built-in model structural tag format.
         """
-        ...
     @typing.overload
     def __init__(self) -> None:
         ...
