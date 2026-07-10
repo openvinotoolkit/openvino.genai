@@ -31,6 +31,7 @@ Structured constraints can affect model behavior and may reduce accuracy on some
 - Structural tags:
   - Compound grammars: combine several grammars to handle more complex tasks or enforce different function calling styles.
   - Tags: blend regular free-form generation with structural tags during single generate call.
+- Built-in model tool-call formats: construct a `StructuredOutputConfig` for model-specific function calling syntax from OpenAI-compatible `tools` and `tool_choice` JSON.
 
 ## Structured Output Configuration
 
@@ -48,6 +49,197 @@ You should set only one primary structured constraint (for example `json_schema`
 :::warning Deprecation Note
 The `StructuralTagsConfig` class and the `compound_grammar` field are deprecated. Use the `structural_tags_config` field on `StructuredOutputConfig` instead; it provides the same functionality and is the recommended API going forward.
 :::
+
+## Model-Specific Tool Calling Formats
+
+Use `StructuredOutputConfig::from_model_format` when a model expects tool calls in one of the built-in model-specific formats. The helper converts an OpenAI-compatible tools list and tool choice into the corresponding `structural_tags_config`.
+
+Supported `model_format` keys are:
+
+- `llama`
+- `kimi`
+- `deepseek_r1`
+- `deepseek_v3_1`
+- `qwen_3_5`
+- `qwen_3_coder`
+- `qwen_3`
+- `harmony`
+- `deepseek_v3_2`
+- `minimax`
+- `glm_4_7`
+- `deepseek_v4`
+
+Unknown keys raise an exception that lists the supported formats.
+
+### Entry Point
+
+<LanguageTabs>
+    <TabItemPython>
+```python
+import openvino_genai as ov_genai
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "parameters": {
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"],
+            },
+        },
+    }
+]
+
+so_config = ov_genai.StructuredOutputConfig.from_model_format(
+    "llama",
+    tools,
+    {"type": "function", "function": {"name": "get_weather"}},
+    reasoning=False,
+    any_order=True,
+)
+
+gen_config = ov_genai.GenerationConfig(structured_output_config=so_config)
+```
+    </TabItemPython>
+    <TabItemCpp>
+```cpp
+#include <openvino/genai/generation_config.hpp>
+#include <openvino/genai/json_container.hpp>
+
+using namespace ov::genai;
+
+JsonContainer tools = JsonContainer::from_json_string(R"([
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "parameters": {
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"]
+            }
+        }
+    }
+])");
+
+JsonContainer tool_choice = JsonContainer::from_json_string(R"({
+    "type": "function",
+    "function": {"name": "get_weather"}
+})");
+
+ModelStructuralTagOptions options;
+options.reasoning = false;
+options.any_order = true;
+
+StructuredOutputConfig so_config =
+    StructuredOutputConfig::from_model_format("llama", tools, tool_choice, options);
+
+GenerationConfig gen_config;
+gen_config.structured_output_config = so_config;
+```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Tools JSON
+
+The `tools` argument must be a JSON array. Each item must be an object with a string `type` field.
+
+Function tools use the OpenAI-compatible function tool shape:
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "get_weather",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "location": {"type": "string"}
+      },
+      "required": ["location"]
+    },
+    "strict": true
+  }
+}
+```
+
+For function tools, `function.name` is required. `function.parameters` is optional and must be an object or `null` when present. `function.strict` is optional and must be a boolean or `null` when present. If `parameters` is missing or `null`, or if `strict` is `false`, the arguments schema is treated as unconstrained.
+
+Built-in tools use a non-`function` `type` and can include an optional `name` and optional `parameters` object:
+
+```json
+{
+  "type": "web_search_preview",
+  "name": "browser.search",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string"}
+    },
+    "required": ["query"]
+  }
+}
+```
+
+If a built-in tool omits `name`, the `type` is used as the name. Built-in tools are only useful with model formats that define syntax for them, such as `harmony`.
+
+### Tool Choice JSON
+
+`tool_choice` is optional. In C++, the default is `JsonContainer("auto")`; in Python, the default is `"auto"`. Passing `null` or `None` is also treated as `auto`.
+
+Accepted string values are:
+
+- `"auto"` - allow regular text or one of the provided tools.
+- `"none"` - disable tool calls for this generation by clearing the tool set.
+- `"required"` - require a tool call. The effective tools list must not be empty.
+
+Force one function tool by name:
+
+```json
+{
+  "type": "function",
+  "function": {"name": "get_weather"}
+}
+```
+
+Restrict the available tools and choose whether a tool is optional or required:
+
+```json
+{
+  "type": "allowed_tools",
+  "allowed_tools": {
+    "mode": "required",
+    "tools": [
+      {"type": "function", "function": {"name": "get_weather"}},
+      {"type": "web_search_preview"}
+    ]
+  }
+}
+```
+
+`allowed_tools.mode` must be `"auto"` or `"required"`. Every referenced tool must exist in the `tools` list. Function references match by `function.name`; built-in references match by `type`.
+
+Force one built-in tool by type:
+
+```json
+{
+  "type": "web_search_preview"
+}
+```
+
+A forced tool choice must resolve to exactly one available tool.
+
+### Options
+
+`ModelStructuralTagOptions` controls how the model-format configuration is built:
+
+- `reasoning` - include reasoning tags for formats that support them. Defaults to `true`.
+- `any_order` - allow JSON object properties to be generated in any order inside generated argument objects. Defaults to `false`.
+- `exclude_special_tokens` - exclude format-specific special tokens from unconstrained text spans. Defaults to `true`.
+
+Python exposes the same options as keyword arguments on `StructuredOutputConfig.from_model_format`.
 
 ## Using Structured Output
 
