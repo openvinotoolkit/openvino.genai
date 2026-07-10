@@ -2268,6 +2268,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # Gemma4 models (with token_type_ids input) PA cases with image input
     "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
     "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
+    # Gemma4 video inputs (not yet supported by optimum)
+    "*tiny-random-gemma4*/*/video*": "CVS-190256",
     # qwen2vl cases that use 70x70 video resolution
     "*tiny-random-qwen2vl/*/video-70x70": "CVS-180070",
     # qwen2.5-vl cases that use 350x350 image, or 70x70 video resolutions
