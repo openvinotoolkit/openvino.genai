@@ -53,7 +53,7 @@ public:
     * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
     * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
     * @param videos_metadata Video metadata for the videos provided.
-    * @param properties Generation arguments (e.g. ov::genai::prompt).
+    * @param properties Generation arguments (e.g. ov::genai::embedding_prompt).
     * @return EmbedResult.
     */
     EmbedResult embed(const StringInputs& text,
@@ -66,7 +66,7 @@ public:
     * @brief Computes embedding vectors using properties.
     *
     * @param properties Generation arguments and inputs (e.g. ov::genai::text(...), ov::genai::images(...),
-    *                   ov::genai::videos(...), ov::genai::videos_metadata(...), ov::genai::prompt(...)).
+    *                   ov::genai::videos(...), ov::genai::videos_metadata(...), ov::genai::embedding_prompt(...)).
     * @return EmbedResult.
     */
     EmbedResult embed(const ov::AnyMap& properties);
@@ -75,7 +75,7 @@ public:
     * @brief Computes embedding vectors using keyword properties.
     *
     * @param properties Generation arguments and inputs (e.g. ov::genai::text(...), ov::genai::images(...),
-    *                   ov::genai::prompt(...)).
+    *                   ov::genai::embedding_prompt(...)).
     * @return EmbedResult.
     */
     template <typename... Properties,
@@ -100,7 +100,7 @@ static constexpr ov::Property<std::variant<std::string, std::vector<std::string>
  * @brief Instruction for encoding a document or query.
  * If the model has a chat template, the prompt is added to the system message; otherwise it is prepended to the text.
  */
-static constexpr ov::Property<std::string> embedding_prompt{"prompt"};
+static constexpr ov::Property<std::string> embedding_prompt{"embedding_prompt"};
 
 /**
  * @brief Configuration for the text embedding pipeline.

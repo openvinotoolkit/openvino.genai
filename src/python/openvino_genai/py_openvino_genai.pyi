@@ -1221,7 +1221,7 @@ class EmbeddingPipeline:
     """
     def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
-        Plugin and/or config properties
+        Plugin and/or config properties. E.g. CACHE_DIR=/tmp/, pooling_type=PoolingType.MEAN, or text_embedding_config=TextEmbeddingPipeline::Config()
         """
     @typing.overload
     def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], **kwargs) -> EmbedResult:

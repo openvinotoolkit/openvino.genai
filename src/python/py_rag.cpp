@@ -93,7 +93,7 @@ void init_rag_pipelines(py::module_& m) {
             "Path to the directory containing model xml/bin files and tokenizer",
             py::arg("device"),
             "Device to run the model on (e.g., CPU, GPU)",
-            "Plugin and/or config properties")
+            "Plugin and/or config properties. E.g. CACHE_DIR=/tmp/, pooling_type=PoolingType.MEAN, or text_embedding_config=TextEmbeddingPipeline::Config()")
         .def(
             "embed",
             [](EmbeddingPipeline& pipe,
