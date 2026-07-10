@@ -976,7 +976,7 @@ if sys.platform == "win32":
             "— GPU memory metrics (gpu_<index>) enabled."
         )
     except ImportError:
-        log.warning(
+        log.debug(  # QW-4: noise-free default; warning only if user explicitly picks -W
             "MemorySamplerW: wmi module not found "
             "— GPU memory metrics (gpu_<index>) will be disabled. "
             "Install it with:  pip install wmi"
@@ -1027,17 +1027,6 @@ class MemorySamplerW(MemorySampler):
     nsys
         ``sys`` expressed as a percentage of total installed RAM.
 
-    Notes
-    -----
-    * Only available on ``sys.platform == "win32"``.  The
-      :meth:`_query_win_mem` helper returns ``(0, 0, 0)`` on other
-      platforms so the class is safe to import everywhere.
-    * DLL handles and the ``PROCESS_MEMORY_COUNTERS_EX`` ctypes structure
-      are defined at module level (inside the ``if sys.platform == "win32"``
-      guard above) so the per-call overhead is limited to one
-      ``OpenProcess`` + ``GetProcessMemoryInfo`` + ``CloseHandle`` round
-      trip per PID.
-
     gpu_<index>
         **Dedicated GPU memory in use** for the adapter at position
         *<index>* in the WMI ``Win32_VideoController`` enumeration (e.g.
@@ -1061,8 +1050,8 @@ class MemorySamplerW(MemorySampler):
     * The WMI connection (``wmi.WMI()`` instance) is established once in
       ``__init__`` and cached in ``self._wmi_conn``; re-using it avoids
       the COM initialisation overhead on every :meth:`collect` call.
-      Note that WMI polling itself can take 100–500 ms per call — see
-      ``~/gpu-mem-research.txt`` section 3 for details.
+      Note that WMI polling itself can take 100–500 ms per call; avoid
+      calling it more frequently than your sampling interval requires.
     """
 
     chunk_size = 8192
@@ -1164,7 +1153,7 @@ class MemorySamplerW(MemorySampler):
                 f"MemorySamplerW: WMI GPU memory query failed ({exc})"
                 " — returning zeros."
             )
-            return tuple(0 for _ in range(self._gpu_count))
+            return (0,) * self._gpu_count  # QW-6: more Pythonic, slightly faster
 
     @staticmethod
     def _query_win_mem(pid):
@@ -1194,7 +1183,7 @@ class MemorySamplerW(MemorySampler):
             ok = _psapi.GetProcessMemoryInfo(
                 hProcess,
                 ctypes.byref(counters),
-                ctypes.sizeof(_PROCESS_MEMORY_COUNTERS_EX),
+                counters.cb,  # QW-5: reuse the value already set one line above
             )
             if ok:
                 return (
@@ -1256,7 +1245,8 @@ class MemorySamplerW(MemorySampler):
         nsys_mem = 100.0 * sys_mem / vm.total
 
         # ── GPU memory (one value per adapter, via WMI) ──────────────────
-        vals = (wset_total, priv_total, pagefile_total, sys_mem, nsys_mem, *self._collect_gpu_mem())
+        gpu_vals = self._collect_gpu_mem()  # QW-8: split long line for readability
+        vals = (wset_total, priv_total, pagefile_total, sys_mem, nsys_mem, *gpu_vals)
         return self.aggregate_and_format(marker, vals)
 
 
@@ -1533,6 +1523,7 @@ class MemoryMarkerHandler:
             traceback.print_exc()
             sys.stderr.flush()
             s_event.set()
+            return  # QW-1: prevent UnboundLocalError if MemoryMarkerMonitor.__init__ raises
 
         metadata = {
             "mode": mode,
