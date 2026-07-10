@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -375,9 +376,20 @@ class LTXPipeline {
 
         ov::Tensor img = image;
         if (img.get_shape().size() == 3) {
-            auto s = img.get_shape();
+            const auto s = img.get_shape();
             img.set_shape({1, s[0], s[1], s[2]});
         }
+
+        const auto& img_shape = img.get_shape();
+        OPENVINO_ASSERT(img_shape.size() == 4,
+                        "Conditioning image must have shape [H, W, 3] or [1, H, W, 3] (NHWC), got rank ",
+                        img_shape.size());
+        OPENVINO_ASSERT(img.get_element_type() == ov::element::u8,
+                        "Conditioning image must have element type u8 (uint8), got ",
+                        img.get_element_type());
+        OPENVINO_ASSERT(img_shape[3] == 3,
+                        "Conditioning image must have 3 channels in the last dimension (NHWC), got ",
+                        img_shape[3]);
 
         ov::Tensor resized = m_image_resizer->execute(img, config.height, config.width);
         ov::Tensor processed = m_image_processor->execute(resized);
@@ -1139,6 +1151,12 @@ public:
         update_adapters_from_properties(properties, m_generation_config.adapters);
         m_t5_text_encoder->compile(text_encode_device, properties);
         m_vae->compile(vae_device, properties);
+        if (m_pipeline_type == VideoPipelineType::IMAGE_2_VIDEO) {
+            m_image_resizer = std::make_shared<ImageResizer>(
+                vae_device, ov::element::u8, "NHWC",
+                ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW);
+            m_image_processor = std::make_shared<ImageProcessor>(vae_device, true);
+        }
 
         m_transformer->compile(denoise_device, properties);
         m_text_encode_device = text_encode_device;
