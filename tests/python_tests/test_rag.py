@@ -475,7 +475,7 @@ def test_embedding_pipeline_prompt_matches_embed_instruction(emb_model):
         emb_model.models_path, "CPU", TextEmbeddingPipeline.Config(embed_instruction=prompt)
     )
 
-    embedding_result = embedding_pipeline.embed(text, prompt=prompt)
+    embedding_result = embedding_pipeline.embed(text, embedding_prompt=prompt)
     text_embedding_result = text_embedding_pipeline.embed_documents([text])
 
     np.testing.assert_allclose(

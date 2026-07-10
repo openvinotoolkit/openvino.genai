@@ -40,7 +40,7 @@ public:
      * @param models_path Path to the directory containing model xml/bin files and tokenizer.
      * @param device Device.
      * @param properties Optional plugin and pipeline properties to pass to ov::Core::compile_model().
-     * e.g ov::AnyMap{{"CACHE_DIR", "/path/to/cache"}, {ov::genai::text_embedding_config, config}}.
+     * e.g ov::AnyMap{{"CACHE_DIR", "/path/to/cache"}, {ov::genai::text_embedding_config.name(), config}}.
      */
     EmbeddingPipeline(const std::filesystem::path& models_path,
                       const std::string& device,
@@ -53,7 +53,7 @@ public:
     * @param images Images for which embedding is computed. Each image is represented as a tensor of shape [H, W, C] (uint8) or a batch [N, H, W, C].
     * @param videos Videos for which embedding is computed. Each video is represented as a tensor of shape [F, H, W, C] (uint8), where F is the number of frames.
     * @param videos_metadata Video metadata for the videos provided.
-    * @param properties Generation arguments (e.g. ov::genai::embedding_prompt).
+    * @param properties Generation arguments (e.g. ov::genai::embedding_prompt("Represent this text")).
     * @return EmbedResult.
     */
     EmbedResult embed(const StringInputs& text,
