@@ -13,10 +13,10 @@ import UsageOptionsSection from './_sections/_usage_options/index.mdx';
 
     <Tabs groupId="whisper-export-command">
         <TabItem label="Default" value="default">
-            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov' trustRemoteCode />
+            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov' />
         </TabItem>
         <TabItem label="INT8 Static Quantization" value="int8_quant">
-            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov_int8' trustRemoteCode quantMode='int8' dataset='librispeech' numSamples={32} />
+            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov_int8' quantMode='int8' dataset='librispeech' numSamples={32} />
         </TabItem>
     </Tabs>
 
