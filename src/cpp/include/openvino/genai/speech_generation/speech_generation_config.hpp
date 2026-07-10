@@ -84,7 +84,7 @@ public:
     float subtalker_temperature = 0.9f;
 
     // Random seed for deterministic sampling (0 = random/non-deterministic).
-        // Only used when do_sample=true; ignored when do_sample=false (argmax sampling).
+    // Only used when do_sample=true; ignored when do_sample=false (argmax sampling).
     uint32_t seed = 0;
 
     // Qwen3 Base voice-clone reference transcript for ICL mode.
