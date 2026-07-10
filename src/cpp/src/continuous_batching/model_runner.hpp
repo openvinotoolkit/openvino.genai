@@ -694,21 +694,21 @@ public:
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
                     OPENVINO_ASSERT(it != m_initial_hidden_states.end() && it->second.get_size() > 0,
-                                    "Missing initial hidden state for Eagle3 draft model inference.");
+                                    "Missing initial hidden state for draft model inference.");
                     const auto& stored_hidden_state = it->second;
                     auto stored_shape = stored_hidden_state.get_shape();
-                    OPENVINO_ASSERT(stored_shape.size() > 0, "Unexpected hidden state shape for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_shape.size() > 0, "Unexpected hidden state shape for draft model inference.");
                     size_t stored_seq_len = stored_shape[0];
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
                     OPENVINO_ASSERT(stored_hidden_size == hidden_size,
-                                    "Eagle3 hs import: hidden size mismatch. request_id=",
+                                    "Hidden-state import: hidden size mismatch. request_id=",
                                     sequence_group->get_request_id(),
                                     ", grouped_id=", sequence->get_grouped_id(),
                                     ", stored_hidden_size=", stored_hidden_size,
                                     ", expected_hidden_size=", hidden_size);
                     OPENVINO_ASSERT(stored_seq_len == num_scheduled_tokens,
-                                    "Eagle3 hs import: seq len mismatch. request_id=",
+                                    "Hidden-state import: seq len mismatch. request_id=",
                                     sequence_group->get_request_id(),
                                     ", grouped_id=", sequence->get_grouped_id(),
                                     ", stored_seq_len=", stored_seq_len,
@@ -719,7 +719,8 @@ public:
                 } else if (_is_hs_internal()) {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
-                        OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
+                        OPENVINO_ASSERT(num_scheduled_tokens == 1,
+                                        "Unexpected num_scheduled_tokens in speculative hidden-state drafting stage.");
                         std::memset(hidden_state_data + current_token_idx * hidden_size,
                                     0,
                                     num_scheduled_tokens * hidden_size * sizeof(float));

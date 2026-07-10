@@ -72,7 +72,7 @@ MtpRTInfo extract_mtp_info_from_config(ov::AnyMap& config) {
     return mtp_rt_info;
 }
 
-void apply_mtp_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
+void apply_mtp_rt_info(const std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
     if (model->has_rt_info("mtp_mode") && model->get_rt_info<bool>("mtp_mode")) {
         properties["mtp_mode"] = true;
     }

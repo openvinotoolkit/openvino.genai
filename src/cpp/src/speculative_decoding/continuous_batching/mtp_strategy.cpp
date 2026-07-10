@@ -107,6 +107,8 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
 void ContinuousBatchingPipeline::MtpDecodingImpl::enable_mtp_hidden_state_pairing() {
     auto main_mtp_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_main_pipeline);
     auto draft_mtp_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForMtpDecodingImpl>(m_draft_pipeline);
+    OPENVINO_ASSERT(main_mtp_pipeline && draft_mtp_pipeline,
+                    "Internal error: expected MTP pipelines to be ContinuousBatchingForMtpDecodingImpl.");
     main_mtp_pipeline->set_hidden_state_export_needed(true);
     draft_mtp_pipeline->set_hidden_state_export_needed(true);
     draft_mtp_pipeline->set_hidden_state_import_needed(true);

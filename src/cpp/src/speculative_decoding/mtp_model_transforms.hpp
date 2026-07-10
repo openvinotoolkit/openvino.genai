@@ -20,7 +20,7 @@ struct MtpRTInfo {
 
 MtpRTInfo extract_mtp_info_from_config(ov::AnyMap& config);
 
-void apply_mtp_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties);
+void apply_mtp_rt_info(const std::shared_ptr<ov::Model>& model, ov::AnyMap& properties);
 
 ov::Output<ov::Node> extract_tied_lm_head_weight(const std::shared_ptr<ov::Model>& main_model,
                                                  bool& transpose_weight);
