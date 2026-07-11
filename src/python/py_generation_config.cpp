@@ -196,7 +196,7 @@ char generation_config_docstring[] = R"(
 
     Thinking / Reasoning control:
     enable_thinking:         whether to allow thinking/reasoning in model output.
-    reasoning_budget_tokens: max tokens allowed in thinking block before forcing </think> (-1 = disabled, 0 = immediate).
+    reasoning_budget_tokens: max tokens allowed in thinking block before forcing </think> (-1 = unlimited / no budget enforcement, 0 = immediate).
     thinking_start_token_id: token ID for the thinking start tag (e.g. <think>).
     thinking_end_token_id:   token ID for the thinking end tag (e.g. </think>).
 
@@ -460,7 +460,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("branching_factor", &GenerationConfig::branching_factor, "Number of branches (top-k) at each level of the candidate tree")
         .def_readwrite("tree_depth", &GenerationConfig::tree_depth, "Lookahead depth of the candidate tree")
         .def_readwrite("enable_thinking", &GenerationConfig::enable_thinking, "Whether to allow thinking/reasoning in model output")
-        .def_readwrite("reasoning_budget_tokens", &GenerationConfig::reasoning_budget_tokens, "Max tokens allowed in thinking block before forcing </think> (-1 = disabled, 0 = immediate)")
+        .def_readwrite("reasoning_budget_tokens", &GenerationConfig::reasoning_budget_tokens, "Max tokens allowed in thinking block before forcing </think> (-1 = unlimited / no budget enforcement, 0 = immediate)")
         .def_readwrite("thinking_start_token_id", &GenerationConfig::thinking_start_token_id, "Token ID for the thinking start tag (e.g. <think>)")
         .def_readwrite("thinking_end_token_id", &GenerationConfig::thinking_end_token_id, "Token ID for the thinking end tag (e.g. </think>)")
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
