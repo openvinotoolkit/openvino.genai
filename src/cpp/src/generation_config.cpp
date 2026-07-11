@@ -307,13 +307,13 @@ void GenerationConfig::validate() const {
     OPENVINO_ASSERT(reasoning_budget_tokens >= -1,
         "reasoning_budget_tokens must be -1 (disabled) or a non-negative value, but got ",
         reasoning_budget_tokens);
-    if (!enable_thinking) {
+    if (!enable_thinking && (thinking_start_token_id >= 0 || thinking_end_token_id >= 0)) {
         OPENVINO_ASSERT(thinking_end_token_id >= 0,
-            "thinking_end_token_id must be set when enable_thinking is false. "
-            "Tokenize \"</think>\" and set the resulting token ID.");
+            "thinking_end_token_id must be set when enable_thinking is false "
+            "and thinking_start_token_id is set.");
         OPENVINO_ASSERT(thinking_start_token_id >= 0,
-            "thinking_start_token_id must be set when enable_thinking is false. "
-            "Tokenize \"<think>\" and set the resulting token ID.");
+            "thinking_start_token_id must be set when enable_thinking is false "
+            "and thinking_end_token_id is set.");
     }
     if (reasoning_budget_tokens >= 0) {
         OPENVINO_ASSERT(thinking_start_token_id >= 0 && thinking_end_token_id >= 0,
