@@ -24,7 +24,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         OPENVINO_ASSERT(execution_devices.size() == 1u);
         m_is_npu = true;
         m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
-        const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
     }
 }
 

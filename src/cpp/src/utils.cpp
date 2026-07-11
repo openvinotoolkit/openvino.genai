@@ -782,6 +782,9 @@ uint32_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
     // for proper support need to expose NPUW_LLM_MAX_GENERATION_TOKEN_LEN property in NPU model
     const auto max_generation_token_len = 1;
 
+    OPENVINO_ASSERT(max_prompt_len + min_response_len >= max_generation_token_len,
+                     "Invalid NPU KV-cache capacity: MAX_PROMPT_LEN + MIN_RESPONSE_LEN must be >= ",
+                     max_generation_token_len, ", got ", max_prompt_len, " + ", min_response_len);
     return max_prompt_len + min_response_len - max_generation_token_len;
 }
 
