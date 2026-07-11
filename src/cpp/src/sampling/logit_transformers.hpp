@@ -524,5 +524,115 @@ public:
     }
 };
 
+// Forces thinking_end_token_id when reasoning budget is exhausted.
+//
+// State machine:
+//   IDLE -> COUNTING -> FORCING -> DONE
+//     ^                         |
+//     +--- re-arm (DONE -> COUNTING) ---+
+//
+// IDLE:    Passthrough, watches for thinking_start_token_id.
+// COUNTING: Decrements budget, watches for natural end.
+// FORCING:  All logits = -inf, only thinking_end_token_id allowed.
+// DONE:    Passthrough forever. Re-arms on new start token (multi-block).
+//
+// Constructor starts in COUNTING, assuming prompt already contains the
+// start token (as Qwen/DeepSeek chat templates do).
+class ThinkingBudgetTransform : public ILogitTransformer {
+public:
+    enum State { IDLE, COUNTING, FORCING, DONE };
+
+    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id)
+        : m_budget(budget), m_start_id(start_id), m_end_id(end_id) {
+        // Qwen/DeepSeek chat templates insert <think> in the prompt,
+        // so start in COUNTING to account for the pre-inserted start token.
+        m_state = COUNTING;
+        m_count = 0;
+        if (m_budget == 0) {
+            m_state = FORCING;
+        }
+    }
+
+    void apply(Logits& logits) override {
+        if (m_state != FORCING) return;
+        if (m_end_id < 0) return;
+
+        const float neg_inf = -std::numeric_limits<float>::infinity();
+        if (logits.is_vector_initialized()) {
+            for (auto& t : logits.m_vector) {
+                if (t.m_index != m_end_id) {
+                    t.m_log_prob = neg_inf;
+                }
+            }
+        } else {
+            for (size_t i = 0; i < logits.m_size; ++i) {
+                if (static_cast<int64_t>(i) != m_end_id) {
+                    logits.m_data[i] = neg_inf;
+                }
+            }
+        }
+    }
+
+    bool is_applicable(size_t /*generated_tokens_cnt*/) override { return true; }
+
+    // Called by LogitProcessor::register_new_generated_token
+    void accept_token(int64_t token_id) {
+        // token_text is not passed (LogitProcessor has no tokenizer reference),
+        // so UTF-8 safe truncation is not available.
+        switch (m_state) {
+        case IDLE:
+            if (token_id == m_start_id) {
+                m_state = COUNTING;
+                m_count = 0;
+            }
+            break;
+
+        case COUNTING:
+            if (token_id == m_end_id) {
+                m_state = DONE;
+            } else {
+                ++m_count;
+                if (m_budget >= 0 && m_count >= static_cast<size_t>(m_budget)) {
+                    m_state = FORCING;
+                }
+            }
+            break;
+
+        case FORCING:
+            if (token_id == m_end_id) {
+                m_state = DONE;
+            }
+            break;
+
+        case DONE:
+            if (token_id == m_start_id) {
+                m_state = COUNTING;
+                m_count = 0;
+            }
+            break;
+        }
+    }
+
+    // Runtime force: transition COUNTING → FORCING
+    void force() {
+        if (m_state == COUNTING) {
+            m_state = FORCING;
+        }
+    }
+
+    State get_state() const { return m_state; }
+    void reset() {
+        m_state = COUNTING;
+        m_count = 0;
+    }
+
+private:
+    int64_t m_budget;
+    int64_t m_start_id;
+    int64_t m_end_id;
+    State m_state = COUNTING;
+    size_t m_count = 0;
+};
+
 } // namespace LogitTransformers
 } // namespace ov::genai
