@@ -532,7 +532,7 @@ public:
 //     +--- re-arm (DONE -> COUNTING) ---+
 //
 // IDLE:    Passthrough, watches for thinking_start_token_id.
-// COUNTING: Decrements budget, watches for natural end.
+// COUNTING: Counts tokens in the think block, watches for natural end.
 // FORCING:  All logits = -inf, only thinking_end_token_id allowed.
 // DONE:    Passthrough forever. Re-arms on new start token (multi-block).
 //
@@ -542,14 +542,18 @@ class ThinkingBudgetTransform : public ILogitTransformer {
 public:
     enum State { IDLE, COUNTING, FORCING, DONE };
 
-    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id)
+    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id, bool prompt_has_open_think = false)
         : m_budget(budget), m_start_id(start_id), m_end_id(end_id) {
-        // Qwen/DeepSeek chat templates insert <think> in the prompt,
-        // so start in COUNTING to account for the pre-inserted start token.
-        m_state = COUNTING;
-        m_count = 0;
-        if (m_budget == 0) {
-            m_state = FORCING;
+        if (prompt_has_open_think) {
+            // Qwen/DeepSeek chat templates insert <think> in the prompt,
+            // so start in COUNTING to account for the pre-inserted start token.
+            m_state = COUNTING;
+            m_count = 0;
+            if (m_budget == 0) {
+                m_state = FORCING;
+            }
+        } else {
+            m_state = IDLE;
         }
     }
 
@@ -582,7 +586,7 @@ public:
         switch (m_state) {
         case IDLE:
             if (token_id == m_start_id) {
-                m_state = (m_budget == 0) ? FORCING : COUNTING;
+                m_state = COUNTING;
                 m_count = 0;
             }
             break;
@@ -606,7 +610,7 @@ public:
 
         case DONE:
             if (token_id == m_start_id) {
-                m_state = COUNTING;
+                m_state = (m_budget == 0) ? FORCING : COUNTING;
                 m_count = 0;
             }
             break;
@@ -622,7 +626,7 @@ public:
 
     State get_state() const { return m_state; }
     void reset() {
-        m_state = COUNTING;
+        m_state = (m_budget == 0) ? FORCING : COUNTING;
         m_count = 0;
     }
 
