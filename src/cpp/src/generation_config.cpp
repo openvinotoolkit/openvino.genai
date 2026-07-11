@@ -304,6 +304,9 @@ void GenerationConfig::validate() const {
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
 
     // Thinking / reasoning
+    OPENVINO_ASSERT(reasoning_budget_tokens >= -1,
+        "reasoning_budget_tokens must be -1 (disabled) or a non-negative value, but got ",
+        reasoning_budget_tokens);
     if (!enable_thinking) {
         OPENVINO_ASSERT(thinking_end_token_id >= 0,
             "thinking_end_token_id must be set when enable_thinking is false. "
