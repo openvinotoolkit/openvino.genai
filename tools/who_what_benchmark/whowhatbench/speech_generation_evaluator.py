@@ -36,16 +36,20 @@ class _Speech:
 
 
 class _SpeechResult:
-    def __init__(self, data, sample_rate: int):
+    def __init__(self, data, sample_rate: int, text: str = ""):
         self.speeches = [_Speech(data)]
         self.output_sample_rate = sample_rate
+        self.text = text
 
 
 SPEAKER_SCORE_COL = "speaker score"
 CONTENT_SCORE_COL = "content score"
 DURATION_SCORE_COL = "duration score"
 ACOUSTIC_SCORE_COL = "acoustic score"
+TEXT_WER_COL = "text WER"
+TEXT_SIM_COL = "text similarity"
 OVERALL_SCORE_COL = "overall similarity"
+TEXT_COL = "generated_text"
 
 
 def _extract_qwen3_omni_speakers_from_config(model_config: Any) -> list[str]:
@@ -462,11 +466,16 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
                 speaker=speaker,
                 return_audio=True,
                 thinker_max_new_tokens=128,
+                talker_max_new_tokens=128,
                 thinker_eos_token_id=151645,
                 **talker_kwargs,
             )
 
-        audio = output[1] if isinstance(output, (tuple, list)) else getattr(output, "audio", None)
+        if isinstance(output, (tuple, list)):
+            thinker_sequences, audio = output[0], output[1]
+        else:
+            thinker_sequences = getattr(output, "sequences", None)
+            audio = getattr(output, "audio", None)
         if audio is None:
             raise ValueError("Qwen3-Omni did not return audio. Ensure the talker module is enabled.")
 
@@ -475,7 +484,18 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
         else:
             speech = torch.as_tensor(audio).cpu().reshape(-1).float().numpy()
 
-        return _SpeechResult(speech, QWEN3_OMNI_SAMPLE_RATE)
+        # Decode only the generated portion (after the prompt tokens) so the stored text mirrors
+        # what the talker was fed as trailing_text_hidden and matches the audio content.
+        text = ""
+        if thinker_sequences is not None:
+            input_ids = inputs.get("input_ids") if hasattr(inputs, "get") else None
+            prompt_len = input_ids.shape[-1] if isinstance(input_ids, torch.Tensor) else 0
+            generated_ids = thinker_sequences[0, prompt_len:] if prompt_len else thinker_sequences[0]
+            text = self.processor.batch_decode(
+                [generated_ids], skip_special_tokens=True, clean_up_tokenization_spaces=False
+            )[0]
+
+        return _SpeechResult(speech, QWEN3_OMNI_SAMPLE_RATE, text=text)
 
 
 class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
@@ -514,7 +534,9 @@ class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
             raise ValueError("OmniPipeline did not return audio. Ensure the talker module is enabled.")
 
         speech = np.asarray(speech_outputs[0].data, dtype=np.float32).reshape(-1)
-        return _SpeechResult(speech, QWEN3_OMNI_SAMPLE_RATE)
+        texts = getattr(result, "texts", None) or []
+        text = texts[0] if texts else ""
+        return _SpeechResult(speech, QWEN3_OMNI_SAMPLE_RATE, text=text)
 
 
 def _safe_metric_mean(values):
@@ -575,6 +597,8 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         return self.generation_fn
 
     def score(self, model_or_data, gen_speech_fn=None, output_dir=None, verbose=False, **kwargs):
+        if verbose:
+            LOGGER.setLevel(logging.DEBUG)
         audio_folder = os.path.join(output_dir if output_dir else self.gt_dir, "target")
 
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
@@ -585,11 +609,16 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self._validate_required_columns(predictions, ["audio", "prompts"], "prediction data")
         self.predictions = predictions
 
+        gt_has_text = TEXT_COL in self.gt_data.columns
+        pred_has_text = TEXT_COL in predictions.columns
+
         max_samples = min(len(self.gt_data), len(predictions))
         speaker_scores = []
         content_scores = []
         duration_scores = []
         acoustic_scores = []
+        text_wer_values = []
+        text_sim_scores = []
         overall_scores = []
 
         for idx in tqdm(range(max_samples), desc="TTS similarity evaluation"):
@@ -608,11 +637,27 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             acoustic_scores.append(scores.acoustic)
             overall_scores.append(scores.overall)
 
+            if gt_has_text and pred_has_text:
+                wer, sim = self._score_text_pair(str(gt_row[TEXT_COL]), str(prediction_row[TEXT_COL]))
+            else:
+                wer, sim = None, None
+            text_wer_values.append(wer)
+            text_sim_scores.append(sim)
+
+            if verbose and gt_has_text and pred_has_text:
+                LOGGER.debug("--- Thinker Text ---")
+                LOGGER.debug("Reference text: %s", str(gt_row[TEXT_COL]))
+                LOGGER.debug("Target text:    %s", str(prediction_row[TEXT_COL]))
+                LOGGER.debug("Text WER: %s", "None" if wer is None else f"{wer:.3f}")
+                LOGGER.debug("Text similarity: %s", "None" if sim is None else f"{sim:.3f}")
+
         all_metrics_per_prompt = {
             SPEAKER_SCORE_COL: speaker_scores,
             CONTENT_SCORE_COL: content_scores,
             DURATION_SCORE_COL: duration_scores,
             ACOUSTIC_SCORE_COL: acoustic_scores,
+            TEXT_WER_COL: text_wer_values,
+            TEXT_SIM_COL: text_sim_scores,
             OVERALL_SCORE_COL: overall_scores,
         }
 
@@ -621,6 +666,8 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             CONTENT_SCORE_COL: _safe_metric_mean(content_scores),
             DURATION_SCORE_COL: _safe_metric_mean(duration_scores),
             ACOUSTIC_SCORE_COL: _safe_metric_mean(acoustic_scores),
+            TEXT_WER_COL: _safe_metric_mean(text_wer_values),
+            TEXT_SIM_COL: _safe_metric_mean(text_sim_scores),
             OVERALL_SCORE_COL: _safe_metric_mean(overall_scores),
         }
 
@@ -630,10 +677,32 @@ class SpeechGenerationEvaluator(BaseEvaluator):
                 "prompt": predictions["prompts"].values[:max_samples],
                 "source_model": self.gt_data["audio"].values[:max_samples],
                 "optimized_model": predictions["audio"].values[:max_samples],
+                "reference_text": (self.gt_data[TEXT_COL].values[:max_samples] if gt_has_text else [""] * max_samples),
+                "target_text": (predictions[TEXT_COL].values[:max_samples] if pred_has_text else [""] * max_samples),
             }
         )
 
         return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
+
+    @staticmethod
+    def _score_text_pair(reference: str, target: str):
+        """Return (WER, similarity in 0..1) for the target text vs reference text.
+
+        Reuses TTSSimilarityEvaluator's normalization and content-score curve so text/audio
+        WER-based scores are directly comparable side-by-side.
+        """
+        from jiwer import wer as jiwer_wer
+        from .tts_similarity import normalize_text, safe_float, linear_distance_score, ScoringConfig
+
+        ref = normalize_text(reference or "")
+        tgt = normalize_text(target or "")
+        if not ref and not tgt:
+            return 0.0, 1.0
+        if not ref:
+            return None, None
+        wer = safe_float(jiwer_wer(ref, tgt))
+        sim = linear_distance_score(wer, 0.0, ScoringConfig().content_wer_bad)
+        return wer, sim
 
     def worst_examples(self, top_k: int = 5, metric=OVERALL_SCORE_COL):
         assert self.last_cmp is not None
@@ -696,7 +765,8 @@ class SpeechGenerationEvaluator(BaseEvaluator):
                 sr = int(result.output_sample_rate)
             except AttributeError:
                 sr = 16000
-            return audio_data, sr
+            text = getattr(result, "text", "") or ""
+            return audio_data, sr, text
 
         generation_fn = gen_speech_fn or default_gen_speech_fn
 
@@ -722,6 +792,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             os.makedirs(audio_dir)
 
         audios = []
+        texts = []
         prompt_values = data["prompts"].values
         expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
 
@@ -737,21 +808,29 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             else:
                 speaker_embedding = self.speaker_embedding
 
-            generated_audio, generated_sr = generation_fn(
+            result = generation_fn(
                 model,
                 prompt,
                 speaker_embedding=speaker_embedding,
                 language=self.speech_language,
                 voice=self.speech_voice,
             )
+            # Custom gen_speech_fn may still return the legacy (audio, sr) tuple; accept both.
+            if len(result) == 3:
+                generated_audio, generated_sr, generated_text = result
+            else:
+                generated_audio, generated_sr = result
+                generated_text = ""
 
             audio_path = os.path.join(audio_dir, f"{idx}.wav")
             sf.write(audio_path, generated_audio, samplerate=generated_sr)
             audios.append(audio_path)
+            texts.append(generated_text or "")
 
         return pd.DataFrame(
             {
                 "prompts": list(prompt_values),
                 "audio": audios,
+                TEXT_COL: texts,
             }
         )
