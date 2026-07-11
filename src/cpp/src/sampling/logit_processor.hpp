@@ -20,6 +20,9 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
+    // thinking / reasoning budget
+    std::shared_ptr<LogitTransformers::ThinkingBudgetTransform> m_thinking_budget;
+
     // speculative decoding parameters
     float m_assistant_confidence_threshold = 0.f;
 
@@ -47,6 +50,23 @@ public:
         if (sampling_params.min_new_tokens > 0) {
             m_logit_transformers.push_back(std::make_shared<LogitTransformers::EOSPenaltyTransform>(
                 sampling_params.stop_token_ids, sampling_params.min_new_tokens));
+        }
+
+        // Thinking / Reasoning Budget
+        if (!sampling_params.enable_thinking || sampling_params.reasoning_budget_tokens >= 0) {
+            int64_t start_id = sampling_params.thinking_start_token_id;
+            int64_t end_id   = sampling_params.thinking_end_token_id;
+            int64_t budget   = sampling_params.reasoning_budget_tokens;
+
+            if (!sampling_params.enable_thinking && end_id >= 0) {
+                budget = 0;
+            }
+
+            if (start_id >= 0 && end_id >= 0 && budget >= 0) {
+                m_thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
+                    budget, start_id, end_id);
+                m_logit_transformers.push_back(m_thinking_budget);
+            }
         }
 
         OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
@@ -142,6 +162,10 @@ public:
             if (transformer->is_applicable(m_generated_tokens)) {
                 transformer->accept_tokens({new_token_id});
             }
+        }
+        // Notify thinking budget transformer
+        if (m_thinking_budget) {
+            m_thinking_budget->accept_token(new_token_id);
         }
     }
 
