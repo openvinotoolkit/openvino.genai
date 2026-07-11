@@ -582,7 +582,7 @@ public:
         switch (m_state) {
         case IDLE:
             if (token_id == m_start_id) {
-                m_state = COUNTING;
+                m_state = (m_budget == 0) ? FORCING : COUNTING;
                 m_count = 0;
             }
             break;
