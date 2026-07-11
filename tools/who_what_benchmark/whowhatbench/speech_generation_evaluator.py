@@ -17,7 +17,13 @@ from importlib.resources import files
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
-from .tts_similarity import TTSSimilarityEvaluator
+from .tts_similarity import (
+    ScoringConfig,
+    TTSSimilarityEvaluator,
+    linear_distance_score,
+    normalize_text,
+    safe_float,
+)
 
 PROMPTS_FILE = "speech_generation_prompts.yaml"
 DEFAULT_SPEAKER_EMBEDDING_REPO_ID = "Xenova/cmu-arctic-xvectors-extracted"
@@ -52,79 +58,63 @@ OVERALL_SCORE_COL = "overall similarity"
 TEXT_COL = "generated_text"
 
 
-def _extract_qwen3_omni_speakers_from_config(model_config: Any) -> list[str]:
-    """Extract supported Qwen3-Omni speaker names from a transformers model config object."""
-    if model_config is None:
+def _qwen3_omni_speakers(source: Any) -> list[str]:
+    """Return supported Qwen3-Omni speaker names from a transformers config, dict, or model dir."""
+    if source is None:
         return []
-    talker_config = getattr(model_config, "talker_config", None)
-    if talker_config is None:
+    if isinstance(source, (str, Path)):
+        config_path = Path(source) / "config.json"
+        if not config_path.exists():
+            return []
+        try:
+            import json
+
+            with config_path.open("r", encoding="utf-8") as config_file:
+                source = json.load(config_file)
+        except Exception:
+            return []
+
+    talker = source.get("talker_config") if isinstance(source, dict) else getattr(source, "talker_config", None)
+    if talker is None:
         return []
-    speaker_id = getattr(talker_config, "speaker_id", None)
+    speaker_id = talker.get("speaker_id") if isinstance(talker, dict) else getattr(talker, "speaker_id", None)
     return list(speaker_id.keys()) if isinstance(speaker_id, dict) else []
-
-
-def _load_qwen3_omni_speakers_from_model_dir(model_dir: str) -> list[str]:
-    """Read supported Qwen3-Omni speakers from model_dir/config.json."""
-    config_path = Path(model_dir) / "config.json"
-    if not config_path.exists():
-        return []
-    try:
-        import json
-
-        with config_path.open("r", encoding="utf-8") as config_file:
-            config = json.load(config_file)
-        talker_cfg = config.get("talker_config", {})
-        speaker_id = talker_cfg.get("speaker_id", {}) if isinstance(talker_cfg, dict) else {}
-        return list(speaker_id.keys()) if isinstance(speaker_id, dict) else []
-    except Exception:
-        return []
-
-
-def _build_lower_to_original_map(values: list[str]) -> dict[str, str]:
-    mapping: dict[str, str] = {}
-    for value in values:
-        if not isinstance(value, str):
-            continue
-        key = value.strip().lower()
-        if not key:
-            continue
-        if key not in mapping:
-            mapping[key] = value
-    return mapping
 
 
 class _Qwen3OmniSpeakerMixin:
     """Speaker resolution logic shared by Qwen3-Omni HF and GenAI wrappers."""
 
+    model_type = "speech-generation"
+
     def _init_speakers(self, supported_speakers: list[str], requested_default: str) -> None:
         self.supported_speakers = supported_speakers
-        self._supported_speaker_map = _build_lower_to_original_map(supported_speakers)
-        self.default_speaker = self._resolve_default_speaker(requested_default)
-        self.model_type = "speech-generation"
+        # Case-insensitive lookup: user-supplied "ethan" resolves to the model's "Ethan".
+        self._speaker_map = {s.strip().lower(): s for s in supported_speakers if isinstance(s, str) and s.strip()}
+        self.default_speaker = self._pick_default(requested_default)
 
-    def _resolve_default_speaker(self, requested_default: str) -> str:
-        requested = requested_default.strip() if isinstance(requested_default, str) else ""
-        if requested.lower() in self._supported_speaker_map:
-            return self._supported_speaker_map[requested.lower()]
-        if self.supported_speakers:
-            fallback = sorted(self.supported_speakers, key=str.lower)[0]
-            if requested:
-                LOGGER.info(
-                    "Qwen3-Omni speaker '%s' is unavailable for this model. Falling back to '%s'.",
-                    requested,
-                    fallback,
-                )
-            return fallback
-        return requested or QWEN3_OMNI_DEFAULT_SPEAKER
+    def _pick_default(self, requested: str) -> str:
+        requested = requested.strip() if isinstance(requested, str) else ""
+        if requested.lower() in self._speaker_map:
+            return self._speaker_map[requested.lower()]
+        if not self.supported_speakers:
+            return requested or QWEN3_OMNI_DEFAULT_SPEAKER
+        fallback = sorted(self.supported_speakers, key=str.lower)[0]
+        if requested:
+            LOGGER.info(
+                "Qwen3-Omni speaker '%s' is unavailable for this model. Falling back to '%s'.",
+                requested,
+                fallback,
+            )
+        return fallback
 
     def get_speaker_embedding_shape(self) -> tuple:
         return (1, 1)
 
     def _resolve_speaker(self, voice: str) -> str:
         speaker = voice.strip() if isinstance(voice, str) and voice.strip() else self.default_speaker
-        if not self._supported_speaker_map:
+        if not self._speaker_map:
             return speaker
-        resolved = self._supported_speaker_map.get(speaker.lower())
+        resolved = self._speaker_map.get(speaker.lower())
         if resolved is None:
             supported = ", ".join(sorted(self.supported_speakers, key=str.lower))
             raise ValueError(
@@ -133,7 +123,7 @@ class _Qwen3OmniSpeakerMixin:
         return resolved
 
     @staticmethod
-    def _validate_no_embedding_or_language(speaker_embedding: Any, language: str) -> None:
+    def _reject_unsupported_inputs(speaker_embedding: Any, language: str) -> None:
         if speaker_embedding is not None:
             raise ValueError(
                 "Qwen3-Omni selects the voice by a named speaker and does not accept speaker embeddings. "
@@ -339,100 +329,99 @@ class KokoroModelWrapper:
         return _SpeechResult(audio, KOKORO_SAMPLE_RATE)
 
 
+def _seed_deterministic_generation():
+    import torch
+
+    torch.manual_seed(42)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
 class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
-    """Wrapper for Qwen3-Omni HF (transformers) models that emit speech via the talker module."""
+    """Wrapper for Qwen3-Omni HF (transformers) or Optimum models that emit speech via the talker module."""
 
     def __init__(self, model, processor, default_speaker=QWEN3_OMNI_DEFAULT_SPEAKER):
         self.model = model
         self.processor = processor
         self._dtypes_aligned = False
-        self._init_speakers(
-            _extract_qwen3_omni_speakers_from_config(getattr(model, "config", None)),
-            default_speaker,
-        )
+        self._init_speakers(_qwen3_omni_speakers(getattr(model, "config", None)), default_speaker)
 
     def __getattr__(self, attr):
         return getattr(self.model, attr)
 
     def _align_hf_talker_dtype_if_needed(self):
+        """Reconcile talker/thinker dtypes on the underlying HF model.
+
+        The dense Qwen3-Omni checkpoint ships the thinker and talker in different precisions,
+        which breaks the CPU matmul between them. We cast the talker's text_projection to the
+        thinker's dtype and monkey-patch `_get_talker_user_parts` to cast the intermediate
+        hidden states, so the two modules can interoperate. Runs at most once per wrapper.
+        """
         if self._dtypes_aligned:
             return
+        self._dtypes_aligned = True
 
         try:
             import types
             import torch
 
-            thinker_embeddings = self.model.thinker.get_input_embeddings()
-            projection_layer = self.model.talker.text_projection
-            thinker_dtype = thinker_embeddings.weight.dtype
-            talker_dtype = self.model.talker.dtype
-
-            projection_params = list(projection_layer.parameters())
+            thinker_dtype = self.model.thinker.get_input_embeddings().weight.dtype
+            talker = self.model.talker
+            projection = talker.text_projection
+            projection_params = list(projection.parameters())
             projection_dtype = projection_params[0].dtype if projection_params else thinker_dtype
 
             if projection_dtype != thinker_dtype:
-                self.model.talker.text_projection = projection_layer.to(dtype=thinker_dtype)
+                talker.text_projection = projection.to(dtype=thinker_dtype)
                 LOGGER.info(
                     "Aligned Qwen3-Omni talker text_projection dtype from %s to %s.",
                     projection_dtype,
                     thinker_dtype,
                 )
 
-            if talker_dtype != thinker_dtype and not getattr(self.model, "_wwb_talker_dtype_patch_applied", False):
+            if talker.dtype == thinker_dtype or getattr(self.model, "_wwb_talker_dtype_patch_applied", False):
+                return
 
-                def _patched_get_talker_user_parts(
-                    model_self, im_start_index, segment_end_index, multimodal_mask, thinker_hidden, thinker_embed
-                ):
-                    user_talker_part = torch.empty(
-                        (
-                            1,
-                            segment_end_index - im_start_index,
-                            model_self.config.talker_config.text_config.hidden_size,
-                        ),
-                        device=model_self.talker.device,
-                        dtype=model_self.talker.dtype,
-                    )
-
-                    user_mm_mask = multimodal_mask[:, im_start_index:segment_end_index]
-
-                    if user_mm_mask.any():
-                        user_thinker_hidden_mm = thinker_hidden[:, im_start_index:segment_end_index][user_mm_mask]
-                        mm_hidden = model_self.talker.hidden_projection(user_thinker_hidden_mm).to(
-                            model_self.talker.device,
-                            dtype=user_talker_part.dtype,
-                        )
-                        user_talker_part[user_mm_mask] = mm_hidden
-
-                    user_thinker_embed = thinker_embed[:, im_start_index:segment_end_index][~user_mm_mask]
-                    user_text_hidden = model_self.talker.text_projection(user_thinker_embed).to(
-                        model_self.talker.device,
-                        dtype=user_talker_part.dtype,
-                    )
-                    user_talker_part[~user_mm_mask] = user_text_hidden
-                    return user_talker_part
-
-                self.model._get_talker_user_parts = types.MethodType(_patched_get_talker_user_parts, self.model)
-                self.model._wwb_talker_dtype_patch_applied = True
-                LOGGER.info(
-                    "Applied WWB Qwen3-Omni CPU dtype compatibility patch (talker=%s, thinker=%s).",
-                    talker_dtype,
-                    thinker_dtype,
+            def _patched_get_talker_user_parts(
+                model_self, im_start_index, segment_end_index, multimodal_mask, thinker_hidden, thinker_embed
+            ):
+                talker = model_self.talker
+                user_talker_part = torch.empty(
+                    (1, segment_end_index - im_start_index, model_self.config.talker_config.text_config.hidden_size),
+                    device=talker.device,
+                    dtype=talker.dtype,
                 )
+                user_mm_mask = multimodal_mask[:, im_start_index:segment_end_index]
+
+                if user_mm_mask.any():
+                    mm_input = thinker_hidden[:, im_start_index:segment_end_index][user_mm_mask]
+                    user_talker_part[user_mm_mask] = talker.hidden_projection(mm_input).to(
+                        talker.device, dtype=user_talker_part.dtype
+                    )
+
+                text_input = thinker_embed[:, im_start_index:segment_end_index][~user_mm_mask]
+                user_talker_part[~user_mm_mask] = talker.text_projection(text_input).to(
+                    talker.device, dtype=user_talker_part.dtype
+                )
+                return user_talker_part
+
+            self.model._get_talker_user_parts = types.MethodType(_patched_get_talker_user_parts, self.model)
+            self.model._wwb_talker_dtype_patch_applied = True
+            LOGGER.info(
+                "Applied WWB Qwen3-Omni CPU dtype compatibility patch (talker=%s, thinker=%s).",
+                talker.dtype,
+                thinker_dtype,
+            )
         except Exception:
-            # Keep default model behavior when internals differ between model versions.
+            # Model internals differ between versions; leave the model unmodified on any mismatch.
             pass
-        finally:
-            self._dtypes_aligned = True
 
     def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
-        self._validate_no_embedding_or_language(speaker_embedding, language)
+        self._reject_unsupported_inputs(speaker_embedding, language)
 
         import torch
 
-        # Ensure pseudo-deterministic output for benchmarking
-        torch.manual_seed(42)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        _seed_deterministic_generation()
 
         speaker = self._resolve_speaker(voice)
         conversation = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
@@ -444,8 +433,8 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
             return_tensors="pt",
         )
 
-        # HF models expose a torch device and require inputs on it; the Optimum
-        # OVModelForMultimodalLM keeps CPU torch tensors and has no torch device.
+        # Optimum OVModelForMultimodalLM keeps CPU torch tensors and has no torch device attribute;
+        # HF models expose one and require inputs to live on it.
         device = getattr(self.model, "device", None)
         if isinstance(device, torch.device):
             inputs = inputs.to(device)
@@ -453,14 +442,11 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
         with torch.inference_mode():
             self._align_hf_talker_dtype_if_needed()
 
-            # HF rejects temperature=0, so use do_sample=False
-            # Optimum ignores do_sample, so use temperature=0 for greedy
-            is_hf = type(self.model).__module__.startswith("transformers")
-            talker_kwargs = (
-                {"thinker_do_sample": False, "talker_do_sample": False}
-                if is_hf
-                else {"thinker_temperature": 0, "talker_temperature": 0}
-            )
+            # HF rejects temperature=0 but honors do_sample=False; Optimum ignores do_sample.
+            if type(self.model).__module__.startswith("transformers"):
+                greedy_kwargs = {"thinker_do_sample": False, "talker_do_sample": False}
+            else:
+                greedy_kwargs = {"thinker_temperature": 0, "talker_temperature": 0}
             output = self.model.generate(
                 **inputs,
                 speaker=speaker,
@@ -468,7 +454,7 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
                 thinker_max_new_tokens=128,
                 talker_max_new_tokens=128,
                 thinker_eos_token_id=151645,
-                **talker_kwargs,
+                **greedy_kwargs,
             )
 
         if isinstance(output, (tuple, list)):
@@ -479,13 +465,10 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
         if audio is None:
             raise ValueError("Qwen3-Omni did not return audio. Ensure the talker module is enabled.")
 
-        if isinstance(audio, torch.Tensor):
-            speech = audio.detach().cpu().reshape(-1).float().numpy()
-        else:
-            speech = torch.as_tensor(audio).cpu().reshape(-1).float().numpy()
+        speech = torch.as_tensor(audio).detach().cpu().reshape(-1).float().numpy()
 
-        # Decode only the generated portion (after the prompt tokens) so the stored text mirrors
-        # what the talker was fed as trailing_text_hidden and matches the audio content.
+        # Decode only the generated tail — this is what the talker consumes as trailing_text_hidden,
+        # so it matches the audio content and can be compared to the reference transcript.
         text = ""
         if thinker_sequences is not None:
             input_ids = inputs.get("input_ids") if hasattr(inputs, "get") else None
@@ -504,28 +487,18 @@ class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
     def __init__(self, pipe, model_dir, default_speaker=QWEN3_OMNI_DEFAULT_SPEAKER):
         self.pipe = pipe
         self.model_dir = model_dir
-        self._init_speakers(
-            _load_qwen3_omni_speakers_from_model_dir(model_dir),
-            default_speaker,
-        )
+        self._init_speakers(_qwen3_omni_speakers(model_dir), default_speaker)
 
     def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
-        self._validate_no_embedding_or_language(speaker_embedding, language)
+        self._reject_unsupported_inputs(speaker_embedding, language)
 
         import openvino_genai
-        import torch
-        import numpy as np
 
-        # Ensure pseudo-deterministic output for benchmarking
-        torch.manual_seed(42)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-        speaker = self._resolve_speaker(voice)
+        _seed_deterministic_generation()
 
         talker_speech_config = openvino_genai.OmniTalkerSpeechConfig()
         talker_speech_config.return_audio = True
-        talker_speech_config.speaker = speaker
+        talker_speech_config.speaker = self._resolve_speaker(voice)
 
         result = self.pipe.generate(prompt, talker_speech_config=talker_speech_config)
 
@@ -535,8 +508,7 @@ class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
 
         speech = np.asarray(speech_outputs[0].data, dtype=np.float32).reshape(-1)
         texts = getattr(result, "texts", None) or []
-        text = texts[0] if texts else ""
-        return _SpeechResult(speech, QWEN3_OMNI_SAMPLE_RATE, text=text)
+        return _SpeechResult(speech, QWEN3_OMNI_SAMPLE_RATE, text=texts[0] if texts else "")
 
 
 def _safe_metric_mean(values):
@@ -609,17 +581,22 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self._validate_required_columns(predictions, ["audio", "prompts"], "prediction data")
         self.predictions = predictions
 
-        gt_has_text = TEXT_COL in self.gt_data.columns
-        pred_has_text = TEXT_COL in predictions.columns
-
+        has_text = TEXT_COL in self.gt_data.columns and TEXT_COL in predictions.columns
         max_samples = min(len(self.gt_data), len(predictions))
-        speaker_scores = []
-        content_scores = []
-        duration_scores = []
-        acoustic_scores = []
-        text_wer_values = []
-        text_sim_scores = []
-        overall_scores = []
+
+        # Per-metric list of per-prompt values, in the column order used in the returned DataFrame.
+        per_prompt: dict[str, list] = {
+            col: []
+            for col in (
+                SPEAKER_SCORE_COL,
+                CONTENT_SCORE_COL,
+                DURATION_SCORE_COL,
+                ACOUSTIC_SCORE_COL,
+                TEXT_WER_COL,
+                TEXT_SIM_COL,
+                OVERALL_SCORE_COL,
+            )
+        }
 
         for idx in tqdm(range(max_samples), desc="TTS similarity evaluation"):
             gt_row = self.gt_data.iloc[idx]
@@ -630,69 +607,52 @@ class SpeechGenerationEvaluator(BaseEvaluator):
                 reference_path=str(gt_row["audio"]),
                 verbose=verbose,
             )
+            per_prompt[SPEAKER_SCORE_COL].append(scores.speaker)
+            per_prompt[CONTENT_SCORE_COL].append(scores.content)
+            per_prompt[DURATION_SCORE_COL].append(scores.duration)
+            per_prompt[ACOUSTIC_SCORE_COL].append(scores.acoustic)
+            per_prompt[OVERALL_SCORE_COL].append(scores.overall)
 
-            speaker_scores.append(scores.speaker)
-            content_scores.append(scores.content)
-            duration_scores.append(scores.duration)
-            acoustic_scores.append(scores.acoustic)
-            overall_scores.append(scores.overall)
-
-            if gt_has_text and pred_has_text:
+            if has_text:
                 wer, sim = self._score_text_pair(str(gt_row[TEXT_COL]), str(prediction_row[TEXT_COL]))
             else:
                 wer, sim = None, None
-            text_wer_values.append(wer)
-            text_sim_scores.append(sim)
+            per_prompt[TEXT_WER_COL].append(wer)
+            per_prompt[TEXT_SIM_COL].append(sim)
 
-            if verbose and gt_has_text and pred_has_text:
+            if verbose and has_text:
                 LOGGER.debug("--- Thinker Text ---")
                 LOGGER.debug("Reference text: %s", str(gt_row[TEXT_COL]))
                 LOGGER.debug("Target text:    %s", str(prediction_row[TEXT_COL]))
                 LOGGER.debug("Text WER: %s", "None" if wer is None else f"{wer:.3f}")
                 LOGGER.debug("Text similarity: %s", "None" if sim is None else f"{sim:.3f}")
 
-        all_metrics_per_prompt = {
-            SPEAKER_SCORE_COL: speaker_scores,
-            CONTENT_SCORE_COL: content_scores,
-            DURATION_SCORE_COL: duration_scores,
-            ACOUSTIC_SCORE_COL: acoustic_scores,
-            TEXT_WER_COL: text_wer_values,
-            TEXT_SIM_COL: text_sim_scores,
-            OVERALL_SCORE_COL: overall_scores,
-        }
+        aggregated = {col: _safe_metric_mean(values) for col, values in per_prompt.items()}
 
-        all_metrics = {
-            SPEAKER_SCORE_COL: _safe_metric_mean(speaker_scores),
-            CONTENT_SCORE_COL: _safe_metric_mean(content_scores),
-            DURATION_SCORE_COL: _safe_metric_mean(duration_scores),
-            ACOUSTIC_SCORE_COL: _safe_metric_mean(acoustic_scores),
-            TEXT_WER_COL: _safe_metric_mean(text_wer_values),
-            TEXT_SIM_COL: _safe_metric_mean(text_sim_scores),
-            OVERALL_SCORE_COL: _safe_metric_mean(overall_scores),
-        }
-
+        gt_texts = (
+            self.gt_data[TEXT_COL].values[:max_samples] if TEXT_COL in self.gt_data.columns else [""] * max_samples
+        )
+        pred_texts = (
+            predictions[TEXT_COL].values[:max_samples] if TEXT_COL in predictions.columns else [""] * max_samples
+        )
         self.last_cmp = pd.DataFrame(
             {
-                **all_metrics_per_prompt,
+                **per_prompt,
                 "prompt": predictions["prompts"].values[:max_samples],
                 "source_model": self.gt_data["audio"].values[:max_samples],
                 "optimized_model": predictions["audio"].values[:max_samples],
-                "reference_text": (self.gt_data[TEXT_COL].values[:max_samples] if gt_has_text else [""] * max_samples),
-                "target_text": (predictions[TEXT_COL].values[:max_samples] if pred_has_text else [""] * max_samples),
+                "reference_text": gt_texts,
+                "target_text": pred_texts,
             }
         )
 
-        return pd.DataFrame(all_metrics_per_prompt), pd.DataFrame([all_metrics])
+        return pd.DataFrame(per_prompt), pd.DataFrame([aggregated])
 
     @staticmethod
     def _score_text_pair(reference: str, target: str):
-        """Return (WER, similarity in 0..1) for the target text vs reference text.
-
-        Reuses TTSSimilarityEvaluator's normalization and content-score curve so text/audio
-        WER-based scores are directly comparable side-by-side.
-        """
+        """Return (WER, similarity in 0..1) — reuses TTSSimilarityEvaluator's normalize + content-score curve
+        so text and audio WER-based scores sit on the same scale side-by-side."""
         from jiwer import wer as jiwer_wer
-        from .tts_similarity import normalize_text, safe_float, linear_distance_score, ScoringConfig
 
         ref = normalize_text(reference or "")
         tgt = normalize_text(target or "")
@@ -701,8 +661,7 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         if not ref:
             return None, None
         wer = safe_float(jiwer_wer(ref, tgt))
-        sim = linear_distance_score(wer, 0.0, ScoringConfig().content_wer_bad)
-        return wer, sim
+        return wer, linear_distance_score(wer, 0.0, ScoringConfig().content_wer_bad)
 
     def worst_examples(self, top_k: int = 5, metric=OVERALL_SCORE_COL):
         assert self.last_cmp is not None
