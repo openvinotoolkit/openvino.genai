@@ -131,6 +131,7 @@ def parse_args():
             "text-chat",
             "text-to-image",
             "text-to-video",
+            "image-to-video",
             "speech-generation",
             "visual-text",
             "visual-text-chat",
@@ -153,6 +154,7 @@ def parse_args():
         "image-to-image - for image generation based on image and prompt, \n"
         "image-inpainting - for image generation based on image, mask and prompt, \n"
         "text-to-video - for video generation, \n"
+        "image-to-video - for video generation conditioned on an input image and prompt, \n"
         "text-reranking - for reranking a list of texts based on relevance to query, \n"
         "text-embedding - for creation of embedding for a list of texts, \n"
         "image-embedding - for creation of embedding for a list of texts and images, \n"
@@ -388,6 +390,14 @@ def parse_args():
         default=None,
         help="[DEPRECATED, will be removed soon. Please use --sd-generation-config instead.] "
         "Config option assistant_confidence_threshold for Speculative decoding.",
+    )
+    parser.add_argument(
+        "--image-dir",
+        type=str,
+        default=None,
+        help="Directory holding the conditioning images for image-to-video generation. Relative filenames in the "
+        "test data's 'images'/'image' column are resolved against it; when the column is absent the images are "
+        "looked up as 0.png, 1.png, ... Not needed for the default dataset.",
     )
     parser.add_argument(
         "--video-frames-num",
@@ -821,6 +831,44 @@ def genai_gen_text2video(
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
+def genai_gen_image2video(
+    model,
+    prompt,
+    image,
+    negative_prompt,
+    num_inference_steps,
+    width=704,
+    height=480,
+    num_frames=25,
+    frame_rate=25,
+    guidance_scale=3,
+    guidance_rescale=0,
+    generator=None,
+    empty_adapters=False,
+):
+    kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
+    if empty_adapters:
+        import openvino_genai
+
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+    image_data = ov.Tensor(np.array(image))
+    result = model.generate(
+        image_data,
+        prompt,
+        num_inference_steps=num_inference_steps,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        frame_rate=frame_rate,
+        guidance_scale=guidance_scale,
+        guidance_rescale=guidance_rescale,
+        max_sequence_length=256,
+        generator=generator,
+        **kwargs,
+    )
+    return [Image.fromarray(frame) for frame in result.video.data[0]]
+
+
 def _is_voice_pack_enabled_model(model):
     if not hasattr(model, "model_dir"):
         return False
@@ -1052,6 +1100,20 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
                 empty_adapters=args.empty_adapters,
+            )
+        elif task == "image-to-video":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                num_frames=args.video_frames_num,
+                gen_video_fn=genai_gen_image2video if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+                empty_adapters=args.empty_adapters,
+                image_dir=args.image_dir,
             )
         elif task == "speech-generation":
             return EvaluatorCLS(
@@ -1420,7 +1482,11 @@ def main():
 
     # Create TaylorSeerCacheConfig for text-to-image and text-to-video pipelines
     taylorseer_config = None
-    if args.taylorseer_config and args.genai and args.model_type in ["text-to-image", "text-to-video"]:
+    if (
+        args.taylorseer_config
+        and args.genai
+        and args.model_type in ["text-to-image", "text-to-video", "image-to-video"]
+    ):
         ts_cfg = get_json_config(args.taylorseer_config)
         if not isinstance(ts_cfg, dict):
             raise ValueError(f"--taylorseer-config must be a JSON object, got {type(ts_cfg).__name__}")
@@ -1521,6 +1587,7 @@ def main():
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type
             or "text-to-video" in args.model_type
+            or "image-to-video" in args.model_type
         ):
             print_image_results(evaluator)
         elif args.model_type in ["speech-generation"]:

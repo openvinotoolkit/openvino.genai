@@ -110,7 +110,7 @@ class GenAIModelWrapper:
                 self.config = AutoConfig.from_pretrained(model_dir)
             except Exception:
                 self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        elif model_type in ("text-to-image", "text-to-video"):
+        elif model_type in ("text-to-image", "text-to-video", "image-to-video"):
             from diffusers import DiffusionPipeline
             try:
                 self.config = DiffusionPipeline.load_config(model_dir)
@@ -859,6 +859,61 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
     return model
 
 
+def load_image2video_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    import openvino_genai
+
+    adapter_config = _create_genai_adapter_config(
+        adapters=kwargs.get("adapters"),
+        alphas=kwargs.get("alphas", None),
+    )
+    return GenAIModelWrapper(
+        openvino_genai.Image2VideoPipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
+        model_dir,
+        "image-to-video",
+    )
+
+
+def load_image2video_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    if use_genai:
+        logger.info("Using OpenVINO GenAI API")
+        model = load_image2video_genai_pipeline(model_id, device, ov_config, **kwargs)
+    elif use_hf:
+        from diffusers import LTXImageToVideoPipeline
+
+        logger.info("Using HF Transformers API")
+        try:
+            model = LTXImageToVideoPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+        except ValueError:
+            model = LTXImageToVideoPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+        if kwargs.get("adapters") is not None:
+            adapters = kwargs["adapters"]
+            alphas = kwargs.get("alphas", None)
+            adapters, alphas = normalize_lora_adapters_and_alphas(adapters, alphas)
+
+            for idx, adapter in enumerate(adapters):
+                model.load_lora_weights(adapter, adapter_name=f"adapter_{idx}")
+            model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
+    else:
+        logger.info("Using Optimum API")
+        from optimum.intel import OVLTXImageToVideoPipeline
+
+        if "adapters" in kwargs and kwargs["adapters"] is not None:
+            raise ValueError("Adapters are not supported for OVLTXImageToVideoPipeline.")
+
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get("from_onnx"):
+            model_kwargs["from_onnx"] = kwargs["from_onnx"]
+        try:
+            model = OVLTXImageToVideoPipeline.from_pretrained(model_id, device=device, **model_kwargs)
+        except ValueError:
+            model = OVLTXImageToVideoPipeline.from_pretrained(
+                model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
+            )
+
+    disable_diffusers_model_progress_bar(model)
+    return model
+
+
 def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     import openvino_genai
 
@@ -998,6 +1053,8 @@ def load_model(
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "text-to-video":
         return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
+    elif model_type == "image-to-video":
+        return load_image2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "speech-generation":
         return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     else:

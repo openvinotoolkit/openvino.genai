@@ -1,0 +1,72 @@
+[
+    {
+        "prompt": "The scene comes to life as the subject begins to move naturally. Subtle motion ripples through the image — hair sways gently, fabric shifts, and the background breathes with a soft ambient movement. The camera remains completely stationary.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "The person in the image slowly turns their head and blinks, their expression shifting slightly as if noticing something off-screen. The camera does not move. Lighting remains consistent with the original image.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "A gentle breeze passes through the scene, causing leaves, hair, and loose fabric to ripple softly. The motion is subtle and natural. The camera is fixed and no objects leave the frame.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "The subject in the image inhales and exhales slowly, their shoulders rising and falling with each breath. Their eyes drift and refocus. The scene is otherwise still. The camera holds its position without movement.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "Light in the scene shifts slightly as clouds pass over the sun, casting and releasing soft shadows across the image. The movement is slow and organic. Subjects remain in place. The camera does not pan or zoom.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "The image animates with the subject taking a slow step forward and then pausing, looking into the distance. The motion is deliberate and natural. The background remains static. The camera is stationary.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "Water in the scene begins to flow gently — ripples spread across the surface, reflections shimmer, and small waves lap at the edges. Everything else in the frame stays still. The camera holds steady.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "The subject raises one hand in a slow, deliberate wave, then lowers it. Their expression stays neutral. The rest of the scene is completely still. Lighting does not change. The camera remains fixed.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "Smoke or mist drifts lazily across part of the scene, partially obscuring and then revealing details in the background. The main subject remains stationary. The drift is slow and atmospheric. Camera does not move.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "The subject in the image looks down and then glances up slowly, making brief eye contact with the camera. Their posture shifts slightly. The background holds still. The camera remains locked in place.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    }
+]
