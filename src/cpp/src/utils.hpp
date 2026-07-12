@@ -248,7 +248,7 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const KVAxesPosition& kv_pos,
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
 
-uint32_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
+size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.

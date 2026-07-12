@@ -776,15 +776,16 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextEmbedding, text_embed_config);
 }
 
-uint32_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
-    const auto max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
-    const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
+    const size_t max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+    const size_t min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
     // for proper support need to expose NPUW_LLM_MAX_GENERATION_TOKEN_LEN property in NPU model
-    const auto max_generation_token_len = 1;
+    const size_t max_generation_token_len = 1u;
 
     OPENVINO_ASSERT(max_prompt_len + min_response_len >= max_generation_token_len,
                      "Invalid NPU KV-cache capacity: MAX_PROMPT_LEN + MIN_RESPONSE_LEN must be >= ",
                      max_generation_token_len, ", got ", max_prompt_len, " + ", min_response_len);
+
     return max_prompt_len + min_response_len - max_generation_token_len;
 }
 
