@@ -467,8 +467,9 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
 
         speech = torch.as_tensor(audio).detach().cpu().reshape(-1).float().numpy()
 
-        # Decode only the generated tail — this is what the talker consumes as trailing_text_hidden,
-        # so it matches the audio content and can be compared to the reference transcript.
+        # Decode only the newly generated tokens (drop the prompt prefix). The talker's audio is
+        # conditioned step-by-step on these tokens' hidden states, so this transcript matches the
+        # audio and can be compared to the reference transcript.
         text = ""
         if thinker_sequences is not None:
             input_ids = inputs.get("input_ids") if hasattr(inputs, "get") else None
@@ -496,13 +497,28 @@ class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
 
         _seed_deterministic_generation()
 
+        text_config = self.pipe.get_vlm().get_generation_config()
+        text_config.do_sample = False
+        text_config.max_new_tokens = 128
+        text_config.eos_token_id = 151645
+
         talker_speech_config = openvino_genai.OmniTalkerSpeechConfig()
         talker_speech_config.return_audio = True
         talker_speech_config.speaker = self._resolve_speaker(voice)
+        talker_speech_config.max_new_tokens = 128
+        talker_speech_config.rng_seed = 42
+        talker_speech_config.talker_top_k = 1
+        talker_speech_config.cp_top_k = 1
 
-        result = self.pipe.generate(prompt, talker_speech_config=talker_speech_config)
+        result = self.pipe.generate(
+            prompt,
+            text_config=text_config,
+            talker_speech_config=talker_speech_config,
+        )
 
-        speech_outputs = result.speech_result.speech_outputs
+        speech_outputs = getattr(result.speech_result, "waveforms", None)
+        if speech_outputs is None:
+            speech_outputs = getattr(result.speech_result, "speech_outputs", None)
         if not speech_outputs:
             raise ValueError("OmniPipeline did not return audio. Ensure the talker module is enabled.")
 
