@@ -3096,6 +3096,11 @@ def test_video_metadata_sampling(
     if "tiny-random-qwen3.5" in ov_pipe_model.model_id and ov_pipe_model.prompt_lookup:
         pytest.xfail("Qwen3.5 with prompt_lookup does not currently support video metadata sampling.")
 
+    if "tiny-random-gemma4-moe" in ov_pipe_model.model_id:
+        pytest.xfail(
+            "tiny-random-gemma4-moe has the same output w/ and w/o video metadata sampling (even in HF transformers)."
+        )
+
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(
