@@ -10,6 +10,10 @@ function(ov_genai_link_opencv target_name)
     set(OpenCV_STATIC ON)
     find_package(OpenCV QUIET COMPONENTS ${required_components})
 
+    if(OpenCV_FOUND AND OpenCV_SHARED)
+        message(FATAL_ERROR "Found a shared OpenCV, but a static one is required. Set -DOpenCV_DIR to a static build or make it undiscoverable.")
+    endif()
+
     if(NOT OpenCV_FOUND)
         include(FetchContent)
 
