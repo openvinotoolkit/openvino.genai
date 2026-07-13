@@ -202,11 +202,23 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
     OPENVINO_ASSERT(video_metadata.frames_indices.size() <= video_frames_num,
         "Number of frames to sample cannot be greater than total number of frames in the video.");
 
-    std::vector<size_t> original_video_indices(video_frames_num);
-    std::iota(original_video_indices.begin(), original_video_indices.end(), 0);
-
-    if (video_metadata.frames_indices.empty() || video_metadata.frames_indices == original_video_indices) {
+    if (video_metadata.frames_indices.empty()) {
         return video;
+    }
+
+    if (video_metadata.frames_indices.size() == video_frames_num) {
+        size_t index = 0;
+        bool is_sequential_indices = std::equal(
+            video_metadata.frames_indices.begin(),
+            video_metadata.frames_indices.end(),
+            video_metadata.frames_indices.begin(),
+            [&index](size_t element, size_t) {
+                return element == index++;
+            }
+        );
+        if (is_sequential_indices) {
+            return video;
+        }
     }
 
     ov::Tensor sampled(video.get_element_type(),
