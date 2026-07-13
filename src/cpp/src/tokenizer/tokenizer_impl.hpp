@@ -45,8 +45,6 @@ public:
     std::string m_eos_token = {};
     std::string m_chat_template = {};
     std::string m_original_chat_template = {};
-    mutable std::mutex m_minja_chat_template_cache_mutex;
-    mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
     std::vector<std::string> m_vocab = {};
     std::shared_ptr<StructuredOutputController> m_structured_output_controller = nullptr;
 
@@ -89,7 +87,11 @@ public:
     std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
 
 private:
-    std::shared_ptr<const minja::chat_template> get_cached_minja_chat_template(const std::string& chat_template) const;
+    std::shared_ptr<const minja::chat_template> get_cached_minja_chat_template(const std::string& chat_template, size_t cache_generation) const;
+
+    mutable std::mutex m_chat_template_mutex;
+    mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
+    mutable size_t m_minja_chat_template_cache_generation = 0;
 };
 
 }  // namespace genai
