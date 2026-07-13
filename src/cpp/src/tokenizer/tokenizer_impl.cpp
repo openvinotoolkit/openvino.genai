@@ -787,26 +787,32 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
-std::shared_ptr<const minja::chat_template> Tokenizer::TokenizerImpl::get_cached_minja_chat_template(const std::string& chat_template) const {
+std::shared_ptr<const minja::chat_template> Tokenizer::TokenizerImpl::get_cached_minja_chat_template(const std::string& chat_template, size_t cache_generation) const {
     constexpr size_t max_cached_templates = 4;
 
     {
-        std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
-        auto iter = m_minja_chat_template_cache.find(chat_template);
-        if (iter != m_minja_chat_template_cache.end()) {
-            return iter->second;
+        std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+        if (cache_generation == m_minja_chat_template_cache_generation) {
+            auto iter = m_minja_chat_template_cache.find(chat_template);
+            if (iter != m_minja_chat_template_cache.end()) {
+                return iter->second;
+            }
         }
     }
 
     auto minja_template = std::make_shared<minja::chat_template>(chat_template, m_bos_token, m_eos_token);
 
-    std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+    if (cache_generation != m_minja_chat_template_cache_generation) {
+        return minja_template;
+    }
+
     auto iter = m_minja_chat_template_cache.find(chat_template);
     if (iter != m_minja_chat_template_cache.end()) {
         return iter->second;
     }
     if (m_minja_chat_template_cache.size() >= max_cached_templates) {
-        m_minja_chat_template_cache.clear();
+        m_minja_chat_template_cache.erase(m_minja_chat_template_cache.begin());
     }
     m_minja_chat_template_cache.emplace(chat_template, minja_template);
     return minja_template;
@@ -820,11 +826,15 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     const std::optional<JsonContainer>& extra_context
 ) const {
     std::string chat_tpl;
+    size_t cache_generation = 0;
     if (chat_template.empty()) {
-        std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
+        std::lock_guard<std::mutex> lock(m_chat_template_mutex);
         chat_tpl = m_chat_template;
+        cache_generation = m_minja_chat_template_cache_generation;
     } else {
         chat_tpl = remap_template(chat_template);
+        std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+        cache_generation = m_minja_chat_template_cache_generation;
     }
     OPENVINO_ASSERT(!chat_tpl.empty(),
                     "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
@@ -839,7 +849,7 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     OPENVINO_ASSERT(resolved_extra_context.is_object(),
                     "Extra context should be an object-like JsonContainer, got: ", resolved_extra_context.type_name());
 
-    auto minja_template = get_cached_minja_chat_template(chat_tpl);
+    auto minja_template = get_cached_minja_chat_template(chat_tpl, cache_generation);
     
     minja::chat_template_inputs minja_inputs;
     minja_inputs.messages = history.get_messages();
@@ -875,19 +885,20 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
     auto remapped_chat_template = remap_template(chat_template);
 
-    std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
     m_original_chat_template = chat_template;
     m_chat_template = std::move(remapped_chat_template);
     m_minja_chat_template_cache.clear();
+    ++m_minja_chat_template_cache_generation;
 }
 
 std::string Tokenizer::TokenizerImpl::get_chat_template() const {
-    std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
     return m_chat_template;
 }
 
 std::string Tokenizer::TokenizerImpl::get_original_chat_template() const {
-    std::lock_guard<std::mutex> lock(m_minja_chat_template_cache_mutex);
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
     return m_original_chat_template;
 }
 
