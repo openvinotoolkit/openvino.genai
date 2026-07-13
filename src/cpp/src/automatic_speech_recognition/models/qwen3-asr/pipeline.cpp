@@ -29,7 +29,9 @@ Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& 
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")} {
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
-    m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
+    const auto encoder_properties = utils::get_model_properties(properties_copy, "audio_encoder", device);
+    m_encoder =
+        std::make_unique<Qwen3ASREncoder>(models_path, device, encoder_properties, m_feature_extractor.feature_size);
     m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy);
 
     // Qwen3-ASR EOS tokens: <|endoftext|>=151643, <|im_end|>=151645
