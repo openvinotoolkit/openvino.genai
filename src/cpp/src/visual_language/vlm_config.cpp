@@ -25,6 +25,10 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen2_vl", VLMModelType::QWEN2_VL},
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
         {"qwen3_vl", VLMModelType::QWEN3_VL},
+        // Cosmos3Omni's Reasoner surface is architecturally identical to Qwen3-VL upstream
+        // (transformers defines Cosmos3OmniForConditionalGeneration as a subclass of
+        // Qwen3VLForConditionalGeneration with no overrides); reuse the same pipeline.
+        {"cosmos3_omni", VLMModelType::QWEN3_VL},
         {"qwen3_5", VLMModelType::QWEN3_5},
         {"qwen3_5_moe", VLMModelType::QWEN3_5_MOE},
         {"gemma3", VLMModelType::GEMMA3},
