@@ -545,8 +545,8 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
         const uint8_t* src = static_cast<const uint8_t*>(encoded_video.video_features.data());
 
         for (size_t f = 0; f < encoded_video.frame_num; ++f) {
-            ov::Tensor frame_embed(elem_type, {1, tokens_per_frame, hidden_size});
-            std::memcpy(frame_embed.data(), src + f * bytes_per_frame, bytes_per_frame);
+            auto* frame_ptr = const_cast<uint8_t*>(src + f * bytes_per_frame);
+            ov::Tensor frame_embed(elem_type, {1, tokens_per_frame, hidden_size}, frame_ptr);
             video_embeds.push_back(std::move(frame_embed));
         }
     }
