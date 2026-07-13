@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen3TextEncoder', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen3TextEncoder', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -1205,6 +1205,34 @@ class DeepSeekR1ReasoningIncrementalParser(IncrementalParser):
 class DeepSeekR1ReasoningParser(ReasoningParser):
     def __init__(self) -> None:
         ...
+class EmbedResult:
+    embeddings: openvino._pyopenvino.Tensor
+    def __init__(self, embeddings: openvino._pyopenvino.Tensor) -> None:
+        ...
+class EmbeddingPipeline:
+    """
+    
+    Embedding pipeline.
+    
+    Computes embedding vector for:
+    - text only
+    - text + images
+    - text + images + videos
+    """
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        """
+        Plugin and/or config properties. E.g. CACHE_DIR=/tmp/, pooling_type=PoolingType.MEAN, or text_embedding_config=TextEmbeddingPipeline::Config()
+        """
+    @typing.overload
+    def embed(self, text: str | collections.abc.Sequence[str], images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], **kwargs) -> EmbedResult:
+        """
+        Computes embedding vectors for text or a batch of texts with images and videos. Generation arguments (e.g. embedding_prompt=...) can be passed as keyword arguments.
+        """
+    @typing.overload
+    def embed(self, **kwargs) -> EmbedResult:
+        """
+        Computes embedding vectors using properties (text=..., images=..., videos=..., videos_metadata=..., embedding_prompt=...).
+        """
 class EncodedGenerationResult:
     """
     
@@ -4566,6 +4594,10 @@ class TextEmbeddingPipeline:
         device (str): Device to run the model on (e.g., CPU, GPU).
         config: (TextEmbeddingPipeline.Config): Optional pipeline configuration
         kwargs: Plugin and/or config properties
+        """
+    def embed(self, texts: collections.abc.Sequence[str], prompt: str) -> list[list[float]] | list[list[int]] | list[list[int]]:
+        """
+        Computes embeddings for a vector of texts prepended with a prompt
         """
     def embed_documents(self, texts: collections.abc.Sequence[str]) -> list[list[float]] | list[list[int]] | list[list[int]]:
         """
