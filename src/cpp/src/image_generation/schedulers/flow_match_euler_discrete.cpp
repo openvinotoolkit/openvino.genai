@@ -68,6 +68,7 @@ FlowMatchEulerDiscreteScheduler::Config::Config(const std::filesystem::path& sch
     read_json_param(data, "base_image_seq_len", base_image_seq_len);
     read_json_param(data, "max_image_seq_len", max_image_seq_len);
     read_json_param(data, "shift_terminal", shift_terminal);
+    read_json_param(data, "time_shift_type", time_shift_type);
 }
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
@@ -270,6 +271,19 @@ void FlowMatchEulerDiscreteScheduler::scale_noise(ov::Tensor sample, float times
 }
 
 void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t num_inference_steps, float strength) {
+    double mu;
+    if (m_config.time_shift_type == "exponential") {
+        mu = compute_empirical_mu(image_seq_len, num_inference_steps);
+    } else if (m_config.time_shift_type == "linear") {
+        mu = calculate_shift(image_seq_len);
+    } else {
+        OPENVINO_THROW("Unsupported time_shift_type '", m_config.time_shift_type,
+                       "'. Supported values are 'linear' and 'exponential'");
+    }
+    set_timesteps_with_mu(mu, num_inference_steps, strength);
+}
+
+void FlowMatchEulerDiscreteScheduler::set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) {
     m_timesteps.clear();
     m_sigmas.clear();
 
@@ -288,8 +302,6 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t image_seq_len, size_t
 
     const float shift = m_config.shift;
 
-    // fill sigma
-    const double mu = calculate_shift(image_seq_len);
     if (m_config.use_dynamic_shifting) {
         const float exp_mu = static_cast<float>(std::exp(mu));
         for (float& s : sigmas) {
@@ -323,6 +335,24 @@ double FlowMatchEulerDiscreteScheduler::calculate_shift(size_t image_seq_len) {
     const double m = (max_shift - base_shift) / (max_seq_len - base_seq_len);
     const double b = base_shift - m * base_seq_len;
     return static_cast<double>(image_seq_len) * m + b;
+}
+
+double FlowMatchEulerDiscreteScheduler::compute_empirical_mu(const size_t image_seq_len, const size_t num_inference_steps) {
+    constexpr double a1 = 8.73809524e-05, b1 = 1.89833333;
+    constexpr double a2 = 0.00016927, b2 = 0.45666666;
+
+    const double seq_len = static_cast<double>(image_seq_len);
+
+    if (seq_len > 4300.0) {
+        return a2 * seq_len + b2;
+    }
+
+    const double m_200 = a2 * seq_len + b2;
+    const double m_10 = a1 * seq_len + b1;
+
+    const double a = (m_200 - m_10) / 190.0;
+    const double b = m_200 - 200.0 * a;
+    return a * static_cast<double>(num_inference_steps) + b;
 }
 
 void FlowMatchEulerDiscreteScheduler::set_begin_index(size_t begin_index) {
