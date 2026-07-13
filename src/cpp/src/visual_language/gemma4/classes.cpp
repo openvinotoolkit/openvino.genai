@@ -3,6 +3,7 @@
 
 #include "visual_language/gemma4/classes.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <sstream>
@@ -10,7 +11,6 @@
 #include <numeric>
 
 #include "logger.hpp"
-
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
