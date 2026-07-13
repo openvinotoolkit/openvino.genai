@@ -22,6 +22,7 @@ function(ov_genai_link_opencv target_name)
         endif()
 
         set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        set(BUILD_WITH_STATIC_CRT OFF CACHE BOOL "" FORCE)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON)
         set(OPENCV_ENABLE_PLUGINS OFF CACHE BOOL "" FORCE)
         set(WITH_FFMPEG ON)
