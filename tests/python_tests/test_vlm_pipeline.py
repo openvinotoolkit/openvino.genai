@@ -490,8 +490,8 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    if "gemma4-unified" in ov_model and ov_backend == "PA":
-        pytest.xfail("gemma4-unified does not support PA. Ticket: 189844")
+    if ("gemma4" in ov_model or ov_model == MODEL_GEMMA3N) and ov_backend == "PA" and ov_prompt_lookup:
+        pytest.xfail(f"{ov_model} does not support PA with prompt_lookup=True")
 
     models_path = _get_ov_model(ov_model)
 
@@ -2260,6 +2260,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # Gemma4-unified cases
     "*tiny-random-gemma4-unified-it/SDPA/CPP/image*": "CVS-190429",
     "*tiny-random-gemma4-unified-it/SDPA/CPP/text-only": "CVS-190429",
+    "*tiny-random-gemma4-unified-it/PA/CPP/image*": "CVS-190429",
+    "*tiny-random-gemma4-unified-it/PA/CPP/text-only": "CVS-190429",
     # Gemma4 models (with token_type_ids input) PA cases with image input
     "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
     "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
