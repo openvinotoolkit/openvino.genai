@@ -116,6 +116,10 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
+    
+    if (lm_extra_inputs_list.has_value()) {
+        OPENVINO_ASSERT(lm_extra_inputs_list->size() == input_ids.size(), "lm_extra_inputs_list size must match input_ids size.");
+    }
 
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
