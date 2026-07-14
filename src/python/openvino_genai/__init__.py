@@ -134,7 +134,7 @@ from .py_openvino_genai import (
 )
 
 # RAG
-from .py_openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
+from .py_openvino_genai import EmbedResult, EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
 
 # Speech generation
 from .py_openvino_genai import (
