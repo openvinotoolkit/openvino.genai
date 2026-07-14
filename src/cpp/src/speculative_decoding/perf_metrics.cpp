@@ -93,6 +93,11 @@ size_t ov::genai::SDPerModelsPerfMetrics::get_num_draft_tokens() {
     return num_draft_tokens;
 };
 
+size_t ov::genai::SDPerModelsPerfMetrics::get_num_draft_processed_tokens() {
+    evaluate_statistics();
+    return draft_model_metrics.get_num_generated_tokens();
+};
+
 size_t ov::genai::SDPerModelsPerfMetrics::get_num_rejected_tokens() {
     evaluate_statistics();
     if (num_draft_tokens == 0) {
@@ -109,6 +114,27 @@ float ov::genai::SDPerModelsPerfMetrics::get_draft_acceptance_rate() {
         return std::numeric_limits<float>::quiet_NaN();
     }
     return static_cast<float>(num_accepted_tokens) / static_cast<float>(num_draft_tokens);
+};
+
+float ov::genai::SDPerModelsPerfMetrics::get_draft_processed_to_candidate_ratio() {
+    evaluate_statistics();
+    if (num_draft_tokens == 0) {
+        return std::numeric_limits<float>::quiet_NaN();
+    }
+    return static_cast<float>(get_num_draft_processed_tokens()) / static_cast<float>(num_draft_tokens);
+};
+
+float ov::genai::SDPerModelsPerfMetrics::get_draft_to_main_inference_duration_ratio() {
+    evaluate_statistics();
+    const auto draft_inference_duration = draft_model_metrics.get_inference_duration().mean;
+    const auto main_inference_duration = main_model_metrics.get_inference_duration().mean;
+    if (main_inference_duration <= 0.0f) {
+        return std::numeric_limits<float>::quiet_NaN();
+    }
+    if (draft_inference_duration < 0.0f) {
+        return std::numeric_limits<float>::quiet_NaN();
+    }
+    return draft_inference_duration / main_inference_duration;
 };
     
 void ov::genai::SDPerModelsPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {

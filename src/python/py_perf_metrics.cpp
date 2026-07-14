@@ -180,11 +180,20 @@ auto sd_per_models_perf_metrics_docstring = R"(
     :param get_num_draft_tokens: total number of draft candidate tokens offered for validation
     :type get_num_draft_tokens: int
 
+    :param get_num_draft_processed_tokens: total draft-model execution work in generated/processed tokens
+    :type get_num_draft_processed_tokens: int
+
     :param get_num_rejected_tokens: total number of draft candidate tokens rejected by main model
     :type get_num_rejected_tokens: int
 
     :param get_draft_acceptance_rate: accepted draft candidate tokens divided by draft candidate tokens
     :type get_draft_acceptance_rate: float
+
+    :param get_draft_processed_to_candidate_ratio: draft-model execution tokens divided by draft candidate tokens
+    :type get_draft_processed_to_candidate_ratio: float
+
+    :param get_draft_to_main_inference_duration_ratio: draft-model inference duration divided by main-model inference duration
+    :type get_draft_to_main_inference_duration_ratio: float
 )";
 
 } // namespace
@@ -292,8 +301,11 @@ void init_perf_metrics(py::module_& m) {
     py::class_<SDPerModelsPerfMetrics, SDPerfMetrics, std::shared_ptr<SDPerModelsPerfMetrics>>(m, "SDPerModelsPerfMetrics", sd_per_models_perf_metrics_docstring)
         .def("get_num_accepted_tokens", &SDPerModelsPerfMetrics::get_num_accepted_tokens)
         .def("get_num_draft_tokens", &SDPerModelsPerfMetrics::get_num_draft_tokens)
+        .def("get_num_draft_processed_tokens", &SDPerModelsPerfMetrics::get_num_draft_processed_tokens)
         .def("get_num_rejected_tokens", &SDPerModelsPerfMetrics::get_num_rejected_tokens)
         .def("get_draft_acceptance_rate", &SDPerModelsPerfMetrics::get_draft_acceptance_rate)
+        .def("get_draft_processed_to_candidate_ratio", &SDPerModelsPerfMetrics::get_draft_processed_to_candidate_ratio)
+        .def("get_draft_to_main_inference_duration_ratio", &SDPerModelsPerfMetrics::get_draft_to_main_inference_duration_ratio)
         .def_readonly("main_model_metrics", &SDPerModelsPerfMetrics::main_model_metrics)
         .def_readonly("draft_model_metrics", &SDPerModelsPerfMetrics::draft_model_metrics);
 }

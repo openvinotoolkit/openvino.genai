@@ -334,6 +334,17 @@ def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
             "Inconsistent extended perf metrics: accepted tokens exceed draft-generated tokens "
             f"(accepted={num_accepted}, draft_generated={num_draft_generated})"
         )
+        num_draft_tokens = extended_perf_metrics.get_num_draft_tokens()
+        num_draft_processed = extended_perf_metrics.get_num_draft_processed_tokens()
+        assert num_draft_processed == num_draft_generated
+        assert num_draft_processed >= num_draft_tokens
+        if num_draft_tokens > 0:
+            assert np.isclose(
+                extended_perf_metrics.get_draft_processed_to_candidate_ratio(),
+                num_draft_processed / num_draft_tokens,
+            )
+        duration_ratio = extended_perf_metrics.get_draft_to_main_inference_duration_ratio()
+        assert np.isfinite(duration_ratio) and duration_ratio >= 0
 
         target_iterations = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
         draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
@@ -512,10 +523,21 @@ def test_eagle3_perf_metrics(
     assert num_accepted <= num_draft_tokens
     assert extended_perf_metrics.get_num_rejected_tokens() == num_draft_tokens - num_accepted
 
+    num_draft_processed = extended_perf_metrics.get_num_draft_processed_tokens()
+    assert num_draft_processed == extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+    assert num_draft_processed >= num_draft_tokens
+    assert np.isclose(
+        extended_perf_metrics.get_draft_processed_to_candidate_ratio(),
+        num_draft_processed / num_draft_tokens,
+    )
+
     # Calculate and verify acceptance rate is reasonable for Eagle3
     acceptance_rate = extended_perf_metrics.get_draft_acceptance_rate()
     assert 0 <= acceptance_rate <= 1
     assert acceptance_rate > 0.1, f"Acceptance rate too low ({acceptance_rate:.2%}), Eagle3 may not be working properly"
+
+    duration_ratio = extended_perf_metrics.get_draft_to_main_inference_duration_ratio()
+    assert np.isfinite(duration_ratio) and duration_ratio >= 0
 
     # Verify both models had reasonable iteration counts
     target_iterations = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)

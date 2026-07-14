@@ -83,6 +83,13 @@ struct OPENVINO_GENAI_EXPORTS SDPerModelsPerfMetrics : public ov::genai::SDPerfM
     size_t get_num_draft_tokens();
 
     /**
+    * @param returns draft-model execution work in generated/processed tokens.
+    *        This is useful to diagnose speculative-decoding overhead because it may be larger than
+    *        get_num_draft_tokens(), which only counts candidates offered for validation.
+    */
+    size_t get_num_draft_processed_tokens();
+
+    /**
     * @param returns the number of draft candidate tokens rejected by the main model.
     */
     size_t get_num_rejected_tokens();
@@ -92,6 +99,18 @@ struct OPENVINO_GENAI_EXPORTS SDPerModelsPerfMetrics : public ov::genai::SDPerfM
     *        The value is in the [0, 1] range. Returns NaN when no draft candidate tokens were recorded.
     */
     float get_draft_acceptance_rate();
+
+    /**
+    * @param returns draft-model execution tokens divided by draft candidate tokens.
+    *        Returns NaN when no draft candidate tokens were recorded.
+    */
+    float get_draft_processed_to_candidate_ratio();
+
+    /**
+    * @param returns draft-model inference duration divided by main-model inference duration.
+    *        Returns NaN when main-model inference duration is unavailable or zero.
+    */
+    float get_draft_to_main_inference_duration_ratio();
 
     /**
     * @brief calculates mean/std values from raw_metrics.

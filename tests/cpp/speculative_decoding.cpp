@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <cmath>
 #include "gtest/gtest.h"
 
+#include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
 
@@ -46,6 +48,32 @@ protected:
 
     PipelineTestInstance m_pipeline = PipelineTestInstance();
 };
+
+TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnostics) {
+    ov::genai::SDPerModelsPerfMetrics metrics;
+    metrics.num_draft_tokens = 5;
+    metrics.num_accepted_tokens = 3;
+
+    metrics.main_model_metrics.raw_metrics.m_durations = {ov::genai::MicroSeconds(1000.0f)};
+    metrics.main_model_metrics.raw_metrics.m_batch_sizes = {4};
+    metrics.main_model_metrics.raw_metrics.m_inference_durations = {ov::genai::MicroSeconds(4000.0f)};
+
+    metrics.draft_model_metrics.raw_metrics.m_durations = {ov::genai::MicroSeconds(1000.0f),
+                                                            ov::genai::MicroSeconds(1000.0f)};
+    metrics.draft_model_metrics.raw_metrics.m_batch_sizes = {4, 4};
+    metrics.draft_model_metrics.raw_metrics.m_inference_durations = {ov::genai::MicroSeconds(2000.0f)};
+
+    EXPECT_EQ(metrics.get_num_draft_processed_tokens(), 8);
+    EXPECT_FLOAT_EQ(metrics.get_draft_processed_to_candidate_ratio(), 8.0f / 5.0f);
+    EXPECT_FLOAT_EQ(metrics.get_draft_to_main_inference_duration_ratio(), 0.5f);
+}
+
+TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnosticsReturnNanWithoutDenominator) {
+    ov::genai::SDPerModelsPerfMetrics metrics;
+
+    EXPECT_TRUE(std::isnan(metrics.get_draft_processed_to_candidate_ratio()));
+    EXPECT_TRUE(std::isnan(metrics.get_draft_to_main_inference_duration_ratio()));
+}
 
 TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};

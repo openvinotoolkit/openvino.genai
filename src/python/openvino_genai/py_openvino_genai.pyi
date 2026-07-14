@@ -3175,15 +3175,30 @@ class SDPerModelsPerfMetrics(SDPerfMetrics):
         :param get_num_draft_tokens: total number of draft candidate tokens offered for validation
         :type get_num_draft_tokens: int
     
+        :param get_num_draft_processed_tokens: total draft-model execution work in generated/processed tokens
+        :type get_num_draft_processed_tokens: int
+    
         :param get_num_rejected_tokens: total number of draft candidate tokens rejected by main model
         :type get_num_rejected_tokens: int
     
         :param get_draft_acceptance_rate: accepted draft candidate tokens divided by draft candidate tokens
         :type get_draft_acceptance_rate: float
+    
+        :param get_draft_processed_to_candidate_ratio: draft-model execution tokens divided by draft candidate tokens
+        :type get_draft_processed_to_candidate_ratio: float
+    
+        :param get_draft_to_main_inference_duration_ratio: draft-model inference duration divided by main-model inference duration
+        :type get_draft_to_main_inference_duration_ratio: float
     """
     def get_draft_acceptance_rate(self) -> float:
         ...
+    def get_draft_processed_to_candidate_ratio(self) -> float:
+        ...
+    def get_draft_to_main_inference_duration_ratio(self) -> float:
+        ...
     def get_num_accepted_tokens(self) -> int:
+        ...
+    def get_num_draft_processed_tokens(self) -> int:
         ...
     def get_num_draft_tokens(self) -> int:
         ...
