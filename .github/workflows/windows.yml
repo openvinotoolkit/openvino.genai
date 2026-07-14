@@ -45,9 +45,16 @@ jobs:
         with:
           sparse-checkout: .github
 
+      - name: Create Smart CI dependency constraints
+        # ghapi 1.0.4 used by Smart CI breaks with fastcore 2.x; create the constraint before the action upgrades pip.
+        run: echo "fastcore==1.12.1" > "${{ runner.temp }}/smart-ci-constraints.txt"
+        shell: bash
+
       - name: Get affected components
         id: smart_ci
         uses: openvinotoolkit/openvino/.github/actions/smart-ci@46c59b29a3cbdaf30e9eaacf5c04686b196d9a0f
+        env:
+          PIP_CONSTRAINT: ${{ runner.temp }}/smart-ci-constraints.txt
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -733,9 +740,12 @@ jobs:
             timeout: 60
 
           - name: 'Rag tests'
-            cmd: 'python -m pytest -s -v tests/python_tests/test_rag.py'
+            # Pin optimum which supports qwen3-vl-embedding
+            cmd: |
+              python -m pip install "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
+              python -m pytest -v ./tests/python_tests/test_rag.py
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
-            timeout: 30
+            timeout: 35
           - name: 'WWB tests'
             cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava and not transformers_lower_v5" -k "not videochat"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
@@ -1140,10 +1150,14 @@ jobs:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 
   genai_nodejs_tests:
-    name: Node.js bindings tests
+    name: Node.js bindings tests (Node ${{ matrix.nodejs-version }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        nodejs-version: [22, 24, 26]
     defaults:
       run:
         shell: pwsh
@@ -1152,7 +1166,7 @@ jobs:
     env:
       SRC_DIR: ${{ github.workspace }}/openvino.genai
       INSTALL_DIR: ${{ github.workspace }}/install
-      NODE_VERSION: 21
+      NODE_VERSION: ${{ matrix.nodejs-version }}
 
     steps:
       - name: Clone openvino.genai
