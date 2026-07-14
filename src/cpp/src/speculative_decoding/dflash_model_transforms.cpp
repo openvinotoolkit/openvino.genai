@@ -4,6 +4,7 @@
 #include "dflash_model_transforms.hpp"
 
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -32,18 +33,6 @@ namespace {
 constexpr const char* DFLASH_HIDDEN_STATES_RT_INFO_KEY = "hidden_states_decoder_layers";
 constexpr const char* LAST_HIDDEN_STATE_OUTPUT_NAME = "last_hidden_state";
 
-std::optional<ov::Output<ov::Node>> find_dflash_output_by_tensor_name(const std::shared_ptr<ov::Model>& model,
-                                                                      const std::string& tensor_name) {
-    for (const auto& node : model->get_ordered_ops()) {
-        for (const auto& output : node->outputs()) {
-            if (output.get_names().count(tensor_name) != 0) {
-                return output;
-            }
-        }
-    }
-    return std::nullopt;
-}
-
 void add_dflash_hidden_state_result(std::shared_ptr<ov::Model>& model,
                                     const std::vector<ov::Output<ov::Node>>& hidden_state_outputs) {
     ov::Output<ov::Node> output_to_operate;
@@ -62,43 +51,48 @@ void add_dflash_hidden_state_result(std::shared_ptr<ov::Model>& model,
     model->add_results({result});
 }
 
-std::vector<ov::Output<ov::Node>> get_dflash_annotated_hidden_state_outputs(
-    const std::shared_ptr<ov::Model>& model,
-    const std::vector<int32_t>& target_layer_ids) {
-    if (!model->has_rt_info(DFLASH_HIDDEN_STATES_RT_INFO_KEY)) {
-        auto fallback_outputs =
-            ov::genai::utils::eagle3::find_decoder_layer_hidden_state_outputs(model, target_layer_ids);
-        OPENVINO_ASSERT(fallback_outputs.empty() || fallback_outputs.size() == target_layer_ids.size(),
-                        "DFlash Eagle3 hidden-state fallback found ",
-                        fallback_outputs.size(),
-                        " outputs for ",
-                        target_layer_ids.size(),
-                        " requested target layers.");
-        return fallback_outputs;
-    }
+bool is_rank3_hidden_output(const ov::Output<ov::Node>& output,
+                            std::optional<size_t> expected_hidden_size = std::nullopt) {
+    const auto shape = output.get_partial_shape();
+    return shape.rank().is_static() && shape.rank().get_length() == 3 && shape[2].is_static() &&
+           (!expected_hidden_size || static_cast<size_t>(shape[2].get_length()) == *expected_hidden_size);
+}
 
-    const auto annotation = nlohmann::json::parse(model->get_rt_info<std::string>(DFLASH_HIDDEN_STATES_RT_INFO_KEY));
-    OPENVINO_ASSERT(annotation.contains("layers") && annotation["layers"].is_object(),
-                    "Invalid hidden-state annotation metadata in model rt_info.");
-
-    std::vector<ov::Output<ov::Node>> outputs;
-    outputs.reserve(target_layer_ids.size());
-    for (const auto layer_idx : target_layer_ids) {
-        const auto key = std::to_string(layer_idx);
-        OPENVINO_ASSERT(annotation["layers"].contains(key),
-                        "Missing hidden-state annotation for decoder layer ",
-                        layer_idx,
-                        ".");
-        const auto tensor_name = annotation["layers"].at(key).get<std::string>();
-        auto output = find_dflash_output_by_tensor_name(model, tensor_name);
-        OPENVINO_ASSERT(output.has_value(),
-                        "Hidden-state tensor annotated for decoder layer ",
-                        layer_idx,
-                        " was not found in the model graph: ",
-                        tensor_name);
-        outputs.push_back(*output);
+std::shared_ptr<ov::Node> resolve_unique_live_node(const std::vector<std::shared_ptr<ov::Node>>& live_nodes,
+                                                   const std::string& producer) {
+    std::shared_ptr<ov::Node> match;
+    size_t node_count = 0;
+    for (const auto& node : live_nodes) {
+        if (node->get_friendly_name() == producer) {
+            match = node;
+            ++node_count;
+        }
     }
-    return outputs;
+    OPENVINO_ASSERT(node_count == 1, "Hidden-state producer ", producer, " resolved to ", node_count, " live nodes.");
+    return match;
+}
+
+ov::Output<ov::Node> resolve_live_hidden_state_output(
+    const std::vector<std::shared_ptr<ov::Node>>& live_nodes,
+    const std::string& producer,
+    nlohmann::json::number_unsigned_t output_index,
+    std::optional<size_t> expected_hidden_size = std::nullopt) {
+    const auto node = resolve_unique_live_node(live_nodes, producer);
+    OPENVINO_ASSERT(output_index < node->get_output_size(),
+                    "Hidden-state producer ",
+                    producer,
+                    " has no output ",
+                    output_index,
+                    ".");
+    const auto output = node->output(static_cast<size_t>(output_index));
+    OPENVINO_ASSERT(is_rank3_hidden_output(output, expected_hidden_size),
+                    "Hidden-state producer ",
+                    producer,
+                    " output ",
+                    output_index,
+                    " must be rank-3 with a static hidden width",
+                    expected_hidden_size ? " matching the retained hidden width." : ".");
+    return output;
 }
 
 template <typename T>
@@ -143,6 +137,89 @@ std::shared_ptr<ov::op::v0::Parameter> find_inputs_embeds_parameter(const std::s
 
 }  // namespace
 
+std::optional<std::vector<DFlashHiddenStateLocator>> resolve_target_hidden_state_locators(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<int32_t>& target_layer_ids) {
+    OPENVINO_ASSERT(model, "DFlash target model cannot be null.");
+    OPENVINO_ASSERT(!target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
+    if (!model->has_rt_info(DFLASH_HIDDEN_STATES_RT_INFO_KEY)) {
+        return std::nullopt;
+    }
+
+    nlohmann::json annotation;
+    try {
+        annotation = nlohmann::json::parse(model->get_rt_info<std::string>(DFLASH_HIDDEN_STATES_RT_INFO_KEY));
+    } catch (const nlohmann::json::exception& error) {
+        OPENVINO_THROW("Malformed hidden-state annotation metadata in model rt_info: ", error.what());
+    }
+
+    std::set<std::pair<std::string, nlohmann::json::number_unsigned_t>> producer_outputs;
+    std::vector<DFlashHiddenStateLocator> resolved;
+    resolved.reserve(target_layer_ids.size());
+    try {
+        const auto& layers = annotation.at("layers");
+        const auto live_nodes = model->get_ordered_ops();
+        for (const auto layer_id : target_layer_ids) {
+            const auto key = std::to_string(layer_id);
+            const auto& locator = layers.at(key);
+            const auto producer = locator.at("producer").get<std::string>();
+            const auto output_index =
+                locator.at("output_index").get_ref<const nlohmann::json::number_unsigned_t&>();
+            OPENVINO_ASSERT(producer_outputs.emplace(producer, output_index).second,
+                            "Duplicate producer/output locator for requested decoder layers: ",
+                            producer,
+                            "[",
+                            output_index,
+                            "].");
+
+            const auto output = resolve_live_hidden_state_output(live_nodes, producer, output_index);
+            resolved.push_back({producer, output, static_cast<size_t>(output.get_partial_shape()[2].get_length())});
+        }
+    } catch (const nlohmann::json::exception& error) {
+        OPENVINO_THROW("Malformed hidden-state annotation metadata: ", error.what());
+    }
+    return resolved;
+}
+
+void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
+                                 const std::optional<std::vector<DFlashHiddenStateLocator>>& retained_locators,
+                                 const std::vector<int32_t>& target_layer_ids) {
+    OPENVINO_ASSERT(model, "DFlash target model cannot be null.");
+    OPENVINO_ASSERT(!target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
+    std::vector<ov::Output<ov::Node>> outputs;
+
+    if (retained_locators) {
+        OPENVINO_ASSERT(!retained_locators->empty(), "DFlash hidden-state locators cannot be empty.");
+        OPENVINO_ASSERT(retained_locators->size() == target_layer_ids.size(),
+                        "DFlash hidden-state locator count does not match target_layer_ids.");
+        const auto live_nodes = model->get_ordered_ops();
+        outputs.reserve(retained_locators->size());
+        for (const auto& retained : *retained_locators) {
+            const auto current_output = resolve_live_hidden_state_output(
+                live_nodes,
+                retained.producer,
+                retained.output.get_index(),
+                retained.hidden_size);
+            OPENVINO_ASSERT(current_output.get_node_shared_ptr() == retained.output.get_node_shared_ptr(),
+                            "DFlash hidden-state producer ",
+                            retained.producer,
+                            " no longer resolves to the retained output identity.");
+            outputs.push_back(retained.output);
+        }
+    } else {
+        OPENVINO_ASSERT(!model->has_rt_info(DFLASH_HIDDEN_STATES_RT_INFO_KEY),
+                        "DFlash hidden-state fallback cannot be used when target metadata is present.");
+        outputs = eagle3::find_decoder_layer_hidden_state_outputs(model, target_layer_ids);
+        OPENVINO_ASSERT(outputs.size() == target_layer_ids.size(),
+                        "DFlash target model has no hidden-state RT info and Eagle3 fallback found ",
+                        outputs.size(),
+                        " outputs for ",
+                        target_layer_ids.size(),
+                        " requested target layers.");
+    }
+    add_dflash_hidden_state_result(model, outputs);
+}
+
 void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
     if (!model->has_rt_info("dflash_mode") || !model->get_rt_info<bool>("dflash_mode")) {
         return;
@@ -182,16 +259,6 @@ DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config) {
     OPENVINO_ASSERT(!info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
 
     return info;
-}
-
-void expose_target_hidden_states(std::shared_ptr<ov::Model>& model, const std::vector<int32_t>& target_layer_ids) {
-    OPENVINO_ASSERT(!target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
-    auto annotated_outputs = get_dflash_annotated_hidden_state_outputs(model, target_layer_ids);
-    OPENVINO_ASSERT(!annotated_outputs.empty(),
-                    "DFlash requires hidden-state annotations in the target model. "
-                    "Export the target model with Optimum hidden-state annotations or provide "
-                    "Eagle3-compatible decoder layer names.");
-    add_dflash_hidden_state_result(model, annotated_outputs);
 }
 
 void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model) {

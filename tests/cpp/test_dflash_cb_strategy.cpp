@@ -3,43 +3,95 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <memory>
 #include <numeric>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "openvino/op/add.hpp"
+#include "openvino/op/assign.hpp"
+#include "openvino/op/concat.hpp"
 #include "openvino/op/constant.hpp"
+#include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
+#include "openvino/op/read_value.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/result.hpp"
+#include "openvino/op/scaled_dot_product_attention.hpp"
+#include "openvino/op/transpose.hpp"
+#include "openvino/op/unsqueeze.hpp"
+#include "openvino/op/util/variable.hpp"
+#include "openvino/pass/sdpa_to_paged_attention.hpp"
 #include "speculative_decoding/continuous_batching/dflash_strategy_utils.hpp"
 #include "speculative_decoding/dflash_model_transforms.hpp"
+#include "utils.hpp"
 
 namespace {
 
-std::shared_ptr<ov::Model> make_annotated_hidden_state_model() {
-    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1, 2, 4});
-    auto bias = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{1, 2, 4}, 1.0f);
+std::shared_ptr<ov::Model> make_annotated_stateful_sdpa_model() {
+    auto input_ids = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::Shape{1, 2});
+    input_ids->set_friendly_name("input_ids");
+    input_ids->output(0).set_names({"input_ids"});
+    auto embedding_weights =
+        ov::op::v0::Constant::create(ov::element::f32, ov::Shape{16, 4}, std::vector<float>(16 * 4, 1.0f));
+    auto embeddings =
+        std::make_shared<ov::op::v8::Gather>(embedding_weights,
+                                             input_ids,
+                                             ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {0}));
+    auto beam_idx = std::make_shared<ov::op::v0::Parameter>(ov::element::i32, ov::PartialShape{-1});
+    beam_idx->set_friendly_name("beam_idx");
+    beam_idx->output(0).set_names({"beam_idx"});
+    auto gather_axis = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {0});
+    auto reshape_pattern = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{4}, {0, 0, 1, -1});
+    auto transpose_order = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{4}, {0, 2, 1, 3});
 
-    auto layer0 = std::make_shared<ov::op::v1::Add>(input, bias);
-    layer0->output(0).set_names({"ov.hidden_states.decoder_layer_0"});
-    auto layer1 = std::make_shared<ov::op::v1::Add>(layer0, bias);
-    layer1->output(0).set_names({"ov.hidden_states.decoder_layer_1"});
-    auto layer2 = std::make_shared<ov::op::v1::Add>(layer1, bias);
-    layer2->output(0).set_names({"ov.hidden_states.decoder_layer_2"});
-    auto layer3 = std::make_shared<ov::op::v1::Add>(layer2, bias);
-    layer3->output(0).set_names({"ov.hidden_states.decoder_layer_3"});
-    auto layer4 = std::make_shared<ov::op::v1::Add>(layer3, bias);
-    layer4->output(0).set_names({"ov.hidden_states.decoder_layer_4"});
+    auto make_cache = [&](const std::string& variable_id) {
+        auto variable = std::make_shared<ov::op::util::Variable>(
+            ov::op::util::VariableInfo{ov::PartialShape::dynamic(4), ov::element::f32, variable_id});
+        auto initial = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 1, 4}, {0.0f});
+        auto read = std::make_shared<ov::op::v6::ReadValue>(initial, variable);
+        auto past = std::make_shared<ov::op::v8::Gather>(read, beam_idx, gather_axis);
+        auto current = std::make_shared<ov::op::v1::Reshape>(embeddings, reshape_pattern, true);
+        auto concat = std::make_shared<ov::op::v0::Concat>(ov::OutputVector{past, current}, 1);
+        auto assign = std::make_shared<ov::op::v6::Assign>(concat, variable);
+        auto transposed = std::make_shared<ov::op::v1::Transpose>(concat, transpose_order);
+        return std::make_tuple(transposed, assign);
+    };
 
-    auto result = std::make_shared<ov::op::v0::Result>(layer4);
-    result->output(0).set_names({"logits"});
-    auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
+    auto [key, key_assign] = make_cache("dflash_test_key_cache");
+    auto [value, value_assign] = make_cache("dflash_test_value_cache");
+    auto query =
+        std::make_shared<ov::op::v0::Unsqueeze>(embeddings,
+                                                ov::op::v0::Constant::create(ov::element::i64, ov::Shape{}, {1}));
+    auto mask = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 2, 3}, {0.0f});
+    auto sdpa = std::make_shared<ov::op::v13::ScaledDotProductAttention>(query, key, value, mask, false);
+
+    auto attention_transposed = std::make_shared<ov::op::v1::Transpose>(sdpa, transpose_order);
+    auto attention_hidden =
+        std::make_shared<ov::op::v1::Reshape>(attention_transposed,
+                                              ov::op::v0::Constant::create(ov::element::i64, ov::Shape{3}, {0, 0, -1}),
+                                              true);
+    auto bias = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 4}, {1.0f});
+    auto decoder_layer = std::make_shared<ov::op::v1::Add>(embeddings, attention_hidden);
+    decoder_layer->set_friendly_name("decoder_layer_0");
+    auto final_norm = std::make_shared<ov::op::v1::Multiply>(decoder_layer, bias);
+    final_norm->set_friendly_name("final_norm");
+    auto lm_head_weights = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{4, 8}, {1.0f});
+    auto lm_head = std::make_shared<ov::op::v0::MatMul>(final_norm, lm_head_weights);
+    lm_head->set_friendly_name("lm_head");
+
+    auto logits_result = std::make_shared<ov::op::v0::Result>(lm_head);
+    logits_result->output(0).set_names({"logits"});
+    auto model = std::make_shared<ov::Model>(ov::ResultVector{logits_result},
+                                             ov::SinkVector{key_assign, value_assign},
+                                             ov::ParameterVector{input_ids, beam_idx});
     model->set_rt_info(
-        std::string(R"({"version":1,"layers":{"0":"ov.hidden_states.decoder_layer_0","1":"ov.hidden_states.decoder_layer_1","2":"ov.hidden_states.decoder_layer_2","3":"ov.hidden_states.decoder_layer_3","4":"ov.hidden_states.decoder_layer_4"}})"),
+        std::string(
+            R"({"layers":{"0":{"producer":"decoder_layer_0","output_index":0},"1":{"producer":"final_norm","output_index":0}}})"),
         "hidden_states_decoder_layers");
     return model;
 }
@@ -141,7 +193,7 @@ TEST(DFlashCBHiddenDeltaBuffer, MergesChunksInOrder) {
 }
 
 TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
-    auto model = make_annotated_hidden_state_model();
+    auto model = make_annotated_stateful_sdpa_model();
     model->set_rt_info(true, "dflash_mode");
     model->set_rt_info(std::string("151669"), {"dflash", "mask_token_id"});
     model->set_rt_info(std::string("1,12,23,34,45"), {"dflash", "target_layer_ids"});
@@ -161,43 +213,113 @@ TEST(DFlashModelTransforms, AppliesAndExtractsDraftRtInfo) {
     ASSERT_TRUE(properties.empty());
 }
 
-TEST(DFlashModelTransforms, AddsArbitraryAnnotatedHiddenStatesAsOutput) {
-    auto model = make_annotated_hidden_state_model();
-
-    ov::genai::utils::dflash::expose_target_hidden_states(model, {0, 1, 2, 3, 4});
-
-    ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 1);
-    const auto hidden_state = model->output("last_hidden_state");
-    ASSERT_EQ(hidden_state.get_partial_shape(), ov::PartialShape({1, 2, 20}));
-}
-
 TEST(DFlashModelTransforms, FallsBackToEagle3LayerPatternWithoutAnnotations) {
     auto model = make_eagle3_pattern_hidden_state_model();
+    const std::vector<int32_t> target_layer_ids = {0, 2, 4};
+    auto retained_locators =
+        ov::genai::utils::dflash::resolve_target_hidden_state_locators(model, target_layer_ids);
 
-    ov::genai::utils::dflash::expose_target_hidden_states(model, {0, 2, 4});
+    ASSERT_FALSE(retained_locators);
+    ov::genai::utils::dflash::expose_target_hidden_states(model, retained_locators, target_layer_ids);
 
     ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 1);
     const auto hidden_state = model->output("last_hidden_state");
     ASSERT_EQ(hidden_state.get_partial_shape(), ov::PartialShape({1, 2, 12}));
 }
 
-TEST(DFlashModelTransforms, ThrowsForMissingAnnotatedHiddenStateLayer) {
-    auto model = make_annotated_hidden_state_model();
+TEST(DFlashModelTransforms, ValidatesLocatorsAcrossPagedAttentionAndGatherBeforeAddingResult) {
+    auto model = make_annotated_stateful_sdpa_model();
+    const auto original_result_count = model->get_results().size();
+    const std::vector<int32_t> target_layer_ids = {0, 1};
+    auto retained_locators =
+        ov::genai::utils::dflash::resolve_target_hidden_state_locators(model, target_layer_ids);
+    ASSERT_TRUE(retained_locators);
+    const auto& locators = *retained_locators;
+    ASSERT_EQ(locators.size(), 2);
+    ASSERT_EQ(locators.front().producer, "decoder_layer_0");
+    ASSERT_EQ(locators.back().producer, "final_norm");
 
-    EXPECT_THROW(ov::genai::utils::dflash::expose_target_hidden_states(model, {0, 99}), ov::Exception);
+    ov::pass::SDPAToPagedAttention(/*use_per_layer_block_indices_inputs=*/false,
+                                   /*use_score_outputs=*/false,
+                                   /*allow_score_aggregation=*/true,
+                                   /*allow_cache_rotation=*/false)
+        .run_on_model(model);
+
+    ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 0);
+    ASSERT_EQ(model->get_results().size(), original_result_count);
+    const auto transformed_ops = model->get_ordered_ops();
+    ASSERT_TRUE(std::any_of(transformed_ops.begin(), transformed_ops.end(), [](const std::shared_ptr<ov::Node>& node) {
+        return std::string(node->get_type_name()).find("PagedAttention") != std::string::npos;
+    }));
+    for (const auto& locator : locators) {
+        const auto shape = locator.output.get_partial_shape();
+        ASSERT_TRUE(shape[1].is_static());
+        ASSERT_EQ(shape[1].get_length(), 1);
+    }
+
+    ov::genai::utils::apply_gather_before_matmul_transformation(model);
+    ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 0);
+    ASSERT_EQ(model->get_results().size(), original_result_count);
+    const auto parameters = model->get_parameters();
+    ASSERT_TRUE(
+        std::any_of(parameters.begin(), parameters.end(), [](const std::shared_ptr<ov::op::v0::Parameter>& parameter) {
+            return parameter->get_friendly_name() == "sampled_tokens_indices";
+        }));
+    const auto transformed_lm_head = std::get<0>(ov::genai::utils::find_llm_matmul(model));
+    ASSERT_TRUE(transformed_lm_head);
+    ASSERT_TRUE(ov::as_type_ptr<ov::op::v8::Gather>(transformed_lm_head->input_value(0).get_node_shared_ptr()));
+
+    ov::genai::utils::dflash::expose_target_hidden_states(model, retained_locators, target_layer_ids);
+
+    ASSERT_EQ(count_outputs_with_name(model, "last_hidden_state"), 1);
+    ASSERT_EQ(model->get_results().size(), original_result_count + 1);
+    ASSERT_EQ(model->output("last_hidden_state").get_partial_shape()[2].get_length(), 8);
 }
 
-TEST(DFlashModelTransforms, ReshapesStaticDraftHiddenStatesInputForCB) {
-    auto model = make_dflash_draft_hidden_states_model(ov::PartialShape({1, 2, 4}));
+TEST(DFlashModelTransforms, RejectsMalformedRequestedLocators) {
+    const std::vector<std::pair<std::string, std::vector<int32_t>>> invalid_annotations = {
+        {R"({"layers":{"0":{"producer":1,"output_index":0}}})", {0}},
+        {R"({"layers":{"0":{"producer":"decoder_layer_0","output_index":-1}}})", {0}},
+        {R"({"layers":{"0":{"producer":"decoder_layer_0","output_index":0}}})", {1}},
+        {R"({"layers":{"0":{"producer":"decoder_layer_0","output_index":0},"1":{"producer":"decoder_layer_0","output_index":0}}})",
+         {0, 1}},
+    };
+    for (const auto& [annotation, layer_ids] : invalid_annotations) {
+        SCOPED_TRACE(annotation);
+        auto model = make_annotated_stateful_sdpa_model();
+        model->set_rt_info(annotation, "hidden_states_decoder_layers");
+        EXPECT_THROW(ov::genai::utils::dflash::resolve_target_hidden_state_locators(model, layer_ids), ov::Exception);
+    }
+}
 
-    ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model);
+TEST(DFlashModelTransforms, RejectsReplacedRetainedLocatorWhileOriginalRemainsLive) {
+    auto model = make_annotated_stateful_sdpa_model();
+    const std::vector<int32_t> target_layer_ids = {0};
+    auto retained_locators =
+        ov::genai::utils::dflash::resolve_target_hidden_state_locators(model, target_layer_ids);
+    ASSERT_TRUE(retained_locators);
+    const auto& locators = *retained_locators;
+    const auto original_output = locators.front().output;
+    const auto original = original_output.get_node_shared_ptr();
 
-    ASSERT_EQ(model->input("hidden_states").get_partial_shape(), ov::PartialShape({2, 1, 4}));
-    auto consumer = find_dflash_draft_hidden_states_consumer(model);
-    ASSERT_TRUE(consumer);
-    auto reshape = ov::as_type_ptr<ov::op::v1::Reshape>(consumer->input_value(0).get_node_shared_ptr());
-    ASSERT_TRUE(reshape);
-    ASSERT_EQ(reshape->get_output_partial_shape(0), ov::PartialShape({1, 2, 4}));
+    auto keep_original_live = std::make_shared<ov::op::v0::Result>(original_output);
+    keep_original_live->set_friendly_name("original_decoder_layer_0_result");
+    model->add_results({keep_original_live});
+
+    auto replacement = std::make_shared<ov::op::v1::Add>(original->input_value(0), original->input_value(1));
+    const auto original_name = original->get_friendly_name();
+    for (auto consumer : original_output.get_target_inputs()) {
+        if (consumer.get_node() != keep_original_live.get()) {
+            consumer.replace_source_output(replacement->output(0));
+        }
+    }
+    original->set_friendly_name("replaced_decoder_layer_0");
+    replacement->set_friendly_name(original_name);
+    model->validate_nodes_and_infer_types();
+
+    EXPECT_THROW(
+        ov::genai::utils::dflash::expose_target_hidden_states(model, retained_locators, target_layer_ids),
+        ov::Exception);
 }
 
 TEST(DFlashModelTransforms, ReshapesDynamicDraftHiddenStatesInputForCB) {
@@ -214,31 +336,6 @@ TEST(DFlashModelTransforms, ReshapesDynamicDraftHiddenStatesInputForCB) {
     ASSERT_TRUE(reshape);
     ASSERT_EQ(reshape->get_output_partial_shape(0),
               ov::PartialShape({ov::Dimension(1), ov::Dimension::dynamic(), ov::Dimension(4)}));
-}
-
-TEST(DFlashModelTransforms, ReshapesFullyDynamicDraftHiddenStatesInputForCB) {
-    auto hidden_states = std::make_shared<ov::op::v0::Parameter>(
-        ov::element::f32,
-        ov::PartialShape::dynamic(3));
-    hidden_states->set_friendly_name("hidden_states");
-    hidden_states->output(0).set_names({"hidden_states"});
-    auto result = std::make_shared<ov::op::v0::Result>(hidden_states);
-    auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{hidden_states});
-
-    ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model);
-
-    ASSERT_EQ(model->input("hidden_states").get_partial_shape(),
-              ov::PartialShape({ov::Dimension::dynamic(), ov::Dimension(1), ov::Dimension::dynamic()}));
-    auto reshape = ov::as_type_ptr<ov::op::v1::Reshape>(model->get_results().front()->input_value(0).get_node_shared_ptr());
-    ASSERT_TRUE(reshape);
-    ASSERT_EQ(reshape->get_output_partial_shape(0),
-              ov::PartialShape({ov::Dimension(1), ov::Dimension::dynamic(), ov::Dimension::dynamic()}));
-}
-
-TEST(DFlashModelTransforms, ThrowsForMissingDraftHiddenStatesInput) {
-    auto model = make_annotated_hidden_state_model();
-
-    EXPECT_THROW(ov::genai::utils::dflash::reshape_draft_hidden_states_input_for_cb(model), ov::Exception);
 }
 
 TEST(DFlashModelTransforms, ThrowsForIncompatibleDraftHiddenStatesInput) {

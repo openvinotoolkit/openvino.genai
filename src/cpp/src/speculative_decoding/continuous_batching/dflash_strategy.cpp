@@ -253,6 +253,10 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     OPENVINO_ASSERT(needs_lm_head_graft != model_has_output(draft_model_desc.model, "logits"),
                     "DFlash draft model must have exactly one of 'last_hidden_state' or 'logits' output.");
 
+    // Resolve authoritative metadata before mutating either model so a malformed target leaves the draft reusable.
+    auto retained_hidden_state_locators =
+        utils::dflash::resolve_target_hidden_state_locators(main_model, m_rt_info.target_layer_ids);
+
     // Transform while the target is pristine so the compiled draft is self-contained (input_ids -> logits).
     if (needs_embedding_attach) {
         utils::dflash::attach_target_embedding_to_draft(main_model, draft_model_desc.model);
@@ -263,16 +267,19 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     const bool target_has_linear_attention = utils::get_cache_types(*main_model).has_linear();
 
-    bool allow_score_aggregation = true;
-    bool allow_xattention = false;
+    const bool allow_score_aggregation = true;
+    const bool allow_cache_rotation = false;
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_xattention)
+                                   allow_cache_rotation)
         .run_on_model(main_model);
     utils::apply_gather_before_matmul_transformation(main_model);
-    utils::dflash::expose_target_hidden_states(main_model, m_rt_info.target_layer_ids);
     validate_target_has_no_unmanaged_state(main_model);
+    utils::dflash::expose_target_hidden_states(
+        main_model,
+        retained_hidden_state_locators,
+        m_rt_info.target_layer_ids);
 
     m_tokenizer = main_model_desc.tokenizer;
     auto main_generation_config = main_model_desc.generation_config;

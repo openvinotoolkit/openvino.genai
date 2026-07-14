@@ -3,8 +3,11 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "openvino/core/any.hpp"
@@ -25,6 +28,15 @@ struct DFlashRTInfo {
 };
 
 /**
+ * @brief A hidden-state locator resolved against a live target graph.
+ */
+struct DFlashHiddenStateLocator {
+    std::string producer;
+    ov::Output<ov::Node> output;
+    size_t hidden_size;
+};
+
+/**
  * @brief Applies DFlash runtime info from model RT info to a properties map.
  */
 void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties);
@@ -35,13 +47,22 @@ void apply_dflash_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
 DFlashRTInfo extract_dflash_info_from_config(ov::AnyMap& config);
 
 /**
- * @brief Exposes annotated target hidden states as a concatenated model output.
+ * @brief Parses target hidden-state RT info and resolves the requested locators.
  *
- * DFlash target models exported by Optimum carry semantic hidden-state tensor names
- * in `hidden_states_decoder_layers` RT info. This function looks up the requested
- * decoder layers by annotation and exposes them as `last_hidden_state`.
+ * Returns std::nullopt when the metadata is absent.
+ *
+ * @throws ov::Exception for malformed metadata, duplicate locators, or a missing/ambiguous producer.
  */
-void expose_target_hidden_states(std::shared_ptr<ov::Model>& model, const std::vector<int32_t>& target_layer_ids);
+std::optional<std::vector<DFlashHiddenStateLocator>> resolve_target_hidden_state_locators(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<int32_t>& target_layer_ids);
+
+/**
+ * @brief Exposes annotated target hidden states, or uses the Eagle3 fallback when metadata is absent.
+ */
+void expose_target_hidden_states(std::shared_ptr<ov::Model>& model,
+                                 const std::optional<std::vector<DFlashHiddenStateLocator>>& retained_locators,
+                                 const std::vector<int32_t>& target_layer_ids);
 
 /**
  * @brief Makes DFlash draft accept CB-native hidden states externally.
@@ -59,7 +80,7 @@ void reshape_draft_hidden_states_input_for_cb(std::shared_ptr<ov::Model>& model)
  * Clones only the weight side (input(1)) of the target's final lm_head MatMul - including any INT4
  * decompression subgraph - and builds a fresh MatMul(draft last_hidden_state, cloned_weight) using
  * the target's transpose flags. The draft `last_hidden_state` Result is replaced by a `logits`
- * Result. Run before `expose_target_hidden_states` adds a second target output.
+ * Result. Run while the target is pristine, before PA and gather transformations.
  */
 void attach_target_lm_head_to_draft(const std::shared_ptr<ov::Model>& main_model,
                                     const std::shared_ptr<ov::Model>& draft_model);
