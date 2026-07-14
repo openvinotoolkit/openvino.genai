@@ -119,7 +119,8 @@ void PNDMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     if (m_config.skip_prk_steps) {
         m_prk_timesteps = {};
         std::copy(m_timesteps.begin(), m_timesteps.end() - 1, std::back_inserter(m_plms_timesteps));
-        m_plms_timesteps.push_back(m_timesteps[m_timesteps.size() - 2]);
+        size_t second_last_idx = m_timesteps.size() >= 2 ? m_timesteps.size() - 2 : 0;
+        m_plms_timesteps.push_back(m_timesteps[second_last_idx]);
         m_plms_timesteps.push_back(m_timesteps[m_timesteps.size() - 1]);
         std::reverse(m_plms_timesteps.begin(), m_plms_timesteps.end());
     } else {
