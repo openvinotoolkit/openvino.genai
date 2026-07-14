@@ -577,7 +577,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
     if (!image_embeds.empty()) {
         inputs_embeds = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
     } else {
-        text_embeds.copy_to(inputs_embeds);
+        inputs_embeds = std::move(text_embeds);
     }
 
     // Merge video embeddings at video_token_id positions
