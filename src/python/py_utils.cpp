@@ -444,6 +444,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::WhisperGenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj)) {
         return py::cast<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj);
+    } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::Config>(py_obj)) {
+        return py::cast<ov::genai::TextEmbeddingPipeline::Config>(py_obj);
     } else if (py::isinstance<ov::genai::StopCriteria>(py_obj)) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {

@@ -51,19 +51,6 @@ def safe_json_load(file_path: Path) -> Optional[dict]:
     return None
 
 
-def resolve_complex_model_types(config):
-    model_type = config.get("model_type").lower().replace('_', '-')
-    if model_type == "gemma3":
-        return USE_CASES["visual_text_gen"][0], model_type
-    if model_type == "gemma3-text":
-        return USE_CASES["text_gen"][0], model_type
-    if model_type in ["phi4mm", "phi4-multimodal"]:
-        return USE_CASES["visual_text_gen"][0], model_type
-    if model_type == "llama4":
-        return USE_CASES["visual_text_gen"][0], model_type
-    return None, None
-
-
 def get_model_name(model_path: Path, task: Optional[str] = None) -> Tuple[Optional[object], Optional[str], Optional[str]]:
     """
     Attempts to extract the model name and its use case/type from the given path.
@@ -166,10 +153,6 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
     # Strategy 2 & 3: Determine a 'model_id' from config or GGUF metadata
     model_id = None
     if (config := safe_json_load(model_path / "config.json")):
-        # First, attempt resolution with more complex logic
-        case, model_type = resolve_complex_model_types(config)
-        if case and model_type:
-            return log_and_return(case, model_type, cur_model_name)
         # Fallback to simple 'model_type' key
         if model_type_val := config.get("model_type"):
             model_id = str(model_type_val).lower().replace('_', '-')
