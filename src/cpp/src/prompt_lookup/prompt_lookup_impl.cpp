@@ -124,12 +124,15 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
         bool has_valid_ttid = token_type_ids.has_value() && request_id < token_type_ids->size();
         bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
+        bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
         generations.push_back(m_pipeline->add_request(
             request_id,
             input_ids[request_id],
             sampling_params[request_id],
             has_valid_ttid ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
-            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt));
+            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
+        ));
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 
