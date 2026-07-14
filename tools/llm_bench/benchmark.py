@@ -27,14 +27,14 @@ from llm_bench_utils.memory_monitor import MemoryMonitorHandler
 DEFAULT_TORCH_THREAD_NUMS = 16
 
 
-def num_positive_integers(x):
+def positive_integer(x):
     x = int(x)
     if x < 0:
         raise argparse.ArgumentTypeError("Minimum input value is 0")
     return x
 
 
-def num_at_least_one(x):
+def greater_than_zero(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError("Minimum input value is 1")
@@ -90,7 +90,7 @@ def get_argparser():
         "-pi",
         "--prompt_index",
         nargs="+",
-        type=num_positive_integers,
+        type=positive_integer,
         default=None,
         help="Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.",
     )
@@ -99,14 +99,14 @@ def get_argparser():
         "-ic",
         "--infer_count",
         default=None,
-        type=num_at_least_one,
+        type=greater_than_zero,
         help="set the output token size, the value must be greater than 0.",
     )
     parser.add_argument(
         "-n",
         "--num_iters",
         default=0,
-        type=num_positive_integers,
+        type=positive_integer,
         help="number of benchmarking iterations, "
         "if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n"
         "if the value equals 0 (default), execute the warm-up iteration(0th iteration).",
@@ -316,7 +316,9 @@ def get_argparser():
         action="store_true",
         help="Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).",
     )
-    parser.add_argument("--set_torch_thread", default=0, type=num_at_least_one, help="Set the number of Torch thread. ")
+    parser.add_argument(
+        "--set_torch_thread", default=0, type=greater_than_zero, help="Set the number of Torch thread. "
+    )
     parser.add_argument(
         "-tl",
         "--tokens_len",
@@ -481,7 +483,7 @@ def get_argparser():
     )
     parser.add_argument(
         "--chat_iter",
-        type=num_at_least_one,
+        type=greater_than_zero,
         default=None,
         help="Use with --task text_gen_chat. The chat will run chat-iter iterations with the one prompt."
         " Alternative option is setup prompts list in JSONL via -pf option."

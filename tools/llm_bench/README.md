@@ -194,7 +194,7 @@ python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.
 ```sh
 # chat iteration
 python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen_chat --chat_iter 3
-python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen_chat -pf ./prompts/llm_chat.jsonl
+python benchmark.py -m ./models/llama-2-7b-chat/ -n 2 --task text_gen_chat -pf ./prompts/llm_chat.jsonl
 ```
 
 **Some additional parameters:**
