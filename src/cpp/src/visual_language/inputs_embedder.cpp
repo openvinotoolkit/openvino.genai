@@ -207,15 +207,13 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::sample_video_if_needed(
     }
 
     if (video_metadata.frames_indices.size() == video_frames_num) {
-        size_t index = 0;
-        bool is_sequential_indices = std::equal(
-            video_metadata.frames_indices.begin(),
-            video_metadata.frames_indices.end(),
-            video_metadata.frames_indices.begin(),
-            [&index](size_t element, size_t) {
-                return element == index++;
+        bool is_sequential_indices = true;
+        for (size_t i = 0; i < video_frames_num; ++i) {
+            if (video_metadata.frames_indices[i] != i) {
+                is_sequential_indices = false;
+                break;
             }
-        );
+        }
         if (is_sequential_indices) {
             return video;
         }
