@@ -26,6 +26,7 @@ from .tts_similarity import (
 )
 
 PROMPTS_FILE = "speech_generation_prompts.yaml"
+OMNI_PROMPTS_FILE = "text_prompts.yaml"
 DEFAULT_SPEAKER_EMBEDDING_REPO_ID = "Xenova/cmu-arctic-xvectors-extracted"
 DEFAULT_SPEAKER_EMBEDDING_FILENAME = "cmu_us_slt_arctic-wav-arctic_a0508.bin"
 SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
@@ -85,6 +86,7 @@ class _Qwen3OmniSpeakerMixin:
     """Speaker resolution logic shared by Qwen3-Omni HF and GenAI wrappers."""
 
     model_type = "speech-generation"
+    prompts_file = OMNI_PROMPTS_FILE
 
     def _init_speakers(self, supported_speakers: list[str], requested_default: str) -> None:
         self.supported_speakers = supported_speakers
@@ -755,7 +757,8 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             else:
                 data = pd.DataFrame.from_dict({"prompts": list(self.test_data)})
         else:
-            data_path = files("whowhatbench.prompts").joinpath(PROMPTS_FILE)
+            prompts_file = getattr(model, "prompts_file", None) or PROMPTS_FILE
+            data_path = files("whowhatbench.prompts").joinpath(prompts_file)
             prompt_data = yaml.safe_load(data_path.read_text(encoding="utf-8"))
             data = pd.DataFrame.from_dict(prompt_data["en"])
 

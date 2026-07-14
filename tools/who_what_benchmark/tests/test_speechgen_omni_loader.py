@@ -75,3 +75,11 @@ def test_qwen3_omni_speech_wrapper_rejects_speaker_embedding():
 
     with pytest.raises(ValueError):
         wrapper.generate("hello world", speaker_embedding=object())
+
+
+def test_qwen3_omni_wrappers_declare_text_prompts_file():
+    hf_wrapper = Qwen3OmniSpeechWrapper(model=object(), processor=object())
+    genai_wrapper = GenAIOmniSpeechWrapper.__new__(GenAIOmniSpeechWrapper)
+
+    assert hf_wrapper.prompts_file == "text_prompts.yaml"
+    assert genai_wrapper.prompts_file == "text_prompts.yaml"
