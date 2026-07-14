@@ -259,12 +259,20 @@ optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vo
 wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin
 # run benchmark.py
 python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
+
+# Kokoro export (Optimum)
+pip install kokoro
+optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code models/ov_Kokoro-82M
+# run benchmark.py with Kokoro (Optimum or GenAI)
+python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice af_heart --speech_language en-us
 ```
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
+- `--speech_voice`: Voice to use for Kokoro models. Default is `af_heart`
+- `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
 
-> **Supported Text to Speech model types:** speecht5
+> **Supported Text to Speech model types:** speecht5, kokoro
 
 ### Speech to Text models
 ```sh

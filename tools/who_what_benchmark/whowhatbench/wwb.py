@@ -248,6 +248,17 @@ def parse_args():
         help="Use llama-cpp-python to instantiate the model.",
     )
     parser.add_argument(
+        "--llamacpp-chat",
+        action="store_true",
+        help="Use llama.cpp chat-completions API for model-type 'text'.",
+    )
+    parser.add_argument(
+        "--llamacpp-n-ctx",
+        type=positive_integer,
+        default=None,
+        help="Context window size for llama.cpp backend in model-type 'text' (default: 8192 with --llamacpp).",
+    )
+    parser.add_argument(
         "--image-size",
         type=int,
         default=None,
@@ -478,6 +489,19 @@ def check_args(args):
     if args.output is not None and os.path.isfile(args.output):
         raise ValueError(f"--output must be a directory path, not a file: '{args.output}'")
 
+    backend_flags = [args.hf, args.genai, args.llamacpp]
+    if sum(bool(flag) for flag in backend_flags) > 1:
+        raise ValueError("Options --hf, --genai and --llamacpp are mutually exclusive")
+
+    if args.llamacpp and args.model_type != "text":
+        raise ValueError("--llamacpp is supported only with --model-type text")
+
+    if args.llamacpp_n_ctx is not None and not args.llamacpp:
+        raise ValueError("--llamacpp-n-ctx requires --llamacpp")
+
+    if args.llamacpp_chat and not args.llamacpp:
+        raise ValueError("--llamacpp-chat requires --llamacpp")
+
 
 def load_prompts(args):
     if args.dataset is None:
@@ -694,22 +718,17 @@ def llamacpp_gen_text(
     max_new_tokens,
     skip_question,
     use_chat_template=False,
+    empty_adapters=False,
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
 ):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
-        text = output["choices"][0]["message"]["content"]
-        if skip_question:
-            text = text[len(question):]
-        return text
+        return output["choices"][0]["message"]["content"]
     else:
-        output = model(question, max_tokens=max_new_tokens, echo=True, temperature=0.0)
-        text = output["choices"][0]["text"]
-        if skip_question:
-            text = text[len(question):]
-        return text
+        output = model(question, max_tokens=max_new_tokens, echo=False, temperature=0.0)
+        return output["choices"][0]["text"]
 
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
@@ -946,9 +965,12 @@ def create_evaluator(base_model, args):
             else:
                 gen_answer_fn = None
 
-            use_chat_template = (
-                tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
-            )
+            if args.llamacpp:
+                use_chat_template = args.llamacpp_chat and not args.omit_chat_template
+            else:
+                use_chat_template = (
+                    tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
+                )
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -1366,6 +1388,8 @@ def main():
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
+    kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
+
     if args.base_model is not None:
         base_model = load_model(
             args.model_type,
@@ -1374,6 +1398,7 @@ def main():
             args.ov_config,
             args.hf,
             args.genai,
+            args.llamacpp,
             **kwargs,
         )
 

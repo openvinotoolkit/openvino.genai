@@ -14,7 +14,9 @@ class TestBenchmarkGenAI:
     @pytest.mark.parametrize(
         "convert_model, prompt, sample_args",
         [
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["-nw", "2", "-n", "3", "-mt", "50", "-d", "CPU"]),
+            pytest.param(
+                "TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["-N", "2", "-n", "3", "-M", "50", "-d", "CPU"]
+            ),
         ],
         indirect=["convert_model"],
     )
@@ -31,7 +33,9 @@ class TestBenchmarkGenAI:
     @pytest.mark.parametrize(
         "convert_model, prompt, sample_args",
         [
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["--nw", "2", "-n", "3", "--mt", "50", "-d", "CPU"]),
+            pytest.param(
+                "TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["-N", "2", "-n", "3", "-M", "50", "-d", "CPU"]
+            ),
         ],
         indirect=["convert_model"],
     )
@@ -48,7 +52,9 @@ class TestBenchmarkGenAI:
     @pytest.mark.parametrize(
         "convert_model, prompt, sample_args",
         [
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["--nw", "2", "-n", "3", "--mt", "50", "-d", "CPU"]),
+            pytest.param(
+                "TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["-N", "2", "-n", "3", "-M", "50", "-d", "CPU"]
+            ),
         ],
         indirect=["convert_model"],
     )
@@ -63,7 +69,9 @@ class TestBenchmarkGenAI:
     @pytest.mark.parametrize(
         "convert_model, prompt, sample_args",
         [
-            pytest.param("TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["--nw", "2", "-n", "3", "--mt", "50", "-d", "CPU"]),
+            pytest.param(
+                "TinyLlama-1.1B-Chat-v1.0", "Why is the sun yellow?", ["-N", "2", "-n", "3", "-M", "50", "-d", "CPU"]
+            ),
         ],
         indirect=["convert_model"],
     )

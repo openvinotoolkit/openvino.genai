@@ -1125,14 +1125,11 @@ void StatefulEagle3LLMPipeline::validate_construction_params(const ModelDesc& ta
 
     OPENVINO_ASSERT(draft_model_desc.properties.find("hidden_layers_list") != draft_model_desc.properties.end(),
                     "hidden_layers_list must be present in draft model properties");
-
-    OPENVINO_ASSERT(target_model_desc.model, "Target model must not be null");
-    OPENVINO_ASSERT(draft_model_desc.model, "Draft model must not be null");
 }
 
 void StatefulEagle3LLMPipeline::apply_graph_transforms(const ModelDesc& target_model_desc,
                                                        const ModelDesc& draft_model_desc) {
-    const auto hidden_layers_to_abstract =
+    const auto& hidden_layers_to_abstract =
         draft_model_desc.properties.at("hidden_layers_list").as<std::vector<int32_t>>();
     OPENVINO_ASSERT(hidden_layers_to_abstract.size() == 3,
                     "hidden_layers_list must contain exactly 3 layers, got ",
@@ -1140,6 +1137,8 @@ void StatefulEagle3LLMPipeline::apply_graph_transforms(const ModelDesc& target_m
 
     auto target_model = target_model_desc.model;
     auto draft_model = draft_model_desc.model;
+    OPENVINO_ASSERT(target_model, "Target model must not be null");
+    OPENVINO_ASSERT(draft_model, "Draft model must not be null");
 
     utils::eagle3::share_vocabulary(target_model, draft_model);
 
@@ -1203,7 +1202,7 @@ void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& conf
 }
 
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
-    GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
+    GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(std::move(generation_config));
     OPENVINO_ASSERT(!config.do_sample, "Eagle3 speculative decoding requires greedy sampling (do_sample=false)");
     ensure_tree_params_is_set(config);
 

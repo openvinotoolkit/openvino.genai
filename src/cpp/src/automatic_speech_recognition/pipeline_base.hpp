@@ -21,7 +21,7 @@ public:
           m_tokenizer{models_path} {}
 
     virtual ASRDecodedResults generate(const AudioInputs& audio_inputs,
-                                       std::optional<ASRGenerationConfig> generation_config,
+                                       const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
 
     virtual void set_generation_config(const ASRGenerationConfig& config) {

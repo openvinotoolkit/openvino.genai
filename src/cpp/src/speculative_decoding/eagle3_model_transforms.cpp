@@ -379,7 +379,7 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
     auto block_indices_begins = std::make_shared<op::v0::Parameter>(element::i32, PartialShape{-1});
     block_indices_begins->set_friendly_name("block_indices_begins");
     block_indices_begins->output(0).set_names({"block_indices_begins"});
-    inputs.push_back(block_indices_begins);
+    inputs.push_back(std::move(block_indices_begins));
 
     auto block_indices = std::make_shared<op::v0::Parameter>(element::i32, PartialShape{-1});
     block_indices->set_friendly_name("block_indices");
@@ -394,7 +394,7 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
     auto block_update_indices_begins = std::make_shared<op::v0::Parameter>(element::i32, PartialShape{-1});
     block_update_indices_begins->set_friendly_name("block_update_indices_begins");
     block_update_indices_begins->output(0).set_names({"block_update_indices_begins"});
-    inputs.push_back(block_update_indices_begins);
+    inputs.push_back(std::move(block_update_indices_begins));
 
     ResultVector results;
     size_t pair_count = std::min(key_caches.size(), value_caches.size());
@@ -442,7 +442,7 @@ void apply_eagle3_attention_mask_transform(std::shared_ptr<ov::Model>& model) {
     std::vector<std::shared_ptr<ov::op::v13::ScaledDotProductAttention>> sdpa_nodes;
     for (const auto& node : model->get_ordered_ops()) {
         if (auto sdpa = std::dynamic_pointer_cast<ov::op::v13::ScaledDotProductAttention>(node)) {
-            sdpa_nodes.push_back(sdpa);
+            sdpa_nodes.push_back(std::move(sdpa));
         }
     }
 
@@ -460,7 +460,7 @@ void apply_eagle3_attention_mask_transform(std::shared_ptr<ov::Model>& model) {
 
         auto current_mask_node = sdpa->get_input_node_shared_ptr(SDPA_ATTENTION_MASK_INPUT_INDEX);
         if (!attention_mask_source_node) {
-            attention_mask_source_node = current_mask_node;
+            attention_mask_source_node = std::move(current_mask_node);
         } else {
             OPENVINO_ASSERT(attention_mask_source_node.get() == current_mask_node.get(),
                             "Eagle3AttentionMaskTransform: SDPA nodes have different attention_mask source nodes. ",
@@ -493,7 +493,7 @@ void apply_eagle3_attention_mask_transform(std::shared_ptr<ov::Model>& model) {
     }
 
     // 6. Add the new parameter to the model
-    model->add_parameters({eagle_tree_mask_param});
+    model->add_parameters(ov::ParameterVector{std::move(eagle_tree_mask_param)});
 
     // 7. Validate the model
     model->validate_nodes_and_infer_types();

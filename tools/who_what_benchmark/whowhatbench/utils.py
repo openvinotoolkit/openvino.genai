@@ -211,14 +211,14 @@ def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lor
 # preapre default dataset for visualtext(VLM) evalutor
 def preprocess_fn(example):
     return {
-        "prompts": example["instruction"],
-        "images": load_image(example["image_url"]),
+        "prompts": example["question"],
+        "images": load_image(example["image"]),
         "videos": None,
     }
 
 
 def prepare_default_data_image(num_samples=None):
-    DATASET_NAME = "ucla-contextual/contextual_test"
+    DATASET_NAME = "lmms-lab/VQAv2"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
