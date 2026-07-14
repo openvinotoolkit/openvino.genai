@@ -269,10 +269,17 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     const bool allow_score_aggregation = true;
     const bool allow_cache_rotation = false;
+    const bool allow_xattention = false;
+    const bool allow_adaptive_rkv = false;
+    const bool allow_qq_bias = main_model_desc.properties.count("query_to_query_bias") > 0 &&
+                               main_model_desc.properties.at("query_to_query_bias").as<bool>();
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_cache_rotation)
+                                   allow_cache_rotation,
+                                   allow_xattention,
+                                   allow_adaptive_rkv,
+                                   allow_qq_bias)
         .run_on_model(main_model);
     utils::apply_gather_before_matmul_transformation(main_model);
     validate_target_has_no_unmanaged_state(main_model);
