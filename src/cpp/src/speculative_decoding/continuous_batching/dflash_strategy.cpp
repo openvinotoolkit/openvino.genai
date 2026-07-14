@@ -84,6 +84,8 @@ public:
         const int64_t* ids_data = input_ids.data<const int64_t>();
         TokenIds prompt_ids(ids_data, ids_data + shape[1]);
         m_prompt_length = shape[1];
+        // Sampler state is keyed by request_id; we reuse request_id=1, so clear per-request context.
+        m_sampler.clear_request_info(1);
         m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config);
         m_sequence_group->update_processed_tokens_num(m_prompt_length);
         m_committed_context_length = 0;
