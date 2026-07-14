@@ -105,6 +105,12 @@ The model requires `transformers==5.2` for the export with `optimum-cli`.
 #### nanoLLaVA {#nanollava-notes}
 
 The model requires `transformers>=4.48` for the export with `optimum-cli`.
+
+#### GLM-Edge-V {#glm-edge-v-notes}
+
+GLM-Edge-V (`GlmForCausalLM` with a SigLIP `vision_config`) supports text and image inputs only. Video input is not supported at the moment.
+
+The model requires `trust_remote_code=True` and `transformers>=4.44` for the export with `optimum-cli`.
 :::
 
 ## Speech Recognition Models (Whisper-based)
