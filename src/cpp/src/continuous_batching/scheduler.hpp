@@ -280,6 +280,7 @@ public:
     }
 
     void free_sequence(uint64_t seq_id) {
+        m_linear_attention_checkpoint_counts.erase(seq_id);
         m_cache_orchestrator->free_sequence(seq_id);
     }
 
@@ -367,7 +368,7 @@ private:
             auto sequences = victim->get_not_finished_sequences();
             for (size_t s = 0; s < sequences.size(); ++s) {
                 auto seq_id = sequences[s]->get_id();
-                m_cache_orchestrator->free_sequence(seq_id);
+                free_sequence(seq_id);
             }
             victim->preempt_tokens(processed_tokens);
             if (was_evicted_from) {
@@ -393,7 +394,7 @@ private:
             for (auto sequence: victim->get_not_finished_sequences()) {
                 auto seq_id = sequence->get_id();
                 if (m_cache_orchestrator->has_block_table(seq_id)) {
-                    m_cache_orchestrator->free_sequence(seq_id);
+                    free_sequence(seq_id);
                 }
             }
         }
