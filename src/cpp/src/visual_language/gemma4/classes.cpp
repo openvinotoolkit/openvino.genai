@@ -475,8 +475,11 @@ void InputsEmbedderGemma4::expand_video_tags_in_prompt(
 
         const size_t tokens_per_frame = encoded_video.num_video_tokens / encoded_video.frame_num;
 
-        // Build expanded tag: "MM:SS <boi><video_token>×N<eoi> MM:SS <boi><video_token>×N<eoi> ..."
+        // Build expanded tag: "MM:SS <boi><video_token>*N<eoi> MM:SS <boi><video_token>×N<eoi> ..."
         std::string expanded;
+        // MM:SS (5) + whitespace (1) + <boi> + <video_token>*N + <eoi> + whitespace (1)
+        const size_t per_frame_expanded_size =  5 + 1 + boi.size() + video_token.size() * tokens_per_frame + eoi.size() + 1;
+        expanded.reserve(encoded_video.frame_num * per_frame_expanded_size);
         for (size_t i = 0; i < encoded_video.frame_num; ++i) {
             const float seconds = static_cast<float>(encoded_video.metadata.frames_indices[i]) / encoded_video.metadata.fps;
             const int mins = static_cast<int>(seconds) / 60;
