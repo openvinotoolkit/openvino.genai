@@ -64,6 +64,38 @@ bool isEmbeddingGatherWithZeroBatchDims(const std::shared_ptr<ov::Node>& node) {
     return ov::is_type<ov::op::v1::Gather>(node);
 }
 
+// Detects an NNCF-style weight-decompression chain rooted at a low-precision
+// Constant: Convert(Constant) [- Convert(zero_point)] then * Constant(scale), cast
+// back to f32. Covers both asymmetric (int8, with zero point) and symmetric
+// (int4_sym, no zero point) weight compression of the embedding table.
+bool isDecompressedEmbeddingWeight(const ov::Output<ov::Node>& output) {
+    const auto convertToF32 = ov::as_type_ptr<ov::opset13::Convert>(output.get_node_shared_ptr());
+    if (convertToF32 == nullptr || convertToF32->get_output_element_type(0) != ov::element::f32) {
+        return false;
+    }
+
+    const auto multiply = ov::as_type_ptr<ov::opset13::Multiply>(convertToF32->input_value(0).get_node_shared_ptr());
+    if (multiply == nullptr || multiply->get_input_size() != 2) {
+        return false;
+    }
+    const bool scaleIsInput1 = ov::is_type<ov::opset13::Constant>(multiply->input_value(1).get_node_shared_ptr());
+    const bool scaleIsInput0 = ov::is_type<ov::opset13::Constant>(multiply->input_value(0).get_node_shared_ptr());
+    if (!scaleIsInput0 && !scaleIsInput1) {
+        return false;
+    }
+
+    auto dequantized = scaleIsInput1 ? multiply->input_value(0) : multiply->input_value(1);
+    // Asymmetric quantization subtracts a per-row zero point before scaling;
+    // symmetric quantization (e.g. int4_sym) has no such term.
+    if (const auto subtract = ov::as_type_ptr<ov::opset13::Subtract>(dequantized.get_node_shared_ptr())) {
+        dequantized = subtract->input_value(0);
+    }
+
+    const auto convertFromLowPrecision = ov::as_type_ptr<ov::opset13::Convert>(dequantized.get_node_shared_ptr());
+    return convertFromLowPrecision != nullptr &&
+           ov::is_type<ov::opset13::Constant>(convertFromLowPrecision->input_value(0).get_node_shared_ptr());
+}
+
 bool hasTensorName(const ov::Output<ov::Node>& output, const std::string& name) {
     return output.get_names().count(name) != 0;
 }
@@ -180,10 +212,16 @@ TextEmbeddingMatch findTextEmbedding(const std::shared_ptr<ov::Model>& model, co
             continue;
         }
 
-        const auto weight = ov::as_type_ptr<ov::opset13::Constant>(node->input_value(0).get_node_shared_ptr());
+        const auto weightOutput = node->input_value(0);
+        // The embedding table is either a plain f32 Constant, or (for int8/int4
+        // weight-compressed exports) a dequantization chain rooted in one.
+        const bool weightIsPlainConstant = ov::is_type<ov::opset13::Constant>(weightOutput.get_node_shared_ptr());
+        if (!weightIsPlainConstant && !isDecompressedEmbeddingWeight(weightOutput)) {
+            continue;
+        }
         const auto convert = ov::as_type_ptr<ov::opset13::Convert>(node->input_value(1).get_node_shared_ptr());
         const auto axis = ov::as_type_ptr<ov::opset13::Constant>(node->input_value(2).get_node_shared_ptr());
-        if (weight == nullptr || convert == nullptr || axis == nullptr || convert->get_input_size() != 1 ||
+        if (convert == nullptr || axis == nullptr || convert->get_input_size() != 1 ||
             convert->input_value(0) != inputIds) {
             continue;
         }
@@ -193,7 +231,7 @@ TextEmbeddingMatch findTextEmbedding(const std::shared_ptr<ov::Model>& model, co
             continue;
         }
 
-        const auto weightShape = weight->get_output_partial_shape(0);
+        const auto weightShape = weightOutput.get_partial_shape();
         const auto outputShape = node->get_output_partial_shape(0);
         if (!weightShape.rank().is_static() || weightShape.rank().get_length() != 2 ||
             !outputShape.rank().is_static() || outputShape.rank().get_length() != 3 || !weightShape[1].is_static() ||
@@ -211,7 +249,7 @@ TextEmbeddingMatch findTextEmbedding(const std::shared_ptr<ov::Model>& model, co
 
     OPENVINO_ASSERT(candidates.size() == 1,
                     "Qwen3-ASR decoder split expected exactly one input_ids -> Convert -> "
-                    "Gather(Constant, axis=0) text embedding, found ",
+                    "Gather(Constant or decompressed weight, axis=0) text embedding, found ",
                     candidates.size());
     return candidates.front();
 }

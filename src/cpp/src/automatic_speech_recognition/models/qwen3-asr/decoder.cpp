@@ -4,13 +4,18 @@
 #include "decoder.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 
 #include "decoder_model_split.hpp"
+#include "openvino/core/model.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
@@ -45,6 +50,42 @@ ov::AnyMap getTextEmbeddingProperties(const ov::AnyMap& properties) {
     }
     return text_embedding_properties;
 }
+
+std::optional<std::filesystem::path> resolveNpuDumpDir(const std::filesystem::path& models_path) {
+    const char* flag = std::getenv("OV_GENAI_QWEN3ASR_NPU_DUMP");
+    if (flag == nullptr) {
+        return std::nullopt;
+    }
+    const std::string_view value{flag};
+    if (value.empty() || value == "0" || value == "false" || value == "FALSE") {
+        return std::nullopt;
+    }
+    auto dump_dir = models_path / "npu_static_dump";
+    std::filesystem::create_directories(dump_dir);
+    return dump_dir;
+}
+
+// Restores the process working directory on destruction so NPUW_DUMP_FULL
+// output (written to the current directory) lands in the dump folder only
+// while the language model is compiled.
+class ScopedWorkingDirectory final {
+public:
+    explicit ScopedWorkingDirectory(const std::filesystem::path& directory)
+        : _previous(std::filesystem::current_path()) {
+        std::filesystem::current_path(directory);
+    }
+
+    ScopedWorkingDirectory(const ScopedWorkingDirectory&) = delete;
+    ScopedWorkingDirectory& operator=(const ScopedWorkingDirectory&) = delete;
+
+    ~ScopedWorkingDirectory() {
+        std::error_code error_code;
+        std::filesystem::current_path(_previous, error_code);
+    }
+
+private:
+    std::filesystem::path _previous;
+};
 
 class SamplerRequestCleanup final {
 public:
@@ -82,7 +123,19 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
         auto language_model_properties = utils::get_model_properties(properties, "language_model", "NPU");
         if (language_model_properties.count("PREFILL_HINT") == 0 &&
             language_model_properties.count("NPUW_LLM_PREFILL_HINT") == 0) {
-            language_model_properties.emplace("PREFILL_HINT", "STATIC");
+            // Experimental A/B knob: default STATIC; env can switch to DYNAMIC chunked prefill.
+            std::string prefill_hint = "STATIC";
+            if (const char* override_hint = std::getenv("OV_GENAI_QWEN3ASR_PREFILL_HINT")) {
+                if (override_hint[0] != '\0') {
+                    prefill_hint = override_hint;
+                }
+            }
+            language_model_properties.emplace("PREFILL_HINT", prefill_hint);
+            if (const char* chunk_size = std::getenv("OV_GENAI_QWEN3ASR_PREFILL_CHUNK")) {
+                if (chunk_size[0] != '\0') {
+                    language_model_properties.emplace("NPUW_LLM_PREFILL_CHUNK_SIZE", std::string(chunk_size));
+                }
+            }
         }
         if (language_model_properties.count("GENERATE_HINT") == 0 &&
             language_model_properties.count("NPUW_LLM_GENERATE_HINT") == 0) {
@@ -101,10 +154,28 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
         language_model_properties.emplace("NPUW_DEVICES", "NPU");
         language_model_properties.emplace("NPUW_FALLBACK_EXEC", "NO");
 
+        const auto npu_dump_dir = resolveNpuDumpDir(models_path);
+        if (npu_dump_dir) {
+            // Dump the statically-reshaped NPUW models. NPUW_DUMP_FULL writes the full
+            // prefill/generate models to the current working directory (redirected below).
+            // NPUW_DUMP_SUBS writes the online-partitioned subgraphs into a subfolder.
+            language_model_properties.emplace("NPUW_DUMP_FULL", "YES");
+            const auto partitions_dir = *npu_dump_dir / "partitions";
+            std::filesystem::create_directories(partitions_dir);
+            language_model_properties.emplace("NPUW_DUMP_SUBS", "YES");
+            language_model_properties.emplace("NPUW_DUMP_SUBS_DIR", partitions_dir.string());
+        }
+
         const auto kv_pos = utils::get_kv_axes_pos(decoder_models.languageModel);
         utils::KVDesc kv_desc;
-        std::tie(compiled_model, kv_desc) =
-            utils::compile_decoder_for_npu(decoder_models.languageModel, language_model_properties, kv_pos);
+        {
+            std::optional<ScopedWorkingDirectory> dump_cwd;
+            if (npu_dump_dir) {
+                dump_cwd.emplace(*npu_dump_dir);
+            }
+            std::tie(compiled_model, kv_desc) =
+                utils::compile_decoder_for_npu(decoder_models.languageModel, language_model_properties, kv_pos);
+        }
 
         m_max_prompt_len = kv_desc.max_prompt_len;
         m_max_kv_cache_size =
@@ -119,6 +190,10 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
 
         decoder_models.textEmbedding->reshape(
             {{"input_ids", ov::PartialShape{1, static_cast<int64_t>(m_max_prompt_len)}}});
+        if (npu_dump_dir) {
+            ov::save_model(decoder_models.textEmbedding,
+                           (*npu_dump_dir / "npu_text_embedding_static.xml").string());
+        }
         const auto text_embedding_properties =
             getTextEmbeddingProperties(utils::get_model_properties(properties, "text_embeddings", "NPU"));
         auto compiled_text_embedding =

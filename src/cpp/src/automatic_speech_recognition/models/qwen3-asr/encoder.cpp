@@ -3,9 +3,13 @@
 
 #include "encoder.hpp"
 
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <optional>
 #include <string_view>
 
+#include "openvino/core/model.hpp"
 #include "openvino/runtime/core.hpp"
 #include "utils.hpp"
 
@@ -40,6 +44,20 @@ ov::AnyMap getAudioEncoderProperties(const ov::AnyMap& properties) {
     return encoder_properties;
 }
 
+std::optional<std::filesystem::path> resolveNpuDumpDir(const std::filesystem::path& models_path) {
+    const char* flag = std::getenv("OV_GENAI_QWEN3ASR_NPU_DUMP");
+    if (flag == nullptr) {
+        return std::nullopt;
+    }
+    const std::string_view value{flag};
+    if (value.empty() || value == "0" || value == "false" || value == "FALSE") {
+        return std::nullopt;
+    }
+    auto dump_dir = models_path / "npu_static_dump";
+    std::filesystem::create_directories(dump_dir);
+    return dump_dir;
+}
+
 }  // namespace
 
 Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
@@ -71,6 +89,10 @@ Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
         OPENVINO_ASSERT(static_input_shape == ov::Shape({1, m_feature_size, m_encoder_chunk_frames}),
                         "Unexpected Qwen3-ASR NPU encoder input shape: ",
                         static_input_shape);
+
+        if (const auto dump_dir = resolveNpuDumpDir(models_path)) {
+            ov::save_model(encoder_model, (*dump_dir / "npu_encoder_static.xml").string());
+        }
 
         compiled_model = core.compile_model(encoder_model, "NPU", getAudioEncoderProperties(properties));
     } else {
