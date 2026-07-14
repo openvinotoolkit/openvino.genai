@@ -68,10 +68,10 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
 }
 
 ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs,
-                                        std::optional<ASRGenerationConfig> generation_config,
+                                        const std::optional<ASRGenerationConfig>& generation_config,
                                         StreamerVariant streamer) {
     const std::shared_ptr<StreamerBase> base_streamer = utils::create_streamer(streamer, m_impl->m_tokenizer);
-    return m_impl->generate(audio_inputs, std::move(generation_config), base_streamer);
+    return m_impl->generate(audio_inputs, generation_config, base_streamer);
 }
 
 ASRDecodedResults ASRPipeline::generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map) {
