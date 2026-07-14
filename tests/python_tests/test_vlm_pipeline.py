@@ -490,9 +490,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    # if ("gemma4" in ov_model or ov_model == MODEL_GEMMA3N) and ov_backend == "PA" and ov_prompt_lookup:
-    #     pytest.xfail(f"{ov_model} does not support PA with prompt_lookup=True")
-
     models_path = _get_ov_model(ov_model)
 
     vision_preprocess_env_set = False
