@@ -794,16 +794,6 @@ std::shared_ptr<const minja::chat_template> Tokenizer::TokenizerImpl::get_cached
                     "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                     " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario.");
 
-    {
-        std::lock_guard<std::mutex> lock(m_chat_template_mutex);
-        auto iter = m_minja_chat_template_cache.find(chat_template);
-        if (iter != m_minja_chat_template_cache.end()) {
-            return iter->second;
-        }
-    }
-
-    auto minja_template = std::make_shared<minja::chat_template>(chat_template, m_bos_token, m_eos_token);
-
     std::lock_guard<std::mutex> lock(m_chat_template_mutex);
     auto iter = m_minja_chat_template_cache.find(chat_template);
     if (iter != m_minja_chat_template_cache.end()) {
@@ -812,6 +802,7 @@ std::shared_ptr<const minja::chat_template> Tokenizer::TokenizerImpl::get_cached
     if (m_minja_chat_template_cache.size() >= max_cached_templates) {
         m_minja_chat_template_cache.erase(m_minja_chat_template_cache.begin());
     }
+    auto minja_template = std::make_shared<minja::chat_template>(chat_template, m_bos_token, m_eos_token);
     m_minja_chat_template_cache.emplace(chat_template, minja_template);
     return minja_template;
 }
