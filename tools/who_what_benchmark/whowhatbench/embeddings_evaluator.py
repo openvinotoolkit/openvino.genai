@@ -307,8 +307,8 @@ class EmbeddingsEvaluator(BaseEvaluator):
                 data = pd.read_csv(self.test_data)
             else:
                 if isinstance(self.test_data, dict):
-                    if not ("passages" in self.test_data or "images" in self.test_data or "videos" in self.test_data):
-                        raise RuntimeError("Test data must contain 'passages' or 'images' or 'videos' keys")
+                    if "passages" not in self.test_data:
+                        raise RuntimeError("Test data must contain 'passages' keys")
                     if "videos" in self.test_data and "videos_metadata" not in self.test_data:
                         raise RuntimeError("Test data must contain 'videos_metadata' key for video-embedding pipeline")
                     data = dict(self.test_data)
@@ -379,7 +379,12 @@ class EmbeddingsEvaluator(BaseEvaluator):
                 self.processor,
                 text_data_input,
                 images_input,
-                {"videos": videos_input, "videos_metadata": videos_metadata[i] if len(videos_metadata) > 0 else None},
+                {
+                    "videos": videos_input,
+                    "videos_metadata": videos_metadata[i]
+                    if len(videos_metadata) > 0 and i < len(videos_metadata)
+                    else None,
+                },
                 prompt=prompt,
                 **kwargs,
             )

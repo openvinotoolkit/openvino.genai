@@ -245,8 +245,8 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("tiny-random-qwen3-vl-embedding", "image-embedding"),
-        ("tiny-random-qwen3-vl-embedding", "video-embedding"),
+        ("optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding", "image-embedding"),
+        ("optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding", "video-embedding"),
     ],
 )
 @pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)

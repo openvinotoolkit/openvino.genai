@@ -152,10 +152,10 @@ optimum-cli export openvino -m BAAI/bge-small-en-v1.5 bge-small-en-v1.5 --task f
 
 # Collect the references and save the mapping in the .csv file.
 # Reference data will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --hf
+wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --hf
 # Compute the metric
 # Target data will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --genai
+wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --genai
 ```
 
 ### Compare Visual Embeddings models
@@ -170,10 +170,10 @@ optimum-cli export openvino -m Qwen/Qwen3-VL-Embedding-2B qwen3-vl-embedding-2B 
 
 # Collect the references and save the mapping in the .csv file.
 # Reference data will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model Qwen/Qwen3-VL-Embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling last_token --hf
+wwb --base-model Qwen/Qwen3-VL-Embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --hf
 # Compute the metric
 # Target data will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model ./qwen3-vl-embedding-2 --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling last_token --genai
+wwb --target-model ./qwen3-vl-embedding-2 --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --genai
 ```
 
 ### Compare Text-to-video models

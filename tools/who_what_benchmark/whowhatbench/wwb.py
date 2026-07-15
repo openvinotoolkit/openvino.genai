@@ -955,7 +955,7 @@ def genai_gen_embedding(model, tokenizer, processor, texts, images, videos_info,
             media_inputs["videos"].append(ov.Tensor(np.stack(video, axis=0)))
 
             video_metadata = openvino_genai.VideoMetadata()
-            video_metadata.frames_indices = range(len(video))
+            video_metadata.frames_indices = list(range(len(video)))
             if videos_metadata is not None and len(videos_metadata) > i and "fps" in videos_metadata[i]:
                 video_metadata.fps = videos_metadata[i]["fps"]
             media_inputs["videos_metadata"].append(video_metadata)
