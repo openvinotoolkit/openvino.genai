@@ -864,7 +864,17 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(
-    model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight, generation_config_extra=None,
+    model,
+    prompt,
+    image,
+    video,
+    processor,
+    tokenizer,
+    max_new_tokens,
+    crop_question,
+    pruning_ratio,
+    relevance_weight,
+    generation_config_extra=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:

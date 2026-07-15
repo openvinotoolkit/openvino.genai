@@ -63,7 +63,7 @@ class VisualTextEvaluator(TextEvaluator):
             gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
-            generation_config_extra=self.generation_config_extra
+            generation_config_extra=self.generation_config_extra,
         )
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
