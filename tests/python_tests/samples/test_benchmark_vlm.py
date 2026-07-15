@@ -9,9 +9,7 @@ import sys
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, convert_model
 from test_utils import run_sample
 
-@pytest.fixture(scope="session")
-def convert_draft_model(request):
-    yield from convert_model(request)
+convert_draft_model = convert_model
 
 class TestBenchmarkVLM:
     @pytest.mark.vlm

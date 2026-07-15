@@ -1341,6 +1341,16 @@ def main():
         if "assistant_confidence_threshold" in validated:
             args.assistant_confidence_threshold = validated["assistant_confidence_threshold"]
             logger.info(f"assistant_confidence_threshold (final): {args.assistant_confidence_threshold}")
+        if validated.get("num_assistant_tokens", 0) and validated.get("assistant_confidence_threshold", 0.0):
+            raise ValueError(
+                "Parameters 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive in --sd-generation-config"
+            )
+        if (
+            "branching_factor" in validated or "tree_depth" in validated
+        ) and validated.get("assistant_confidence_threshold", 0.0):
+            raise ValueError(
+                "EAGLE3 mode (branching_factor/tree_depth) does not support assistant_confidence_threshold; set it to 0.0"
+            )
         if args.model_type in ("text", "text-chat"):
             args.generation_config_extra = {
                 k: v

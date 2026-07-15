@@ -330,6 +330,12 @@ class ChatVisualTextEvaluator(TextEvaluator):
         prompts_dir = Path(result_dir) / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
 
+        extra_kwargs = (
+            {"generation_config_extra": self.generation_config_extra}
+            if self.generation_config_extra
+            else {}
+        )
+
         inputs: List[VisualTextChatInput]
         for i, inputs in tqdm(
             enumerate(input_data),
@@ -346,7 +352,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
                 kv_axes_pos,
                 self._crop_question,
                 _full_chat,
-                self.generation_config_extra,
+                **extra_kwargs,
             )
 
             result_path = Path(result_dir) / f"chat_vlm_output_{i}.json"
