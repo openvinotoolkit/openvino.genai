@@ -36,6 +36,40 @@ class RESTAPIResponse(BaseModel):
     data: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
 
 
+def test_structured_output_config_from_model_format_python_inputs():
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"],
+                },
+            },
+        }
+    ]
+
+    config = SOC.from_model_format(
+        "llama",
+        tools,
+        {"type": "function", "function": {"name": "get_weather"}},
+        reasoning=False,
+        any_order=True,
+    )
+
+    assert isinstance(config, SOC)
+    assert "get_weather" in repr(config.structural_tags_config)
+    assert "any_order=true" in repr(config.structural_tags_config)
+
+    auto_config = SOC.from_model_format("qwen_3", tools, None)
+    assert isinstance(auto_config, SOC)
+
+    with pytest.raises(Exception, match="Unknown format type"):
+        SOC.from_model_format("gemma_4", tools)
+
+
 structured_id_models = [
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",

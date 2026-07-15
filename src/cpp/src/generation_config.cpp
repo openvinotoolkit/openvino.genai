@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <fstream>
+#include <functional>
 #include <limits>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
@@ -17,6 +20,680 @@ namespace ov {
 namespace genai {
 
 ov::Property<size_t> rng_seed{"rng_seed"};
+
+namespace {
+
+using SOC = StructuredOutputConfig;
+using StructuralTag = SOC::StructuralTag;
+using ToolChoice = std::string;
+using Json = nlohmann::ordered_json;
+
+struct FunctionTool {
+    std::string name;
+    Json parameters = nullptr;
+    std::optional<bool> strict;
+};
+
+struct BuiltinTool {
+    std::string type;
+    std::string name;
+    Json parameters = nullptr;
+};
+
+struct NormalizedTools {
+    std::vector<FunctionTool> functions;
+    std::vector<BuiltinTool> builtins;
+    ToolChoice choice = "auto";
+};
+
+using ModelFormatOptions = ModelStructuralTagOptions;
+
+const Json& as_json(const JsonContainer& value) {
+    return *static_cast<const Json*>(value._get_json_value_ptr());
+}
+
+std::string json_type(const Json& value) {
+    if (value.is_null()) return "null";
+    if (value.is_boolean()) return "boolean";
+    if (value.is_number()) return "number";
+    if (value.is_string()) return "string";
+    if (value.is_array()) return "array";
+    if (value.is_object()) return "object";
+    return "unknown";
+}
+
+void assert_object(const Json& value, const std::string& name) {
+    OPENVINO_ASSERT(value.is_object(), name, " must be an object, but got ", json_type(value), ".");
+}
+
+std::string require_string_field(const Json& value, const std::string& key, const std::string& context) {
+    OPENVINO_ASSERT(value.contains(key), context, " must contain string field '", key, "'.");
+    OPENVINO_ASSERT(value.at(key).is_string(), context, " field '", key, "' must be a string.");
+    return value.at(key).get<std::string>();
+}
+
+std::optional<bool> optional_bool_field(const Json& value, const std::string& key, const std::string& context) {
+    if (!value.contains(key) || value.at(key).is_null()) {
+        return std::nullopt;
+    }
+    OPENVINO_ASSERT(value.at(key).is_boolean(), context, " field '", key, "' must be a boolean when present.");
+    return value.at(key).get<bool>();
+}
+
+Json optional_parameters_field(const Json& value, const std::string& context) {
+    if (!value.contains("parameters") || value.at("parameters").is_null()) {
+        return nullptr;
+    }
+    OPENVINO_ASSERT(value.at("parameters").is_object(), context, " field 'parameters' must be an object or null.");
+    return value.at("parameters");
+}
+
+std::string parameters_schema(const FunctionTool& tool) {
+    if (tool.strict.has_value() && !*tool.strict) {
+        return "true";
+    }
+    if (tool.parameters.is_null()) {
+        return "true";
+    }
+    return tool.parameters.dump();
+}
+
+std::string parameters_schema(const BuiltinTool& tool) {
+    if (tool.parameters.is_null()) {
+        return "true";
+    }
+    return tool.parameters.dump();
+}
+
+std::vector<std::string> text_excludes(bool exclude_special_tokens, std::initializer_list<const char*> tokens) {
+    if (!exclude_special_tokens) {
+        return {};
+    }
+    std::vector<std::string> result;
+    result.reserve(tokens.size());
+    for (const auto* token : tokens) {
+        result.emplace_back(token);
+    }
+    return result;
+}
+
+SOC::JSONSchema schema(const std::string& json_schema, const ModelFormatOptions& options, const std::string& style = "json") {
+    return SOC::JSONSchema(json_schema, style, options.any_order);
+}
+
+std::shared_ptr<SOC::Concat> seq(std::initializer_list<StructuralTag> elements) {
+    return std::make_shared<SOC::Concat>(std::vector<StructuralTag>(elements));
+}
+
+std::shared_ptr<SOC::Tag> tag_ptr(SOC::Tag tag) {
+    return std::make_shared<SOC::Tag>(std::move(tag));
+}
+
+std::shared_ptr<SOC::TagsWithSeparator> separated(const std::vector<SOC::Tag>& tags,
+                                                  const std::string& separator,
+                                                  bool at_least_one = false) {
+    return std::make_shared<SOC::TagsWithSeparator>(tags, separator, at_least_one);
+}
+
+std::shared_ptr<SOC::TriggeredTags> triggered(const std::vector<std::string>& triggers,
+                                              const std::vector<SOC::Tag>& tags,
+                                              const std::vector<std::string>& excludes,
+                                              bool at_least_one = false) {
+    return std::make_shared<SOC::TriggeredTags>(triggers, tags, at_least_one, false, excludes);
+}
+
+FunctionTool parse_function_tool(const Json& tool) {
+    assert_object(tool, "function tool");
+    OPENVINO_ASSERT(tool.contains("function"), "function tool must contain object field 'function'.");
+    const Json& function = tool.at("function");
+    assert_object(function, "function tool field 'function'");
+    FunctionTool parsed;
+    parsed.name = require_string_field(function, "name", "function tool field 'function'");
+    parsed.parameters = optional_parameters_field(function, "function tool field 'function'");
+    parsed.strict = optional_bool_field(function, "strict", "function tool field 'function'");
+    return parsed;
+}
+
+BuiltinTool parse_builtin_tool(const Json& tool) {
+    assert_object(tool, "builtin tool");
+    BuiltinTool parsed;
+    parsed.type = require_string_field(tool, "type", "builtin tool");
+    if (tool.contains("name") && !tool.at("name").is_null()) {
+        OPENVINO_ASSERT(tool.at("name").is_string(), "builtin tool field 'name' must be a string when present.");
+        parsed.name = tool.at("name").get<std::string>();
+    } else {
+        parsed.name = parsed.type;
+    }
+    parsed.parameters = optional_parameters_field(tool, "builtin tool");
+    return parsed;
+}
+
+std::pair<std::vector<FunctionTool>, std::vector<BuiltinTool>> parse_tools(const JsonContainer& tools_container) {
+    const Json& tools = as_json(tools_container);
+    OPENVINO_ASSERT(tools.is_array(), "The 'tools' argument must be a JSON array.");
+
+    std::vector<FunctionTool> functions;
+    std::vector<BuiltinTool> builtins;
+    for (size_t i = 0; i < tools.size(); ++i) {
+        const Json& tool = tools.at(i);
+        OPENVINO_ASSERT(tool.is_object(), "tools[", i, "] must be an object, but got ", json_type(tool), ".");
+        const std::string type = require_string_field(tool, "type", "tool");
+        if (type == "function") {
+            functions.push_back(parse_function_tool(tool));
+        } else {
+            builtins.push_back(parse_builtin_tool(tool));
+        }
+    }
+    return {functions, builtins};
+}
+
+void filter_allowed_tools(std::vector<FunctionTool>& functions, std::vector<BuiltinTool>& builtins, const Json& allowed_tools) {
+    assert_object(allowed_tools, "allowed_tools");
+    OPENVINO_ASSERT(allowed_tools.contains("tools"), "allowed_tools must contain field 'tools'.");
+    OPENVINO_ASSERT(allowed_tools.at("tools").is_array(), "allowed_tools.tools must be an array.");
+
+    std::unordered_set<std::string> allowed_function_names;
+    std::unordered_set<std::string> allowed_builtin_types;
+    for (const auto& allowed_tool : allowed_tools.at("tools")) {
+        assert_object(allowed_tool, "allowed tool reference");
+        const std::string type = require_string_field(allowed_tool, "type", "allowed tool reference");
+        if (type == "function") {
+            OPENVINO_ASSERT(allowed_tool.contains("function"), "Allowed function tool references must include 'function'.");
+            assert_object(allowed_tool.at("function"), "allowed function tool reference field 'function'");
+            allowed_function_names.insert(require_string_field(allowed_tool.at("function"), "name", "allowed function tool reference field 'function'"));
+        } else {
+            allowed_builtin_types.insert(type);
+        }
+    }
+
+    std::unordered_set<std::string> available_function_names;
+    for (const auto& tool : functions) {
+        available_function_names.insert(tool.name);
+    }
+    for (const auto& name : allowed_function_names) {
+        OPENVINO_ASSERT(available_function_names.count(name) > 0,
+                        "Allowed function tool is not found in the tools list: ", name, ".");
+    }
+
+    std::unordered_set<std::string> matched_builtin_types;
+    for (const auto& tool : builtins) {
+        if (allowed_builtin_types.count(tool.type) > 0) {
+            matched_builtin_types.insert(tool.type);
+        }
+    }
+    for (const auto& type : allowed_builtin_types) {
+        OPENVINO_ASSERT(matched_builtin_types.count(type) > 0,
+                        "Allowed builtin tool is not found in the tools list: ", type, ".");
+    }
+
+    functions.erase(std::remove_if(functions.begin(), functions.end(), [&](const FunctionTool& tool) {
+        return allowed_function_names.count(tool.name) == 0;
+    }), functions.end());
+    builtins.erase(std::remove_if(builtins.begin(), builtins.end(), [&](const BuiltinTool& tool) {
+        return allowed_builtin_types.count(tool.type) == 0;
+    }), builtins.end());
+}
+
+NormalizedTools normalize_tool_choice(const JsonContainer& tools_container, const JsonContainer& tool_choice_container) {
+    auto [functions, builtins] = parse_tools(tools_container);
+    const Json& tool_choice = as_json(tool_choice_container);
+
+    ToolChoice simplified = "auto";
+    if (tool_choice.is_null()) {
+        simplified = "auto";
+    } else if (tool_choice.is_string()) {
+        const std::string choice = tool_choice.get<std::string>();
+        OPENVINO_ASSERT(choice == "auto" || choice == "none" || choice == "required",
+                        "tool_choice string must be one of 'auto', 'none', or 'required'.");
+        if (choice == "none") {
+            functions.clear();
+            builtins.clear();
+            simplified = "auto";
+        } else {
+            simplified = choice;
+        }
+    } else if (tool_choice.is_object()) {
+        const std::string type = require_string_field(tool_choice, "type", "tool_choice");
+        if (type == "allowed_tools") {
+            OPENVINO_ASSERT(tool_choice.contains("allowed_tools"), "tool_choice.allowed_tools must be present.");
+            const Json& allowed_tools = tool_choice.at("allowed_tools");
+            filter_allowed_tools(functions, builtins, allowed_tools);
+            simplified = require_string_field(allowed_tools, "mode", "tool_choice.allowed_tools");
+            OPENVINO_ASSERT(simplified == "auto" || simplified == "required",
+                            "tool_choice.allowed_tools.mode must be 'auto' or 'required'.");
+        } else if (type == "function") {
+            OPENVINO_ASSERT(tool_choice.contains("function"), "tool_choice function object must include 'function'.");
+            assert_object(tool_choice.at("function"), "tool_choice field 'function'");
+            const std::string tool_name = require_string_field(tool_choice.at("function"), "name", "tool_choice field 'function'");
+            functions.erase(std::remove_if(functions.begin(), functions.end(), [&](const FunctionTool& tool) {
+                return tool.name != tool_name;
+            }), functions.end());
+            OPENVINO_ASSERT(!functions.empty(), "The tool with name '", tool_name, "' is not found in the tools list.");
+            builtins.clear();
+            simplified = "forced";
+        } else {
+            functions.clear();
+            builtins.erase(std::remove_if(builtins.begin(), builtins.end(), [&](const BuiltinTool& tool) {
+                return tool.type != type;
+            }), builtins.end());
+            OPENVINO_ASSERT(builtins.size() == 1,
+                            "Builtin tool choice must match exactly one builtin tool, got ", builtins.size(), " matches.");
+            simplified = "forced";
+        }
+    } else {
+        OPENVINO_THROW("tool_choice must be a string, object, or null, but got ", json_type(tool_choice), ".");
+    }
+
+    OPENVINO_ASSERT(simplified != "required" || !functions.empty() || !builtins.empty(),
+                    "The 'tools' list is empty, which is not allowed when 'tool_choice' is 'required'.");
+    OPENVINO_ASSERT(simplified != "forced" || functions.size() + builtins.size() == 1,
+                    "Forced tool choice must resolve to exactly one tool.");
+    return {std::move(functions), std::move(builtins), simplified};
+}
+
+StructuralTag llama(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* TOOL_NAME_PREFIX = "{\"name\": \"";
+    constexpr const char* PARAMETERS_FIELD_PREFIX = "\", \"parameters\": ";
+    constexpr const char* TOOL_OBJECT_BEGIN_PREFIX = "{\"name\": \"";
+    constexpr const char* TOOL_OBJECT_PARAMETERS_PREFIX = "\", \"parameters\": ";
+    constexpr const char* TOOLS_TRIGGER = "{\"name\": ";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) {
+            tags.emplace_back(std::string(TOOL_OBJECT_BEGIN_PREFIX) + tool.name + TOOL_OBJECT_PARAMETERS_PREFIX,
+                              schema(parameters_schema(tool), options),
+                              "}");
+        }
+        suffix = tags.empty() ? StructuralTag(SOC::AnyText(excludes))
+                              : StructuralTag(triggered({TOOLS_TRIGGER}, tags, excludes));
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = std::make_shared<SOC::Tag>(std::string(TOOL_NAME_PREFIX) + nt.functions[0].name + PARAMETERS_FIELD_PREFIX,
+                                            schema(parameters_schema(nt.functions[0]), options),
+                                            "}");
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) {
+            tags.emplace_back(std::string(TOOL_OBJECT_BEGIN_PREFIX) + tool.name + TOOL_OBJECT_PARAMETERS_PREFIX,
+                              schema(parameters_schema(tool), options),
+                              "}");
+        }
+        suffix = separated(tags, "", true);
+    }
+    return suffix;
+}
+
+StructuralTag kimi(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* TOOL_CALL_BEGIN = "<|tool_call_begin|>";
+    constexpr const char* TOOL_CALL_BEGIN_PREFIX = "<|tool_call_begin|>functions.";
+    constexpr const char* TOOL_CALL_SUFFIX = ":";
+    constexpr const char* TOOL_CALL_ARGUMENT_BEGIN = "<|tool_call_argument_begin|>";
+    constexpr const char* TOOL_CALL_END = "<|tool_call_end|>";
+    constexpr const char* TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>";
+    constexpr const char* TOOL_CALLS_SECTION_END = "<|tool_calls_section_end|>";
+    constexpr const char* THINK_TAG_END = "</think>";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(TOOL_CALL_BEGIN_PREFIX) + tool.name + TOOL_CALL_SUFFIX,
+                        seq({SOC::Regex(R"(\d+)"), SOC::ConstString(TOOL_CALL_ARGUMENT_BEGIN), schema(parameters_schema(tool), options)}),
+                        TOOL_CALL_END);
+    };
+
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) {
+            suffix = triggered({TOOL_CALLS_SECTION_BEGIN},
+                               {SOC::Tag(TOOL_CALLS_SECTION_BEGIN, separated(tags, "", true), TOOL_CALLS_SECTION_END)},
+                               text_excludes(options.exclude_special_tokens, {"<think>", "</think>", TOOL_CALL_BEGIN}));
+        }
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = seq({SOC::ConstString(TOOL_CALLS_SECTION_BEGIN), tag_ptr(make_tag(nt.functions[0])), SOC::ConstString(TOOL_CALLS_SECTION_END)});
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = seq({SOC::ConstString(TOOL_CALLS_SECTION_BEGIN), separated(tags, "", true), SOC::ConstString(TOOL_CALLS_SECTION_END)});
+    }
+    if (!options.reasoning) return suffix;
+    return seq({std::make_shared<SOC::Tag>("", SOC::AnyText(), THINK_TAG_END), suffix});
+}
+
+StructuralTag deepseek_r1(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* TOOL_CALLS_BEGIN = "<｜tool▁calls▁begin｜>";
+    constexpr const char* TOOL_CALLS_END = "<｜tool▁calls▁end｜>";
+    constexpr const char* TOOL_CALL_BEGIN = "<｜tool▁call▁begin｜>";
+    constexpr const char* TOOL_CALL_END = "<｜tool▁call▁end｜>";
+    constexpr const char* TOOL_SEP = "<｜tool▁sep｜>";
+    constexpr const char* JSON_RENDER_BEGIN = "\n```json\n";
+    constexpr const char* JSON_RENDER_END = "\n```";
+    constexpr const char* THINK_TAG_END = "</think>";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(TOOL_CALL_BEGIN) + "function" + TOOL_SEP + tool.name + JSON_RENDER_BEGIN,
+                        schema(parameters_schema(tool), options),
+                        std::string(JSON_RENDER_END) + TOOL_CALL_END);
+    };
+
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) {
+            suffix = triggered({TOOL_CALLS_BEGIN},
+                               {SOC::Tag(TOOL_CALLS_BEGIN, separated(tags, "\n", true), TOOL_CALLS_END)},
+                               excludes);
+        }
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = std::make_shared<SOC::Tag>(std::string(TOOL_CALLS_BEGIN) + TOOL_CALL_BEGIN + "function" + TOOL_SEP + nt.functions[0].name + JSON_RENDER_BEGIN,
+                                            schema(parameters_schema(nt.functions[0]), options),
+                                            std::string(JSON_RENDER_END) + TOOL_CALL_END + TOOL_CALLS_END);
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = std::make_shared<SOC::Tag>(TOOL_CALLS_BEGIN, separated(tags, "\n", true), TOOL_CALLS_END);
+    }
+    if (!options.reasoning) return suffix;
+    return seq({std::make_shared<SOC::Tag>("", SOC::AnyText(), THINK_TAG_END), suffix});
+}
+
+StructuralTag deepseek_v3_1(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* TOOL_CALLS_BEGIN = "<｜tool▁calls▁begin｜>";
+    constexpr const char* TOOL_CALLS_END = "<｜tool▁calls▁end｜>";
+    constexpr const char* TOOL_CALL_BEGIN = "<｜tool▁call▁begin｜>";
+    constexpr const char* TOOL_CALL_END = "<｜tool▁call▁end｜>";
+    constexpr const char* TOOL_SEP = "<｜tool▁sep｜>";
+    constexpr const char* THINK_TAG_END = "</think>";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(TOOL_CALL_BEGIN) + tool.name + TOOL_SEP,
+                        schema(parameters_schema(tool), options),
+                        TOOL_CALL_END);
+    };
+
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) suffix = triggered({TOOL_CALLS_BEGIN}, {SOC::Tag(TOOL_CALLS_BEGIN, separated(tags, "", true), TOOL_CALLS_END)}, excludes);
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = std::make_shared<SOC::Tag>(std::string(TOOL_CALLS_BEGIN) + TOOL_CALL_BEGIN + nt.functions[0].name + TOOL_SEP,
+                                            schema(parameters_schema(nt.functions[0]), options),
+                                            std::string(TOOL_CALL_END) + TOOL_CALLS_END);
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = std::make_shared<SOC::Tag>(TOOL_CALLS_BEGIN, separated(tags, "", true), TOOL_CALLS_END);
+    }
+    if (!options.reasoning) return suffix;
+    return seq({std::make_shared<SOC::Tag>("", SOC::AnyText(), THINK_TAG_END), suffix});
+}
+
+StructuralTag qwen_3_5(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* TOOL_CALL_BEGIN_PREFIX = "<tool_call>\n<function=";
+    constexpr const char* TOOL_CALL_BEGIN_SUFFIX = ">\n";
+    constexpr const char* TOOL_CALL_END = "\n</function>\n</tool_call>";
+    constexpr const char* TOOL_CALL_TRIGGER = "<tool_call>\n<function=";
+    constexpr const char* THINK_TAG_END = "</think>";
+    constexpr const char* THINK_SUFFIX = "\n\n";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(TOOL_CALL_BEGIN_PREFIX) + tool.name + TOOL_CALL_BEGIN_SUFFIX,
+                        schema(parameters_schema(tool), options, "qwen_xml"),
+                        TOOL_CALL_END);
+    };
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) suffix = triggered({TOOL_CALL_TRIGGER}, tags, excludes);
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = std::make_shared<SOC::Tag>(make_tag(nt.functions[0]));
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = separated(tags, "\n", true);
+    }
+    if (!options.reasoning) return suffix;
+    return seq({seq({std::make_shared<SOC::Tag>("", SOC::AnyText(), THINK_TAG_END), SOC::ConstString(THINK_SUFFIX)}), suffix});
+}
+
+StructuralTag qwen_3(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* TOOL_CALL_BEGIN_PREFIX = "<tool_call>\n{\"name\": \"";
+    constexpr const char* ARGUMENTS_FIELD_PREFIX = "\", \"arguments\": ";
+    constexpr const char* TOOL_CALL_END = "}\n</tool_call>";
+    constexpr const char* TOOL_CALL_TRIGGER = "<tool_call>";
+    constexpr const char* THINK_TAG_END = "</think>";
+    constexpr const char* THINK_SUFFIX = "\n\n";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(TOOL_CALL_BEGIN_PREFIX) + tool.name + ARGUMENTS_FIELD_PREFIX,
+                        schema(parameters_schema(tool), options),
+                        TOOL_CALL_END);
+    };
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) suffix = triggered({TOOL_CALL_TRIGGER}, tags, excludes);
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = std::make_shared<SOC::Tag>(make_tag(nt.functions[0]));
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = separated(tags, "\n", true);
+    }
+    if (!options.reasoning) return suffix;
+    return seq({seq({std::make_shared<SOC::Tag>("", SOC::AnyText(), THINK_TAG_END), SOC::ConstString(THINK_SUFFIX)}), suffix});
+}
+
+StructuralTag harmony(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* CALL_END = "<|call|>";
+    constexpr const char* FINAL_BEGIN = "<|channel|>final<|message|>";
+    const std::vector<std::string> FINAL_END = {"<|end|>", "<|return|>"};
+    constexpr const char* ANALYSIS_BEGIN = "<|channel|>analysis<|message|>";
+    constexpr const char* TAG_SEPARATOR = "<|start|>assistant";
+
+    auto function_tags = [&](const FunctionTool& tool) {
+        StructuralTag content = schema(parameters_schema(tool), options);
+        return std::vector<SOC::Tag>{
+            SOC::Tag(std::string("<|channel|>commentary to=functions.") + tool.name + "<|constrain|>json<|message|>", content, CALL_END),
+            SOC::Tag(std::string(" to=functions.") + tool.name + "<|channel|>commentary <|constrain|>json<|message|>", content, CALL_END),
+            SOC::Tag(std::string(" to=functions.") + tool.name + "<|channel|>commentary json<|message|>", content, CALL_END),
+        };
+    };
+    auto builtin_tags = [&](const BuiltinTool& tool) {
+        StructuralTag content = schema(parameters_schema(tool), options);
+        return std::vector<SOC::Tag>{
+            SOC::Tag(std::string("<|channel|>commentary to=") + tool.name + " code<|message|>", content, CALL_END),
+            SOC::Tag(std::string(" to=") + tool.name + "<|channel|>commentary code<|message|>", content, CALL_END),
+        };
+    };
+
+    std::vector<SOC::Tag> tags;
+    auto append = [&](const std::vector<SOC::Tag>& more) { tags.insert(tags.end(), more.begin(), more.end()); };
+    if (nt.choice == "auto") {
+        for (const auto& tool : nt.functions) append(function_tags(tool));
+        for (const auto& tool : nt.builtins) append(builtin_tags(tool));
+        tags.emplace_back(FINAL_BEGIN, SOC::AnyText(), FINAL_END);
+    } else if (nt.choice == "forced") {
+        if (!nt.builtins.empty()) {
+            append(builtin_tags(nt.builtins[0]));
+        } else if (!nt.functions.empty()) {
+            append(function_tags(nt.functions[0]));
+        } else {
+            OPENVINO_THROW("Forced tool choice must resolve to exactly one tool.");
+        }
+    } else {
+        for (const auto& tool : nt.builtins) append(builtin_tags(tool));
+        for (const auto& tool : nt.functions) append(function_tags(tool));
+        OPENVINO_ASSERT(!tags.empty(), "At least one tool is required for this model format.");
+    }
+    if (options.reasoning) {
+        tags.emplace_back(ANALYSIS_BEGIN, SOC::AnyText(), FINAL_END);
+    }
+    return separated(tags, TAG_SEPARATOR);
+}
+
+StructuralTag dsml_xml(const NormalizedTools& nt,
+                       const ModelFormatOptions& options,
+                       const std::string& calls_begin,
+                       const std::string& calls_end,
+                       const std::string& calls_trigger) {
+    constexpr const char* INVOKE_BEGIN_PREFIX = "<｜DSML｜invoke name=\"";
+    constexpr const char* INVOKE_BEGIN_SUFFIX = "\">\n";
+    constexpr const char* INVOKE_END = "</｜DSML｜invoke>\n";
+    constexpr const char* TOOL_CALLS_PREFIX = "\n\n";
+    constexpr const char* THINK_TAG_END = "</think>";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(INVOKE_BEGIN_PREFIX) + tool.name + INVOKE_BEGIN_SUFFIX,
+                        schema(parameters_schema(tool), options, "deepseek_xml"),
+                        INVOKE_END);
+    };
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) suffix = triggered({calls_trigger}, {SOC::Tag(calls_begin, separated(tags, "", true), calls_end)}, excludes);
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = seq({SOC::ConstString(TOOL_CALLS_PREFIX + calls_begin), tag_ptr(make_tag(nt.functions[0])), SOC::ConstString(calls_end)});
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = seq({SOC::ConstString(TOOL_CALLS_PREFIX + calls_begin), separated(tags, "", true), SOC::ConstString(calls_end)});
+    }
+    if (!options.reasoning) return suffix;
+    return seq({std::make_shared<SOC::Tag>("", SOC::AnyText(), THINK_TAG_END), suffix});
+}
+
+StructuralTag minimax(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* INVOKE_BEGIN_PREFIX = "<invoke name=\"";
+    constexpr const char* INVOKE_BEGIN_SUFFIX = "\">\n";
+    constexpr const char* INVOKE_END = "</invoke>\n";
+    constexpr const char* TOOL_CALL_BEGIN = "<minimax:tool_call>\n";
+    constexpr const char* TOOL_CALL_END = "</minimax:tool_call>";
+    constexpr const char* TOOL_CALL_TRIGGER = "<minimax:tool_call>";
+    constexpr const char* THINK_TAG_END = "</think>";
+    constexpr const char* THINK_SUFFIX = "\n\n";
+    constexpr const char* EMPTY_THINK_CONTENT = "\n</think>\n\n";
+    auto excludes = text_excludes(options.exclude_special_tokens, {"<think>", "</think>"});
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(INVOKE_BEGIN_PREFIX) + tool.name + INVOKE_BEGIN_SUFFIX,
+                        schema(parameters_schema(tool), options, "minimax_xml"),
+                        INVOKE_END);
+    };
+    StructuralTag suffix = SOC::AnyText(excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) suffix = triggered({TOOL_CALL_TRIGGER}, {SOC::Tag(TOOL_CALL_BEGIN, separated(tags, "", true), TOOL_CALL_END)}, excludes);
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = seq({SOC::ConstString(std::string("\n") + TOOL_CALL_BEGIN), tag_ptr(make_tag(nt.functions[0])), SOC::ConstString(TOOL_CALL_END)});
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = seq({SOC::ConstString(std::string("\n") + TOOL_CALL_BEGIN), separated(tags, "", true), SOC::ConstString(TOOL_CALL_END)});
+    }
+    StructuralTag think_tag = options.reasoning ? StructuralTag(std::make_shared<SOC::Tag>("", SOC::AnyText(), THINK_TAG_END))
+                                                : StructuralTag(SOC::ConstString(EMPTY_THINK_CONTENT));
+    return seq({think_tag, SOC::ConstString(THINK_SUFFIX), suffix});
+}
+
+StructuralTag glm_4_7(const NormalizedTools& nt, const ModelFormatOptions& options) {
+    constexpr const char* TOOL_CALL_BEGIN_PREFIX = "<tool_call>";
+    constexpr const char* TOOL_CALL_END = "</tool_call>";
+    constexpr const char* TOOL_CALL_TRIGGER = "<tool_call>";
+    constexpr const char* THINK_TAG_END = "</think>";
+    auto reasoning_excludes = text_excludes(options.exclude_special_tokens,
+                                            {"<think>", "</think>", TOOL_CALL_BEGIN_PREFIX, TOOL_CALL_END,
+                                             "<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"});
+    auto text_ex = text_excludes(options.exclude_special_tokens,
+                                 {"<think>", "</think>", TOOL_CALL_END, "<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"});
+    auto make_tag = [&](const FunctionTool& tool) {
+        return SOC::Tag(std::string(TOOL_CALL_BEGIN_PREFIX) + tool.name,
+                        schema(parameters_schema(tool), options, "glm_xml"),
+                        TOOL_CALL_END);
+    };
+    StructuralTag suffix = SOC::AnyText(reasoning_excludes);
+    if (nt.choice == "auto") {
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        if (!tags.empty()) suffix = triggered({TOOL_CALL_TRIGGER}, tags, text_ex);
+    } else if (nt.choice == "forced") {
+        OPENVINO_ASSERT(!nt.functions.empty(), "Forced tool choice must resolve to exactly one function tool for this model format.");
+        suffix = std::make_shared<SOC::Tag>(make_tag(nt.functions[0]));
+    } else {
+        OPENVINO_ASSERT(!nt.functions.empty(), "At least one function tool is required for this model format.");
+        std::vector<SOC::Tag> tags;
+        for (const auto& tool : nt.functions) tags.push_back(make_tag(tool));
+        suffix = separated(tags, "", true);
+    }
+    if (!options.reasoning) return suffix;
+    return seq({std::make_shared<SOC::Tag>("", SOC::AnyText(reasoning_excludes), THINK_TAG_END), suffix});
+}
+
+using Builder = std::function<StructuralTag(const NormalizedTools&, const ModelFormatOptions&)>;
+
+const std::vector<std::string>& supported_model_formats() {
+    static const std::vector<std::string> formats = {
+        "llama", "kimi", "deepseek_r1", "deepseek_v3_1", "qwen_3_5", "qwen_3_coder",
+        "qwen_3", "harmony", "deepseek_v3_2", "minimax", "glm_4_7", "deepseek_v4"};
+    return formats;
+}
+
+std::string supported_model_formats_string() {
+    std::ostringstream oss;
+    const auto& formats = supported_model_formats();
+    for (size_t i = 0; i < formats.size(); ++i) {
+        if (i != 0) oss << ", ";
+        oss << formats[i];
+    }
+    return oss.str();
+}
+
+const std::unordered_map<std::string, Builder>& registry() {
+    static const std::unordered_map<std::string, Builder> builders = {
+        {"llama", llama},
+        {"kimi", kimi},
+        {"deepseek_r1", deepseek_r1},
+        {"deepseek_v3_1", deepseek_v3_1},
+        {"qwen_3_5", qwen_3_5},
+        {"qwen_3_coder", qwen_3_5},
+        {"qwen_3", qwen_3},
+        {"harmony", harmony},
+        {"deepseek_v3_2", [](const NormalizedTools& nt, const ModelFormatOptions& options) {
+             return dsml_xml(nt, options, "<｜DSML｜function_calls>\n", "</｜DSML｜function_calls>", "<｜DSML｜function_calls>");
+         }},
+        {"minimax", minimax},
+        {"glm_4_7", glm_4_7},
+        {"deepseek_v4", [](const NormalizedTools& nt, const ModelFormatOptions& options) {
+             return dsml_xml(nt, options, "<｜DSML｜tool_calls>\n", "</｜DSML｜tool_calls>", "<｜DSML｜tool_calls>");
+         }},
+    };
+    return builders;
+}
+
+}  // namespace
 
 GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     using utils::read_json_param;
@@ -248,6 +925,21 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "structural_tags_config", structural_tags_config);
     read_anymap_param(properties, "compound_grammar", compound_grammar);
     read_anymap_param(properties, "backend", backend);
+}
+
+StructuredOutputConfig StructuredOutputConfig::from_model_format(const std::string& model_format,
+                                                                  const JsonContainer& tools,
+                                                                  const JsonContainer& tool_choice,
+                                                                  const ModelStructuralTagOptions& options) {
+    const auto& builders = registry();
+    const auto it = builders.find(model_format);
+    OPENVINO_ASSERT(it != builders.end(),
+                    "Unknown format type: ", model_format,
+                    ", supported types: ", supported_model_formats_string());
+
+    StructuredOutputConfig config;
+    config.structural_tags_config = it->second(normalize_tool_choice(tools, tool_choice), options);
+    return config;
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {

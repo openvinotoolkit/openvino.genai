@@ -177,6 +177,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-eagle3",
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
+    "tiny-random-qwen3.5": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        "convert_args": ["--task", "image-text-to-text"],
+    },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]

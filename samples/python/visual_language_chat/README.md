@@ -8,6 +8,7 @@ The following are sample files:
  - [`benchmark_vlm.py`](./benchmark_vlm.py) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
  - [`visual_language_lora.py`](./visual_language_lora.py) demonstrates how to apply one or more LoRA adapters to a VLM at runtime.
  - [`milebench_eval_vlm.py`](./milebench_eval_vlm.py) provides MileBench validation for VLMs, enabling evaluation of image–text reasoning and visual QA tasks across multiple subsets designed to assess the MultImodal Long-contExt capabilities of MLLMs.
+ - [`model_format_tool_calling.py`](./model_format_tool_calling.py) demonstrates Qwen 3.5 VLM tool-call generation with `StructuredOutputConfig.from_model_format`, OpenAI-style tool definitions, and a Pydantic argument schema.
 
 ## Download and convert the model and tokenizers
 
@@ -50,6 +51,13 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 `python visual_language_chat.py ./Qwen3-VL-2B-Instruct/ 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
 
 See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
+
+## Run model-format tool-calling sample:
+
+This sample compares generation with and without `StructuredOutputConfig.from_model_format("qwen_3_5", ...)`.
+It defines a `get_weather` tool with a Pydantic schema and constrains the generated `date` parameter to `YYYY-MM-DD`.
+
+`python model_format_tool_calling.py ./Qwen3-VL-2B-Instruct/ 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
 
 ## Run image-to-text sample with LoRA adapters:
 

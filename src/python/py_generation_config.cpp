@@ -18,6 +18,8 @@ using ov::genai::StructuralTagItem;
 using ov::genai::StructuralTagsConfig;
 using ov::genai::StructuredOutputConfig;
 using ov::genai::GenerationConfig;
+using ov::genai::JsonContainer;
+using ov::genai::ModelStructuralTagOptions;
 
 namespace {
 
@@ -54,6 +56,10 @@ auto regex_docstring = R"(
 auto jsonschema_docstring = R"(
     JSONSchema structural tag constrains output to a JSON document that
     must conform to the provided JSON Schema string.
+
+    Optional parameters:
+    style: one of "json", "qwen_xml", "minimax_xml", "deepseek_xml", or "glm_xml".
+    any_order: whether object properties may be generated in any order.
 )";
 
 auto ebnf_docstring = R"(
@@ -67,7 +73,8 @@ auto conststring_docstring = R"(
 
 auto anytext_docstring = R"(
     AnyText structural tag allows any text for the portion of output
-    covered by this tag.
+    covered by this tag. The excludes list prevents selected strings
+    from appearing in that free-text span.
 )";
 
 auto qwenxml_docstring = R"(
@@ -113,6 +120,22 @@ auto tags_with_separator_docstring = R"(
 
     Can be used to produce repeated tagged elements like "<f>A</f>;<f>B</f>"
     where `separator`=";".
+)";
+
+auto optional_docstring = R"(
+    Optional composes a structural tag that can appear zero or one time.
+)";
+
+auto plus_docstring = R"(
+    Plus composes a structural tag that can appear one or more times.
+)";
+
+auto star_docstring = R"(
+    Star composes a structural tag that can appear zero or more times.
+)";
+
+auto repeat_docstring = R"(
+    Repeat composes a structural tag that can appear between min and max times.
 )";
 
 auto structured_tags_config_docstring = R"(
@@ -273,6 +296,10 @@ void init_generation_config(py::module_& m) {
     auto tag = py::class_<StructuredOutputConfig::Tag, std::shared_ptr<StructuredOutputConfig::Tag>>(structured_output_config, "Tag", tag_docstring);
     auto triggered_tags = py::class_<StructuredOutputConfig::TriggeredTags, std::shared_ptr<StructuredOutputConfig::TriggeredTags>>(structured_output_config, "TriggeredTags", triggered_tags_docstring);
     auto tags_with_separator = py::class_<StructuredOutputConfig::TagsWithSeparator, std::shared_ptr<StructuredOutputConfig::TagsWithSeparator>>(structured_output_config, "TagsWithSeparator", tags_with_separator_docstring);
+    auto optional = py::class_<StructuredOutputConfig::Optional, std::shared_ptr<StructuredOutputConfig::Optional>>(structured_output_config, "Optional", optional_docstring);
+    auto plus = py::class_<StructuredOutputConfig::Plus, std::shared_ptr<StructuredOutputConfig::Plus>>(structured_output_config, "Plus", plus_docstring);
+    auto star = py::class_<StructuredOutputConfig::Star, std::shared_ptr<StructuredOutputConfig::Star>>(structured_output_config, "Star", star_docstring);
+    auto repeat = py::class_<StructuredOutputConfig::Repeat, std::shared_ptr<StructuredOutputConfig::Repeat>>(structured_output_config, "Repeat", repeat_docstring);
 
     auto regex = py::class_<StructuredOutputConfig::Regex>(structured_output_config, "Regex", regex_docstring)
         .def(py::init<const std::string&>())
@@ -281,8 +308,11 @@ void init_generation_config(py::module_& m) {
     add_grammar_operators(regex);
 
     auto json_schema = py::class_<StructuredOutputConfig::JSONSchema>(structured_output_config, "JSONSchema", jsonschema_docstring)
-        .def(py::init<const std::string&>())
+        .def(py::init<const std::string&, const std::string&, bool>(),
+             py::arg("value"), py::arg("style") = "json", py::arg("any_order") = false)
         .def_readwrite("value", &StructuredOutputConfig::JSONSchema::value)
+        .def_readwrite("style", &StructuredOutputConfig::JSONSchema::style)
+        .def_readwrite("any_order", &StructuredOutputConfig::JSONSchema::any_order)
         .def("__repr__", [](const StructuredOutputConfig::JSONSchema& self) { return self.to_string(); });
     add_grammar_operators(json_schema);
 
@@ -299,7 +329,8 @@ void init_generation_config(py::module_& m) {
     add_grammar_operators(const_string);
 
     auto any_text = py::class_<StructuredOutputConfig::AnyText>(structured_output_config, "AnyText", anytext_docstring)
-        .def(py::init<>())
+        .def(py::init<const std::vector<std::string>&>(), py::arg("excludes") = std::vector<std::string>{})
+        .def_readwrite("excludes", &StructuredOutputConfig::AnyText::excludes)
         .def("__repr__", [](const StructuredOutputConfig::AnyText& self) { return self.to_string(); });
     add_grammar_operators(any_text);
 
@@ -347,10 +378,11 @@ void init_generation_config(py::module_& m) {
     add_grammar_operators(tag);
 
     triggered_tags
-        .def(py::init<const std::vector<std::string>&, const std::vector<StructuredOutputConfig::Tag>&, bool, bool>(),
-             py::arg("triggers"), py::arg("tags"), py::arg("at_least_one") = false, py::arg("stop_after_first") = false)
+        .def(py::init<const std::vector<std::string>&, const std::vector<StructuredOutputConfig::Tag>&, bool, bool, const std::vector<std::string>&>(),
+             py::arg("triggers"), py::arg("tags"), py::arg("at_least_one") = false, py::arg("stop_after_first") = false, py::arg("excludes") = std::vector<std::string>{})
         .def_readwrite("triggers", &StructuredOutputConfig::TriggeredTags::triggers)
         .def_readwrite("tags", &StructuredOutputConfig::TriggeredTags::tags)
+        .def_readwrite("excludes", &StructuredOutputConfig::TriggeredTags::excludes)
         .def_readwrite("at_least_one", &StructuredOutputConfig::TriggeredTags::at_least_one)
         .def_readwrite("stop_after_first", &StructuredOutputConfig::TriggeredTags::stop_after_first)
         .def("__repr__", [](const StructuredOutputConfig::TriggeredTags& self) { return self.to_string(); });
@@ -366,11 +398,63 @@ void init_generation_config(py::module_& m) {
         .def("__repr__", [](const StructuredOutputConfig::TagsWithSeparator& self) { return self.to_string(); });
     add_grammar_operators(tags_with_separator);
 
+    optional
+        .def(py::init<StructuredOutputConfig::StructuralTag>(), py::arg("content"))
+        .def_readwrite("content", &StructuredOutputConfig::Optional::content)
+        .def("__repr__", [](const StructuredOutputConfig::Optional& self) { return self.to_string(); });
+    add_grammar_operators(optional);
+
+    plus
+        .def(py::init<StructuredOutputConfig::StructuralTag>(), py::arg("content"))
+        .def_readwrite("content", &StructuredOutputConfig::Plus::content)
+        .def("__repr__", [](const StructuredOutputConfig::Plus& self) { return self.to_string(); });
+    add_grammar_operators(plus);
+
+    star
+        .def(py::init<StructuredOutputConfig::StructuralTag>(), py::arg("content"))
+        .def_readwrite("content", &StructuredOutputConfig::Star::content)
+        .def("__repr__", [](const StructuredOutputConfig::Star& self) { return self.to_string(); });
+    add_grammar_operators(star);
+
+    repeat
+        .def(py::init<StructuredOutputConfig::StructuralTag, int32_t, int32_t>(),
+             py::arg("content"), py::arg("min"), py::arg("max"))
+        .def_readwrite("content", &StructuredOutputConfig::Repeat::content)
+        .def_readwrite("min", &StructuredOutputConfig::Repeat::min)
+        .def_readwrite("max", &StructuredOutputConfig::Repeat::max)
+        .def("__repr__", [](const StructuredOutputConfig::Repeat& self) { return self.to_string(); });
+    add_grammar_operators(repeat);
+
     structured_output_config
         .def(py::init<>())
         .def(py::init([](py::kwargs kwargs) {
             return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs));
         }))
+        .def_static("from_model_format",
+            [](const std::string& model_format,
+               py::object tools,
+               py::object tool_choice,
+               bool reasoning,
+               bool any_order,
+               bool exclude_special_tokens) {
+                const JsonContainer tools_json = pyutils::py_object_to_json_container(tools);
+                const JsonContainer tool_choice_json =
+                    tool_choice.is_none() ? JsonContainer(nullptr) : pyutils::py_object_to_json_container(tool_choice);
+                ModelStructuralTagOptions options{
+                    reasoning,
+                    any_order,
+                    exclude_special_tokens
+                };
+                return StructuredOutputConfig::from_model_format(
+                    model_format, tools_json, tool_choice_json, options);
+            },
+            py::arg("model_format"),
+            py::arg("tools") = py::list(),
+            py::arg("tool_choice") = py::str("auto"),
+            py::arg("reasoning") = true,
+            py::arg("any_order") = false,
+            py::arg("exclude_special_tokens") = true,
+            "Build a StructuredOutputConfig from a built-in model structural tag format.")
         .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
         .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
         .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation")
@@ -399,10 +483,14 @@ void init_generation_config(py::module_& m) {
                            || py::isinstance<StructuredOutputConfig::Concat>(value)
                            || py::isinstance<StructuredOutputConfig::Tag>(value)
                            || py::isinstance<StructuredOutputConfig::TriggeredTags>(value)
-                           || py::isinstance<StructuredOutputConfig::TagsWithSeparator>(value)) {
+                           || py::isinstance<StructuredOutputConfig::TagsWithSeparator>(value)
+                           || py::isinstance<StructuredOutputConfig::Optional>(value)
+                           || py::isinstance<StructuredOutputConfig::Plus>(value)
+                           || py::isinstance<StructuredOutputConfig::Star>(value)
+                           || py::isinstance<StructuredOutputConfig::Repeat>(value)) {
                     self.structural_tags_config = pyutils::py_obj_to_structural_tag(value);
                 } else {
-                    throw py::type_error("structural_tags_config must be either StructuralTagsConfig or a StructuralTag (Regex, JSONSchema, EBNF, ConstString, AnyText, QwenXMLParametersFormat, Union, Concat, Tag, TriggeredTags, TagsWithSeparator or plain str)");
+                    throw py::type_error("structural_tags_config must be either StructuralTagsConfig or a StructuralTag (Regex, JSONSchema, EBNF, ConstString, AnyText, QwenXMLParametersFormat, Union, Concat, Tag, TriggeredTags, TagsWithSeparator, Optional, Plus, Star, Repeat or plain str)");
                 }
             },
             "Configuration for structural tags in structured output generation (can be StructuralTagsConfig or StructuralTag)")

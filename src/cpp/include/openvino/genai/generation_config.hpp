@@ -4,8 +4,10 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 #include <limits>
 #include <variant>
+#include <vector>
 #include <string>
 #include <sstream>
 
@@ -15,6 +17,7 @@
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/parsers.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace ov {
 namespace genai {
@@ -81,6 +84,12 @@ public:
     std::vector<std::string> triggers;
 };
 
+struct OPENVINO_GENAI_EXPORTS ModelStructuralTagOptions {
+    bool reasoning = true;
+    bool any_order = false;
+    bool exclude_special_tokens = true;
+};
+
 /* 
 * Structured output parameters:
 * @param json_schema if set, the output will be a JSON string constrained by the specified json_schema.
@@ -101,6 +110,20 @@ public:
     */
     StructuredOutputConfig(const ov::AnyMap& properties);
     StructuredOutputConfig() = default;
+
+    /**
+     * @brief Build a structured output configuration for a registered model tool-call format.
+     *
+     * @param model_format One of the built-in model format keys, such as "llama", "qwen_3", or "harmony".
+     * @param tools OpenAI-compatible tools JSON array. Function tools use
+     *        {"type":"function","function":{...}}; builtin tools use {"type":..., "name":..., "parameters":...}.
+     * @param tool_choice OpenAI-compatible tool choice. Missing/null is treated as "auto".
+     * @param options Options controlling reasoning tags, JSON object property ordering, and special-token exclusion.
+     */
+    static StructuredOutputConfig from_model_format(const std::string& model_format,
+                                                    const JsonContainer& tools = JsonContainer::array(),
+                                                    const JsonContainer& tool_choice = JsonContainer("auto"),
+                                                    const ModelStructuralTagOptions& options = {});
 
     static std::string format_for_json(const std::string& input) {
         std::ostringstream stream;
@@ -131,6 +154,19 @@ public:
         return stream.str();
     }
 
+    static std::string vector_to_json_array(const std::vector<std::string>& values) {
+        std::ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < values.size(); ++i) {
+            oss << format_for_json(values[i]);
+            if (i != values.size() - 1) {
+                oss << ", ";
+            }
+        }
+        oss << "]";
+        return oss.str();
+    }
+
     // base grammar types for structural tags construction
     /**
      * @brief Regex structural tag constrains output using a regular expression.
@@ -157,17 +193,22 @@ public:
      */
     struct JSONSchema {
         std::string value;
+        std::string style = "json";
+        bool any_order = false;
 
         JSONSchema() = default;
-        JSONSchema(const std::string& schema) : value(schema) {}
+        JSONSchema(const std::string& schema, const std::string& style = "json", bool any_order = false)
+            : value(schema), style(style), any_order(any_order) {}
         std::string to_string() const {
-            return "JSONSchema(\"" + value + "\")";
+            return "JSONSchema(\"" + value + "\", style=\"" + style + "\", any_order=" + (any_order ? "true" : "false") + ")";
         }
         std::string to_json() const {
-            return std::string("{\"type\": \"json_schema\", \"json_schema\": ") + value + "}";
+            return std::string("{\"type\": \"json_schema\", \"json_schema\": ") + value +
+                   ", \"style\": " + format_for_json(style) +
+                   ", \"any_order\": " + (any_order ? "true" : "false") + "}";
         }
         bool operator==(const JSONSchema& other) const {
-            return value == other.value;
+            return value == other.value && style == other.style && any_order == other.any_order;
         }
     };
 
@@ -215,15 +256,27 @@ public:
      *        of output covered by this tag.
      */
     struct AnyText {
+        std::vector<std::string> excludes;
+
         AnyText() = default;
+        AnyText(const std::vector<std::string>& excludes) : excludes(excludes) {}
         std::string to_string() const {
-            return "AnyText()";
+            std::ostringstream oss;
+            oss << "AnyText(excludes=[";
+            for (size_t i = 0; i < excludes.size(); ++i) {
+                oss << "\"" << excludes[i] << "\"";
+                if (i != excludes.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "])";
+            return oss.str();
         }
         std::string to_json() const {
-            return "{\"type\": \"any_text\"}";
+            return std::string("{\"type\": \"any_text\", \"excludes\": ") + vector_to_json_array(excludes) + "}";
         }
         bool operator==(const AnyText& other) const {
-            return true;
+            return excludes == other.excludes;
         }
     };
 
@@ -254,6 +307,10 @@ public:
     struct Tag;
     struct TriggeredTags;
     struct TagsWithSeparator;
+    struct Optional;
+    struct Plus;
+    struct Star;
+    struct Repeat;
 
     using StructuralTag = std::variant<
         std::string,
@@ -267,7 +324,11 @@ public:
         std::shared_ptr<Union>,
         std::shared_ptr<Tag>,
         std::shared_ptr<TriggeredTags>,
-        std::shared_ptr<TagsWithSeparator>
+        std::shared_ptr<TagsWithSeparator>,
+        std::shared_ptr<Optional>,
+        std::shared_ptr<Plus>,
+        std::shared_ptr<Star>,
+        std::shared_ptr<Repeat>
     >;
     using CompoundGrammar = StructuralTag;
 
@@ -286,7 +347,11 @@ public:
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Optional>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Plus>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Star>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Repeat>>) {
             return g ? g->to_string() : std::string("null");
         } else {
             OPENVINO_THROW("Unsupported structural tag, cannot convert to string:" + std::string(typeid(g).name()));
@@ -308,7 +373,11 @@ public:
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
-                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Optional>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Plus>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Star>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Repeat>>) {
             return g ? g->to_json() : std::string("null");
         } else {
             OPENVINO_THROW("Unsupported structural tag, cannot convert to json:" + std::string(typeid(g).name()));
@@ -412,14 +481,26 @@ public:
         std::string begin;
         StructuralTag content;
         std::string end;
+        std::vector<std::string> end_alternatives;
 
         Tag() = default;
         Tag(const std::string& begin, StructuralTag content, const std::string& end) : begin(begin), content(std::move(content)), end(end) {};
+        Tag(const std::string& begin, StructuralTag content, const std::vector<std::string>& end_alternatives)
+            : begin(begin),
+              content(std::move(content)),
+              end(end_alternatives.empty() ? std::string() : end_alternatives.front()),
+              end_alternatives(end_alternatives) {};
         std::string to_json() const {
             std::ostringstream oss;
             oss << "{\"type\": \"tag\", \"begin\": " << format_for_json(begin) << ", \"content\": " <<
                    std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) <<
-                   ", \"end\": " << format_for_json(end) << "}";
+                   ", \"end\": ";
+            if (end_alternatives.empty()) {
+                oss << format_for_json(end);
+            } else {
+                oss << vector_to_json_array(end_alternatives);
+            }
+            oss << "}";
             return oss.str();
         };
         std::string to_string() const {
@@ -430,7 +511,8 @@ public:
             return oss.str();
         };
         bool operator==(const Tag& other) const {
-            return begin == other.begin && content == other.content && end == other.end;
+            return begin == other.begin && content == other.content && end == other.end &&
+                   end_alternatives == other.end_alternatives;
         }
     };
 
@@ -444,6 +526,7 @@ public:
     struct TriggeredTags {
         std::vector<std::string> triggers;
         std::vector<Tag> tags;
+        std::vector<std::string> excludes;
         bool at_least_one = false;  // if true, at least one tag must be generated after trigger
         bool stop_after_first = false; // if true, structured generation stops after first tag is generated
         
@@ -451,18 +534,12 @@ public:
         TriggeredTags(const std::vector<std::string>& triggers,
                       const std::vector<Tag>& tags,
                       bool at_least_one = false,
-                      bool stop_after_first = false)
-            : triggers(triggers), tags(tags), at_least_one(at_least_one), stop_after_first(stop_after_first) {};
+                      bool stop_after_first = false,
+                      const std::vector<std::string>& excludes = {})
+            : triggers(triggers), tags(tags), excludes(excludes), at_least_one(at_least_one), stop_after_first(stop_after_first) {};
         std::string to_json() const {
             std::ostringstream oss;
-            oss << "{\"type\": \"triggered_tags\", \"triggers\": [";
-            for (size_t i = 0; i < triggers.size(); ++i) {
-                oss << format_for_json(triggers[i]);
-                if (i != triggers.size() - 1) {
-                    oss << ", ";
-                }
-            }
-            oss << "], \"tags\": [";
+            oss << "{\"type\": \"triggered_tags\", \"triggers\": " << vector_to_json_array(triggers) << ", \"tags\": [";
             for (size_t i = 0; i < tags.size(); ++i) {
                 oss << tags[i].to_json();
                 if (i != tags.size() - 1) {
@@ -470,7 +547,8 @@ public:
                 }
             }
             oss << "], \"at_least_one\": " << (at_least_one ? "true" : "false") <<
-                   ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") << "}";
+                   ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") <<
+                   ", \"excludes\": " << vector_to_json_array(excludes) << "}";
             return oss.str();
         };
         std::string to_string() const {
@@ -490,7 +568,14 @@ public:
                 }
             }
             oss << "], at_least_one=" << (at_least_one ? "True" : "False") <<
-                   ", stop_after_first=" << (stop_after_first ? "True" : "False") << ")";
+                   ", stop_after_first=" << (stop_after_first ? "True" : "False") << ", excludes=[";
+            for (size_t i = 0; i < excludes.size(); ++i) {
+                oss << "\"" << excludes[i] << "\"";
+                if (i != excludes.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "])";
             return oss.str();
         };
     };
@@ -540,6 +625,82 @@ public:
                    ", stop_after_first=" << (stop_after_first ? "true" : "false") << ")";
             return oss.str();
         };
+    };
+
+    struct Optional {
+        StructuralTag content;
+
+        Optional() = default;
+        Optional(StructuralTag content) : content(std::move(content)) {};
+        std::string to_json() const {
+            return std::string("{\"type\": \"optional\", \"content\": ") +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) + "}";
+        }
+        std::string to_string() const {
+            return std::string("Optional(") +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, content) + ")";
+        }
+        bool operator==(const Optional& other) const {
+            return content == other.content;
+        }
+    };
+
+    struct Plus {
+        StructuralTag content;
+
+        Plus() = default;
+        Plus(StructuralTag content) : content(std::move(content)) {};
+        std::string to_json() const {
+            return std::string("{\"type\": \"plus\", \"content\": ") +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) + "}";
+        }
+        std::string to_string() const {
+            return std::string("Plus(") +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, content) + ")";
+        }
+        bool operator==(const Plus& other) const {
+            return content == other.content;
+        }
+    };
+
+    struct Star {
+        StructuralTag content;
+
+        Star() = default;
+        Star(StructuralTag content) : content(std::move(content)) {};
+        std::string to_json() const {
+            return std::string("{\"type\": \"star\", \"content\": ") +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) + "}";
+        }
+        std::string to_string() const {
+            return std::string("Star(") +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, content) + ")";
+        }
+        bool operator==(const Star& other) const {
+            return content == other.content;
+        }
+    };
+
+    struct Repeat {
+        StructuralTag content;
+        int32_t min = 0;
+        int32_t max = 0;
+
+        Repeat() = default;
+        Repeat(StructuralTag content, int32_t min, int32_t max) : content(std::move(content)), min(min), max(max) {};
+        std::string to_json() const {
+            return std::string("{\"type\": \"repeat\", \"min\": ") + std::to_string(min) +
+                   ", \"max\": " + std::to_string(max) + ", \"content\": " +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) + "}";
+        }
+        std::string to_string() const {
+            return std::string("Repeat(") +
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, content) +
+                   ", min=" + std::to_string(min) + ", max=" + std::to_string(max) + ")";
+        }
+        bool operator==(const Repeat& other) const {
+            return content == other.content && min == other.min && max == other.max;
+        }
     };
 
     std::optional<std::string> json_schema;
