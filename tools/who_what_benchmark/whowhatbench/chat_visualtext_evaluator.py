@@ -330,11 +330,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
         prompts_dir = Path(result_dir) / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
 
-        extra_kwargs = (
-            {"generation_config_extra": self.generation_config_extra}
-            if self.generation_config_extra
-            else {}
-        )
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
 
         inputs: List[VisualTextChatInput]
         for i, inputs in tqdm(

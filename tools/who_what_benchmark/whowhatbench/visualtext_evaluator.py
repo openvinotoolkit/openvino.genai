@@ -188,11 +188,7 @@ class VisualTextEvaluator(TextEvaluator):
         images = image_data.values
         videos = videos_data.values
 
-        extra_kwargs = (
-            {"generation_config_extra": self.generation_config_extra}
-            if self.generation_config_extra
-            else {}
-        )
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
 
         for p, i, v in tqdm(
             zip_longest(prompts, images, videos),

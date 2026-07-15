@@ -1345,9 +1345,9 @@ def main():
             raise ValueError(
                 "Parameters 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive in --sd-generation-config"
             )
-        if (
-            "branching_factor" in validated or "tree_depth" in validated
-        ) and validated.get("assistant_confidence_threshold", 0.0):
+        if ("branching_factor" in validated or "tree_depth" in validated) and validated.get(
+            "assistant_confidence_threshold", 0.0
+        ):
             raise ValueError(
                 "EAGLE3 mode (branching_factor/tree_depth) does not support assistant_confidence_threshold; set it to 0.0"
             )
