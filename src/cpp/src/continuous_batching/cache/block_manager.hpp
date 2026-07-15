@@ -863,6 +863,20 @@ public:
     }
 
     /**
+     * @brief Raises fixed blocks per sequence; never shrinks.
+     * @return Whether the reservation was raised.
+     */
+    bool ensure_fixed_blocks_per_sequence(size_t num_blocks) {
+        OPENVINO_ASSERT(m_fixed_blocks_per_sequence > 0,
+                        "ensure_fixed_blocks_per_sequence is only valid for fixed-size-per-sequence block managers");
+        if (num_blocks <= m_fixed_blocks_per_sequence) {
+            return false;
+        }
+        m_fixed_blocks_per_sequence = num_blocks;
+        return true;
+    }
+
+    /**
      * Grows the block pool to accommodate at least the given number of additional tokens.
      * @param num_tokens Number of additional tokens to accommodate.
      */

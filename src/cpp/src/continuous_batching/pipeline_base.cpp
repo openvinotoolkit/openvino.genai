@@ -82,6 +82,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
+            result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
         }
         return results;
@@ -206,6 +207,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
+            result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
         }
         return results;
@@ -637,7 +639,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
         gen_result.extended_perf_metrics = result.extended_perf_metrics;
-    
+
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
         gen_result.perf_metrics.raw_metrics.chat_template_durations = vlm_perf_metrics[i].raw_metrics.chat_template_durations;

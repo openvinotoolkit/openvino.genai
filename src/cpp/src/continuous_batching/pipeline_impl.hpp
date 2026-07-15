@@ -100,6 +100,14 @@ protected:
     void _prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size);
     void _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
+    void _validate_linear_verifier_constraints() const;
+
+    /// Reserves LA live + scratch rows for speculative verification.
+    void _reserve_linear_attention_scratch();
+
+    /// Commits speculative LA checkpoint transactions after sampling.
+    virtual void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output);
+
     virtual void drop_requests();
 
 public:

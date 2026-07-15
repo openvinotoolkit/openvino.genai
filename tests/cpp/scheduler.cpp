@@ -3,6 +3,7 @@
 //
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <numeric>
 #include <set>
 #include "openvino/runtime/core.hpp"
@@ -11,6 +12,7 @@
 #include "openvino/genai/generation_config.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/scheduler.hpp"
+#include "continuous_batching/pipeline_impl.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
@@ -72,11 +74,14 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
                                          ? scheduler_config.num_linear_attention_blocks
                                          : (scheduler_config.num_kv_blocks > 0 ? scheduler_config.max_num_seqs : 0);
+        // One live row per sequence, mirroring CacheOrchestrator::register_linear_attention_cache.
+        // A hybrid verifier raises this to 1 + N at admission via
+        // ensure_linear_attention_fixed_blocks_per_sequence (see the speculative tests below).
         la_block_manager = std::make_unique<BlockManager>(num_la_blocks,
                                                           false,
                                                           1,
                                                           1,  // one logical block table for all LA layers
-                                                          1);
+                                                          /*fixed_blocks_per_sequence=*/1);
     }
 
     auto orchestrator = std::make_shared<CacheOrchestrator>();
@@ -87,6 +92,7 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
                                       std::move(la_block_manager));
     return orchestrator;
 }
+
 
 std::shared_ptr<CacheOrchestrator> init_linear_attention_cache_orchestrator(SchedulerConfig scheduler_config,
                                                                             size_t la_num_layers = 1) {
@@ -364,6 +370,487 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_writ
     EXPECT_EQ(paging_data.cache_interval, 0);
     EXPECT_EQ(paging_data.past_length, 0);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), 1);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_non_speculative_honors_live_block_registry) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.num_linear_attention_blocks = 8;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 8;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    // One scratch row so the live block can be moved off block_table[0].
+    scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + 1);
+
+    // Default (no live override): non-speculative paging is [live, live], interval 0.
+    auto out = scheduler.schedule(requests);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    {
+        const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
+        ASSERT_EQ(paging_data.block_indices.size(), 2);
+        EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
+        EXPECT_EQ(paging_data.cache_interval, 0);
+        EXPECT_FALSE(paging_data.is_speculative);
+        EXPECT_EQ(static_cast<size_t>(paging_data.block_indices[0]), orchestrator->get_linear_attention_live_block(seq_id));
+    }
+    seq_group->finish_iteration();
+
+    // Override the live block to a scratch row; the next non-speculative step must emit [X, X],
+    // proving the registry is honored rather than a hardcoded la_blocks[0].
+    const std::vector<size_t> scratch = linear_attention_scratch_blocks(orchestrator, seq_id);
+    ASSERT_FALSE(scratch.empty());
+    const size_t new_live = scratch.front();
+    EXPECT_NE(new_live, orchestrator->get_linear_attention_live_block(seq_id));
+    scheduler.set_linear_attention_live_block(seq_id, new_live);
+
+    auto running_sequence = seq_group->get_running_sequences()[0];
+    running_sequence->append_token(42, 0.9f);
+    seq_group->update_processed_tokens_num(tokens.size());
+
+    auto gen_out = scheduler.schedule(requests);
+    ASSERT_TRUE(gen_out.has_linear_attention_paging_data(seq_id));
+    {
+        const auto& paging_data = gen_out.get_linear_attention_paging_data(seq_id);
+        ASSERT_EQ(paging_data.block_indices.size(), 2);
+        EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
+        EXPECT_EQ(static_cast<size_t>(paging_data.block_indices[0]), new_live);
+        EXPECT_EQ(paging_data.cache_interval, 0);
+        EXPECT_FALSE(paging_data.is_speculative);
+    }
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_emits_live_live_scratch_window) {
+    constexpr size_t N = 3;
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    // Eager admission-time reservation, as the pipeline does before scheduling a speculative step.
+    scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + N);
+
+    std::ignore = scheduler.schedule(requests);
+    seq_group->finish_iteration();
+
+    auto running_sequence = seq_group->get_running_sequences()[0];
+    running_sequence->append_token(42, 0.9f);
+    seq_group->update_processed_tokens_num(tokens.size());
+    seq_group->set_num_validated_tokens(N);
+
+    const size_t live = orchestrator->get_linear_attention_live_block(seq_id);
+    const std::vector<size_t> scratch = linear_attention_scratch_blocks(orchestrator, seq_id);
+    ASSERT_EQ(scratch.size(), N);
+
+    auto out = scheduler.schedule(requests);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
+
+    ASSERT_EQ(paging_data.block_indices.size(), N + 2);
+    EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
+    EXPECT_EQ(static_cast<size_t>(paging_data.block_indices[0]), live);
+    for (size_t i = 0; i < N; ++i) {
+        EXPECT_EQ(static_cast<size_t>(paging_data.block_indices[i + 2]), scratch[i]);
+        EXPECT_NE(paging_data.block_indices[i + 2], paging_data.block_indices[0]);
+    }
+    EXPECT_EQ(paging_data.cache_interval, 1);
+    EXPECT_TRUE(paging_data.is_speculative);
+    EXPECT_EQ(paging_data.num_processed_tokens_before, seq_group->get_num_processed_tokens());
+    EXPECT_EQ(paging_data.num_processed_tokens_before, tokens.size());
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+// Regression guard for DEFECT A: the linear-attention scratch reservation must reflect the actual
+// per-request num_assistant_tokens (known only at admission), not the construction-time value.
+// The orchestrator here is built WITHOUT N (default fixed_blocks_per_sequence == 1, mirroring an
+// orchestrator created from a generation_config.json that does not carry num_assistant_tokens). The
+// per-request requirement (1 + N) is then supplied at admission via
+// ensure_linear_attention_fixed_blocks_per_sequence (exactly what the pipeline's
+// _reserve_linear_attention_scratch does before scheduling). The reservation must grow to 1 + N and
+// the speculative window must schedule without tripping the "scratch rows insufficient" assert.
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_admission_reservation_grows_to_one_plus_n_per_request) {
+    constexpr size_t N = 2;
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group};
+
+    // Orchestrator built with the default construction-time fixed_blocks_per_sequence == 1 (no scratch).
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    ASSERT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_fixed_blocks_per_sequence(), 1u);
+
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    // Eager reservation at admission, sized from the per-request num_assistant_tokens.
+    EXPECT_TRUE(scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + N));
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_fixed_blocks_per_sequence(), 1u + N);
+    // Idempotent / monotonic: never shrinks, no-op when already covered.
+    EXPECT_FALSE(scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + N));
+
+    std::ignore = scheduler.schedule(requests);
+    seq_group->finish_iteration();
+
+    auto running_sequence = seq_group->get_running_sequences()[0];
+    running_sequence->append_token(42, 0.9f);
+    seq_group->update_processed_tokens_num(tokens.size());
+    seq_group->set_num_validated_tokens(N);
+
+    // The reserved workspace now provides 1 live + N scratch rows for this sequence.
+    const size_t live = orchestrator->get_linear_attention_live_block(seq_id);
+    const std::vector<size_t> scratch = linear_attention_scratch_blocks(orchestrator, seq_id);
+    ASSERT_EQ(scratch.size(), N);
+
+    // Speculative schedule must succeed (previously tripped the scratch-insufficient assert).
+    auto out = scheduler.schedule(requests);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
+    ASSERT_EQ(paging_data.block_indices.size(), N + 2);
+    EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
+    EXPECT_EQ(static_cast<size_t>(paging_data.block_indices[0]), live);
+    for (size_t i = 0; i < N; ++i) {
+        EXPECT_EQ(static_cast<size_t>(paging_data.block_indices[i + 2]), scratch[i]);
+        EXPECT_NE(paging_data.block_indices[i + 2], paging_data.block_indices[0]);
+    }
+    EXPECT_EQ(paging_data.cache_interval, 1);
+    EXPECT_TRUE(paging_data.is_speculative);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+// Gating guard for DEFECT A fix: ensure_linear_attention_fixed_blocks_per_sequence must be a no-op
+// for prefix-caching linear attention (variable-size, not fixed-size-per-sequence), so the fix does
+// not perturb the prefix-caching path.
+TEST(TestScheduler, hybrid_prefix_caching_linear_attention_admission_reservation_is_no_op) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 64;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.cache_interval_multiplier = TEST_CUSTOM_CACHE_INTERVAL_MULTIPLIER;
+    scheduler_config.enable_prefix_caching = true;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    EXPECT_FALSE(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).is_fixed_size_per_sequence());
+    EXPECT_FALSE(scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + 5));
+    EXPECT_FALSE(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).is_fixed_size_per_sequence());
+}
+
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_is_atomic_or_deferred_under_megabatch_pressure) {
+    // Two validating sequences (N candidates each => validation window N+1). The megabatch budget fits
+    // the full window of exactly one of them per step. The scheduler must schedule the full N+1 for the
+    // first and defer the second to 0 (never a partial 1..N). On the next step (budget freed) the deferred
+    // sequence schedules its full window and emits the [live, live, scratch...] paging data of size N+2.
+    constexpr size_t N = 3;
+    constexpr size_t WINDOW = N + 1;  // 4
+    SchedulerConfig scheduler_config;
+    // Budget fits one full window (4) plus a partial second (2) -- never the full second window.
+    scheduler_config.max_num_batched_tokens = WINDOW + (WINDOW - 2);  // 6
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group_a = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    SequenceGroup::Ptr seq_group_b = std::make_shared<SequenceGroup>(
+        1,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id_a = seq_group_a->get_running_sequences()[0]->get_id();
+    const auto seq_id_b = seq_group_b->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group_a, seq_group_b};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    // Eager admission-time reservation, as the pipeline does before scheduling a speculative step.
+    scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + N);
+
+    // The megabatch budget only fits one prompt (len 4) per step, so prompt both sequences over
+    // multiple steps before exercising the generate-phase validation-window scheduling.
+    while (seq_group_a->get_num_processed_tokens() < tokens.size() ||
+           seq_group_b->get_num_processed_tokens() < tokens.size()) {
+        std::ignore = scheduler.schedule(requests);
+        for (auto& req : requests) {
+            if (req->is_scheduled()) {
+                req->finish_iteration();
+            }
+        }
+    }
+
+    for (auto& req : requests) {
+        req->get_running_sequences()[0]->append_token(42, 0.9f);
+        req->update_processed_tokens_num(tokens.size());
+        req->set_num_validated_tokens(N);
+    }
+
+    const size_t live_b = orchestrator->get_linear_attention_live_block(seq_id_b);
+    const std::vector<size_t> scratch_b = linear_attention_scratch_blocks(orchestrator, seq_id_b);
+    ASSERT_EQ(scratch_b.size(), N);
+
+    // Step 1: first sequence gets the full window, the second is deferred (scheduled 0, not partial).
+    auto out1 = scheduler.schedule(requests);
+    ASSERT_TRUE(out1.has_linear_attention_paging_data(seq_id_a));
+    EXPECT_EQ(out1.get_linear_attention_paging_data(seq_id_a).block_indices.size(), N + 2);
+    EXPECT_TRUE(out1.get_linear_attention_paging_data(seq_id_a).is_speculative);
+    EXPECT_EQ(seq_group_a->get_num_scheduled_tokens(), WINDOW);
+
+    // The deferred sequence must not be scheduled at all this step -- never a partial 1..N window.
+    EXPECT_EQ(seq_group_b->get_num_scheduled_tokens(), 0u);
+    EXPECT_FALSE(out1.has_linear_attention_paging_data(seq_id_b));
+    EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, std::vector<uint64_t>({0}));
+
+    seq_group_a->finish_iteration();
+
+    // Step 2: only the deferred sequence still requests a window; the freed budget now fits the full N+1.
+    auto out2 = scheduler.schedule(requests);
+    ASSERT_TRUE(out2.has_linear_attention_paging_data(seq_id_b));
+    const auto& paging_b = out2.get_linear_attention_paging_data(seq_id_b);
+    ASSERT_EQ(paging_b.block_indices.size(), N + 2);
+    EXPECT_EQ(seq_group_b->get_num_scheduled_tokens(), WINDOW);
+    EXPECT_EQ(paging_b.block_indices[0], paging_b.block_indices[1]);
+    EXPECT_EQ(static_cast<size_t>(paging_b.block_indices[0]), live_b);
+    for (size_t i = 0; i < N; ++i) {
+        EXPECT_EQ(static_cast<size_t>(paging_b.block_indices[i + 2]), scratch_b[i]);
+        EXPECT_NE(paging_b.block_indices[i + 2], paging_b.block_indices[0]);
+    }
+    EXPECT_EQ(paging_b.cache_interval, 1);
+    EXPECT_TRUE(paging_b.is_speculative);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_speculative_window_too_large_for_megabatch_asserts) {
+    // Misconfiguration: max_num_batched_tokens can never fit a single sequence's N+1 validation window.
+    // Deferring forever would deadlock, so the scheduler asserts instead.
+    constexpr size_t N = 5;  // window N+1 = 6 > max_num_batched_tokens
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = N;  // strictly less than N+1
+    scheduler_config.num_kv_blocks = 32;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    // Eager admission-time reservation, as the pipeline does before scheduling a speculative step.
+    scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + N);
+
+    std::ignore = scheduler.schedule(requests);
+    seq_group->finish_iteration();
+
+    seq_group->get_running_sequences()[0]->append_token(42, 0.9f);
+    seq_group->update_processed_tokens_num(tokens.size());
+    seq_group->set_num_validated_tokens(N);
+
+    EXPECT_THROW(std::ignore = scheduler.schedule(requests), ov::Exception);
+
+    for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Step 5: workspace reuse across consecutive speculative steps.
+//
+// These tests drive the scheduler through several back-to-back speculative
+// validation windows, mimicking the post-sampling promotion (Step 4's hook) by
+// calling commit_linear_attention_checkpoint_transaction(seq_id, advance) with a
+// chosen advance. They assert the reuse that emerges from Steps 1+2+4: the
+// owned LA set never grows, per-step aliasing holds, a promoted scratch row
+// becomes the next step's live (with the previous live recycled as scratch), and
+// the registry only ever exposes a row that was written by the step that set it.
+// ---------------------------------------------------------------------------
+namespace {
+// Drive one speculative step for a single validating sequence and return its paging data.
+// Pre: the sequence has prompt processed and a token appended; caller has set processed/validation.
+Scheduler::Output run_one_speculative_step(Scheduler& scheduler,
+                                           std::vector<SequenceGroup::Ptr>& requests) {
+    return scheduler.schedule(requests);
+}
+}  // namespace
+
+// @test hybrid_non_prefix_linear_attention_steady_state_no_growth_mixed_advance
+// Across >=4 consecutive speculative steps with mixed advance values (full-accept,
+// partial, full-reject), the sequence's owned LA block table stays 1+N rows: no LA
+// allocation/free mid-run (invariant 1). The promoted block each step is always one
+// of that step's block_indices entries (invariant 3 / selection guard).
+TEST(TestScheduler, hybrid_non_prefix_linear_attention_steady_state_no_growth_mixed_advance) {
+    constexpr size_t N = 3;
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 64;
+    scheduler_config.num_kv_blocks = 64;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
+    std::vector<SequenceGroup::Ptr> requests = {seq_group};
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+    // Eager admission-time reservation, as the pipeline does before scheduling a speculative step.
+    scheduler.ensure_linear_attention_fixed_blocks_per_sequence(1 + N);
+
+    // Prompt phase.
+    std::ignore = scheduler.schedule(requests);
+    seq_group->finish_iteration();
+    auto sequence = seq_group->get_running_sequences()[0];
+    sequence->append_token(42, 0.9f);
+    seq_group->update_processed_tokens_num(tokens.size());
+
+    const size_t owned_size = orchestrator->get_linear_attention_block_table(seq_id).size();
+    ASSERT_EQ(owned_size, N + 1);
+
+    // Mixed advance schedule: full reject (0), full accept (N+1), partial (2), full accept, partial (1).
+    const std::vector<size_t> advances = {0, N + 1, 2, N + 1, 1};
+    size_t processed = seq_group->get_num_processed_tokens();
+
+    size_t prev_live = orchestrator->get_linear_attention_live_block(seq_id);
+    for (size_t step = 0; step < advances.size(); ++step) {
+        seq_group->set_num_validated_tokens(N);
+
+        auto out = run_one_speculative_step(scheduler, requests);
+        ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+        const auto& pd = out.get_linear_attention_paging_data(seq_id);
+        ASSERT_TRUE(pd.is_speculative);
+        ASSERT_EQ(pd.block_indices.size(), N + 2);
+
+        // Invariant 1: owned LA set never grows or shrinks.
+        EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), N + 1)
+            << "owned LA set changed size at step " << step;
+
+        // Invariant 2: per-step aliasing and distinct scratch rows.
+        EXPECT_EQ(pd.block_indices[0], pd.block_indices[1]);
+        EXPECT_EQ(static_cast<size_t>(pd.block_indices[0]), prev_live);
+        std::set<int32_t> scratch_seen;
+        for (size_t i = 2; i < pd.block_indices.size(); ++i) {
+            EXPECT_NE(pd.block_indices[i], pd.block_indices[0]) << "scratch aliases live at step " << step;
+            EXPECT_TRUE(scratch_seen.insert(pd.block_indices[i]).second)
+                << "duplicate scratch row at step " << step;
+        }
+
+        // Mimic Step 4's promotion: commit block_indices[advance] (selection guard: advance <= N+1).
+        const size_t advance = advances[step];
+        ASSERT_LT(advance, pd.block_indices.size());
+        const int32_t chosen = pd.block_indices[advance];
+        // Invariant 3 / selection guard: the promoted block is always within this step's write set.
+        EXPECT_TRUE(std::find(pd.block_indices.begin(), pd.block_indices.end(), chosen) != pd.block_indices.end());
+        scheduler.commit_linear_attention_checkpoint_transaction(seq_id, advance);
+
+        // Commit the step: advance processed tokens, finish, extend content by one accepted token.
+        seq_group->finish_iteration();
+        processed += advance;  // committed prefix length advanced by `advance`
+        seq_group->update_processed_tokens_num(processed);
+        sequence->append_token(100 + static_cast<int64_t>(step), 0.9f);
+
+        prev_live = static_cast<size_t>(chosen);
+        EXPECT_EQ(orchestrator->get_linear_attention_live_block(seq_id), prev_live);
+    }
+
+    // Final no-growth check after the whole run.
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), N + 1);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -2623,4 +3110,111 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
         scheduler.free_sequence(seq->get_id());
     }
     sequence_group->finish_iteration();
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: post-sampling checkpoint transaction commit.
+// ---------------------------------------------------------------------------
+namespace {
+struct LinearAttentionTransactionTestContext {
+    std::shared_ptr<CacheOrchestrator> orchestrator;
+    uint64_t seq_id = 0;
+};
+
+LinearAttentionTransactionTestContext make_linear_attention_transaction_test_context(size_t checkpoint_count) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.num_linear_attention_blocks = 16;
+    scheduler_config.enable_prefix_caching = false;
+    scheduler_config.dynamic_split_fuse = false;
+    scheduler_config.max_num_seqs = 4;
+
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    orchestrator->ensure_linear_attention_fixed_blocks_per_sequence(1 + checkpoint_count);
+
+    std::vector<uint64_t> tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr seq_group = std::make_shared<SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    auto seq = seq_group->get_running_sequences()[0];
+    orchestrator->allocate_tokens(seq, seq_group, 1, seq_group->get_prompt_len());
+
+    return {orchestrator, seq->get_id()};
+}
+}  // namespace
+
+// @test checkpoint_transaction_commit_slots_zero_and_one_keep_old_live_via_aliasing
+// block_indices = [live, live, s1, s2, s3]. advance 0 (counter reads 0 on full rejection) and
+// advance 1 both index the aliased read slot, so the promoted row stays the old live row.
+TEST(TestScheduler, checkpoint_transaction_commit_slots_zero_and_one_keep_old_live_via_aliasing) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
+    const size_t old_live = context.orchestrator->get_linear_attention_live_block(context.seq_id);
+
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    EXPECT_EQ(static_cast<size_t>(transaction.block_indices[0]), old_live);
+    EXPECT_EQ(transaction.block_indices[0], transaction.block_indices[1]);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 0);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), old_live);
+
+    transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 1);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), old_live);
+
+    context.orchestrator->free_sequence(context.seq_id);
+}
+
+// @test checkpoint_transaction_commit_middle_slot_selects_scratch_row
+// advance == 2 (middle) promotes the freshly-written scratch_2 row (block_indices[2]).
+TEST(TestScheduler, checkpoint_transaction_commit_middle_slot_selects_scratch_row) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
+
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    const size_t first_scratch = static_cast<size_t>(transaction.block_indices[2]);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 2);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), first_scratch);
+
+    transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    const size_t second_scratch = static_cast<size_t>(transaction.block_indices[3]);
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), second_scratch);
+
+    context.orchestrator->free_sequence(context.seq_id);
+}
+
+// @test checkpoint_transaction_commit_full_acceptance_slot_selects_last_scratch
+// advance == N+1 (all candidates accepted) promotes the last scratch row (block_indices.back()).
+TEST(TestScheduler, checkpoint_transaction_commit_full_acceptance_slot_selects_last_scratch) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+    const size_t last_scratch = static_cast<size_t>(transaction.block_indices.back());
+
+    // advance == N + 1 == 4 == block_indices.size() - 1 (last valid index)
+    context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 4);
+    EXPECT_EQ(context.orchestrator->get_linear_attention_live_block(context.seq_id), last_scratch);
+
+    context.orchestrator->free_sequence(context.seq_id);
+}
+
+// @test checkpoint_transaction_commit_out_of_range_slot_asserts
+// advance > N+1 indexes past the current step's write window and must fail loud (no silent
+// selection of a row outside this step's writes).
+TEST(TestScheduler, checkpoint_transaction_commit_out_of_range_slot_asserts) {
+    auto context = make_linear_attention_transaction_test_context(/*checkpoint_count=*/3);
+    auto transaction = context.orchestrator->begin_linear_attention_checkpoint_transaction(context.seq_id, 3);
+    ASSERT_EQ(transaction.block_indices.size(), 5u);
+
+    EXPECT_THROW(context.orchestrator->commit_linear_attention_checkpoint_transaction(context.seq_id, 5),
+                 ov::Exception);
+    context.orchestrator->abort_linear_attention_checkpoint_transaction(context.seq_id);
+    context.orchestrator->free_sequence(context.seq_id);
 }

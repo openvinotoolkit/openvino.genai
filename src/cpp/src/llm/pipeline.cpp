@@ -13,6 +13,7 @@
 #include "llm/pipeline_stateful.hpp"
 #include "llm/pipeline_continuous_batching_adapter.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
+#include "speculative_decoding/mtp_model_transforms.hpp"
 #include "speculative_decoding/stateful/eagle3_strategy.hpp"
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
@@ -131,8 +132,12 @@ std::pair<std::string, Any> draft_model(
     const ov::AnyMap& properties) {
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
-    std::filesystem::path openvino_model_name = "openvino_model.xml";
+    const bool is_mtp = std::filesystem::exists(models_path / "openvino_mtp_model.xml");
+    const std::filesystem::path openvino_model_name = is_mtp ? "openvino_mtp_model.xml" : "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
+    if (is_mtp) {
+        plugin_config["mtp_mode"] = true;
+    }
     utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     auto tokenizer = ov::genai::Tokenizer(models_path);
@@ -149,6 +154,7 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
+    utils::mtp::apply_mtp_rt_info(model, plugin_config);
     utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }

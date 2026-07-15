@@ -75,3 +75,16 @@ std::shared_ptr<ov::Model> get_dummy_hybrid_model(ov::Core core, size_t kv_num_l
     
     return std::make_shared<ov::Model>(outputs, params);
 }
+
+std::vector<size_t> linear_attention_scratch_blocks(const std::shared_ptr<ov::genai::CacheOrchestrator>& orchestrator,
+                                                     uint64_t seq_id) {
+    const size_t live_block = orchestrator->get_linear_attention_live_block(seq_id);
+    std::vector<size_t> scratch_blocks;
+    for (const auto& block : orchestrator->get_linear_attention_block_table(seq_id)) {
+        const size_t physical_index = block->get_index();
+        if (physical_index != live_block) {
+            scratch_blocks.push_back(physical_index);
+        }
+    }
+    return scratch_blocks;
+}

@@ -504,6 +504,7 @@ EncodedResults StatefulGemma4MTPLLMPipeline::generate_tokens(const EncodedInputs
     m_sd_perf_metrics.num_input_tokens = m_prompt_length;
     m_sd_perf_metrics.load_time = m_load_time_ms;
     m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
+    m_sd_perf_metrics.num_draft_tokens = total_draft_generated;
     m_sd_perf_metrics.raw_metrics.generate_durations.clear();
     m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
 
