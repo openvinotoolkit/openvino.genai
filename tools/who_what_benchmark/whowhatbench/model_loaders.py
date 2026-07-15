@@ -471,7 +471,7 @@ def load_visual_text_model(
                     config._attn_implementation = "sdpa"
                     from_pretrained_kwargs = {"config": config}
                 else:
-                    from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
+                    from_pretrained_kwargs = {"_attn_implementation": "eager"}
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
