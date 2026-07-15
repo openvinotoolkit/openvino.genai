@@ -32,6 +32,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"gemma4", VLMModelType::GEMMA4},
         {"gemma4_unified", VLMModelType::GEMMA4_UNIFIED},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
+        {"glm", VLMModelType::GLM_EDGE_V},
     };
 
     auto it = model_types_map.find(value);
@@ -89,6 +90,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
         parsed.at("text_config").at("use_bidirectional_attention").is_string()) {
         read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
     }
+
+    // GLM-Edge-V
+    read_json_param(parsed, "boi_token_id", boi_token_id);
+    read_json_param(parsed, "eoi_token_id", eoi_token_id);
 }
 
 }  // namespace ov::genai

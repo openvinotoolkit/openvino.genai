@@ -430,6 +430,15 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
+        # GLM-Edge-V shares the built-in "glm" model_type, but its vision head lives
+        # in the repository's custom modeling code referenced by config.auto_map.
+        # AutoConfig succeeds without remote code, so trust_remote_code stays False
+        # and the text-only built-in GlmForCausalLM (no pixel_values) is loaded.
+        # Force remote code when auto_map provides a custom multimodal model class.
+        if config.model_type == "glm" and isinstance(getattr(config, "auto_map", None), dict):
+            if any(key.startswith("AutoModel") for key in config.auto_map):
+                trust_remote_code = True
+
         model_kwargs = {"trust_remote_code": trust_remote_code}
         try:
             model_cls = None
@@ -443,6 +452,12 @@ def load_visual_text_model(
                 from transformers import AutoModelForMultimodalLM
 
                 model_cls = AutoModelForMultimodalLM
+            elif config.model_type == "glm":
+                # GLM-Edge-V exposes its multimodal head via GlmForCausalLM
+                # (auto_map registers AutoModelForCausalLM only), so the generic
+                # vision-to-seq auto classes resolve to the base GlmModel that
+                # lacks a `generate` method.
+                model_cls = AutoModelForCausalLM
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
