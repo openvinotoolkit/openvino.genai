@@ -28,7 +28,16 @@ using GGUFLoad = std::tuple<std::unordered_map<std::string, GGUFMetaData>,
                             std::unordered_map<std::string, gguf_tensor_type>>;
 
 template <typename... Args>
-std::string format(std::string fmt, Args... args);
+std::string format(std::string fmt, Args... args) {
+    size_t bufferSize = 1000;
+    char* buffer = new char[bufferSize];
+    int n = sprintf(buffer, fmt.c_str(), args...);
+    OPENVINO_ASSERT(n >= 0 && n < (int)bufferSize - 1);
+
+    std::string fmtStr(buffer);
+    delete[] buffer;
+    return fmtStr;
+}
 
 ov::Shape get_shape(const gguf_tensor& tensor);
 
