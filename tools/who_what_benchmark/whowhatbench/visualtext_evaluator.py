@@ -42,16 +42,14 @@ class VisualTextEvaluator(TextEvaluator):
         relevance_weight=None,
         task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
         frames_num: int | None = None,
-        num_assistant_tokens: int = 0,
-        assistant_confidence_threshold: float = 0.0,
+        generation_config_extra=None,
     ) -> None:
         self.processor = processor
         self.is_image_input = (task_type == "visual-text")
         self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
-        self.num_assistant_tokens = num_assistant_tokens
-        self.assistant_confidence_threshold = assistant_confidence_threshold
+        self.generation_config_extra = generation_config_extra or {}
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -65,6 +63,7 @@ class VisualTextEvaluator(TextEvaluator):
             gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
+            generation_config_extra=self.generation_config_extra
         )
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
@@ -127,8 +126,7 @@ class VisualTextEvaluator(TextEvaluator):
             crop_question,
             pruning_ratio,
             relevance_weight,
-            _num_assistant_tokens=0,
-            _assistant_confidence_threshold=0.0,
+            generation_config_extra=None,
         ):
             if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
@@ -195,26 +193,21 @@ class VisualTextEvaluator(TextEvaluator):
             total=max(len(prompts), len(images), len(videos)),
             desc="Evaluate pipeline",
         ):
-            gen_answer_args = [
-                model,
-                p,
-                i,
-                v,
-                self.processor,
-                self.tokenizer,
-                self.max_new_tokens,
-                self._crop_question,
-                self.pruning_ratio,
-                self.relevance_weight,
-            ]
-            if self.num_assistant_tokens != 0 or self.assistant_confidence_threshold != 0.0:
-                gen_answer_args.extend(
-                    [
-                        self.num_assistant_tokens,
-                        self.assistant_confidence_threshold,
-                    ]
+            answers.append(
+                gen_answer_fn(
+                    model,
+                    p,
+                    i,
+                    v,
+                    self.processor,
+                    self.tokenizer,
+                    self.max_new_tokens,
+                    self._crop_question,
+                    self.pruning_ratio,
+                    self.relevance_weight,
+                    self.generation_config_extra,
                 )
-            answers.append(gen_answer_fn(*gen_answer_args))
+            )
 
         res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)

@@ -864,18 +864,7 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(
-    model,
-    prompt,
-    image,
-    video,
-    processor,
-    tokenizer,
-    max_new_tokens,
-    crop_question,
-    pruning_ratio,
-    relevance_weight,
-    num_assistant_tokens=0,
-    assistant_confidence_threshold=0.0,
+    model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight, generation_config_extra=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
@@ -886,14 +875,8 @@ def genai_gen_visual_text(
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
-    if num_assistant_tokens and assistant_confidence_threshold:
-        raise ValueError(
-            "Parameters 'num_assistant_tokens' and 'assistant_confidence_threshold' are mutually exclusive"
-        )
-    if num_assistant_tokens:
-        kwargs["num_assistant_tokens"] = num_assistant_tokens
-    if assistant_confidence_threshold:
-        kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
+    if generation_config_extra is not None:
+        kwargs.update(generation_config_extra)
 
     out = model.generate(
         prompt,
@@ -912,25 +895,18 @@ def genai_gen_visual_text_chat(
     max_new_tokens: int,
     pruning_ratio: Optional[float],
     relevance_weight: Optional[float],
-    num_assistant_tokens: int = 0,
-    assistant_confidence_threshold: float = 0.0,
-    kv_axes_pos=None,
-    crop_question=None,
-    full_chat=None,
+    _kv_axes_pos=None,
+    _crop_question=None,
+    _full_chat=None,
+    generation_config_extra=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
-    if num_assistant_tokens and assistant_confidence_threshold:
-        raise ValueError(
-            "Parameters 'num_assistant_tokens' and 'assistant_confidence_threshold' are mutually exclusive"
-        )
-    if num_assistant_tokens:
-        kwargs["num_assistant_tokens"] = num_assistant_tokens
-    if assistant_confidence_threshold:
-        kwargs["assistant_confidence_threshold"] = assistant_confidence_threshold
+    if generation_config_extra is not None:
+        kwargs.update(generation_config_extra)
 
     import openvino_genai
 
@@ -1081,12 +1057,7 @@ def create_evaluator(base_model, args):
                 frames_num=args.video_frames_num,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
-                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
-                assistant_confidence_threshold=(
-                    float(args.assistant_confidence_threshold)
-                    if args.assistant_confidence_threshold is not None
-                    else 0.0
-                ),
+                generation_config_extra=args.generation_config_extra,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -1198,14 +1169,9 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
-                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
-                assistant_confidence_threshold=(
-                    float(args.assistant_confidence_threshold)
-                    if args.assistant_confidence_threshold is not None
-                    else 0.0
-                ),
                 crop_question=crop_question,
                 device=args.device,
+                generation_config_extra=args.generation_config_extra,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -1365,9 +1331,14 @@ def main():
         if "assistant_confidence_threshold" in validated:
             args.assistant_confidence_threshold = validated["assistant_confidence_threshold"]
             logger.info(f"assistant_confidence_threshold (final): {args.assistant_confidence_threshold}")
-        args.generation_config_extra = {
-            k: v for k, v in validated.items() if k not in ("num_assistant_tokens", "assistant_confidence_threshold")
-        }
+        if args.model_type in ("text", "text-chat"):
+            args.generation_config_extra = {
+                k: v
+                for k, v in validated.items()
+                if k not in ("num_assistant_tokens", "assistant_confidence_threshold")
+            }
+        else:
+            args.generation_config_extra = dict(validated)
     else:
         args.generation_config_extra = {}
 

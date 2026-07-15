@@ -50,11 +50,10 @@ def default_gen_answer(
     max_new_tokens,
     pruning_ratio,
     relevance_weight,
-    num_assistant_tokens=0,
-    assistant_confidence_threshold=0.0,
-    kv_axes_pos=2,
+    kv_axes_pos,
     crop_question=False,
     full_chat=False,
+    generation_config_extra=None,
 ):
     if model.config.model_type not in MODEL_TYPE_TO_CLS_MAPPING:
         raise ValueError(
@@ -186,8 +185,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
         relevance_weight=None,
         crop_question=True,
         device="CPU",
-        num_assistant_tokens: int = 0,
-        assistant_confidence_threshold: float = 0.0,
+        generation_config_extra=None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
@@ -202,8 +200,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
         self.processor = processor
         self._crop_question = crop_question
         self._full_chat = device == "NPU"
-        self.num_assistant_tokens = num_assistant_tokens
-        self.assistant_confidence_threshold = assistant_confidence_threshold
+        self.generation_config_extra = generation_config_extra or {}
 
         self.gt_dir = Path(gt_data or "").parent
         if base_model:
@@ -339,18 +336,17 @@ class ChatVisualTextEvaluator(TextEvaluator):
             desc="Evaluate pipeline",
         ):
             answer = gen_answer_fn(
-                model=model,
-                inputs=inputs,
-                processor=self.processor,
-                tokenizer=self.tokenizer,
-                max_new_tokens=self.max_new_tokens,
-                pruning_ratio=self.pruning_ratio,
-                relevance_weight=self.relevance_weight,
-                num_assistant_tokens=self.num_assistant_tokens,
-                assistant_confidence_threshold=self.assistant_confidence_threshold,
-                kv_axes_pos=kv_axes_pos,
-                crop_question=self._crop_question,
-                full_chat=_full_chat,
+                model,
+                inputs,
+                self.processor,
+                self.tokenizer,
+                self.max_new_tokens,
+                self.pruning_ratio,
+                self.relevance_weight,
+                kv_axes_pos,
+                self._crop_question,
+                _full_chat,
+                self.generation_config_extra,
             )
 
             result_path = Path(result_dir) / f"chat_vlm_output_{i}.json"
