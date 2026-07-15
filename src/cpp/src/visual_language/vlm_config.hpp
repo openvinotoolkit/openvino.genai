@@ -29,6 +29,7 @@ enum class VLMModelType {
     GEMMA4,
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
+    GLM_EDGE_V,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -124,6 +125,15 @@ public:
     size_t vision_config_num_position_embeddings = 2304;
     /// @brief DeepStack visual indexes for Qwen3-VL model.
     std::vector<size_t> vision_config_deepstack_visual_indexes;
+
+    // GLM-Edge-V specific config params
+    /// @brief A placeholder token (also the begin-of-image marker) whose
+    /// positions in the prompt are replaced by image embeddings for GLM-Edge-V.
+    std::string glm_edge_v_image_token = "<|begin_of_image|>";
+    /// @brief Begin-of-image token id for GLM-Edge-V (config.json boi_token_id).
+    int64_t boi_token_id = 59256;
+    /// @brief End-of-image token id for GLM-Edge-V (config.json eoi_token_id).
+    int64_t eoi_token_id = 59257;
 
     /// @brief Default constructor.
     VLMConfig() = default;
