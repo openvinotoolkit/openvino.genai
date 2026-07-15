@@ -24,8 +24,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         OPENVINO_ASSERT(execution_devices.size() == 1u);
         m_is_npu = true;
         m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
-        const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
-        m_max_kv_cache_size = m_max_prompt_len + min_response_len;
     }
 }
 
@@ -76,7 +74,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, *filtered_properties, kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
-        m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     }
@@ -265,7 +262,7 @@ DecodedResults StatefulLLMPipeline::generate(
     StreamerVariant streamer
 ) {
     is_chat_conversation = true;
-    
+
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY;
 
@@ -274,7 +271,7 @@ DecodedResults StatefulLLMPipeline::generate(
                         "Chat doesn't support switching between input types. Please, continue using ChatHistory or restart the chat.");
 
     auto start_time = std::chrono::steady_clock::now();
-    
+
     GenerationConfig config = resolve_generation_config(generation_config);
 
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
@@ -373,7 +370,7 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) 
+    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);
@@ -488,8 +485,12 @@ EncodedResults StatefulLLMPipeline::generate(
         m_sampler.set_seed(config.rng_seed);
     }
 
+    size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
+    if (m_is_npu) {
+        max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_model_runner.get_compiled_model());
+    }
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+                                                                                requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, max_kv_cache_size);
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
