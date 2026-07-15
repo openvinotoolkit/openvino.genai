@@ -37,7 +37,10 @@ struct SchedulerConfig {
 
     // Multiplier used to derive the linear-attention checkpoint interval for prefix caching.
     // The internal cache interval is calculated as KV cache block size * cache_interval_multiplier.
-    // When unset, the default value 8 is used for hybrid models with prefix caching.
+    // When unset, the multiplier is derived adaptively from the model's linear-attention state
+    // size so one checkpoint costs roughly one KV block (>= the default of 8); this prevents the
+    // recurrent-state cache of large hybrid SSM models from exhausting the cache budget on long
+    // prompts. Larger values reduce memory at the cost of coarser prefix-cache reuse.
     // For models without linear attention cache inputs, this parameter is ignored.
     // 0 is valid only when prefix caching is disabled.
     std::optional<std::size_t> cache_interval_multiplier = std::nullopt;

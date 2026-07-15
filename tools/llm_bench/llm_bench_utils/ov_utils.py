@@ -14,6 +14,12 @@ from llm_bench_utils.hook_common import get_bench_hook
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import UseCaseSpeech2Text, UseCaseTextGen, UseCaseTextReranker, PA_ATTENTION_BACKEND
+from llm_bench_utils.tts_utils import (
+    is_kokoro_model_id,
+    normalize_kokoro_lang_code,
+    DEFAULT_KOKORO_VOICE,
+    resolve_kokoro_speaker_embedding,
+)
 from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
@@ -884,11 +890,19 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
 def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_collector, **kwargs):
     import openvino_genai
 
-    if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
-        convert_ov_tokenizer(model_path)
-
-    tokenizer_class = kwargs['use_case'].tokenizer_cls
-    processor = tokenizer_class.from_pretrained(model_path)
+    processor = None
+    if is_kokoro_model_id(model_path):
+        # Kokoro uses a custom model type unrecognised by Transformers; skip the tokenizer
+        # xml check (no openvino_tokenizer.xml is produced by its export) and processor load.
+        pass
+    else:
+        if (
+            not (model_path / "openvino_tokenizer.xml").exists()
+            or not (model_path / "openvino_detokenizer.xml").exists()
+        ):
+            convert_ov_tokenizer(model_path)
+        tokenizer_class = kwargs["use_case"].tokenizer_cls
+        processor = tokenizer_class.from_pretrained(model_path)
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -917,20 +931,31 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
+        # Detect Kokoro before calling AutoConfig — Kokoro uses a custom model_type that
+        # is not registered in Transformers, so AutoConfig.from_pretrained would raise.
+        is_kokoro_model = is_kokoro_model_id(model_path)
         remote_code = False
-        try:
-            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
-        except Exception:
-            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-            remote_code = True
+        model_config = None
+        if not is_kokoro_model:
+            try:
+                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+            except Exception:
+                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+                remote_code = True
         if kwargs.get("genai", True):
             if not is_genai_available(log_msg=True):
                 raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
             try:
                 return create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_collector, **kwargs)
             except Exception as exp:
+                if is_kokoro_model:
+                    model_type = "kokoro"
+                elif model_config is not None:
+                    model_type = model_config.model_type
+                else:
+                    model_type = "unknown"
                 raise RuntimeError(
-                    f"Model type `{model_config.model_type}` is not supported by OpenVINO GenAI. "
+                    f"Model type `{model_type}` is not supported by OpenVINO GenAI. "
                     f"GenAI pipeline loading failed with following error: {exp}"
                 )
 
@@ -941,20 +966,70 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
         start = time.perf_counter()
-        ov_model = model_class.from_pretrained(
-            model_path,
-            device=device,
-            ov_config=ov_config,
-            config=model_config,
-            trust_remote_code=remote_code
-        )
+        if is_kokoro_model:
+            ov_model = model_class.from_pretrained(
+                model_path,
+                device=device,
+                ov_config=ov_config,
+                trust_remote_code=True,
+            )
+        else:
+            ov_model = model_class.from_pretrained(
+                model_path, device=device, ov_config=ov_config, config=model_config, trust_remote_code=remote_code
+            )
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("compilation")
             memory_data_collector.log_data(compilation=True)
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
-    processor = tokenizer_class.from_pretrained(model_path)
+    if is_kokoro_model:
+
+        class KokoroOVModelWrapper:
+            def __init__(self, model):
+                self._model = model
+
+            def preprocess_input(self, prompt, speaker_embeddings=None, language="", voice=""):
+                preprocess_kwargs = {
+                    "text": prompt,
+                    "lang_code": normalize_kokoro_lang_code(language),
+                }
+                if speaker_embeddings is not None:
+                    preprocess_kwargs["speaker_embedding"] = speaker_embeddings.detach().cpu().numpy()
+                else:
+                    selected_voice = voice.strip() if isinstance(voice, str) else ""
+                    if not selected_voice:
+                        selected_voice = DEFAULT_KOKORO_VOICE
+
+                    local_speaker_embedding = resolve_kokoro_speaker_embedding(
+                        model_path=getattr(self._model, "model_save_dir", None),
+                        speech_voice=selected_voice,
+                        speaker_embeddings=None,
+                        strict=False,
+                    )
+                    if local_speaker_embedding is not None:
+                        preprocess_kwargs["speaker_embedding"] = local_speaker_embedding.detach().cpu().numpy()
+                    else:
+                        preprocess_kwargs["voice"] = selected_voice
+
+                return self._model.preprocess_input(**preprocess_kwargs)
+
+            def generate_from_preprocessed(self, preprocessed_inputs):
+                return self._model.generate(**preprocessed_inputs)
+
+            def generate(self, prompt, speaker_embeddings=None, language="", voice=""):
+                preprocessed = self.preprocess_input(
+                    prompt,
+                    speaker_embeddings=speaker_embeddings,
+                    language=language,
+                    voice=voice,
+                )
+                return self.generate_from_preprocessed(preprocessed)
+
+        ov_model = KokoroOVModelWrapper(ov_model)
+        processor = None
+    else:
+        processor = tokenizer_class.from_pretrained(model_path)
     vocoder = None
     if kwargs.get('vocoder_path') is not None:
         vocoder = kwargs['use_case'].vocoder_cls.from_pretrained(kwargs.get('vocoder_path'))

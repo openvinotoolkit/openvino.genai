@@ -125,7 +125,7 @@ std::vector<EncodedGenerationResult> generate_common(
 
     for (size_t rid = 0; rid < all_requests.size(); ++rid) {
         const auto& request = all_requests[rid];
-        auto cfg = request->get_sampling_parameters();
+        const auto& cfg = request->get_sampling_parameters();
         const auto& seqs = request->get_finished_sequences();
         size_t num_out = std::min(cfg.num_return_sequences, seqs.size());
 
@@ -180,7 +180,6 @@ protected:
     std::map<uint64_t, GenerationHandle> m_draft_generations;
 
     void reset_generate_metrics() {
-        m_sd_metrics = SpeculativeDecodingMetrics();
         m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
         m_draft_pipeline->raw_perf_metrics = RawPerfMetrics{};
         m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};

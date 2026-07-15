@@ -5,6 +5,7 @@
 
 #include "automatic_speech_recognition/pipeline_base.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 
@@ -13,7 +14,7 @@ public:
     WhisperASRPipelineAdapter(const std::filesystem::path& models_path,
                               const std::string& device,
                               const ov::AnyMap& properties)
-        : ASRPipelineImplBase(models_path, properties),
+        : ASRPipelineImplBase(models_path),
           m_whisper_pipeline(models_path, device, properties) {}
 
     void set_generation_config(const ASRGenerationConfig& config) override {
@@ -22,8 +23,16 @@ public:
     }
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
-                               std::optional<ASRGenerationConfig> generation_config,
+                               const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer) override {
+        const std::vector<float>& raw_speech = std::visit(
+            ov::genai::utils::overloaded{
+                [](const std::vector<float>& input) -> const std::vector<float>& {
+                    return input;
+                },
+            },
+            audio_inputs);
+
         OptionalWhisperGenerationConfig whisper_config = std::nullopt;
         if (generation_config.has_value()) {
             whisper_config = to_whisper_config(generation_config.value());
@@ -32,7 +41,7 @@ public:
         StreamerVariant streamer_variant = streamer ? StreamerVariant{streamer} : StreamerVariant{std::monostate{}};
 
         WhisperDecodedResults whisper_result =
-            m_whisper_pipeline.generate(std::get<std::vector<float>>(audio_inputs), whisper_config, streamer_variant);
+            m_whisper_pipeline.generate(raw_speech, std::move(whisper_config), streamer_variant);
 
         return to_asr_results(std::move(whisper_result));
     }

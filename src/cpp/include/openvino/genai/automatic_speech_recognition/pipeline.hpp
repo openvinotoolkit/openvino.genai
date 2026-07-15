@@ -4,10 +4,12 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
@@ -79,7 +81,7 @@ public:
     ~ASRPipeline();
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
-                               std::optional<ASRGenerationConfig> generation_config = std::nullopt,
+                               const std::optional<ASRGenerationConfig>& generation_config = std::nullopt,
                                StreamerVariant streamer = std::monostate());
 
     template <typename... Properties>
