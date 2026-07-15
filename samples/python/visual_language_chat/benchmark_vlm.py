@@ -102,7 +102,10 @@ def main():
         "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
     )
     parser.add_argument(
-        "--cm_path", action="store_true", help="(optional): Use CM path scheduler config (default: false)."
+        "--cm_path", action="store_true", default=False, help="(optional): Use CM path scheduler config (default: false)."
+    )
+    parser.add_argument(
+        "--external_chat_template", action="store_true", default=False, help="(optional): Apply chat template by user externally instead of by VLM pipeline (default: false)."
     )
 
     args = parser.parse_args()
@@ -164,10 +167,23 @@ def main():
             sparse_attention_config.xattention_threshold = 100.0
             scheduler_config.use_sparse_attention = True
             scheduler_config.sparse_attention_config = sparse_attention_config
+            
+            # Set KV cache precision to int8 for CM path
+            properties["KV_CACHE_PRECISION"] = "i8"
         properties["scheduler_config"] = scheduler_config
         pipe = ov_genai.VLMPipeline(models_path, device, **properties)
 
-    input_data = pipe.get_tokenizer().encode(prompt)
+    if args.external_chat_template:
+        # Apply chat template externally instead of by VLM pipeline
+        config.apply_chat_template = False
+        tokenizer = pipe.get_tokenizer()
+        prompt = tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}], add_generation_prompt=True)
+
+        input_data = tokenizer.encode(prompt)
+    else:
+        input_data = pipe.get_tokenizer().encode(prompt)
+
     prompt_token_size = input_data.input_ids.get_shape()[1]
     print(f"Number of images: {len(images)}, Prompt token size: {prompt_token_size}")
 

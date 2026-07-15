@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) try {
     ("P,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
     ("R,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
     ("h,help", "Print usage");
-    ("cm_path", "(optional): Use CM path scheduler config (default: false).", cxxopts::value<bool>()->default_value("false"))
+    ("cm_path", "(optional): Use CM path scheduler config (default: false).", cxxopts::value<bool>()->default_value("false"));
 
     cxxopts::ParseResult result;
     try {
