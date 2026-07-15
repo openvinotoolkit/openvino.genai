@@ -88,8 +88,10 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
+    Qwen3TextEncoder,
     T5EncoderModel,
     UNet2DConditionModel,
+    Flux2Transformer2DModel,
     FluxTransformer2DModel,
     SD3Transformer2DModel,
     AutoencoderKL,
@@ -132,7 +134,7 @@ from .py_openvino_genai import (
 )
 
 # RAG
-from .py_openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
+from .py_openvino_genai import EmbedResult, EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
 
 # Speech generation
 from .py_openvino_genai import (

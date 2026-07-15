@@ -6,12 +6,20 @@ import time
 import hashlib
 import datetime
 import logging as log
+import numpy as np
 import soundfile as sf
 import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 from llm_bench_utils.hook_forward import TTSHook
 import openvino as ov
+from llm_bench_utils.tts_utils import (
+    extract_audio_array,
+    get_tts_sample_rate,
+    kokoro_preprocess_once,
+    kokoro_generate_from_preprocessed,
+    resolve_kokoro_speaker_embedding,
+)
 import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
 import llm_bench_utils.output_file
@@ -28,14 +36,27 @@ def run_text_to_speech_generation_optimum(
     input_text_list = [input_text] * args['batch_size']
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(input_text_list):
-            llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
-    tok_encode_start = time.perf_counter()
-    input_data = processor(text=input_text_list, return_tensors='pt', padding=True, truncation=True)
-    tok_encode_end = time.perf_counter()
-    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-    input_data.pop('token_type_ids', None)
-    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
-    input_token_size = input_tokens[0].numel()
+            llm_bench_utils.output_file.output_input_text(
+                in_text, args, model_precision, prompt_index, bs_index, proc_id
+            )
+    is_kokoro_model = args.get("is_kokoro_model", False)
+    sample_rate = get_tts_sample_rate(args)
+    tok_encode_time = None
+    kokoro_preprocessed_inputs = []
+    if is_kokoro_model:
+        tok_encode_start = time.perf_counter()
+        input_token_size = len(input_text.split())
+        kokoro_preprocessed_inputs.append(kokoro_preprocess_once(model, input_text, args))
+        tok_encode_end = time.perf_counter()
+        tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+    else:
+        tok_encode_start = time.perf_counter()
+        input_data = processor(text=input_text_list, return_tensors="pt", padding=True, truncation=True)
+        input_data.pop("token_type_ids", None)
+        input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
+        input_token_size = input_tokens[0].numel()
+        tok_encode_end = time.perf_counter()
+        tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(args['batch_size'])
@@ -44,32 +65,49 @@ def run_text_to_speech_generation_optimum(
 
     mem_consumption.start(num)
     start = time.perf_counter()
-    if vocoder:
-        result = model.generate(input_tokens, speaker_embeddings=args.get('speaker_embeddings'), vocoder=vocoder)
+    speeches = []
+    if is_kokoro_model:
+        for preprocessed_input in kokoro_preprocessed_inputs:
+            speeches.append(kokoro_generate_from_preprocessed(model, preprocessed_input, args))
+        out_size = sum(speech.size for speech in speeches)
     else:
-        result = model.generate(input_tokens, speaker_embeddings=args.get('speaker_embeddings'))
+        if vocoder:
+            result = model.generate(input_tokens, speaker_embeddings=args.get("speaker_embeddings"), vocoder=vocoder)
+        else:
+            result = model.generate(input_tokens, speaker_embeddings=args.get("speaker_embeddings"))
+        out_size = result.numel()
     end = time.perf_counter()
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
-        speech = result.numpy()[bs_idx] if len(result.size()) > 1 else result.numpy()
-        audio_file_path = llm_bench_utils.output_file.output_gen_audio(speech, args, prompt_index, num, bs_idx, proc_id, '.wav')
+        if is_kokoro_model:
+            speech = speeches[bs_idx]
+        else:
+            speech = result.numpy()[bs_idx] if len(result.size()) > 1 else result.numpy()
+        audio_file_path = llm_bench_utils.output_file.output_gen_audio(
+            speech, args, prompt_index, num, bs_idx, proc_id, ".wav", samplerate=sample_rate
+        )
         data, _ = sf.read(audio_file_path)
         result_md5_list.append(hashlib.md5(data.tobytes(), usedforsecurity=False).hexdigest())
     if len(md5_list[num]) == 0:
         md5_list[num] = {prompt_index : result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
+
+    tokenization_kwargs = {}
+    if tok_encode_time is not None:
+        tokenization_kwargs["tokenization_time"] = [tok_encode_time]
+
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args['batch_size'],
-        out_size=result.numel(),
+        out_size=out_size,
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=prompt_index,
-        tokenization_time=[tok_encode_time],
+        **tokenization_kwargs,
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
@@ -77,7 +115,7 @@ def run_text_to_speech_generation_optimum(
         iter_num=num,
         iter_data=iter_data,
         warm_up=(num == 0),
-        tokenization_time=[tok_encode_time],
+        **tokenization_kwargs,
         batch_size=args['batch_size'],
         prompt_idx=prompt_index,
         tts=tts_hook
@@ -100,8 +138,13 @@ def run_text_to_speech_generation_genai(
             llm_bench_utils.output_file.output_input_text(in_text, args, model_precision, prompt_index, bs_index, proc_id)
 
     mem_consumption.start(num)
-    input_data = processor(text=input_text)
-    num_input_tokens = len(input_data['input_ids'])
+    is_kokoro_model = args.get("is_kokoro_model", False)
+    sample_rate = get_tts_sample_rate(args)
+    if is_kokoro_model:
+        num_input_tokens = len(input_text.split())
+    else:
+        input_data = processor(text=input_text)
+        num_input_tokens = len(input_data["input_ids"])
 
     if args['batch_size'] > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
@@ -109,33 +152,67 @@ def run_text_to_speech_generation_genai(
         out_str += 'all input token size after padding: {} * {}, '.format(num_input_tokens, args['batch_size'])
         log.info(out_str)
 
+    speeches = []
+    perf_metrics = None
+    if is_kokoro_model and args.get("speaker_embeddings") is None:
+        args["speaker_embeddings"] = resolve_kokoro_speaker_embedding(
+            model_path=args.get("model_path"),
+            speech_voice=args.get("speech_voice", ""),
+            speaker_embeddings=args.get("speaker_embeddings"),
+            strict=True,
+        )
+
+    additional_args = (
+        {
+            "speaker_embedding": ov.Tensor(
+                args["speaker_embeddings"].detach().cpu().numpy()
+                if hasattr(args["speaker_embeddings"], "detach")
+                else np.asarray(args["speaker_embeddings"], dtype=np.float32)
+            ),
+        }
+        if args.get("speaker_embeddings") is not None
+        else {}
+    )
+
+    if is_kokoro_model:
+        additional_args["language"] = args.get("speech_language", "")
+
     start = time.perf_counter()
-    additional_args = {"speaker_embeddings": ov.Tensor(args['speaker_embeddings'].numpy())} if args.get('speaker_embeddings') is not None else {}
     generation_result = model.generate(input_text_list, **additional_args)
     end = time.perf_counter()
     generation_time = end - start
-    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     perf_metrics = generation_result.perf_metrics
-    tokenization_time = [perf_metrics.get_tokenization_duration().mean]
+    for bs_idx in range(args["batch_size"]):
+        speeches.append(extract_audio_array(generation_result.speeches[bs_idx].data))
+    out_size = perf_metrics.num_generated_samples
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
 
     result_md5_list = []
     for bs_idx in range(args['batch_size']):
-        speech = generation_result.speeches[bs_idx].data[0]
-        audio_file_path = llm_bench_utils.output_file.output_gen_audio(speech, args, prompt_index, num, bs_idx, proc_id, '.wav')
+        speech = speeches[bs_idx]
+        audio_file_path = llm_bench_utils.output_file.output_gen_audio(
+            speech, args, prompt_index, num, bs_idx, proc_id, ".wav", samplerate=sample_rate
+        )
         data, _ = sf.read(audio_file_path)
         result_md5_list.append(hashlib.md5(data.tobytes(), usedforsecurity=False).hexdigest())
 
     md5_list[num][prompt_index] = result_md5_list
 
+    tokenization_time = None
+    tokenization_duration = perf_metrics.get_tokenization_duration().mean
+    if tokenization_duration > 0:
+        tokenization_time = [tokenization_duration]
+    tokenization_kwargs = {"tokenization_time": tokenization_time} if tokenization_time is not None else {}
+
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=num_input_tokens * args['batch_size'],
-        out_size=perf_metrics.num_generated_samples,
+        out_size=out_size,
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=prompt_index,
-        tokenization_time=tokenization_time,
+        **tokenization_kwargs,
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
@@ -147,7 +224,8 @@ def run_text_to_speech_generation_genai(
         batch_size=args['batch_size'],
         prompt_idx=prompt_index
     )
-    log.debug(f'[{num}]Throughput: {perf_metrics.throughput.mean:.4f}')
+
+    log.debug(f"[{num}]Throughput: {perf_metrics.throughput.mean:.4f}")
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
         if result_md5_list != prev_md5:
@@ -158,6 +236,10 @@ def run_text_to_speech_generation_genai(
 def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     mem_consumption.update_marker("model")
     model, processor, vocoder, pretrain_time, use_genai = FW_UTILS[framework].create_text_2_speech_model(model_path, device, mem_consumption, **args)
+    args["model_path"] = model_path
+    if args.get("is_kokoro_model", False) and args.get("batch_size", 1) != 1:
+        log.warning("Only batch size 1 available for benchmarking with kokoro model")
+        args["batch_size"] = 1
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
@@ -178,7 +260,7 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
              f'prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
 
     tts_hook = None
-    if framework == "ov" and not use_genai:
+    if framework == "ov" and not use_genai and not args.get("is_kokoro_model", False):
         tts_hook = TTSHook()
         tts_hook.new_encoder(model)
         tts_hook.new_decoder(model)

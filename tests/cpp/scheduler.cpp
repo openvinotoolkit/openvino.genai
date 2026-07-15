@@ -610,7 +610,7 @@ TEST(TestScheduler, dynamic_alloc_reserves_capacity_for_new_prompt_on_top_of_run
     const size_t blocks = orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count();
     EXPECT_GE(blocks, target_blocks(small_tokens.size()) + target_blocks(large_prompt_len));
 
-    for (auto& req : {small, large}) {
+    for (auto& req : both) {
         for (auto& seq : req->get_sequences()) {
             scheduler.free_sequence(seq->get_id());
         }

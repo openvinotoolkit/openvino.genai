@@ -631,7 +631,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             } else if (sampling_params.is_tree_search() && sampling_params.tree_depth <= generated_tokens_cnt) {
                 // ensure a stable tree structure
                 request->pause_generation(true);
-            } else if (eagle_mode_enabled && m_scheduler && m_scheduler->get_config().dynamic_split_fuse &&
+            } else if (eagle_mode_enabled && m_scheduler->get_config().dynamic_split_fuse &&
                        m_scheduler->get_expected_num_scheduled_tokens(request->get_request_id()) > 0 &&
                        request->get_num_processed_tokens() < request->get_prompt_len()) {
                 // During the prompt processing phase, this is a safety measure to prevent `draft model` from
@@ -639,9 +639,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();
-            if (m_scheduler) {
-                m_scheduler->clear_expected_num_scheduled_tokens(request->get_request_id());
-            }
+            m_scheduler->clear_expected_num_scheduled_tokens(request->get_request_id());
         }
     }
     if (eagle_mode_enabled)

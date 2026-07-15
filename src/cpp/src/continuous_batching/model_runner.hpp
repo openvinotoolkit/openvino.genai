@@ -503,7 +503,7 @@ public:
             {}, ov::element::i32);
 
         ov::Tensor token_type_ids = _get_or_resize_tensor(m_cached_token_type_ids, "token_type_ids",
-            {1, total_num_tokens}, ov::element::i64);
+            {total_num_tokens, 1}, ov::element::i64);
         
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
