@@ -172,7 +172,7 @@ def write_result(
     mem_unit = MemThreadHandler.DEF_MEM_UNIT
     if memory_data_collector.mth:
         mem_unit = memory_data_collector.mth.memory_unit
-    first_latenct_unit = "ms" if model_args["use_case"].task in ["text_gen_chat"] else "ms/token"
+    first_latenct_unit = "ms/token" if model_args["use_case"].task in ["text_gen_chat"] else "ms"
     header = [
         "iteration",
         "model",

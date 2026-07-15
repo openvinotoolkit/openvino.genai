@@ -404,13 +404,15 @@ def genai_generation_config_setup(model: object, max_gen_tokens: int, args: dict
         gen_config.repetition_penalty = 1
     if hasattr(gen_config, "apply_chat_template"):
         gen_config.apply_chat_template = False
-    if args.get('draft_model', ''):
+    if args.get("draft_model", ""):
         apply_sd_generation_config(args, gen_config)
-    if args.get('max_ngram_size') and args.get('num_assistant_tokens'):
+    if args.get("max_ngram_size") and args.get("num_assistant_tokens"):
         config_info = "Prompt Lookup decoding config: "
-        gen_config.max_ngram_size = int(args['max_ngram_size'])
-        gen_config.num_assistant_tokens = int(args['num_assistant_tokens'])
-        config_info += f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
+        gen_config.max_ngram_size = int(args["max_ngram_size"])
+        gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
+        config_info += (
+            f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
+        )
         log.info(config_info)
 
     return gen_config

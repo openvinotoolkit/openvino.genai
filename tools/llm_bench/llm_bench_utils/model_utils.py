@@ -255,7 +255,7 @@ def analyze_args(args):
         model_args["speaker_embeddings"] = get_speaker_embeddings(
             args.speaker_embeddings, expected_shape=expected_shape
         )
-    model_args["vocoder_path"] = args.vocoder_path
+        model_args["vocoder_path"] = args.vocoder_path
 
     model_args["chat_iter"] = args.chat_iter
     if model_args["use_case"].task == "text_gen_chat":
@@ -267,7 +267,11 @@ def analyze_args(args):
         elif args.chat_iter is None and args.prompt_file is None:
             model_args["chat_iter"] = 1
 
-    model_args["full_chat"] = args.full_chat or model_args["devices"] == "NPU"
+    model_args["full_chat"] = args.full_chat
+    if model_args["devices"] == "NPU" and not model_args["full_chat"]:
+        log.warning("NPU requires full chat history; enabling --full_chat.")
+        model_args["full_chat"] = True
+
     return model_path, model_framework, model_args
 
 

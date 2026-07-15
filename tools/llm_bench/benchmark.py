@@ -493,7 +493,6 @@ def get_argparser():
         "--full_chat",
         action="store_true",
         help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
-        "Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
         "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
     )
 
