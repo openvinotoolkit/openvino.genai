@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <filesystem>
+#include <limits>
 #include <memory>
 
 #include "load_image.hpp"
@@ -74,7 +75,7 @@ int main(int argc, char* argv[]) try {
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();
 
-    if (device == "NPU" && !draft_model_path.empty()) {
+    if ((device == "NPU" || device == "npu") && !draft_model_path.empty()) {
         std::cout << "--draft_model is not supported when --device is NPU" << std::endl;
         return EXIT_FAILURE;
     }

@@ -58,10 +58,14 @@ def main():
     parser.add_argument("draft_model_dir", nargs="?", default="", help="Path to the draft model directory")
     args = parser.parse_args()
 
-    if args.prompt_lookup not in ("true", "false") and args.draft_model_dir == "":
+    if args.prompt_lookup.lower() in ("true", "false"):
+        args.prompt_lookup = args.prompt_lookup.lower()
+    elif args.draft_model_dir == "":
         args.draft_model_dir, args.prompt_lookup = args.prompt_lookup, "false"
+    else:
+        parser.error("prompt_lookup must be 'true' or 'false'")
 
-    if args.device == "NPU" and args.draft_model_dir:
+    if args.device.upper() == "NPU" and args.draft_model_dir:
         parser.error("draft_model_dir is not supported when device is NPU")
 
     rgbs = read_images(args.image_dir)

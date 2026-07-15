@@ -9,7 +9,9 @@ import sys
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR, convert_model
 from test_utils import run_sample, run_js_chat
 
-convert_draft_model = convert_model
+@pytest.fixture(scope="session")
+def convert_draft_model(request):
+    yield from convert_model(request)
 
 class TestVisualLanguageChat:
     @pytest.mark.vlm

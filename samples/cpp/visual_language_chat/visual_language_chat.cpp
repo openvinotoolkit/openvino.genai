@@ -21,15 +21,17 @@ int main(int argc, char* argv[]) try {
     // Note: If NPU is selected, only language model will be run on NPU
     std::string device = (argc >= 4) ? argv[3] : "CPU";
     std::string lookup = (argc >= 5) ? argv[4] : "false";
+    const bool lookup_is_true = (lookup == "true" || lookup == "True" || lookup == "TRUE");
+    const bool lookup_is_false = (lookup == "false" || lookup == "False" || lookup == "FALSE");
     std::string draft_model_dir = (argc == 6) ? argv[5] : "";
-    if (argc == 5 && lookup != "true" && lookup != "false") {
+    if (argc == 5 && !lookup_is_true && !lookup_is_false) {
         draft_model_dir = std::move(lookup);
         lookup = "false";
     }
-    if (device == "NPU" && !draft_model_dir.empty()) {
+    if ((device == "NPU" || device == "npu") && !draft_model_dir.empty()) {
         throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU");
     }
-    bool prompt_lookup = (lookup == "true");
+    bool prompt_lookup = lookup_is_true;
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
     ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};
     if (!draft_model_dir.empty()) {
