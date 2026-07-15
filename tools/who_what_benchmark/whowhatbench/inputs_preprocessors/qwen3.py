@@ -167,13 +167,10 @@ class Qwen3OmniInputsPreprocessor(VLMInputsPreprocessor):
     ):
         if processor is None:
             raise ValueError("Processor is required.")
-
-        if isinstance(audio, (list, tuple)) and len(audio) == 1:
-            audio = audio[0]
-        if isinstance(audio, tuple) and len(audio) == 2:
-            # Preserve sampling rate from (samples, rate) tuple format
-            audio_array, sampling_rate = audio
-            audio = {"array": audio_array, "sampling_rate": sampling_rate}
+        if audio is not None:
+            raise ValueError("Audio input is not supported")
+        if self.chat_mode and video is not None:
+            raise ValueError("Video input is not supported in chat mode")
 
         self.update_images(image)
         media = []
@@ -187,9 +184,6 @@ class Qwen3OmniInputsPreprocessor(VLMInputsPreprocessor):
                 video = [video]
             media += [{"type": "video", "video": v} for v in video]
             self.videos = video
-
-        if audio is not None:
-            media += [{"type": "audio", "audio": audio}]
 
         new_message = {"role": "user", "content": media + [{"type": "text", "text": text}]}
         if self.chat_mode:
@@ -208,7 +202,6 @@ class Qwen3OmniInputsPreprocessor(VLMInputsPreprocessor):
             images=self.images,
             text=text_prompt,
             videos=self.videos,
-            audio=audio,
             return_tensors="pt",
         )
 
