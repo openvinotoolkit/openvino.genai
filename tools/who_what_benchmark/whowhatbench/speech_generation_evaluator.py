@@ -747,6 +747,9 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         generation_fn = gen_speech_fn or default_gen_speech_fn
 
+        if hasattr(model, "_reject_unsupported_inputs"):
+            model._reject_unsupported_inputs(self.speaker_embedding_file_path, self.speech_language)
+
         self._ensure_default_speaker_embedding_if_needed(model)
 
         if self.test_data:
