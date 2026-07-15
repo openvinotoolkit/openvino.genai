@@ -301,6 +301,7 @@ public:
 private:
     class VLMPipelineBase;
     class VLMPipelineImpl;
+    class VLMGGUFPipelineImpl;
     class VLMContinuousBatchingAdapter;
     std::unique_ptr<VLMPipelineBase> m_pimpl;
 };

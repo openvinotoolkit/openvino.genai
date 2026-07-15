@@ -14,6 +14,8 @@
 
 #include "gguf_utils/building_blocks.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
+
+#include "gguf_utils/gguf_modeling_qwen35.hpp"
 #include "utils.hpp"
 
 using namespace ov;
@@ -157,6 +159,13 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     ov::genai::utils::print_gguf_debug_info(ss.str());
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2") || !model_arch.compare("qwen3")) {
         model = create_language_model(config, consts, qtypes);
+        if (enable_save_ov_model){
+            std::filesystem::path gguf_model_path(model_path);
+            std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
+            ov::genai::utils::save_openvino_model(model, save_path.string(), true);
+        }
+    } else if (!model_arch.compare("qwen35")) {
+        model = create_qwen35_model(config, consts, qtypes);
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);
             std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";

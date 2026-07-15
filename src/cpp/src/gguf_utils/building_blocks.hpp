@@ -57,3 +57,40 @@ ov::Output<ov::Node> init_rope(
     int64_t max_position_embeddings = 2048,
     float base = 10000.0f,
     float scaling_factor = 1.0f);
+
+ov::Output<ov::Node> make_fc(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& consts,
+    gguf_tensor_type qtype,
+    bool reorder = false,
+    int head_size = -1);
+
+ov::Output<ov::Node> make_rms_norm_qwen3(
+    const std::string& key,
+    const ov::Output<ov::Node>& input,
+    const std::unordered_map<std::string, ov::Tensor>& weights,
+    float rms_norm_eps);
+
+ov::Output<ov::Node> causal_mask(
+    const ov::Output<ov::Node>& attention_mask,
+    const ov::Output<ov::Node>& keys,
+    const ov::Output<ov::Node>& hidden_dim,
+    const ov::Output<ov::Node>& input_shape);
+
+std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>> rope_emb(
+    const ov::Output<ov::Node>& x,
+    const ov::Output<ov::Node>& rope_const,
+    const ov::Output<ov::Node>& position_ids,
+    const ov::Output<ov::Node>& batch_dim);
+
+std::tuple<ov::Output<ov::Node>, ov::Output<ov::Node>, std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>>
+apply_rotary_pos_emb(
+    const ov::Output<ov::Node>& q,
+    const ov::Output<ov::Node>& k,
+    const ov::Output<ov::Node>& cos,
+    const ov::Output<ov::Node>& sin,
+    int64_t head_size,
+    const ov::Output<ov::Node>& hidden_dim,
+    const std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>& cos_sin_cached,
+    int64_t unsqueeze_dim = 1);

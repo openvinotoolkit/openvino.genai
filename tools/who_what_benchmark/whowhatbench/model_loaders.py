@@ -43,6 +43,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+VISUAL_MODEL_TYPES = {"visual-text", "visual-video-text", "visual-text-chat"}
+
+
+def is_visual_model_type(model_type):
+    return model_type in VISUAL_MODEL_TYPES
+
+
+def resolve_visual_model_config_dir(model_id):
+    model_path = Path(model_id)
+    if model_path.suffix == ".gguf" and model_path.is_file():
+        return model_path.parent
+    return model_path
+
+
+def resolve_visual_preprocessor_model_id(model_type, model_id):
+    if model_id is None or not is_visual_model_type(model_type):
+        return model_id
+    return str(resolve_visual_model_config_dir(model_id))
+
+
+def should_use_genai_visual_backend(model_id, use_hf=False, use_genai=False):
+    if use_hf:
+        return False
+    if use_genai:
+        return True
+
+    model_path = Path(model_id)
+    return model_path.exists()
+
+
+def should_use_genai_visual_backend_for_type(model_type, model_id, use_hf=False, use_genai=False):
+    if model_id is None or not is_visual_model_type(model_type):
+        return False
+    return should_use_genai_visual_backend(model_id, use_hf=use_hf, use_genai=use_genai)
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -404,9 +440,10 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         logger.info("Using OpenVINO GenAI VLMPipeline API")
         pipeline = openvino_genai.VLMPipeline(model_dir, **pipeline_kwargs)
 
+    config_dir = resolve_visual_model_config_dir(model_dir)
     return GenAIModelWrapper(
         pipeline,
-        model_dir,
+        config_dir,
         kwargs.get("model_type", "visual-text")
     )
 
@@ -509,7 +546,7 @@ def load_visual_text_model(
             tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
             img_context_token_id = tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
             model.img_context_token_id = img_context_token_id
-    elif use_genai:
+    elif should_use_genai_visual_backend(model_id, use_hf=use_hf, use_genai=use_genai):
         logger.info("Using OpenVINO GenAI API")
         model = load_visual_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     else:
