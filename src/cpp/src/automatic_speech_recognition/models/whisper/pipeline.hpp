@@ -23,7 +23,7 @@ public:
     }
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
-                               std::optional<ASRGenerationConfig> generation_config,
+                               const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer) override {
         const std::vector<float>& raw_speech = std::visit(
             ov::genai::utils::overloaded{
@@ -41,7 +41,7 @@ public:
         StreamerVariant streamer_variant = streamer ? StreamerVariant{streamer} : StreamerVariant{std::monostate{}};
 
         WhisperDecodedResults whisper_result =
-            m_whisper_pipeline.generate(raw_speech, whisper_config, streamer_variant);
+            m_whisper_pipeline.generate(raw_speech, std::move(whisper_config), streamer_variant);
 
         return to_asr_results(std::move(whisper_result));
     }

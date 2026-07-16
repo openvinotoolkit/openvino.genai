@@ -125,7 +125,7 @@ std::vector<EncodedGenerationResult> generate_common(
 
     for (size_t rid = 0; rid < all_requests.size(); ++rid) {
         const auto& request = all_requests[rid];
-        auto cfg = request->get_sampling_parameters();
+        const auto& cfg = request->get_sampling_parameters();
         const auto& seqs = request->get_finished_sequences();
         size_t num_out = std::min(cfg.num_return_sequences, seqs.size());
 

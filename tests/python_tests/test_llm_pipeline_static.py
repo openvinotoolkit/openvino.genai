@@ -332,6 +332,7 @@ def test_terminate_by_max_number_of_tokens(
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
+@pytest.mark.xfail(reason="Error: KV-Cache is full: num_stored_tokens=319 capacity=319. Ticket 190518")
 def test_terminate_by_out_of_memory(
     llm_model: OVConvertedModelSchema,
     npu_config: dict,
