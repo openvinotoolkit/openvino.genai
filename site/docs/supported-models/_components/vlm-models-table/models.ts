@@ -212,6 +212,18 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'GlmForCausalLM',
+    models: [
+      {
+        name: 'GLM-Edge-V',
+        links: [
+          'https://huggingface.co/zai-org/glm-edge-v-2b',
+          'https://huggingface.co/zai-org/glm-edge-v-5b',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'Gemma3ForConditionalGeneration',
     models: [
       {

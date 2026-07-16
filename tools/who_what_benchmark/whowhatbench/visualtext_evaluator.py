@@ -124,7 +124,18 @@ class VisualTextEvaluator(TextEvaluator):
             pruning_ratio,
             relevance_weight,
         ):
-            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
+            use_wwb_preprocessor = model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and (
+                "transformers" in str(type(model))
+                # GLM-Edge-V (config.model_type == "glm" with a vision_config)
+                # does not ship a combined AutoProcessor, so Optimum's
+                # preprocess_inputs (which expects an image processor in
+                # `processor`) fails when WWB passes the text tokenizer. The
+                # WWB preprocessor resolves the image processor itself and works
+                # for both the HF Transformers and Optimum/OpenVINO GenAI
+                # backends.
+                or model.config.model_type == "glm"
+            )
+            if use_wwb_preprocessor:
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
                 preprocess_inputs = inputs_processor.preprocess_inputs
             else:

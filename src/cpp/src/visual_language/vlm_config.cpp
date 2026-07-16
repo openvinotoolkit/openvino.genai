@@ -34,6 +34,10 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
+        // GLM-Edge-V reports model_type "glm" (shared with the text-only GLM
+        // decoder) but carries a nested SigLIP vision_config. It only reaches
+        // the VLM config path when used as a VLM, so mapping "glm" here is safe.
+        {"glm", VLMModelType::GLM_EDGE_V},
     };
 
     auto it = model_types_map.find(value);
@@ -122,6 +126,11 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
                 speaker_ids[key] = val.get<int64_t>();
             }
         }
+    }
+    // GLM-Edge-V: the image placeholder token is <|begin_of_image|>
+    // (config.json boi_token_id). Reuse image_pad_token for the merge step.
+    if (model_type == VLMModelType::GLM_EDGE_V) {
+        image_pad_token = "<|begin_of_image|>";
     }
 }
 
