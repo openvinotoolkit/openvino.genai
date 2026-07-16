@@ -109,7 +109,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         tm_list.clear()
         log.info(
-            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
+            f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
         )
     metrics_print.print_average(iter_data_list, prompt_idx_list, 1, False)
     return iter_data_list, pretrain_time, iter_timestamp
