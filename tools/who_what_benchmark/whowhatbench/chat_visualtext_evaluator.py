@@ -39,6 +39,8 @@ full_chat_types = [
     "qwen3_5_moe",
     "llava_next",
     "llava-qwen2",
+    "qwen3_omni",
+    "qwen3_omni_moe",
 ]
 
 
