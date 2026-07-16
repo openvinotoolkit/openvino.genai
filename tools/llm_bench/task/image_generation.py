@@ -242,7 +242,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
             iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(
-            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
+            f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
         )
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
