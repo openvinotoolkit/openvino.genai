@@ -2,13 +2,109 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <fstream>
+
+#include <nlohmann/json.hpp>
+
 #include "llm/pipeline_stateful.hpp"
 
+#include "json_utils.hpp"
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
 
 #include "utils.hpp"
+
+namespace {
+
+// Mitigates a LongRoPE short/long-factor KV-cache-consistency issue: once the cumulative
+// sequence length reaches original_max_position_embeddings, the model's RoPE branch
+// selection switches from the "short" to the "long" factor table, but previously cached KV
+// entries remain encoded with the "short" factor, corrupting attention. NPU only (see the
+// m_is_npu checks at the two call sites below).
+//
+// Detects the threshold from the model's config.json ("rope_parameters", rope_type/type ==
+// "longrope", e.g. Phi-4-mini). Returns std::nullopt for models that don't use LongRoPE, or
+// if config.json isn't present/parseable.
+std::optional<size_t> detect_longrope_threshold(const std::filesystem::path& models_path) {
+    std::ifstream config_file(models_path / "config.json");
+    if (!config_file.is_open())
+        return std::nullopt;
+
+    nlohmann::json data = nlohmann::json::parse(config_file, nullptr, /* allow_exceptions = */ false);
+    if (data.is_discarded())
+        return std::nullopt;
+
+    std::string rope_type;
+    ov::genai::utils::read_json_param(data, "rope_parameters.rope_type", rope_type);
+    if (rope_type.empty())
+        ov::genai::utils::read_json_param(data, "rope_parameters.type", rope_type);
+    if (rope_type != "longrope")
+        return std::nullopt;
+
+    size_t threshold = 0;
+    ov::genai::utils::read_json_param(data, "rope_parameters.original_max_position_embeddings", threshold);
+    if (threshold == 0)
+        ov::genai::utils::read_json_param(data, "original_max_position_embeddings", threshold);
+    return threshold > 0 ? std::optional<size_t>(threshold) : std::nullopt;
+}
+
+// Wraps the caller-supplied streamer (if any) and, in addition to forwarding every token to
+// it, requests ov::genai::StreamingStatus::STOP once the newly generated token's 0-based
+// position reaches `threshold`. Lets the caller detect a mid-generation LongRoPE crossing via
+// threshold_reached() and re-run generation from a fully re-prefilled, consistent KV-cache.
+class LongRopeThresholdStreamer : public ov::genai::StreamerBase {
+public:
+    LongRopeThresholdStreamer(std::shared_ptr<ov::genai::StreamerBase> base, size_t prompt_length, size_t threshold)
+        : m_base(std::move(base)), m_total_len(prompt_length), m_threshold(threshold) {}
+
+    ov::genai::StreamingStatus write(int64_t token) override {
+        ov::genai::StreamingStatus status = m_base ? m_base->write(token) : ov::genai::StreamingStatus::RUNNING;
+        ++m_total_len;
+        m_last_write_stopped_by_us = false;
+        // total_len == threshold + 1  <=>  the just-appended token's 0-based position
+        // (total_len - 1) equals `threshold`.
+        m_threshold_reached = m_total_len == m_threshold + 1;
+        if (status == ov::genai::StreamingStatus::RUNNING && m_threshold_reached) {
+            m_last_write_stopped_by_us = true;
+            return ov::genai::StreamingStatus::STOP;
+        }
+        return status;
+    }
+
+    // get_lm_encoded_results() calls end() once per call. If OUR own threshold check is what
+    // just stopped generation, a continuation phase follows, so forwarding end() here would
+    // close the wrapped streamer prematurely - suppress it; the call site flushes it via
+    // flush_end() once it knows no continuation will run after all. Otherwise (generation
+    // ended for any other reason - EOS, cancel, etc. - with no continuation to follow),
+    // forward immediately as usual.
+    void end() override {
+        if (!m_last_write_stopped_by_us)
+            flush_end();
+    }
+
+    void flush_end() {
+        if (m_base)
+            m_base->end();
+    }
+
+    bool threshold_reached() const {
+        return m_threshold_reached;
+    }
+
+    bool last_write_stopped_by_us() const {
+        return m_last_write_stopped_by_us;
+    }
+
+private:
+    std::shared_ptr<ov::genai::StreamerBase> m_base;
+    size_t m_total_len;
+    size_t m_threshold;
+    bool m_threshold_reached = false;
+    bool m_last_write_stopped_by_us = false;
+};
+
+}  // namespace
 
 namespace ov::genai {
 
@@ -25,7 +121,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         m_is_npu = true;
         m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
-        m_max_kv_cache_size = m_max_prompt_len + min_response_len;
+        const auto max_generation_token_len = std::max(1u, compiled_model.get_property("NPUW_LLM_MAX_GENERATION_TOKEN_LEN").as<uint32_t>());
+        m_max_kv_cache_size = m_max_prompt_len + min_response_len - max_generation_token_len;
     }
 }
 
@@ -40,7 +137,33 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         device,
         properties,
         utils::from_config_json_if_exists(models_path)
-    } {}
+    } {
+    set_longrope_threshold(models_path);
+}
+
+void StatefulLLMPipeline::set_longrope_threshold(const std::filesystem::path& models_path) {
+    if (models_path.empty()) {
+        m_longrope_threshold = std::nullopt;
+        m_force_longrope_reprefill = false;
+        m_longrope_reprefill_pending = false;
+        return;
+    }
+    m_longrope_threshold = detect_longrope_threshold(models_path);
+}
+
+bool StatefulLLMPipeline::should_force_longrope_reprefill(size_t new_total_len) {
+    if (!m_is_npu || !m_longrope_threshold.has_value())
+        return false;
+    // A previous call's mid-generation crossing landed on the very last allowed token, so no
+    // continuation re-prefill ran then - force one now, unconditionally, regardless of the
+    // transition check below (the cache is known-inconsistent until this fires once).
+    if (m_longrope_reprefill_pending) {
+        m_longrope_reprefill_pending = false;
+        return true;
+    }
+    const size_t prev_total_len = m_cache_state.get_state().size();
+    return prev_total_len < *m_longrope_threshold && new_total_len >= *m_longrope_threshold;
+}
 
 StatefulLLMPipeline::StatefulLLMPipeline(
     const std::shared_ptr<ov::Model>& model,
@@ -175,7 +298,8 @@ DecodedResults StatefulLLMPipeline::generate(
             tokenization_start_time = std::chrono::steady_clock::now();
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
-            if (m_use_full_chat_history) {
+            m_force_longrope_reprefill = should_force_longrope_reprefill(new_chat_tokens.input_ids.get_size());
+            if (m_use_full_chat_history || m_force_longrope_reprefill) {
                 encoded_input = new_chat_tokens;
             } else {
                 ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
@@ -211,7 +335,8 @@ DecodedResults StatefulLLMPipeline::generate(
             // Do not add special tokens in chat scenario to be aligned with HF.
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
-            if (m_use_full_chat_history) {
+            m_force_longrope_reprefill = should_force_longrope_reprefill(new_chat_tokens.input_ids.get_size());
+            if (m_use_full_chat_history || m_force_longrope_reprefill) {
                 encoded_input = new_chat_tokens;
             } else {
                 ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
@@ -265,7 +390,7 @@ DecodedResults StatefulLLMPipeline::generate(
     StreamerVariant streamer
 ) {
     is_chat_conversation = true;
-    
+
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY;
 
@@ -274,7 +399,7 @@ DecodedResults StatefulLLMPipeline::generate(
                         "Chat doesn't support switching between input types. Please, continue using ChatHistory or restart the chat.");
 
     auto start_time = std::chrono::steady_clock::now();
-    
+
     GenerationConfig config = resolve_generation_config(generation_config);
 
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
@@ -295,6 +420,9 @@ DecodedResults StatefulLLMPipeline::generate(
         reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_cache_state.reset_state();
+        // A brand new/unrelated conversation - any pending LongRoPE reprefill obligation from
+        // whatever conversation was previously in the cache no longer applies.
+        m_longrope_reprefill_pending = false;
     }
 
     m_history = history;
@@ -306,7 +434,8 @@ DecodedResults StatefulLLMPipeline::generate(
     auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
     TokenizedInputs encoded_input;
-    if (m_use_full_chat_history) {
+    m_force_longrope_reprefill = should_force_longrope_reprefill(new_chat_tokens.input_ids.get_size());
+    if (m_use_full_chat_history || m_force_longrope_reprefill) {
         encoded_input = new_chat_tokens;
     } else {
         ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
@@ -334,10 +463,16 @@ EncodedResults StatefulLLMPipeline::generate(
         OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.last()["role"] == "user",
                         "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
 
+    // Set by the StringInputs/ChatHistory overloads before delegating here; consumed once so
+    // it doesn't leak into unrelated future calls.
+    bool force_longrope_reprefill = m_force_longrope_reprefill;
+    m_force_longrope_reprefill = false;
+
     if (!is_chat_conversation) {
         reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
         m_cache_state.reset_state();
+        m_longrope_reprefill_pending = false;
     }
 
     auto start_time = std::chrono::steady_clock::now();
@@ -373,12 +508,16 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) 
+    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
+        // Called directly with EncodedInputs (not via StringInputs/ChatHistory), so compute
+        // the crossing check here instead of relying on the caller to have set it.
+        force_longrope_reprefill = force_longrope_reprefill || should_force_longrope_reprefill(m_tokenized_chat_history.size());
+    }
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);
 
-    if (is_chat_conversation && m_use_full_chat_history)
+    if (is_chat_conversation && (m_use_full_chat_history || force_longrope_reprefill))
         m_cache_state.reset_state();
 
     // Tail of previous output in chat mode is missing in KV cache.
@@ -419,7 +558,7 @@ EncodedResults StatefulLLMPipeline::generate(
                     "but you have '" + std::to_string(num_inputs) + "' inputs");
 
     if (is_chat_conversation) {
-        if (m_use_full_chat_history)
+        if (m_use_full_chat_history || force_longrope_reprefill)
             reset_state();
         else
             ov::genai::utils::trim_kv_cache(m_model_runner, m_cache_state, m_adapter_controller);
@@ -427,7 +566,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     size_t cache_len = 0;
     ov::Tensor concatenated_attention_mask;
-    if (is_chat_conversation && !m_cache_state.get_state().empty() && !m_use_full_chat_history) {
+    if (is_chat_conversation && !m_cache_state.get_state().empty() && !(m_use_full_chat_history || force_longrope_reprefill)) {
         OPENVINO_ASSERT(batch_size == 1, "continuation of generation is possible only for batch 1");
         // If history is saved in KV cache, concatenate new attention_mask with the already existing.
         // Between subsequent runs attention_mask should not be modified.
@@ -488,8 +627,92 @@ EncodedResults StatefulLLMPipeline::generate(
         m_sampler.set_seed(config.rng_seed);
     }
 
-    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
+    std::shared_ptr<LongRopeThresholdStreamer> threshold_streamer;
+    std::shared_ptr<StreamerBase> effective_streamer_ptr = streamer_ptr;
+    if (m_is_npu && m_longrope_threshold.has_value()) {
+        threshold_streamer = std::make_shared<LongRopeThresholdStreamer>(
+            streamer_ptr, concatenated_attention_mask.get_shape().at(1), *m_longrope_threshold);
+        effective_streamer_ptr = threshold_streamer;
+    }
+
+    ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, effective_streamer_ptr, m_sampler,
                                                                                 requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+
+    if (threshold_streamer && threshold_streamer->threshold_reached()) {
+        // Generation was stopped right after the token at the LongRoPE threshold position
+        // (that token was already sampled - keep it). Reset the KV cache and re-run a full
+        // prefill over the whole history (original prompt + everything generated so far) so
+        // all keys are consistently re-encoded under the "long" RoPE factor, then continue
+        // generating the remaining token budget.
+        TokenIds generated_so_far = finish_info.results.tokens.at(0);
+        TokenIds full_ids = requests.at(0)->get_prompt_ids();
+        full_ids.insert(full_ids.end(), generated_so_far.begin(), generated_so_far.end());
+
+        size_t total_max_new_tokens = requests.at(0)->get_max_new_tokens();
+        size_t remaining_new_tokens = total_max_new_tokens > generated_so_far.size() ?
+            total_max_new_tokens - generated_so_far.size() : 0;
+
+        // If the threshold is reached but generation was not stopped by us,
+        // postpone the reprefill until the next call to generate.
+        m_longrope_reprefill_pending = remaining_new_tokens == 0 || !threshold_streamer->last_write_stopped_by_us();
+        if (remaining_new_tokens == 0 && threshold_streamer->last_write_stopped_by_us()) {
+            // notify base streamer that generation is finished, so it can flush the last token
+            threshold_streamer->flush_end();
+
+            // Generation was stopped right after the token at the LongRoPE threshold position
+            // need set correct finish status
+            finish_info.streaming_finish_status = ov::genai::GenerationStatus::FINISHED;
+        } else if (threshold_streamer->last_write_stopped_by_us()){
+            PerfMetrics first_phase_metrics = finish_info.results.perf_metrics;
+
+            reset_state();
+            m_cache_state.reset_state();
+
+            ov::Tensor continuation_input_ids(ov::element::i64, {1, full_ids.size()}, full_ids.data());
+            ov::Tensor continuation_attention_mask = utils::init_attention_mask(continuation_input_ids);
+            std::optional<ov::Tensor> continuation_position_ids = std::nullopt;
+            if (position_ids_available) {
+                continuation_position_ids = ov::Tensor{ov::element::i64, continuation_input_ids.get_shape()};
+                utils::initialize_position_ids(*continuation_position_ids, continuation_attention_mask);
+            }
+
+            GenerationConfig continuation_config = config;
+            continuation_config.max_new_tokens = remaining_new_tokens;
+            std::vector<SequenceGroup::Ptr> continuation_requests{
+                std::make_shared<SequenceGroup>(0, full_ids, continuation_config)
+            };
+
+            finish_info = get_lm_encoded_results(m_model_runner, continuation_input_ids, continuation_attention_mask, effective_streamer_ptr, m_sampler,
+                                                  continuation_requests, continuation_position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+
+            // PerfMetrics::operator+ does not merge m_new_token_times, so capture the
+            // continuation's entries before they're overwritten by the merge below and
+            // re-append them afterwards.
+            auto continuation_new_token_times = finish_info.results.perf_metrics.raw_metrics.m_new_token_times;
+
+            // Stitch tokens/perf-metrics generated before the reset with the post-reset
+            // continuation.
+            finish_info.results.tokens[0].insert(finish_info.results.tokens[0].begin(), generated_so_far.begin(), generated_so_far.end());
+            finish_info.results.perf_metrics = first_phase_metrics + finish_info.results.perf_metrics;
+
+            auto& merged_new_token_times = finish_info.results.perf_metrics.raw_metrics.m_new_token_times;
+            merged_new_token_times.insert(merged_new_token_times.end(),
+                continuation_new_token_times.begin(), continuation_new_token_times.end());
+
+            // m_inference_durations is a single running total per get_lm_encoded_results()
+            // call, so operator+ above left it holding both phases' totals as two separate
+            // entries, which calc_mean_and_std() would average instead of sum. Collapse it
+            // back into one summed entry.
+            auto& merged_inference_durations = finish_info.results.perf_metrics.raw_metrics.m_inference_durations;
+            if (merged_inference_durations.size() > 1) {
+                MicroSeconds total_inference_duration{0.0f};
+                for (const auto& duration : merged_inference_durations)
+                    total_inference_duration += duration;
+                merged_inference_durations = {total_inference_duration};
+            }
+        }
+    }
+
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 
@@ -551,6 +774,7 @@ void StatefulLLMPipeline::finish_chat() {
         m_history.clear();
         m_tokenized_chat_history.clear();
         m_cache_state.reset_state();
+        m_longrope_reprefill_pending = false;
     }
 }
 
