@@ -558,8 +558,13 @@ def load_visual_text_model(
 
         model_cls = OVModelForVisualCausalLM
         if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
-            from optimum.intel.openvino import OVModelForMultimodalLM
-
+            try:
+                from optimum.intel.openvino import OVModelForMultimodalLM
+            except ImportError as exc:
+                raise ValueError(
+                    "This Optimum version does not provide OVModelForMultimodalLM required for Qwen3-Omni models. "
+                    "Please upgrade optimum-intel to a version that supports Qwen3-Omni export/loading."
+                ) from exc
             model_cls = OVModelForMultimodalLM
         try:
             model = model_cls.from_pretrained(model_id, device=device, ov_config=ov_config)
