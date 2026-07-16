@@ -1566,6 +1566,14 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 } else {
                     const auto& sampling_params = sequence_group->get_sampling_parameters();
                     if (is_stop_token_id_hit(sampled_token.m_index, sampling_params.stop_token_ids) && !sampling_params.ignore_eos) {
+                        // Accepted stop token, discard draft candidates speculatively appended after it
+                        const size_t trailing_draft_tokens =
+                            generated_seq_token_offset > 0 ? generated_seq_token_offset - 1 : 0;
+                        if (trailing_draft_tokens > 0) {
+                            running_sequence->remove_last_tokens(trailing_draft_tokens);
+                            assisting_pipeline_info.max_removed_tokens_per_request =
+                                std::max(assisting_pipeline_info.max_removed_tokens_per_request, trailing_draft_tokens);
+                        }
                         running_sequence->set_status(SequenceStatus::FINISHED);
                         running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                         sg_sampling_info.sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
