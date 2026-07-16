@@ -369,8 +369,7 @@ def run_text_reranker_benchmark(
 
     # Build the prompt schedule via BenchPrompter, which handles both
     # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop, eliminating the previous
-    # duplicated if/else branches.
+    # in a single unified iter_schedule() loop.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     text_list = [p["prompt"] for p in prompter.active_items]
