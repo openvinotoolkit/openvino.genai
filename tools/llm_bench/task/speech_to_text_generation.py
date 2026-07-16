@@ -205,7 +205,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
             iter_data_list[-1]["prompt_repr"] = repr(prompt)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(
-            f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
+            f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
         )
     metrics_print.print_average(iter_data_list, speech_idx_list, 1, True)
     return iter_data_list, pretrain_time, iter_timestamp
