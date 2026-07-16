@@ -183,7 +183,6 @@ class Qwen3OmniInputsPreprocessor(VLMInputsPreprocessor):
             if not isinstance(video, list):
                 video = [video]
             media += [{"type": "video", "video": v} for v in video]
-            self.videos = video
 
         new_message = {"role": "user", "content": media + [{"type": "text", "text": text}]}
         if self.chat_mode:
