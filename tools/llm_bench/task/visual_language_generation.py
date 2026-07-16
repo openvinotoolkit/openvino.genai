@@ -293,8 +293,7 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     md5_list = {num : {} for num in range(num_iters + 1)}
     # Build the prompt schedule via BenchPrompter, which handles both
     # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop, eliminating the previous
-    # duplicated if/else branches.
+    # in a single unified iter_schedule() loop.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     image_text_list = prompter.active_items
