@@ -50,6 +50,14 @@ struct EncodedGenerationResult {
     // To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline
     // Cast to SDPerModelsPerfMetrics for SpeculativeDecoding
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
+
+    // Accumulated intermediate hidden states per sequence.
+    // Outer vector: per return sequence. Inner vector: one tensor per generation step.
+    std::vector<std::vector<ov::Tensor>> m_intermediate_hidden_states;
+
+    // Full prompt + generated token IDs (needed for talker input construction).
+    // Outer vector: per return sequence, aligned with m_intermediate_hidden_states.
+    std::vector<std::vector<int64_t>> m_full_token_ids;
 };
 
 struct GenerationResult {
@@ -82,6 +90,8 @@ struct GenerationOutput {
     std::vector<float> generated_log_probs;
     float score = 0;
     GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
+    // Per-token hidden states collected for Qwen3-Omni speech generation. Preview API: subject to change.
+    std::vector<ov::Tensor> intermediate_hidden_states;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;

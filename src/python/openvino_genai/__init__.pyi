@@ -44,6 +44,10 @@ from openvino_genai.py_openvino_genai import LLMPipeline
 from openvino_genai.py_openvino_genai import LTXVideoTransformer3DModel
 from openvino_genai.py_openvino_genai import Llama3JsonToolParser
 from openvino_genai.py_openvino_genai import Llama3PythonicToolParser
+from openvino_genai.py_openvino_genai import OmniDecodedResults
+from openvino_genai.py_openvino_genai import OmniPipeline
+from openvino_genai.py_openvino_genai import OmniSpeechStreamerBase
+from openvino_genai.py_openvino_genai import OmniTalkerSpeechConfig
 from openvino_genai.py_openvino_genai import Parser
 from openvino_genai.py_openvino_genai import PerfMetrics
 from openvino_genai.py_openvino_genai import Phi4ReasoningIncrementalParser
@@ -67,6 +71,10 @@ from openvino_genai.py_openvino_genai import StructuralTagItem
 from openvino_genai.py_openvino_genai import StructuralTagsConfig
 from openvino_genai.py_openvino_genai import StructuredOutputConfig
 from openvino_genai.py_openvino_genai import T5EncoderModel
+from openvino_genai.py_openvino_genai import Talker
+from openvino_genai.py_openvino_genai import TalkerBase
+from openvino_genai.py_openvino_genai import TalkerPerfMetrics
+from openvino_genai.py_openvino_genai import TalkerResults
 from openvino_genai.py_openvino_genai import TaylorSeerCacheConfig
 from openvino_genai.py_openvino_genai import Text2ImagePipeline
 from openvino_genai.py_openvino_genai import Text2SpeechDecodedResults
@@ -81,7 +89,9 @@ from openvino_genai.py_openvino_genai import Tokenizer
 from openvino_genai.py_openvino_genai import TorchGenerator
 from openvino_genai.py_openvino_genai import UNet2DConditionModel
 from openvino_genai.py_openvino_genai import VLLMParserWrapper
+from openvino_genai.py_openvino_genai import VLMDecodedResults
 from openvino_genai.py_openvino_genai import VLMPipeline
+from openvino_genai.py_openvino_genai import VLMPipelineBase
 from openvino_genai.py_openvino_genai import VideoGenerationConfig
 from openvino_genai.py_openvino_genai import VideoGenerationPerfMetrics
 from openvino_genai.py_openvino_genai import VideoGenerationResult
@@ -95,5 +105,5 @@ from openvino_genai.py_openvino_genai import draft_model
 from openvino_genai.py_openvino_genai import get_version
 import os as os
 from . import py_openvino_genai
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedResults', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'Qwen3TextEncoder', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'T5EncoderModel', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMPipeline', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version', 'openvino', 'os', 'py_openvino_genai']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedResults', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'Qwen3TextEncoder', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPipeline', 'VLMPipelineBase', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version', 'openvino', 'os', 'py_openvino_genai']
 __version__: str
