@@ -96,23 +96,22 @@ NormalizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& promp
     
     auto [unified_prompt, images_sequence] = normalize(prompt, start_of_image, start_of_image, base_id, images.size());
 
-    std::vector<ov::Tensor> image_embeds;
-    image_embeds.reserve(images_sequence.size());
-    size_t searched_pos = 0;
+    size_t search_offset = 0;
     for (size_t new_image_id : images_sequence) {
-        image_embeds.push_back(images.at(new_image_id - base_id).resized_source);
+        const size_t num_image_tokens = images.at(new_image_id - base_id).resized_source.get_shape().at(1);
 
-        size_t num_image_tokens = image_embeds.back().get_shape().at(1);
-
-        std::string expanded_tag = "\n\n" + start_of_image;
+        std::string expanded_tag;
+        expanded_tag.reserve(2 + start_of_image.size() + num_image_tokens * image_token.size() + end_of_image.size() + 2);
+        expanded_tag = "\n\n" + start_of_image;
         for (size_t i = 0; i < num_image_tokens; i++) {
             expanded_tag += image_token;
         }
         expanded_tag += end_of_image + "\n\n";
 
-        // fixme: there seems to be an issue with how image_token is replaced. unified_prompt.find needs search_offset.
-        // refer to gemma4 implementation.
-        unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), expanded_tag);
+        size_t pos = unified_prompt.find(start_of_image, search_offset);
+        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image token in prompt during normalization");
+        unified_prompt.replace(pos, start_of_image.length(), expanded_tag);
+        search_offset = pos + expanded_tag.size();
     }
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }

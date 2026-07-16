@@ -1068,9 +1068,6 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
-    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
-
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -2252,8 +2249,6 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
-    # gemma3 PA cases
-    "*tiny-random-gemma3/PA/*": "CVS-167316",
     # gemma3n cases
     "*tiny-random-gemma3n/PA/CPP/image*": "CVS-190429",
     "*tiny-random-gemma3n/SDPA/CPP/image*": "CVS-190429",

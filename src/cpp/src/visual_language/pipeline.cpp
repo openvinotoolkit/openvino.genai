@@ -880,9 +880,10 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // TODO: remove it when GEMMA3 ticket-171180 is fixed
-    return vlm_config.model_type == VLMModelType::GEMMA3;
+    // Force models to use SDPA backend by default until PA is supported. Example:
+    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    // vlm_config.model_type == VLMModelType::GEMMA3;
+    return false;
 }
 
 VLMPipeline::VLMPipeline(
