@@ -57,6 +57,19 @@ py::object call_common_generate(
     const ov::genai::GenerationConfig& default_config = config.value_or(pipe.get_generation_config());
     auto updated_config = pyutils::update_config_from_kwargs(default_config, kwargs);
 
+    // Auto-detect thinking token IDs when enable_thinking=false
+    if (!updated_config.enable_thinking && updated_config.thinking_start_token_id < 0) {
+        try {
+            auto tok = pipe.get_tokenizer();
+            auto start = tok.encode("<think>");
+            auto end = tok.encode("</think>");
+            if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
+                updated_config.thinking_start_token_id = *start.input_ids.data<int64_t>();
+                updated_config.thinking_end_token_id = *end.input_ids.data<int64_t>();
+            }
+        } catch (...) { /* skip auto-detect on failure */ }
+    }
+
     py::object results;
     StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
 
