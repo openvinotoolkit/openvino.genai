@@ -24,14 +24,18 @@ int main(int argc, char* argv[]) try {
     const bool lookup_is_true = (lookup == "true" || lookup == "True" || lookup == "TRUE");
     const bool lookup_is_false = (lookup == "false" || lookup == "False" || lookup == "FALSE");
     std::string draft_model_dir = (argc == 6) ? argv[5] : "";
-    if (argc == 5 && !lookup_is_true && !lookup_is_false) {
-        draft_model_dir = std::move(lookup);
-        lookup = "false";
+    if (!lookup_is_true && !lookup_is_false) {
+        if (argc == 5) {
+            draft_model_dir = std::move(lookup);
+            lookup = "false";
+        } else {
+            throw std::runtime_error("PROMPT_LOOKUP must be 'true' or 'false'");
+        }
     }
     if (device == "NPU" && !draft_model_dir.empty()) {
         throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU");
     }
-    bool prompt_lookup = lookup_is_true;
+    const bool prompt_lookup = lookup_is_true;
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
     ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};
     if (!draft_model_dir.empty()) {

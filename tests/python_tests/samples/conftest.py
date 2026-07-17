@@ -388,6 +388,7 @@ def _prepare_model_for_tests(model_id: str):
     optimum_cli_convert(model, str(model_path))
     return str(model_path), model_cache
 
+
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
