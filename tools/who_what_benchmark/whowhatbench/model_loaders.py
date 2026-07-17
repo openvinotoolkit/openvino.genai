@@ -95,7 +95,11 @@ def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
     main_device = device.upper()
     draft_device = (kwargs.get("draft_device") or device).upper()
 
-    if (main_device == "NPU" or draft_device == "NPU") and model_type in ("visual-text", "visual-video-text", "visual-text-chat"):
+    if (main_device == "NPU" or draft_device == "NPU") and model_type in (
+        "visual-text",
+        "visual-video-text",
+        "visual-text-chat",
+    ):
         raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
 
     if not Path(draft_model_path).exists():
