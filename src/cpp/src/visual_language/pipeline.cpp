@@ -82,7 +82,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
-    size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
@@ -170,7 +169,6 @@ private:
                 lm_properties,
                 kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
-            m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
             npu_auto_default_properties(device_properties);
         } else {
             // Slice-before-matmul rewrites LM logits to be produced only for the last token.
@@ -601,7 +599,7 @@ public:
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
-        
+
         // Update pruned content after generation (CDPruner has run during prepare_inputs_and_generate)
         if (generation_config.pruning_ratio > 0) {
             chat_context.apply_pruning_to_last_message();
@@ -782,7 +780,7 @@ private:
         } else {
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(
                 unified_prompt,
-                encoded_images, 
+                encoded_images,
                 encoded_videos,
                 perf_metrics,
                 recalculate_merged_embeddings,
@@ -861,6 +859,10 @@ private:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
+        size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
+        if (m_is_npu) {
+            max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
+        }
         return ov::genai::get_lm_encoded_results(m_language,
                                                  inputs_embeds,
                                                  new_atten_mask,
@@ -872,7 +874,7 @@ private:
                                                  cache_state,
                                                  m_embedding,
                                                  rope_delta,
-                                                 m_max_kv_cache_size,
+                                                 max_kv_cache_size,
                                                  use_intermediate_remote_tensor,
                                                  lm_extra_inputs,
                                                  std::move(per_layer_callback));
