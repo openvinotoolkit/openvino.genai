@@ -114,6 +114,7 @@ def parse_args():
             "text-to-video",
             "speech-generation",
             "visual-text",
+            "visual-text-agent",
             "visual-text-chat",
             "visual-video-text",
             "image-to-image",
@@ -122,7 +123,7 @@ def parse_args():
             "text-reranking",
         ],
         default="text",
-        help="Indicates the model type: text - for causal text generation, text-agent - for agent-style JSON messages/tools datasets, visual-text - for Visual Language Models with image inputs, "
+        help="Indicates the model type: text - for causal text generation, text-agent - for agent-style JSON messages/tools datasets, visual-text - for Visual Language Models with image inputs, visual-text-agent - for agent-style JSON messages/tools datasets evaluated with VLM backends, "
         "visual-video-text - for Visual Language Models with video inputs, text-to-image - for image generation, "
         "image-to-image - for image generation based on image and prompt, image-inpainting - for image generation based on image, mask and prompt, "
         "text-to-video - for video generation, text-reranking - for reranking a list of texts based on relevance to query, "
@@ -156,7 +157,7 @@ def parse_args():
             " Variants map to JSONL files:"
             " base=messages_500.jsonl, small=messages_5k.jsonl,"
             " medium=messages_20k.jsonl, large=messages_100k.jsonl."
-            " Used only for --model-type text-agent."
+            " Used only for --model-type text-agent or visual-text-agent."
             " If set, it overrides default/--long-prompt selection."
         ),
     )
@@ -933,7 +934,7 @@ def create_evaluator(base_model, args):
                     if args.assistant_confidence_threshold is not None else 0.0
                 ),
             )
-        elif task == "text-agent":
+        elif task == "text-agent" or task == "visual-text-agent":
             tokenizer = load_tokenizer(args)
             dataset_records = load_agent_dataset(args)
 
@@ -1388,7 +1389,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-agent", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+        if args.model_type in ["text", "text-agent", "text-chat", "visual-text", "visual-text-agent", "visual-video-text", "visual-text-chat"]:
 
             print_text_results(evaluator)
         elif (

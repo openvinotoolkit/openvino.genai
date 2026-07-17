@@ -18,7 +18,7 @@ from .whowhat_metrics import TextDivergency, TextSimilarity
 logger = logging.getLogger(__name__)
 
 
-@register_evaluator("text-agent")
+@register_evaluator("text-agent", "visual-text-agent")
 class TextAgentEvaluator(BaseEvaluator):
     def __init__(
         self,
@@ -375,26 +375,7 @@ class TextAgentEvaluator(BaseEvaluator):
             raise ValueError("Rendered prompt is empty after chat template application; check/fix the template or messages")
         return prompt
 
-    def _build_prompt_text_without_tools(self, tokenizer, messages, chat_template, backend_name: str) -> str:
-        logger.warning(
-            "Retrying prompt rendering without tools in %s path due to incompatible tools format",
-            backend_name,
-        )
-
-        if chat_template is not None:
-            try:
-                return self._render_messages_to_prompt(messages, None, chat_template)
-            except Exception as render_exc:
-                logger.warning(
-                    "Template rendering without tools failed for current record in %s path; "
-                    "falling back to tokenizer.apply_chat_template without tools. Error: %s",
-                    backend_name,
-                    render_exc,
-                )
-
-        return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, None)
-
-    def _build_prompt_text(self, tokenizer, messages, tools, chat_template, backend_name: str) -> str:
+    def _build_templated_prompt(self, tokenizer, messages, tools, chat_template, backend_name: str) -> str:
         if chat_template is not None:
             try:
                 return self._render_messages_to_prompt(messages, tools, chat_template)
@@ -404,8 +385,20 @@ class TextAgentEvaluator(BaseEvaluator):
                     backend_name,
                     render_exc,
                 )
+
+        return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, tools)
+
+    def _build_prompt_text_without_tools(self, tokenizer, messages, chat_template, backend_name: str) -> str:
+        logger.warning(
+            "Retrying prompt rendering without tools in %s path due to incompatible tools format",
+            backend_name,
+        )
+
+        return self._build_templated_prompt(tokenizer, messages, None, chat_template, backend_name)
+
+    def _build_prompt_text(self, tokenizer, messages, tools, chat_template, backend_name: str) -> str:
         try:
-            return self._apply_tokenizer_chat_template_to_prompt(tokenizer, messages, tools)
+            return self._build_templated_prompt(tokenizer, messages, tools, chat_template, backend_name)
         except Exception as template_exc:
             if tools is None:
                 raise

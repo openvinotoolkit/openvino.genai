@@ -90,6 +90,7 @@ class GenAIModelWrapper:
             "text-embedding",
             "text-reranking",
             "visual-text-chat",
+            "visual-text-agent",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -228,11 +229,11 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
     else:
         try:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=False, device_map=device, **model_kwargs
+                model_id, trust_remote_code=False, device_map=device.lower(), **model_kwargs
             )
         except Exception:
             model = AutoModelForCausalLM.from_pretrained(
-                model_id, trust_remote_code=True, device_map=device, **model_kwargs
+                model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
 
     if kwargs.get("adapters") is not None:
@@ -430,7 +431,7 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
-            model = model_cls.from_pretrained(model_id, device_map=device, **model_kwargs)
+            model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:
             try:
                 model_cls = AutoModel
@@ -441,7 +442,7 @@ def load_visual_text_model(
                 elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
-                model = model_cls.from_pretrained(model_id, device_map=device, **model_kwargs)
+                model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
             except ValueError:
                 if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
                     if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
@@ -453,7 +454,7 @@ def load_visual_text_model(
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    device_map=device,
+                    device_map=device.lower(),
                     **from_pretrained_kwargs,
                     **model_kwargs,
                 )
@@ -911,19 +912,12 @@ def load_model(
         ov_options = {}
 
     if model_type == "text" or model_type == "text-chat" or model_type == "text-agent":
-        if model_type == "text-agent" and use_genai and _is_visual_text_model(model_id):
-            logger.info(
-                "text-agent requested for multimodal model '%s'; using VLMPipeline via visual-text loader",
-                model_id,
-            )
-            kwargs["model_type"] = kwargs.get("model_type", "visual-text")
-            return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai, **kwargs
         )
-    elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
+    elif model_type in ("visual-text", "visual-video-text", "visual-text-chat", "visual-text-agent"):
         kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":

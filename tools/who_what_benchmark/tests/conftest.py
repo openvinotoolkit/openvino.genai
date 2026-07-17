@@ -34,6 +34,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "Qwen/Qwen3-Reranker-0.6B",
         "convert_args": ["--trust-remote-code", "--task", "text-generation"],
     },
+    "tiny-random-Phi3ForCausalLM": {
+        "name": "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
+        "convert_args": ["--trust-remote-code", "--task", "text-generation"],
+    },
     "tiny-random-qwen2vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
