@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching/pipeline_base.hpp"
+
 #include "visual_language/chat_history_state.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 
 namespace {
 
 std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
-    const std::unordered_map<std::string, ov::Tensor>& src
-) {
+    const std::unordered_map<std::string, ov::Tensor>& src) {
     std::unordered_map<std::string, ov::Tensor> dst;
     dst.reserve(src.size());
     for (const auto& [name, tensor] : src) {
@@ -20,12 +20,9 @@ std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
     return dst;
 }
 
-} // namespace
+}  // namespace
 
 namespace ov::genai {
-
-template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;
@@ -65,13 +62,12 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_video_id = 0;
 };
 
-std::vector<GenerationResult>
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<std::string>& prompts,
     std::vector<ov::genai::GenerationConfig> sampling_params,
     const StreamerVariant& streamer) {
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        // TODO: remove this code and within model runner add check: if sequence group type is tokens, 
+        // TODO: remove this code and within model runner add check: if sequence group type is tokens,
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
         auto results_vlm = generate(prompts, images, sampling_params, streamer);
@@ -162,7 +158,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
-        perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        perf_metrics.raw_metrics.generate_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
         // Reevaluate taking into account tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
@@ -178,24 +175,24 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         });
     }
 
-    // if streaming was cancelled, prompt/answer of current step shouldn't be presented in history, so let's remove prompt from history
+    // if streaming was cancelled, prompt/answer of current step shouldn't be presented in history, so let's remove
+    // prompt from history
     if (m_is_chat_conversation && encoded[0].m_status == ov::genai::GenerationStatus::CANCEL)
         m_history.pop_back();
 
     return decoded;
 }
 
-std::vector<GenerationResult>
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
     const std::vector<ov::genai::GenerationConfig>& sampling_params,
-    const StreamerVariant& streamer
-) {
+    const StreamerVariant& streamer) {
     OPENVINO_ASSERT(histories.size() == sampling_params.size(), "Number of histories must match sampling params");
-    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(),
+                    "Chat template must not be empty when using ChatHistory in generate method.");
 
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        // TODO: remove this code and within model runner add check: if sequence group type is tokens, 
+        // TODO: remove this code and within model runner add check: if sequence group type is tokens,
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(histories.size());
         auto results_vlm = generate(histories, images, sampling_params, streamer);
@@ -210,7 +207,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
         return results;
     }
-    
+
     auto start_time = std::chrono::steady_clock::now();
 
     std::vector<ov::Tensor> input_ids;
@@ -227,9 +224,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
         OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-        
+
         constexpr bool add_generation_prompt = true;
-        
+
         const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(histories[i], add_generation_prompt);
 
@@ -238,12 +235,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             m_tokenizer.encode(templated_history, add_special_tokens(false)).input_ids
         );
         const auto encode_end = std::chrono::steady_clock::now();
-        
+
         tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_end - encode_start));
-        // Store chat template duration for metrics tracking
         template_durations.emplace_back(PerfMetrics::get_microsec(encode_start - template_start));
     }
-    
+
     timer.end();
 
     std::vector<EncodedGenerationResult> encoded_results = generate(input_ids, sampling_params, streamer);
@@ -269,7 +265,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
-        perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        perf_metrics.raw_metrics.generate_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
         // Reevaluate taking into accound tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
@@ -288,13 +285,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return decoded_results;
 }
 
-std::vector<VLMDecodedResults>
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& images_vector,
-             const std::vector<GenerationConfig>& sampling_params,
-             const StreamerVariant& streamer) {
-    // empty videos batch size should match prompt batch size
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
     const std::vector<std::vector<ov::Tensor>> empty_videos_vector(prompts.size());
     return generate(prompts, images_vector, empty_videos_vector, sampling_params, streamer);
 }
@@ -307,7 +302,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos metadata batch size should match prompt batch size
     const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(prompts.size());
     return generate(prompts, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
 }
@@ -335,7 +329,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
     std::vector<ov::Tensor> original_prompt_ids_list;
     std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
-    
+
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
     std::vector<EncodedVideo> encoded_videos = {};
@@ -345,6 +339,24 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // Set visual token pruning configuration
     m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight);
+
+    // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches.
+    // Cache-state size is captured pre-embedding so the new prompt-ids slice can be sent
+    // downstream for speech when needed.
+    auto prepare_prompt_ids = [&](const std::string& prompt, const GenerationConfig& params) -> size_t {
+        if (params.is_prompt_lookup()) {
+            original_prompt_ids_list.push_back(m_inputs_embedder->encode_prompt(prompt));
+        }
+        return m_inputs_embedder->get_cache_state().get_state().size();
+    };
+
+    auto extract_audio_prompt_ids = [&](const GenerationConfig& /*params*/, size_t cache_size_before) {
+        const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
+        const size_t new_tokens = cache_ids.size() - cache_size_before;
+        ov::Tensor prompt_ids_tensor(ov::element::i64, {1, new_tokens});
+        std::copy(cache_ids.begin() + cache_size_before, cache_ids.end(), prompt_ids_tensor.data<int64_t>());
+        original_prompt_ids_list.push_back(prompt_ids_tensor);
+    };
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
@@ -357,7 +369,14 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
 
-        auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
+        // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
+        if (!m_pending_audios_batches.empty() && !m_pending_audios_batches[0].empty()) {
+            std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+            m_inputs_embedder->encode_audios(m_pending_audios_batches[0]);
+        }
+
+        auto [unified_prompt, image_sequence, video_sequence] =
+            m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
         m_history_image_ids.insert(m_history_image_ids.end(), image_sequence.begin(), image_sequence.end());
@@ -372,20 +391,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        if (sampling_params[0].is_prompt_lookup()) {
-            auto prompt_ids = m_inputs_embedder->encode_prompt(prompt);
-            original_prompt_ids_list.push_back(prompt_ids);
-        }
+        size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[0]);
 
         if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
-                                                                                             m_history_images,
-                                                                                             m_history_videos,
-                                                                                             vlm_perf_metrics[0],
-                                                                                             recalculate_merged_embeddings,
-                                                                                             m_history_image_ids,
-                                                                                             m_history_video_ids,
-                                                                                             m_history_vision_count);
+            auto [embeds, tt_ids] =
+                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
+                                                                         m_history_images,
+                                                                         m_history_videos,
+                                                                         vlm_perf_metrics[0],
+                                                                         recalculate_merged_embeddings,
+                                                                         m_history_image_ids,
+                                                                         m_history_video_ids,
+                                                                         m_history_vision_count);
             input_embeds_list.push_back(std::move(embeds));
             token_type_ids_list.push_back(std::move(tt_ids));
         } else {
@@ -399,18 +416,21 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                 m_history_vision_count));
         }
 
+        extract_audio_prompt_ids(sampling_params[0], cache_size_before);
+
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
         lm_extra_inputs_list.push_back(m_inputs_embedder->get_lm_extra_inputs());
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-        vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
+            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-            
+
             auto images_to_encode = images_vector.size() > 0 ? images_vector[i] : std::vector<ov::Tensor>{};
             const auto encoded_images = m_inputs_embedder->encode_images(images_to_encode);
 
@@ -418,35 +438,50 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
             const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode, videos_metadata);
 
-            auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
+            // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
+            // encode_audios overwrites the embedder's audio cache, so this must run per-prompt.
+            if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
+                std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+                m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
+            }
+
+            auto [unified_prompt, image_sequence, video_sequence] =
+                m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
-            if (sampling_params[i].is_prompt_lookup()) {
-                auto prompt_ids = m_inputs_embedder->encode_prompt(prompt);
-                original_prompt_ids_list.push_back(prompt_ids);
-            }
+            size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
 
             if (m_inputs_embedder->has_token_type_ids()) {
-                auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
-                                                                                                 encoded_images,
-                                                                                                 encoded_videos,
-                                                                                                 vlm_perf_metrics[i],
-                                                                                                 recalculate_merged_embeddings,
-                                                                                                 image_sequence,
-                                                                                                 video_sequence);
+                auto [embeds, tt_ids] =
+                    m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
+                                                                             encoded_images,
+                                                                             encoded_videos,
+                                                                             vlm_perf_metrics[i],
+                                                                             recalculate_merged_embeddings,
+                                                                             image_sequence,
+                                                                             video_sequence);
                 input_embeds_list.push_back(std::move(embeds));
                 token_type_ids_list.push_back(std::move(tt_ids));
             } else {
-                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, vlm_perf_metrics[i], recalculate_merged_embeddings, image_sequence, video_sequence));
+                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt,
+                                                                                    encoded_images,
+                                                                                    encoded_videos,
+                                                                                    vlm_perf_metrics[i],
+                                                                                    recalculate_merged_embeddings,
+                                                                                    image_sequence,
+                                                                                    video_sequence));
             }
+
+            extract_audio_prompt_ids(sampling_params[i], cache_size_before);
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
             lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
-        
+
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-            vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+            vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
+                PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
         }
     }
     std::vector<VLMDecodedResults> results;
@@ -458,15 +493,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                     original_prompt_ids_list,
                                                                     lm_extra_inputs_list);
     for (size_t i = 0; i < prompts.size(); i++) {
+        utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
         gen_result.perf_metrics.raw_metrics.chat_template_durations = vlm_perf_metrics[i].raw_metrics.chat_template_durations;
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
-        
+
+
         auto decode_start_time = std::chrono::steady_clock::now();
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
             gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
@@ -474,10 +512,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
         gen_result.finish_reasons = result.m_finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
-        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
-        
+        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
+
+        // Propagate hidden states for speech generation (Qwen3-Omni). Both fields stay empty
+        // on the text-only path (CB only fills m_intermediate_hidden_states when return_omni_outputs is set).
+        if (!result.m_intermediate_hidden_states.empty()) {
+            gen_result.intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
+            gen_result.full_token_ids = std::move(result.m_full_token_ids);
+        }
 
         results.emplace_back(gen_result);
     }
@@ -487,8 +533,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             m_image_id += encoded_images.size();
             m_video_id += encoded_videos.size();
             m_history.push_back({{"role", "assistant"}, {"content", results[0].texts[0]}});
-        }
-        else {
+        } else {
             m_history.pop_back();
             for (size_t idx = 0; idx < encoded_images.size(); idx++) {
                 m_history_image_ids.pop_back();
@@ -511,7 +556,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos batch size should match histories batch size
     const std::vector<std::vector<ov::Tensor>> empty_videos_vector(histories.size());
     return generate(histories, images_vector, empty_videos_vector, sampling_params, streamer);
 }
@@ -524,9 +568,49 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // empty videos metadata batch size should match histories batch size
     const std::vector<std::vector<VideoMetadata>> empty_videos_metadata_vector(histories.size());
     return generate(histories, images_vector, videos_vector, empty_videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // Stash audios per-request and clear on scope exit so the inner per-prompt loop can
+    // encode the i-th batch immediately before tokenizing prompts[i]. Pre-encoding all
+    // batches up front would overwrite the embedder's audio cache and leave every prompt
+    // seeing the last batch's embeddings.
+    struct PendingAudiosGuard {
+        std::vector<std::vector<ov::Tensor>>& slot;
+        ~PendingAudiosGuard() { slot.clear(); }
+    } guard{m_pending_audios_batches};
+    m_pending_audios_batches = audios_vector;
+    return generate(prompts, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // Same per-prompt deferral as the prompts overload — see comment there.
+    struct PendingAudiosGuard {
+        std::vector<std::vector<ov::Tensor>>& slot;
+        ~PendingAudiosGuard() { slot.clear(); }
+    } guard{m_pending_audios_batches};
+    m_pending_audios_batches = audios_vector;
+    return generate(histories, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>
@@ -555,7 +639,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // FIXME original_prompt_ids_list is not populated for VLM prompt lookup with ChatHistory API
     std::vector<ov::Tensor> original_prompt_ids_list;
     std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
-    
+
     std::vector<VLMPerfMetrics> vlm_perf_metrics(histories.size());
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
 
@@ -563,8 +647,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     chat_contexts.reserve(histories.size());
 
     for (size_t i = 0; i < histories.size(); i++) {
-        OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
-        OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
+        OPENVINO_ASSERT(sampling_params[i].apply_chat_template,
+                        "Chat template must be applied when using ChatHistory in generate method.");
+        OPENVINO_ASSERT(!histories[i].empty(),
+                        "Chat history must not be empty when using ChatHistory in generate method.");
 
         const auto& generation_config = sampling_params[i];
         // Set visual token pruning configuration
@@ -572,12 +658,19 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                            generation_config.relevance_weight);
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        
+
+        // Encode this history's audios under m_embeddings_mutex right before tokenization.
+        // encode_audios overwrites the embedder's audio cache, so this must run per-history.
+        if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
+            std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+            m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
+        }
+
         VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
         chat_contexts.push_back(std::move(chat_context));
-    
+
         auto processed_chat_data = chat_contexts[i].process(images_vector[i], videos_vector[i], videos_metadata_vector[i]);
-    
+
         const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(
             processed_chat_data.normalized_history,
@@ -586,18 +679,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         vlm_perf_metrics[i].raw_metrics.chat_template_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start)
         );
-    
+
+
         m_inputs_embedder->set_apply_chat_template_status(false);
-    
+
         if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
-                                                                                            processed_chat_data.encoded_images,
-                                                                                            processed_chat_data.encoded_videos,
-                                                                                            vlm_perf_metrics[i],
-                                                                                            recalculate_merged_embeddings,
-                                                                                            processed_chat_data.image_sequence,
-                                                                                            processed_chat_data.video_sequence,
-                                                                                            processed_chat_data.vision_counts);
+            auto [embeds, tt_ids] =
+                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
+                                                                         processed_chat_data.encoded_images,
+                                                                         processed_chat_data.encoded_videos,
+                                                                         vlm_perf_metrics[i],
+                                                                         recalculate_merged_embeddings,
+                                                                         processed_chat_data.image_sequence,
+                                                                         processed_chat_data.video_sequence,
+                                                                         processed_chat_data.vision_counts);
             input_embeds_list.push_back(std::move(embeds));
             token_type_ids_list.push_back(std::move(tt_ids));
         } else {
@@ -614,9 +709,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
         lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
-    
+
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-        vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
+            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
     }
 
     std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
@@ -630,15 +726,18 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     results.reserve(encoded_results.size());
 
     for (size_t i = 0; i < encoded_results.size(); ++i) {
+        utils::assert_request_was_scheduled(encoded_results.at(i).m_status, encoded_results.at(i).m_request_id);
         auto result = encoded_results.at(i);
         VLMDecodedResults gen_result;
         gen_result.perf_metrics = result.perf_metrics;
-    
+        gen_result.extended_perf_metrics = result.extended_perf_metrics;
+
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
         gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
         gen_result.perf_metrics.raw_metrics.chat_template_durations = vlm_perf_metrics[i].raw_metrics.chat_template_durations;
         gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
-        
+
+
         auto decode_start_time = std::chrono::steady_clock::now();
         for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
             gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
@@ -646,15 +745,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         }
         gen_result.finish_reasons = result.m_finish_reasons;
         auto decode_end_time = std::chrono::steady_clock::now();
-        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
-        
+        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
+            PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
-    
+
         results.emplace_back(gen_result);
-    
+
         m_inputs_embedder->update_chat_history(results[i].texts[0], encoded_results[i].m_status);
-    
+
         if (encoded_results[i].m_status == ov::genai::GenerationStatus::CANCEL) {
             chat_contexts[i].rollback();
         }
@@ -663,11 +763,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return results;
 }
 
-GenerationHandle 
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
-                                        const std::string& prompt,
-                                        const std::vector<ov::Tensor>& rgbs,
-                                        GenerationConfig sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+    uint64_t request_id,
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& rgbs,
+    GenerationConfig sampling_params) {
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
@@ -679,18 +779,23 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
 
-        const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
+        const auto [unified_prompt, image_sequence, video_sequence] =
+            m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, metrics, true, image_sequence);
+            std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
+                                                                                                        encoded_images,
+                                                                                                        metrics,
+                                                                                                        true,
+                                                                                                        image_sequence);
         } else {
-            inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
+            inputs =
+                m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
         }
         return add_request(request_id, inputs, sampling_params, token_type_ids, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
     }
 }
 
-GenerationHandle
-ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
     const std::vector<ov::Tensor>& images,
@@ -730,8 +835,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
     const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
-    const GenerationHandle& handle
-) {
+    const GenerationHandle& handle) {
     if (!streamer_ptr->has_callback() || !handle->can_read()) {
         return;
     }
@@ -767,4 +871,4 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::~IContinuousBatchingPip
     utils::release_core_plugin(m_device);
 }
 
-}
+}  // namespace ov::genai

@@ -2,10 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
-#include <cmath>
-#include <iostream>
 #include <numeric>
-#include <random>
 #include <vector>
 
 #include "utils.hpp"
@@ -199,7 +196,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     for (size_t i = 0; i < sequence_groups.size(); i++)
         beam_offets.insert({sequence_groups.at(i)->get_request_id(), i});
 
+    const auto sample_start = std::chrono::steady_clock::now();
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
+    raw_perf_counters.m_sampling_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     free_non_running_requests(); // handle sampler output
 
     raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
@@ -318,7 +318,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
 
+        const auto sample_start = std::chrono::steady_clock::now();
         sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
+        raw_perf_counters.m_sampling_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         free_non_running_requests(); // handle sampler output
 
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());

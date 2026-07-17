@@ -123,7 +123,7 @@ public:
     /**
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}, {"truncation", true}}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(const std::string& prompt, const ov::AnyMap& tokenization_params = {});
@@ -131,7 +131,7 @@ public:
     /**
     * @brief encode batch of prompts.
     * @param prompts vector storing batch of prompts
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}, {"truncation", true}}
     * @return pair of [input_ids, attention_mask]
     */
     TokenizedInputs encode(const std::vector<std::string>& prompt, const ov::AnyMap& tokenization_params = {});
@@ -143,7 +143,7 @@ public:
     * This overload copies prompts to the the pair of vectors, thus is less efficient than encode(prompts_1, prompts_2).
     * In case if efficiency is important, please use encode(prompts_1, prompts_2).
     * @param prompts vector storing batch of prompts
-    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+    * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}, {"truncation", true}}
     * @return pair of [input_ids, attention_mask]
     */
    TokenizedInputs encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params = {});
@@ -154,7 +154,7 @@ public:
    * Prompts should be of the same length, or one of them should be of length 1. In the latest case, the prompt will be
    * broadcasted to the length of the other prompt.
    * @param prompts vector storing batch of prompts
-   * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}}
+   * @param tokenization_params AnyMap with tokenization parameters, e.g. {{"add_special_tokens", false}, {"max_length", 128}, {"truncation", true}}
    * @return pair of [input_ids, attention_mask]
    */
     TokenizedInputs encode(const std::vector<std::string>& prompts_1, const std::vector<std::string>& prompts_2, const ov::AnyMap& tokenization_params = {});
@@ -164,6 +164,7 @@ public:
     * @param prompt std::string with input prompt
     * @param add_special_tokens whether to add special tokens
     * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR (where default value from original HF/GGUF model is stored).
+    * @param truncation whether to truncate output to max_length. Default is false.
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR (where default value from original HF/GGUF model is stored).
     * @return pair of [input_ids, attention_mask]
@@ -178,6 +179,7 @@ public:
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
     * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR (where default value from original HF/GGUF model is stored).
+    * @param truncation whether to truncate output to max_length. Default is false.
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
     * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR (where default value from original HF/GGUF model is stored).
     * @return pair of [input_ids, attention_mask]
@@ -333,6 +335,7 @@ static constexpr ov::Property<bool> add_second_input{"add_second_input"};
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
 static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
+static constexpr ov::Property<bool> truncation{"truncation"};
 static constexpr ov::Property<std::string> padding_side{"padding_side"};
 
 }  // namespace genai
