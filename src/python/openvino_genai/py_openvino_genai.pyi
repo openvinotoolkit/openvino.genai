@@ -5374,7 +5374,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5413,7 +5413,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5452,7 +5452,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5491,7 +5491,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5530,7 +5530,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
@@ -5556,7 +5556,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5595,7 +5595,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5634,7 +5634,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5673,7 +5673,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
