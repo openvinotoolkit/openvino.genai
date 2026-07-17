@@ -542,18 +542,14 @@ class ThinkingBudgetTransform : public ILogitTransformer {
 public:
     enum State { IDLE, COUNTING, FORCING, DONE };
 
-    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id, bool prompt_has_open_think = false)
+    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id)
         : m_budget(budget), m_start_id(start_id), m_end_id(end_id) {
-        if (prompt_has_open_think) {
-            // Qwen/DeepSeek chat templates insert <think> in the prompt,
-            // so start in COUNTING to account for the pre-inserted start token.
-            m_state = COUNTING;
-            m_count = 0;
-            if (m_budget == 0) {
-                m_state = FORCING;
-            }
-        } else {
-            m_state = IDLE;
+        // Qwen/DeepSeek chat templates insert <think> in the prompt,
+        // so start in COUNTING to account for the pre-inserted start token.
+        m_state = COUNTING;
+        m_count = 0;
+        if (m_budget == 0) {
+            m_state = FORCING;
         }
     }
 
@@ -615,19 +611,6 @@ public:
             }
             break;
         }
-    }
-
-    // Runtime force: transition COUNTING → FORCING
-    void force() {
-        if (m_state == COUNTING) {
-            m_state = FORCING;
-        }
-    }
-
-    State get_state() const { return m_state; }
-    void reset() {
-        m_state = (m_budget == 0) ? FORCING : COUNTING;
-        m_count = 0;
     }
 
 private:
