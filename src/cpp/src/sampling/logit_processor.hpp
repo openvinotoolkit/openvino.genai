@@ -52,7 +52,7 @@ public:
                 sampling_params.stop_token_ids, sampling_params.min_new_tokens));
         }
 
-        OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation"
+        OPENVINO_ASSERT(structured_output_controller != nullptr || !sampling_params.is_structured_output_generation(), "Structured output controller is not set for structured output generation");
         if (sampling_params.is_structured_output_generation() && structured_output_controller != nullptr) {
             auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
             m_logit_transformers.push_back(transformer);
@@ -124,9 +124,8 @@ public:
             }
 
             if (start_id >= 0 && end_id >= 0 && budget >= 0) {
-                bool prompt_has_open_think = (!input_ids.empty() && input_ids.back() == start_id);
                 m_thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
-                    budget, start_id, end_id, prompt_has_open_think);
+                    budget, start_id, end_id);
                 m_logit_transformers.push_back(m_thinking_budget);
             }
         }

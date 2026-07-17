@@ -70,6 +70,7 @@ configs = [
     dict(max_new_tokens=1, apply_chat_template=False),
     # thinking / reasoning
     dict(max_new_tokens=1, enable_thinking=True),
+    dict(max_new_tokens=1, enable_thinking=False),
     dict(max_new_tokens=1, enable_thinking=False, thinking_start_token_id=151667, thinking_end_token_id=151668),
     dict(max_new_tokens=1, reasoning_budget_tokens=10, thinking_start_token_id=151667, thinking_end_token_id=151668),
     dict(max_new_tokens=1, reasoning_budget_tokens=100, thinking_start_token_id=151667, thinking_end_token_id=151668),
@@ -121,7 +122,6 @@ invalid_configs = [
     dict(max_new_tokens=1, assistant_confidence_threshold=1.0, num_assistant_tokens=2), # 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive
     dict(max_new_tokens=1, max_ngram_size=1), # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
     # thinking / reasoning
-    dict(max_new_tokens=1, enable_thinking=False), # missing thinking_end_token_id
     dict(max_new_tokens=1, enable_thinking=False, thinking_end_token_id=151668), # missing thinking_start_token_id
     dict(max_new_tokens=1, enable_thinking=False, thinking_start_token_id=151667), # missing thinking_end_token_id
     dict(max_new_tokens=1, reasoning_budget_tokens=10), # missing thinking_start_token_id and thinking_end_token_id
