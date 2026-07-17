@@ -114,7 +114,7 @@ BasePerfMetricsWrapper<T, MetricsType>::get_class_properties() {
         T::InstanceMethod("getDetokenizationDuration", &T::get_detokenization_duration),
         T::InstanceMethod("getGrammarCompilerInitTimes", &T::get_grammar_compiler_init_times),
         T::InstanceMethod("getGrammarCompileTime", &T::get_grammar_compile_time),
-        T::template InstanceAccessor<&T::get_raw_metrics>("rawMetrics"),
+        T::InstanceAccessor("rawMetrics", &T::get_raw_metrics, nullptr),
         T::InstanceMethod("add", &T::add),
     };
 }
