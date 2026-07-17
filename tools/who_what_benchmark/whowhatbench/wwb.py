@@ -945,8 +945,6 @@ def genai_gen_embedding(model, tokenizer, processor, texts, images, videos, prom
             media_inputs["images"].append(ov.Tensor(np.array(im)))
 
     if videos is not None:
-        import openvino_genai
-
         media_inputs["videos"] = []
         for video in videos:
             media_inputs["videos"].append(ov.Tensor(np.stack(video, axis=0)))
