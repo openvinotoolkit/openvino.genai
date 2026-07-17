@@ -107,7 +107,7 @@ void PNDMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
         {
             float step_ratio = static_cast<float>(m_config.num_train_timesteps) / static_cast<float>(m_num_inference_steps);
             for (size_t s = 0; s < num_inference_steps; ++s) {
-                float i = m_config.num_train_timesteps - s * step_ratio;
+                const float i = static_cast<float>(m_config.num_train_timesteps) - static_cast<float>(s) * step_ratio;
                 m_timesteps.push_back(static_cast<int64_t>(std::round(i)) - 1);
             }
             std::reverse(m_timesteps.begin(), m_timesteps.end());
