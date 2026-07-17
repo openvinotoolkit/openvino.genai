@@ -92,17 +92,16 @@ def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
     if not draft_model_path:
         return
 
-    if device.upper() == "NPU" and model_type in ("visual-text", "visual-video-text", "visual-text-chat"):
-        raise RuntimeError(
-            f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB"
-        )
+    draft_device = kwargs.get("draft_device") or device
+
+    if draft_device.upper() == "NPU" and model_type in ("visual-text", "visual-video-text", "visual-text-chat"):
+        raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
 
     if not Path(draft_model_path).exists():
         raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
 
     import openvino_genai
 
-    draft_device = kwargs.get("draft_device") or device
     draft_cb_config = kwargs.get("draft_cb_config")
     draft_model_load_kwargs = (
         {"scheduler_config": get_scheduler_config_genai(draft_cb_config)} if draft_cb_config is not None else {}
