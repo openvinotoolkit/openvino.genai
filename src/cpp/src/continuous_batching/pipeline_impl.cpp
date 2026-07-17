@@ -751,7 +751,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
         if (request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
-            request->get_generation_stream()->set_perf_metrics(request->get_perf_metrics());
+            auto perf_metrics = request->get_perf_metrics();
+            perf_metrics.load_time = m_load_time_ms;
+            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
             for (const auto& sequence : request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());

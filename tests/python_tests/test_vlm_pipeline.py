@@ -866,6 +866,8 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         assert sum(perf_metrics.raw_metrics.m_batch_sizes) == perf_metrics.get_num_generated_tokens()
         assert len(perf_metrics.raw_metrics.sampling_durations) == len(perf_metrics.raw_metrics.m_batch_sizes)
         assert perf_metrics.get_sampling_duration().mean > 0
+        assert perf_metrics.get_load_time() > 0
+        assert vlm_perf_metrics.get_load_time() == perf_metrics.get_load_time()
         assert vlm_perf_metrics.get_num_generated_tokens() == perf_metrics.get_num_generated_tokens()
         assert perf_metrics.get_num_input_tokens() == cb_vlm_perf_metrics.get_num_input_tokens()
         assert perf_metrics.get_num_generated_tokens() == cb_vlm_perf_metrics.get_num_generated_tokens()
