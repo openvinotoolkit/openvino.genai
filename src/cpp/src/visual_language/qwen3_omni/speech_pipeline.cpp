@@ -1008,13 +1008,10 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
             }
         }
 
-        // Build next talker input: sum of all codec representations + trailing text
-        auto first_code_embed = embed_talker_token(first_code);
         auto* next_data = next_input.data<float>();
-        auto* fc_data = first_code_embed.data<float>();
         auto* cp_data = cp_embed_sum.data<float>();
         for (size_t i = 0; i < hidden_size; i++) {
-            next_data[i] = fc_data[i] + cp_data[i];
+            next_data[i] = cp_data[i];
         }
 
         if (trailing_idx < trailing_len) {
