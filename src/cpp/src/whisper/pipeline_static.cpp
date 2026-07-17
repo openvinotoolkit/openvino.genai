@@ -1169,7 +1169,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
     WhisperDecodedResults result;
-    std::vector<int64_t> sot_tokens;
+    SotTokensResult sot_result;
     std::vector<int64_t> output_tokens;
     std::vector<Segment> segments;
 
@@ -1197,13 +1197,12 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                                 perf_metrics.whisper_raw_metrics);
 
         // prepare sot_tokens just once for whole input
-        if (sot_tokens.empty()) {
-            auto sot_result = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
-            sot_tokens = std::move(sot_result.tokens);
+        if (sot_result.tokens.empty()) {
+            sot_result = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
             result.language = sot_result.language;
         }
 
-        std::vector<int64_t> chunk_sot_tokens = sot_tokens;
+        std::vector<int64_t> chunk_sot_tokens = sot_result.tokens;
         
         if (!return_timestamps) {
             chunk_sot_tokens.push_back(config.no_timestamps_token_id);
@@ -1262,7 +1261,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                 std::min(m_feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
 
             const auto word_timestamps_processing_start = std::chrono::steady_clock::now();
-            const auto word_timestamps = add_word_level_timestamps(sot_tokens,
+            const auto word_timestamps = add_word_level_timestamps(sot_result,
                                                                    chunk_output_tokens,
                                                                    m_tokenizer,
                                                                    m_models.decoder,

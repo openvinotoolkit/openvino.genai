@@ -3,26 +3,26 @@
 
 #include "py_utils.hpp"
 
-#include <memory>
-
+#include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <pybind11/stl_bind.h>
 #include <pybind11/stl/filesystem.h>
-#include <pybind11/functional.h>
+#include <pybind11/stl_bind.h>
 
+#include <memory>
 #include <openvino/runtime/auto/properties.hpp>
 
-#include "tokenizer/tokenizers_path.hpp"
-#include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/genai/image_generation/generation_config.hpp"
+#include <iostream>
+#include "openvino/core/extension.hpp"
 #include "openvino/genai/extensions.hpp"
+#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/genai/taylorseer_config.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
-#include "openvino/genai/rag/text_embedding_pipeline.hpp"
-#include "openvino/core/extension.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "utils.hpp"
 
 namespace py = pybind11;
@@ -35,7 +35,8 @@ class GilSafeGeneratorWrapper : public ov::genai::Generator {
 
 public:
     GilSafeGeneratorWrapper(std::shared_ptr<ov::genai::Generator>&& impl, py::object&& py_ref)
-        : m_impl(std::move(impl)), m_py_ref(std::move(py_ref)) {}
+        : m_impl(std::move(impl)),
+          m_py_ref(std::move(py_ref)) {}
 
     ~GilSafeGeneratorWrapper() override {
         if (Py_IsInitialized()) {
@@ -50,10 +51,31 @@ public:
         m_py_ref.release();
     }
 
-    float next() override { return m_impl->next(); }
-    ov::Tensor randn_tensor(const ov::Shape& shape) override { return m_impl->randn_tensor(shape); }
-    void seed(size_t new_seed) override { m_impl->seed(new_seed); }
+    float next() override {
+        return m_impl->next();
+    }
+    ov::Tensor randn_tensor(const ov::Shape& shape) override {
+        return m_impl->randn_tensor(shape);
+    }
+    void seed(size_t new_seed) override {
+        m_impl->seed(new_seed);
+    }
 };
+
+// Permissive mapping: any value outside {RUNNING, CANCEL, TOOL_CALL_STOP} (including legacy
+// `True`/non-zero ints from older Python callbacks that returned bool) is treated as STOP so
+// we don't break user code that returned bools to mean "stop streaming".
+ov::genai::StreamingStatus map_py_status(const std::optional<uint16_t>& result) {
+    if (!result.has_value())
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::RUNNING))
+        return ov::genai::StreamingStatus::RUNNING;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::CANCEL))
+        return ov::genai::StreamingStatus::CANCEL;
+    if (*result == static_cast<uint16_t>(ov::genai::StreamingStatus::TOOL_CALL_STOP))
+        return ov::genai::StreamingStatus::TOOL_CALL_STOP;
+    return ov::genai::StreamingStatus::STOP;
+}
 
 }  // namespace
 
@@ -70,7 +92,7 @@ py::str handle_utf8(const std::string& text) {
 
 py::list handle_utf8(const std::vector<std::string>& decoded_res) {
     py::list res;
-    for (const auto s: decoded_res) {
+    for (const auto& s : decoded_res) {
         py::str r = handle_utf8(s);
         res.append(r);
     }
@@ -105,7 +127,7 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj) {
 }
 
 ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
-    // These properties should be casted to ov::AnyMap, instead of std::map. 
+    // These properties should be casted to ov::AnyMap, instead of std::map.
     std::set<std::string> any_map_properties = {
         "GENERATE_CONFIG",
         "PREFILL_CONFIG",
@@ -126,8 +148,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     py::object float_32_type = py::module_::import("numpy").attr("float32");
     if (py::isinstance<py::str>(py_obj)) {
         if (property_name == "structural_tags_config") {
-            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value =
-                py_obj.cast<std::string>();
+            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag>
+                variant_value = py_obj.cast<std::string>();
             return variant_value;
         }
         return py_obj.cast<std::string>();
@@ -172,9 +194,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 py::gil_scoped_acquire acquire;
                 return (*py_decrypt)(py::bytes(in_str)).cast<std::string>();
             };
-            ov::EncryptionCallbacks encryption_callbacks{
-                std::move(encrypt_func), std::move(decrypt_func)
-            };
+            ov::EncryptionCallbacks encryption_callbacks{std::move(encrypt_func), std::move(decrypt_func)};
             return encryption_callbacks;
         } else if (property_name == "structural_tags") {
             // this impl is based on OpenVINO python bindings impl.
@@ -205,7 +225,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             py::object pathlib_path = py::module_::import("pathlib").attr("Path");
             py::object op_extension_ctor = py::module_::import("openvino").attr("OpExtension");
             for (const auto& item : property_list) {
-                if (py::isinstance<py::str>(item) || py::isinstance<py::bytes>(item) || py::isinstance(item, pathlib_path)) {
+                if (py::isinstance<py::str>(item) || py::isinstance<py::bytes>(item) ||
+                    py::isinstance(item, pathlib_path)) {
                     extensions.push_back(item.cast<std::filesystem::path>());
                     continue;
                 }
@@ -222,9 +243,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                         e.clear();
                     }
                 }
-                OPENVINO_THROW("Incorrect value in \"",
-                               property_name,
-                               "\". Expected extension path (str/bytes/pathlib.Path), ov::Extension object, or custom op type.");
+                OPENVINO_THROW(
+                    "Incorrect value in \"",
+                    property_name,
+                    "\". Expected extension path (str/bytes/pathlib.Path), ov::Extension object, or custom op type.");
             }
             return extensions;
         } else if (property_name == ov::genai::videos_metadata.name()) {
@@ -238,7 +260,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             return videos_metadata;
         } else {
             auto _list = py_obj.cast<py::list>();
-            enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};
+            enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT };
             PY_TYPE detected_type = PY_TYPE::UNKNOWN;
             for (const auto& it : _list) {
                 auto check_type = [&](PY_TYPE type) {
@@ -246,7 +268,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                         detected_type = type;
                         return;
                     }
-                    OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the list are not allowed.");
+                    OPENVINO_THROW("Incorrect value in \"" + property_name +
+                                   "\". Mixed types in the list are not allowed.");
                 };
                 if (py::isinstance<py::str>(it)) {
                     check_type(PY_TYPE::STR);
@@ -295,7 +318,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
 
     } else if (py::isinstance<py::dict>(py_obj) && any_map_properties.find(property_name) == any_map_properties.end()) {
         auto _dict = py_obj.cast<py::dict>();
-        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT};
+        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT };
         PY_TYPE detected_key_type = PY_TYPE::UNKNOWN;
         PY_TYPE detected_value_type = PY_TYPE::UNKNOWN;
         for (const auto& it : _dict) {
@@ -304,7 +327,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     detected_type = type;
                     return;
                 }
-                OPENVINO_THROW("Incorrect value in \"" + property_name + "\". Mixed types in the dict are not allowed.");
+                OPENVINO_THROW("Incorrect value in \"" + property_name +
+                               "\". Mixed types in the dict are not allowed.");
             };
             // check key type
             if (py::isinstance<py::str>(it.first)) {
@@ -333,7 +357,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         }
     } else if (py::isinstance<py::set>(py_obj)) {
         auto _set = py_obj.cast<py::set>();
-        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL};
+        enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL };
         PY_TYPE detected_type = PY_TYPE::UNKNOWN;
         for (const auto& it : _set) {
             auto check_type = [&](PY_TYPE type) {
@@ -370,7 +394,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
         }
 
-    // OV types
+        // OV types
     } else if (py_object_is_any_map(py_obj)) {
         return py_object_to_any_map(py_obj);
     } else if (py::isinstance<ov::Any>(py_obj)) {
@@ -410,27 +434,27 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
         // For structural_tags_config property, wrap in variant
         if (property_name == "structural_tags_config") {
-            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value = 
-                py::cast<ov::genai::StructuralTagsConfig>(py_obj);
+            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag>
+                variant_value = py::cast<ov::genai::StructuralTagsConfig>(py_obj);
             return variant_value;
         }
         return py::cast<ov::genai::StructuralTagsConfig>(py_obj);
-    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Regex>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::EBNF>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::ConstString>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::AnyText>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>(py_obj)
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Regex>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::EBNF>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::ConstString>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::AnyText>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>(py_obj)
                // python does not use std::shared_ptr to obj
-               || py::isinstance<ov::genai::StructuredOutputConfig::Union>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::Tag>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::TriggeredTags>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::TagsWithSeparator>(py_obj)) {
+               || py::isinstance<ov::genai::StructuredOutputConfig::Union>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::Tag>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::TriggeredTags>(py_obj) ||
+               py::isinstance<ov::genai::StructuredOutputConfig::TagsWithSeparator>(py_obj)) {
         // For structural_tags_config property, wrap in variant
         if (property_name == "structural_tags_config") {
-            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value = 
-                py_obj_to_structural_tag(py_obj);
+            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag>
+                variant_value = py_obj_to_structural_tag(py_obj);
             return variant_value;
         }
         return py_obj_to_structural_tag(py_obj);
@@ -444,6 +468,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return py::cast<ov::genai::WhisperGenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj)) {
         return py::cast<ov::genai::TextEmbeddingPipeline::PoolingType>(py_obj);
+    } else if (py::isinstance<ov::genai::TextEmbeddingPipeline::Config>(py_obj)) {
+        return py::cast<ov::genai::TextEmbeddingPipeline::Config>(py_obj);
     } else if (py::isinstance<ov::genai::StopCriteria>(py_obj)) {
         return py::cast<ov::genai::StopCriteria>(py_obj);
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
@@ -453,27 +479,35 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         return wrapper;
     } else if (py::isinstance<py::function>(py_obj) && property_name == "callback") {
         auto py_callback = py::cast<py::function>(py_obj);
-        auto shared_callback = std::shared_ptr<py::function>(
-            new py::function(py_callback),
-            [](py::function* f) {
-                if (Py_IsInitialized()) {
-                    py::gil_scoped_acquire acquire;
-                    delete f;
-                } else {
-                    delete f;
-                }
+        auto shared_callback = std::shared_ptr<py::function>(new py::function(py_callback), [](py::function* f) {
+            if (Py_IsInitialized()) {
+                py::gil_scoped_acquire acquire;
+                delete f;
+            } else {
+                delete f;
             }
-        );
+        });
 
         return std::function<bool(size_t, size_t, ov::Tensor&)>(
             [shared_callback](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
                 py::gil_scoped_acquire acquire;
                 return (*shared_callback)(step, num_steps, latent).cast<bool>();
-            }
-        );
-    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
+            });
+    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) ||
+                py::isinstance<std::monostate>(py_obj)) &&
+               property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
+    } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::OmniSpeechStreamerBase>(py_obj)) &&
+               property_name == "audio_streamer") {
+        auto audio_streamer = py::cast<ov::genai::pybind::utils::PyBindOmniSpeechStreamerVariant>(py_obj);
+        auto converted = py_speech_streamer_to_streamer(audio_streamer);
+        // Store the unwrapped concrete type so get_audio_streamer_from_map can .is<T>() it
+        return std::visit(
+            [](auto&& val) -> ov::Any {
+                return ov::Any(val);
+            },
+            converted);
     } else if (py::isinstance(py_obj, py::module_::import("pathlib").attr("Path"))) {
         return py::cast<std::filesystem::path>(py_obj);
     }
@@ -507,7 +541,6 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             OPENVINO_ASSERT(!value.is_none(), "Property \"", key, "\" can't be None.");
             params[key] = utils::py_object_to_any(value, key);
         }
-
     }
     return params;
 }
@@ -524,50 +557,83 @@ std::filesystem::path ov_tokenizers_module_path() {
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer) {
     ov::genai::StreamerVariant streamer = std::monostate();
 
-    std::visit(overloaded {
-        [&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback){
-            auto shared_callback = std::shared_ptr<std::function<std::optional<uint16_t>(py::str)>>(
-                new std::function<std::optional<uint16_t>(py::str)>(py_callback),
-                [](std::function<std::optional<uint16_t>(py::str)>* f) {
-                    if (Py_IsInitialized()) {
-                        py::gil_scoped_acquire acquire;
-                        delete f;
-                    } else {
-                        delete f;
-                    }
-                }
-            );
+    std::visit(overloaded{[&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback) {
+                              auto shared_callback = std::shared_ptr<std::function<std::optional<uint16_t>(py::str)>>(
+                                  new std::function<std::optional<uint16_t>(py::str)>(py_callback),
+                                  [](std::function<std::optional<uint16_t>(py::str)>* f) {
+                                      if (Py_IsInitialized()) {
+                                          py::gil_scoped_acquire acquire;
+                                          delete f;
+                                      } else {
+                                          delete f;
+                                      }
+                                  });
 
-            auto callback_wrapped = [shared_callback = std::move(shared_callback)](std::string subword) -> ov::genai::StreamingStatus {
-                py::gil_scoped_acquire acquire;
-                PyObject* py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-                if (!py_str) {
-                    PyErr_WriteUnraisable(nullptr);
-                    return StreamingStatus::RUNNING;
-                }
-                auto py_str_obj = py::reinterpret_steal<py::str>(py_str);
-                std::optional<uint16_t> callback_output;
-                try {
-                    callback_output = (*shared_callback)(py_str_obj);
-                } catch (const py::error_already_set&) {
-                    return StreamingStatus::RUNNING;
-                }
-                if (callback_output.has_value()) {
-                    if (*callback_output == static_cast<uint16_t>(StreamingStatus::RUNNING))
-                        return StreamingStatus::RUNNING;
-                    else if (*callback_output == static_cast<uint16_t>(StreamingStatus::CANCEL))
-                        return StreamingStatus::CANCEL;
-                    return StreamingStatus::STOP;
-                }
-                return StreamingStatus::RUNNING;
-            };
-            streamer = callback_wrapped;
-        },
-        [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-            streamer = streamer_cls;
-        },
-        [](std::monostate none){ /*streamer is already a monostate */ }
-    }, py_streamer);
+                              auto callback_wrapped = [shared_callback = std::move(shared_callback)](
+                                                          std::string subword) -> ov::genai::StreamingStatus {
+                                  py::gil_scoped_acquire acquire;
+                                  PyObject* py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+                                  if (!py_str) {
+                                      PyErr_WriteUnraisable(nullptr);
+                                      return StreamingStatus::RUNNING;
+                                  }
+                                  auto py_str_obj = py::reinterpret_steal<py::str>(py_str);
+                                  try {
+                                      return map_py_status((*shared_callback)(py_str_obj));
+                                  } catch (const py::error_already_set& e) {
+                                      // Surface the failure but keep generation alive — historical
+                                      // behavior is RUNNING so user callbacks that raise transiently
+                                      // don't abort. Log to stderr so the error stops being invisible.
+                                      std::cerr << "[GenAI] Text streamer callback raised exception: " << e.what()
+                                                << std::endl;
+                                      return StreamingStatus::RUNNING;
+                                  }
+                              };
+                              streamer = callback_wrapped;
+                          },
+                          [&streamer](std::shared_ptr<StreamerBase> streamer_cls) {
+                              streamer = streamer_cls;
+                          },
+                          [](std::monostate none) { /*streamer is already a monostate */ }},
+               py_streamer);
+    return streamer;
+}
+
+ov::genai::OmniSpeechStreamerVariant py_speech_streamer_to_streamer(const PyBindOmniSpeechStreamerVariant& py_streamer) {
+    ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
+
+    std::visit(overloaded{[&streamer](const std::function<std::optional<uint16_t>(ov::Tensor)>& py_callback) {
+                              // shared_ptr so the destructor runs with GIL held
+                              auto shared_callback =
+                                  std::shared_ptr<std::function<std::optional<uint16_t>(ov::Tensor)>>(
+                                      new std::function<std::optional<uint16_t>(ov::Tensor)>(py_callback),
+                                      [](std::function<std::optional<uint16_t>(ov::Tensor)>* f) {
+                                          if (Py_IsInitialized()) {
+                                              py::gil_scoped_acquire acquire;
+                                              delete f;
+                                          } else {
+                                              delete f;
+                                          }
+                                      });
+
+                              auto callback_wrapped = [shared_callback = std::move(shared_callback)](
+                                                          const ov::Tensor& audio_chunk) -> StreamingStatus {
+                                  py::gil_scoped_acquire acquire;
+                                  try {
+                                      return map_py_status((*shared_callback)(audio_chunk));
+                                  } catch (const py::error_already_set& e) {
+                                      std::cerr << "[GenAI] Audio streamer callback raised exception: " << e.what()
+                                                << std::endl;
+                                      return StreamingStatus::STOP;
+                                  }
+                              };
+                              streamer = callback_wrapped;
+                          },
+                          [&streamer](std::shared_ptr<ov::genai::OmniSpeechStreamerBase> streamer_cls) {
+                              streamer = streamer_cls;
+                          },
+                          [](std::monostate) { /* already monostate */ }},
+               py_streamer);
     return streamer;
 }
 

@@ -4,6 +4,8 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
+
 #include <openvino/runtime/properties.hpp>
 
 #include "openvino/genai/visibility.hpp"
@@ -29,6 +31,7 @@ enum class VLMModelType {
     GEMMA4,
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
+    QWEN3_OMNI,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -124,6 +127,39 @@ public:
     size_t vision_config_num_position_embeddings = 2304;
     /// @brief DeepStack visual indexes for Qwen3-VL model.
     std::vector<size_t> vision_config_deepstack_visual_indexes;
+
+    // Qwen3-Omni specific config
+    /// @brief Whether audio output (speech) is enabled.
+    bool enable_audio_output = false;
+    /// @brief Audio encoder: number of mel spectrogram bins.
+    size_t audio_config_num_mel_bins = 128;
+    /// @brief Audio encoder: window size for training.
+    size_t audio_config_n_window = 50;
+    /// @brief Audio encoder: window size for inference.
+    size_t audio_config_n_window_infer = 200;
+    /// @brief Talker: number of codec quantizer groups.
+    size_t talker_num_code_groups = 16;
+    // Codec special token IDs (model-specific; -1 until loaded from talker_config in config.json)
+    int64_t talker_codec_bos_id = -1;
+    int64_t talker_codec_eos_token_id = -1;
+    int64_t talker_codec_pad_id = -1;
+    int64_t talker_codec_nothink_id = -1;
+    int64_t talker_codec_think_bos_id = -1;
+    int64_t talker_codec_think_eos_id = -1;
+    // TTS special token IDs (in thinker vocabulary)
+    int64_t tts_bos_token_id = -1;
+    int64_t tts_eos_token_id = -1;
+    int64_t tts_pad_token_id = -1;
+    // ChatML role token IDs for talker input construction
+    int64_t im_start_token_id = -1;
+    int64_t system_token_id = -1;
+    int64_t user_token_id = -1;
+    int64_t assistant_token_id = -1;
+    int64_t audio_token_id = -1;
+    int64_t image_token_id = -1;
+    int64_t video_token_id = -1;
+    // Speaker name-to-codec-token mapping
+    std::map<std::string, int64_t> speaker_ids;
 
     /// @brief Default constructor.
     VLMConfig() = default;
