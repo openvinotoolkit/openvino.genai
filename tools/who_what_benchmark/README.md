@@ -173,7 +173,7 @@ optimum-cli export openvino -m Qwen/Qwen3-VL-Embedding-2B qwen3-vl-embedding-2B 
 wwb --base-model Qwen/Qwen3-VL-Embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --hf
 # Compute the metric
 # Target data will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model ./qwen3-vl-embedding-2 --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --genai
+wwb --target-model ./qwen3-vl-embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --genai
 ```
 
 ### Compare Text-to-video models
