@@ -112,6 +112,9 @@ void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float str
     m_sigmas.clear();
     m_step_index = m_begin_index = -1;
 
+    OPENVINO_ASSERT(num_inference_steps <= m_config.num_train_timesteps,
+                    "`num_inference_steps` cannot be larger than `num_train_timesteps`");
+
     m_num_inference_steps = num_inference_steps;
     std::vector<float> sigmas;
 
