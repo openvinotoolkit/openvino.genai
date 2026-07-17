@@ -51,11 +51,11 @@ ALL_CACHE_NAMES = [
 ]
 
 
-# Transformers version: v5.4.0 through v5.10.x (used for transformers >= 5.4.0, < 5.11.0)
+# Transformers version: v5.11.0 through v5.13.x (used for transformers >= 5.11.0)
 # Add the function of collecting latency
 
 
-# https://github.com/huggingface/transformers/blob/v5.4.0/src/transformers/generation/utils.py#L3703
+# https://github.com/huggingface/transformers/blob/v5.11.0/src/transformers/generation/utils.py#L3784
 def new_prefill(
     self,
     input_ids: torch.LongTensor,
@@ -143,7 +143,7 @@ def new_prefill(
         return outputs
 
 
-# Copied from https://github.com/huggingface/transformers/blob/v5.4.0/src/transformers/generation/utils.py#L2636
+# Copied from https://github.com/huggingface/transformers/blob/v5.11.0/src/transformers/generation/utils.py#L2697
 def new_sample(
     self,
     input_ids: torch.LongTensor,
@@ -180,6 +180,13 @@ def new_sample(
     batch_size = input_ids.shape[0]
     this_peer_finished = False
     unfinished_sequences = torch.ones(batch_size, dtype=torch.long, device=input_ids.device)
+
+    # `pad_token_id` is created on `inputs_tensor.device` in `_prepare_special_tokens`. For multimodal models
+    # (e.g. BLIP-2, LLaVA) sharded across devices via `device_map="auto"`, `inputs_tensor` (e.g. `pixel_values`
+    # on the vision encoder) and `input_ids` (on the language model) can live on different devices, so we need to
+    # realign `pad_token_id` with `input_ids` to avoid cross-device ops below.
+    if pad_token_id is not None:
+        pad_token_id = pad_token_id.to(input_ids.device)
 
     model_forward = (
         self.get_compiled_call(generation_config.compile_config)

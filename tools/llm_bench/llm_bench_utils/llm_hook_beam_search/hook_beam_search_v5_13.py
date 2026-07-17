@@ -56,11 +56,11 @@ ALL_CACHE_NAMES = [
     "past_buckets_states",  # reformer
 ]
 
-# Transformers version: v5.4.0 through v5.12.x (used for transformers >= 5.4.0, < 5.13.0)
+# Transformers version: v5.13.0 and later (used for transformers >= 5.13.0)
 # Add the function of collecting latency
 
 
-# https://github.com/huggingface/transformers/blob/v5.4.0/src/transformers/generation/utils.py#L3703
+# https://github.com/huggingface/transformers/blob/v5.13.0/src/transformers/generation/utils.py#L3852
 def new_prefill(
     self,
     input_ids: torch.LongTensor,
@@ -148,7 +148,7 @@ def new_prefill(
         return outputs
 
 
-# Copied from https://github.com/huggingface/transformers/blob/v5.4.0/src/transformers/generation/utils.py#L3054
+# Copied from https://github.com/huggingface/transformers/blob/v5.13.0/src/transformers/generation/utils.py#L3185
 def new_beam_search(
     self,
     input_ids: torch.LongTensor,
@@ -355,12 +355,17 @@ def new_beam_search(
 
         # pluck the cache from the beam indices that will be used in the next iteration
         # NOTE: we need to check if `self._reorder_cache` exists for special models like RAG, RecurrentGemma etc.
-        if model_kwargs.get("past_key_values") is not None:
+        if any(cache_key in model_kwargs for cache_key in ALL_CACHE_NAMES):
+            cache_key = next(cache_key for cache_key in ALL_CACHE_NAMES if cache_key in model_kwargs)
             beam_idx = self._flatten_beam_dim(running_beam_indices[..., cur_len - decoder_prompt_len])
             if hasattr(self, "_reorder_cache"):
-                model_kwargs["past_key_values"] = self._reorder_cache(model_kwargs["past_key_values"], beam_idx)
+                model_kwargs[cache_key] = self._reorder_cache(model_kwargs[cache_key], beam_idx)
+            elif hasattr(model_kwargs[cache_key], "reorder_cache"):
+                model_kwargs[cache_key].reorder_cache(beam_idx)
             else:
-                model_kwargs["past_key_values"].reorder_cache(beam_idx)
+                raise ValueError(
+                    f"{self.__class__.__name__} cannot use beam search with a cache currently, as the cache cannot be reordered"
+                )
 
         hook_beam.tm_list.append(time.perf_counter() - tic)
         cur_len = cur_len + 1
