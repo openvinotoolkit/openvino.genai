@@ -386,6 +386,7 @@ class TestTaylorSeer:
             "Last step latents are identical — TaylorSeer prediction should have changed the result"
         )
 
+    @pytest.mark.skip(reason="CVS-191113: TaylorSeer default changed to disabled")
     def test_taylorseer_default_on(self, video_generation_model):
         """Test that TaylorSeer is enabled by default"""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
