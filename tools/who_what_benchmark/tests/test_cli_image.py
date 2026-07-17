@@ -77,6 +77,7 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
     assert similarity >= 0.98
 
 
+@pytest.mark.image_generation
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     list(itertools.product(OV_IMAGE_MODELS,
@@ -189,6 +190,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     ])
 
 
+@pytest.mark.image_generation
 def test_image_model_genai_with_taylorseer(tmp_path):
     if sys.platform == "darwin":
         pytest.xfail("Ticket 173169")
