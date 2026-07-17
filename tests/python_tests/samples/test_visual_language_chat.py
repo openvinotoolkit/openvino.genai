@@ -6,10 +6,8 @@ import pytest
 import subprocess # nosec B404
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR, convert_model
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR
 from test_utils import run_sample, run_js_chat
-
-convert_draft_model = convert_model
 
 class TestVisualLanguageChat:
     @pytest.mark.vlm

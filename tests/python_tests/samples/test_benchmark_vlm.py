@@ -6,10 +6,8 @@ import pytest
 import subprocess  # nosec B404
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, convert_model
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
-
-convert_draft_model = convert_model
 
 class TestBenchmarkVLM:
     @pytest.mark.vlm
