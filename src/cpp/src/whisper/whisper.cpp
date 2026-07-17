@@ -202,7 +202,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
 
     results.tokens.push_back(sequence->get_generated_ids());
     results.scores.push_back(score);
-    
+
     ov::genai::GenerationFinishReason finish_reason = sequence->get_finish_reason();
     if (sequence_group->handle_stopped() && finish_reason == ov::genai::GenerationFinishReason::NONE) {
         finish_reason = sequence_group->get_generation_stream()->get_finish_reason();
@@ -315,7 +315,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
-    std::vector<int64_t> sot_tokens;
+    SotTokensResult sot_result;
     std::vector<int64_t>& output_tokens = result.output_tokens;
     std::vector<Segment> segments;
 
@@ -340,15 +340,14 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                 result.perf_metrics.whisper_raw_metrics);
 
         // prepare sot_tokens just once for whole input
-        if (sot_tokens.empty()) {
-            auto sot_result = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics);
-            sot_tokens = std::move(sot_result.tokens);
-            result.language = std::move(sot_result.language);
+        if (sot_result.tokens.empty()) {
+            sot_result = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics);
+            result.language = sot_result.language;
         }
 
         std::vector<int64_t> chunk_sot_tokens = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
 
-        chunk_sot_tokens.insert(chunk_sot_tokens.end(), sot_tokens.begin(), sot_tokens.end());
+        chunk_sot_tokens.insert(chunk_sot_tokens.end(), sot_result.tokens.begin(), sot_result.tokens.end());
 
         if (!return_timestamps) {
             chunk_sot_tokens.push_back(config.no_timestamps_token_id);
@@ -408,7 +407,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                 std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
 
             const auto word_timestamps_processing_start = std::chrono::steady_clock::now();
-            const auto word_timestamps = add_word_level_timestamps(sot_tokens,
+            const auto word_timestamps = add_word_level_timestamps(sot_result,
                                                                    chunk_output_tokens,
                                                                    tokenizer,
                                                                    decoder,
