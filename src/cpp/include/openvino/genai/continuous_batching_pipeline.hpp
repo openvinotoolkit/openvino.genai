@@ -384,4 +384,11 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_batches
 );
 
+/// @brief Factory for audios_batches AnyMap entry.
+/// Audios must be encoded before text tokenization for Qwen3-Omni's interleaved layout.
+/// @note This is a preview API and is subject to change.
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> audios_batches(
+    const std::vector<std::vector<ov::Tensor>>& audios_batches
+);
+
 }
