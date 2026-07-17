@@ -642,7 +642,9 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor inputs_embeds = m_embedding->infer(req, encoded_input);
-
+    // make a copy of inputs_embeds to avoid data corruption when the infer request is used by another thread
+    draft_inputs_embeds = ov::Tensor(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
+    std::memcpy(draft_inputs_embeds.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
     OPENVINO_ASSERT(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),
         "Unexpected embedding size"

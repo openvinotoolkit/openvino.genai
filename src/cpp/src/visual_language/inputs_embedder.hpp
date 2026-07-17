@@ -69,6 +69,11 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
+    // returns the draft-specific input embeddings prepared for speculative (eagle3) decoding,
+    // or an empty tensor when the embedder does not provide a dedicated draft embedding.
+    // aligned with VLLM implementation
+    ov::Tensor get_draft_inputs_embeds() const;
+
     bool has_token_type_ids() const;
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
@@ -126,6 +131,9 @@ public:
     // finishes chat and clears a chat history
     void finish_chat();
 
+    virtual ov::Tensor get_draft_inputs_embeds() const {
+        return {};
+    }
     // set CDPruner setting
     virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight);
     virtual NormalizedPrompt normalize_prompt(

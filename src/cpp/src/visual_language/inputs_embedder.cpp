@@ -524,6 +524,10 @@ void InputsEmbedder::set_rope_delta(int64_t rope_delta) {
     m_impl->set_rope_delta(rope_delta);
 }
 
+ov::Tensor InputsEmbedder::get_draft_inputs_embeds() const {
+    return m_impl->get_draft_inputs_embeds();
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
     return m_impl->get_generation_phase_position_ids(inputs_embeds_size, history_size, rope_delta);
 }
