@@ -9,7 +9,7 @@ import { SpeechGeneration } from './components/speech-generation';
 import { SpeechRecognition } from './components/speech-recognition';
 import { TextGeneration } from './components/text-generation';
 import { TextRerank } from './components/text-rerank';
-import { TextEmbedding } from './components/text-embedding';
+import { MultimodalEmbedding } from './components/multimodal-embedding';
 import { VideoGeneration } from './components/video-generation';
 
 export const UseCasesSection = () => (
@@ -24,7 +24,7 @@ export const UseCasesSection = () => (
       <VideoGeneration />
       <SpeechRecognition />
       <SpeechGeneration />
-      <TextEmbedding />
+      <MultimodalEmbedding />
       <TextRerank />
     </div>
     <div className={styles.useCasesFooter}>
