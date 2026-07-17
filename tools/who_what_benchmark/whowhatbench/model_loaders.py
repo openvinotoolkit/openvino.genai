@@ -443,6 +443,9 @@ def load_visual_text_model(
                 from transformers import AutoModelForMultimodalLM
 
                 model_cls = AutoModelForMultimodalLM
+            elif config.model_type == "gemma3n":
+                model_cls = AutoModelForCausalLM
+                model_kwargs.update({"torch_dtype": torch.float32})
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
@@ -460,7 +463,7 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3", "gemma3n"]:
+                elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
