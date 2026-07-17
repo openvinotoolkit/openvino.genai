@@ -1,0 +1,18 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import numpy as np
+import openvino as ov
+import openvino_genai as ov_genai
+from PIL import Image
+
+pipeline = ov_genai.EmbeddingPipeline(models_path, "${props.device || 'CPU'}")
+
+# Embed a text query
+query_embedding = pipeline.embed("a photo of a cat").embeddings
+
+# Embed an image
+image = ov.Tensor(np.array(Image.open("cat.jpg").convert("RGB")))
+image_embedding = pipeline.embed(images=[image]).embeddings
+`}
+</CodeBlock>

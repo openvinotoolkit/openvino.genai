@@ -1,0 +1,21 @@
+---
+sidebar_position: 8
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Multimodal Embedding
+
+`EmbeddingPipeline` computes embedding vectors for text, images, and videos with a single multimodal embedding model. It enables cross-modal use cases such as retrieving the most relevant image or video for a text query.
+
+<ConvertModelSection>
+    Download and convert a multimodal embedding model (e.g. [Qwen/Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B)) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='Qwen/Qwen3-VL-Embedding-2B' outputDir='Qwen3-VL-Embedding-2B' task='image-text-to-text' />
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />

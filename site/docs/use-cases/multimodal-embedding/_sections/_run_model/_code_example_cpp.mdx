@@ -1,0 +1,18 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/rag/embedding_pipeline.hpp"
+
+int main(int argc, char* argv[]) {
+    std::string models_path = argv[1];
+
+    ov::genai::EmbeddingPipeline pipeline(models_path, "${props.device || 'CPU'}");
+
+    // Embed a text query
+    ov::genai::EmbedResult query = pipeline.embed("a photo of a cat");
+
+    // Embed an image (image is an ov::Tensor of shape [H, W, 3], uint8)
+    ov::genai::EmbedResult image_embedding = pipeline.embed(std::string{}, {image});
+}
+`}
+</CodeBlock>
