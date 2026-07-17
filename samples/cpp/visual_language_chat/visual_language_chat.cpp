@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) try {
         draft_model_dir = std::move(lookup);
         lookup = "false";
     }
-    if ((device == "NPU" || device == "npu") && !draft_model_dir.empty()) {
+    if (device == "NPU" && !draft_model_dir.empty()) {
         throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU");
     }
     bool prompt_lookup = lookup_is_true;

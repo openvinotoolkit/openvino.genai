@@ -98,9 +98,6 @@ def _add_genai_draft_model_config(ov_config, device, **kwargs):
         raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
 
     draft_device = kwargs.get("draft_device") or device
-    if device.upper() == "NPU" or draft_device.upper() == "NPU":
-        raise RuntimeError("Draft model is not supported when device is NPU")
-
     draft_cb_config = kwargs.get("draft_cb_config")
     draft_model_load_kwargs = (
         {"scheduler_config": get_scheduler_config_genai(draft_cb_config)} if draft_cb_config is not None else {}
