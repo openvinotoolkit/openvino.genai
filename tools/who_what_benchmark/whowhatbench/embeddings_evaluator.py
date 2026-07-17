@@ -54,7 +54,6 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
             {
                 "passages": [item["prompts"]],
                 "videos": [item["videos"]],
-                "videos_metadata": [{"fps": item["videos_metadata"].fps}],
             }
         )
 
@@ -254,7 +253,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(
-            model, tokenizer=None, processor=None, passages=None, images=None, videos_info=None, **kwargs
+            model, tokenizer=None, processor=None, passages=None, images=None, videos=None, **kwargs
         ):
             device = "cpu"
             if hasattr(model, "device"):
@@ -267,7 +266,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
                     processor=processor,
                     passages=passages,
                     images=images,
-                    videos=videos_info["videos"],
+                    videos=videos,
                     **kwargs,
                 )
             else:
@@ -309,8 +308,6 @@ class EmbeddingsEvaluator(BaseEvaluator):
                 if isinstance(self.test_data, dict):
                     if "passages" not in self.test_data:
                         raise RuntimeError("Test data must contain 'passages' keys")
-                    if "videos" in self.test_data and "videos_metadata" not in self.test_data:
-                        raise RuntimeError("Test data must contain 'videos_metadata' key for video-embedding pipeline")
                     data = dict(self.test_data)
                 else:
                     data = {"passages": list(self.test_data)}
@@ -329,17 +326,11 @@ class EmbeddingsEvaluator(BaseEvaluator):
         texts = data["passages"].values if self.num_samples is None else data["passages"].values[: self.num_samples]
         images = []
         videos = []
-        videos_metadata = []
 
         if self.pipeline_type == "image-embedding":
             images = data["images"].values if self.num_samples is None else data["images"].values[: self.num_samples]
         if self.pipeline_type == "video-embedding":
             videos = data["videos"].values if self.num_samples is None else data["videos"].values[: self.num_samples]
-            videos_metadata = (
-                data["videos_metadata"].values
-                if self.num_samples is None
-                else data["videos_metadata"].values[: self.num_samples]
-            )
 
         embeds_paths = []
         passages = []
@@ -379,12 +370,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
                 self.processor,
                 text_data_input,
                 images_input,
-                {
-                    "videos": videos_input,
-                    "videos_metadata": videos_metadata[i]
-                    if len(videos_metadata) > 0 and i < len(videos_metadata)
-                    else None,
-                },
+                videos_input,
                 prompt=prompt,
                 **kwargs,
             )

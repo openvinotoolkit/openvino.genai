@@ -929,7 +929,7 @@ def genai_gen_visual_text_chat(
     return answers
 
 
-def genai_gen_embedding(model, tokenizer, processor, texts, images, videos_info, prompt, **kwargs):
+def genai_gen_embedding(model, tokenizer, processor, texts, images, videos, prompt, **kwargs):
     text_input = []
     if texts is not None:
         text_input.append(texts)
@@ -944,21 +944,12 @@ def genai_gen_embedding(model, tokenizer, processor, texts, images, videos_info,
         for im in images:
             media_inputs["images"].append(ov.Tensor(np.array(im)))
 
-    videos = videos_info.get("videos") if videos_info else None
-    videos_metadata = videos_info.get("videos_metadata") if videos_info else None
     if videos is not None:
         import openvino_genai
 
         media_inputs["videos"] = []
-        media_inputs["videos_metadata"] = []
-        for i, video in enumerate(videos):
+        for video in videos:
             media_inputs["videos"].append(ov.Tensor(np.stack(video, axis=0)))
-
-            video_metadata = openvino_genai.VideoMetadata()
-            video_metadata.frames_indices = list(range(len(video)))
-            if videos_metadata is not None and len(videos_metadata) > i and "fps" in videos_metadata[i]:
-                video_metadata.fps = videos_metadata[i]["fps"]
-            media_inputs["videos_metadata"].append(video_metadata)
 
     return np.asarray(model.embed(*text_input, **media_inputs).embeddings.data, dtype=np.float32)
 
