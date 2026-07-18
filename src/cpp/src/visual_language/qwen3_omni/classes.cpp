@@ -56,6 +56,7 @@ VisionEncoderQwen3Omni::PatchPreprocMode parse_preproc_mode_env() {
                     value,
                     ". Expected GPU, GPU_REARRANGE, or CPP.");
     return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
+}
 
 // Append the patch reshape/transpose/flatten tail (bit-identical to
 // qwen2_vl_utils::reshape_image_patches + transpose_image_patches + flatten). The 8D/4D
