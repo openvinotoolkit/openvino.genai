@@ -53,6 +53,8 @@ private:
                                size_t frame_num,
                                size_t frame_id);
 
+    void initialize_patch_preprocessing(const std::string& device, const ov::AnyMap& properties);
+
     PatchPreprocMode m_preproc_mode = PatchPreprocMode::GpuFull;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_patch_rearrange;
 };

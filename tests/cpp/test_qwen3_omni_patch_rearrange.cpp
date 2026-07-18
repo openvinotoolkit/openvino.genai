@@ -7,6 +7,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <filesystem>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "openvino/runtime/core.hpp"
@@ -14,6 +18,47 @@
 
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen3_omni/classes.hpp"
+
+namespace {
+
+class ScopedVisionPreprocessEnv {
+public:
+    explicit ScopedVisionPreprocessEnv(const char* value) {
+        if (const char* previous = std::getenv("VISION_PREPROCESS")) {
+            m_previous = previous;
+        }
+        set(value);
+    }
+
+    ~ScopedVisionPreprocessEnv() {
+        set(m_previous ? m_previous->c_str() : nullptr);
+    }
+
+private:
+    static void set(const char* value) {
+#ifdef _WIN32
+        _putenv_s("VISION_PREPROCESS", value ? value : "");
+#else
+        if (value) {
+            setenv("VISION_PREPROCESS", value, 1);
+        } else {
+            unsetenv("VISION_PREPROCESS");
+        }
+#endif
+    }
+
+    std::optional<std::string> m_previous;
+};
+
+}  // namespace
+
+TEST(Qwen3OmniPatchRearrange, FallsBackToHostWhenDeviceCompilationFails) {
+    ScopedVisionPreprocessEnv env("GPU");
+
+    EXPECT_NO_THROW(ov::genai::VisionEncoderQwen3Omni(std::filesystem::temp_directory_path(),
+                                                       "QWEN3_OMNI_TEST_INVALID_DEVICE",
+                                                       {}));
+}
 
 TEST(Qwen3OmniPatchRearrange, MatchesQwen2VlReference) {
     // Non-square grid so a transpose-permutation bug can't hide behind symmetry.

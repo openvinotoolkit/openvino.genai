@@ -59,6 +59,18 @@ TEST(VlSdpaTransformations, CheckDetectsCuWindowSeqlens) {
     EXPECT_TRUE(utils::check_vl_sdpa_transformations(compiled));
 }
 
+// Callers that feed a specific packed input must be able to distinguish the two names.
+TEST(VlSdpaTransformations, HasVlSdpaInputMatchesExactName) {
+    ov::Core core;
+    auto cu_seq_lens = core.compile_model(make_named_input_model("cu_seq_lens"), "CPU");
+    auto cu_window_seqlens = core.compile_model(make_named_input_model("cu_window_seqlens"), "CPU");
+
+    EXPECT_TRUE(utils::has_vl_sdpa_input(cu_seq_lens, "cu_seq_lens"));
+    EXPECT_FALSE(utils::has_vl_sdpa_input(cu_seq_lens, "cu_window_seqlens"));
+    EXPECT_FALSE(utils::has_vl_sdpa_input(cu_window_seqlens, "cu_seq_lens"));
+    EXPECT_TRUE(utils::has_vl_sdpa_input(cu_window_seqlens, "cu_window_seqlens"));
+}
+
 // A model without the packed input (the dense attention_mask path) must report false.
 TEST(VlSdpaTransformations, CheckAbsentReturnsFalse) {
     ov::Core core;
