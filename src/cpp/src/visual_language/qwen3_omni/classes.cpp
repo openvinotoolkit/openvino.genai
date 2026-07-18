@@ -33,23 +33,28 @@ namespace {
 // Default (unset or "GPU") is GpuFull (Stage 2): resize + normalize + reshape/transpose/flatten all on GPU.
 // Accuracy is comparable to the host CPU path (borderline-resolution noise only, both directions).
 // Opt-in fallbacks: VISION_PREPROCESS=GPU_REARRANGE for Stage 1 (GPU reshape/transpose only,
-// bit-identical to CPU), or VISION_PREPROCESS=CPP for the fully host-side path.
+// bit-identical to CPU), or VISION_PREPROCESS=CPP for the fully host-side path. Other values are rejected.
 VisionEncoderQwen3Omni::PatchPreprocMode parse_preproc_mode_env() {
     const char* env = std::getenv("VISION_PREPROCESS");
-    if (env) {
-        std::string v(env);
-        if (v == "CPP") {
-            return VisionEncoderQwen3Omni::PatchPreprocMode::Cpu;
-        }
-        if (v == "GPU_REARRANGE") {
-            return VisionEncoderQwen3Omni::PatchPreprocMode::GpuRearrange;
-        }
-        if (v == "GPU") {
-            return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
-        }
+    if (!env) {
+        return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
     }
-    // Default: full GPU preprocessing (Stage 2).
-    return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
+
+    const std::string value(env);
+    if (value == "CPP") {
+        return VisionEncoderQwen3Omni::PatchPreprocMode::Cpu;
+    }
+    if (value == "GPU_REARRANGE") {
+        return VisionEncoderQwen3Omni::PatchPreprocMode::GpuRearrange;
+    }
+    if (value == "GPU") {
+        return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
+    }
+
+    OPENVINO_ASSERT(false,
+                    "Unsupported VISION_PREPROCESS value: ",
+                    value,
+                    ". Expected GPU, GPU_REARRANGE, or CPP.");
 }
 
 // Append the patch reshape/transpose/flatten tail (bit-identical to

@@ -25,9 +25,11 @@ std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test();
 class VisionEncoderQwen3Omni : public VisionEncoderQwen3VL {
 public:
     // Patch preprocessing offload mode, selected by the VISION_PREPROCESS env var:
-    //   unset / "GPU"  -> GpuFull      : resize + normalize + reshape/transpose/flatten on GPU (Stage 2) [default]
+    //   unset           -> GpuFull      : resize + normalize + reshape/transpose/flatten on GPU (Stage 2) [default]
+    //   "GPU"           -> GpuFull      : resize + normalize + reshape/transpose/flatten on GPU (Stage 2)
     //   "GPU_REARRANGE"-> GpuRearrange : CPU resize+normalize, GPU reshape/transpose/flatten (Stage 1, bit-identical)
     //   "CPP"          -> Cpu          : full host CPU path (reference)
+    // Any other value is rejected.
     enum class PatchPreprocMode { Cpu, GpuRearrange, GpuFull };
 
     explicit VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,
