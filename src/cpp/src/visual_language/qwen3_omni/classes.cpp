@@ -307,33 +307,44 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
     int64_t shape2d[2] = {static_cast<int64_t>(grid_t * grid_h * grid_w),
                           static_cast<int64_t>(channel * tps * patch * patch)};
 
+    ov::Tensor shape8d_tensor(ov::element::i64, ov::Shape{8});
+    ov::Tensor shape4d_tensor(ov::element::i64, ov::Shape{4});
+    ov::Tensor shape2d_tensor(ov::element::i64, ov::Shape{2});
+    std::memcpy(shape8d_tensor.data(), shape8d, sizeof(shape8d));
+    std::memcpy(shape4d_tensor.data(), shape4d, sizeof(shape4d));
+    std::memcpy(shape2d_tensor.data(), shape2d, sizeof(shape2d));
+
     ov::Tensor flattened;
     if (m_preproc_mode == PatchPreprocMode::GpuFull) {
         // Stage 2: upload raw u8 frame(s) and run resize + normalize + reshape/transpose/flatten on GPU.
         // For an image the same frame fills both temporal slots (matching the CPU loop, which resizes
         // the image twice). For video the two adjacent frames fill the slots.
-        int64_t resize_target[2] = {static_cast<int64_t>(target_image_size.height),
-                                    static_cast<int64_t>(target_image_size.width)};
+        ov::Tensor resize_target_tensor(ov::element::i64, ov::Shape{2});
+        int64_t* resize_target = resize_target_tensor.data<int64_t>();
+        resize_target[0] = static_cast<int64_t>(target_image_size.height);
+        resize_target[1] = static_cast<int64_t>(target_image_size.width);
 
         // Normalization constants from the per-call config (image vs video), matching the host
         // CPU/Stage-1 paths: centered = clamp(x) - mean*255, scaled = centered * 1/(std*255).
-        float mean_buf[3];
-        float scale_buf[3];
+        ov::Tensor image_mean_tensor(ov::element::f32, ov::Shape{1, 3, 1, 1});
+        ov::Tensor image_scale_tensor(ov::element::f32, ov::Shape{1, 3, 1, 1});
+        float* image_mean = image_mean_tensor.data<float>();
+        float* image_scale = image_scale_tensor.data<float>();
         for (size_t c = 0; c < 3; ++c) {
-            mean_buf[c] = config.image_mean[c] * 255.0f;
-            scale_buf[c] = 1.0f / (config.image_std[c] * 255.0f);
+            image_mean[c] = config.image_mean[c] * 255.0f;
+            image_scale[c] = 1.0f / (config.image_std[c] * 255.0f);
         }
 
         CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue_patch_rearrange.get());
         auto& ireq = guard.get();
         ireq.set_tensor("raw_frame_0", images[0]);
         ireq.set_tensor("raw_frame_1", images.size() > 1 ? images[1] : images[0]);
-        ireq.set_tensor("resize_target", ov::Tensor(ov::element::i64, ov::Shape{2}, resize_target));
-        ireq.set_tensor("image_mean", ov::Tensor(ov::element::f32, ov::Shape{1, 3, 1, 1}, mean_buf));
-        ireq.set_tensor("image_scale", ov::Tensor(ov::element::f32, ov::Shape{1, 3, 1, 1}, scale_buf));
-        ireq.set_tensor("reshape_shape8d", ov::Tensor(ov::element::i64, ov::Shape{8}, shape8d));
-        ireq.set_tensor("reshape_shape4d", ov::Tensor(ov::element::i64, ov::Shape{4}, shape4d));
-        ireq.set_tensor("reshape_shape2d", ov::Tensor(ov::element::i64, ov::Shape{2}, shape2d));
+        ireq.set_tensor("resize_target", resize_target_tensor);
+        ireq.set_tensor("image_mean", image_mean_tensor);
+        ireq.set_tensor("image_scale", image_scale_tensor);
+        ireq.set_tensor("reshape_shape8d", shape8d_tensor);
+        ireq.set_tensor("reshape_shape4d", shape4d_tensor);
+        ireq.set_tensor("reshape_shape2d", shape2d_tensor);
         ireq.infer();
         const auto& out = ireq.get_tensor("patches_2d");
         flattened = ov::Tensor(out.get_element_type(), out.get_shape());
@@ -362,9 +373,9 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
             CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue_patch_rearrange.get());
             auto& ireq = guard.get();
             ireq.set_tensor("tiled_patches", tiled_patches);
-            ireq.set_tensor("reshape_shape8d", ov::Tensor(ov::element::i64, ov::Shape{8}, shape8d));
-            ireq.set_tensor("reshape_shape4d", ov::Tensor(ov::element::i64, ov::Shape{4}, shape4d));
-            ireq.set_tensor("reshape_shape2d", ov::Tensor(ov::element::i64, ov::Shape{2}, shape2d));
+            ireq.set_tensor("reshape_shape8d", shape8d_tensor);
+            ireq.set_tensor("reshape_shape4d", shape4d_tensor);
+            ireq.set_tensor("reshape_shape2d", shape2d_tensor);
             ireq.infer();
             const auto& out = ireq.get_tensor("patches_2d");
             flattened = ov::Tensor(out.get_element_type(), out.get_shape());

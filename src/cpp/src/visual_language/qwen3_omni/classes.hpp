@@ -6,6 +6,10 @@
 #include "visual_language/qwen3_omni/audio_encoder.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
 
+namespace ov {
+class Model;
+}
+
 namespace ov::genai {
 
 namespace qwen3_omni_testing {

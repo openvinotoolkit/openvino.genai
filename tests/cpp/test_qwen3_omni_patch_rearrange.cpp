@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 // The Qwen3-Omni GPU preprocessing offloads the patch reshape/transpose/flatten step to a small
 // standalone graph (build_patch_rearrange_model). This test compiles that graph on CPU and asserts
 // it is bit-identical to the qwen2_vl_utils host reference (pure data movement, so exact).
