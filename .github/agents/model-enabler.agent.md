@@ -21,9 +21,7 @@ You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingF
 
 Expect the user to provide:
 
-- **model_id**: HuggingFace model identifier (e.g. `google/gemma-3-4b-it`),
-  local architecture-preserving tiny-model directory, or exported OpenVINO IR
-  directory
+- **model_id**: HuggingFace model identifier (e.g. `google/gemma-3-4b-it`), or path to local directory with exported OpenVINO IR model (tiny-random or real weights).
 - **task**: optimum export task (e.g. `image-text-to-text`, `text-generation-with-past`)
 
 If either is missing, ask for them before proceeding.
