@@ -76,11 +76,6 @@ Revalidate with **model-checker**, passing the same Hugging Face model ID or
 local OpenVINO IR directory used during initial validation. Do not replace a
 failing local-artifact check with success from another model.
 
-Do not report a model as enabled when its required repository test is blocked,
-failing, deselected, or references an inaccessible tiny-model repository. A
-test merely added to source is not validation. Repair the fixture or report the
-exact blocker and leave enablement incomplete.
-
 ### Step 4: Add Tests
 
 Add repository Python tests for every newly enabled VLM model before updating docs.
@@ -100,6 +95,11 @@ For `image-text-to-text` models:
    - If the test cannot run locally, document the exact command, blocker, and expected CI coverage in Step 6.
 
 Do not proceed to Step 5 until tiny-random Python tests are added or an explicit blocker is recorded.
+
+Do not report a model as enabled when its required repository test is blocked,
+failing, deselected, or references an inaccessible tiny-model repository. A
+test merely added to source is not validation. Repair the fixture or report the
+exact blocker and leave enablement incomplete.
 
 ### Step 5: Documentation Update
 
@@ -131,7 +131,3 @@ Report a structured summary:
   - **Details**: summary of doc changes.
   - **PR Created** (if applicable): Link or reference to documentation PR
 - **Details**: Additional details required for context, next steps, or follow-ups.
-
-Do not commit, push, or create a pull request unless the user explicitly asks.
-Leave validated changes in the working tree and report the repository path,
-branch, and changed files.
