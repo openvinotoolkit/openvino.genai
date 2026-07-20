@@ -3514,6 +3514,40 @@ class SpeechGenerationConfig(GenerationConfig):
                                              omit this key instead of passing None because kwargs-to-AnyMap
                                              conversion rejects None values.
         :type phonemize_fallback_model_dir: str | None
+
+        Qwen3-TTS-specific parameters:
+        :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+        :type speaker: str
+
+        :param instruct: optional instruction text that controls speaking style.
+        :type instruct: str
+
+        :param non_streaming_mode: Qwen3 prompt assembly mode.
+                                   ``True`` means non-streaming prompt assembly.
+                                   ``False`` means streaming-style prompt assembly.
+        :type non_streaming_mode: bool
+
+        :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+        :type subtalker_dosample: bool
+
+        :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+        :type subtalker_top_k: int
+
+        :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+        :type subtalker_top_p: float
+
+        :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+        :type subtalker_temperature: float
+
+        Qwen3 Base voice-clone over ``generate``:
+        :param voice_clone_ref_text: reference transcript for ICL mode.
+        :type voice_clone_ref_text: str
+
+        :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+        :type voice_clone_ref_audio: openvino.Tensor
+
+        :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+        :type voice_clone_ref_codec_ids: openvino.Tensor
     """
     language: str
     @typing.overload
@@ -3525,6 +3559,12 @@ class SpeechGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def instruct(self) -> str:
+        ...
+    @instruct.setter
+    def instruct(self, arg0: str) -> None:
         ...
     @property
     def max_phoneme_length(self) -> int:
@@ -3545,10 +3585,22 @@ class SpeechGenerationConfig(GenerationConfig):
     def minlenratio(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
+    def non_streaming_mode(self) -> bool:
+        ...
+    @non_streaming_mode.setter
+    def non_streaming_mode(self, arg0: bool) -> None:
+        ...
+    @property
     def phonemize_fallback_model_dir(self) -> pathlib.Path | None:
         ...
     @phonemize_fallback_model_dir.setter
     def phonemize_fallback_model_dir(self, arg0: os.PathLike | str | bytes | None) -> None:
+        ...
+    @property
+    def speaker(self) -> str:
+        ...
+    @speaker.setter
+    def speaker(self, arg0: str) -> None:
         ...
     @property
     def speed(self) -> float:
@@ -3557,10 +3609,52 @@ class SpeechGenerationConfig(GenerationConfig):
     def speed(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
+    def subtalker_dosample(self) -> bool:
+        ...
+    @subtalker_dosample.setter
+    def subtalker_dosample(self, arg0: bool) -> None:
+        ...
+    @property
+    def subtalker_temperature(self) -> float:
+        ...
+    @subtalker_temperature.setter
+    def subtalker_temperature(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def subtalker_top_k(self) -> int:
+        ...
+    @subtalker_top_k.setter
+    def subtalker_top_k(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def subtalker_top_p(self) -> float:
+        ...
+    @subtalker_top_p.setter
+    def subtalker_top_p(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
     def threshold(self) -> float:
         ...
     @threshold.setter
     def threshold(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def voice_clone_ref_audio(self) -> openvino._pyopenvino.Tensor:
+        ...
+    @voice_clone_ref_audio.setter
+    def voice_clone_ref_audio(self, arg0: openvino._pyopenvino.Tensor) -> None:
+        ...
+    @property
+    def voice_clone_ref_codec_ids(self) -> openvino._pyopenvino.Tensor:
+        ...
+    @voice_clone_ref_codec_ids.setter
+    def voice_clone_ref_codec_ids(self, arg0: openvino._pyopenvino.Tensor) -> None:
+        ...
+    @property
+    def voice_clone_ref_text(self) -> str:
+        ...
+    @voice_clone_ref_text.setter
+    def voice_clone_ref_text(self, arg0: str) -> None:
         ...
 class SpeechGenerationPerfMetrics(PerfMetrics):
     """
