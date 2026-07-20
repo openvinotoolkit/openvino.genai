@@ -119,6 +119,16 @@ auto text_to_speech_decoded_results = R"(
 
     :param perf_metrics: performance metrics
     :type perf_metrics: SpeechGenerationPerfMetrics
+
+    :param speaker_embedding: Qwen3-TTS Base voice-clone speaker embedding used for generation.
+                              Persist and pass it back as the ``speaker_embedding`` argument to reuse a
+                              cloned voice without re-encoding reference audio. Empty for other backends.
+    :type speaker_embedding: openvino.Tensor
+
+    :param voice_clone_ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
+                                      Persist and pass it back via the ``voice_clone_ref_codec_ids``
+                                      property to reuse the reference prompt. Empty otherwise.
+    :type voice_clone_ref_codec_ids: openvino.Tensor
 )";
 
 auto text_to_speech_generate_docstring = R"(
@@ -200,7 +210,9 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readonly("speeches", &Text2SpeechDecodedResults::speeches)
         .def_readonly("output_sample_rate", &Text2SpeechDecodedResults::output_sample_rate)
-        .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics);
+        .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics)
+        .def_readonly("speaker_embedding", &Text2SpeechDecodedResults::speaker_embedding)
+        .def_readonly("voice_clone_ref_codec_ids", &Text2SpeechDecodedResults::voice_clone_ref_codec_ids);
 
     py::class_<Text2SpeechPipeline>(m, "Text2SpeechPipeline", "Text-to-speech pipeline")
         .def(

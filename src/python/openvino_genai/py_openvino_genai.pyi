@@ -4394,6 +4394,16 @@ class Text2SpeechDecodedResults:
     
         :param perf_metrics: performance metrics
         :type perf_metrics: SpeechGenerationPerfMetrics
+
+        :param speaker_embedding: Qwen3-TTS Base voice-clone speaker embedding used for generation.
+                                  Persist and pass it back as the ``speaker_embedding`` argument to reuse a
+                                  cloned voice without re-encoding reference audio. Empty for other backends.
+        :type speaker_embedding: openvino.Tensor
+
+        :param voice_clone_ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
+                                          Persist and pass it back via the ``voice_clone_ref_codec_ids``
+                                          property to reuse the reference prompt. Empty otherwise.
+        :type voice_clone_ref_codec_ids: openvino.Tensor
     """
     def __init__(self) -> None:
         ...
@@ -4404,7 +4414,13 @@ class Text2SpeechDecodedResults:
     def perf_metrics(self) -> SpeechGenerationPerfMetrics:
         ...
     @property
+    def speaker_embedding(self) -> openvino._pyopenvino.Tensor:
+        ...
+    @property
     def speeches(self) -> list[openvino._pyopenvino.Tensor]:
+        ...
+    @property
+    def voice_clone_ref_codec_ids(self) -> openvino._pyopenvino.Tensor:
         ...
 class Text2SpeechPipeline:
     """

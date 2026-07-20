@@ -1624,6 +1624,11 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         // Falls through to the normal synthesis loop with effective_speaker_embedding.
     }
 
+    // Surface the resolved speaker embedding so callers can persist and reuse it (x-vector mode).
+    if (base_model && effective_speaker_embedding) {
+        result.speaker_embedding = effective_speaker_embedding;
+    }
+
     // ICL voice-clone path: triggered when ref_text or ref_codec_ids is provided.
     const bool has_qwen_voice_clone_props =
         base_model &&
@@ -1654,6 +1659,10 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         prompt.ref_spk_embedding = resolved_speaker_embedding;
         prompt.ref_text = generation_config.voice_clone_ref_text;
         prompt.ref_code = resolved_ref_code;
+
+        // Surface the resolved clone artifacts so callers can persist and reuse them (ICL mode).
+        result.speaker_embedding = resolved_speaker_embedding;
+        result.voice_clone_ref_codec_ids = resolved_ref_code;
 
         for (const auto& text : texts) {
             auto decoded = generate_voice_clone(text, prompt, generation_config);
@@ -1916,16 +1925,39 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     auto result = Text2SpeechDecodedResults{};
     result.output_sample_rate = m_output_sample_rate;
 
-    const std::string assistant_text = "<|im_start|>assistant\n" + prompt.ref_text + text + "<|im_end|>\n<|im_start|>assistant\n";
-    auto input = m_tokenizer.encode(assistant_text);
-    auto input_ids_tensor = input.input_ids;
-    OPENVINO_ASSERT(input_ids_tensor.get_element_type() == ov::element::i64,
+    // Tokenize the reference and target turns SEPARATELY, then concatenate token ids,
+    // mirroring upstream qwen_tts (ref_id[:, 3:-2] ++ text_id[:, 3:-5]). Gluing the raw
+    // strings before tokenization could merge tokens across the ref/target seam (BPE
+    // boundary effects) and diverge from the reference.
+    const std::string ref_turn = "<|im_start|>assistant\n" + prompt.ref_text + "<|im_end|>\n";
+    const std::string target_turn = "<|im_start|>assistant\n" + text + "<|im_end|>\n<|im_start|>assistant\n";
+
+    auto ref_input_ids = m_tokenizer.encode(ref_turn).input_ids;
+    auto target_input_ids = m_tokenizer.encode(target_turn).input_ids;
+    OPENVINO_ASSERT(ref_input_ids.get_element_type() == ov::element::i64 &&
+                        target_input_ids.get_element_type() == ov::element::i64,
                     "Qwen3-TTS tokenizer must produce i64 input_ids tensor");
-    OPENVINO_ASSERT(input_ids_tensor.get_shape().size() == 2 && input_ids_tensor.get_shape()[0] == 1,
+    OPENVINO_ASSERT(ref_input_ids.get_shape().size() == 2 && ref_input_ids.get_shape()[0] == 1 &&
+                        target_input_ids.get_shape().size() == 2 && target_input_ids.get_shape()[0] == 1,
                     "Expected input_ids shape [1, T]");
 
-    const size_t input_len = input_ids_tensor.get_shape()[1];
-    const int64_t* input_ids = input_ids_tensor.data<const int64_t>();
+    // Each turn is stripped of its 3-token role prefix (<|im_start|>assistant\n) and its
+    // trailing structural tokens: the reference turn drops <|im_end|>\n (2 tokens); the
+    // target turn drops <|im_end|>\n<|im_start|>assistant\n (5 tokens).
+    const size_t ref_ids_len = ref_input_ids.get_shape()[1];
+    const size_t target_ids_len = target_input_ids.get_shape()[1];
+    OPENVINO_ASSERT(ref_ids_len > 5, "Qwen3 voice-clone reference transcript tokenized too short");
+    OPENVINO_ASSERT(target_ids_len > 8, "Qwen3 voice-clone target text tokenized too short");
+    const int64_t* ref_ids = ref_input_ids.data<const int64_t>();
+    const int64_t* target_ids = target_input_ids.data<const int64_t>();
+
+    // Role prefix taken from the target turn (matches upstream input_id[:, :3]).
+    const std::vector<int64_t> role_ids(target_ids, target_ids + 3);
+    // Content = ref_content ++ target_content (token ids), tokenized independently above.
+    std::vector<int64_t> icl_content_ids;
+    icl_content_ids.reserve((ref_ids_len - 5) + (target_ids_len - 8));
+    icl_content_ids.insert(icl_content_ids.end(), ref_ids + 3, ref_ids + (ref_ids_len - 2));
+    icl_content_ids.insert(icl_content_ids.end(), target_ids + 3, target_ids + (target_ids_len - 5));
 
     int64_t language_id = -1;
     auto lang_it = m_ids.codec_language_id.find(language);
@@ -2015,22 +2047,12 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     }
 
     // Role embed: first 3 tokens = <|im_start|>assistant\n
-    const std::vector<int64_t> role_tokens(input_ids, input_ids + std::min<size_t>(3, input_len));
-    auto role_embed = infer_text_projection(infer_embedding_seq(m_talker_text_embedding, role_tokens));
+    auto role_embed = infer_text_projection(infer_embedding_seq(m_talker_text_embedding, role_ids));
 
-    // text_embed: ref_text + target_text, strip role (first 3) and trailing structural tokens (last 5:
-    // <|im_end|>\n<|im_start|>assistant\n), then append tts_eos.
-    auto ref_text_embed = infer_text_projection(infer_embedding_seq(
-        m_talker_text_embedding,
-        std::vector<int64_t>(input_ids + std::min<size_t>(3, input_len), input_ids + input_len)));
-    const size_t ref_text_tokens_len = ref_text_embed.get_shape()[1];
-    const size_t ref_trimmed_len = ref_text_tokens_len > 5 ? ref_text_tokens_len - 5 : ref_text_tokens_len;
-    ov::Tensor ref_text_trimmed(ov::element::f32, ov::Shape{1, ref_trimmed_len, hidden});
-    if (ref_trimmed_len > 0) {
-        std::copy_n(ref_text_embed.data<const float>(), ref_text_trimmed.get_size(), ref_text_trimmed.data<float>());
-    }
-    // Append tts_eos to text (matches Python: text_embed = torch.cat([text_embed, tts_eos_embed], dim=1))
-    ov::Tensor text_embed_with_eos = concat_embed({ref_text_trimmed, tts_eos});
+    // text_embed: embed(ref_content ++ target_content), then append tts_eos
+    // (matches Python: text_embed = text_projection(embed(cat([ref_id, text_id]))); cat([text_embed, tts_eos])).
+    auto content_embed = infer_text_projection(infer_embedding_seq(m_talker_text_embedding, icl_content_ids));
+    ov::Tensor text_embed_with_eos = concat_embed({content_embed, tts_eos});
     const size_t text_eos_len = text_embed_with_eos.get_shape()[1];
 
     std::cerr << "[DEBUG] ICL path: text_eos_len=" << text_eos_len << " ref_len=" << ref_len << " hidden=" << hidden << std::endl;
