@@ -670,6 +670,7 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
         prompt.introduce_in_stdout(num, prefix)
 
         iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
         text_gen_fn(
             prompt["prompt"],
             num,
@@ -687,10 +688,9 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
             mem_consumption,
             prefix,
         )
-        # Attach the prompt representation to the iter_data entry just appended
-        # so it is available for JSON report output.
-        if iter_data_list:
-            iter_data_list[-1]["prompt_repr"] = repr(prompt)
+        # Attach the prompt representation to the record(s) appended by this
+        # call so it is available for JSON report output.
+        prompt.stamp_repr(iter_data_list, before)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 

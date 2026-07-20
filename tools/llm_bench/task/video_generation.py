@@ -415,9 +415,10 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
         prefix = prompter.get_prefix(num, p_idx)
         prompt.introduce_in_stdout(num, prefix)
         iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
         iter_data, _ = video_gen_pipeline.run(prompt, num, p_idx, proc_id, None)
         iter_data_list.append(iter_data)
-        iter_data["prompt_repr"] = repr(prompt)
+        prompt.stamp_repr(iter_data_list, before)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(
             f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
