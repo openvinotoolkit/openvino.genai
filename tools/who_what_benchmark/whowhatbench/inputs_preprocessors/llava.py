@@ -8,7 +8,7 @@ from transformers import (
     __version__,
 )
 from packaging.version import Version
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Any
 
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
@@ -21,8 +21,9 @@ TRANSFORMERS_VERSION = Version(__version__)
 
 
 class LLAVAInputsPreprocessor(VLMInputsPreprocessor):
-    def __init__(self, chat_mode: bool = False):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         super().__init__(chat_mode)
+        self.def_image_token_id = 32000
 
     def update_chat_history_with_answer(self, answer):
         self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
@@ -86,8 +87,12 @@ class LLAVAInputsPreprocessor(VLMInputsPreprocessor):
 
 
 class NanoLlavaInputsPreprocessor(VLMInputsPreprocessor):
-    def __init__(self, chat_mode: bool = False):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         super().__init__(chat_mode)
+        if model is not None:
+            self.def_image_token_id = getattr(model.config, "image_token_index", 128256)
+        else:
+            self.def_image_token_id = 128256
 
     def update_chat_history_with_answer(self, answer):
         self.chat_history.append({"role": "assistant", "content": answer})
@@ -111,12 +116,12 @@ class NanoLlavaInputsPreprocessor(VLMInputsPreprocessor):
         if image is not None and processor is None:
             raise ValueError("Processor is required.")
 
-        if not isinstance(image, list):
-            image = [image]
-
+        if image is not None:
+            if not isinstance(image, list):
+                image = [image]
+            if len(image) > 0 and image[0] is not None:
+                text = "<image>\n" * len(image) + text
         self.update_images(image)
-        if len(image) > 0 and image[0] is not None:
-            text = "<image>\n" * len(image) + text
 
         new_message = {"role": "user", "content": text}
         if self.chat_mode:

@@ -100,7 +100,7 @@ public:
                                             const ov::AnyMap& plugin_config,
                                             bool is_validation_mode_enabled)
         : ContinuousBatchingForSpeculativeDecodingImpl(model,
-                                                       inputs_embedder,
+                                                       std::move(inputs_embedder),
                                                        tokenizer,
                                                        generation_config,
                                                        scheduler_config,

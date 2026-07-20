@@ -61,6 +61,12 @@ public:
         return rand_tensor;
     }
 
+    ov::Tensor mean() const {
+        ov::Tensor result(m_mean.get_element_type(), m_mean.get_shape());
+        m_mean.copy_to(result);
+        return result;
+    }
+
 private:
     ov::Tensor m_parameters;
     ov::Tensor m_mean, m_std;
@@ -295,6 +301,37 @@ ov::Tensor AutoencoderKL::encode(ov::Tensor image, std::shared_ptr<Generator> ge
         latent = output;
     } else if (output_name == "latent_parameters") {
         latent = DiagonalGaussianDistribution(output).sample(generator);
+    } else {
+        OPENVINO_THROW("Unexpected output name for AutoencoderKL encoder '", output_name, "'");
+    }
+
+    // apply shift and scaling factor
+    float * latent_data = latent.data<float>();
+    for (size_t i = 0; i < latent.get_size(); ++i) {
+        latent_data[i] = (latent_data[i] - m_config.shift_factor) * m_config.scaling_factor;
+    }
+
+    return latent;
+}
+
+ov::Tensor AutoencoderKL::encode(ov::Tensor image) {
+    OPENVINO_ASSERT(m_encoder_request || m_encoder_model, "AutoencoderKL is created without 'VAE encoder' capability. Please, pass extra argument to constructor to create 'VAE encoder'");
+    OPENVINO_ASSERT(m_encoder_request, "VAE encoder model must be compiled first. Cannot infer non-compiled model");
+
+    m_encoder_request.set_input_tensor(image);
+    m_encoder_request.infer();
+
+    ov::Tensor output = m_encoder_request.get_output_tensor(), latent;
+
+    ov::CompiledModel compiled_model = m_encoder_request.get_compiled_model();
+    auto outputs = compiled_model.outputs();
+    OPENVINO_ASSERT(outputs.size() == 1, "AutoencoderKL encoder model is expected to have a single output");
+
+    const std::string output_name = outputs[0].get_any_name();
+    if (output_name == "latent_sample") {
+        latent = output;
+    } else if (output_name == "latent_parameters") {
+        latent = DiagonalGaussianDistribution(output).mean();
     } else {
         OPENVINO_THROW("Unexpected output name for AutoencoderKL encoder '", output_name, "'");
     }

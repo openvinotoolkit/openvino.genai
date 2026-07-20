@@ -18,15 +18,6 @@ on:
 #     types:
 #       - completed
 
-engine:
-  id: copilot
-  # Latest Copilot CLI v1.0.22 blocks safeoutputs MCP server: https://github.com/github/gh-aw/issues/25550
-  version: v1.0.20
-  model: gpt-5-mini
-
-rate-limit:
-  max: 5 # Maximum runs per window
-  window: 60 # Time window in minutes
 
 # Only trigger for failures on master or PRs targeting master
 # Allow workflow_dispatch for manual testing
@@ -54,11 +45,11 @@ timeout-minutes: 10
 
 steps:
   - name: Checkout repository
-    uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
     with:
       persist-credentials: false
   - name: Setup Python
-    uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+    uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
     with:
       python-version: "3.12"
   - name: Install Python requirements for CI Doctor
@@ -94,7 +85,7 @@ steps:
 
   - name: Checkout investigated run's commit
     if: github.event_name == 'workflow_dispatch'
-    uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+    uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
     with:
       ref: ${{ steps.get-head-sha.outputs.head_sha }}
       persist-credentials: false

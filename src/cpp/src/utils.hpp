@@ -8,6 +8,7 @@
 #include <utility>
 #include <cstdint>
 
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -55,6 +56,19 @@ struct GenerationFinishInfo
     GenerationStatus streaming_finish_status;
 };
 
+// A request finishes with GenerationStatus::IGNORED when the scheduler could not fit it within
+// the available cache budget (out of memory) - this can happen for the prompt or later during
+// generation under overall cache pressure. Call sites that discard GenerationStatus (and would
+// otherwise return an empty result) should use this to surface an actionable error instead.
+// request_id identifies which request was dropped when several are generated together.
+inline void assert_request_was_scheduled(GenerationStatus status, uint64_t request_id) {
+    OPENVINO_ASSERT(status != GenerationStatus::IGNORED,
+                    "Request ", request_id, " was dropped by the scheduler because it did not fit in the "
+                    "available cache budget (out of memory). Increase cache_size / num_kv_blocks, reduce the "
+                    "prompt or generation length, or for hybrid (linear-attention) models raise "
+                    "cache_interval_multiplier to lower per-token cache usage.");
+}
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
@@ -83,12 +97,14 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 }
 
 const std::string STREAMER_ARG_NAME = "streamer";
+const std::string AUDIO_STREAMER_ARG_NAME = "audio_streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 const std::string EXTENSIONS_ARG_NAME = "extensions";
 const std::string IMAGES_BATCHES_ARG_NAME = "images_batches";
 const std::string VIDEOS_BATCHES_ARG_NAME = "videos_batches";
 const std::string VIDEOS_METADATA_BATCHES_ARG_NAME = "videos_metadata_batches";
+const std::string AUDIOS_BATCHES_ARG_NAME = "audios_batches";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -97,6 +113,7 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
+ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
@@ -239,6 +256,8 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const ov::AnyMap& config,
                                                                             const KVAxesPosition& kv_pos,
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
+
+size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
