@@ -19,7 +19,7 @@
 #include "utils.hpp"
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
-#include "visual_language/vision_properties.hpp"
+#include "visual_language/multimodal_inputs.hpp"
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
 
@@ -85,7 +85,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
-            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
@@ -143,7 +143,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
-            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
@@ -196,7 +196,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
-            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
@@ -291,7 +291,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
-            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model, scheduler_config, generation_config);
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         }
@@ -457,19 +457,19 @@ GenerationHandle ContinuousBatchingPipeline::add_request(
     ov::genai::OptionalGenerationConfig generation_config = utils::get_config_from_map(properties_map);
     OPENVINO_ASSERT(generation_config.has_value(),
         "\"generation_config\" property is required in add_request with properties map");
-    
-    const auto vision_properties = extract_vision_properties(properties_map);
 
-    if (!vision_properties.has_value()) {
+    const auto multimodal_inputs = extract_multimodal_inputs(properties_map);
+
+    if (!multimodal_inputs.has_value()) {
         return m_impl->add_request(request_id, prompt, generation_config.value());
     }
 
     return m_impl->add_request(
         request_id,
         prompt,
-        vision_properties.images.value_or(std::vector<ov::Tensor>{}),
-        vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
-        vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
+        multimodal_inputs.images.value_or(std::vector<ov::Tensor>{}),
+        multimodal_inputs.videos.value_or(std::vector<ov::Tensor>{}),
+        multimodal_inputs.videos_metadata.value_or(std::vector<VideoMetadata>{}),
         generation_config.value()
     );
 }
@@ -552,6 +552,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
         properties.streamer
     );
@@ -595,6 +596,7 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.images_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
+        CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
         properties.streamer
     );

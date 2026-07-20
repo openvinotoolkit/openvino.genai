@@ -1,2 +1,2 @@
 # Deterministic pins for Who-What-Benchmark CI jobs.
-llama-cpp-python==0.3.33
+llama-cpp-python==0.3.34

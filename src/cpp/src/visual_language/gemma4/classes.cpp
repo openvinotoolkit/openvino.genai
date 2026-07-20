@@ -3,13 +3,20 @@
 
 #include "visual_language/gemma4/classes.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <sstream>
+#include <iomanip>
+#include <numeric>
 
+#include "logger.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
 
 namespace {
+
+constexpr float DEFAULT_METADATA_FPS = 24.0f;
 
 /// @brief Compute target dimensions for aspect-ratio-preserving resize.
 /// Total pixel count should match max_patches * patch_size^2
@@ -138,13 +145,63 @@ size_t get_num_valid_soft_tokens(const PatchExtractionConfig& patch_config,
     return num_patches_h * num_patches_w;
 }
 
+/**
+ * @brief Populates video metadata and computes frame sampling indices.
+ */
+void fill_video_metadata(
+    ov::genai::VideoMetadata& video_metadata,
+    size_t total_num_frames,
+    const ov::genai::VideoProcessorConfig& video_config
+) {
+    if (video_metadata.fps == 0.0f) {
+        GENAI_WARN("Gemma4 requires frame timestamps to construct prompts, but fps is not set. "
+               "Defaulting to 24 fps. Please provide VideoMetadata with fps for more accurate results.");
+        video_metadata.fps = DEFAULT_METADATA_FPS;
+    }
+
+    if (!video_metadata.frames_indices.empty()) {
+        GENAI_WARN("Frames indices already provided in video metadata, skipping Gemma4 model-specific sampling.");
+        return;
+    }
+
+    if (!video_config.do_sample_frames) {
+        video_metadata.frames_indices.resize(total_num_frames);
+        std::iota(video_metadata.frames_indices.begin(), video_metadata.frames_indices.end(), 0);
+        return;
+    }
+
+    size_t num_frames = video_config.num_frames;
+
+    if (num_frames == 0) {
+        num_frames = std::min(total_num_frames, video_config.max_frames > 0 ? video_config.max_frames : total_num_frames);
+    }
+
+    num_frames = std::min(num_frames, total_num_frames);
+    OPENVINO_ASSERT(num_frames > 0, "Number of frames to sample must be positive.");
+
+    if (num_frames == total_num_frames) {
+        video_metadata.frames_indices.resize(total_num_frames);
+        std::iota(video_metadata.frames_indices.begin(), video_metadata.frames_indices.end(), 0);
+        return;
+    }
+
+    video_metadata.frames_indices.reserve(num_frames);
+    const double step = static_cast<double>(total_num_frames) / static_cast<double>(num_frames);
+    for (size_t i = 0; i < num_frames; ++i) {
+        video_metadata.frames_indices.push_back(static_cast<size_t>(static_cast<double>(i) * step));
+    }
+}
+
 }  // namespace
 
 namespace ov::genai {
 
 EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
+    return encode_with_config(image, config);
+}
 
+EncodedImage VisionEncoderGemma4::encode_with_config(const ov::Tensor& image, const ProcessorConfig& config) {
     // 1. Convert input tensor (NHWC uint8) to clip_image_u8 (HWC uint8)
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
@@ -223,6 +280,36 @@ EncodedImage VisionEncoderGemma4::encode(const ov::Tensor& image, const ov::AnyM
     return {std::move(image_features)};
 }
 
+EncodedVideo VisionEncoderGemma4::encode_frames(const std::vector<ov::Tensor>& frames) {
+    OPENVINO_ASSERT(!frames.empty(), "Cannot encode an empty list of video frames.");
+
+    std::vector<ov::Tensor> frame_features;
+    frame_features.reserve(frames.size());
+
+    for (const auto& frame : frames) {
+        EncodedImage encoded = encode_with_config(frame, m_video_processor_config);
+        frame_features.push_back(std::move(encoded.resized_source));
+    }
+
+    // Concatenate all frame features: [1, total_tokens, hidden_size]
+    size_t num_soft_tokens_per_frame = frame_features[0].get_shape()[1];
+    const size_t hidden_size = frame_features[0].get_shape()[2];
+    const size_t total_tokens = frames.size() * num_soft_tokens_per_frame;
+
+    ov::Tensor video_features(frame_features[0].get_element_type(), {1, total_tokens, hidden_size});
+    uint8_t* dst = static_cast<uint8_t*>(video_features.data());
+    for (const auto& frame_feature : frame_features) {
+        std::memcpy(dst, frame_feature.data(), frame_feature.get_byte_size());
+        dst += frame_feature.get_byte_size();
+    }
+
+    EncodedVideo result;
+    result.video_features = std::move(video_features);
+    result.num_video_tokens = total_tokens;
+    result.frame_num = frames.size();
+    return result;
+}
+
 InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::filesystem::path& model_dir,
                                            const std::string& device,
@@ -289,31 +376,136 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderGemma4::encode_images(const s
     return embeds;
 }
 
-NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& prompt,
-                                                        size_t base_id,
-                                                        const std::vector<EncodedImage>& images) const {
+std::vector<ov::genai::EncodedVideo> InputsEmbedderGemma4::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata
+) {
+    OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
+        "Number of videos and videos metadata must match if metadata provided.");
+
+    std::vector<EncodedVideo> encoded_videos;
+    encoded_videos.reserve(videos.size());
+
+    for (size_t i = 0; i < videos.size(); ++i) {
+        const ov::Tensor& video = videos[i];
+        const size_t video_num_frames = video.get_shape()[0];
+        VideoMetadata video_metadata = i < videos_metadata.size() ? videos_metadata[i] : VideoMetadata{};
+        fill_video_metadata(video_metadata, video_num_frames, m_vision_encoder->get_video_processor_config());
+        const auto sampled_video = sample_video_if_needed(video, video_metadata);
+        std::vector<ov::Tensor> frames = to_single_image_tensors({sampled_video});
+        auto encoded_video = m_vision_encoder->encode_frames(frames);
+        encoded_video.metadata = video_metadata;
+        encoded_videos.emplace_back(std::move(encoded_video));
+    }
+    return encoded_videos;
+}
+
+NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(
+    const std::string& prompt,
+    size_t base_id,
+    const std::vector<EncodedImage>& images
+) const {
+    return normalize_prompt(prompt, base_id, 0, images, {});
+}
+
+NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(
+    const std::string& prompt,
+    size_t base_image_id,
+    size_t base_video_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos
+) const {
     const auto& boi = m_vlm_config.boi_token;
     const auto& eoi = m_vlm_config.eoi_token;
-    const auto& img = m_vlm_config.image_token;
-    auto [unified_prompt, images_sequence] = normalize(prompt, img, img, base_id, images.size());
+    const auto& image_token = m_vlm_config.image_token;
+    const auto& video_token = m_vlm_config.video_token;
+
+    // Images
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_image_id, images.size(), VisionType::IMAGE);
 
     size_t search_offset = 0;
     for (size_t new_image_id : images_sequence) {
-        const size_t num_image_tokens = images.at(new_image_id - base_id).resized_source.get_shape().at(1);
+        const size_t num_image_tokens = images.at(new_image_id - base_image_id).resized_source.get_shape().at(1);
         std::string expanded_tag;
-        expanded_tag.reserve(boi.size() + num_image_tokens * img.size() + eoi.size());
+        expanded_tag.reserve(boi.size() + num_image_tokens * image_token.size() + eoi.size());
         expanded_tag = boi;
         for (size_t i = 0; i < num_image_tokens; i++) {
-            expanded_tag += img;
+            expanded_tag += image_token;
         }
         expanded_tag += eoi;
 
-        size_t pos = unified_prompt.find(img, search_offset);
+        size_t pos = unified_prompt.find(image_token, search_offset);
         OPENVINO_ASSERT(pos != std::string::npos, "Failed to find image token in prompt during normalization");
-        unified_prompt.replace(pos, img.length(), expanded_tag);
+        unified_prompt.replace(pos, image_token.length(), expanded_tag);
         search_offset = pos + expanded_tag.size();
     }
-    return {std::move(unified_prompt), std::move(images_sequence), {}};
+
+    // Videos
+    std::vector<size_t> videos_sequence;
+    std::tie(unified_prompt, videos_sequence) =
+        normalize(unified_prompt, video_token, video_token, base_video_id, videos.size(), VisionType::VIDEO);
+    
+    expand_video_tags_in_prompt(unified_prompt, videos, videos_sequence, base_video_id);
+
+    return {std::move(unified_prompt), std::move(images_sequence), std::move(videos_sequence)};
+}
+
+void InputsEmbedderGemma4::expand_video_tags_in_prompt(
+    std::string& unified_prompt,
+    const std::vector<EncodedVideo>& encoded_videos,
+    const std::vector<size_t>& videos_sequence,
+    size_t video_base_id
+) const {
+    const auto& boi = m_vlm_config.boi_token;
+    const auto& eoi = m_vlm_config.eoi_token;
+    const auto& video_token = m_vlm_config.video_token;
+
+    size_t search_offset = 0;
+    for (size_t video_id : videos_sequence) {
+        const auto& encoded_video = encoded_videos.at(video_id - video_base_id);
+        OPENVINO_ASSERT(encoded_video.frame_num > 0, "Video must contain at least one frame.");
+        OPENVINO_ASSERT(encoded_video.metadata.frames_indices.size() >= encoded_video.frame_num,
+            "Video metadata frames_indices size (", encoded_video.metadata.frames_indices.size(),
+            ") must be >= frame_num (", encoded_video.frame_num, ")");
+        OPENVINO_ASSERT(encoded_video.num_video_tokens % encoded_video.frame_num == 0,
+            "num_video_tokens (", encoded_video.num_video_tokens,
+            ") must be divisible by frame_num (", encoded_video.frame_num, ")");
+        OPENVINO_ASSERT(encoded_video.metadata.fps > 0.0f,
+            "Video metadata fps must be positive for timestamp calculation");
+
+        const size_t tokens_per_frame = encoded_video.num_video_tokens / encoded_video.frame_num;
+
+        // Build expanded tag: "MM:SS <boi><video_token>*N<eoi> MM:SS <boi><video_token>×N<eoi> ..."
+        std::string expanded;
+        // MM:SS (5) + whitespace (1) + <boi> + <video_token>*N + <eoi> + whitespace (1)
+        const size_t per_frame_expanded_size =  5 + 1 + boi.size() + video_token.size() * tokens_per_frame + eoi.size() + 1;
+        expanded.reserve(encoded_video.frame_num * per_frame_expanded_size);
+        for (size_t i = 0; i < encoded_video.frame_num; ++i) {
+            const float seconds = static_cast<float>(encoded_video.metadata.frames_indices[i]) / encoded_video.metadata.fps;
+            const int mins = static_cast<int>(seconds) / 60;
+            const int secs = static_cast<int>(seconds) % 60;
+
+            std::ostringstream timestamp_ss;
+            timestamp_ss << std::setfill('0') << std::setw(2) << mins
+                << ":" << std::setfill('0') << std::setw(2) << secs;
+
+            expanded += timestamp_ss.str();
+            expanded += " ";
+            expanded += boi;
+            for (size_t t = 0; t < tokens_per_frame; ++t) {
+                expanded += video_token;
+            }
+            expanded += eoi;
+            if (i + 1 < encoded_video.frame_num) {
+                expanded += " ";
+            }
+        }
+
+        const size_t pos = unified_prompt.find(video_token, search_offset);
+        OPENVINO_ASSERT(pos != std::string::npos, "Failed to find video token in prompt during expansion");
+        unified_prompt.replace(pos, video_token.length(), expanded);
+        search_offset = pos + expanded.size();
+    }
 }
 
 ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& input_ids) {
@@ -333,12 +525,33 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
     VLMPerfMetrics& metrics,
-    const std::vector<size_t>& images_sequence) {
+    const std::vector<size_t>& images_sequence,
+    const std::vector<size_t>& videos_sequence
+) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
         image_embeds.push_back(images.at(new_image_id).resized_source);
+    }
+
+    // Collect per-frame video embeddings as individual "image" embeds for the video token scatter
+    std::vector<ov::Tensor> video_embeds;
+    for (size_t video_id : videos_sequence) {
+        const auto& encoded_video = videos.at(video_id);
+        // video_features is [1, total_tokens, hidden_size] — reshape to individual frame embeds
+        const size_t tokens_per_frame = encoded_video.num_video_tokens / encoded_video.frame_num;
+        const size_t hidden_size = encoded_video.video_features.get_shape()[2];
+        const auto elem_type = encoded_video.video_features.get_element_type();
+        const size_t bytes_per_frame = tokens_per_frame * hidden_size * elem_type.size();
+        const uint8_t* src = static_cast<const uint8_t*>(encoded_video.video_features.data());
+
+        for (size_t f = 0; f < encoded_video.frame_num; ++f) {
+            auto* frame_ptr = const_cast<uint8_t*>(src + f * bytes_per_frame);
+            ov::Tensor frame_embed(elem_type, {1, tokens_per_frame, hidden_size}, frame_ptr);
+            video_embeds.push_back(std::move(frame_embed));
+        }
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
@@ -351,16 +564,27 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
-    encode_image_token_id();
+    encode_vision_token_ids();
 
-    if (images.empty()) {
-        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+    ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
+
+    if (image_embeds.empty() && video_embeds.empty()) {
         text_embeds.copy_to(inputs_embeds);
         return {std::move(inputs_embeds), std::move(input_ids)};
     }
 
-    ov::Tensor inputs_embeds =
-        utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
+    // Merge image embeddings at image_token_id positions
+    if (!image_embeds.empty()) {
+        inputs_embeds = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
+    } else {
+        inputs_embeds = std::move(text_embeds);
+    }
+
+    // Merge video embeddings at video_token_id positions
+    if (!video_embeds.empty()) {
+        inputs_embeds = utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, video_embeds, m_video_token_id);
+    }
+    
     return {std::move(inputs_embeds), std::move(input_ids)};
 }
 
@@ -369,7 +593,20 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
                                                    VLMPerfMetrics& metrics,
                                                    bool recalculate_merged_embeddings,
                                                    const std::vector<size_t>& images_sequence) {
-    return compute_inputs_embeds(prompt, images, metrics, images_sequence).first;
+    return compute_inputs_embeds(prompt, images, {}, metrics, images_sequence, {}).first;
+}
+
+ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& images_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    return compute_inputs_embeds(prompt, images, videos, metrics, images_sequence, videos_sequence).first;
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_token_type_ids(
@@ -378,7 +615,22 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_t
     VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence) {
-    auto [inputs_embeds, input_ids] = compute_inputs_embeds(prompt, images, metrics, images_sequence);
+    auto [inputs_embeds, input_ids] = compute_inputs_embeds(prompt, images, {}, metrics, images_sequence, {});
+    ov::Tensor token_type_ids = get_token_type_ids(input_ids);
+    return {std::move(inputs_embeds), std::move(token_type_ids)};
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_token_type_ids(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& images_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
+    auto [inputs_embeds, input_ids] = compute_inputs_embeds(prompt, images, videos, metrics, images_sequence, videos_sequence);
     ov::Tensor token_type_ids = get_token_type_ids(input_ids);
     return {std::move(inputs_embeds), std::move(token_type_ids)};
 }
@@ -395,16 +647,18 @@ ov::Tensor InputsEmbedderGemma4::get_token_type_ids(const ov::Tensor& input_ids)
     ov::Tensor token_type_ids(ov::element::i64, input_ids.get_shape());
     int64_t* token_type_data = token_type_ids.data<int64_t>();
     for (size_t i = 0; i < num_elements; ++i) {
-        token_type_data[i] = (input_ids_data[i] == m_image_token_id) ? 1 : 0;
+        token_type_data[i] = (input_ids_data[i] == m_image_token_id || input_ids_data[i] == m_video_token_id) ? 1 : 0;
     }
     return token_type_ids;
 }
 
-void InputsEmbedderGemma4::encode_image_token_id() {
-    std::call_once(m_image_token_id_once_flag, [this]() {
-        const auto encoded_image_token =
-            m_tokenizer.encode(m_vlm_config.image_token, ov::genai::add_special_tokens(false)).input_ids;
-        m_image_token_id = encoded_image_token.data<int64_t>()[0];
+void InputsEmbedderGemma4::encode_vision_token_ids() {
+    std::call_once(m_vision_token_ids_once_flag, [this]() {
+        const auto encoded_vision_tokens =
+            m_tokenizer.encode(m_vlm_config.image_token + m_vlm_config.video_token, ov::genai::add_special_tokens(false)).input_ids;
+        OPENVINO_ASSERT(encoded_vision_tokens.get_size() == 2, "Encoded vision tokens must contain two tokens");
+        m_image_token_id = encoded_vision_tokens.data<int64_t>()[0];
+        m_video_token_id = encoded_vision_tokens.data<int64_t>()[1];
     });
 }
 

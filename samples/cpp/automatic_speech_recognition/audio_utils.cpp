@@ -4,6 +4,7 @@
 #include "audio_utils.hpp"
 
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -113,6 +114,30 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
     }
 
     return pcmf32;
+}
+
+ov::Tensor read_wav_as_tensor(const std::string& filename) {
+    ov::genai::RawSpeechInput pcm = read_wav(filename);
+    const size_t sample_count = pcm.size();
+
+    // Move the decoded samples into an allocator so the tensor owns them directly, avoiding a
+    // copy of the PCM buffer. Mirrors SharedImageAllocator in visual_language_chat/load_image.cpp.
+    // The buffer is held via shared_ptr so copying the allocator is cheap and ownership is unambiguous.
+    struct SharedPcmAllocator {
+        std::shared_ptr<std::vector<float>> pcm;
+        void* allocate(size_t bytes, size_t) const {
+            OPENVINO_ASSERT(bytes == pcm->size() * sizeof(float),
+                            "Unexpected number of bytes was requested to allocate.");
+            return pcm->data();
+        }
+        void deallocate(void*, size_t, size_t) const noexcept {}
+        bool is_equal(const SharedPcmAllocator& other) const noexcept {
+            return pcm == other.pcm;
+        }
+    };
+    return ov::Tensor(ov::element::f32,
+                      ov::Shape{sample_count},
+                      SharedPcmAllocator{std::make_shared<std::vector<float>>(std::move(pcm))});
 }
 }  // namespace audio
 }  // namespace utils
