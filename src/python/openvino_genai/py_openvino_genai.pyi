@@ -722,6 +722,25 @@ class AutoencoderKL:
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, vae_decoder_blob_tensor: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config, device: str, **kwargs) -> None:
+        """
+                    AutoencoderKL class initialized only with decoder model from blob tensor.
+                    vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
+                    vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, vae_encoder_blob_tensor: openvino._pyopenvino.Tensor, vae_decoder_blob_tensor: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config, device: str, **kwargs) -> None:
+        """
+                    AutoencoderKL class initialized with both encoder and decoder models from blob tensors.
+                    vae_encoder_blob_tensor (ov.Tensor): Pre-read compiled VAE encoder model blob tensor.
+                    vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
+                    vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -897,6 +916,16 @@ class CLIPTextModel:
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, blob_tensor: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
+        """
+                    CLIPTextModel class constructor from blob tensor.
+                    blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
+                    config (CLIPTextModel.Config): CLIPTextModel configuration.
+                    clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -960,6 +989,16 @@ class CLIPTextModelWithProjection(CLIPTextModel):
                     CLIPTextModelWithProjection class constructor.
                     model (str): Pre-read model.
                     weights (ov.Tensor): Pre-read model weights tensor.
+                    config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
+                    clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, blob_tensor: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
+        """
+                    CLIPTextModelWithProjection class constructor from blob tensor.
+                    blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
                     config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
                     device (str): Device on which inference will be done.
@@ -5258,6 +5297,16 @@ class UNet2DConditionModel:
                     UNet2DConditionModel class constructor.
                     model (str): Pre-read model.
                     weights (ov.Tensor): Pre-read model weights tensor.
+                    config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
+                    vae_scale_factor (int): VAE scale factor.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, blob_tensor: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
+        """
+                    UNet2DConditionModel class constructor from blob tensor.
+                    blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
                     config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
                     vae_scale_factor (int): VAE scale factor.
                     device (str): Device on which inference will be done.
