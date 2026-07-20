@@ -905,8 +905,9 @@ _wmi_module    = None
 # kernel32.dll on modern Windows) and mirrors the C struct from psapi.h.
 #
 # WMI (Windows Management Instrumentation) is used for GPU memory monitoring.
-# The wmi module queries Win32_VideoController.DedicatedUsage (Win10 1803+)
-# to obtain per-adapter dedicated GPU memory currently in use.
+# The wmi module queries the GPUAdapterMemory performance counters (Win10
+# 1709+) to obtain per-adapter dedicated AND shared GPU memory currently in
+# use — shared coverage is what makes integrated GPUs report non-zero usage.
 # ---------------------------------------------------------------------------
 if sys.platform == "win32":
     import ctypes
@@ -1027,15 +1028,28 @@ class MemorySamplerW(MemorySampler):
     nsys
         ``sys`` expressed as a percentage of total installed RAM.
 
-    gpu_<index>
-        **Dedicated GPU memory in use** for the adapter at position
-        *<index>* in the WMI ``Win32_VideoController`` enumeration (e.g.
-        ``gpu_0``, ``gpu_1``).  Sourced from the ``DedicatedUsage`` WMI
-        field (bytes, Windows 10 1803+).  One metric is registered per
-        physical GPU detected at construction time.  Vendor-agnostic:
-        works with NVIDIA, AMD, and Intel Arc adapters alike.
-        Present only when the ``wmi`` package is installed and at least
-        one GPU adapter is detected.
+    gpu_<index>_ded / gpu_<index>_shr
+        **GPU memory in use** for the adapter at position *<index>* in the
+        GPU performance-counter enumeration (e.g. ``gpu_0_ded``,
+        ``gpu_0_shr``).  Two pools are reported per adapter:
+
+        * ``_ded`` — **dedicated** GPU memory (``DedicatedUsage``): on-board
+          VRAM.  Nonzero on **discrete** GPUs; ~0 on integrated GPUs, which
+          have no dedicated VRAM.
+        * ``_shr`` — **shared** GPU memory (``SharedUsage``): system RAM used
+          as GPU memory.  This is where **integrated** GPU usage shows up
+          (and where a discrete GPU spills once its VRAM is full).
+
+        Sourced from the
+        ``Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory``
+        WMI class (bytes, Windows 10 1709+), which — unlike
+        ``Win32_VideoController.DedicatedUsage`` used previously — exposes
+        the shared pool, so integrated GPUs no longer read a constant 0.
+        Values are system-wide (all processes) per adapter.  Two metrics are
+        registered per adapter detected at construction time.  Vendor-
+        agnostic: works with NVIDIA, AMD, and Intel adapters alike.  Present
+        only when the ``wmi`` package is installed and at least one GPU
+        adapter is detected.
 
     Notes
     -----
@@ -1055,9 +1069,16 @@ class MemorySamplerW(MemorySampler):
     """
 
     chunk_size = 8192
+
+    # WMI performance-counter class exposing per-adapter GPU memory. Unlike
+    # Win32_VideoController.DedicatedUsage (dedicated VRAM only), it also
+    # reports the shared pool, so integrated GPUs report real usage.
+    _GPU_ADAPTER_CLS = "Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory"
+
     # Base metrics — fixed, vendor-independent process/system counters.
-    # gpu_<index> entries are appended dynamically in __init__ after WMI
-    # GPU discovery, so this dict must NOT be mutated directly.
+    # gpu_<index>_ded / gpu_<index>_shr entries are appended dynamically in
+    # __init__ after WMI GPU discovery, so this dict must NOT be mutated
+    # directly.
     metrics = OrderedDict(
         [
             # fmt: off
@@ -1080,37 +1101,30 @@ class MemorySamplerW(MemorySampler):
 
         # ── WMI GPU discovery ────────────────────────────────────────────
         # Establish the WMI connection once and cache it.  Each detected GPU
-        # adapter gets a dedicated gpu_<index> metric slot appended to
-        # self.metrics in enumeration order.
-        self._wmi_conn  = None
-        self._gpu_count = 0
+        # adapter contributes TWO metric slots appended to self.metrics in
+        # enumeration order: gpu_<index>_ded (dedicated VRAM) and
+        # gpu_<index>_shr (shared system RAM).  The shared pool is what makes
+        # integrated-GPU usage visible (dedicated is ~0 for iGPUs).
+        self._wmi_conn      = None
+        self._gpu_instances = []   # ordered adapter instance names (LUID keys)
         if _wmi_available:
             try:
-                self._wmi_conn  = _wmi_module.WMI()
-                self._gpu_count = len(self._wmi_conn.Win32_VideoController())
-                if self._gpu_count > 0:
-                    log.info(
-                        f"MemorySamplerW: WMI detected {self._gpu_count} GPU adapter(s) "
-                        f"— metrics: gpu_0 … gpu_{self._gpu_count - 1}."
-                    )
-                else:
-                    log.info(
-                        "MemorySamplerW: WMI found no GPU adapters "
-                        "— gpu_<index> metrics skipped."
-                    )
+                self._wmi_conn = _wmi_module.WMI()
+                self._discover_gpu_adapters()
             except Exception as exc:
                 log.warning(
                     f"MemorySamplerW: WMI GPU detection failed ({exc}) "
                     "— gpu_<index> metrics disabled."
                 )
 
-        for i in range(self._gpu_count):
-            self.metrics[f"gpu_{i}"] = {
-                "denom":  1_048_576,   # bytes → MiB
-                "unit":   "MiB",
-                "digits": 3,
-                "cv":     True,
-            }
+        for i in range(len(self._gpu_instances)):
+            for pool in ("ded", "shr"):
+                self.metrics[f"gpu_{i}_{pool}"] = {
+                    "denom":  1_048_576,   # bytes → MiB
+                    "unit":   "MiB",
+                    "digits": 3,
+                    "cv":     True,
+                }
 
         # Call parent __init__ *after* self.metrics is fully populated so
         # that make_header() already sees all entries, including gpu_N ones.
@@ -1120,40 +1134,83 @@ class MemorySamplerW(MemorySampler):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _discover_gpu_adapters(self):
+        """
+        Enumerate GPU adapters via the GPU performance-counter class and fix
+        the per-adapter metric order for the lifetime of the sampler.
+
+        Adapter instance names (e.g. ``luid_0x00000000_0x0002c3ec_phys_0``)
+        are stable for the current boot session, so the index → adapter
+        mapping stays constant across every :meth:`collect` call.  Friendly
+        names from ``Win32_VideoController`` are logged as a legend only:
+        they cannot be mapped 1:1 to counter LUIDs via WMI, so metric keys
+        stay index-based.  Virtual/idle adapters (e.g. Microsoft Basic
+        Render Driver) are included and simply read 0/0 — they are never
+        dropped, so a genuine but momentarily-idle GPU is never missed.
+        """
+        rows = getattr(self._wmi_conn, self._GPU_ADAPTER_CLS)()
+        self._gpu_instances = [r.Name for r in rows]
+
+        if not self._gpu_instances:
+            log.info("MemorySamplerW: no GPU adapters found — gpu metrics skipped.")
+            return
+
+        try:
+            names = [getattr(v, "Name", None) or "GPU"
+                     for v in self._wmi_conn.Win32_VideoController()]
+        except Exception:
+            names = []
+
+        last = len(self._gpu_instances) - 1
+        log.info(
+            f"MemorySamplerW: {len(self._gpu_instances)} GPU adapter(s) "
+            f"— metrics gpu_0_ded/shr … gpu_{last}_ded/shr "
+            "(ded=dedicated VRAM/discrete, shr=shared system RAM/integrated). "
+            f"Adapters(LUID)={self._gpu_instances} VideoControllers={names}"
+        )
+
     def _collect_gpu_mem(self):
         """
-        Query dedicated GPU memory currently in use for every detected
-        adapter via the WMI ``Win32_VideoController`` class.
+        Query dedicated + shared GPU memory currently in use for every
+        detected adapter via the WMI
+        ``Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory``
+        class.  ``DedicatedUsage`` is on-board VRAM (nonzero on discrete
+        GPUs) and ``SharedUsage`` is system RAM used as GPU memory (nonzero
+        on integrated GPUs).  Values are bytes, system-wide per adapter.
+        The cached ``self._wmi_conn`` is reused on every call to avoid COM
+        re-initialisation overhead.
 
-        The ``DedicatedUsage`` field (Windows 10 version 1803 and later)
-        reports the number of bytes of dedicated video memory currently
-        consumed by the adapter.  The cached ``self._wmi_conn`` is reused
-        on every call to avoid COM re-initialisation overhead.
+        Two values are returned **per GPU index** — ``(ded, shr)`` — flattened
+        in the same order as the ``gpu_<index>_ded`` / ``gpu_<index>_shr``
+        metrics registered in ``self.metrics``.  This guarantees the tuple
+        length always matches what :meth:`aggregate_and_format` expects.
 
-        One value is returned **per GPU index**, in the same order as the
-        ``gpu_<index>`` metrics registered in ``self.metrics``.  This
-        guarantees that the tuple length always matches what
-        :meth:`aggregate_and_format` expects.
-
-        :returns: A tuple of ``int`` values in **bytes**, one per GPU.
-                  Returns an empty tuple when WMI is unavailable or no
-                  adapters were found.  Returns a tuple of zeros (length
-                  ``self._gpu_count``) when the WMI query fails at
-                  runtime, so sampling continues without crashing.
+        :returns: A flat tuple of ``int`` values in **bytes**,
+                  ``(ded_0, shr_0, ded_1, shr_1, …)``.  Empty tuple when WMI
+                  is unavailable or no adapters were found.  A tuple of zeros
+                  (length ``2 * len(self._gpu_instances)``) when the WMI query
+                  fails at runtime, so sampling continues without crashing.
         """
-        if self._wmi_conn is None or self._gpu_count == 0:
+        if self._wmi_conn is None or not self._gpu_instances:
             return ()
         try:
-            return tuple(
-                int(getattr(gpu, "DedicatedUsage", None) or 0)
-                for gpu in self._wmi_conn.Win32_VideoController()
-            )
+            rows = {
+                r.Name: r
+                for r in getattr(self._wmi_conn, self._GPU_ADAPTER_CLS)()
+            }
         except Exception as exc:
             log.debug(
                 f"MemorySamplerW: WMI GPU memory query failed ({exc})"
                 " — returning zeros."
             )
-            return (0,) * self._gpu_count  # QW-6: more Pythonic, slightly faster
+            return (0,) * (2 * len(self._gpu_instances))
+
+        out = []
+        for name in self._gpu_instances:
+            r = rows.get(name)
+            out.append(int(getattr(r, "DedicatedUsage", 0) or 0) if r is not None else 0)
+            out.append(int(getattr(r, "SharedUsage",   0) or 0) if r is not None else 0)
+        return tuple(out)
 
     @staticmethod
     def _query_win_mem(pid):
@@ -1244,8 +1301,8 @@ class MemorySamplerW(MemorySampler):
         sys_mem  = vm.total - vm.available
         nsys_mem = 100.0 * sys_mem / vm.total
 
-        # ── GPU memory (one value per adapter, via WMI) ──────────────────
-        gpu_vals = self._collect_gpu_mem()  # QW-8: split long line for readability
+        # ── GPU memory (two values per adapter: dedicated + shared, via WMI) ─
+        gpu_vals = self._collect_gpu_mem()  # flat (ded_0, shr_0, ded_1, shr_1, …)
         vals = (wset_total, priv_total, pagefile_total, sys_mem, nsys_mem, *gpu_vals)
         return self.aggregate_and_format(marker, vals)
 
@@ -1296,8 +1353,9 @@ class MemoryMarkerMonitor(list):
         #   "W" → MemorySamplerW: Windows-native, calls GetProcessMemoryInfo
         #          (psapi.dll) directly.  Provides Working Set, Private Bytes,
         #          Page-File Usage and system-wide RAM.  When the optional *wmi*
-        #          package is installed, per-GPU dedicated memory (gpu_<index>)
-        #          is also collected via Win32_VideoController.DedicatedUsage.
+        #          package is installed, per-GPU dedicated + shared memory
+        #          (gpu_<index>_ded / gpu_<index>_shr) is also collected via the
+        #          GPUAdapterMemory performance counters.
         #          If "W" is requested on a non-Windows platform the code falls
         #          back to MemorySampler5 with a warning.
         _use_w = sampler_type == "W"
