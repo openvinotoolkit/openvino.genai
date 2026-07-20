@@ -44,18 +44,6 @@ Ensure the Python virtual environment is activated before running any commands.
 
 Read and follow the **model-checker** skill.
 
-For a Hugging Face model ID, run model-checker normally. For a local model or
-IR directory, do not reject it for not matching `org/model` and do not invoke a
-checker path that requires a Hub ID. Instead:
-
-1. Read its `config.json` and processor metadata to establish `model_type`,
-   architecture, task, and whether it is a source model or exported IR.
-2. Reuse a supplied export when present; otherwise export the local source
-   model into a local work directory.
-3. Run the smallest correct direct GenAI generation check for the task.
-4. Preserve the original Hugging Face identity in the analysis report when it
-   is known, while using the local path as the runnable validation artifact.
-
 Read **model-checker** step results. Depending on the results:
 
 - If all steps passed, proceed to Step 4.
@@ -84,9 +72,9 @@ Before modifying shared model code, check backward compatibility:
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
 If model-checker passes, proceed to Step 4.
 
-Revalidate using the same mode used initially: model-checker for a Hub model,
-or the same direct local-path generation reproducer for a local model/IR. Do
-not replace a failing local-artifact check with success from another model.
+Revalidate with **model-checker**, passing the same Hugging Face model ID or
+local OpenVINO IR directory used during initial validation. Do not replace a
+failing local-artifact check with success from another model.
 
 If any GenAI source file changed, rebuild the edited checkout before running
 model-checker or direct inference. Verify `openvino_genai.__file__` resolves to
