@@ -85,10 +85,15 @@ Follow the checklist in [genai-vlm-architecture.md](genai-vlm-architecture.md) "
 
 ### 2.2 Build
 
-Build the current checkout using the repository instructions in
-`src/docs/BUILD.md`. Preserve the active OpenVINO, Transformers, Optimum Intel,
-and tokenizer versions unless a source-compatible dependency change is part of
-the fix. Do not validate edited source through a previously installed wheel.
+For normal local development, install the current checkout into the active
+environment using the repository instructions in `src/docs/BUILD.md`:
+
+```bash
+python -m pip install .
+```
+
+This is the default validation path. Do not validate edited source through a
+previously installed OpenVINO GenAI wheel.
 
 After building, verify:
 
@@ -97,9 +102,12 @@ python -c "import openvino, openvino_genai; print(openvino.__version__); print(o
 ```
 
 Confirm the imported module comes from this checkout's build/install output.
-If native loading fails, locate the actual `libopenvino.so*` used by the build
-and resolve the ABI/version mismatch; adding an arbitrary library directory to
-`LD_LIBRARY_PATH` is not proof of compatibility.
+
+Use an OpenVINO source build only when the change requires it or a native
+loading/ABI mismatch cannot be resolved with the installed runtime. In that
+case, build OpenVINO and OpenVINO GenAI from source in the same environment as
+described in `src/docs/BUILD.md`; do not treat adding an arbitrary library
+directory to `LD_LIBRARY_PATH` as proof of compatibility.
 
 Fix all compilation errors.
 
