@@ -311,16 +311,48 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
-    adapter_config = _create_genai_adapter_config(
-        adapters=kwargs.get("adapters"),
-        alphas=kwargs.get("alphas", None),
-    )
+    ov_config = ov_config or {}
 
-    return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
-        model_dir,
-        "text-to-image"
-    )
+    if device.upper().startswith("NPU"):
+        image_size = kwargs.get("image_size")
+        if image_size is None or image_size <= 0:
+            raise ValueError(
+                "A positive --image-size must be provided for text-to-image GenAI evaluation on NPU "
+                "because the pipeline must be reshaped to static dimensions before compilation"
+            )
+
+        pipe = openvino_genai.Text2ImagePipeline(model_dir)
+        guidance_scale = pipe.get_generation_config().guidance_scale
+        logger.info(
+            "Reshaping text-to-image pipeline to static shapes for NPU: "
+            f"num_images_per_prompt=1, height={image_size}, width={image_size}, guidance_scale={guidance_scale}"
+        )
+        pipe.reshape(
+            num_images_per_prompt=1,
+            height=image_size,
+            width=image_size,
+            guidance_scale=guidance_scale,
+        )
+        pipe.compile(device, **ov_config)
+
+        wrapper = GenAIModelWrapper(pipe, model_dir, "text-to-image")
+        if kwargs.get("adapters") is not None:
+            wrapper.adapter_config = _create_genai_adapter_config(
+                adapters=kwargs.get("adapters"),
+                alphas=kwargs.get("alphas", None),
+            )
+        return wrapper
+    else:
+        adapter_config = _create_genai_adapter_config(
+            adapters=kwargs.get("adapters"),
+            alphas=kwargs.get("alphas", None),
+        )
+
+        return GenAIModelWrapper(
+            openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
+            model_dir,
+            "text-to-image",
+        )
 
 
 def load_text2image_model(

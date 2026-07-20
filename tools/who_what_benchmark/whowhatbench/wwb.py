@@ -477,6 +477,16 @@ def check_args(args):
     if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
             "Whether --target-model, --target-data or --gt-data should be provided")
+    if (
+        args.genai
+        and args.model_type == "text-to-image"
+        and args.device.upper().startswith("NPU")
+        and (args.image_size is None or args.image_size <= 0)
+    ):
+        raise ValueError(
+            "A positive --image-size must be provided for text-to-image GenAI evaluation on NPU "
+            "because the pipeline must be reshaped to static dimensions before compilation"
+        )
     if args.adapters is not None and args.alphas is not None and len(args.adapters) != len(args.alphas):
         raise ValueError(
             "If --adapters is provided and --alphas is provided, they should have the same length."
@@ -734,6 +744,9 @@ def llamacpp_gen_text(
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
     kwargs = {}
+    adapter_config = getattr(model, "adapter_config", None)
+    if adapter_config is not None:
+        kwargs["adapters"] = adapter_config
     if empty_adapters:
         import openvino_genai
         kwargs["adapters"] = openvino_genai.AdapterConfig()
@@ -1360,6 +1373,8 @@ def main():
         kwargs["embeds_normalize"] = args.embeds_normalize
         kwargs["embeds_padding_side"] = args.embeds_padding_side
         kwargs["embeds_batch_size"] = args.embeds_batch_size
+    if args.model_type == "text-to-image":
+        kwargs["image_size"] = args.image_size
 
     if args.draft_model is not None:
         kwargs["draft_model"] = args.draft_model
