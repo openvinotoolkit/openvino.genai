@@ -108,8 +108,8 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
         auto model = utils::singleton_core().read_model(path);
 
         ov::AnyMap compilation_props = properties;
-        if (force_fp32 && (device == "GPU" || device.find("GPU") == 0)) {
-            compilation_props["INFERENCE_PRECISION_HINT"] = "f32";
+        if (force_fp32 && device.find("GPU") != std::string::npos) {
+            compilation_props["INFERENCE_PRECISION_HINT"] = ov::element::f32;
             GENAI_DEBUG("Speech: forcing f32 precision for %s on GPU", filename.c_str());
         }
 
