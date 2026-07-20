@@ -1,4 +1,4 @@
-type EmbeddingsModelType = {
+type EmbeddingModelType = {
   architecture: string;
   modality: string;
   models: Array<{
@@ -6,7 +6,7 @@ type EmbeddingsModelType = {
   }>;
 };
 
-export const EMBEDDINGS_MODELS: EmbeddingsModelType[] = [
+export const EMBEDDING_MODELS: EmbeddingModelType[] = [
   {
     architecture: 'BertModel',
     modality: 'Text',

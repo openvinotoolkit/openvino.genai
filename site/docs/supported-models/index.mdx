@@ -3,7 +3,7 @@ import VideoGenerationModelsTable from './_components/video-generation-models-ta
 import LLMModelsTable from './_components/llm-models-table';
 import VLMModelsTable from './_components/vlm-models-table';
 import WhisperModelsTable from './_components/whisper-models-table';
-import EmbeddingsModelsTable from './_components/embeddings-models-table';
+import EmbeddingModelsTable from './_components/embedding-models-table';
 import SpeechGenerationModelsTable from './_components/speech-generation-models-table';
 import TextRerankModelsTable from './_components/text-rerank-models-table';
 
@@ -122,15 +122,15 @@ Speech generation pipeline does **not** support LoRA adapters.
 
 <SpeechGenerationModelsTable />
 
-## Embeddings Models
+## Embedding Models {#embedding-models}
 
-Embeddings models are used with the `EmbeddingPipeline`, which supports both text-only and multimodal (text, image, and video) embedding models.
+Embedding models are used with the `EmbeddingPipeline`, which supports both text-only and multimodal (text, image, and video) embedding models.
 
 :::info LoRA Support
-Embeddings pipeline does **not** support LoRA adapters.
+The embedding pipeline does **not** support LoRA adapters.
 :::
 
-<EmbeddingsModelsTable />
+<EmbeddingModelsTable />
 
 ## Text Rerank Models
 

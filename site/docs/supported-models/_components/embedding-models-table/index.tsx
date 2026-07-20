@@ -1,11 +1,11 @@
 import React from 'react';
 import { BaseModelsTable, LinksCell } from '../base-models-table';
-import { EMBEDDINGS_MODELS } from './models';
+import { EMBEDDING_MODELS } from './models';
 
-export default function EmbeddingsModelsTable(): React.JSX.Element {
+export default function EmbeddingModelsTable(): React.JSX.Element {
   const headers = ['Architecture', 'Modality', 'Example HuggingFace Models'];
 
-  const rows = EMBEDDINGS_MODELS.map(({ architecture, modality, models }) => (
+  const rows = EMBEDDING_MODELS.map(({ architecture, modality, models }) => (
     <tr key={architecture}>
       <td>
         <code>{architecture}</code>
