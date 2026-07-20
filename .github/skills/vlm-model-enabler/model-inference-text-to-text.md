@@ -3,22 +3,6 @@
 This file provides **supplementary details** for Step 2 of the VLM Model Enabler skill.
 The main workflow is in [SKILL.md](SKILL.md). Do not follow this file as a standalone procedure.
 
-### Smoke Test — `test_text_only.py`
-
-```python
-import openvino_genai
-
-pipe = openvino_genai.VLMPipeline("<model_dir>", "CPU")
-config = openvino_genai.GenerationConfig()
-config.max_new_tokens = 100
-config.do_sample = False
-
-history = openvino_genai.ChatHistory()
-history.append({"role": "user", "content": "What is OpenVINO?"})
-result = pipe.generate(history, generation_config=config)
-print("GenAI:", result.texts[0])
-```
-
 ### Comparison — `test_text_only_compare.py`
 
 ```python

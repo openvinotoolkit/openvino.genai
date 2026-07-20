@@ -7,31 +7,6 @@ For the list of reusable C++ preprocessing utilities (`clip.hpp` / `clip.cpp`) a
 
 ## Test Script Templates
 
-### Smoke Test — `test_image_text.py`
-
-```python
-import numpy as np
-import openvino_genai
-import requests
-from PIL import Image
-from openvino import Tensor
-
-model_dir = "<model_dir>"
-image_url = "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11"
-
-image = Image.open(requests.get(image_url, stream=True).raw).convert("RGB")
-image_tensor = Tensor(np.array(image))
-pipe = openvino_genai.VLMPipeline(model_dir, "CPU")
-config = openvino_genai.GenerationConfig()
-config.max_new_tokens = 100
-config.do_sample = False
-
-history = openvino_genai.ChatHistory()
-history.append({"role": "user", "content": "Describe this image in detail."})
-result = pipe.generate(history, images=[image_tensor], generation_config=config)
-print("GenAI:", result.texts[0])
-```
-
 ### Comparison — `test_image_text_compare.py`
 
 ```python
