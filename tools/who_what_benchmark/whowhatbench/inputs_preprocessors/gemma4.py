@@ -67,13 +67,22 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         else:
             messages = [new_message]
 
-        return processor.apply_chat_template(
+        # switch off add_bos_token if chat template already includes it
+        orig_add_bos_token = processor.tokenizer.add_bos_token
+        if getattr(processor.tokenizer, "chat_template", None) and "bos_token" in processor.tokenizer.chat_template:
+            processor.tokenizer.add_bos_token = False
+
+        inputs = processor.apply_chat_template(
             messages,
             add_generation_prompt=True,
             tokenize=True,
             return_dict=True,
             return_tensors="pt",
         )
+
+        # recover add_bos_token flag in tokenizer
+        processor.tokenizer.add_bos_token = orig_add_bos_token
+        return inputs
 
 
 class Gemma4InputsPreprocessor(Gemma3InputsPreprocessor):

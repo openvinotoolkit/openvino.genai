@@ -9,6 +9,9 @@ from pathlib import Path
 from test_utils import run_sample
 from data.models import GGUF_MODEL_LIST
 from utils.hugging_face import download_gguf_model
+from utils.constants import get_ov_cache_converted_models_dir
+from utils.kokoro_test_assets import prepare_tiny_kokoro_model_path
+from utils.kokoro_test_assets import prepare_tiny_kokoro_ov_path
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 
 convert_draft_model = convert_model
@@ -57,6 +60,21 @@ video_generation_json = [
         "frame_rate": 25,
     }
 ]
+
+
+@pytest.fixture(scope="module")
+def tiny_kokoro_ov_path() -> Path:
+    converted_models_dir = get_ov_cache_converted_models_dir()
+    tiny_kokoro_model_path = prepare_tiny_kokoro_model_path(converted_models_dir)
+    return prepare_tiny_kokoro_ov_path(converted_models_dir, tiny_kokoro_model_path)
+
+
+@pytest.fixture(scope="module")
+def tiny_kokoro_speaker_embedding_file_path(tiny_kokoro_ov_path: Path) -> str:
+    voice_bin_path = tiny_kokoro_ov_path / "voices" / "tiny_voice.bin"
+    if not voice_bin_path.exists():
+        raise FileNotFoundError(f"Missing tiny Kokoro speaker embedding file at {voice_bin_path}")
+    return str(voice_bin_path)
 
 
 class TestBenchmarkLLM:
@@ -124,6 +142,124 @@ class TestBenchmarkLLM:
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "--draft_model", convert_draft_model, "-p", prompt] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model",
+        [
+            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3"),
+        ],
+        indirect=["convert_model", "convert_draft_model"],
+    )
+    def test_python_tool_llm_benchmark_sd_generation_config(self, convert_model, convert_draft_model, tmp_path):
+        """
+        Test --sd_generation_config JSON file parsing for Speculative Decoding.
+        Verifies that JSON config is parsed and applied with EAGLE3 draft model.
+        """
+        import json
+
+        config_path = tmp_path / "sd_config.json"
+        with open(config_path, "w") as f:
+            json.dump({"num_assistant_tokens": 5}, f)
+
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--draft_model",
+            convert_draft_model,
+            "-p",
+            "Why is the Sun yellow?",
+            "-d",
+            "cpu",
+            "--draft_device",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "20",
+            "--sd_generation_config",
+            str(config_path),
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model",
+        [
+            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3"),
+        ],
+        indirect=["convert_model", "convert_draft_model"],
+    )
+    def test_python_tool_llm_benchmark_sd_generation_config_json_string(self, convert_model, convert_draft_model):
+        """
+        Test --sd_generation_config with a JSON string argument (no filesystem I/O).
+        """
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--draft_model",
+            convert_draft_model,
+            "-p",
+            "Why is the Sun yellow?",
+            "-d",
+            "cpu",
+            "--draft_device",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "20",
+            "--sd_generation_config",
+            '{"num_assistant_tokens": 6, "branching_factor": 2, "tree_depth": 3}',
+        ]
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model",
+        [
+            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3"),
+        ],
+        indirect=["convert_model", "convert_draft_model"],
+    )
+    def test_python_tool_llm_benchmark_sd_generation_config_topk(self, convert_model, convert_draft_model, tmp_path):
+        """
+        Test --sd_generation_config with EAGLE3 Top-K parameters.
+        """
+        import json
+
+        config_path = tmp_path / "sd_topk_config.json"
+        with open(config_path, "w") as f:
+            json.dump({"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3}, f)
+
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--draft_model",
+            convert_draft_model,
+            "-p",
+            "Why is the Sun yellow?",
+            "-d",
+            "cpu",
+            "--draft_device",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "20",
+            "--sd_generation_config",
+            str(config_path),
+        ]
         run_sample(benchmark_py_command)
 
 
@@ -261,6 +397,87 @@ class TestBenchmarkLLM:
             "-m", convert_model,
             "--speaker_embeddings", download_test_content
         ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.speech_generation
+    @pytest.mark.parametrize(
+        "sample_args, use_explicit_speaker_embedding",
+        [
+            (
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--task",
+                    "text_to_speech",
+                    "--genai",
+                    "--speech_language",
+                    "en-us",
+                    "--prompt",
+                    "Why is the Sun yellow?",
+                ],
+                True,
+            ),
+            (
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--task",
+                    "text_to_speech",
+                    "--genai",
+                    "--speech_voice",
+                    "tiny_voice",
+                    "--speech_language",
+                    "en-us",
+                    "--prompt",
+                    "Why is the Sun yellow?",
+                ],
+                False,
+            ),
+            (
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--task",
+                    "text_to_speech",
+                    "--optimum",
+                    "--speech_voice",
+                    "tiny_voice",
+                    "--speech_language",
+                    "en-us",
+                    "--prompt",
+                    "Why is the Sun yellow?",
+                ],
+                False,
+            ),
+        ],
+    )
+    def test_python_tool_llm_benchmark_tts_kokoro(
+        self,
+        tiny_kokoro_ov_path: Path,
+        tiny_kokoro_speaker_embedding_file_path: str,
+        sample_args,
+        use_explicit_speaker_embedding,
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            str(tiny_kokoro_ov_path),
+        ]
+        if use_explicit_speaker_embedding:
+            benchmark_py_command += [
+                "--speaker_embeddings",
+                tiny_kokoro_speaker_embedding_file_path,
+            ]
+        benchmark_py_command += sample_args
         run_sample(benchmark_py_command)
 
 

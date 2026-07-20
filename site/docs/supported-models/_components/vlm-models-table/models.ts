@@ -225,6 +225,18 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Gemma3nForConditionalGeneration',
+    models: [
+      {
+        name: 'gemma3n',
+        links: [
+          'https://huggingface.co/google/gemma-3n-E2B-it',
+          'https://huggingface.co/google/gemma-3n-E4B-it',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'Gemma4ForConditionalGeneration',
     models: [
       {

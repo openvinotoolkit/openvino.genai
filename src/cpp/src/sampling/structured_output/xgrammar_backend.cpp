@@ -177,15 +177,18 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
 
 void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
     for (const auto& token : input_ids) {
+        if (m_grammar_matcher.IsTerminated()) {
+            break;  // stop accepting tokens once the matcher has terminated (e.g., after accepting the stop token)
+        }
         m_grammar_matcher.AcceptToken(token);
     }
 }
 
 void XGrammarLogitsTransformer::apply(Logits& logits) {
-    m_grammar_matcher.FillNextTokenBitmask(m_token_bitmask.get());
     if (m_grammar_matcher.IsTerminated()) {
         return;
     }
+    m_grammar_matcher.FillNextTokenBitmask(m_token_bitmask.get());
 
     if (logits.is_vector_initialized()) {
         // logprobs > 0 path: m_data holds pristine raw logits — must not be written.

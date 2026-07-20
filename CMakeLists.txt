@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-cmake_minimum_required(VERSION 3.23.0)  # The requirement comes from Jinja2Cpp
+cmake_minimum_required(VERSION 3.26.0)  # The requirement comes from OpenVINO cmake_minimum_required
 
 # Multi config generators such as Visual Studio ignore CMAKE_BUILD_TYPE. Multi config generators are configured with
 # CMAKE_CONFIGURATION_TYPES, but limiting options in it completely removes such build options
@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2026.3.0.0
+        VERSION 2026.4.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)

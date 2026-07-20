@@ -13,8 +13,9 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     ignore:
-      # Cannot be updated for the moment, ticket: 184715
-      - dependency-name: "actions/checkout"
+      # actions/smart-ci update triggered on each new openvino commit
+      # update manually on demand to reduce noise
+      - dependency-name: "openvinotoolkit/openvino/.github/actions/smart-ci"
       # Due to recent trivy security issues to be updated manually
       - dependency-name: "aquasecurity/trivy-action"
     groups:
@@ -95,8 +96,6 @@ updates:
       - dependency-name: "huggingface-hub"
       # update transformers version is dependent on optimum-intel for now and required more precise changes in repo
       - dependency-name: "transformers"
-      # new version fails on Windows due to import k2 module, remove ignore after CVS-186425 will be fixed
-      - dependency-name: "speechbrain"
       # update required more precise changes in repo and made upon request
       - dependency-name: "optimum-intel"
     groups:

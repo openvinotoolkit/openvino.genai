@@ -180,7 +180,6 @@ def run_test_with_lora(
     assert similarity_genai >= genai_threshold
 
 
-@pytest.mark.xfail(strict=True, reason="CVS-190187: The default dataset is broken.")
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
@@ -201,7 +200,6 @@ def test_vlm_chat(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 
-@pytest.mark.xfail(strict=True, reason="CVS-190187: The default dataset is broken.")
 @pytest.mark.nanollava
 @pytest.mark.parametrize(
     ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
@@ -234,7 +232,6 @@ def test_vlm_video(model_id, model_type, tmp_path):
     run_test(model_id, model_type, 0.8, 0.8, tmp_path)
 
 
-@pytest.mark.xfail(strict=True, reason="CVS-190187: The default dataset is broken.")
 @pytest.mark.parametrize(
     (
         "model_id",

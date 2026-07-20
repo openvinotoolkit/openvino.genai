@@ -634,6 +634,10 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex, or EBNF grammar.
  *
  * @param apply_chat_template whether or not to apply chat_template for non-chat scenarios
+ *
+ * @param return_omni_outputs if set to true, the pipeline accumulates per-token intermediate hidden
+ *        states and full token ids in the result so a Qwen3-Omni talker can consume them. Only the
+ *        continuous-batching backend supports this; OmniPipeline sets it internally on the audio path.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
@@ -658,7 +662,7 @@ public:
 
     // penalties (not used in beam search)
     float repetition_penalty = 1.0f;
-    float presence_penalty = 0.0;
+    float presence_penalty = 0.0f;
     float frequency_penalty = 0.0f;
 
     // Beam search specific
@@ -699,6 +703,10 @@ public:
     // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
     bool apply_chat_template = true;
 
+    // Accumulate intermediate hidden states and full token ids in the result for Qwen3-Omni speech
+    // generation. Only supported by the continuous-batching backend; set internally by OmniPipeline.
+    // Preview API: subject to change.
+    bool return_omni_outputs = false;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
@@ -778,6 +786,9 @@ static constexpr ov::Property<std::string> grammar{"grammar"};
 static constexpr ov::Property<std::string> backend{"backend"};
 
 static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
+
+// Preview API: subject to change.
+static constexpr ov::Property<bool> return_omni_outputs{"return_omni_outputs"};
 
 }  // namespace genai
 }  // namespace ov

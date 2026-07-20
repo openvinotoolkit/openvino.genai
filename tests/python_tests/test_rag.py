@@ -1,28 +1,38 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-
 import numpy as np
 import pytest
 import gc
 from pathlib import Path
-from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
+import requests
+import openvino as ov
+import openvino_genai
+from openvino_genai import EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline, VideoMetadata
 from utils.hugging_face import download_and_convert_model, download_and_convert_model_class, OVConvertedModelSchema
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
 from typing import Literal
 import sys
-import platform
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
+from PIL import Image
 from torch import Tensor
 import torch
+import torch.nn.functional as F
+from transformers import AutoModel, AutoProcessor
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
+from samples.conftest import TEST_FILES
 
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
     "mixedbread-ai/mxbai-embed-xsmall-v1",
+]
+
+MULTIMODAL_EMBEDDINGS_TEST_MODELS = [
+    # "Qwen/Qwen3-VL-Embedding-2B",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding"
 ]
 
 RERANK_TEST_MODELS = [
@@ -67,6 +77,15 @@ mobile processor offering.2\
 "
 
 
+def test_embedding_pipeline_public_api():
+    assert hasattr(openvino_genai, "EmbeddingPipeline")
+    assert EmbeddingPipeline.__name__ == "EmbeddingPipeline"
+    assert hasattr(EmbeddingPipeline, "embed")
+    assert "prompt" in EmbeddingPipeline.embed.__doc__
+    assert hasattr(openvino_genai, "EmbedResult")
+    assert hasattr(openvino_genai.EmbedResult, "embeddings")
+
+
 @pytest.fixture(scope="module")
 def rerank_model(request) -> OVConvertedModelSchema:
     model_id = request.param
@@ -77,6 +96,19 @@ def rerank_model(request) -> OVConvertedModelSchema:
 def emb_model(request) -> OVConvertedModelSchema:
     model_id = request.param
     return download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(scope="module")
+def multimodal_emb_model(request) -> OVConvertedModelSchema:
+    model_id = request.param
+    return download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(scope="module")
+def multimodal_emb_hf_components(multimodal_emb_model: OVConvertedModelSchema):
+    processor = AutoProcessor.from_pretrained(multimodal_emb_model.model_id, trust_remote_code=True)
+    model = AutoModel.from_pretrained(multimodal_emb_model.model_id, trust_remote_code=True).eval()
+    return processor, model
 
 
 @pytest.fixture(scope="module")
@@ -126,6 +158,332 @@ def run_text_embedding_genai(
         return pipeline.embed_documents(documents)
     else:
         return pipeline.embed_query(documents[0])
+
+
+@pytest.fixture(scope="module")
+def cat_image_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    image_path = tmp_path_factory.mktemp("rag_test_data") / "cat"
+    if not image_path.exists():
+        response = requests.get(TEST_FILES["cat"], timeout=30)
+        response.raise_for_status()
+        image_path.write_bytes(response.content)
+    return image_path
+
+
+def get_image_as_array(image_path: Path) -> np.ndarray:
+    return np.asarray(Image.open(image_path).convert("RGB"), dtype=np.uint8)
+
+
+def get_image_tensor(image_path: Path) -> ov.Tensor:
+    return ov.Tensor(get_image_as_array(image_path))
+
+
+def get_video_as_array(image_path: Path) -> np.ndarray:
+    image = get_image_as_array(image_path)
+    return np.stack([image] * 4, axis=0)
+
+
+def get_video_tensor(image_path: Path) -> ov.Tensor:
+    return ov.Tensor(get_video_as_array(image_path))
+
+
+def get_video_metadata() -> VideoMetadata:
+    video_metadata = VideoMetadata()
+    video_metadata.frames_indices = [0, 1, 2, 3]
+    return video_metadata
+
+
+def assert_embedding_tensor(result, batch_size: int):
+    assert isinstance(result.embeddings, ov.Tensor)
+    assert result.embeddings.shape[0] == batch_size
+    assert result.embeddings.shape[1] > 0
+
+
+def run_multimodal_embedding_hf(
+    hf_processor,
+    hf_model,
+    text: str,
+    image: np.ndarray | None = None,
+    prompt: str | None = None,
+) -> np.ndarray:
+    images = None
+    if image is not None or prompt is not None:
+        content = [{"type": "text", "text": text}]
+        if image is not None:
+            image = Image.fromarray(image)
+            content.append({"type": "image", "image": image})
+            images = [image]
+
+        conversation = [
+            {"role": "user", "content": content},
+        ]
+        if prompt is not None:
+            conversation.insert(0, {"role": "system", "content": [{"type": "text", "text": prompt}]})
+        text = hf_processor.apply_chat_template(conversation, add_generation_prompt=False, tokenize=False)
+
+    kwargs = {"text": [text], "return_tensors": "pt", "padding": True}
+    if images is not None:
+        kwargs["images"] = images
+
+    with torch.no_grad():
+        inputs = hf_processor(**kwargs)
+        outputs = hf_model(**inputs)
+
+    sequence_lengths = inputs["attention_mask"].sum(dim=1) - 1
+    pooled = outputs.last_hidden_state[torch.arange(outputs.last_hidden_state.shape[0]), sequence_lengths]
+    return F.normalize(pooled.to(torch.float32), p=2, dim=-1).cpu().numpy()
+
+
+def run_multimodal_embedding_sentence_transformers(
+    model_id: str,
+    text: str,
+    image: np.ndarray | None = None,
+    prompt: str | None = None,
+) -> np.ndarray:
+    import sentence_transformers
+
+    model = sentence_transformers.SentenceTransformer(model_id)
+    model_input = {"text": text}
+    if image is not None:
+        model_input["image"] = Image.fromarray(image)
+    return model.encode([model_input], prompt=prompt, convert_to_numpy=True).astype(np.float32)
+
+
+def run_multimodal_embedding_transformers(
+    model_id: str,
+    text: str,
+    image: np.ndarray | None = None,
+    prompt: str = "Represent the user's input.",
+) -> np.ndarray:
+    processor = AutoProcessor.from_pretrained(model_id, padding_side="right")
+    model = AutoModel.from_pretrained(model_id)
+
+    content = [{"type": "text", "text": text}]
+    if image is not None:
+        content.append({"type": "image", "image": Image.fromarray(image)})
+    conversation = [
+        {"role": "system", "content": [{"type": "text", "text": prompt}]},
+        {"role": "user", "content": content},
+    ]
+    templated_text = processor.apply_chat_template(conversation, add_generation_prompt=False, tokenize=False)
+    inputs = processor(
+        text=[templated_text],
+        images=[Image.fromarray(image)] if image is not None else None,
+        padding=True,
+        return_tensors="pt",
+    )
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    sequence_lengths = inputs["attention_mask"].sum(dim=1) - 1
+    pooled = outputs.last_hidden_state[torch.arange(outputs.last_hidden_state.shape[0]), sequence_lengths]
+    return F.normalize(pooled.to(torch.float32), p=2, dim=-1).cpu().numpy()
+
+
+def assert_embedding_matches_hf_cosine(result, reference: np.ndarray, max_cosine_diff: float):
+    actual = np.array(result.embeddings.data, dtype=np.float32).reshape(result.embeddings.shape)
+    actual_norm = np.linalg.norm(actual)
+    reference_norm = np.linalg.norm(reference)
+    cosine_similarity = float(actual.flatten() @ reference.flatten() / (actual_norm * reference_norm))
+    cosine_difference = 1.0 - cosine_similarity
+    message = (
+        f"EmbeddingPipeline output does not match HF reference by cosine\n"
+        f"actual shape: {actual.shape}, reference shape: {reference.shape}\n"
+        f"cosine similarity: {cosine_similarity}\n"
+        f"cosine difference: {cosine_difference}\n"
+        f"actual first 8: {actual.flatten()[:8].tolist()}\n"
+        f"reference first 8: {reference.flatten()[:8].tolist()}"
+    )
+    assert cosine_difference < max_cosine_diff, message
+
+
+@pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
+def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
+    pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
+
+    result = pipeline.embed("What is OpenVINO?")
+    assert result.embeddings.shape[0] == 1
+    assert result.embeddings.shape[1] > 0
+
+    batch_result = pipeline.embed(["What is OpenVINO?", "What is OpenVINO GenAI?"])
+    assert batch_result.embeddings.shape[0] == 2
+    assert batch_result.embeddings.shape[1] == result.embeddings.shape[1]
+
+    with pytest.raises(
+        RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"
+    ):
+        pipeline.embed("What is OpenVINO?", images=[ov.Tensor(np.zeros((1, 1, 1, 1), dtype=np.float32))])
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_prompt(multimodal_emb_model):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    text = "What is OpenVINO?"
+    prompt = "Represent the user's input."
+
+    result = pipeline.embed(text, prompt=prompt)
+    assert_embedding_tensor(result, 1)
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_batch_consistency(multimodal_emb_model):
+    """Test that batch processing gives same results as individual processing."""
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    texts = ["What is OpenVINO?", "How does deep learning work?"]
+    prompt = "Represent the user's input."
+
+    # Process individually
+    result1 = pipeline.embed(texts[0], prompt=prompt)
+    result2 = pipeline.embed(texts[1], prompt=prompt)
+
+    # Process as batch
+    result_batch = pipeline.embed(texts, prompt=prompt)
+
+    # Verify shapes
+    assert result_batch.embeddings.shape == (2, result1.embeddings.shape[1])
+
+    # Verify results match
+    batch_data = np.array(result_batch.embeddings.data).reshape(result_batch.embeddings.shape)
+    assert np.allclose(result1.embeddings.data, batch_data[0], rtol=1e-4, atol=1e-4)
+    assert np.allclose(result2.embeddings.data, batch_data[1], rtol=1e-4, atol=1e-4)
+
+
+@pytest.mark.xfail(reason="Ticket - CVS-189808")
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_image(multimodal_emb_model, multimodal_emb_hf_components, cat_image_path):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    image_array = get_image_as_array(cat_image_path)
+    image = get_image_tensor(cat_image_path)
+    image_text_prompt = " المرأ playing with her dog on a beach at sunset."
+    prompt = "Represent the user's input."
+    hf_processor, hf_model = multimodal_emb_hf_components
+
+    result = pipeline.embed(image_text_prompt, images=[image], prompt=prompt)
+    assert_embedding_tensor(result, 1)
+    hf_result = run_multimodal_embedding_hf(hf_processor, hf_model, image_text_prompt, image=image_array, prompt=prompt)
+    assert_embedding_matches_hf_cosine(result, hf_result, max_cosine_diff=0.05)
+
+
+@pytest.mark.xfail(reason="Ticket - CVS-189808")
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_image_sentence_transformers(
+    multimodal_emb_model,
+    cat_image_path,
+):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    image_array = get_image_as_array(cat_image_path)
+    image = get_image_tensor(cat_image_path)
+    text = "A woman playing with her dog on a beach at sunset."
+    prompt = "Represent the user's input."
+    # prompt = ""
+
+    result = pipeline.embed(text, images=[image], prompt=prompt)
+    assert_embedding_tensor(result, 1)
+
+    sentence_transformers_result = run_multimodal_embedding_sentence_transformers(
+        multimodal_emb_model.model_id,
+        text,
+        image=image_array,
+        prompt=prompt,
+    )
+    assert_embedding_matches_hf_cosine(result, sentence_transformers_result, max_cosine_diff=0.06)
+
+
+@pytest.mark.xfail(reason="Ticket - CVS-189808")
+@pytest.mark.parametrize("model_id", MULTIMODAL_EMBEDDINGS_TEST_MODELS)
+def test_qwen3_vl_embedding_sentence_transformers_matches_transformers(
+    model_id,
+    cat_image_path,
+):
+    image_array = get_image_as_array(cat_image_path)
+    text = "A woman"
+    prompt = "hi"
+
+    sentence_transformers_result = run_multimodal_embedding_sentence_transformers(
+        model_id,
+        text,
+        image=image_array,
+        prompt=prompt,
+    )
+    transformers_result = run_multimodal_embedding_transformers(
+        model_id,
+        text,
+        image=image_array,
+        prompt=prompt,
+    )
+    assert_embedding_matches_hf_cosine(
+        openvino_genai.EmbedResult(ov.Tensor(sentence_transformers_result)),
+        transformers_result,
+        max_cosine_diff=0.05,
+    )
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_text_and_video(multimodal_emb_model, cat_image_path):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    video = get_video_tensor(cat_image_path)
+    video_metadata = get_video_metadata()
+    text = "Represent this video."
+
+    result = pipeline.embed(text, videos=[video], videos_metadata=[video_metadata])
+    assert_embedding_tensor(result, 1)
+
+
+@pytest.mark.parametrize("multimodal_emb_model", MULTIMODAL_EMBEDDINGS_TEST_MODELS, indirect=True)
+def test_qwen3_vl_embedding_three_texts_image_and_video(multimodal_emb_model, cat_image_path):
+    pipeline = EmbeddingPipeline(multimodal_emb_model.models_path, "CPU")
+    image = get_image_tensor(cat_image_path)
+    video = get_video_tensor(cat_image_path)
+    video_metadata = get_video_metadata()
+    texts = ["Represent OpenVINO.", "Represent this image.", "Represent this video."]
+
+    result = pipeline.embed(
+        texts,
+        images=[image],
+        videos=[video],
+        videos_metadata=[video_metadata],
+        prompt="Represent the user's input.",
+    )
+    assert_embedding_tensor(result, len(texts))
+
+
+@pytest.mark.parametrize("emb_model", [EMBEDDINGS_TEST_MODELS[0]], indirect=True)
+def test_embedding_pipeline_matches_text_embedding_pipeline(emb_model):
+    text = "What is OpenVINO?"
+    embedding_pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
+    text_embedding_pipeline = TextEmbeddingPipeline(emb_model.models_path, "CPU")
+
+    embedding_result = embedding_pipeline.embed(text)
+    text_embedding_result = text_embedding_pipeline.embed_documents([text])
+
+    np.testing.assert_allclose(
+        embedding_result.embeddings.data,
+        np.asarray(text_embedding_result, dtype=np.float32),
+        atol=MAX_EMBEDDING_ERROR,
+        rtol=0,
+    )
+
+
+@pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+def test_embedding_pipeline_prompt_matches_embed_instruction(emb_model):
+    text = "What is OpenVINO?"
+    prompt = "Represent this document for searching relevant passages: "
+
+    embedding_pipeline = EmbeddingPipeline(emb_model.models_path, "CPU")
+    text_embedding_pipeline = TextEmbeddingPipeline(
+        emb_model.models_path, "CPU", TextEmbeddingPipeline.Config(embed_instruction=prompt)
+    )
+
+    embedding_result = embedding_pipeline.embed(text, embedding_prompt=prompt)
+    text_embedding_result = text_embedding_pipeline.embed_documents([text])
+
+    np.testing.assert_allclose(
+        embedding_result.embeddings.data,
+        np.asarray(text_embedding_result, dtype=np.float32),
+        atol=MAX_EMBEDDING_ERROR,
+        rtol=0,
+    )
 
 
 def run_text_embedding_langchain(
@@ -609,6 +967,28 @@ def test_embedding_constructors(emb_model):
         PERFORMANCE_HINT_NUM_REQUESTS=2,
     )
 
+    EmbeddingPipeline(models_path, "CPU")
+    EmbeddingPipeline(models_path, "CPU", text_embedding_config=TextEmbeddingPipeline.Config())
+    EmbeddingPipeline(
+        models_path,
+        "CPU",
+        text_embedding_config=TextEmbeddingPipeline.Config(),
+        PERFORMANCE_HINT_NUM_REQUESTS=2,
+    )
+    EmbeddingPipeline(
+        models_path,
+        "CPU",
+        normalize=True,
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+    )
+    EmbeddingPipeline(
+        models_path,
+        "CPU",
+        normalize=True,
+        pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+        PERFORMANCE_HINT_NUM_REQUESTS=2,
+    )
+
 
 @pytest.mark.parametrize("emb_model", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
@@ -828,7 +1208,6 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     )
 
     assert_rerank_results(opt_result, genai_result)
-
 
 @pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
