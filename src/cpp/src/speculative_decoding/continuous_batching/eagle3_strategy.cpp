@@ -91,7 +91,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     }
     ov::genai::ModelDesc kv_model_desc;
     kv_model_desc.model = kv_model;
-    kv_model_desc.device = main_device;
+    kv_model_desc.device = std::move(main_device);
     // only kv cache information is needed for kv update model
     if (main_model_desc.properties.count(ov::hint::kv_cache_precision.name()) > 0) {
         kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
@@ -373,7 +373,7 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::step() {
     // specific step for eagle3 to update main model kv cache after validation
     {
         // Launch KV update asynchronously
-        m_sync_future = std::async(std::launch::async, [wrapper = m_kv_update_wrapper, main_pipeline]() mutable {
+        m_sync_future = std::async(std::launch::async, [wrapper = m_kv_update_wrapper, main_pipeline = std::move(main_pipeline)]() mutable {
             auto main_generated_requests = main_pipeline->get_generated_requests();
             std::vector<int32_t> block_update_indices, block_update_begins;
             main_pipeline->collect_block_update_info(main_generated_requests,

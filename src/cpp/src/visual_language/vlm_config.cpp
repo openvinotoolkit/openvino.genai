@@ -32,6 +32,8 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"gemma4", VLMModelType::GEMMA4},
         {"gemma4_unified", VLMModelType::GEMMA4_UNIFIED},
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
+        {"qwen3_omni", VLMModelType::QWEN3_OMNI},
+        {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
     };
 
     auto it = model_types_map.find(value);
@@ -60,7 +62,6 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     read_json_param(parsed, "query_num", query_num);
     read_json_param(parsed, "use_image_id", use_image_id);
 
-    // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);
     read_json_param(parsed, "vision_config.patch_size", vision_config_patch_size);
 
@@ -88,6 +89,39 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     if (parsed.contains("text_config") && parsed.at("text_config").contains("use_bidirectional_attention") &&
         parsed.at("text_config").at("use_bidirectional_attention").is_string()) {
         read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);
+    }
+
+    // Qwen3-Omni: vision/audio configs are nested under thinker_config
+    if (model_type == VLMModelType::QWEN3_OMNI) {
+        read_json_param(parsed, "thinker_config.text_config.hidden_size", hidden_size);
+        read_json_param(parsed, "thinker_config.vision_config.num_position_embeddings", vision_config_num_position_embeddings);
+        read_json_param(parsed, "thinker_config.vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
+        read_json_param(parsed, "thinker_config.audio_config.num_mel_bins", audio_config_num_mel_bins);
+        read_json_param(parsed, "thinker_config.audio_config.n_window", audio_config_n_window);
+        read_json_param(parsed, "thinker_config.audio_config.n_window_infer", audio_config_n_window_infer);
+        read_json_param(parsed, "enable_audio_output", enable_audio_output);
+        read_json_param(parsed, "tts_bos_token_id", tts_bos_token_id);
+        read_json_param(parsed, "tts_eos_token_id", tts_eos_token_id);
+        read_json_param(parsed, "tts_pad_token_id", tts_pad_token_id);
+        read_json_param(parsed, "im_start_token_id", im_start_token_id);
+        read_json_param(parsed, "system_token_id", system_token_id);
+        read_json_param(parsed, "user_token_id", user_token_id);
+        read_json_param(parsed, "assistant_token_id", assistant_token_id);
+        read_json_param(parsed, "thinker_config.audio_token_id", audio_token_id);
+        read_json_param(parsed, "thinker_config.image_token_id", image_token_id);
+        read_json_param(parsed, "thinker_config.video_token_id", video_token_id);
+        read_json_param(parsed, "talker_config.num_code_groups", talker_num_code_groups);
+        read_json_param(parsed, "talker_config.codec_bos_id", talker_codec_bos_id);
+        read_json_param(parsed, "talker_config.codec_eos_token_id", talker_codec_eos_token_id);
+        read_json_param(parsed, "talker_config.codec_pad_id", talker_codec_pad_id);
+        read_json_param(parsed, "talker_config.codec_nothink_id", talker_codec_nothink_id);
+        read_json_param(parsed, "talker_config.codec_think_bos_id", talker_codec_think_bos_id);
+        read_json_param(parsed, "talker_config.codec_think_eos_id", talker_codec_think_eos_id);
+        if (parsed.contains("talker_config") && parsed["talker_config"].contains("speaker_id")) {
+            for (auto& [key, val] : parsed["talker_config"]["speaker_id"].items()) {
+                speaker_ids[key] = val.get<int64_t>();
+            }
+        }
     }
 }
 

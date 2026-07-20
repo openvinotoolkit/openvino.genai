@@ -49,7 +49,7 @@ struct ModelDesc {
               const ov::genai::GenerationConfig& generation_config = {})
         : model(model),
           tokenizer(tokenizer),
-          inputs_embedder(inputs_embedder),
+          inputs_embedder(std::move(inputs_embedder)),
           device(device),
           properties(properties),
           scheduler_config(scheduler_config),

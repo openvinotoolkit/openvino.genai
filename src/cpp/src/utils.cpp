@@ -92,8 +92,8 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
-    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG"); 
-    
+    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG");
+
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "++SHARED_HEAD_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
@@ -199,6 +199,20 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
         } else if (any_val.is<std::function<StreamingStatus(std::string)>>()) {
             streamer = any_val.as<std::function<StreamingStatus(std::string)>>();
+        }
+    }
+    return streamer;
+}
+
+ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
+
+    if (config_map.count(AUDIO_STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(AUDIO_STREAMER_ARG_NAME);
+        if (any_val.is<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>();
+        } else if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(const ov::Tensor&)>>();
         }
     }
     return streamer;
@@ -489,7 +503,7 @@ CacheTypes get_cache_types(const ov::Model& model) {
         } else if (
             (rank == 3 && dynamic_axis_count == 1)  // conv state
             || (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 0)  // ssm state
-        ) {  
+        ) {
             cache_types.add_linear();
         }
     }
@@ -774,6 +788,19 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const KVAxesPosition& kv_pos,
                                                                             const TextEmbeddingPipeline::Config& text_embed_config) {
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextEmbedding, text_embed_config);
+}
+
+size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
+    const size_t max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+    const size_t min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+    // for proper support need to expose NPUW_LLM_MAX_GENERATION_TOKEN_LEN property in NPU model
+    const size_t max_generation_token_len = 1u;
+
+    OPENVINO_ASSERT(max_prompt_len + min_response_len >= max_generation_token_len,
+                     "Invalid NPU KV-cache capacity: MAX_PROMPT_LEN + MIN_RESPONSE_LEN must be >= ",
+                     max_generation_token_len, ", got ", max_prompt_len, " + ", min_response_len);
+
+    return max_prompt_len + min_response_len - max_generation_token_len;
 }
 
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {

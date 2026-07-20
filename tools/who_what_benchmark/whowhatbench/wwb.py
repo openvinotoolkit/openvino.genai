@@ -7,6 +7,7 @@ import numpy as np
 import logging
 import os
 from pathlib import Path
+from itertools import zip_longest
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
@@ -1184,9 +1185,7 @@ def print_text_results(evaluator):
         ref_text = ""
         actual_text = ""
         diff = ""
-        for l1, l2 in zip(
-            e["source_model"].splitlines(), e["optimized_model"].splitlines()
-        ):
+        for l1, l2 in zip_longest(e["source_model"].splitlines(), e["optimized_model"].splitlines(), fillvalue=""):
             if l1 == "" and l2 == "":
                 continue
             ref_text += l1 + "\n"
