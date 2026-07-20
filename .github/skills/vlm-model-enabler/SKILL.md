@@ -15,7 +15,10 @@ Enables a new VLM model in the GenAI VLM pipeline. Follows a strict 4-step workf
 
 ## Working Directory
 
-All intermediate assets go in `.model_enabler/`. Create it if it does not exist.
+All intermediate assets for one model go in
+`.model_enabler/<model_type>/`. Determine `<model_type>` from `config.json` and
+create the directory if it does not exist. Never share this directory between
+different model types; this keeps parallel and resumed enablement runs isolated.
 
 ## Rules
 
@@ -102,12 +105,12 @@ Fix all compilation errors.
 
 ### 2.3 Verify
 
-Create and run `.model_enabler/test_text_only_compare.py` — compare GenAI vs optimum-intel with `do_sample=False` on 3 prompts.
+Create and run `.model_enabler/<model_type>/test_text_only_compare.py` — compare GenAI vs optimum-intel with `do_sample=False` on 3 prompts.
 
 ### Checkpoint
 
 - [ ] Build succeeds
-- [ ] `.model_enabler/test_text_only_compare.py` shows exact match on all prompts
+- [ ] `.model_enabler/<model_type>/test_text_only_compare.py` shows exact match on all prompts
 
 **Do not proceed to Step 3 until text-only output matches optimum-intel exactly.**
 
@@ -154,7 +157,7 @@ embedder. A prompt containing only the textual placeholder is not sufficient.
 
 Rebuild, then create and run:
 
-- `.model_enabler/test_image_text_compare.py` — compare GenAI vs optimum-intel on 3 image prompts
+- `.model_enabler/<model_type>/test_image_text_compare.py` — compare GenAI vs optimum-intel on 3 image prompts
 
 If output differs, locate the first divergent component rather than judging
 only decoded text. Compare, in order:
@@ -173,7 +176,7 @@ export merely because the command requested fp32.
 ### Checkpoint
 
 - [ ] Build succeeds
-- [ ] `.model_enabler/test_image_text_compare.py` shows semantically similar outputs
+- [ ] `.model_enabler/<model_type>/test_image_text_compare.py` shows semantically similar outputs
 
 ---
 
@@ -216,7 +219,7 @@ command with every test deselected is not validation.
 Before declaring the model enabled:
 
 - [ ] `.model_analysis/<model_type>_analysis.md` exists with the `## GenAI Enablement Design` section
-- [ ] All test scripts exist and pass in `.model_enabler/`
+- [ ] All test scripts exist and pass in `.model_enabler/<model_type>/`
 - [ ] Tiny-random repository coverage is added under `tests/python_tests/`
 - [ ] Narrow pytest command/result, or the exact local blocker, is recorded
 - [ ] `git diff --name-only` contains the intended source, test, and docs files only
