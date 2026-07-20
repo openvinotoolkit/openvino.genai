@@ -16,7 +16,7 @@ from transformers import (
     __version__,
 )
 
-from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
+from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH, Qwen3VLEmbeddingWrapper
 from .reranking_evaluator import (
     DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH,
     DEFAULT_MAX_LENGTH_QWEN as RERANK_DEFAULT_MAX_LENGTH_QWEN,
@@ -102,7 +102,7 @@ class GenAIModelWrapper:
             "text-chat",
             "visual-text",
             "visual-video-text",
-            "text-embedding",
+            "embedding",
             "text-reranking",
             "visual-text-chat",
         ):
@@ -662,6 +662,13 @@ def load_inpainting_model(
     return model
 
 
+def apply_embedding_model_wrapper(model, use_genai):
+    if not use_genai and Qwen3VLEmbeddingWrapper.is_qwen3_vl_model(model):
+        return Qwen3VLEmbeddingWrapper(model)
+
+    return model
+
+
 def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
@@ -677,19 +684,23 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+    elif Qwen3VLEmbeddingWrapper.is_qwen3_vl_model(model_dir):
+        config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
+
     config.max_length = EMBED_DEFAULT_MAX_LENGTH
     config.normalize = kwargs.get("embeds_normalize", False)
     config.pad_to_max_length = True
     config.batch_size = kwargs.get("embeds_batch_size", config.batch_size)
 
     logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")
-    pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, device.upper(), config, **ov_config)
+    if hasattr(openvino_genai, "EmbeddingPipeline"):
+        pipeline = openvino_genai.EmbeddingPipeline(
+            model_dir, device.upper(), text_embedding_config=config, **ov_config
+        )
+    else:
+        pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, device.upper(), config, **ov_config)
 
-    return GenAIModelWrapper(
-        pipeline,
-        model_dir,
-        "text-embedding"
-    )
+    return GenAIModelWrapper(pipeline, model_dir, "embedding")
 
 
 def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
@@ -717,6 +728,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
                 ov_config=ov_config,
                 safety_checker=None
             )
+    model = apply_embedding_model_wrapper(model, use_genai)
     return model
 
 
@@ -977,7 +989,7 @@ def load_model(
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-inpainting":
         return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type == "text-embedding":
+    elif model_type in ("text-embedding", "image-embedding", "video-embedding"):
         return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-reranking":
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
