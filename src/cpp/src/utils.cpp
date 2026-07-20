@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
+#include "model_desc.hpp"
 
 #include <algorithm>
 #include <variant>
@@ -91,8 +92,8 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "PREFILL_HINT", "NPUW_LLM_PREFILL_HINT");
     rename_key(config, "GENERATE_CONFIG", "NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "GENERATE_HINT", "NPUW_LLM_GENERATE_HINT");
-    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG"); 
-    
+    rename_key(config, "SHARED_HEAD_CONFIG", "NPUW_LLM_SHARED_HEAD_CONFIG");
+
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "++SHARED_HEAD_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
@@ -203,6 +204,20 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
     return streamer;
 }
 
+ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map) {
+    ov::genai::OmniSpeechStreamerVariant streamer = std::monostate();
+
+    if (config_map.count(AUDIO_STREAMER_ARG_NAME)) {
+        auto any_val = config_map.at(AUDIO_STREAMER_ARG_NAME);
+        if (any_val.is<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>()) {
+            streamer = any_val.as<std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>();
+        } else if (any_val.is<std::function<StreamingStatus(const ov::Tensor&)>>()) {
+            streamer = any_val.as<std::function<StreamingStatus(const ov::Tensor&)>>();
+        }
+    }
+    return streamer;
+}
+
 std::shared_ptr<StreamerBase> create_streamer(StreamerVariant streamer, Tokenizer tokenizer) {
     return std::visit(overloaded{
         [](std::monostate) -> std::shared_ptr<StreamerBase> {
@@ -225,23 +240,6 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
         return config_map.at(CONFIG_ARG_NAME).as<ov::genai::GenerationConfig>();
     else
         return std::nullopt;
-}
-
-ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model;
-    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-    }
-    return draft_model;
-}
-
-ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model;
-    if (config.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(ov::genai::utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-        config.erase(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
-    }
-    return draft_model;
 }
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
@@ -362,29 +360,47 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 const std::string PER_MODEL_PROPERTIES = "MODEL_PROPERTIES";
 
-// Merge global properties with per-role overrides. Type mismatches fall out
-// of .as<ov::AnyMap>() as a throw; empty or missing maps are treated as
-// "no overrides" rather than errors.
-ov::AnyMap get_model_properties(ov::AnyMap& properties, const std::string& model_role) {
+ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string& model_role, const std::string& device) {
     ov::AnyMap result;
     for (const auto& property : properties) {
-        if (property.first != PER_MODEL_PROPERTIES) {
-            result.insert(property);
+        // Ignore MODEL_PROPERTIES as they are used only within this function
+        // to construct final properties map for a given model.
+        if (property.first == PER_MODEL_PROPERTIES) {
+            continue;
+        }
+        // When a concrete device is known, DEVICE_PROPERTIES[device] is
+        // flattened below so it must not be re-forwarded to the plugin
+        // (otherwise the plugin would re-overlay it on top of MODEL_PROPERTIES).
+        if (!device.empty() && property.first == ov::device::properties.name()) {
+            continue;
+        }
+        result.insert(property);
+    }
+
+    // Layer 2: DEVICE_PROPERTIES[device] over globals.
+    if (!device.empty()) {
+        auto dp_it = properties.find(ov::device::properties.name());
+        if (dp_it != properties.end()) {
+            const auto& dp_map = dp_it->second.as<ov::AnyMap>();
+            auto dev_it = dp_map.find(device);
+            if (dev_it != dp_map.end()) {
+                for (const auto& property : dev_it->second.as<ov::AnyMap>()) {
+                    result.insert_or_assign(property.first, property.second);
+                }
+            }
         }
     }
 
+    // Layer 3: MODEL_PROPERTIES[role] wins over everything else.
     auto it = properties.find(PER_MODEL_PROPERTIES);
     if (it == properties.end()) {
         return result;
     }
-
     const auto& model_map = it->second.as<ov::AnyMap>();
     auto role_it = model_map.find(model_role);
     if (role_it == model_map.end()) {
         return result;
     }
-
-    // Role-specific values win over globals.
     for (const auto& property : role_it->second.as<ov::AnyMap>()) {
         result.insert_or_assign(property.first, property.second);
     }
@@ -487,7 +503,7 @@ CacheTypes get_cache_types(const ov::Model& model) {
         } else if (
             (rank == 3 && dynamic_axis_count == 1)  // conv state
             || (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 0)  // ssm state
-        ) {  
+        ) {
             cache_types.add_linear();
         }
     }
@@ -774,6 +790,19 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
     return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::TextEmbedding, text_embed_config);
 }
 
+size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
+    const size_t max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
+    const size_t min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
+    // for proper support need to expose NPUW_LLM_MAX_GENERATION_TOKEN_LEN property in NPU model
+    const size_t max_generation_token_len = 1u;
+
+    OPENVINO_ASSERT(max_prompt_len + min_response_len >= max_generation_token_len,
+                     "Invalid NPU KV-cache capacity: MAX_PROMPT_LEN + MIN_RESPONSE_LEN must be >= ",
+                     max_generation_token_len, ", got ", max_prompt_len, " + ", min_response_len);
+
+    return max_prompt_len + min_response_len - max_generation_token_len;
+}
+
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
         std::optional<ov::Any> found = std::make_optional(it->second);
@@ -789,6 +818,35 @@ const ModelsMap::mapped_type& get_model_weights_pair(const ModelsMap& models_map
         return it->second;
     }
     OPENVINO_THROW("Model with key '", key, "' not found in models map.");
+}
+
+void validate_vlm_model_properties(const ov::AnyMap& properties) {
+    static const std::vector<std::string> known_roles{
+        "vision_embeddings",
+        "text_embeddings",
+        "text_embeddings_per_layer",
+        "resampler",
+        "vision_embeddings_merger",
+        "vision_embeddings_pos",
+        "vision_projection",
+        "multi_modal_projector",
+        "language_model",
+    };
+    const auto it = properties.find(PER_MODEL_PROPERTIES);
+    if (it == properties.end()) {
+        return;
+    }
+    const auto& per_role = it->second.as<ov::AnyMap>();
+    for (const auto& [role, _] : per_role) {
+        OPENVINO_ASSERT(
+            std::find(known_roles.begin(), known_roles.end(), role) != known_roles.end(),
+            "Unknown sub-model role '", role, "' in MODEL_PROPERTIES. Known roles: ",
+            []() {
+                std::string s;
+                for (const auto& r : known_roles) { s += (s.empty() ? "" : ", "); s += r; }
+                return s;
+            }());
+    }
 }
 
 std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap& properties, std::optional<SchedulerConfig> default_config) {
@@ -825,7 +883,9 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
     }
 
     if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() && !is_npu_requested) {
-        if (is_paged_attention_available()) {
+        if (attention_backend_it != properties.end() && attention_backend_it->second.as<std::string>() == SDPA_BACKEND) {
+            return false;
+        } else if (is_paged_attention_available()) {
             return true;
         } else {
             OPENVINO_THROW("Speculative decoding requires PagedAttention operation support on non-NPU devices, which is available on x86_64 or ARM64 platforms only");

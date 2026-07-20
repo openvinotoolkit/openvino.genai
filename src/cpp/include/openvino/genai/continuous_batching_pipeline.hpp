@@ -62,6 +62,11 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
+     * Duration of the sampling step in the last generation step in microseconds.
+     */
+    float sampling_duration = 0.0;
+
+    /**
     * Total allocated cache size in bytes across registered cache types, based on the total number of cache blocks.
      * This value represents reserved/allocated memory for the cache and does not
      * distinguish between used and unused portions in dynamic cache configurations.
@@ -377,6 +382,13 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_batches(
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_batches
+);
+
+/// @brief Factory for audios_batches AnyMap entry.
+/// Audios must be encoded before text tokenization for Qwen3-Omni's interleaved layout.
+/// @note This is a preview API and is subject to change.
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> audios_batches(
+    const std::vector<std::vector<ov::Tensor>>& audios_batches
 );
 
 }

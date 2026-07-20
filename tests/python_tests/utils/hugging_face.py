@@ -5,9 +5,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Type
 import subprocess  # nosec B404
+import tempfile
 
 from optimum.modeling_base import OptimizedModel
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import (
+    AutoConfig,
+    AutoImageProcessor,
+    AutoProcessor,
+    AutoTokenizer,
+    AutoModelForCausalLM,
+)
 from transformers import GenerationConfig as HFGenerationConfig
 
 from optimum.intel import OVModelForCausalLM
@@ -62,6 +69,8 @@ def generation_config_to_hf(
     # copy default parameters
     kwargs["bos_token_id"] = default_generation_config.bos_token_id
     kwargs["pad_token_id"] = default_generation_config.pad_token_id
+    if hasattr(default_generation_config, "use_cache"):
+        kwargs["use_cache"] = default_generation_config.use_cache
 
     if generation_config.ignore_eos:
         kwargs["eos_token_id"] = []
@@ -261,11 +270,14 @@ def convert_models(
     opt_model: OVModelForCausalLM,
     hf_tokenizer: AutoTokenizer,
     models_path: Path,
+    model_id: str | None = None,
+    trust_remote_code: bool = False,
 ) -> None:
     opt_model.save_pretrained(str(models_path))
     # save generation config
     if opt_model.generation_config:
         opt_model.generation_config.save_pretrained(str(models_path))
+
     opt_model.config.save_pretrained(str(models_path))
 
     # to store tokenizer config jsons with special tokens
@@ -274,16 +286,62 @@ def convert_models(
         # convert tokenizers as well
         convert_and_save_tokenizer(hf_tokenizer, models_path)
 
+    if not model_id:
+        return
+
+    # to store preprocessor_config.json, processor_config.json etc. if they exist
+    for auto_cls in (AutoProcessor, AutoImageProcessor):
+        try:
+            processor = auto_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code)
+            processor.save_pretrained(str(models_path))
+        except (OSError, ValueError):
+            # ignore if processor is not available for the model
+            pass
 
 def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConvertedModelSchema:
     return download_and_convert_model_class(model_id, OVModelForCausalLM, **tokenizer_kwargs)
+
+
+def generate_and_save_gemma4_mtp_assistant_model(target_models_path: Path) -> Path:
+    from transformers import Gemma4AssistantConfig, Gemma4AssistantForCausalLM
+    from optimum.intel import OVAssistantForCausalLM
+
+    assistant_models_path = target_models_path.parent / f"{target_models_path.name}_assistant"
+    if (assistant_models_path / OV_MODEL_FILENAME).exists():
+        return assistant_models_path
+
+    assistant_models_path.mkdir(parents=True, exist_ok=True)
+    target_config = AutoConfig.from_pretrained(target_models_path)
+    assistant_text_config = target_config.text_config.to_dict()
+    assistant_text_config["hidden_size_per_layer_input"] = 0
+    assistant_text_config["use_double_wide_mlp"] = False
+    assistant_text_config["vocab_size_per_layer_input"] = 0
+    assistant_text_config["num_kv_shared_layers"] = assistant_text_config["num_hidden_layers"]
+    assistant_config = Gemma4AssistantConfig(
+        text_config=assistant_text_config,
+        backbone_hidden_size=target_config.text_config.hidden_size,
+        tie_word_embeddings=target_config.tie_word_embeddings,
+        use_ordered_embeddings=True,
+    )
+    assistant_model = Gemma4AssistantForCausalLM(assistant_config)
+    with tempfile.TemporaryDirectory() as assistant_hf_dir:
+        assistant_hf_path = Path(assistant_hf_dir)
+        assistant_model.save_pretrained(assistant_hf_path)
+        ov_assistant_model = OVAssistantForCausalLM.from_pretrained(
+            assistant_hf_path,
+            export=True,
+            compile=False,
+            ov_config=get_default_llm_properties(),
+        )
+    ov_assistant_model.save_pretrained(assistant_models_path)
+    return assistant_models_path
 
 
 def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
-TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3",)
+TRUST_REMOTE_CODE_MODELS = ("AngelSlim/Qwen3-1.7B_eagle3", "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3")
 
 # Some models require optimum-cli export instead of the Python API path.
 # This maps model_id to the --task value used during export - CVS-183496
@@ -358,7 +416,7 @@ def download_and_convert_model_class(
                 hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
             def convert_to_temp(temp_path: Path) -> None:
-                convert_models(opt_model, hf_tokenizer, temp_path)
+                convert_models(opt_model, hf_tokenizer, temp_path, model_id, trust_remote_code)
 
             manager.execute(convert_to_temp)
 

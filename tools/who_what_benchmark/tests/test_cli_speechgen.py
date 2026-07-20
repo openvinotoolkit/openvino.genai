@@ -47,9 +47,10 @@ def get_overall_score(output: str) -> float:
     return float(matches[-1])
 
 
-def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path):
-    if sys.platform == "darwin":
-        pytest.xfail("Ticket 184323")
+def run_test(
+    model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path, execution_args=None
+):
+    execution_args = execution_args or []
 
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
@@ -66,6 +67,7 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
         "CPU",
         "--model-type",
         model_type,
+        *execution_args,
         "--hf",
     ]
     if speaker_embeddings is not None:
@@ -84,6 +86,7 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
         "CPU",
         "--model-type",
         model_type,
+        *execution_args,
     ]
     if speaker_embeddings is not None:
         optimum_args.extend(["--speaker_embeddings", speaker_embeddings])
@@ -105,6 +108,7 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
         "CPU",
         "--model-type",
         model_type,
+        *execution_args,
         "--genai",
         "--output",
         tmp_path,
@@ -134,11 +138,6 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
     assert genai_score_no_gen == genai_score
 
 
-@pytest.mark.transformers_lower_v5(
-    reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
-)
-@pytest.mark.speech_generation
-@pytest.mark.speecht5
 @pytest.mark.parametrize(
     ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
     [
@@ -146,16 +145,37 @@ def run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_
     ],
 )
 def test_tts_speecht5(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("Ticket 184323")
+
     speaker_embeddings = get_speaker_embedding()
     run_test(model_id, model_type, speaker_embeddings, optimum_threshold, genai_threshold, tmp_path)
 
 
-@pytest.mark.transformers_lower_v5(
-    reason="version of the speechbrain module compatible with transformers v5.0 causes an import error with k2 module on Windows."
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "speech_voice", "speech_language", "optimum_threshold", "genai_threshold"),
+    [
+        ("hexgrad/Kokoro-82M", "speech-generation", "af_heart", "en-us", 0.90, 0.90),
+    ],
 )
-@pytest.mark.speech_generation
-@pytest.mark.speecht5
+def test_tts_kokoro(model_id, model_type, speech_voice, speech_language, optimum_threshold, genai_threshold, tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("CVS-187265")
+
+    run_test(
+        model_id=model_id,
+        model_type=model_type,
+        speaker_embeddings=None,
+        optimum_threshold=optimum_threshold,
+        genai_threshold=genai_threshold,
+        tmp_path=tmp_path,
+        execution_args=["--speech-voice", speech_voice, "--speech-language", speech_language],
+    )
+
+
 def test_tts_speecht5_default_speaker_embeddings(tmp_path):
+    if sys.platform == "darwin":
+        pytest.xfail("Ticket 184323")
     model_id = "microsoft/speecht5_tts"
     model_type = "speech-generation"
     run_test(

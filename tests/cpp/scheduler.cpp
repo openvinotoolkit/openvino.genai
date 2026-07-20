@@ -65,7 +65,9 @@ std::shared_ptr<CacheOrchestrator> init_hybrid_cache_orchestrator(SchedulerConfi
         la_block_manager = std::make_unique<BlockManager>(scheduler_config.num_linear_attention_blocks,
                                                           true,
                                                           get_test_cache_interval(scheduler_config, kv_block_size),
-                                                          1);
+                                                          1,
+                                                          0,
+                                                          true);
     } else {
         const size_t num_la_blocks = scheduler_config.num_linear_attention_blocks > 0
                                          ? scheduler_config.num_linear_attention_blocks
@@ -138,6 +140,44 @@ ov::Tensor embeds_matrix_to_tensor(std::vector<std::vector<float>> vec) {
     return res;
 }
 
+TEST(TestScheduler, adaptive_rkv_zero_size_is_not_marked_available) {
+    Scheduler::Output output;
+    const uint64_t seq_id = 42;
+
+    EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 0);
+
+    output.set_adaptive_rkv_evictable_size(seq_id, 0);
+    EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 0);
+
+    output.set_adaptive_rkv_evictable_size(seq_id, 3);
+    EXPECT_TRUE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 3);
+
+    output.set_adaptive_rkv_evictable_size(seq_id, 0);
+    EXPECT_FALSE(output.has_adaptive_rkv_evictable_size(seq_id));
+    EXPECT_EQ(output.get_adaptive_rkv_evictable_size(seq_id), 0);
+}
+
+TEST(TestScheduler, output_keeps_shared_kv_global_data_alive) {
+    Scheduler::Output output;
+    auto mutable_global_data = std::make_shared<Scheduler::KVPagedAttentionGlobalData>();
+    mutable_global_data->xattention_block_size = 17;
+    mutable_global_data->xattention_stride = 5;
+    mutable_global_data->adaptive_rkv_start_size = 3;
+
+    std::shared_ptr<const Scheduler::KVPagedAttentionGlobalData> global_data = mutable_global_data;
+    output.set_kv_paged_attention_global_data(global_data);
+    mutable_global_data.reset();
+    global_data.reset();
+
+    const Scheduler::KVPagedAttentionGlobalData& output_global_data = output.get_kv_paged_attention_global_data();
+    EXPECT_EQ(output_global_data.xattention_block_size, 17);
+    EXPECT_EQ(output_global_data.xattention_stride, 5);
+    EXPECT_EQ(output_global_data.adaptive_rkv_start_size, 3);
+}
+
 TEST(TestScheduler, general_test) {
     std::array<SchedulerConfig, 2> configs = {SchedulerConfig(), SchedulerConfig()};
     configs.at(0).max_num_batched_tokens = 32;
@@ -167,9 +207,9 @@ TEST(TestScheduler, general_test) {
 
         std::vector<uint64_t> ref_ids = {0, 1, 2};
         EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
-        EXPECT_EQ(out1.m_block_tables[idx0][0].size(), 2);
-        EXPECT_EQ(out1.m_block_tables[idx1][0].size(), 2);
-        EXPECT_EQ(out1.m_block_tables[idx2][0].size(), 2);
+        EXPECT_EQ(out1.get_kv_block_tables(idx0)[0].size(), 2);
+        EXPECT_EQ(out1.get_kv_block_tables(idx1)[0].size(), 2);
+        EXPECT_EQ(out1.get_kv_block_tables(idx2)[0].size(), 2);
         // tokens.size() * 2 tokens should be scheduled on prompt phase, corresponding to first three sequences
         EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 3);
         EXPECT_EQ(out1.is_prompt, !scheduler_config.dynamic_split_fuse);
@@ -194,8 +234,8 @@ TEST(TestScheduler, general_test) {
 
         std::vector<uint64_t> ref_ids2 = {0, 1};
         EXPECT_EQ(out3.m_scheduled_sequence_groups_ids, ref_ids2);
-        EXPECT_EQ(out3.m_block_tables[idx0][0].size(), 3);
-        EXPECT_EQ(out3.m_block_tables[idx1][0].size(), 3);
+        EXPECT_EQ(out3.get_kv_block_tables(idx0)[0].size(), 3);
+        EXPECT_EQ(out3.get_kv_block_tables(idx1)[0].size(), 3);
         // 2 tokens should be scheduled on generate phase for "0" and "1" sequence, "2" sequence should be preempted
         EXPECT_EQ(out3.m_total_num_scheduled_tokens, 2);
         EXPECT_FALSE(out3.is_prompt);
@@ -213,11 +253,11 @@ TEST(TestScheduler, general_test) {
         auto out4 = scheduler.schedule(requests);
 
         // check that sequence_group3 is fully scehuled
-        EXPECT_EQ(out4.m_block_tables[idx2][0].size(), 2);
-        EXPECT_FALSE(out4.m_block_tables[idx2][0][0]->is_free());
-        EXPECT_EQ(out4.m_block_tables[idx2][0][0]->get_index(), 0);
-        EXPECT_FALSE(out4.m_block_tables[idx2][0][1]->is_free());
-        EXPECT_EQ(out4.m_block_tables[idx2][0][1]->get_index(), 1);
+        EXPECT_EQ(out4.get_kv_block_tables(idx2)[0].size(), 2);
+        EXPECT_FALSE(out4.get_kv_block_tables(idx2)[0][0]->is_free());
+        EXPECT_EQ(out4.get_kv_block_tables(idx2)[0][0]->get_index(), 0);
+        EXPECT_FALSE(out4.get_kv_block_tables(idx2)[0][1]->is_free());
+        EXPECT_EQ(out4.get_kv_block_tables(idx2)[0][1]->get_index(), 1);
 
         // requests1[1] should be fully scheduled plus 1 slot for requests[0] for generate phase
         EXPECT_EQ(out4.m_total_num_scheduled_tokens, requests[1]->get_context_len() + 1);
@@ -260,16 +300,16 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
 
     EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_layers(), 3);
     EXPECT_EQ(orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE).get_num_cache_tensors(), 6);
-    ASSERT_EQ(prompt_out.m_block_tables.at(seq_id1).size(), 2);
-    ASSERT_EQ(prompt_out.m_block_tables.at(seq_id2).size(), 2);
-    EXPECT_EQ(prompt_out.m_block_tables.at(seq_id1)[1].size(), 1);
-    EXPECT_EQ(prompt_out.m_block_tables.at(seq_id2)[1].size(), 1);
-    EXPECT_TRUE(prompt_out.m_linear_attention_paging_data.count(seq_id1));
-    EXPECT_TRUE(prompt_out.m_linear_attention_paging_data.count(seq_id2));
-    EXPECT_EQ(prompt_out.m_linear_attention_paging_data.at(seq_id1).block_indices.size(), 2);
-    EXPECT_EQ(prompt_out.m_linear_attention_paging_data.at(seq_id1).block_indices[0], prompt_out.m_linear_attention_paging_data.at(seq_id1).block_indices[1]);
-    EXPECT_EQ(prompt_out.m_linear_attention_paging_data.at(seq_id2).block_indices.size(), 2);
-    EXPECT_EQ(prompt_out.m_linear_attention_paging_data.at(seq_id2).block_indices[0], prompt_out.m_linear_attention_paging_data.at(seq_id2).block_indices[1]);
+    ASSERT_EQ(prompt_out.get_kv_block_tables(seq_id1).size(), 1);
+    ASSERT_EQ(prompt_out.get_kv_block_tables(seq_id2).size(), 1);
+    EXPECT_EQ(prompt_out.get_kv_block_tables(seq_id1)[0].size(), 1);
+    EXPECT_EQ(prompt_out.get_kv_block_tables(seq_id2)[0].size(), 1);
+    EXPECT_TRUE(prompt_out.has_linear_attention_paging_data(seq_id1));
+    EXPECT_TRUE(prompt_out.has_linear_attention_paging_data(seq_id2));
+    EXPECT_EQ(prompt_out.get_linear_attention_paging_data(seq_id1).block_indices.size(), 2);
+    EXPECT_EQ(prompt_out.get_linear_attention_paging_data(seq_id1).block_indices[0], prompt_out.get_linear_attention_paging_data(seq_id1).block_indices[1]);
+    EXPECT_EQ(prompt_out.get_linear_attention_paging_data(seq_id2).block_indices.size(), 2);
+    EXPECT_EQ(prompt_out.get_linear_attention_paging_data(seq_id2).block_indices[0], prompt_out.get_linear_attention_paging_data(seq_id2).block_indices[1]);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id1).size(), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id2).size(), 1);
 
@@ -280,12 +320,12 @@ TEST(TestScheduler, hybrid_output_fills_linear_attention_block_table_in_prompt_a
     }
 
     auto gen_out = scheduler.schedule(requests);
-    EXPECT_TRUE(gen_out.m_linear_attention_paging_data.count(seq_id1));
-    EXPECT_TRUE(gen_out.m_linear_attention_paging_data.count(seq_id2));
-    EXPECT_EQ(gen_out.m_linear_attention_paging_data.at(seq_id1).block_indices.size(), 2);
-    EXPECT_EQ(gen_out.m_linear_attention_paging_data.at(seq_id1).block_indices[0], gen_out.m_linear_attention_paging_data.at(seq_id1).block_indices[1]);
-    EXPECT_EQ(gen_out.m_linear_attention_paging_data.at(seq_id2).block_indices.size(), 2);
-    EXPECT_EQ(gen_out.m_linear_attention_paging_data.at(seq_id2).block_indices[0], gen_out.m_linear_attention_paging_data.at(seq_id2).block_indices[1]);
+    EXPECT_TRUE(gen_out.has_linear_attention_paging_data(seq_id1));
+    EXPECT_TRUE(gen_out.has_linear_attention_paging_data(seq_id2));
+    EXPECT_EQ(gen_out.get_linear_attention_paging_data(seq_id1).block_indices.size(), 2);
+    EXPECT_EQ(gen_out.get_linear_attention_paging_data(seq_id1).block_indices[0], gen_out.get_linear_attention_paging_data(seq_id1).block_indices[1]);
+    EXPECT_EQ(gen_out.get_linear_attention_paging_data(seq_id2).block_indices.size(), 2);
+    EXPECT_EQ(gen_out.get_linear_attention_paging_data(seq_id2).block_indices[0], gen_out.get_linear_attention_paging_data(seq_id2).block_indices[1]);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id1).size(), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id2).size(), 1);
 
@@ -317,8 +357,8 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_returns_aliased_read_writ
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 2);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
     EXPECT_EQ(paging_data.cache_interval, 0);
@@ -407,7 +447,7 @@ TEST(TestScheduler, hybrid_admission_when_la_pool_is_bottleneck) {
     auto out = scheduler.schedule(requests);
 
     EXPECT_EQ(out.m_scheduled_sequence_groups_ids.size(), 1);
-    EXPECT_TRUE(out.m_linear_attention_paging_data.count(seq_id1) || out.m_linear_attention_paging_data.count(seq_id2));
+    EXPECT_TRUE(out.has_linear_attention_paging_data(seq_id1) || out.has_linear_attention_paging_data(seq_id2));
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -437,9 +477,9 @@ TEST(TestScheduler, hybrid_initialize_cache_grows_fixed_size_by_total_concurrent
     auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config);
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
 
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 0);
     std::ignore = scheduler.schedule(requests);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 2);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 2);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -470,9 +510,107 @@ TEST(TestScheduler, initialize_cache_uses_sequence_aware_block_rounding) {
 
     std::ignore = scheduler.schedule(requests);
 
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), requests.size());
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), requests.size());
 
     for (auto& req : requests) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
+TEST(TestScheduler, dynamic_alloc_reserves_full_capacity_for_later_larger_prompt) {
+    // In dynamic allocation mode, a prompt that arrives after the cache was sized for a smaller
+    // one must have its capacity reserved in a single scheduling round (grow-to-fit), rather than
+    // growing m_cache_growth_num_tokens at a time across the prefill (which reallocates the whole
+    // cache each step). See openvinotoolkit/openvino.genai#3968.
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;  // small batch => prompt is chunked across steps
+    scheduler_config.num_kv_blocks = 0;            // dynamic allocation
+    scheduler_config.cache_size = 0;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    // Round 1: a small prompt sizes the cache for itself.
+    std::vector<int64_t> small_tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr small = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {small_tokens.size()}, small_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> round1 = {small};
+    std::ignore = scheduler.schedule(round1);
+    for (auto& seq : small->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+
+    // Round 2: a much larger prompt (well beyond the 256-token growth chunk) arrives.
+    const size_t large_prompt_len = 600;
+    std::vector<int64_t> large_tokens(large_prompt_len);
+    std::iota(large_tokens.begin(), large_tokens.end(), 0);
+    SequenceGroup::Ptr large = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {large_tokens.size()}, large_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> round2 = {large};
+    std::ignore = scheduler.schedule(round2);
+
+    // After a single schedule() round, the KV cache must already hold the whole large prompt.
+    const size_t blocks = orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count();
+    const size_t blocks_needed_for_prompt = (large_prompt_len + TEST_BLOCK_SIZE - 1) / TEST_BLOCK_SIZE;
+    EXPECT_GE(blocks, blocks_needed_for_prompt);
+
+    for (auto& seq : large->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+}
+
+TEST(TestScheduler, dynamic_alloc_reserves_capacity_for_new_prompt_on_top_of_running_sequence) {
+    // When a large prompt arrives while another sequence is still generating, the reservation must
+    // account for the running sequence's footprint too, so the new prompt's capacity is added on
+    // top in a single reallocation (not under-reserved). See openvinotoolkit/openvino.genai#3968.
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 0;  // dynamic allocation
+    scheduler_config.cache_size = 0;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    // Round 1: a small sequence is prefilled and advanced into the generate phase (running).
+    std::vector<int64_t> small_tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr small = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {small_tokens.size()}, small_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> running = {small};
+    std::ignore = scheduler.schedule(running);
+    small->get_running_sequences()[0]->append_token(42, 0.9f);
+    small->finish_iteration();
+    ASSERT_TRUE(small->can_generate_tokens());  // now running in generate phase
+
+    // Round 2: a much larger prompt arrives while the small one keeps running.
+    const size_t large_prompt_len = 600;
+    std::vector<int64_t> large_tokens(large_prompt_len);
+    std::iota(large_tokens.begin(), large_tokens.end(), 0);
+    SequenceGroup::Ptr large = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {large_tokens.size()}, large_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> both = {small, large};
+    std::ignore = scheduler.schedule(both);
+
+    // Capacity must cover BOTH the running sequence's reservation and the new prompt's, reserved in
+    // one round. Targets mirror the scheduler heuristic: min(prompt_len*2, prompt_len + max_new).
+    const size_t max_new = utils::get_greedy_config().max_new_tokens;
+    auto target_blocks = [&](size_t prompt_len) {
+        const size_t tokens = std::min(prompt_len * 2, prompt_len + max_new);
+        return (tokens + TEST_BLOCK_SIZE - 1) / TEST_BLOCK_SIZE;
+    };
+    const size_t blocks = orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count();
+    EXPECT_GE(blocks, target_blocks(small_tokens.size()) + target_blocks(large_prompt_len));
+
+    for (auto& req : both) {
         for (auto& seq : req->get_sequences()) {
             scheduler.free_sequence(seq->get_id());
         }
@@ -502,8 +640,8 @@ TEST(TestScheduler, linear_attention_only_initializes_fixed_size_capacity) {
     auto out = scheduler.schedule(requests);
 
     EXPECT_EQ(out.m_scheduled_sequence_groups_ids.size(), 1);
-    EXPECT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
+    EXPECT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1);
 
     scheduler.free_sequence(seq_id);
 }
@@ -528,7 +666,7 @@ TEST(TestScheduler, hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedul
 
     std::vector<SequenceGroup::Ptr> requests = {seq_group1};
     std::ignore = scheduler.schedule(requests);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1);
 
     auto running = seq_group1->get_running_sequences();
     running[0]->append_token(42, 0.9f);
@@ -541,8 +679,8 @@ TEST(TestScheduler, hybrid_runtime_arrival_beyond_initial_fixed_capacity_schedul
     requests.push_back(seq_group2);
 
     auto out = scheduler.schedule(requests);
-    EXPECT_TRUE(out.m_linear_attention_paging_data.count(seq_id1));
-    EXPECT_TRUE(out.m_linear_attention_paging_data.count(seq_id2));
+    EXPECT_TRUE(out.has_linear_attention_paging_data(seq_id1));
+    EXPECT_TRUE(out.has_linear_attention_paging_data(seq_id2));
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -579,8 +717,8 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_requires_read_and_interval_wri
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 10);
     EXPECT_EQ(paging_data.past_length, 0);
     EXPECT_EQ(paging_data.cache_interval, TEST_DEFAULT_CACHE_INTERVAL);
@@ -618,8 +756,8 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_uses_scheduler_config_cache_in
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 3);
     EXPECT_EQ(paging_data.cache_interval, TEST_CUSTOM_CACHE_INTERVAL);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
@@ -676,8 +814,8 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_complete_linear_attentio
     auto out = scheduler.schedule(consumer_requests);
 
     EXPECT_EQ(out.m_total_num_scheduled_tokens, 1);
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(consumer_seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(consumer_seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(consumer_seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(consumer_seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 2);
     EXPECT_EQ(paging_data.past_length, producer_tokens.size());
     EXPECT_EQ(paging_data.cache_interval, TEST_BLOCK_SIZE);
@@ -726,25 +864,25 @@ TEST(TestScheduler, hybrid_prefix_caching_reuses_active_incomplete_linear_attent
     const auto consumer_seq_id = consumer_group->get_running_sequences()[0]->get_id();
 
     scheduler.restore_cached_blocks(consumer_group);
-    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 2);
-    EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), complete_checkpoint_idx);
-    EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(1)->get_index(), incomplete_checkpoint_idx);
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), incomplete_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table_logical_start(consumer_seq_id), 1);
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
 
     std::vector<SequenceGroup::Ptr> consumer_requests = {consumer_group};
     auto out = scheduler.schedule(consumer_requests);
 
     EXPECT_EQ(out.m_total_num_scheduled_tokens, 1);
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(consumer_seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(consumer_seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(consumer_seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(consumer_seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 2);
     EXPECT_EQ(paging_data.past_length, tokens.size() - 1);
     EXPECT_EQ(paging_data.cache_interval, TEST_BLOCK_SIZE);
     EXPECT_NE(paging_data.block_indices[0], incomplete_checkpoint_idx);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
-    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 2);
-    EXPECT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), complete_checkpoint_idx);
-    EXPECT_NE(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(1)->get_index(), incomplete_checkpoint_idx);
+    ASSERT_EQ(orchestrator->get_linear_attention_block_table(consumer_seq_id).size(), 1);
+    EXPECT_NE(orchestrator->get_linear_attention_block_table(consumer_seq_id).at(0)->get_index(), incomplete_checkpoint_idx);
+    EXPECT_EQ(orchestrator->get_linear_attention_block_table_logical_start(consumer_seq_id), 1);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).at(0)->get_index(), complete_checkpoint_idx);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(producer_seq_id).at(1)->get_index(), incomplete_checkpoint_idx);
 
@@ -823,8 +961,8 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_exactly_interval_uses_single_w
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 2);
     EXPECT_EQ(paging_data.past_length, 0);
     EXPECT_EQ(paging_data.cache_interval, TEST_CUSTOM_CACHE_INTERVAL);
@@ -861,8 +999,8 @@ TEST(TestScheduler, hybrid_prefix_caching_prefill_interval_plus_one_uses_next_wr
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 3);
     EXPECT_EQ(paging_data.past_length, 0);
     EXPECT_EQ(paging_data.cache_interval, TEST_CUSTOM_CACHE_INTERVAL);
@@ -900,17 +1038,17 @@ TEST(TestScheduler, hybrid_prefix_caching_chunked_prefill_crossing_interval_adds
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto first_out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(first_out.m_linear_attention_paging_data.count(seq_id));
-    ASSERT_EQ(first_out.m_linear_attention_paging_data.at(seq_id).block_indices.size(), 2);
-    EXPECT_EQ(first_out.m_linear_attention_paging_data.at(seq_id).past_length, 0);
-    EXPECT_EQ(first_out.m_linear_attention_paging_data.at(seq_id).block_indices[0],
-              first_out.m_linear_attention_paging_data.at(seq_id).block_indices[1]);
+    ASSERT_TRUE(first_out.has_linear_attention_paging_data(seq_id));
+    ASSERT_EQ(first_out.get_linear_attention_paging_data(seq_id).block_indices.size(), 2);
+    EXPECT_EQ(first_out.get_linear_attention_paging_data(seq_id).past_length, 0);
+    EXPECT_EQ(first_out.get_linear_attention_paging_data(seq_id).block_indices[0],
+              first_out.get_linear_attention_paging_data(seq_id).block_indices[1]);
 
     seq_group->finish_iteration();
     auto second_out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(second_out.m_linear_attention_paging_data.count(seq_id));
-    const auto& second_paging_data = second_out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(second_out.has_linear_attention_paging_data(seq_id));
+    const auto& second_paging_data = second_out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(second_paging_data.block_indices.size(), 3);
     EXPECT_EQ(second_paging_data.past_length, 48);
     EXPECT_EQ(second_paging_data.cache_interval, TEST_CUSTOM_CACHE_INTERVAL);
@@ -958,8 +1096,8 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_multiple_tokens_crossing_in
 
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 3);
     EXPECT_EQ(seq_group->get_num_scheduled_tokens(), 3);
     EXPECT_EQ(paging_data.past_length, 62);
@@ -997,8 +1135,8 @@ TEST(TestScheduler, hybrid_prefix_caching_cache_interval_multiplier_one_allocate
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 2);
     EXPECT_EQ(paging_data.cache_interval, TEST_BLOCK_SIZE);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
@@ -1036,8 +1174,8 @@ TEST(TestScheduler, hybrid_prefix_caching_dynamic_allocation_honors_custom_cache
     Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    const auto& paging_data = out.m_linear_attention_paging_data.at(seq_id);
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    const auto& paging_data = out.get_linear_attention_paging_data(seq_id);
     ASSERT_EQ(paging_data.block_indices.size(), 3);
     EXPECT_EQ(paging_data.cache_interval, TEST_CUSTOM_CACHE_INTERVAL);
     EXPECT_EQ(paging_data.block_indices[0], paging_data.block_indices[1]);
@@ -1070,7 +1208,7 @@ TEST(TestScheduler, scheduler_config_zero_cache_interval_multiplier_requires_dis
     EXPECT_EQ(scheduler_config.cache_interval_multiplier.value(), 0);
 }
 
-TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_requires_linear_attention_model) {
+TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_is_ignored_for_kv_only_model) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_model(core, TEST_NUM_DECODER_LAYERS)).create_infer_request();
     auto get_available_memory = [](const std::string&, size_t) {
@@ -1085,12 +1223,12 @@ TEST(TestScheduler, scheduler_config_custom_cache_interval_multiplier_requires_l
     SchedulerConfig explicit_default_config;
     explicit_default_config.num_kv_blocks = 64;
     explicit_default_config.cache_interval_multiplier = DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER;
-    EXPECT_ANY_THROW(CacheOrchestrator::create(request, explicit_default_config, get_available_memory));
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, explicit_default_config, get_available_memory));
 
     SchedulerConfig custom_interval_config;
     custom_interval_config.num_kv_blocks = 64;
     custom_interval_config.cache_interval_multiplier = TEST_CUSTOM_CACHE_INTERVAL_MULTIPLIER;
-    EXPECT_ANY_THROW(CacheOrchestrator::create(request, custom_interval_config, get_available_memory));
+    EXPECT_NO_THROW(CacheOrchestrator::create(request, custom_interval_config, get_available_memory));
 }
 
 TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_single_fixed_linear_attention_block_for_client_scenario) {
@@ -1110,8 +1248,8 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_single_fixed_linear
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 64);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, 1);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 64);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 1);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 64);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 1);
 }
 
 TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_fixed_linear_attention_capacity_from_max_num_seqs_for_bounded_batching) {
@@ -1131,8 +1269,8 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_fixed_linear_attent
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 64);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, scheduler_config.max_num_seqs);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 64);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(),
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 64);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(),
               scheduler_config.max_num_seqs);
 }
 
@@ -1155,7 +1293,7 @@ TEST(TestScheduler, hybrid_create_explicit_kv_blocks_derives_paged_linear_attent
 
     ASSERT_EQ(scheduler_config.num_kv_blocks, 10);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, expected_la_blocks);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(),
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(),
               expected_la_blocks);
 }
 
@@ -1245,8 +1383,8 @@ TEST(TestScheduler, hybrid_create_zero_budget_keeps_all_cache_pools_dynamic) {
 
     EXPECT_EQ(scheduler_config.num_kv_blocks, 0);
     EXPECT_EQ(scheduler_config.num_linear_attention_blocks, 0);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_number_of_kv_blocks(), 0);
-    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_number_of_kv_blocks(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count(), 0);
+    EXPECT_EQ(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE).get_total_block_count(), 0);
 }
 
 TEST(TestScheduler, scheduler_config_explicit_linear_attention_blocks_require_linear_attention_model) {
@@ -1299,12 +1437,12 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_finishing_interval_reuses_s
     seq_group->update_processed_tokens_num(TEST_DEFAULT_CACHE_INTERVAL - 1);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    ASSERT_EQ(out.m_linear_attention_paging_data.at(seq_id).block_indices.size(), 2);
-    const auto read_idx = out.m_linear_attention_paging_data.at(seq_id).block_indices[0];
-    const auto write_idx = out.m_linear_attention_paging_data.at(seq_id).block_indices[1];
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    ASSERT_EQ(out.get_linear_attention_paging_data(seq_id).block_indices.size(), 2);
+    const auto read_idx = out.get_linear_attention_paging_data(seq_id).block_indices[0];
+    const auto write_idx = out.get_linear_attention_paging_data(seq_id).block_indices[1];
     EXPECT_EQ(read_idx, write_idx);
-    EXPECT_EQ(out.m_linear_attention_paging_data.at(seq_id).cache_interval, TEST_DEFAULT_CACHE_INTERVAL);
+    EXPECT_EQ(out.get_linear_attention_paging_data(seq_id).cache_interval, TEST_DEFAULT_CACHE_INTERVAL);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -1348,10 +1486,10 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_after_completed_interval_sw
     seq_group->update_processed_tokens_num(TEST_DEFAULT_CACHE_INTERVAL);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    ASSERT_EQ(out.m_linear_attention_paging_data.at(seq_id).block_indices.size(), 2);
-    const auto read_idx = out.m_linear_attention_paging_data.at(seq_id).block_indices[0];
-    const auto write_idx = out.m_linear_attention_paging_data.at(seq_id).block_indices[1];
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    ASSERT_EQ(out.get_linear_attention_paging_data(seq_id).block_indices.size(), 2);
+    const auto read_idx = out.get_linear_attention_paging_data(seq_id).block_indices[0];
+    const auto write_idx = out.get_linear_attention_paging_data(seq_id).block_indices[1];
     EXPECT_NE(read_idx, write_idx);
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), 2);
 
@@ -1397,12 +1535,12 @@ TEST(TestScheduler, hybrid_prefix_caching_generation_inside_interval_reuses_same
     seq_group->update_processed_tokens_num(TEST_DEFAULT_CACHE_INTERVAL - 2);
     auto out = scheduler.schedule(requests);
 
-    ASSERT_TRUE(out.m_linear_attention_paging_data.count(seq_id));
-    ASSERT_EQ(out.m_linear_attention_paging_data.at(seq_id).block_indices.size(), 2);
-    const auto read_idx = out.m_linear_attention_paging_data.at(seq_id).block_indices[0];
-    const auto write_idx = out.m_linear_attention_paging_data.at(seq_id).block_indices[1];
+    ASSERT_TRUE(out.has_linear_attention_paging_data(seq_id));
+    ASSERT_EQ(out.get_linear_attention_paging_data(seq_id).block_indices.size(), 2);
+    const auto read_idx = out.get_linear_attention_paging_data(seq_id).block_indices[0];
+    const auto write_idx = out.get_linear_attention_paging_data(seq_id).block_indices[1];
     EXPECT_EQ(read_idx, write_idx);
-    EXPECT_EQ(out.m_linear_attention_paging_data.at(seq_id).cache_interval, TEST_DEFAULT_CACHE_INTERVAL);
+    EXPECT_EQ(out.get_linear_attention_paging_data(seq_id).cache_interval, TEST_DEFAULT_CACHE_INTERVAL);
 
     for (auto& req : requests) {
         for (auto& seq : req->get_sequences()) {
@@ -1453,16 +1591,16 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
 
     std::vector<uint64_t> ref_ids = {0, 1};
     EXPECT_EQ(out1.m_scheduled_sequence_groups_ids, ref_ids);
-    EXPECT_EQ(out1.m_block_tables[idx0][0].size(), 2);
-    EXPECT_EQ(out1.m_block_tables[idx1][0].size(), 2);
-    EXPECT_FALSE(out1.m_block_tables[idx0][0][0]->is_free());
-    EXPECT_EQ(out1.m_block_tables[idx0][0][0]->get_index(), 0);
-    EXPECT_FALSE(out1.m_block_tables[idx0][0][1]->is_free());
-    EXPECT_EQ(out1.m_block_tables[idx0][0][1]->get_index(), 1);
-    EXPECT_FALSE(out1.m_block_tables[idx1][0][0]->is_free());
-    EXPECT_EQ(out1.m_block_tables[idx1][0][0]->get_index(), 2);
-    EXPECT_FALSE(out1.m_block_tables[idx1][0][1]->is_free());
-    EXPECT_EQ(out1.m_block_tables[idx1][0][1]->get_index(), 3);
+    EXPECT_EQ(out1.get_kv_block_tables(idx0)[0].size(), 2);
+    EXPECT_EQ(out1.get_kv_block_tables(idx1)[0].size(), 2);
+    EXPECT_FALSE(out1.get_kv_block_tables(idx0)[0][0]->is_free());
+    EXPECT_EQ(out1.get_kv_block_tables(idx0)[0][0]->get_index(), 0);
+    EXPECT_FALSE(out1.get_kv_block_tables(idx0)[0][1]->is_free());
+    EXPECT_EQ(out1.get_kv_block_tables(idx0)[0][1]->get_index(), 1);
+    EXPECT_FALSE(out1.get_kv_block_tables(idx1)[0][0]->is_free());
+    EXPECT_EQ(out1.get_kv_block_tables(idx1)[0][0]->get_index(), 2);
+    EXPECT_FALSE(out1.get_kv_block_tables(idx1)[0][1]->is_free());
+    EXPECT_EQ(out1.get_kv_block_tables(idx1)[0][1]->get_index(), 3);
     EXPECT_EQ(out1.m_total_num_scheduled_tokens, tokens.size() * 2);
     EXPECT_EQ(out1.is_prompt, !scheduler_config.dynamic_split_fuse);
     for (auto seq: requests) {
@@ -1475,13 +1613,13 @@ TEST_P(AppendSlotsSchedulerTest, test_append_slots_considers_all_sequences) {
     auto out2 = scheduler.schedule(requests);
 
     // 1-st sequence now should use 3 kv-blocks
-    EXPECT_EQ(out2.m_block_tables[idx0][0].size(), 3);
-    EXPECT_FALSE(out2.m_block_tables[idx0][0][0]->is_free());
-    EXPECT_EQ(out2.m_block_tables[idx0][0][0]->get_index(), 0);
-    EXPECT_FALSE(out2.m_block_tables[idx0][0][1]->is_free());
-    EXPECT_EQ(out2.m_block_tables[idx0][0][1]->get_index(), 1);
-    EXPECT_FALSE(out2.m_block_tables[idx0][0][2]->is_free());
-    EXPECT_EQ(out2.m_block_tables[idx0][0][2]->get_index(), 4);
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0].size(), 3);
+    EXPECT_FALSE(out2.get_kv_block_tables(idx0)[0][0]->is_free());
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][0]->get_index(), 0);
+    EXPECT_FALSE(out2.get_kv_block_tables(idx0)[0][1]->is_free());
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][1]->get_index(), 1);
+    EXPECT_FALSE(out2.get_kv_block_tables(idx0)[0][2]->is_free());
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][2]->get_index(), 4);
 
     // 1 token was scheduled for generate phase
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1);
@@ -1547,8 +1685,8 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
 
     std::vector<uint64_t> ref_ids = {0};
     EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
-    auto block_table1 = scheduler.get_block_tables(*(*sequence_group1)[0])[0];
-    auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+    auto block_table1 = scheduler.get_kv_block_tables(*(*sequence_group1)[0])[0];
+    auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
     EXPECT_EQ(block_table1.size(), 4);
     EXPECT_EQ(block_table1[0]->get_index(), 0);
     EXPECT_EQ(block_table1[1]->get_index(), 1);
@@ -1559,10 +1697,10 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
     EXPECT_EQ(block_table2[1]->get_index(), 4);
 
     EXPECT_EQ(out2.m_total_num_scheduled_tokens, 1);
-    EXPECT_EQ(out2.m_block_tables[idx0][0][0]->get_index(), 0);
-    EXPECT_EQ(out2.m_block_tables[idx0][0][1]->get_index(), 1);
-    EXPECT_EQ(out2.m_block_tables[idx0][0][2]->get_index(), 2);
-    EXPECT_EQ(out2.m_block_tables[idx0][0][3]->get_index(), 5);
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][0]->get_index(), 0);
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][1]->get_index(), 1);
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][2]->get_index(), 2);
+    EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][3]->get_index(), 5);
 
     // finish first sequence
     requests[0]->get_running_sequences()[0]->set_status(SequenceStatus::FINISHED);
@@ -1575,11 +1713,11 @@ TEST_P(PartialPreemptionSchedulerTest, test_partial_preemption) {
 
     // last token should be recomputed
     EXPECT_EQ(out3.m_total_num_scheduled_tokens, 1);
-    EXPECT_EQ(out3.m_block_tables[idx1][0][0]->get_index(), 3);
-    EXPECT_EQ(out3.m_block_tables[idx1][0][1]->get_index(), 4);
-    EXPECT_EQ(out3.m_block_tables[idx1][0][2]->get_index(), 0);
+    EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][0]->get_index(), 3);
+    EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 4);
+    EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-    block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+    block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
     EXPECT_EQ(block_table2.size(), 3);
     EXPECT_EQ(block_table2[0]->get_index(), 3);
     EXPECT_EQ(block_table2[1]->get_index(), 4);
@@ -1678,11 +1816,11 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         EXPECT_EQ(sequence_group->get_num_processed_tokens(), 8);
         auto seqs = sequence_group->get_sequences();
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[0])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[1])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[2])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[3])[0].size(), 2);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[4])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[0])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[1])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[2])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[3])[0].size(), 2);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[4])[0].size(), 2);
 
         // append another 20 tokens to greedy group, this should result in usage of all free blocks and
         // another partial preemption of beam search group
@@ -1694,11 +1832,11 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         EXPECT_EQ(sequence_group->get_num_processed_tokens(), 4);
         seqs = sequence_group->get_sequences();
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[0])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[1])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[2])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[3])[0].size(), 1);
-        EXPECT_EQ(scheduler.get_block_tables(*seqs[4])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[0])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[1])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[2])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[3])[0].size(), 1);
+        EXPECT_EQ(scheduler.get_kv_block_tables(*seqs[4])[0].size(), 1);
 
         for (auto& req : new_requests) {
             for (auto& seq : req->get_sequences()) {
@@ -1742,18 +1880,18 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         auto out2 = scheduler.schedule(requests);
 
         // check that sequence_group1 has one more allocated block
-        auto block_tables_for_all_layers = scheduler.get_block_tables(*(*sequence_group1)[0]);
+        auto block_tables_for_all_layers = scheduler.get_kv_block_tables(*(*sequence_group1)[0]);
         auto block_table1 = block_tables_for_all_layers[0];
         EXPECT_EQ(block_table1.size(), 4);
         EXPECT_EQ(block_table1[0]->get_index(), 0);
         EXPECT_EQ(block_table1[1]->get_index(), 1);
         EXPECT_EQ(block_table1[2]->get_index(), 2);
         EXPECT_EQ(block_table1[3]->get_index(), 5);
-        EXPECT_EQ(out2.m_block_tables[idx0][0].size(), 4);
-        EXPECT_EQ(out2.m_block_tables[idx0][0][0]->get_index(), 0);
-        EXPECT_EQ(out2.m_block_tables[idx0][0][1]->get_index(), 1);
-        EXPECT_EQ(out2.m_block_tables[idx0][0][2]->get_index(), 2);
-        EXPECT_EQ(out2.m_block_tables[idx0][0][3]->get_index(), 5);
+        EXPECT_EQ(out2.get_kv_block_tables(idx0)[0].size(), 4);
+        EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][0]->get_index(), 0);
+        EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][1]->get_index(), 1);
+        EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][2]->get_index(), 2);
+        EXPECT_EQ(out2.get_kv_block_tables(idx0)[0][3]->get_index(), 5);
 
         std::vector<uint64_t> ref_ids = {0};
         EXPECT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
@@ -1762,7 +1900,7 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
         if (scheduler_config.dynamic_split_fuse) {
             // for dynamic_split_fuse sequence_group2 is preemted partially, part of prompt is left
             EXPECT_TRUE(scheduler.has_block_table(idx1));
-            auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+            auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
             EXPECT_EQ(block_table2.size(), 2); // full prompt requires 3 blocks, 2 are left in scheduler
 
         } else {
@@ -1793,11 +1931,11 @@ TEST(TestScheduler, test_partially_preempted_prompt) {
             EXPECT_EQ(out3.m_total_num_scheduled_tokens, 12);
         }
 
-        EXPECT_EQ(out3.m_block_tables[idx1][0][0]->get_index(), 3);
-        EXPECT_EQ(out3.m_block_tables[idx1][0][1]->get_index(), 4);
-        EXPECT_EQ(out3.m_block_tables[idx1][0][2]->get_index(), 0);
+        EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][0]->get_index(), 3);
+        EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 4);
+        EXPECT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-        auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0])[0];
+        auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0];
         EXPECT_EQ(block_table2.size(), 3);
         EXPECT_EQ(block_table2[0]->get_index(), 3);
         EXPECT_EQ(block_table2[1]->get_index(), 4);
@@ -2035,17 +2173,17 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     auto out2 = scheduler.schedule(requests);
 
     // check that sequence_group1 has one more allocated block
-    auto block_table1 = scheduler.get_block_tables(*(*sequence_group1)[0]);
+    auto block_table1 = scheduler.get_kv_block_tables(*(*sequence_group1)[0]);
     ASSERT_EQ(block_table1[0].size(), 4);
     ASSERT_EQ(block_table1[0][0]->get_index(), 0);
     ASSERT_EQ(block_table1[0][1]->get_index(), 1);
     ASSERT_EQ(block_table1[0][2]->get_index(), 2);
     ASSERT_EQ(block_table1[0][3]->get_index(), 3);
-    ASSERT_EQ(out2.m_block_tables[idx0][0].size(), 4);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][0]->get_index(), 0);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][1]->get_index(), 1);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][2]->get_index(), 2);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][3]->get_index(), 3);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0].size(), 4);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][0]->get_index(), 0);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][1]->get_index(), 1);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][2]->get_index(), 2);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][3]->get_index(), 3);
 
     std::vector<uint64_t> ref_ids = {0};
     ASSERT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
@@ -2068,11 +2206,11 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     // prompt should be fully scheduled
     ASSERT_EQ(out3.m_total_num_scheduled_tokens, 12);
 
-    ASSERT_EQ(out3.m_block_tables[idx1][0][0]->get_index(), 4);
-    ASSERT_EQ(out3.m_block_tables[idx1][0][1]->get_index(), 5);
-    ASSERT_EQ(out3.m_block_tables[idx1][0][2]->get_index(), 0);
+    ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][0]->get_index(), 4);
+    ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 5);
+    ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-    auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0]);
+    auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0]);
     ASSERT_EQ(block_table2[0].size(), 3);
     ASSERT_EQ(block_table2[0][0]->get_index(), 4);
     ASSERT_EQ(block_table2[0][1]->get_index(), 5);
@@ -2129,17 +2267,17 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
     auto out2 = scheduler.schedule(requests);
 
     // check that sequence_group1 has one more allocated block
-    auto block_table1 = scheduler.get_block_tables(*(*sequence_group1)[0]);
+    auto block_table1 = scheduler.get_kv_block_tables(*(*sequence_group1)[0]);
     ASSERT_EQ(block_table1[0].size(), 4);
     ASSERT_EQ(block_table1[0][0]->get_index(), 0);
     ASSERT_EQ(block_table1[0][1]->get_index(), 1);
     ASSERT_EQ(block_table1[0][2]->get_index(), 2);
     ASSERT_EQ(block_table1[0][3]->get_index(), 3);
-    ASSERT_EQ(out2.m_block_tables[idx0][0].size(), 4);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][0]->get_index(), 0);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][1]->get_index(), 1);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][2]->get_index(), 2);
-    ASSERT_EQ(out2.m_block_tables[idx0][0][3]->get_index(), 3);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0].size(), 4);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][0]->get_index(), 0);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][1]->get_index(), 1);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][2]->get_index(), 2);
+    ASSERT_EQ(out2.get_kv_block_tables(idx0)[0][3]->get_index(), 3);
 
     std::vector<uint64_t> ref_ids = {0};
     ASSERT_EQ(out2.m_scheduled_sequence_groups_ids, ref_ids);
@@ -2162,11 +2300,11 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed2) {
     // prompt should be fully scheduled + generated tokens concatenated to prompt (10 + 2)
     ASSERT_EQ(out3.m_total_num_scheduled_tokens, 12);
 
-    ASSERT_EQ(out3.m_block_tables[idx1][0][0]->get_index(), 4);
-    ASSERT_EQ(out3.m_block_tables[idx1][0][1]->get_index(), 5);
-    ASSERT_EQ(out3.m_block_tables[idx1][0][2]->get_index(), 0);
+    ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][0]->get_index(), 4);
+    ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][1]->get_index(), 5);
+    ASSERT_EQ(out3.get_kv_block_tables(idx1)[0][2]->get_index(), 0);
 
-    auto block_table2 = scheduler.get_block_tables(*(*sequence_group2)[0]);
+    auto block_table2 = scheduler.get_kv_block_tables(*(*sequence_group2)[0]);
     ASSERT_EQ(block_table2[0].size(), 3);
     ASSERT_EQ(block_table2[0][0]->get_index(), 4);
     ASSERT_EQ(block_table2[0][1]->get_index(), 5);
@@ -2253,8 +2391,8 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     }
 
     // ensure we are in expected cache state just before preemption
-    auto block_table1 = _get_indices(scheduler.get_block_tables(*(*sequence_group1)[0])[0]);
-    auto block_table2 = _get_indices(scheduler.get_block_tables(*(*sequence_group2)[0])[0]);
+    auto block_table1 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group1)[0])[0]);
+    auto block_table2 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0]);
 
     const std::vector<size_t> ref_block_table1{0, 1, 2};
     EXPECT_EQ(block_table1, ref_block_table1);
@@ -2266,7 +2404,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     // Should ensure that the 2-nd sequence can only be preempted completely
     out = _schedule_one_mock_generation_token_for_each_sequence_group(scheduler, requests);
 
-    block_table1 = _get_indices(scheduler.get_block_tables(*(*sequence_group1)[0])[0]);
+    block_table1 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group1)[0])[0]);
 
     const std::vector<size_t> ref_block_table1_after_preemption{0, 1, 2, 3};  // 3 was the first to be freed after preemption
     EXPECT_EQ(block_table1, ref_block_table1_after_preemption);
@@ -2283,7 +2421,7 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     // last token should be recomputed
     EXPECT_FALSE(scheduler.has_block_table(idx1));
     EXPECT_TRUE(scheduler.has_block_table(idx2));
-    block_table2 = _get_indices(scheduler.get_block_tables(*(*sequence_group2)[0])[0]);
+    block_table2 = _get_indices(scheduler.get_kv_block_tables(*(*sequence_group2)[0])[0]);
     const std::vector<size_t> ref_block_table2_after_recompute{4, 5, 0, 1, 2};  // should restore the old state before first eviction in terms of block count
     EXPECT_EQ(block_table2, ref_block_table2_after_recompute);
 
@@ -2385,4 +2523,104 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
             }
          }
     }
+}
+
+TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 42;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    scheduler.set_expected_num_scheduled_tokens(request_id, 5);
+    EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 5);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 5);
+    EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    // Release scheduled sequences and acknowledge the iteration so that
+    // Scheduler / BlockManager state is consistent at destruction time.
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
+}
+
+TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_than_available) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 43;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    // Available tokens for the request are 12; expected value above it must be ignored.
+    scheduler.set_expected_num_scheduled_tokens(request_id, 13);
+
+    auto out = scheduler.schedule(requests);
+    // Default scheduling is min(max_num_batched_tokens, available_tokens) = min(8, 12) = 8.
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 8);
+    EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
+}
+
+TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedule) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 44;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    scheduler.set_expected_num_scheduled_tokens(request_id, 5);
+    auto out1 = scheduler.schedule(requests);
+    EXPECT_EQ(out1.m_total_num_scheduled_tokens, 5);
+
+    requests[0]->finish_iteration();
+
+    scheduler.clear_expected_num_scheduled_tokens(request_id);
+    EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 0);
+
+    auto out2 = scheduler.schedule(requests);
+    // 7 prompt tokens remain after the first scheduling; default scheduling should now apply.
+    EXPECT_EQ(out2.m_total_num_scheduled_tokens, 7);
+    EXPECT_FALSE(out2.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
 }

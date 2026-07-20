@@ -68,6 +68,13 @@ protected:
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
 
+    // Per-request audio batches passed by the audios-aware generate() overloads.
+    // Populated under m_embeddings_mutex by the audio overload and consumed inside the
+    // per-prompt loop right before tokenization, so each prompt sees its own audio
+    // embeddings (m_inputs_embedder->encode_audios overwrites internal cache state).
+    // Empty when the no-audio overloads are used.
+    std::vector<std::vector<ov::Tensor>> m_pending_audios_batches;
+
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
@@ -126,6 +133,18 @@ public:
                                  GenerationConfig sampling_params);
 
     /**
+     * Overload accepting audios. Audios are encoded under m_embeddings_mutex before text tokenization so
+     * <|AUDIO|> placeholders resolve to fresh embeddings (Qwen3-Omni).
+     */
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 const std::vector<VideoMetadata>& videos_metadata,
+                                 const std::vector<ov::Tensor>& audios,
+                                 GenerationConfig sampling_params);
+
+    /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
      */
     virtual bool has_non_finished_requests() = 0;
@@ -180,7 +199,17 @@ public:
         const StreamerVariant& streamer
     );
 
-    
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+
     /**
      * Performs monolitic generation based on ChatHistory objects
      */
@@ -210,6 +239,16 @@ public:
         const std::vector<std::vector<ov::Tensor>>& images,
         const std::vector<std::vector<ov::Tensor>>& videos,
         const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer
+    );
+
+    virtual std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer
     );

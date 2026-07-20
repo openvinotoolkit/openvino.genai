@@ -642,7 +642,8 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
     auto image_scale = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, a_image_scale.data());
 
     auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
-    auto compiled_model = utils::singleton_core().compile_model(model, device, config);
+    auto compiled_model = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(config, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     return std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -680,6 +681,12 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
         m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
     }
 }
+
+VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& config_dir, ConfigOnlyTag)
+    : VisionEncoder(config_dir, ConfigOnlyTag{}) {}
+
+VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag)
+    : VisionEncoder(models_map, config_dir, ConfigOnlyTag{}) {}
 
 // keep both implementations for comparison and testing, here is the cpp version
 void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
@@ -934,21 +941,25 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
-    utils::request_vl_sdpa_transformations(model);
+    auto merger_path = model_dir / "openvino_vision_embeddings_merger_model.xml";
+    if (std::filesystem::exists(merger_path)) {
+        auto model = utils::singleton_core().read_model(merger_path);
+        utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
+        auto compiled_model = utils::singleton_core().compile_model(
+            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
 
-    m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
-    ov::genai::utils::print_compiled_model_properties(compiled_model,
-        m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
-        "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
+        m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model,
+            m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
+            "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
 
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+        m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
 
     encode_vision_placeholder_tokens();
 
@@ -963,26 +974,26 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    auto model = utils::singleton_core().read_model(
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
-        utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
-    utils::request_vl_sdpa_transformations(model);
+    if (models_map.count("vision_embeddings_merger")) {
+        auto model = utils::singleton_core().read_model(
+            utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
+            utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
+        utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model,
-        device,
-        device_config
-    );
+        auto compiled_model = utils::singleton_core().compile_model(
+            model, device, utils::get_model_properties(device_config, "vision_embeddings_merger", device));
 
-    m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
-    ov::genai::utils::print_compiled_model_properties(compiled_model,
-        m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
-        "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
+        m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
+        ov::genai::utils::print_compiled_model_properties(compiled_model,
+            m_with_cu_seqlens_input ? "VLM vision embeddings merger model with VLSDPA optimization ENABLED" :
+            "VLM vision embeddings merger model with VLSDPA optimization DISABLED");
 
-    m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+        m_ireq_queue_vision_embeddings_merger = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
 
     encode_vision_placeholder_tokens();
 
@@ -1156,54 +1167,38 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     merged_video_embeddings_tensor = m_merged_video_embeddings;
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
-    // [CDPruner] Lambda to apply pruning (reusable for both images and videos)
-    auto apply_pruning = [&](size_t vision_count,
-                             const std::vector<std::array<size_t, 3>>& grid_thw,
-                             const std::vector<size_t>& sequence,
-                             ov::Tensor& merged_embeddings,
-                             int64_t vision_pad_token_id) {
-        // Calculate tokens per vision input
-        std::vector<size_t> tokens_per_vision;
-        tokens_per_vision.reserve(grid_thw.size());
-        for (const auto& [grid_t, grid_h, grid_w] : grid_thw) {
-            tokens_per_vision.push_back(calc_tokens_num(grid_t, grid_h, grid_w));
+    // [CDPruner] Apply pruning to images. Video pruning for Qwen2-VL is not yet supported.
+    OPENVINO_ASSERT(videos.empty() || !is_cdpruner_active(),
+                    "CDPruner video pruning is not yet supported for Qwen2-VL. "
+                    "Disable pruning (pruning_ratio=0) or remove video inputs.");
+    if (!images.empty() && is_cdpruner_active()) {
+        std::vector<std::array<size_t, 3>> image_region_grids;
+        image_region_grids.reserve(images_sequence.size());
+        for (size_t idx : images_sequence) {
+            image_region_grids.push_back(images_grid_thw[idx]);
         }
-
-        const size_t spatial_merge_size = std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size);
 
         PruningContext pruning_context{input_ids,
                                        text_embeds,
-                                       merged_embeddings,
-                                       vision_count,
-                                       grid_thw,
-                                       sequence,
-                                       tokens_per_vision,
-                                       vision_pad_token_id,
+                                       merged_image_embeddings_tensor,
+                                       /*video_embeddings=*/{},
+                                       std::move(image_region_grids),
+                                       /*video_grids=*/{},
+                                       image_pad_token_id,
+                                       /*video_pad_token_id=*/-1,
                                        vision_start_token_id,
                                        vision_end_token_id,
-                                       spatial_merge_size};
+                                       m_vision_encoder->get_processor_config().merge_size};
 
         if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
-            merged_embeddings = pruning_result->pruned_embeddings;
+            merged_image_embeddings_tensor = std::move(pruning_result->pruned_image_embeddings);
             input_ids = pruning_result->pruned_input_ids;
             text_embeds = pruning_result->pruned_text_embeds;
-
             if (pruning_result->updated_rope_delta.has_value()) {
                 m_rope_delta = pruning_result->updated_rope_delta.value();
             }
         }
-    };
-
-    // Apply pruning to images
-    if (!images.empty() && is_cdpruner_active()) {
-        apply_pruning(images.size(),
-                      images_grid_thw,
-                      images_sequence,
-                      merged_image_embeddings_tensor,
-                      image_pad_token_id);
     }
-
-    // TODO: Apply pruning to videos when video pruning is supported
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,
                                                                  text_embeds,

@@ -48,13 +48,23 @@ public:
 
     explicit WhisperFeatureExtractor(const std::filesystem::path& preprocessor_json_path);
 
+    // Construct with explicit numeric configuration (no preprocessor_config.json). Used by
+    // pipelines that declare WhisperFeatureExtractor in their preprocessor config but do not
+    // fix a chunk_length (e.g. Qwen3-Omni). n_samples is set to 0, disabling pre-padding so
+    // the produced frame count tracks the raw signal length.
+    WhisperFeatureExtractor(size_t feature_size, size_t sampling_rate, size_t n_fft, size_t hop_length);
+
     /**
      * @brief Create a flattened 2d log-mel spectrogram [feature_size, n_frames] from raw speech data
+     *
+     * @param raw_speech Raw audio waveform samples.
+     * @param pad_to_max_duration When true, pads audio to n_samples (chunk_length * sampling_rate)
+     *        producing a fixed-size output. When false, output length follows actual audio length.
      *
      * @see [huggingface introduction to audio
      * data](https://huggingface.co/learn/audio-course/chapter1/audio_data#mel-spectrogram)
      */
-    WhisperFeatures extract(const std::vector<float>& raw_speech);
+    WhisperFeatures extract(const std::vector<float>& raw_speech, bool pad_to_max_duration = true);
 
 private:
     std::vector<float> sin_vals;

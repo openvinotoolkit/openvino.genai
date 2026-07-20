@@ -7,6 +7,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <map>
+#include <memory>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -20,9 +23,29 @@
 
 namespace ov::genai {
 class Scheduler {
+public:
+    // Stable data that doesn't change across scheduling calls
+    struct KVPagedAttentionGlobalData {
+        KVPagedAttentionGlobalData() = default;
+
+        explicit KVPagedAttentionGlobalData(const SchedulerConfig& config) :
+            apply_sparse_attention_mask(config.use_sparse_attention && config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE),
+            xattention_block_size(config.sparse_attention_config.xattention_block_size),
+            xattention_stride(config.sparse_attention_config.xattention_stride),
+            adaptive_rkv_start_size(config.cache_eviction_config.get_start_size()) {
+        }
+
+        bool apply_sparse_attention_mask = false;
+        size_t xattention_block_size = 0;
+        size_t xattention_stride = 0;
+        size_t adaptive_rkv_start_size = 0;
+    };
+
+private:
     bool m_can_use_partial_preemption;
 
     SchedulerConfig m_config;
+    std::shared_ptr<const KVPagedAttentionGlobalData> m_kv_paged_attention_global_data;
     std::shared_ptr<CacheOrchestrator> m_cache_orchestrator;
     friend class CacheStateDumper;
 
@@ -33,9 +56,21 @@ class Scheduler {
     const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
 
     size_t m_snapkv_window_size = 1;
+    std::map<uint64_t, size_t> m_expected_num_scheduled_tokens;
 
 public:
     struct Output {
+        struct KVPagedAttentionData {
+            std::vector<BlocksPerLayer> block_tables;
+            size_t score_aggregation_window = 0;
+            bool has_score_aggregation_window = false;
+            std::set<size_t> sparse_attention_skipped_logical_blocks;
+            float xattention_threshold = 0.0f;
+            size_t adaptive_rkv_evictable_size = 0;
+            bool has_adaptive_rkv_evictable_size = false;
+            std::vector<std::vector<size_t>> adaptive_rkv_diversity_block_sets;
+        };
+
         struct LinearAttentionPagingData {
             std::vector<int32_t> block_indices;
             int32_t past_length = 0;
@@ -44,26 +79,9 @@ public:
 
         // IDs of scheduled groups
         std::vector<uint64_t> m_scheduled_sequence_groups_ids;
-        // block tables for scheduled sequences per each attention layer in the model
-        std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_tables;
-        // how many previous token scores to aggregate in the paged attention score output, per sequence
-        std::map<uint64_t, size_t> m_score_aggregation_windows;
-
-        bool m_apply_sparse_attention_mask = false;
-        std::map<uint64_t, std::set<size_t>> m_sparse_attention_skipped_logical_blocks;
-
-        // XAttention thresholds per-sequence, a value of 0.0 means that XAttention is not to be applied
-        // to this sequence
-        std::map<uint64_t, float> m_xattention_thresholds;
-        size_t m_xattention_block_size = 0;
-        size_t m_xattention_stride = 0;
-
-        size_t m_adaptive_rkv_start_size = 0;
-        // A value of 0 means that Adaptive R-KV similarity computation is not to be applied
-        std::map<uint64_t, size_t> m_adaptive_rkv_evictable_sizes;
-
-        // Reserved for future use
-        std::vector<std::map<size_t, std::vector<size_t>>> m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence;
+        std::map<uint64_t, KVPagedAttentionData> m_kv_paged_attention_data;
+        std::map<uint64_t, LinearAttentionPagingData> m_linear_attention_paging_data;
+        std::shared_ptr<const KVPagedAttentionGlobalData> m_kv_paged_attention_global_data;
 
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
@@ -74,12 +92,109 @@ public:
         // total allocated cache size in bytes across registered cache types
         size_t m_cache_size_in_bytes = 0;
 
-        std::map<uint64_t, LinearAttentionPagingData> m_linear_attention_paging_data;
+        void set_kv_block_tables(uint64_t seq_id, const std::vector<BlocksPerLayer>& block_tables) {
+            m_kv_paged_attention_data[seq_id].block_tables = block_tables;
+        }
+
+        void set_score_aggregation_window(uint64_t seq_id, size_t score_aggregation_window) {
+            KVPagedAttentionData& kv_data = m_kv_paged_attention_data[seq_id];
+            kv_data.score_aggregation_window = score_aggregation_window;
+            kv_data.has_score_aggregation_window = true;
+        }
+
+        void set_kv_paged_attention_global_data(const std::shared_ptr<const KVPagedAttentionGlobalData>& global_data) {
+            m_kv_paged_attention_global_data = global_data;
+        }
+
+        void set_sparse_attention_skipped_logical_blocks(uint64_t seq_id, const std::set<size_t>& skipped_logical_blocks) {
+            KVPagedAttentionData& kv_data = m_kv_paged_attention_data[seq_id];
+            kv_data.sparse_attention_skipped_logical_blocks = skipped_logical_blocks;
+        }
+
+        void set_xattention_threshold(uint64_t seq_id, float threshold) {
+            m_kv_paged_attention_data[seq_id].xattention_threshold = threshold;
+        }
+
+        void set_adaptive_rkv_evictable_size(uint64_t seq_id, size_t evictable_size) {
+            KVPagedAttentionData& kv_data = m_kv_paged_attention_data[seq_id];
+            kv_data.adaptive_rkv_evictable_size = evictable_size;
+            kv_data.has_adaptive_rkv_evictable_size = evictable_size > 0;
+        }
+
+        void set_linear_attention_paging_data(uint64_t seq_id, LinearAttentionPagingData&& paging_data) {
+            m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+        }
+
+        const std::vector<BlocksPerLayer>& get_kv_block_tables(uint64_t seq_id) const {
+            return get_kv_paged_attention_data(seq_id).block_tables;
+        }
+
+        const KVPagedAttentionData& get_kv_paged_attention_data(uint64_t seq_id) const {
+            auto it = m_kv_paged_attention_data.find(seq_id);
+            OPENVINO_ASSERT(it != m_kv_paged_attention_data.end(),
+                            "KV paged attention data was not scheduled for sequence ", seq_id);
+            return it->second;
+        }
+
+        const KVPagedAttentionGlobalData& get_kv_paged_attention_global_data() const {
+            static const KVPagedAttentionGlobalData default_global_data;
+            return m_kv_paged_attention_global_data != nullptr ? *m_kv_paged_attention_global_data : default_global_data;
+        }
+
+        bool has_score_aggregation_window(uint64_t seq_id) const {
+            auto it = m_kv_paged_attention_data.find(seq_id);
+            return it != m_kv_paged_attention_data.end() && it->second.has_score_aggregation_window;
+        }
+
+        size_t get_score_aggregation_window(uint64_t seq_id) const {
+            const KVPagedAttentionData& kv_data = get_kv_paged_attention_data(seq_id);
+            OPENVINO_ASSERT(kv_data.has_score_aggregation_window, "Score aggregation window was not scheduled for sequence ", seq_id);
+            return kv_data.score_aggregation_window;
+        }
+
+        const std::set<size_t>& get_sparse_attention_skipped_logical_blocks(uint64_t seq_id) const {
+            return get_kv_paged_attention_data(seq_id).sparse_attention_skipped_logical_blocks;
+        }
+
+        float get_xattention_threshold(uint64_t seq_id) const {
+            auto it = m_kv_paged_attention_data.find(seq_id);
+            return it == m_kv_paged_attention_data.end() ? 0.0f : it->second.xattention_threshold;
+        }
+
+        size_t get_adaptive_rkv_evictable_size(uint64_t seq_id) const {
+            auto it = m_kv_paged_attention_data.find(seq_id);
+            return it == m_kv_paged_attention_data.end() ? 0 : it->second.adaptive_rkv_evictable_size;
+        }
+
+        bool has_adaptive_rkv_evictable_size(uint64_t seq_id) const {
+            auto it = m_kv_paged_attention_data.find(seq_id);
+            return it != m_kv_paged_attention_data.end() && it->second.has_adaptive_rkv_evictable_size;
+        }
+
+        const std::vector<std::vector<size_t>>& get_adaptive_rkv_diversity_block_sets(uint64_t seq_id) const {
+            return get_kv_paged_attention_data(seq_id).adaptive_rkv_diversity_block_sets;
+        }
+
+        bool has_linear_attention_paging_data() const {
+            return !m_linear_attention_paging_data.empty();
+        }
+
+        bool has_linear_attention_paging_data(uint64_t seq_id) const {
+            return m_linear_attention_paging_data.find(seq_id) != m_linear_attention_paging_data.end();
+        }
+
+        const LinearAttentionPagingData& get_linear_attention_paging_data(uint64_t seq_id) const {
+            auto it = m_linear_attention_paging_data.find(seq_id);
+            OPENVINO_ASSERT(it != m_linear_attention_paging_data.end(),
+                            "Linear attention paging data was not scheduled for sequence ", seq_id);
+            return it->second;
+        }
     };
 
     Scheduler(std::shared_ptr<CacheOrchestrator> cache_orchestrator, const SchedulerConfig & config = {}, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
         m_can_use_partial_preemption(can_use_partial_preemption),
         m_config(config),
+        m_kv_paged_attention_global_data(std::make_shared<const KVPagedAttentionGlobalData>(config)),
         m_cache_orchestrator(std::move(cache_orchestrator)),
         m_snapkv_window_size(snapkv_window_size) {
     }
@@ -90,6 +205,7 @@ public:
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
         Output scheduler_output;
+        scheduler_output.set_kv_paged_attention_global_data(m_kv_paged_attention_global_data);
         // map of src -> dst blocks copies per cache type
         std::map<CacheType, std::map<size_t, std::list<size_t>>> typed_block_copy_map;
 
@@ -98,6 +214,11 @@ public:
 
         if (!m_cache_orchestrator->has_token_capacity()) {
             _initialize_cache(sequence_groups);
+        } else if (m_dynamic_memory_allocation) {
+            // Cache already initialized and growing dynamically: make sure a newly-arrived prompt
+            // has its capacity (on top of running sequences) reserved in one reallocation rather
+            // than growing in small chunks across the prefill.
+            _reserve_dynamic_capacity_for_active_sequences(sequence_groups);
         }
 
         if (m_config.dynamic_split_fuse) {
@@ -137,20 +258,20 @@ public:
             m_cache_orchestrator->free_empty_physical_blocks(seq_group);
     }
 
-    std::vector<BlocksPerLayer> get_block_tables(const Sequence& seq) const {
-        return m_cache_orchestrator->get_block_tables(seq.get_id());
+    const std::vector<BlocksPerLayer>& get_kv_block_tables(const Sequence& seq) const {
+        return m_cache_orchestrator->get_kv_block_tables(seq.get_id());
     }
 
     size_t get_block_size(CacheType type) const {
         return m_cache_orchestrator->get_block_size(type);
     }
 
-    size_t get_num_logical_blocks(SequenceGroup::CPtr seq_group) const {
-        return m_cache_orchestrator->get_num_logical_blocks(seq_group);
+    size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
+        return m_cache_orchestrator->get_num_kv_logical_blocks(seq_group);
     }
 
-    std::vector<BlocksPerLayer> get_block_tables(size_t seq_id) const {
-        return m_cache_orchestrator->get_block_tables(seq_id);
+    const std::vector<BlocksPerLayer>& get_kv_block_tables(size_t seq_id) const {
+        return m_cache_orchestrator->get_kv_block_tables(seq_id);
     }
 
     const bool has_block_table(uint64_t seq_id) {
@@ -180,6 +301,22 @@ public:
     void clear_cache() {
         OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "Cache should not be cleared if prefix caching is enabled.");
         m_cache_orchestrator->clear();
+    }
+
+    void set_expected_num_scheduled_tokens(uint64_t request_id, size_t num_tokens) {
+        m_expected_num_scheduled_tokens[request_id] = num_tokens;
+    }
+
+    size_t get_expected_num_scheduled_tokens(uint64_t request_id) const {
+        auto it = m_expected_num_scheduled_tokens.find(request_id);
+        if (it != m_expected_num_scheduled_tokens.end()) {
+            return it->second;
+        }
+        return 0;
+    }
+
+    void clear_expected_num_scheduled_tokens(uint64_t request_id) {
+        m_expected_num_scheduled_tokens.erase(request_id);
     }
 
 private:
@@ -295,6 +432,16 @@ private:
                 // apply megabatch limitations
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
 
+                // use externally expected scheduling size when an external expectation is provided.
+                auto it_expected_scheduled_tokens =
+                    m_expected_num_scheduled_tokens.find(sequence_group->get_request_id());
+                if (it_expected_scheduled_tokens != m_expected_num_scheduled_tokens.end()) {
+                    const size_t expected_num_scheduled_tokens = it_expected_scheduled_tokens->second;
+                    if (expected_num_scheduled_tokens > 0 && expected_num_scheduled_tokens < num_scheduled_tokens) {
+                        num_scheduled_tokens = expected_num_scheduled_tokens;
+                    }
+                }
+
                 // apply KV cache limitations
                 while (m_cache_orchestrator->available_token_slots(sequence_group) < num_scheduled_tokens) {
                     if (!_try_increase_cache(sequence_group)) {
@@ -312,30 +459,14 @@ private:
                     // add information to scheduler_output
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
-                        scheduler_output.m_block_tables[seq_id] = m_cache_orchestrator->get_block_tables(seq_id);
+                        _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += num_scheduled_tokens * num_running_seqs;
-
-
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
-                        scheduler_output.m_apply_sparse_attention_mask = m_config.use_sparse_attention && m_config.sparse_attention_config.mode == SparseAttentionMode::TRISHAPE;
-                        if (scheduler_output.m_apply_sparse_attention_mask) {
-                            TriShapeSparseAttentionTokenSkipper skipper(get_block_size(CacheType::KV_CACHE),
-                                    m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
-                                    m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
-                                    m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
-                            scheduler_output.m_sparse_attention_skipped_logical_blocks[seq_id] = skipper.get_skipped_blocks(sequence_group);
-                        }
-                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
-                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
-
-                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
-                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
 
                         // fill linear attention block tables if registered
                         if (m_cache_orchestrator->has_linear_attention_cache()) {
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks);
+                            const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(seq_id);
+                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks, la_block_logical_start);
                         }
                     }
                 }
@@ -402,16 +533,7 @@ private:
                     for (const auto & seq : sequence_group->get_running_sequences()) {
                         size_t seq_id = seq->get_id();
                         // block tables for each running sequence within a group
-                        scheduler_output.m_block_tables[seq_id] = m_cache_orchestrator->get_block_tables(seq_id);
-
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
-
-                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
-                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
-
-                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
-                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
+                        _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                     }
 
                     for (auto& [type, copy_map] : per_type_copy_map) {
@@ -427,7 +549,8 @@ private:
                         for (const auto& seq : sequence_group->get_running_sequences()) {
                             size_t sid = seq->get_id();
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(sid);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, sid, la_blocks);
+                            const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(sid);
+                            _set_linear_attention_paging_data(scheduler_output, sequence_group, sid, la_blocks, la_block_logical_start);
                         }
                     }
                 }
@@ -499,22 +622,14 @@ private:
                     {
                         scheduler_output.m_scheduled_sequence_groups_ids.push_back(sequence_group_id);
                         uint64_t seq_id = sequence_group->get_running_sequences()[0]->get_id();
-                        scheduler_output.m_block_tables[seq_id] = m_cache_orchestrator->get_block_tables(seq_id);
+                        _set_kv_paged_attention_data(scheduler_output, sequence_group, seq_id);
                         scheduler_output.m_total_num_scheduled_tokens += sequence_len;
-
-                        scheduler_output.m_score_aggregation_windows[seq_id] = _schedule_scores_to_aggregate(sequence_group);
-
-                        scheduler_output.m_xattention_thresholds[seq_id] = _schedule_xattention_threshold(sequence_group);
-                        scheduler_output.m_xattention_block_size = m_config.sparse_attention_config.xattention_block_size;
-                        scheduler_output.m_xattention_stride = m_config.sparse_attention_config.xattention_stride;
-
-                        scheduler_output.m_adaptive_rkv_start_size = m_config.cache_eviction_config.get_start_size();
-                        scheduler_output.m_adaptive_rkv_evictable_sizes[seq_id] = _schedule_adaptive_rkv_evictable_size(sequence_group);
 
                         // fill linear attention block tables if registered
                         if (m_cache_orchestrator->has_linear_attention_cache()) {
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks);
+                            const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(seq_id);
+                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks, la_block_logical_start);
                         }
                     }
 
@@ -533,10 +648,15 @@ private:
         }
     }
 
-    void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    // Build (tokens-per-sequence, num-sequences) capacity targets for the given sequence groups,
+    // sized to each group's expected total length. Also accumulates the total concurrent sequence
+    // count (for fixed-size-per-sequence pools).
+    std::vector<std::pair<size_t, size_t>> _build_sequence_token_targets(
+            const std::vector<SequenceGroup::Ptr>& sequence_groups,
+            size_t& total_concurrent_seqs) {
         std::vector<std::pair<size_t, size_t>> sequence_token_targets;
         sequence_token_targets.reserve(sequence_groups.size());
-        size_t total_concurrent_seqs = 0;
+        total_concurrent_seqs = 0;
         for (size_t idx = 0; idx < sequence_groups.size(); idx++) {
             size_t seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             const auto& gen_config = sequence_groups[idx]->get_sampling_parameters();
@@ -550,12 +670,58 @@ private:
             total_concurrent_seqs += concurrent_seqs;
             sequence_token_targets.emplace_back(seq_length, concurrent_seqs);
         }
+        return sequence_token_targets;
+    }
+
+    void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        size_t total_concurrent_seqs = 0;
+        auto sequence_token_targets = _build_sequence_token_targets(sequence_groups, total_concurrent_seqs);
         m_cache_orchestrator->ensure_sequence_token_capacity(sequence_token_targets);
         // Fixed-size-per-sequence managers (e.g. linear attention) are not covered by
         // ensure_sequence_token_capacity.  Pre-grow their pool to the number of arriving sequences
         // so the prompt phase can allocate without triggering _try_increase_cache.
         m_cache_orchestrator->grow_fixed_size_capacity(total_concurrent_seqs);
         m_dynamic_memory_allocation = true;
+    }
+
+    // In dynamic-allocation mode, pre-grow the variable-size caches so a newly-arriving prompt
+    // fits in a single reallocation. Without this, a long prompt that arrives after the cache was
+    // sized for a smaller one grows m_cache_growth_num_tokens (256) at a time across the whole
+    // prefill; every growth reallocates and copies the entire cache, which is O(n^2) copy work and
+    // produces the unstable memory spikes observed for hybrid models.
+    //
+    // The reservation targets ALL active sequences (both prompt- and generate-phase), not just the
+    // arriving prompt: ensure_sequence_token_capacity grows to the absolute sum of the supplied
+    // targets, so it must include the footprint already held by running sequences, otherwise a new
+    // prompt arriving alongside running ones would be under-reserved and fall back to chunked
+    // growth. It is idempotent (grows only when the required level exceeds the current one), so the
+    // work is skipped entirely on pure generation steps and is a no-op once capacity is sufficient.
+    void _reserve_dynamic_capacity_for_active_sequences(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        auto is_active = [](const SequenceGroup::Ptr& sg) {
+            return !sg->is_waiting() && !sg->has_finished() && !sg->handle_stopped() && !sg->handle_cancelled();
+        };
+
+        // Only (re)reserve when a prompt-phase sequence is entering this round; pure generation
+        // steps need no capacity change.
+        const bool has_pending_prompt = std::any_of(sequence_groups.begin(), sequence_groups.end(),
+            [&](const SequenceGroup::Ptr& sg) { return is_active(sg) && !sg->can_generate_tokens(); });
+        if (!has_pending_prompt) {
+            return;
+        }
+
+        std::vector<SequenceGroup::Ptr> active_sequences;
+        active_sequences.reserve(sequence_groups.size());
+        for (const auto& sequence_group : sequence_groups) {
+            if (is_active(sequence_group)) {
+                active_sequences.push_back(sequence_group);
+            }
+        }
+        if (active_sequences.empty()) {
+            return;
+        }
+        size_t total_concurrent_seqs = 0;
+        auto sequence_token_targets = _build_sequence_token_targets(active_sequences, total_concurrent_seqs);
+        m_cache_orchestrator->ensure_sequence_token_capacity(sequence_token_targets);
     }
 
     bool _try_increase_cache(SequenceGroup::CPtr sequence_group = nullptr) {
@@ -597,7 +763,8 @@ private:
     void _set_linear_attention_paging_data(Output& scheduler_output,
                                            SequenceGroup::CPtr sequence_group,
                                            uint64_t seq_id,
-                                           const BlocksPerLayer& la_blocks) {
+                                           const BlocksPerLayer& la_blocks,
+                                           size_t block_table_logical_start) {
         OPENVINO_ASSERT(!la_blocks.empty(), "Linear attention block table empty for sequence ", seq_id);
 
         Output::LinearAttentionPagingData paging_data;
@@ -610,7 +777,7 @@ private:
             paging_data.block_indices.push_back(block_index);
             paging_data.block_indices.push_back(block_index);
             paging_data.cache_interval = 0;
-            scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+            scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
             return;
         }
 
@@ -625,16 +792,50 @@ private:
         const size_t write_blocks_count = (num_processed_tokens % cache_interval + num_scheduled_tokens + cache_interval - 1) / cache_interval;
         const size_t write_block_end = write_block_begin + write_blocks_count;
 
-        OPENVINO_ASSERT(write_block_end <= la_blocks.size(),
+        OPENVINO_ASSERT(read_block_position >= block_table_logical_start,
+                        "Linear attention read block precedes restored block table for sequence ", seq_id,
+                        ": read position ", read_block_position, ", table starts at ", block_table_logical_start);
+        OPENVINO_ASSERT(write_block_begin >= block_table_logical_start,
+                        "Linear attention write blocks precede restored block table for sequence ", seq_id,
+                        ": write position ", write_block_begin, ", table starts at ", block_table_logical_start);
+        const size_t read_block_table_position = read_block_position - block_table_logical_start;
+        const size_t write_block_table_begin = write_block_begin - block_table_logical_start;
+        const size_t write_block_table_end = write_block_end - block_table_logical_start;
+
+        OPENVINO_ASSERT(write_block_table_end <= la_blocks.size(),
                         "Linear attention block table has insufficient blocks for sequence ", seq_id,
-                        ": expected at least ", write_block_end, ", got ", la_blocks.size());
+                        ": expected at least ", write_block_table_end, " blocks from logical start ",
+                        block_table_logical_start, ", got ", la_blocks.size());
 
         paging_data.block_indices.reserve(1 + write_blocks_count);
-        paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[read_block_position]->get_index(), seq_id));
-        for (size_t block_position = write_block_begin; block_position < write_block_end; ++block_position) {
+        paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[read_block_table_position]->get_index(), seq_id));
+        for (size_t block_position = write_block_table_begin; block_position < write_block_table_end; ++block_position) {
             paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[block_position]->get_index(), seq_id));
         }
-        scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+        scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
+    }
+
+    void _set_kv_paged_attention_data(Output& scheduler_output,
+                                      SequenceGroup::Ptr sequence_group,
+                                      uint64_t seq_id) {
+        if (!m_cache_orchestrator->has_kv_cache()) {
+            return;
+        }
+
+        scheduler_output.set_kv_block_tables(seq_id, m_cache_orchestrator->get_kv_block_tables(seq_id));
+        scheduler_output.set_score_aggregation_window(seq_id, _schedule_scores_to_aggregate(sequence_group));
+        const size_t num_processed_tokens_after_chunk = sequence_group->get_num_processed_tokens() +
+                                                        sequence_group->get_num_scheduled_tokens();
+        if (m_kv_paged_attention_global_data->apply_sparse_attention_mask &&
+            num_processed_tokens_after_chunk <= sequence_group->get_prompt_len()) {
+            TriShapeSparseAttentionTokenSkipper skipper(get_block_size(CacheType::KV_CACHE),
+                    m_config.sparse_attention_config.num_last_dense_tokens_in_prefill,
+                    m_config.sparse_attention_config.num_retained_start_tokens_in_cache,
+                    m_config.sparse_attention_config.num_retained_recent_tokens_in_cache);
+            scheduler_output.set_sparse_attention_skipped_logical_blocks(seq_id, skipper.get_skipped_blocks(sequence_group));
+        }
+        scheduler_output.set_xattention_threshold(seq_id, _schedule_xattention_threshold(sequence_group));
+        scheduler_output.set_adaptive_rkv_evictable_size(seq_id, _schedule_adaptive_rkv_evictable_size(sequence_group));
     }
 
     static int32_t checked_size_to_int32(size_t value, const char* value_name, uint64_t seq_id) {
@@ -705,9 +906,9 @@ private:
         }
 
         size_t non_evictable_size = m_config.cache_eviction_config.get_max_cache_size() - m_config.cache_eviction_config.get_evictable_size();
-        OPENVINO_ASSERT(get_num_logical_blocks(sequence_group) * kv_block_size >= non_evictable_size);
+        OPENVINO_ASSERT(get_num_kv_logical_blocks(sequence_group) * kv_block_size >= non_evictable_size);
 
-        return get_num_logical_blocks(sequence_group) * kv_block_size - non_evictable_size;
+        return get_num_kv_logical_blocks(sequence_group) * kv_block_size - non_evictable_size;
     }
 };
 

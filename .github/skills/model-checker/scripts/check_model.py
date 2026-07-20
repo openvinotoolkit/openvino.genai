@@ -5,7 +5,7 @@
 """End-to-end validation of a HuggingFace model with OpenVINO GenAI."""
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 import re
@@ -34,6 +34,14 @@ TASK_MAPPING = {
 
 
 WWB_SIMILARITY_THRESHOLD = 0.95
+OV_RUNTIME_CONFIG_JSON = (
+    '{"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}'
+)
+HF_MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
+
+
+def _is_huggingface_model_id(model_id: str) -> bool:
+    return HF_MODEL_ID_PATTERN.match(model_id) is not None
 
 
 def log_header(args: argparse.Namespace, bench_task: str, wwb_task: str, work_dir: str, log_file: str) -> None:
@@ -66,6 +74,28 @@ class ToolResult:
     def raise_if_failed(self) -> None:
         if not self.success and self.err_msg:
             raise RuntimeError(self.err_msg)
+
+
+@dataclass
+class ToolResultCollector:
+    results: list[ToolResult] = field(default_factory=list)
+    failures: list[ToolResult] = field(default_factory=list)
+
+    def add_result(self, new_result: ToolResult) -> None:
+        self.results.append(new_result)
+        if not new_result.success:
+            self.failures.append(new_result)
+
+    def raise_if_any_failed(self) -> None:
+        if not self.failures:
+            return
+
+        full_err_msg = ""
+        for result in self.failures:
+            full_err_msg += f"FAILED: {result.name} "
+            full_err_msg += f"\n{result.err_msg}\n" if result.err_msg else "\n"
+
+        raise RuntimeError(full_err_msg)
 
 
 class ToolWrapper:
@@ -142,11 +172,13 @@ class OptimumExportTool(ToolWrapper):
             str(model_dir),
             "--task",
             task,
+            "--weight-format",
+            "fp32",
         ]
         super().__init__(name="optimum_export", commands_list=cmd, work_dir=work_dir)
 
 
-class LlmBenchTool(ToolWrapper):
+class GenAILlmBenchTool(ToolWrapper):
     def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path):
         llm_bench_script_path = Path("tools/llm_bench/benchmark.py")
 
@@ -163,8 +195,41 @@ class LlmBenchTool(ToolWrapper):
             "1",
             "--task",
             task,
+            "--load_config",
+            OV_RUNTIME_CONFIG_JSON,
         ]
-        super().__init__(name="llm_bench", commands_list=cmd, work_dir=work_dir)
+        super().__init__(name="llm_bench_genai", commands_list=cmd, work_dir=work_dir)
+
+    def _post_run_hook(self, result):
+        if result.returncode != 0:
+            return super()._post_run_hook(result)
+        last_llm_bench_line = result.stdout[-1]
+        logger.info(f"{self.logger_prefix}: llm_bench metrics: {last_llm_bench_line}")
+        return ToolResult(name=self.name, success=True)
+
+
+class OptimumLlmBenchTool(ToolWrapper):
+    def __init__(self, model_dir: Path, task: str, device: str, work_dir: Path):
+        llm_bench_script_path = Path("tools/llm_bench/benchmark.py")
+
+        if not llm_bench_script_path.is_file():
+            raise FileNotFoundError(f"llm_bench script not found: {llm_bench_script_path}")
+        cmd = [
+            sys.executable,
+            str(llm_bench_script_path),
+            "-m",
+            str(model_dir),
+            "-d",
+            device,
+            "-n",
+            "1",
+            "--task",
+            task,
+            "--optimum",
+            "--load_config",
+            OV_RUNTIME_CONFIG_JSON,
+        ]
+        super().__init__(name="llm_bench_optimum", commands_list=cmd, work_dir=work_dir)
 
     def _post_run_hook(self, result):
         if result.returncode != 0:
@@ -183,6 +248,17 @@ def _log_csv_listing(logger_prefix: str, directory: Path) -> None:
             logger.info("%s:   %s (%d bytes)", logger_prefix, f.name, f.stat().st_size)
     else:
         logger.info("%s: No CSV files found in %s", logger_prefix, directory)
+
+
+def _validate_wwb_ground_truth_file(gt_data_path: Path) -> None:
+    if not gt_data_path.is_file():
+        raise FileNotFoundError(
+            f"Cannot reuse WWB ground truth: {gt_data_path} does not exist. Run without --skip-wwb-ground-truth first."
+        )
+    if gt_data_path.stat().st_size == 0:
+        raise RuntimeError(
+            f"Cannot reuse WWB ground truth: {gt_data_path} is empty. Run without --skip-wwb-ground-truth first."
+        )
 
 
 class HFWWBGroundTruthTool(ToolWrapper):
@@ -234,7 +310,8 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
             device,
             "--num-samples",
             str(num_samples),
-            # Optimum backend used by default
+            "--ov-config",
+            OV_RUNTIME_CONFIG_JSON,
             "--output",
             str(work_dir / "optimum"),
         ]
@@ -283,6 +360,8 @@ class GenAIWWBTargetEvaluationTool(ToolWrapper):
             "--num-samples",
             str(num_samples),
             "--genai",  # Use GenAI backend for target evaluation
+            "--ov-config",
+            OV_RUNTIME_CONFIG_JSON,
             "--output",
             str(work_dir / "genai"),
         ]
@@ -337,13 +416,15 @@ def _setup_logging(log_file: Path) -> None:
 
 def _get_arguments() -> argparse.Namespace:
     def model_id_validator(model_id: str) -> str:
-        MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
-        if not MODEL_ID_PATTERN.match(model_id):
-            raise argparse.ArgumentTypeError(
-                f"Invalid model_id format: {model_id}\n"
-                "Expected format: org-name/model-name (alphanumeric, hyphens, dots, underscores)"
-            )
-        return model_id
+        if _is_huggingface_model_id(model_id):
+            return model_id
+        # Accept a path to an existing directory with OpenVINO IR model
+        if Path(model_id).is_dir():
+            return model_id
+        raise argparse.ArgumentTypeError(
+            f"Invalid model_id format: {model_id}\n"
+            "Expected: HuggingFace model ID (org/model) or path to existing OpenVINO IR directory"
+        )
 
     class _HelpFormatter(argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
         pass
@@ -365,11 +446,21 @@ def _get_arguments() -> argparse.Namespace:
             "      --model-id tencent/HY-MT1.5-1.8B \\\n"
             "      --task text-generation-with-past \\\n"
             "      --work-dir /tmp/genai-model-check\n\n"
+            "  # Use a pre-converted local model (export is skipped automatically):\n"
+            "  python check_model.py \\\n"
+            "      --model-id /path/to/model_ir \\\n"
+            "      --task text-generation-with-past\n\n"
+            "  # Local paths shaped like org/model must be passed as ./org/model or absolute paths.\n\n"
             "  # Reuse existing IR, skip accuracy check:\n"
             "  python check_model.py \\\n"
             "      --model-id tencent/HY-MT1.5-1.8B \\\n"
             "      --task text-generation-with-past \\\n"
-            "      --skip-export --skip-wwb"
+            "      --skip-export --skip-wwb\n\n"
+            "  # Reuse existing IR and WWB ground truth, rerun target evaluation:\n"
+            "  python check_model.py \\\n"
+            "      --model-id tencent/HY-MT1.5-1.8B \\\n"
+            "      --task text-generation-with-past \\\n"
+            "      --skip-export --skip-llm-bench --skip-wwb-ground-truth"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -377,7 +468,7 @@ def _get_arguments() -> argparse.Namespace:
         "--model-id",
         type=model_id_validator,
         required=True,
-        help="HuggingFace model identifier (e.g. tencent/HY-MT1.5-1.8B)",
+        help="HuggingFace model identifier (e.g. tencent/HY-MT1.5-1.8B) or path to existing OpenVINO IR directory",
     )
     parser.add_argument(
         "--task",
@@ -393,6 +484,11 @@ def _get_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--skip-llm-bench", action="store_true", help="Skip llm_bench inference test")
     parser.add_argument("--skip-wwb", action="store_true", help="Skip who-what-benchmark accuracy check")
+    parser.add_argument(
+        "--skip-wwb-ground-truth",
+        action="store_true",
+        help="Skip WWB ground-truth generation and reuse <work-dir>/wwb/gt.csv",
+    )
     parser.add_argument("--num-samples", type=int, default=4, help="Number of WWB samples")
     return parser.parse_args()
 
@@ -403,11 +499,19 @@ def main():
     bench_task, wwb_task = TASK_MAPPING[args.task]
 
     work_dir = Path(args.work_dir)
-    model_dir = work_dir / "model_ir"
     work_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = work_dir / "check_model.log"
     _setup_logging(log_file)
+
+    # Detect local model path: auto-skip export and use it as model_dir
+    model_path = Path(args.model_id)
+    if model_path.is_dir() and not _is_huggingface_model_id(args.model_id):
+        model_dir = model_path.resolve()
+        args.skip_export = True
+        logger.info("Local model path detected: %s. Skipping export.", model_dir)
+    else:
+        model_dir = work_dir / "model_ir"
 
     log_header(args, bench_task, wwb_task, work_dir, log_file)
 
@@ -419,31 +523,46 @@ def main():
         result = OptimumExportTool(args.model_id, args.task, model_dir, optimum_export_work_dir).run()
         result.raise_if_failed()
 
+    tools_results = ToolResultCollector()
+
     # Step 2: Inference test
     if args.skip_llm_bench:
         logger.info("Skipping llm_bench test")
     else:
         llm_bench_work_dir = work_dir / "llm_bench"
-        result = LlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
-        result.raise_if_failed()
+        genai_llm_bench_result = GenAILlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        tools_results.add_result(genai_llm_bench_result)
+
+        optimum_llm_bench_result = OptimumLlmBenchTool(model_dir, bench_task, args.device, llm_bench_work_dir).run()
+        tools_results.add_result(optimum_llm_bench_result)
 
     # Step 3: WWB accuracy
     if args.skip_wwb or wwb_task is None:
         logger.info("Skipping wwb accuracy check")
     else:
         wwb_work_dir = work_dir / "wwb"
-        hf_gt_result = HFWWBGroundTruthTool(args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device).run()
-        hf_gt_result.raise_if_failed()
+        wwb_gt_data_path = wwb_work_dir / "gt.csv"
+        if args.skip_wwb_ground_truth:
+            _validate_wwb_ground_truth_file(wwb_gt_data_path)
+            logger.info("Skipping WWB ground-truth generation. Reusing existing GT data: %s", wwb_gt_data_path)
+            _log_csv_listing("[wwb_hf_ground_truth]", wwb_work_dir)
+        else:
+            hf_gt_result = HFWWBGroundTruthTool(
+                args.model_id, wwb_task, wwb_work_dir, args.num_samples, args.device
+            ).run()
+            tools_results.add_result(hf_gt_result)
 
         optimum_result = OptimumWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
-        optimum_result.raise_if_failed()
+        tools_results.add_result(optimum_result)
 
         genai_result = GenAIWWBTargetEvaluationTool(
             model_dir, wwb_task, wwb_work_dir, args.num_samples, args.device
         ).run()
-        genai_result.raise_if_failed()
+        tools_results.add_result(genai_result)
+
+    tools_results.raise_if_any_failed()
 
 
 if __name__ == "__main__":
