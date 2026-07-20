@@ -142,8 +142,10 @@ Update `get_inputs_embeds()` to handle the non-empty images case: insert vision 
 
 Before reporting a tokenizer/export blocker, compare Hugging Face and OpenVINO
 tokenization for every required image/chat special token. If the OpenVINO
-tokenizer drops or splits added tokens, implement architecture-aware recovery
-in the model-specific input embedder:
+tokenizer drops or splits added tokens, recover only the configured special
+token IDs in the model-specific GenAI input embedder. This is needed because
+`get_inputs_embeds()` uses image-placeholder IDs to locate where vision
+embeddings must be merged:
 
 1. Read `tokenizer.json` added tokens and the relevant token IDs from model and
    processor configuration.
