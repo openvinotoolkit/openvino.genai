@@ -194,12 +194,20 @@ export merely because the command requested fp32.
 
 Every newly enabled model must add repository tests:
 
-1. Prefer adding the matching tiny-random model to
-   `tests/python_tests/test_vlm_pipeline.py`.
-2. Add a dedicated test file only when the behavior cannot fit the shared VLM
-   suite. Reuse existing fixtures and conversion-cache helpers.
-3. Never use a full-size model in repository tests.
-4. Run the narrow pytest selection for the new model.
+1. Find the matching tiny-random model ID. First inspect the Optimum Intel
+   model description, tests, or release notes; if it is not documented there,
+   look it up on the Hugging Face Hub. Use the
+   `optimum-intel-internal-testing/tiny-random-*` fixture matching the model
+   architecture.
+2. Prefer adding the tiny-random model to
+   `tests/python_tests/test_vlm_pipeline.py`, including the prompt, image or
+   video tag where applicable, resolution, and any targeted skip/xfail entry
+   required by an already tracked issue.
+3. Add a dedicated `tests/python_tests/test_<model_type>_*.py` only when the
+   behavior cannot fit the shared VLM suite. Reuse existing fixtures and
+   conversion-cache helpers; never use a full-size model in repository tests.
+4. Run the narrow pytest selection for the new model from the activated
+   environment.
 5. If special Transformers or Optimum dependencies are required, add a
    dedicated VLM CI matrix entry instead of changing unrelated jobs.
 
