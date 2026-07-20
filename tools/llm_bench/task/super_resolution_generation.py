@@ -105,7 +105,7 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
         run_ldm_super_resolution(
             prompt, num, pipe, args, framework, iter_data_list, p_idx, tm_list, proc_id, mem_consumption
         )
-        prompt.stamp_repr(iter_data_list, before)
+        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         tm_list.clear()
         log.info(
