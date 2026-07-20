@@ -197,7 +197,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     # Build the prompt schedule via BenchPrompter, which handles both
     # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
-    # in a single unified iter_schedule() loop.  
+    # in a single unified iter_schedule() loop.
     prompter = BenchPrompter(args)
     prompt_idx_list = prompter.active_indices
     image_list = prompter.active_items
@@ -239,11 +239,9 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
         before = len(iter_data_list)
         image_gen_fn(prompt, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption, callback)
-        prompt.stamp_repr(iter_data_list, before, args['batch_size'])
+        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
-        log.info(
-            f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
-        )
+        log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time, iter_timestamp
