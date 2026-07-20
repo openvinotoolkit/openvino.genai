@@ -1260,6 +1260,8 @@ def print_embeds_results(evaluator):
         logger.info(f"Top-{i+1} example:")
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
+        logger.info("## Source:\n%s\n", e["source_model"])
+        logger.info("## Optimized:\n%s\n", e["optimized_model"])
 
 
 def print_rag_results(evaluator):
@@ -1509,7 +1511,7 @@ def main():
             print_image_results(evaluator)
         elif args.model_type in ["speech-generation"]:
             print_speech_results(evaluator)
-        elif args.model_type in ['text-embedding']:
+        elif args.model_type in ["text-embedding", "video-embedding", "image-embedding"]:
             print_embeds_results(evaluator)
         elif args.model_type in ['text-reranking']:
             print_rag_results(evaluator)
