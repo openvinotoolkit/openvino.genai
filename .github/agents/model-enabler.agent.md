@@ -76,10 +76,6 @@ Revalidate with **model-checker**, passing the same Hugging Face model ID or
 local OpenVINO IR directory used during initial validation. Do not replace a
 failing local-artifact check with success from another model.
 
-For every newly enabled VLM, add the repository test coverage required by the
-`vlm-model-enabler` skill. GenAI source changes without a corresponding
-tiny-random test are incomplete.
-
 Do not report a model as enabled when its required repository test is blocked,
 failing, deselected, or references an inaccessible tiny-model repository. A
 test merely added to source is not validation. Repair the fixture or report the
