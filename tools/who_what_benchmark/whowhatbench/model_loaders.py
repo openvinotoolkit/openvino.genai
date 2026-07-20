@@ -318,7 +318,7 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
         return GenAIModelWrapper(
             openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
             model_dir,
-            "text-to-image"
+            "text-to-image",
         )
 
 
