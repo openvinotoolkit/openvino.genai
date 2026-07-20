@@ -191,9 +191,12 @@ def get_argparser():
         "                GetProcessMemoryInfo (psapi.dll) directly. Collects\n"
         "                Working Set, Private Bytes, Page-File Usage and\n"
         "                system-wide RAM. When the optional *wmi* package is\n"
-        "                installed (pip install wmi), one additional gpu_<index>\n"
-        "                metric is emitted per physical GPU adapter, sourced from\n"
-        "                Win32_VideoController.DedicatedUsage (Windows 10 1803+).\n"
+        "                installed (pip install wmi), two additional metrics are\n"
+        "                emitted per GPU adapter: gpu_<index>_ded (dedicated VRAM)\n"
+        "                and gpu_<index>_shr (shared system RAM). Sourced from\n"
+        "                GPUAdapterMemory perf counters (Windows 10 1709+), so\n"
+        "                integrated GPUs report real usage via the shared pool\n"
+        "                instead of a constant 0.\n"
         "                Falls back to MemorySampler5 automatically when used on\n"
         "                a non-Windows platform.",
     )
