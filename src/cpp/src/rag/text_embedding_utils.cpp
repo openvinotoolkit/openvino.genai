@@ -10,6 +10,7 @@
 #include "openvino/opsets/opset3.hpp"
 #include "openvino/opsets/opset8.hpp"
 #include "utils.hpp"
+#include <openvino/genai/rag/embedding_pipeline.hpp>
 
 namespace {
 
@@ -125,6 +126,23 @@ std::shared_ptr<op::Op> create_normalize_ops(const ov::Output<ov::Node>& input,
 namespace ov {
 namespace genai {
 namespace utils {
+
+ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
+    ov::AnyMap properties_copy = properties;
+
+    properties_copy.erase(max_length.name());
+    properties_copy.erase(pad_to_max_length.name());
+    properties_copy.erase(truncation.name());
+    properties_copy.erase(batch_size.name());
+    properties_copy.erase(pooling_type.name());
+    properties_copy.erase(normalize.name());
+    properties_copy.erase(embed_instruction.name());
+    properties_copy.erase(query_instruction.name());
+    properties_copy.erase(padding_side.name());
+    properties_copy.erase(text_embedding_config.name());
+
+    return properties_copy;
+}
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const TextEmbeddingPipeline::Config& config) {
     ov::preprocess::PrePostProcessor processor(model);
