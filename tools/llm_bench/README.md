@@ -282,9 +282,12 @@ optimum-cli export openvino --model openai/whisper-base models/whisper-base
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
 python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
+
+# Qwen3-Omni speech recognition
+python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
 ```
 
-> **Supported Text to Speech model types:** whisper
+> **Supported Speech to Text model types:** whisper, qwen3-omni
 
 ### Text Rerank models
 ```sh

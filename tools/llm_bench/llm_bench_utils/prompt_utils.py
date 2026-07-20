@@ -7,6 +7,7 @@ import os
 import numpy as np
 from PIL import Image
 import logging as log
+import librosa
 from transformers.image_utils import load_image
 from .model_utils import get_param_from_file, resolve_media_file_path
 from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data
@@ -97,8 +98,19 @@ def load_image_genai(image_path):
     return ov.Tensor(image_data)
 
 
+def load_audio_genai(audio_path):
+    # GenAI pipelines expect a 16 kHz mono waveform tensor.
+    audio_data, _ = librosa.load(audio_path, sr=16000, mono=True)
+    return ov.Tensor(audio_data.astype(np.float32))
+
+
+def load_audio_optimum(audio_path):
+    # Optimum processors resample internally, so keep the native rate and pass it along.
+    return librosa.load(audio_path, sr=None, mono=True)
+
+
 def extract_prompt_data(inputs, required_frames, genai_flag):
-    prompts, images, videos = [], [], []
+    prompts, images, videos, audios = [], [], [], []
     if not isinstance(inputs, (list, tuple, set)):
         inputs = [inputs]
     for input_data in inputs:
@@ -121,8 +133,11 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
             else:
                 img = func_load_image(input_data["media"])
                 images.append(img)
+        if input_data.get("audio") is not None:
+            func_load_audio = load_audio_genai if genai_flag else load_audio_optimum
+            audios.append(func_load_audio(str(input_data["audio"])))
         prompts.append(input_data["prompt"])
-    return prompts, images, videos
+    return prompts, images, videos, audios
 
 
 def get_vlm_prompt(args):

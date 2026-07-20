@@ -743,3 +743,33 @@ class TestBenchmarkLLM:
             "What animal is in this image?",
         ] + sample_args
         run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.skipif(
+        TRANSFORMERS_VERSION is None or TRANSFORMERS_VERSION < (5, 1),
+        reason="Requires transformers >= 5.1",
+    )
+    @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_omni_speech_to_text(
+        self, download_test_content, convert_model, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "Transcribe this audio.",
+        ] + sample_args
+        run_sample(benchmark_py_command)

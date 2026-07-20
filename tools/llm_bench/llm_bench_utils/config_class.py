@@ -257,6 +257,7 @@ except ImportError:
     pass
 else:
     USE_CASES["visual_text_gen"].append(UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM))
+    USE_CASES["speech_to_text"].append(UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM))
 
 PA_ATTENTION_BACKEND = "PA"
 SDPA_ATTENTION_BACKEND = "SDPA"

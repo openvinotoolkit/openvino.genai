@@ -34,7 +34,7 @@ def run_visual_language_generation_optimum(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, False)
+    prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, False)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -42,12 +42,17 @@ def run_visual_language_generation_optimum(
                 prompt_index, bs_index, proc_id)
     tok_encode_start = time.perf_counter()
 
-    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-    log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
-    log.info(f'{prefix}[P{prompt_index}] Input video nums: {len(videos)}')
-    input_data = model.preprocess_inputs(image=images[0] if images else None,
-                                         video=videos[0] if videos else None,
-                                         text=prompts[0], **processor)
+    prefix = "[warm-up]" if num == 0 else "[{}]".format(num)
+    log.info(f"{prefix}[P{prompt_index}] Input image nums: {len(images)}")
+    log.info(f"{prefix}[P{prompt_index}] Input video nums: {len(videos)}")
+    log.info(f"{prefix}[P{prompt_index}] Input audio nums: {len(audios)}")
+    input_data = model.preprocess_inputs(
+        image=images[0] if images else None,
+        video=videos[0] if videos else None,
+        audio=audios[0] if audios else None,
+        text=prompts[0],
+        **processor,
+    )
 
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
@@ -178,7 +183,7 @@ def run_visual_language_generation_genai(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, True)
+    prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, True)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -201,14 +206,17 @@ def run_visual_language_generation_genai(
 
         apply_sd_generation_config(args, gen_config)
     kwargs = {}
-    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-    log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
-    log.info(f'{prefix}[P{prompt_index}] Input video nums: {len(videos)}')
+    prefix = "[warm-up]" if num == 0 else "[{}]".format(num)
+    log.info(f"{prefix}[P{prompt_index}] Input image nums: {len(images)}")
+    log.info(f"{prefix}[P{prompt_index}] Input video nums: {len(videos)}")
+    log.info(f"{prefix}[P{prompt_index}] Input audio nums: {len(audios)}")
 
     if images:
         kwargs["images"] = images
     if videos:
         kwargs["videos"] = videos
+    if audios:
+        kwargs["audios"] = audios
 
     log.info("%s[P%s] Text generation start: %s", prefix, prompt_index, datetime.datetime.now().isoformat())
     start = time.perf_counter()
@@ -285,14 +293,16 @@ def run_visual_language_generation_genai(
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
-def run_visual_language_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+def run_visual_language_generation_benchmark(
+    model_path, framework, device, args, num_iters, mem_consumption, input_list=None
+):
     mem_consumption.update_marker("model")
     outs = FW_UTILS[framework].create_image_text_gen_model(model_path, device, mem_consumption, **args)
     model, processor, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
-    input_image_text_list = get_vlm_prompt(args)
+    input_image_text_list = input_list if input_list is not None else get_vlm_prompt(args)
     if args['prompt_index'] is None:
         prompt_idx_list = list(range(0, len(input_image_text_list)))
         image_text_list = input_image_text_list
