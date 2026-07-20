@@ -309,17 +309,17 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
                 alphas=kwargs.get("alphas", None),
             )
         return wrapper
+    else:
+        adapter_config = _create_genai_adapter_config(
+            adapters=kwargs.get("adapters"),
+            alphas=kwargs.get("alphas", None),
+        )
 
-    adapter_config = _create_genai_adapter_config(
-        adapters=kwargs.get("adapters"),
-        alphas=kwargs.get("alphas", None),
-    )
-
-    return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
-        model_dir,
-        "text-to-image"
-    )
+        return GenAIModelWrapper(
+            openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
+            model_dir,
+            "text-to-image"
+        )
 
 
 def load_text2image_model(
