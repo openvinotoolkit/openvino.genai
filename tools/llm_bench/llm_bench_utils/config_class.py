@@ -248,7 +248,7 @@ USE_CASES = {
     "ldm_super_resolution": [UseCaseLDMSuperResolution(["ldm-super-resolution"])],
     "text_embed": [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     "text_rerank": [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
-    "text_to_speech": [UseCaseTextToSpeech(["speecht5"])],
+    "text_to_speech": [UseCaseTextToSpeech(["speecht5", "kokoro"])],
 }
 
 PA_ATTENTION_BACKEND = "PA"

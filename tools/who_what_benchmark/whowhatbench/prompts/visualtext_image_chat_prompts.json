@@ -11,7 +11,7 @@
             "images": []
         },
         {
-            "text": "What do the pictures have in common?",
+            "text": "What do the images have in common?",
             "images": [
                 "http://images.cocodataset.org/val2017/000000338624.jpg"
             ]
@@ -79,7 +79,7 @@
             ]
         },
         {
-            "text": "What is the difference between the pictures?",
+            "text": "What is the difference between the images?",
             "images": [
                 "http://images.cocodataset.org/val2017/000000571718.jpg"
             ]
@@ -120,13 +120,13 @@
     ],
     [
         {
-            "text": "What's in the picture?",
+            "text": "What's in the image?",
             "images": [
                 "http://images.cocodataset.org/val2017/000000290843.jpg"
             ]
         },
         {
-            "text": "What animals are shown in the pictures?",
+            "text": "What animals are shown in the images?",
             "images": [
                 "http://images.cocodataset.org/val2017/000000281447.jpg",
                 "http://images.cocodataset.org/val2017/000000152740.jpg"
@@ -151,7 +151,7 @@
             "images": []
         },
         {
-            "text": "What sports do the people in the pictures do?",
+            "text": "What sports do the people in the images do?",
             "images": [
                 "http://images.cocodataset.org/val2017/000000217285.jpg",
                 "http://images.cocodataset.org/val2017/000000403565.jpg"

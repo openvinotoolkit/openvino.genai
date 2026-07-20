@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 
 #include "minja/minja.hpp"
 #include "minja/chat-template.hpp"
@@ -83,6 +85,12 @@ public:
     std::string get_chat_template() const;
     std::string get_original_chat_template() const;
     std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
+
+private:
+    std::shared_ptr<const minja::chat_template> get_cached_minja_chat_template(const std::string& chat_template) const;
+
+    mutable std::mutex m_chat_template_mutex;
+    mutable std::unordered_map<std::string, std::shared_ptr<const minja::chat_template>> m_minja_chat_template_cache;
 };
 
 }  // namespace genai

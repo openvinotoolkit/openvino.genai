@@ -19,6 +19,10 @@ public:
     ThreadedStreamerWrapper(const StreamerVariant& streamer, Tokenizer& tokenizer)
         : m_streamer_ptr{utils::create_streamer(streamer, tokenizer)} {}
 
+    ~ThreadedStreamerWrapper() {
+        end();
+    }
+
     void start() {
         if (!m_streamer_ptr) {
             return;

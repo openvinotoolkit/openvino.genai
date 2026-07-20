@@ -8,7 +8,11 @@ import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_default_llm_properties
-from utils.hugging_face import download_and_convert_model, run_hugging_face
+from utils.hugging_face import (
+    download_and_convert_model,
+    generate_and_save_gemma4_mtp_assistant_model,
+    run_hugging_face,
+)
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import convert_decoded_results_to_generation_result
 
@@ -158,9 +162,9 @@ def test_extended_perf_metrics():
     extended_perf_metrics = ov_pipe.generate(["Why is the Sun yellow?"], generation_config).extended_perf_metrics
     total_time = (time.perf_counter() - start_time) * 1000
 
-    assert not extended_perf_metrics is None
-    assert not extended_perf_metrics.main_model_metrics is None
-    assert not extended_perf_metrics.draft_model_metrics is None
+    assert extended_perf_metrics is not None
+    assert extended_perf_metrics.main_model_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics is not None
 
     assert extended_perf_metrics.get_num_accepted_tokens() > 0
 
@@ -199,6 +203,159 @@ def test_extended_perf_metrics():
         assert std_gen_duration == 0
 
 
+# assistant model is randomly generated from the target model
+gemma4_mtp_models_and_input = [
+    (
+        "optimum-intel-internal-testing/tiny-random-gemma4",
+        "OpenVINO is",
+    )
+]
+
+gemma4_mtp_devices = [("CPU", "CPU")]
+
+
+@pytest.fixture(params=gemma4_mtp_models_and_input)
+def gemma4_mtp_model_input(request):
+    return request.param
+
+
+@pytest.fixture(params=gemma4_mtp_devices)
+def gemma4_mtp_device_pair(request):
+    return request.param
+
+
+@pytest.fixture
+def gemma4_mtp_target_model_schema(gemma4_mtp_model_input):
+    target_model, _ = gemma4_mtp_model_input
+    target_model_schema = download_and_convert_model(target_model)
+    return target_model_schema
+
+
+@pytest.fixture
+def gemma4_mtp_draft_model_path(gemma4_mtp_target_model_schema):
+    return generate_and_save_gemma4_mtp_assistant_model(
+        gemma4_mtp_target_model_schema.models_path,
+    )
+
+
+@pytest.fixture
+def gemma4_mtp_pipeline(gemma4_mtp_target_model_schema, gemma4_mtp_draft_model_path, gemma4_mtp_device_pair):
+    target_device, draft_device = gemma4_mtp_device_pair
+    ov_draft_model = ov_genai.draft_model(gemma4_mtp_draft_model_path, draft_device)
+
+    target_config = get_default_llm_properties()
+    ov_pipe = ov_genai.LLMPipeline(
+        gemma4_mtp_target_model_schema.models_path,
+        target_device,
+        target_config,
+        draft_model=ov_draft_model,
+        ATTENTION_BACKEND="SDPA",
+    )
+    return ov_pipe
+
+
+def test_gemma4_mtp_string_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_model_schema, gemma4_mtp_model_input):
+    _, prompt = gemma4_mtp_model_input
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=3)
+    ref_gen_results = run_hugging_face(
+        gemma4_mtp_target_model_schema.opt_model,
+        gemma4_mtp_target_model_schema.hf_tokenizer,
+        [prompt],
+        generation_config,
+    )
+
+    ov_decoded_results = gemma4_mtp_pipeline.generate([prompt], generation_config)
+    ov_gen_results = convert_decoded_results_to_generation_result(ov_decoded_results, 1, 1, False)
+
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": prompt}])
+    ov_chat_history_decoded_results = gemma4_mtp_pipeline.generate(chat_history, generation_config)
+    ov_chat_history_gen_results = convert_decoded_results_to_generation_result(
+        ov_chat_history_decoded_results,
+        1,
+        1,
+        False,
+    )
+
+    compare_generation_results([prompt], ref_gen_results, ov_gen_results, generation_config)
+    compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, generation_config)
+
+
+def test_gemma4_mtp_tokenized_inputs(gemma4_mtp_pipeline, gemma4_mtp_target_model_schema, gemma4_mtp_model_input):
+    _, prompt = gemma4_mtp_model_input
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=20,
+        num_assistant_tokens=3,
+        apply_chat_template=False,
+    )
+    tokenized = gemma4_mtp_target_model_schema.hf_tokenizer(prompt, return_tensors="np")
+    tokenized_inputs = ov_genai.TokenizedInputs(
+        ov.Tensor(tokenized["input_ids"].astype(np.int64)),
+        ov.Tensor(tokenized["attention_mask"].astype(np.int64)),
+    )
+
+    ov_string_results = gemma4_mtp_pipeline.generate([prompt], generation_config)
+    ov_string_gen_results = convert_decoded_results_to_generation_result(ov_string_results, 1, 1, False)
+
+    ov_encoded_results = gemma4_mtp_pipeline.generate(tokenized_inputs, generation_config)
+    ov_result = ov_genai.GenerationResult()
+    ov_result.m_generation_ids = [
+        gemma4_mtp_target_model_schema.hf_tokenizer.decode(ov_encoded_results.tokens[0], skip_special_tokens=True)
+    ]
+    ov_gen_results = [ov_result]
+
+    compare_generation_results([prompt], ov_string_gen_results, ov_gen_results, generation_config)
+
+
+def test_gemma4_mtp_perf_metrics(gemma4_mtp_pipeline, gemma4_mtp_model_input):
+    _, prompt = gemma4_mtp_model_input
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=20,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+
+    def generate_and_validate():
+        extended_perf_metrics = gemma4_mtp_pipeline.generate([prompt], generation_config).extended_perf_metrics
+
+        assert extended_perf_metrics is not None
+        assert extended_perf_metrics.main_model_metrics is not None
+        assert extended_perf_metrics.draft_model_metrics is not None
+
+        num_main_generated = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
+        num_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+        assert num_main_generated > 0 and num_main_generated <= generation_config.max_new_tokens
+        assert num_draft_generated >= 0
+
+        num_accepted = extended_perf_metrics.get_num_accepted_tokens()
+        assert num_accepted >= 0
+        assert num_accepted <= num_draft_generated, (
+            "Inconsistent extended perf metrics: accepted tokens exceed draft-generated tokens "
+            f"(accepted={num_accepted}, draft_generated={num_draft_generated})"
+        )
+
+        target_iterations = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
+        draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
+        assert target_iterations > 0 and target_iterations <= generation_config.max_new_tokens
+        assert draft_iterations > 0
+
+        return {
+            "main_iterations": target_iterations,
+            "draft_iterations": draft_iterations,
+            "main_generated": num_main_generated,
+            "draft_generated": num_draft_generated,
+            "accepted": num_accepted,
+        }
+
+    first = generate_and_validate()
+    second = generate_and_validate()
+    assert second == first, (
+        "Per-model perf metrics accumulate across generate() calls instead of being reset. "
+        f"first={first}, second={second}"
+    )
+
+
 # Eagle3 specific tests
 eagle3_models_and_input = [
     (
@@ -215,15 +372,26 @@ A:""",
         "Qwen/Qwen3-1.7B",
         "AngelSlim/Qwen3-1.7B_eagle3",
         "What is the capital of Ireland?/no_think",
-    )
+    ),
 ]
 
 eagle3_devices = [("NPU", "NPU")]
 
+# Tree search parameter configurations: (branching_factor, tree_depth, num_assistant_tokens)
+# (0, 0, 0) means "use pipeline defaults" — do not set tree params in GenerationConfig.
+eagle3_tree_params = [
+    (0, 0, 0),  # default: pipeline uses ensure_tree_params_is_set() defaults (bf=2, td=4, nat=7)
+    (4, 2, 7),  # topk: wide and shallow tree
+    (1, 4, 4),  # top-1: linear chain, no branching
+]
 
+
+@pytest.mark.parametrize("branching_factor,tree_depth,num_assistant_tokens", eagle3_tree_params)
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
 @pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
-def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_device, prompt):
+def test_eagle3_string_inputs(
+    target_model, target_device, draft_model, draft_device, prompt, branching_factor, tree_depth, num_assistant_tokens
+):
     """Test Eagle3 pipeline with string inputs on different device combinations"""
     # Download and convert models:
     target_model_schema = download_and_convert_model(target_model)
@@ -233,14 +401,35 @@ def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_de
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI Eagle3 pipeline:
+    use_default_tree_params = branching_factor == 0
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    if draft_device == "NPU" and not use_default_tree_params:
+        draft_config.update(
+            {
+                "MAX_TREE_DEPTH": tree_depth,
+                "MAX_BRANCHING_FACTOR": branching_factor,
+                "MAX_ASSISTANT_TOKENS": num_assistant_tokens,
+            }
+        )
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
     target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
 
     # Run reference HF model:
-    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=30, do_sample=False)
+    if use_default_tree_params:
+        ov_generation_config = ov_genai.GenerationConfig(
+            max_new_tokens=30,
+            do_sample=False,
+        )
+    else:
+        ov_generation_config = ov_genai.GenerationConfig(
+            max_new_tokens=30,
+            do_sample=False,
+            branching_factor=branching_factor,
+            tree_depth=tree_depth,
+            num_assistant_tokens=num_assistant_tokens,
+        )
     target_hf_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
     ref_gen_results = run_hugging_face(target_opt_model, target_hf_tokenizer, [prompt], ov_generation_config)
 
@@ -260,27 +449,50 @@ def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_de
     compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, ov_generation_config)
 
 
+@pytest.mark.parametrize("branching_factor,tree_depth,num_assistant_tokens", eagle3_tree_params)
 @pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
 @pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
-def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_device, prompt):
+def test_eagle3_perf_metrics(
+    target_model, target_device, draft_model, draft_device, prompt, branching_factor, tree_depth, num_assistant_tokens
+):
     """Test Eagle3 pipeline performance metrics to verify speculative decoding is actually working"""
     # Download and convert models:
     target_model_path = download_and_convert_model(target_model).models_path
     draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI Eagle3 pipeline:
+    use_default_tree_params = branching_factor == 0
     draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    if draft_device == "NPU" and not use_default_tree_params:
+        draft_config.update(
+            {
+                "MAX_TREE_DEPTH": tree_depth,
+                "MAX_BRANCHING_FACTOR": branching_factor,
+                "MAX_ASSISTANT_TOKENS": num_assistant_tokens,
+            }
+        )
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
     target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
-    generation_config = ov_genai.GenerationConfig(
-        do_sample=False, max_new_tokens=30, ignore_eos=True, num_assistant_tokens=5
-    )
+    if use_default_tree_params:
+        generation_config = ov_genai.GenerationConfig(
+            do_sample=False,
+            max_new_tokens=30,
+            ignore_eos=True,
+        )
+    else:
+        generation_config = ov_genai.GenerationConfig(
+            do_sample=False,
+            max_new_tokens=30,
+            ignore_eos=True,
+            branching_factor=branching_factor,
+            tree_depth=tree_depth,
+            num_assistant_tokens=num_assistant_tokens,
+        )
 
     # Generate and collect both basic and extended performance metrics
     results = ov_pipe.generate([prompt], generation_config)
-    perf_metrics = results.perf_metrics
     extended_perf_metrics = results.extended_perf_metrics
 
     # Verify extended metrics exist (proves Eagle3 speculative decoding is enabled)

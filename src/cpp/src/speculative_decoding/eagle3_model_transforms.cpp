@@ -13,7 +13,9 @@
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
+#include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/scatter_update.hpp"
 #include "utils.hpp"
 
@@ -36,7 +38,9 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
         } else {
             // compute the layers from number of hidden layers
             auto config_file_path = models_path / "config.json";
-            OPENVINO_ASSERT(std::filesystem::exists(config_file_path), "Cannot deduce layers for hidden layer extraction because the file is missing: ", config_file_path);
+            OPENVINO_ASSERT(std::filesystem::exists(config_file_path),
+                            "Cannot deduce layers for hidden layer extraction because the file is missing: ",
+                            config_file_path);
             std::ifstream file(config_file_path);
 
             nlohmann::json data = nlohmann::json::parse(file);
@@ -62,9 +66,10 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
             // Note: Integer division (num_decoder_layers / 2) is intentional and produces the desired behavior
             // for typical LLM layer counts (e.g., 12→6, 24→12, 32→16).
             // If you wish to use different layers, provide the "hidden_layers_list" parameter in the config.
-            eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
+            eagle_rt_info.hidden_layers_list = {2, num_decoder_layers / 2, num_decoder_layers - 3};
         }
-        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "Eagle3 is expected to provide exactly three layers for extraction");
+        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3,
+                        "Eagle3 is expected to provide exactly three layers for extraction");
     }
     return eagle_rt_info;
 }
@@ -80,32 +85,33 @@ void apply_eagle3_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
 
 void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
     // extract embedding weight from main model
-    auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
-        -> std::shared_ptr<ov::Node> {
+    auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model) -> std::shared_ptr<ov::Node> {
         constexpr size_t MIN_VOCAB_SIZE_THRESHOLD = 1000;
         for (const auto& node : model->get_ordered_ops()) {
             auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
-            if (!gather) continue;
+            if (!gather)
+                continue;
             // [vocab, hidden_size] * [batch, seq_len] -> [batch, seq_len, hidden_size]
             auto data_node = gather->input_value(0).get_node_shared_ptr();
             auto indices_node = gather->input_value(1).get_node_shared_ptr();
-            if (!data_node || !indices_node) continue;
+            if (!data_node || !indices_node)
+                continue;
             // indices_node should be on parameter path, maybe this is better rule
             ov::PartialShape ps = data_node->get_output_partial_shape(0);
             if (ps.rank().is_static() && ps.rank().get_length() >= 2) {
-                if (ps[0].is_static() && ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) { // Heuristic: vocab size > 1000
+                if (ps[0].is_static() &&
+                    ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) {  // Heuristic: vocab size > 1000
                     return gather;
                 }
             }
             std::string fname = data_node->get_friendly_name();
-            if (fname.find("embed_tokens") != std::string::npos ||
-                fname.find("embedding") != std::string::npos) {
+            if (fname.find("embed_tokens") != std::string::npos || fname.find("embedding") != std::string::npos) {
                 return gather;
             }
         }
         return nullptr;
     };
-    auto main_gather  = find_embedding_gather(main_model);
+    auto main_gather = find_embedding_gather(main_model);
     auto draft_gather = find_embedding_gather(draft_model);
     if (!main_gather || !draft_gather) {
         return;
@@ -126,7 +132,6 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
         clone_node_recursive =
             [&](const std::shared_ptr<ov::Node>& node,
                 std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) -> std::shared_ptr<ov::Node> {
-
         auto it = cloned_nodes.find(node.get());
         if (it != cloned_nodes.end()) {
             return it->second;
@@ -173,10 +178,12 @@ void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::sh
     auto remove_fc_and_rewire = [](const std::shared_ptr<ov::Model>& model) -> std::shared_ptr<ov::Node> {
         for (const auto& node : model->get_ordered_ops()) {
             auto matmul_node = ov::as_type_ptr<ov::op::v0::MatMul>(node);
-            if (!matmul_node) continue;
+            if (!matmul_node)
+                continue;
             auto input_node = matmul_node->get_input_node_shared_ptr(0);
             auto param_node = ov::as_type_ptr<ov::op::v0::Parameter>(input_node);
-            if (!param_node || input_node->get_friendly_name().find("hidden_states") == std::string::npos) continue;
+            if (!param_node || input_node->get_friendly_name().find("hidden_states") == std::string::npos)
+                continue;
             // Rewire all outputs of this MatMul to use the input_node directly
             for (auto& output : matmul_node->outputs()) {
                 for (auto& target : output.get_target_inputs()) {
@@ -230,19 +237,18 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
     if (hidden_layers_to_abstract.empty()) {
         return;
     }
-    OPENVINO_ASSERT(
-        hidden_layers_to_abstract.size() == 3 || hidden_layers_to_abstract.size() == 1,
-        "Expected exactly 1 or 3 hidden layers for extraction: 1 for draft model, 3 for main model (early/middle/late stages)."
-    );
+    OPENVINO_ASSERT(hidden_layers_to_abstract.size() == 3 || hidden_layers_to_abstract.size() == 1,
+                    "Expected exactly 1 or 3 hidden layers for extraction: 1 for draft model, 3 for main model "
+                    "(early/middle/late stages).");
 
     std::vector<std::string> patterns;
     if (hidden_layers_to_abstract.size() > 1) {
         patterns.reserve(hidden_layers_to_abstract.size());
         for (int32_t idx : hidden_layers_to_abstract) {
-            patterns.emplace_back("layers." + std::to_string(idx) + "/"); // main description
+            patterns.emplace_back("layers." + std::to_string(idx) + "/");  // main description
         }
     } else {
-        patterns.emplace_back("midlayer"); // draft description
+        patterns.emplace_back("midlayer");  // draft description
     }
 
     // Helper: check if node is a residual Add node with expected structure
@@ -250,7 +256,8 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
             auto input1 = add->get_input_node_shared_ptr(1);
             auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
-            if (!matmul) return false;
+            if (!matmul)
+                return false;
             auto matmul_input = matmul->get_input_node_shared_ptr(0);
             return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
         }
@@ -259,7 +266,8 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
 
     std::vector<ov::Output<ov::Node>> residual_outputs;
     for (const auto& node : model->get_ordered_ops()) {
-        if (!is_residual_node(node)) continue;
+        if (!is_residual_node(node))
+            continue;
         const std::string& name = node->get_friendly_name();
         for (const auto& pattern : patterns) {
             if (name.find(pattern) != std::string::npos) {
@@ -304,7 +312,8 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
 
 std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<ov::Model>& main_model) {
     // The KV update model accepts all KV cache inputs from main_model.
-    // Extra inputs for updating KV cache: block_indices, block_indices_begins, block_update_indices, block_update_indices_begins, all element::i32, PartialShape{-1}.
+    // Extra inputs for updating KV cache: block_indices, block_indices_begins, block_update_indices,
+    // block_update_indices_begins, all element::i32, PartialShape{-1}.
     using namespace ov;
     ParameterVector inputs;
     // clone the kv cache parameters from the main model
@@ -324,7 +333,8 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
                         break;
                     }
                 }
-                if (paged_attention_op) break;
+                if (paged_attention_op)
+                    break;
             }
         }
         if (name.find("key_cache") != std::string::npos) {
@@ -366,50 +376,57 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
         }
     }
 
-    auto block_indices_begins = std::make_shared<op::v0::Parameter>(
-        element::i32, PartialShape{-1});
+    auto block_indices_begins = std::make_shared<op::v0::Parameter>(element::i32, PartialShape{-1});
     block_indices_begins->set_friendly_name("block_indices_begins");
     block_indices_begins->output(0).set_names({"block_indices_begins"});
-    inputs.push_back(block_indices_begins);
+    inputs.push_back(std::move(block_indices_begins));
 
-    auto block_indices = std::make_shared<op::v0::Parameter>(
-        element::i32, PartialShape{-1});
+    auto block_indices = std::make_shared<op::v0::Parameter>(element::i32, PartialShape{-1});
     block_indices->set_friendly_name("block_indices");
     block_indices->output(0).set_names({"block_indices"});
     inputs.push_back(block_indices);
 
-    auto block_update_indices = std::make_shared<op::v0::Parameter>(
-        element::i32, PartialShape{-1});
+    auto block_update_indices = std::make_shared<op::v0::Parameter>(element::i32, PartialShape{-1});
     block_update_indices->set_friendly_name("block_update_indices");
     block_update_indices->output(0).set_names({"block_update_indices"});
     inputs.push_back(block_update_indices);
 
-    auto block_update_indices_begins = std::make_shared<op::v0::Parameter>(
-        element::i32, PartialShape{-1});
+    auto block_update_indices_begins = std::make_shared<op::v0::Parameter>(element::i32, PartialShape{-1});
     block_update_indices_begins->set_friendly_name("block_update_indices_begins");
     block_update_indices_begins->output(0).set_names({"block_update_indices_begins"});
-    inputs.push_back(block_update_indices_begins);
+    inputs.push_back(std::move(block_update_indices_begins));
 
     ResultVector results;
     size_t pair_count = std::min(key_caches.size(), value_caches.size());
     for (size_t i = 0; i < pair_count; ++i) {
-        auto key_gather = std::make_shared<op::v8::Gather>(
-            key_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
+        auto key_gather =
+            std::make_shared<op::v8::Gather>(key_caches[i],
+                                             block_update_indices,
+                                             std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         key_gather->set_friendly_name("reordered_key_cache_" + std::to_string(i));
-        auto key_scatter = std::make_shared<op::v3::ScatterUpdate>(
-            key_caches[i], block_indices, key_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
+        auto key_scatter =
+            std::make_shared<op::v3::ScatterUpdate>(key_caches[i],
+                                                    block_indices,
+                                                    key_gather,
+                                                    std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         key_scatter->set_friendly_name("updated_key_cache_" + std::to_string(i));
 
-        auto value_gather = std::make_shared<op::v8::Gather>(
-            value_caches[i], block_update_indices, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
+        auto value_gather =
+            std::make_shared<op::v8::Gather>(value_caches[i],
+                                             block_update_indices,
+                                             std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         value_gather->set_friendly_name("reordered_value_cache_" + std::to_string(i));
-        auto value_scatter = std::make_shared<op::v3::ScatterUpdate>(
-            value_caches[i], block_indices, value_gather, std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
+        auto value_scatter =
+            std::make_shared<op::v3::ScatterUpdate>(value_caches[i],
+                                                    block_indices,
+                                                    value_gather,
+                                                    std::make_shared<op::v0::Constant>(element::i32, ov::Shape{1}, 0));
         value_scatter->set_friendly_name("updated_value_cache_" + std::to_string(i));
 
         // Concat key and value scatter outputs along last axis
-        auto concat = std::make_shared<ov::op::v0::Concat>(
-            ov::OutputVector{key_scatter->output(0), value_scatter->output(0)}, -1);
+        auto concat =
+            std::make_shared<ov::op::v0::Concat>(ov::OutputVector{key_scatter->output(0), value_scatter->output(0)},
+                                                 -1);
         concat->set_friendly_name("kv_cache_pair_concat_" + std::to_string(i));
         results.push_back(std::make_shared<op::v0::Result>(concat));
     }
@@ -417,6 +434,71 @@ std::shared_ptr<ov::Model> create_eagle3_kv_update_model(const std::shared_ptr<o
     auto model = std::make_shared<Model>(results, inputs, "kv_cache_reorder_model");
     return model;
 }
+
+void apply_eagle3_attention_mask_transform(std::shared_ptr<ov::Model>& model) {
+    constexpr size_t SDPA_ATTENTION_MASK_INPUT_INDEX = 3;
+
+    // 1. Find all SDPA nodes in the model
+    std::vector<std::shared_ptr<ov::op::v13::ScaledDotProductAttention>> sdpa_nodes;
+    for (const auto& node : model->get_ordered_ops()) {
+        if (auto sdpa = std::dynamic_pointer_cast<ov::op::v13::ScaledDotProductAttention>(node)) {
+            sdpa_nodes.push_back(std::move(sdpa));
+        }
+    }
+
+    OPENVINO_ASSERT(!sdpa_nodes.empty(), "Eagle3AttentionMaskTransform: No SDPA nodes found in model");
+
+    // 2. Verify all SDPA nodes have the same attention_mask source node
+    std::shared_ptr<ov::Node> attention_mask_source_node = nullptr;
+    for (const auto& sdpa : sdpa_nodes) {
+        // SDPA typically has inputs: [query, key, value, attention_mask, scale(optional)]
+        OPENVINO_ASSERT(sdpa->get_input_size() > SDPA_ATTENTION_MASK_INPUT_INDEX,
+                        "Eagle3AttentionMaskTransform: SDPA node ",
+                        sdpa->get_friendly_name(),
+                        " does not have attention_mask input at index ",
+                        SDPA_ATTENTION_MASK_INPUT_INDEX);
+
+        auto current_mask_node = sdpa->get_input_node_shared_ptr(SDPA_ATTENTION_MASK_INPUT_INDEX);
+        if (!attention_mask_source_node) {
+            attention_mask_source_node = std::move(current_mask_node);
+        } else {
+            OPENVINO_ASSERT(attention_mask_source_node.get() == current_mask_node.get(),
+                            "Eagle3AttentionMaskTransform: SDPA nodes have different attention_mask source nodes. ",
+                            "Expected all SDPA nodes to share the same attention_mask source.");
+        }
+    }
+
+    OPENVINO_ASSERT(attention_mask_source_node != nullptr,
+                    "Eagle3AttentionMaskTransform: Could not find attention_mask input in SDPA nodes");
+
+    // Get the shape and element type from the attention mask being used by SDPA
+    auto attention_mask_shape = attention_mask_source_node->get_output_partial_shape(0);
+    auto attention_mask_type = attention_mask_source_node->get_output_element_type(0);
+
+    // 3. Create a new parameter for eagle_tree_mask with the same shape and type
+    auto eagle_tree_mask_param = std::make_shared<ov::op::v0::Parameter>(attention_mask_type, attention_mask_shape);
+    eagle_tree_mask_param->set_friendly_name("eagle_tree_mask");
+    eagle_tree_mask_param->output(0).set_names({"eagle_tree_mask"});
+
+    // 4. Create an Add operation to combine attention_mask with eagle_tree_mask
+    // We need to add this Add op before the attention_mask reaches SDPA
+    auto add_op =
+        std::make_shared<ov::op::v1::Add>(attention_mask_source_node->output(0), eagle_tree_mask_param->output(0));
+    add_op->set_friendly_name("eagle_tree_mask_add");
+
+    // 5. Replace the attention_mask input in all SDPA nodes with the output of Add operation
+    // We've already verified all SDPAs use the same attention_mask source, so we can safely replace all
+    for (auto& sdpa : sdpa_nodes) {
+        sdpa->input(SDPA_ATTENTION_MASK_INPUT_INDEX).replace_source_output(add_op->output(0));
+    }
+
+    // 6. Add the new parameter to the model
+    model->add_parameters(ov::ParameterVector{std::move(eagle_tree_mask_param)});
+
+    // 7. Validate the model
+    model->validate_nodes_and_infer_types();
+}
+
 }  // namespace eagle3
 }  // namespace utils
 }  // namespace genai

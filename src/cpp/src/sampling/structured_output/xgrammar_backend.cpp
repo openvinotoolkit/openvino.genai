@@ -13,6 +13,10 @@ namespace genai {
 
 XGrammarStructuredOutput::XGrammarStructuredOutput(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
     auto vocab_vector = tokenizer_impl.m_vocab;
+    OPENVINO_ASSERT(!vocab_vector.empty(),
+        "Structured output requires the tokenizer to expose its full vocabulary, but the current tokenizer "
+        "has no vocabulary entries. This typically occurs when the tokenizer is a SentencePiece wrapper "
+        "without a decomposed VocabDecoder node.");
     if (!vocab_size.has_value()) {
         vocab_size = vocab_vector.size();
     }
@@ -173,15 +177,18 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
 
 void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
     for (const auto& token : input_ids) {
+        if (m_grammar_matcher.IsTerminated()) {
+            break;  // stop accepting tokens once the matcher has terminated (e.g., after accepting the stop token)
+        }
         m_grammar_matcher.AcceptToken(token);
     }
 }
 
 void XGrammarLogitsTransformer::apply(Logits& logits) {
-    m_grammar_matcher.FillNextTokenBitmask(m_token_bitmask.get());
     if (m_grammar_matcher.IsTerminated()) {
         return;
     }
+    m_grammar_matcher.FillNextTokenBitmask(m_token_bitmask.get());
 
     if (logits.is_vector_initialized()) {
         // logprobs > 0 path: m_data holds pristine raw logits — must not be written.
