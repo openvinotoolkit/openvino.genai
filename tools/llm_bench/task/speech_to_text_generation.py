@@ -200,9 +200,9 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         input_param["iter_idx"] = num
         input_param["raw_speech"] = raw_speech
         iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
         run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list)
-        if iter_data_list:
-            iter_data_list[-1]["prompt_repr"] = repr(prompt)
+        prompt.stamp_repr(iter_data_list, before)
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(
             f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"

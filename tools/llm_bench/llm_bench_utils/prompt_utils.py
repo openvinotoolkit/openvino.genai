@@ -18,6 +18,8 @@ from .parse_json_data import (
 )
 import llm_bench_utils.metrics_print as metrics_print
 from pathlib import Path
+from dataclasses import dataclass, field
+from typing import Callable, Optional, Union
 import openvino as ov
 import math
 import cv2
@@ -336,6 +338,91 @@ class BenchPrompt(dict):
         prompt_repr = repr(self)
         log.info(f"{prefix} Prompt: {prompt_repr}")
 
+    def stamp_repr(self, iter_data_list, start_index):
+        """Attach this prompt's ``repr`` to every record appended since *start_index*.
+
+        Callers capture ``len(iter_data_list)`` **before** invoking the
+        generation function, then pass that length here afterwards. This tags
+        exactly the record(s) produced for the current (iteration, prompt)
+        pair:
+
+        * zero records appended (e.g. a skipped / errored call) -> nothing is
+          tagged, so a previous iteration's record is never mislabelled;
+        * multiple records appended (e.g. per-batch) -> all of them are tagged.
+
+        This replaces the fragile ``iter_data_list[-1]["prompt_repr"] = ...``
+        positional assignment, which silently mis-attributed the repr whenever
+        a call appended a number of records other than exactly one.
+        """
+        prompt_repr = repr(self)
+        for record in iter_data_list[start_index:]:
+            record["prompt_repr"] = prompt_repr
+
+
+# ---------------------------------------------------------------------------
+# Per-task prompt specification
+# ---------------------------------------------------------------------------#
+#
+# Each task type maps to a declarative _PromptSpec instead of a bespoke branch
+# in BenchPrompter._load_prompts().  This keeps the task-specific knowledge
+# (which CLI/JSONL key holds the prompt, how to parse the JSONL entries, which
+# keys are media paths to resolve, and any key renames) in one readable table.
+
+
+@dataclass(frozen=True)
+class _PromptSpec:
+    #: Key(s) passed to get_param_from_file().  A callable receives ``args``
+    #: and returns the key(s) — used by image_gen whose key set is dynamic.
+    input_key: Union[str, list, Callable]
+    #: Parser applied to raw JSONL entries.
+    parse: Callable
+    #: Entry keys whose values are media file paths to resolve against the
+    #: prompt file (JSONL branch only).
+    path_keys: tuple = ()
+    #: ``{src: dst}`` key renames applied AFTER path resolution (JSONL branch).
+    #: e.g. speech_to_text stores the audio path under 'audio' (not 'media')
+    #: so BenchPrompt.probe() routes it through _get_audio_info().
+    rename: dict = field(default_factory=dict)
+    #: Wrapper applied to each raw value in the NON-JSON (CLI) branch.  When
+    #: None the raw values are used as-is.  Used by speech_to_text to wrap a
+    #: bare audio path into ``{"audio": path}``.
+    nonjson_wrap: Optional[Callable] = None
+
+
+def _image_gen_input_key(args):
+    """Resolve the dynamic input key set for the image_gen task.
+
+    Mirrors the original branch logic: inpainting needs media+mask+prompt,
+    img2img needs media+prompt, plain text-to-image needs only prompt.
+    """
+    use_case = args.get("use_case")
+    if use_case and hasattr(use_case, "TASK"):
+        inpainting_name = use_case.TASK.get("inpainting", {}).get("name")
+        img2img_name = use_case.TASK.get("img2img", {}).get("name")
+        if args.get("task") == inpainting_name or (
+            (args.get("media") or args.get("images")) and args.get("mask_image")
+        ):
+            return ["media", "mask_image", "prompt"]
+        if args.get("task") == img2img_name or args.get("media") or args.get("images"):
+            return ["media", "prompt"]
+    return ["prompt"]
+
+
+_PROMPT_SPECS = {
+    "visual_text_gen": _PromptSpec(["video", "media", "prompt"], parse_vlm_json_data, path_keys=("media", "video")),
+    "image_gen": _PromptSpec(_image_gen_input_key, parse_image_json_data, path_keys=("media", "mask_image")),
+    "video_gen": _PromptSpec(["prompt", "negative_prompt"], parse_video_json_data),
+    "speech_to_text": _PromptSpec(
+        "media", parse_speech_json_data,
+        path_keys=("media",), rename={"media": "audio"},
+        nonjson_wrap=lambda item: {"audio": item},
+    ),
+    "ldm_super_resolution": _PromptSpec("prompt", parse_image_json_data, path_keys=("prompt",)),
+}
+
+# text_gen, code_gen, text_embed, text2speech, text_rerank, ...
+_DEFAULT_PROMPT_SPEC = _PromptSpec("prompt", parse_text_json_data)
+
 
 class BenchPrompter(list):
     """
@@ -390,9 +477,11 @@ class BenchPrompter(list):
         """
         Populate the list with :class:`BenchPrompt` objects.
 
-        Selects the appropriate ``input_key`` for
-        :func:`get_param_from_file` and the matching parse function based
-        on the task type derived from ``args['use_case'].task``.
+        The task type (``args['use_case'].task``) selects a declarative
+        :class:`_PromptSpec` (see ``_PROMPT_SPECS``) that drives every
+        task-specific decision: which ``input_key`` to read, how to parse
+        JSONL entries, which entry keys hold media paths to resolve, any key
+        renames, and how to wrap bare CLI values.
         """
         args = self._args
         use_case = args.get("use_case")
@@ -400,94 +489,31 @@ class BenchPrompter(list):
         if task is None:
             raise ValueError("(obligatory) task is not specified!")
 
-        # ---- pick input keys based on task ----
-        if task == "visual_text_gen":
-            input_key = ["video", "media", "prompt"]
-        elif task == "image_gen":
-            if use_case and hasattr(use_case, "TASK"):
-                inpainting_name = use_case.TASK.get("inpainting", {}).get("name")
-                img2img_name = use_case.TASK.get("img2img", {}).get("name")
-                if args.get("task") == inpainting_name or (
-                    (args.get("media") or args.get("images")) and args.get("mask_image")
-                ):
-                    input_key = ["media", "mask_image", "prompt"]
-                elif args.get("task") == img2img_name or args.get("media") or args.get("images"):
-                    input_key = ["media", "prompt"]
-                else:
-                    input_key = ["prompt"]
-            else:
-                input_key = ["prompt"]
-        elif task == "video_gen":
-            input_key = ["prompt", "negative_prompt"]
-        elif task == "speech_to_text":
-            # Speech prompts reference an audio file stored under the 'audio'
-            # key (renamed from 'media' after loading so that BenchPrompt.probe()
-            # correctly calls _get_audio_info() instead of _get_image_size()).
-            # get_param_from_file still uses the 'media' key as the CLI/JSONL
-            # schema key for the audio file path.
-            input_key = "media"
-        elif task == "ldm_super_resolution":
-            # Super-resolution prompts reference an image file stored under
-            # the 'prompt' key for backward-compatibility with the JSON schema.
-            input_key = "prompt"
-        else:
-            # text_gen, code_gen, text_embed, text2speech, text_rerank, ...
-            input_key = "prompt"
+        spec = _PROMPT_SPECS.get(task, _DEFAULT_PROMPT_SPEC)
+        input_key = spec.input_key(args) if callable(spec.input_key) else spec.input_key
 
         output_data_list, is_json_data = get_param_from_file(args, input_key)
 
         if is_json_data:
-            # Parse raw jsonl dicts according to task type.
-            # Note: parse_text_json_data returns plain strings; all others
-            # return dicts – both are accepted by BenchPrompt.__init__.
-            if task == "visual_text_gen":
-                raw_list = parse_vlm_json_data(output_data_list)
-                # Resolve relative media/video paths against the prompt file.
-                if args.get("prompt_file"):
-                    for entry in raw_list:
-                        if "media" in entry:
-                            entry["media"] = resolve_media_file_path(entry["media"], args["prompt_file"][0])
-                        if "video" in entry:
-                            entry["video"] = resolve_media_file_path(entry["video"], args["prompt_file"][0])
-            elif task == "image_gen":
-                raw_list = parse_image_json_data(output_data_list)
-                # Resolve relative media/mask_image paths against the prompt file.
-                if args.get("prompt_file"):
-                    for entry in raw_list:
-                        if "media" in entry:
-                            entry["media"] = resolve_media_file_path(entry.get("media"), args["prompt_file"][0])
-                        if "mask_image" in entry:
-                            entry["mask_image"] = resolve_media_file_path(
-                                entry.get("mask_image"), args["prompt_file"][0]
-                            )
-            elif task == "video_gen":
-                # prompt/negative_prompt are plain text — no path resolution needed.
-                raw_list = parse_video_json_data(output_data_list)
-            elif task == "speech_to_text":
-                raw_list = parse_speech_json_data(output_data_list)
-                if args.get("prompt_file"):
-                    for entry in raw_list:
-                        if "media" in entry:
-                            # Rename 'media' -> 'audio' so BenchPrompt.probe()
-                            # correctly calls _get_audio_info() instead of
-                            # _get_image_size() on the audio file path.
-                            entry["audio"] = resolve_media_file_path(entry.pop("media"), args["prompt_file"][0])
-            elif task == "ldm_super_resolution":
-                raw_list = parse_image_json_data(output_data_list)
-                if args.get("prompt_file"):
-                    for entry in raw_list:
-                        if "prompt" in entry:
-                            entry["prompt"] = resolve_media_file_path(entry["prompt"], args["prompt_file"][0])
-            else:
-                raw_list = parse_text_json_data(output_data_list)
+            # parse_text_json_data returns plain strings; all other parsers
+            # return dicts — both are accepted by BenchPrompt.__init__.
+            raw_list = spec.parse(output_data_list)
+            # is_json_data is only True when a prompt_file was supplied, but
+            # keep the guard explicit: media paths are resolved relative to it.
+            prompt_file = args.get("prompt_file")
+            if prompt_file and (spec.path_keys or spec.rename):
+                base = prompt_file[0]
+                for entry in raw_list:
+                    for key in spec.path_keys:
+                        if key in entry:
+                            entry[key] = resolve_media_file_path(entry[key], base)
+                    for src, dst in spec.rename.items():
+                        if src in entry:
+                            entry[dst] = entry.pop(src)
+        elif spec.nonjson_wrap is not None:
+            raw_list = [spec.nonjson_wrap(item) for item in output_data_list]
         else:
-            # For speech_to_text the raw value is an audio-file path which
-            # must be stored under 'audio' (not 'prompt') so that
-            # BenchPrompt.probe() calls _get_audio_info() on it correctly.
-            if task == "speech_to_text":
-                raw_list = [{"audio": item} for item in output_data_list]
-            else:
-                raw_list = output_data_list
+            raw_list = output_data_list
 
         if not raw_list:
             raise RuntimeError("BenchPrompter: prompt list is empty")
