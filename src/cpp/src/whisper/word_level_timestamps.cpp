@@ -320,6 +320,22 @@ std::vector<ov::Tensor> extract_n_frames(const std::vector<ov::Tensor>& alignmen
     return extracted_tensors;
 }
 
+std::string trim(const std::string& text) {
+    std::string result = text;
+    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) {
+                     return !std::isspace(ch);
+                 }));
+
+    result.erase(std::find_if(result.rbegin(),
+                              result.rend(),
+                              [](unsigned char ch) {
+                                  return !std::isspace(ch);
+                              })
+                     .base(),
+                 result.end());
+    return result;
+}
+
 std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tokens_on_unicode(
     const std::vector<int64_t>& tokens,
     ov::genai::Tokenizer& tokenizer) {
@@ -352,6 +368,58 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
     }
 
     return {words, word_tokens};
+}
+
+// https://github.com/openai/whisper/blob/v20250625/whisper/tokenizer.py#L311
+std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tokens_on_spaces(
+    const std::vector<int64_t>& tokens,
+    ov::genai::Tokenizer& tokenizer) {
+    const auto [subwords, subword_tokens_list] = split_tokens_on_unicode(tokens, tokenizer);
+
+    const int64_t eot = tokenizer.get_eos_token_id();
+
+    std::vector<std::string> words;
+    std::vector<std::vector<int64_t>> word_tokens;
+
+    for (size_t i = 0; i < subwords.size(); ++i) {
+        const std::string& subword = subwords[i];
+        const std::vector<int64_t>& subword_tokens = subword_tokens_list[i];
+
+        const bool is_special = subword_tokens.size() && subword_tokens[0] >= eot;
+        const bool with_space = !subword.empty() && std::isspace(static_cast<unsigned char>(subword[0]));
+
+        const std::string trimmed_subword = trim(subword);
+        const bool is_punctuation = !trimmed_subword.empty() && trimmed_subword.size() == 1 &&
+                                    std::ispunct(static_cast<unsigned char>(trimmed_subword[0]));
+
+        if (words.empty() || is_special || with_space || is_punctuation) {
+            words.push_back(subword);
+            word_tokens.push_back(subword_tokens);
+        } else {
+            words.back() += subword;
+            word_tokens.back().insert(word_tokens.back().end(), subword_tokens.begin(), subword_tokens.end());
+        }
+    }
+
+    return {words, word_tokens};
+}
+
+// Scriptio-continua languages: written without spaces between words. OpenAI groups their
+// tokens by unicode codepoint instead of by leading space.
+// https://github.com/openai/whisper/blob/v20250625/whisper/tokenizer.py#L294
+bool is_no_space_language(const std::string& language) {
+    static const std::set<std::string> no_space_languages = {"zh", "ja", "th", "lo", "my", "yue"};
+
+    return no_space_languages.count(language) > 0;
+}
+
+// https://github.com/openai/whisper/blob/v20250625/whisper/tokenizer.py#L289
+std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>>
+split_to_word_tokens(const std::vector<int64_t>& tokens, ov::genai::Tokenizer& tokenizer, const std::string& language) {
+    if (is_no_space_language(language)) {
+        return split_tokens_on_unicode(tokens, tokenizer);
+    }
+    return split_tokens_on_spaces(tokens, tokenizer);
 }
 
 std::vector<ov::genai::WhisperWordTiming> match_words_to_alignment_path(
@@ -526,56 +594,6 @@ std::vector<ov::genai::WhisperWordTiming> merge_punctuations(std::vector<ov::gen
     return filtered_words;
 }
 
-std::string trim(const std::string& text) {
-    std::string result = text;
-    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) {
-                     return !std::isspace(ch);
-                 }));
-
-    result.erase(std::find_if(result.rbegin(),
-                              result.rend(),
-                              [](unsigned char ch) {
-                                  return !std::isspace(ch);
-                              })
-                     .base(),
-                 result.end());
-    return result;
-}
-
-// https://github.com/openai/whisper/blob/v20250625/whisper/tokenizer.py#L311
-std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tokens_on_spaces(
-    const std::vector<int64_t>& tokens,
-    ov::genai::Tokenizer& tokenizer) {
-    const auto [subwords, subword_tokens_list] = split_tokens_on_unicode(tokens, tokenizer);
-
-    const int64_t eot = tokenizer.get_eos_token_id();
-
-    std::vector<std::string> words;
-    std::vector<std::vector<int64_t>> word_tokens;
-
-    for (size_t i = 0; i < subwords.size(); ++i) {
-        const std::string& subword = subwords[i];
-        const std::vector<int64_t>& subword_tokens = subword_tokens_list[i];
-
-        const bool is_special = subword_tokens.size() && subword_tokens[0] >= eot;
-        const bool with_space = !subword.empty() && std::isspace(static_cast<unsigned char>(subword[0]));
-
-        const std::string trimmed_subword = trim(subword);
-        const bool is_punctuation = !trimmed_subword.empty() && trimmed_subword.size() == 1 &&
-                                    std::ispunct(static_cast<unsigned char>(trimmed_subword[0]));
-
-        if (words.empty() || is_special || with_space || is_punctuation) {
-            words.push_back(subword);
-            word_tokens.push_back(subword_tokens);
-        } else {
-            words.back() += subword;
-            word_tokens.back().insert(word_tokens.back().end(), subword_tokens.begin(), subword_tokens.end());
-        }
-    }
-
-    return {words, word_tokens};
-}
-
 std::vector<ov::Tensor> infer_alignments_heads_qks(const std::vector<int64_t>& tokens,
                                                    std::shared_ptr<ov::genai::WhisperDecoder> decoder,
                                                    const ov::Tensor& hidden_state_tensor,
@@ -626,7 +644,7 @@ std::vector<ov::Tensor> infer_alignments_heads_qks(const std::vector<int64_t>& t
 
 namespace ov::genai {
 
-std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::vector<int64_t>& sot_tokens,
+std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const SotTokensResult& sot_result,
                                                                     const std::vector<int64_t>& input_tokens,
                                                                     ov::genai::Tokenizer& tokenizer,
                                                                     std::shared_ptr<ov::genai::WhisperDecoder> decoder,
@@ -644,16 +662,16 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     text_tokens.push_back(config.eos_token_id);
 
     // [sot_tokens] + [no_timestamps_token] + [text_tokens] + [eos_token]
-    std::vector<int64_t> infer_tokens = sot_tokens;
+    std::vector<int64_t> infer_tokens = sot_result.tokens;
     infer_tokens.push_back(config.no_timestamps_token_id);
     infer_tokens.insert(infer_tokens.end(), text_tokens.begin(), text_tokens.end());
 
     auto alignment_heads_qks =
         infer_alignments_heads_qks(infer_tokens, decoder, hidden_state_tensor, config.alignment_heads);
 
-    const auto alignment_path = find_alignment_path(alignment_heads_qks, n_active_frames, sot_tokens);
+    const auto alignment_path = find_alignment_path(alignment_heads_qks, n_active_frames, sot_result.tokens);
 
-    const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
+    const auto [words, word_tokens] = split_to_word_tokens(text_tokens, tokenizer, sot_result.language);
 
     auto words_timestamps = match_words_to_alignment_path(words, word_tokens, alignment_path, chunk_time_offset);
 
@@ -664,7 +682,7 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     return merged_timestamps;
 }
 
-std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::vector<int64_t>& sot_tokens,
+std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const SotTokensResult& sot_result,
                                                                     const std::vector<int64_t>& input_tokens,
                                                                     ov::genai::Tokenizer& tokenizer,
                                                                     ov::InferRequest& decoder,
@@ -682,16 +700,16 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     text_tokens.push_back(config.eos_token_id);
 
     // [sot_tokens] + [no_timestamps_token] + [text_tokens] + [eos_token]
-    std::vector<int64_t> infer_tokens = sot_tokens;
+    std::vector<int64_t> infer_tokens = sot_result.tokens;
     infer_tokens.push_back(config.no_timestamps_token_id);
     infer_tokens.insert(infer_tokens.end(), text_tokens.begin(), text_tokens.end());
 
     auto alignment_heads_qks =
         infer_alignments_heads_qks(infer_tokens, decoder, hidden_state_tensor, config.alignment_heads);
 
-    const auto alignment_path = find_alignment_path(alignment_heads_qks, n_active_frames, sot_tokens);
+    const auto alignment_path = find_alignment_path(alignment_heads_qks, n_active_frames, sot_result.tokens);
 
-    const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
+    const auto [words, word_tokens] = split_to_word_tokens(text_tokens, tokenizer, sot_result.language);
 
     auto words_timestamps = match_words_to_alignment_path(words, word_tokens, alignment_path, chunk_time_offset);
 

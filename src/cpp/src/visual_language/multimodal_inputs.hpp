@@ -13,31 +13,31 @@
 
 namespace ov::genai {
 
-struct VisionProperties {
+struct MultimodalInputs {
     std::optional<std::vector<ov::Tensor>> images;
     std::optional<std::vector<ov::Tensor>> videos;
     std::optional<std::vector<VideoMetadata>> videos_metadata;
+    std::optional<std::vector<ov::Tensor>> audios;
 
     bool has_value() const {
-        return images.has_value() || videos.has_value() || videos_metadata.has_value();
+        return images.has_value() || videos.has_value() || videos_metadata.has_value() || audios.has_value();
     }
 };
 
-inline VisionProperties extract_vision_properties(const ov::AnyMap& properties_map) {
-    VisionProperties vision_properties;
-    
+inline MultimodalInputs extract_multimodal_inputs(const ov::AnyMap& properties_map) {
+    MultimodalInputs multimodal_inputs;
+
     const auto image_it = properties_map.find(ov::genai::image.name());
     if (image_it != properties_map.end()) {
-        vision_properties.images = {image_it->second.as<ov::Tensor>()};
+        multimodal_inputs.images = {image_it->second.as<ov::Tensor>()};
     }
 
     const auto images_it = properties_map.find(ov::genai::images.name());
     if (images_it != properties_map.end()) {
         if (images_it->second.is<std::vector<ov::Tensor>>()) {
-            const auto images = images_it->second.as<std::vector<ov::Tensor>>();
-            vision_properties.images = images_it->second.as<std::vector<ov::Tensor>>();
+            multimodal_inputs.images = images_it->second.as<std::vector<ov::Tensor>>();
         } else if (images_it->second.is<ov::Tensor>()) {
-            vision_properties.images = {images_it->second.as<ov::Tensor>()};
+            multimodal_inputs.images = {images_it->second.as<ov::Tensor>()};
         } else if (!images_it->second.empty()) {
             OPENVINO_THROW("Unknown images type.");
         }
@@ -46,9 +46,9 @@ inline VisionProperties extract_vision_properties(const ov::AnyMap& properties_m
     const auto videos_it = properties_map.find(ov::genai::videos.name());
     if (videos_it != properties_map.end()) {
         if (videos_it->second.is<std::vector<ov::Tensor>>()) {
-            vision_properties.videos = videos_it->second.as<std::vector<ov::Tensor>>();
+            multimodal_inputs.videos = videos_it->second.as<std::vector<ov::Tensor>>();
         } else if (videos_it->second.is<ov::Tensor>()) {
-            vision_properties.videos = {videos_it->second.as<ov::Tensor>()};
+            multimodal_inputs.videos = {videos_it->second.as<ov::Tensor>()};
         } else if (!videos_it->second.empty()) {
             OPENVINO_THROW("Unknown videos type.");
         }
@@ -57,15 +57,26 @@ inline VisionProperties extract_vision_properties(const ov::AnyMap& properties_m
     const auto videos_metadata_it = properties_map.find(ov::genai::videos_metadata.name());
     if (videos_metadata_it != properties_map.end()) {
         if (videos_metadata_it->second.is<std::vector<VideoMetadata>>()) {
-            vision_properties.videos_metadata = videos_metadata_it->second.as<std::vector<VideoMetadata>>();
+            multimodal_inputs.videos_metadata = videos_metadata_it->second.as<std::vector<VideoMetadata>>();
         } else if (videos_metadata_it->second.is<VideoMetadata>()) {
-            vision_properties.videos_metadata = {videos_metadata_it->second.as<VideoMetadata>()};
+            multimodal_inputs.videos_metadata = {videos_metadata_it->second.as<VideoMetadata>()};
         } else if (!videos_metadata_it->second.empty()) {
             OPENVINO_THROW("Unknown videos metadata type.");
         }
     }
 
-    return vision_properties;
+    const auto audios_it = properties_map.find(ov::genai::audios.name());
+    if (audios_it != properties_map.end()) {
+        if (audios_it->second.is<std::vector<ov::Tensor>>()) {
+            multimodal_inputs.audios = audios_it->second.as<std::vector<ov::Tensor>>();
+        } else if (audios_it->second.is<ov::Tensor>()) {
+            multimodal_inputs.audios = {audios_it->second.as<ov::Tensor>()};
+        } else if (!audios_it->second.empty()) {
+            OPENVINO_THROW("Unknown audios type.");
+        }
+    }
+
+    return multimodal_inputs;
 }
 
 }  // namespace ov::genai
