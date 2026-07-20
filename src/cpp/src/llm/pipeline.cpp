@@ -15,7 +15,9 @@
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "speculative_decoding/stateful/eagle3_strategy.hpp"
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
+#include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 #include "logger.hpp"
 
 namespace {
@@ -24,6 +26,32 @@ void log_paged_attention_fallback(const ov::Exception& exception) {
     GENAI_WARN("Paged Attention backend initialization failed. Falling back to SDPA backend. "
                 "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
     GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
+}
+
+std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
+    auto it = properties.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
+    if (it == properties.end()) {
+        return nullptr;
+    }
+    return it->second.as<ov::genai::ModelDesc>().model;
+}
+
+bool should_use_stateful_pipeline(bool is_npu_requested,
+                                  bool has_draft_model,
+                                  const std::string& attention_backend,
+                                  const std::shared_ptr<ov::Model>& main_model,
+                                  const ov::AnyMap& properties) {
+    if (is_npu_requested) {
+        return true;
+    }
+    if (has_draft_model && attention_backend == ov::genai::SDPA_BACKEND) {
+        OPENVINO_ASSERT(ov::genai::is_gemma4_mtp_model_pair(main_model, peek_draft_model(properties)),
+                        "Speculative decoding with the SDPA attention backend on non-NPU devices is only "
+                        "supported for Gemma4 MTP model pairs. For other model pairs use the Paged Attention "
+                        "backend (ATTENTION_BACKEND=\"PA\") or run on NPU.");
+        return true;
+    }
+    return false;
 }
 
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
@@ -155,13 +183,17 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
                                                    const std::filesystem::path& models_path = {}) {
     OPENVINO_ASSERT(model, "Model must not be null");
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
 
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
     OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
 
     if (draft_model_descr.model) {
+        if (is_gemma4_mtp_model_pair(main_model_descr.model, draft_model_descr.model)) {
+            return std::make_unique<StatefulGemma4MTPLLMPipeline>(main_model_descr, draft_model_descr);
+        }
+
         // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
                         "Stateful FastDraft and Stateful Eagle3 Speculative Decoding require NPU to be "
@@ -213,12 +245,13 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
     utils::extract_extensions_to_core(properties);
 
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (is_npu_requested) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -256,13 +289,14 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
     utils::extract_extensions_to_core(properties);
+    bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
     const Tokenizer tokenizer(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (is_npu_requested) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -303,11 +337,12 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
     utils::extract_extensions_to_core(properties);
 
     std::shared_ptr<ov::Model> model = utils::singleton_core().read_model(model_str, weights_tensor);
 
-    if (is_npu_requested) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(
             model,
             tokenizer,
@@ -411,14 +446,10 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
 }
 
 void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-               "Please, use generate() with ChatHistory argument.");
     m_pimpl->start_chat(system_message);
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
-               "Please, use generate() with ChatHistory argument.");
     m_pimpl->finish_chat();
 }
 

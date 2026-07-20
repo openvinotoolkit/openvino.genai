@@ -227,6 +227,27 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
                     " has incompatible last dim shape: ",
                     shape.back());
 
+    // K-quants (Q4_K/Q6_K) are dequantized one 256-weight super-block at a time:
+    // the extract_*_k_data() loops iterate tensor.bsize / bytes_per_block super-blocks
+    // and write a full super-block (128 bytes for Q4_K, 256 weights for Q6_K) each.
+    // The output buffers below, however, are sized from shape.back(), which is only
+    // guarded to be a multiple of the sub-block size (32 / 16) above. A last dim that
+    // is a multiple of the sub-block size but not of the 256-weight super-block (e.g.
+    // 32) makes gguflib pad the data up to a full super-block, so the loop writes past
+    // the end of the smaller output buffer -- an attacker-controlled heap overflow
+    // (the dequantized nibbles come straight from the file). Require whole super-blocks.
+    if (tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
+        constexpr uint64_t weights_per_super_block = 256;
+        OPENVINO_ASSERT(shape.back() % weights_per_super_block == 0,
+                        "[load_gguf] K-quant tensor ",
+                        name,
+                        " has a last dim of ",
+                        shape.back(),
+                        " which is not a multiple of the super-block size ",
+                        weights_per_super_block,
+                        ". The GGUF file is malformed or corrupted.");
+    }
+
     auto weights_shape = shape;
     weights_shape.back() /= (weights_per_byte * 4);  // means u32 type can store 8 q4 or 4 q8
 

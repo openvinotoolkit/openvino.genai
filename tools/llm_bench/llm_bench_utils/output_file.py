@@ -129,7 +129,7 @@ def output_gen_image(img, args, prompt_idx, iteration, batchsize_idx, proc_id, s
     return img_save_path
 
 
-def output_gen_audio(audio, args, prompt_idx, iteration, batchsize_idx, proc_id, suffix):
+def output_gen_audio(audio, args, prompt_idx, iteration, batchsize_idx, proc_id, suffix, samplerate=16000):
     audio_save_name = construct_file_name(
         args["batch_size"],
         args["model_name"],
@@ -140,7 +140,7 @@ def output_gen_audio(audio, args, prompt_idx, iteration, batchsize_idx, proc_id,
         proc_id=proc_id,
         suffix=f"_output{suffix}",
     )
-    audio_save_path = save_audio_file(audio, audio_save_name, args)
+    audio_save_path = save_audio_file(audio, audio_save_name, args, samplerate=samplerate)
     return audio_save_path
 
 

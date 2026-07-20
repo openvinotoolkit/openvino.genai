@@ -354,7 +354,7 @@ describe("tokenizer functions", async () => {
 });
 
 // Add model with paired input support CVS-176639
-describe.skip("tokenizer with paired input", () => {
+describe("tokenizer with paired input", { skip: true }, () => {
   let tokenizer = null;
 
   before(async () => {

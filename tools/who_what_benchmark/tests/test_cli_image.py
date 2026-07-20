@@ -138,6 +138,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
             "2",
             "--taylorseer-config",
             '{"disable_cache_after_step": 0}',
+            "--output",
+            tmp_path,
         ]
     )
 

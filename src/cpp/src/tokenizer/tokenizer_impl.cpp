@@ -194,11 +194,13 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
     std::optional<bool> skip_special_tokens_flag = true;
     std::optional<int32_t> max_length_val;
     std::optional<bool> pad_to_max_length_val = false;
+    std::optional<bool> truncation_val = false;
     std::optional<std::string> padding_side_val = std::nullopt;
     
     ov::genai::utils::read_anymap_param(params, add_special_tokens.name(), add_special_tokens_flag);
     ov::genai::utils::read_anymap_param(params, skip_special_tokens.name(), skip_special_tokens_flag);
     ov::genai::utils::read_anymap_param(params, pad_to_max_length.name(), pad_to_max_length_val);
+    ov::genai::utils::read_anymap_param(params, truncation.name(), truncation_val);
     ov::genai::utils::read_anymap_param(params, max_length.name(), max_length_val);
     ov::genai::utils::read_anymap_param(params, padding_side.name(), padding_side_val);
     std::optional<bool> pad_right;
@@ -213,8 +215,6 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
         pad_right = (*padding_side_val == "right") ? true : false;
     }
 
-    std::optional<bool> is_max_length_set_val = max_length_val.has_value();
-
     ov::AnyMap& state_flags = m_request_to_state_flags[&infer_request_guard.get()];
 
     for (auto& state : infer_request_guard.get().query_state()) {
@@ -228,8 +228,8 @@ void Tokenizer::TokenizerImpl::set_state_if_necessary(CircularBufferQueueElement
             set_state_value(state, max_length_val, state_flags);
         } else if (name == PAD_TO_MAX_LENGTH_VAR_ID) {
             set_state_value(state, pad_to_max_length_val, state_flags);
-        } else if (name == IS_MAX_LENGTH_SET) {
-            set_state_value(state, is_max_length_set_val, state_flags);
+        } else if (name == TRUNCATION_VAR_ID) {
+            set_state_value(state, truncation_val, state_flags);
         } else if (name == PAD_RIGHT_VAR_ID) {
             set_state_value(state, pad_right, state_flags);
         }
@@ -787,6 +787,26 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
+std::shared_ptr<const minja::chat_template> Tokenizer::TokenizerImpl::get_cached_minja_chat_template(const std::string& chat_template) const {
+    constexpr size_t max_cached_templates = 4;
+
+    OPENVINO_ASSERT(!chat_template.empty(),
+                    "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
+                    " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario.");
+
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+    auto iter = m_minja_chat_template_cache.find(chat_template);
+    if (iter != m_minja_chat_template_cache.end()) {
+        return iter->second;
+    }
+    if (m_minja_chat_template_cache.size() >= max_cached_templates) {
+        m_minja_chat_template_cache.erase(m_minja_chat_template_cache.begin());
+    }
+    auto minja_template = std::make_shared<minja::chat_template>(chat_template, m_bos_token, m_eos_token);
+    m_minja_chat_template_cache.emplace(chat_template, minja_template);
+    return minja_template;
+}
+
 std::string Tokenizer::TokenizerImpl::apply_chat_template(
     const ChatHistory& history,
     bool add_generation_prompt,
@@ -794,11 +814,13 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     const std::optional<JsonContainer>& tools,
     const std::optional<JsonContainer>& extra_context
 ) const {
-    std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
-    OPENVINO_ASSERT(!chat_tpl.empty(),
-                    "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
-                    " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
-                    " For more information see the section Troubleshooting in README.md");
+    std::string chat_tpl;
+    if (chat_template.empty()) {
+        std::lock_guard<std::mutex> lock(m_chat_template_mutex);
+        chat_tpl = m_chat_template;
+    } else {
+        chat_tpl = remap_template(chat_template);
+    }
 
     auto resolved_tools = tools.value_or(history.get_tools());
     auto resolved_extra_context = extra_context.value_or(history.get_extra_context());
@@ -808,7 +830,7 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     OPENVINO_ASSERT(resolved_extra_context.is_object(),
                     "Extra context should be an object-like JsonContainer, got: ", resolved_extra_context.type_name());
 
-    minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
+    auto minja_template = get_cached_minja_chat_template(chat_tpl);
     
     minja::chat_template_inputs minja_inputs;
     minja_inputs.messages = history.get_messages();
@@ -826,7 +848,7 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     
     std::string result;
     try {
-        result = minja_template.apply(minja_inputs);
+        result = minja_template->apply(minja_inputs);
     } catch (const std::exception& error) {
         OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
                         "* Provide a simplified chat template with set_chat_template().\n"
@@ -842,15 +864,21 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
 }
 
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
+    auto remapped_chat_template = remap_template(chat_template);
+
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
     m_original_chat_template = chat_template;
-    m_chat_template = remap_template(chat_template);
+    m_chat_template = std::move(remapped_chat_template);
+    m_minja_chat_template_cache.clear();
 }
 
 std::string Tokenizer::TokenizerImpl::get_chat_template() const {
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
     return m_chat_template;
 }
 
 std::string Tokenizer::TokenizerImpl::get_original_chat_template() const {
+    std::lock_guard<std::mutex> lock(m_chat_template_mutex);
     return m_original_chat_template;
 }
 

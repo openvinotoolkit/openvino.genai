@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, before } from "node:test";
+import os from "node:os";
 import assert from "node:assert/strict";
 import { Text2ImagePipeline } from "../dist/index.js";
 import { Text2ImagePipeline as Text2ImagePipelineClass } from "../dist/pipelines/text2ImagePipeline.js";
@@ -25,7 +26,8 @@ describe("Text2ImagePipeline creation", () => {
   });
 });
 
-describe("Text2ImagePipeline methods", () => {
+// Skip due to CVS-179949
+describe("Text2ImagePipeline methods", { skip: os.platform() === "darwin" }, () => {
   let pipeline;
 
   before(async () => {
@@ -116,6 +118,42 @@ describe("Text2ImagePipeline methods", () => {
     assert.ok(result.data.length > 0);
   });
 
+  it("callback receives a latent tensor that can be decoded", async () => {
+    let decoded;
+    await pipeline.generate("a tiny robot", {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      callback: async (step, numSteps, latent) => {
+        assert.ok(latent, "callback should receive a latent tensor");
+        assert.strictEqual(typeof latent.getShape, "function");
+        decoded = await pipeline.decode(latent);
+        return false;
+      },
+    });
+    assert.deepStrictEqual(decoded.getShape(), [1, 64, 64, 3]);
+    assert.ok(decoded.data instanceof Uint8Array);
+    assert.ok(decoded.data.length > 0);
+  });
+
+  it("decode(latent) returns an image tensor", async () => {
+    let captured;
+    await pipeline.generate("a tiny robot", {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      callback: (step, numSteps, latent) => {
+        captured = latent;
+        return true; // stop early, we only need one latent
+      },
+    });
+    assert.ok(captured, "should have captured a latent");
+    const decoded = await pipeline.decode(captured);
+    assert.deepStrictEqual(decoded.getShape(), [1, 64, 64, 3]);
+    assert.ok(decoded.data instanceof Uint8Array);
+    assert.ok(decoded.data.length > 0);
+  });
+
   it("generate stops early when callback returns true", async () => {
     const steps = [];
     await pipeline.generate("a tiny robot", {
@@ -131,11 +169,60 @@ describe("Text2ImagePipeline methods", () => {
   });
 });
 
+// Skip due to CVS-179949
+describe("Text2ImagePipeline concurrency", { skip: os.platform() === "darwin" }, () => {
+  let pipeline;
+  let latent;
+
+  before(async () => {
+    pipeline = await Text2ImagePipeline(IMAGE_GENERATION_MODEL_PATH, "CPU");
+    await pipeline.generate("a tiny robot", {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+      callback: (step, numSteps, capturedLatent) => {
+        latent = capturedLatent;
+        return true; // stop early, we only need one latent
+      },
+    });
+  });
+
+  it("decode() rejects while a generate() is in progress", async () => {
+    const generating = pipeline.generate("a tiny robot", {
+      width: 64,
+      height: 64,
+      num_inference_steps: 2,
+    });
+    await assert.rejects(
+      pipeline.decode(latent),
+      /decode\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+    );
+    await generating;
+  });
+
+  it("generate() rejects while a decode() is in progress", async () => {
+    const decoding = pipeline.decode(latent);
+    await assert.rejects(
+      pipeline.generate("a tiny robot", { width: 64, height: 64, num_inference_steps: 2 }),
+      /generate\(\) cannot run while another generate\(\) or decode\(\) is in progress/,
+    );
+    await decoding;
+  });
+});
+
 describe("Text2ImagePipeline initialization", () => {
   it("throws when generate() is called before init()", async () => {
     const uninitializedPipeline = new Text2ImagePipelineClass(IMAGE_GENERATION_MODEL_PATH, "CPU");
     await assert.rejects(
       uninitializedPipeline.generate("a tiny robot"),
+      /Text2ImagePipeline is not initialized/,
+    );
+  });
+
+  it("throws when decode() is called before init()", async () => {
+    const uninitializedPipeline = new Text2ImagePipelineClass(IMAGE_GENERATION_MODEL_PATH, "CPU");
+    await assert.rejects(
+      uninitializedPipeline.decode(undefined),
       /Text2ImagePipeline is not initialized/,
     );
   });

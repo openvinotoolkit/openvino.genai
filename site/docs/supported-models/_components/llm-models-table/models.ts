@@ -497,6 +497,39 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'Lfm2ForCausalLM',
+    models: [
+      {
+        name: 'LFM2',
+        links: [
+          'https://huggingface.co/LiquidAI/LFM2-350M',
+          'https://huggingface.co/LiquidAI/LFM2-700M',
+          'https://huggingface.co/LiquidAI/LFM2-1.2B',
+          'https://huggingface.co/LiquidAI/LFM2-2.6B',
+          'https://huggingface.co/LiquidAI/LFM2-2.6B-Exp',
+          'https://huggingface.co/LiquidAI/LFM2.5-350M',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP',
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Base',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Lfm2MoeForCausalLM',
+    models: [
+      {
+        name: 'LFM2MoE',
+        links: [
+          'https://huggingface.co/LiquidAI/LFM2-8B-A1B',
+          'https://huggingface.co/LiquidAI/LFM2-24B-A2B',
+          'https://huggingface.co/LiquidAI/LFM2.5-8B-A1B',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'LlamaForCausalLM',
     models: [
       {
@@ -831,6 +864,20 @@ export const LLM_MODELS: LLMModelType[] = [
         links: [
           'https://huggingface.co/Qwen/Qwen3-30B-A3B',
           'https://huggingface.co/Qwen/Qwen3-30B-A3B-Base',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Qwen3NextForCausalLM',
+    models: [
+      {
+        name: 'Qwen3Next',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-Coder-Next',
+          'https://huggingface.co/Qwen/Qwen3-Coder-Next-Base',
+          'https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct',
+          'https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Thinking',
         ],
       },
     ],

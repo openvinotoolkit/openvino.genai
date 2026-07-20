@@ -5,11 +5,10 @@ import pytest
 import sys
 import numpy as np
 from pathlib import Path
-import cv2
 from PIL import Image
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
-from test_utils import run_sample
+from test_utils import run_sample, compare_videos
 
 
 def compare_images(image_path1: Path, image_path2: Path) -> bool:
@@ -19,39 +18,6 @@ def compare_images(image_path1: Path, image_path2: Path) -> bool:
         arr2 = np.array(img2)
 
         return arr1.shape == arr2.shape and np.array_equal(arr1, arr2)
-
-
-def compare_videos(video_path1: Path, video_path2: Path) -> bool:
-    """Compare two videos frame by frame for exact match."""
-    cap1 = cv2.VideoCapture(str(video_path1))
-    cap2 = cv2.VideoCapture(str(video_path2))
-
-    if not cap1.isOpened() or not cap2.isOpened():
-        return False
-
-    frame_count1 = int(cap1.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_count2 = int(cap2.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    if frame_count1 != frame_count2:
-        cap1.release()
-        cap2.release()
-        return False
-
-    try:
-        for _ in range(frame_count1):
-            ret1, frame1 = cap1.read()
-            ret2, frame2 = cap2.read()
-
-            if not ret1 or not ret2:
-                return False
-
-            if frame1.shape != frame2.shape or not np.array_equal(frame1, frame2):
-                return False
-
-        return True
-    finally:
-        cap1.release()
-        cap2.release()
 
 
 class TestTaylorSeerText2Image:

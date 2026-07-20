@@ -133,6 +133,8 @@ public:
 
     ov::Tensor encode(ov::Tensor image, std::shared_ptr<Generator> generator);
 
+    ov::Tensor encode(ov::Tensor image);
+
     const Config& get_config() const;
 
     size_t get_vae_scale_factor() const;

@@ -137,6 +137,10 @@ public:
 
     virtual void generate_candidates_for_prompt_lookup();
 
+    virtual bool sync_embeddings_after_candidates() const {
+        return !m_is_validation_mode_enabled;
+    }
+
     void step() override;
 
     /**

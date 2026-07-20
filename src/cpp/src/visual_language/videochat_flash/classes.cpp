@@ -5,6 +5,12 @@
 #include "visual_language/videochat_flash/classes.hpp"
 
 #include "openvino/opsets/opset13.hpp"
+#include "openvino/op/interpolate.hpp"
+#include "openvino/op/convert.hpp"
+#include "openvino/op/transpose.hpp"
+#include "openvino/op/clamp.hpp"
+#include "openvino/op/subtract.hpp"
+#include "openvino/op/multiply.hpp"
 #include "logger.hpp"
 #include "visual_language/clip.hpp"
 #include "visual_language/vlm_utils.hpp"
@@ -12,12 +18,25 @@
 #include "utils.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <numeric>
 #include <cmath>
+#include <cstdlib>
+#include <optional>
 #include <sstream>
 #include <mutex>
 #include <fstream>
+
+// Forward-declare the rt_info helper from openvino's transformations library to avoid
+// pulling in the private header "transformations/rt_info/disable_precision_conversion.hpp"
+// (not on the genai include path). The symbol is exported via TRANSFORMATIONS_API and
+// resolves at link time against the openvino runtime that genai already depends on.
+namespace ov {
+class Node;
+void disable_conversion(const std::shared_ptr<Node>& node, const element::Type& to);
+}  // namespace ov
+
 namespace ov::genai {
 
 namespace {
@@ -55,25 +74,111 @@ void write_native(std::ostream& os, size_t idx) {
 }
 
 /**
- * @brief Preprocess frame batch in NHWC/u8 layout.
+ * @brief Build a frame-batch preprocessing model implemented purely with OpenVINO ops.
+ *
+ * The model is compiled once and reused across videos; the heavy per-frame
+ * pixel work executes inside OpenVINO kernels instead of a C++ triple loop.
+ */
+std::shared_ptr<ov::Model> build_frame_preprocess_model(const std::array<float, 3>& image_mean,
+                                                        const std::array<float, 3>& image_std) {
+    auto raw_frames = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, 3});
+    raw_frames->set_friendly_name("raw_frames");
+    raw_frames->output(0).set_names({"raw_frames"});
+
+    auto resize_target = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
+    resize_target->set_friendly_name("resize_target");
+    resize_target->output(0).set_names({"resize_target"});
+
+    // u8 NHWC -> f32 NCHW
+    auto to_f32 = std::make_shared<ov::op::v0::Convert>(raw_frames, ov::element::f32);
+    auto nhwc_to_nchw = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{4}, {0, 3, 1, 2});
+    auto nchw = std::make_shared<ov::op::v1::Transpose>(to_f32, nhwc_to_nchw);
+
+    auto half_const = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {0.5f});
+
+    // Bicubic resize: single 2D pass, pinned to f32 to avoid GPU fp16 grid snapping.
+    // Use PYTORCH_HALF_PIXEL because it is the closest available OV coordinate mode
+    // to the legacy resize path, while cube_coeff = -0.5f empirically matches the
+    // existing clip.cpp bicubic implementation better than -0.75f.
+    ov::op::v11::Interpolate::InterpolateAttrs attrs;
+    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::CUBIC;
+    attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
+    attrs.coordinate_transformation_mode = ov::op::v11::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL;
+    attrs.cube_coeff = -0.5f;
+    attrs.nearest_mode = ov::op::v11::Interpolate::NearestMode::ROUND_PREFER_FLOOR;
+    attrs.pads_begin = {0, 0};
+    attrs.pads_end = {0, 0};
+    attrs.antialias = false;
+    auto resize_axes = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, {2, 3});
+    auto resized = std::make_shared<ov::op::v11::Interpolate>(nchw, resize_target, resize_axes, attrs);
+    ov::disable_conversion(resized, ov::element::f16);
+
+    // Match legacy CPU uint8 staging:
+    // bicubic_resize() produces uint8-like pixels before clip_image_preprocess().
+    // Equivalent graph behavior:
+    //   x = clamp(x, 0, 255)
+    //   x = floor(x + 0.5)
+    auto clamped = std::make_shared<ov::op::v0::Clamp>(resized, 0.0, 255.0);
+
+    auto rounded_pre = std::make_shared<ov::op::v1::Add>(clamped, half_const);
+    auto rounded = std::make_shared<ov::op::v0::Floor>(rounded_pre);
+
+    // Normalize with the same op order as clip_image_preprocess():
+    //   ((float(v2) / 255.0f) - mean[c]) / std[c]
+    auto scale_const = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {255.0f});
+    auto scaled = std::make_shared<ov::op::v1::Divide>(rounded, scale_const);
+
+    auto mean_const =
+        std::make_shared<ov::op::v0::Constant>(ov::element::f32,
+                                               ov::Shape{1, 3, 1, 1},
+                                               std::vector<float>{image_mean[0], image_mean[1], image_mean[2]});
+
+    auto std_const =
+        std::make_shared<ov::op::v0::Constant>(ov::element::f32,
+                                               ov::Shape{1, 3, 1, 1},
+                                               std::vector<float>{image_std[0], image_std[1], image_std[2]});
+
+    auto centered = std::make_shared<ov::op::v1::Subtract>(scaled, mean_const);
+    auto normalized = std::make_shared<ov::op::v1::Divide>(centered, std_const);
+
+    normalized->set_friendly_name("preprocessed_frames");
+    return std::make_shared<ov::Model>(ov::OutputVector{normalized},
+                                       ov::ParameterVector{raw_frames, resize_target},
+                                       "videochat_flash_frame_preprocess");
+}
+
+bool check_vision_preprocess_env() {
+    const char* env = std::getenv("VISION_PREPROCESS");
+    return !(env && std::string(env) == "CPP");
+}
+
+ov::Tensor make_resize_target(ImageSize image_size) {
+    OPENVINO_ASSERT(image_size.height > 0 && image_size.width > 0, "target_h and target_w must be > 0.");
+
+    ov::Tensor target_shape_tensor(ov::element::i64, ov::Shape{2});
+    auto* target_shape_data = target_shape_tensor.data<int64_t>();
+    target_shape_data[0] = static_cast<int64_t>(image_size.height);
+    target_shape_data[1] = static_cast<int64_t>(image_size.width);
+    return target_shape_tensor;
+}
+
+/**
+ * @brief Legacy CPU per-frame preprocess (kept for A/B comparison, selectable via env var).
  *
  * Pipeline:
- * 1) Resize each frame with bicubic interpolation to (target_h, target_w)
- * 2) Rescale pixel values by /255
- * 3) Normalize by (x - mean) / std
+ *   1) Resize each frame with bicubic interpolation to (target_h, target_w)
+ *   2) Rescale pixel values by /255
+ *   3) Normalize by (x - mean) / std
  *
  * Input:
  *   - input_nhwc_u8: [N, H, W, 3], element type u8
  * Output:
  *   - Tensor with shape [N, C, target_h, target_w], element type f32
- *     (clip_image_preprocess returns planar CHW buffer per frame)
- *
- * Notes:
- *   - This function does not infer layout. Caller must provide NHWC.
- *   - Channel count is strictly 3 for current normalization parameters.
  */
-ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, const std::array<float, 3>& image_mean, const std::array<float, 3>& image_std) {
-    // TODO CVS-183051: optimize preprocessing by ov ops.
+ov::Tensor preprocess_cpu(const ov::Tensor& input_nhwc_u8,
+                          ImageSize image_size,
+                          const std::array<float, 3>& image_mean,
+                          const std::array<float, 3>& image_std) {
     const ov::Shape& in_shape = input_nhwc_u8.get_shape();
     OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
     OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
@@ -92,7 +197,6 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
     const size_t out_frame_elems = channels * image_size.height * image_size.width;
 
     clip_ctx ctx{};
-    
     std::copy_n(image_mean.begin(), image_mean.size(), ctx.image_mean);
     std::copy_n(image_std.begin(), image_std.size(), ctx.image_std);
 
@@ -108,15 +212,52 @@ ov::Tensor preprocess(const ov::Tensor& input_nhwc_u8, ImageSize image_size, con
         clip_image_u8 clip_resized;
         bicubic_resize(clip_in, clip_resized, image_size.width, image_size.height);
 
-        // 2) rescale(/255) + 3) normalize((x-mean)/std)
-        // clip_image_preprocess implements normalization pipeline and returns f32 planar image.
-        clip_image_f32 clip_norm = clip_image_preprocess(ctx, clip_resized); //// CHW
+        // 2) rescale(/255) + 3) normalize((x-mean)/std), returns f32 planar CHW.
+        clip_image_f32 clip_norm = clip_image_preprocess(ctx, clip_resized);
 
-        // Convert planar(CHW) -> NCHW
         OPENVINO_ASSERT(clip_norm.buf.size() == out_frame_elems, "Unexpected preprocessed frame size.");
         std::memcpy(out_ptr + b * out_frame_elems, clip_norm.buf.data(), out_frame_elems * sizeof(float));
     }
+
     return output_nchw_f32;
+}
+
+/**
+ * @brief OV graph-based batched preprocess using a pre-compiled preprocessing model.
+ *
+ * Replaces the per-frame CPU pipeline with a single device-side inference over the whole
+ * frame batch, eliminating N x (resize + normalize) CPU loops and the extra f32 planar->NCHW
+ * copy.
+ *
+ * Input:
+ *   - input_nhwc_u8: [N, H, W, 3], element type u8
+ * Output:
+ *   - f32 tensor [N, 3, target_h, target_w], backed by the InferRequest output buffer.
+ */
+ov::Tensor preprocess_ov_graph(const ov::Tensor& input_nhwc_u8,
+                               const ov::Tensor& resize_target_tensor,
+                               ov::InferRequest& req) {
+    const ov::Shape& in_shape = input_nhwc_u8.get_shape();
+    OPENVINO_ASSERT(in_shape.size() == 4, "Input must be 4D NHWC.");
+    OPENVINO_ASSERT(input_nhwc_u8.get_element_type() == ov::element::u8, "Input dtype must be u8.");
+    OPENVINO_ASSERT(in_shape[3] == 3, "Input channel must be 3 for normalization.");
+    OPENVINO_ASSERT(resize_target_tensor.get_element_type() == ov::element::i64,
+                    "resize_target tensor dtype must be i64.");
+    OPENVINO_ASSERT(resize_target_tensor.get_shape() == ov::Shape{2}, "resize_target tensor must have shape [2].");
+    const auto* target_shape_data = resize_target_tensor.data<const int64_t>();
+    OPENVINO_ASSERT(target_shape_data[0] > 0 && target_shape_data[1] > 0, "target_h and target_w must be > 0.");
+
+    req.set_tensor("raw_frames", input_nhwc_u8);
+    req.set_tensor("resize_target", resize_target_tensor);
+    req.infer();
+
+    // Return the InferRequest output tensor without an extra deep copy.
+    // Its buffer is owned/reused by the InferRequest, so the caller must keep
+    // the corresponding CircularBufferQueueElementGuard alive until the tensor
+    // is fully consumed. In encode_video(), transpose_video_features() copies this
+    // data into its own tensor before preprocess_guard.reset() returns the request
+    // to the pool.
+    return req.get_output_tensor();
 }
 
 std::string normalize_prompt_impl(
@@ -233,6 +374,7 @@ ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
             output_data + i * seq_len * head_elements
         );
     }
+
     return output;
 }
 
@@ -549,39 +691,10 @@ ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, boo
 
     return pos_tensor;
 }
-ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
-    if (tensors.empty()) return ov::Tensor();
 
-    const ov::Shape single_shape = tensors[0].get_shape();
-    OPENVINO_ASSERT(!single_shape.empty(), "Input tensors must have rank >= 1.");
-    OPENVINO_ASSERT(single_shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
-    auto type = tensors[0].get_element_type();
-    const size_t single_tensor_byte_size = tensors[0].get_byte_size();
-
-    ov::Shape final_shape = single_shape;
-    final_shape[0] = tensors.size();
-
-    ov::Tensor merged_tensor(type, final_shape);
-    uint8_t* dst_ptr = static_cast<uint8_t*>(merged_tensor.data());
-
-    for (const auto& t : tensors) {
-        OPENVINO_ASSERT(t.get_element_type() == type, "All tensors must have the same element type.");
-        const ov::Shape& shape = t.get_shape();
-        OPENVINO_ASSERT(shape.size() == single_shape.size(), "All tensors must have the same rank.");
-        OPENVINO_ASSERT(shape[0] == 1, "Each tensor must have shape[0] == 1 for concatenation.");
-        OPENVINO_ASSERT(std::equal(shape.begin() + 1, shape.end(), single_shape.begin() + 1),
-                        "All tensors must have identical dimensions except dim0.");
-        size_t byte_size = t.get_byte_size();
-        OPENVINO_ASSERT(byte_size == single_tensor_byte_size,
-                        "All tensors must have the same byte size for concatenation.");
-        std::memcpy(dst_ptr, t.data(), byte_size);
-        dst_ptr += byte_size;
-    }
-
-    return merged_tensor;
-}
-
-ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings, const ov::Tensor& pos_emb) {
+ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features,
+                            ov::InferRequest& vision_embeddings,
+                            const ov::Tensor& pos_emb) {
     OPENVINO_ASSERT(
         transpose_features.get_element_type() == ov::element::f32,
         "vision_embeddings input pixel_values must be f32."
@@ -591,21 +704,58 @@ ov::Tensor cyclic_vit_infer(const ov::Tensor& transpose_features, ov::InferReque
     OPENVINO_ASSERT(full_shape.size() == 5, "transpose_features must be 5D [N, C, T, H, W].");
     const size_t N = full_shape[0];
     OPENVINO_ASSERT(N > 0, "transpose_features batch size N must be greater than 0.");
+
     const size_t single_sample_size = transpose_features.get_size() / N;
     const float* src_ptr = transpose_features.data<const float>();
-    std::vector<ov::Tensor> results_list;
-    for (size_t i = 0; i < N; ++i) {
-        const ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
-        ov::Tensor single_input(transpose_features.get_element_type(), single_shape, const_cast<float*>(src_ptr + (i * single_sample_size)));
-        vision_embeddings.set_tensor("hidden_states", single_input);
+    const ov::Shape single_in_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
+
+    // Dry-infer sample 0 to learn per-sample output shape.
+    ov::Tensor first_in(ov::element::f32, single_in_shape, const_cast<float*>(src_ptr));
+    vision_embeddings.set_tensor("hidden_states", first_in);
+    vision_embeddings.set_tensor("rotary_pos_emb", pos_emb);
+    vision_embeddings.infer();
+    ov::Tensor first_out = vision_embeddings.get_output_tensor();
+
+    const ov::Shape per_out_shape = first_out.get_shape();
+    const ov::element::Type out_dtype = first_out.get_element_type();
+    OPENVINO_ASSERT(
+        !per_out_shape.empty() && per_out_shape[0] == 1,
+        "vision_embeddings per-sample output is expected to have batch dim == 1, got shape ",
+        per_out_shape.to_string(), "."
+    );
+
+    ov::Shape final_shape = per_out_shape;
+    final_shape[0] = N;
+    ov::Tensor final_processed_embeds(out_dtype, final_shape);
+    const size_t per_sample_bytes = first_out.get_byte_size();
+    OPENVINO_ASSERT(
+        final_processed_embeds.get_byte_size() == per_sample_bytes * N,
+        "Final ViT output buffer size mismatch."
+    );
+    uint8_t* dst_base = static_cast<uint8_t*>(final_processed_embeds.data());
+    std::memcpy(dst_base, first_out.data(), per_sample_bytes);
+
+    bool foreign_output_bound = false;
+    for (size_t i = 1; i < N; ++i) {
+        ov::Tensor view_in(
+            ov::element::f32, single_in_shape,
+            const_cast<float*>(src_ptr + i * single_sample_size));
+        ov::Tensor view_out(
+            out_dtype, per_out_shape,
+            dst_base + i * per_sample_bytes);
+        vision_embeddings.set_tensor("hidden_states", view_in);
         vision_embeddings.set_tensor("rotary_pos_emb", pos_emb);
+        vision_embeddings.set_output_tensor(view_out);
         vision_embeddings.infer();
-        ov::Tensor out_tensor = vision_embeddings.get_output_tensor();
-        ov::Tensor copy_tensor(out_tensor.get_element_type(), out_tensor.get_shape());
-        out_tensor.copy_to(copy_tensor);
-        results_list.push_back(copy_tensor);
+        foreign_output_bound = true;
     }
-    ov::Tensor final_processed_embeds = concatenate_tensors(results_list);
+    if (foreign_output_bound) {
+        // Rebind output to a scratch tensor so the InferRequest, once returned to the pool,
+        // does not write into our just-returned final_processed_embeds buffer.
+        ov::Tensor scratch(out_dtype, per_out_shape);
+        vision_embeddings.set_output_tensor(scratch);
+    }
+
     return final_processed_embeds;
 }
 
@@ -645,6 +795,23 @@ void VisionEncoderVideoChatFlashQwen::initialize_runtime_config(const std::files
     m_target_num_token = runtime_config.mm_projector_num_tome_tokens;
 }
 
+void VisionEncoderVideoChatFlashQwen::initialize_preprocess_queue(const std::string& device, const ov::AnyMap& properties) {
+    // Build the preprocess model (Convert + Transpose + Bicubic resize + Clamp + Normalize)
+    // and compile it on the caller-requested device. The bicubic Interpolate inside the
+    // graph is tagged with ov::disable_conversion so the GPU plugin keeps just that
+    // single op in f32 (see comment in build_frame_preprocess_model); the rest of the
+    // graph still runs at the device's default precision and the caller's `properties`
+    // are forwarded unchanged.
+    auto preprocess_model = build_frame_preprocess_model(
+        m_processor_config.image_mean, m_processor_config.image_std);
+    auto compiled_preprocess = utils::singleton_core().compile_model(preprocess_model, device, properties);
+    m_ireq_queue_preprocess = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_preprocess.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_preprocess]() -> ov::InferRequest {
+            return compiled_preprocess.create_infer_request();
+        });
+}
+
 void VisionEncoderVideoChatFlashQwen::initialize_merge_model_queue() {
     const size_t num_attention_heads = m_num_attention_heads;
     OPENVINO_ASSERT(
@@ -673,6 +840,7 @@ void VisionEncoderVideoChatFlashQwen::initialize_shared_config(const std::filesy
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "config.json");
     m_video_processor_config = utils::from_config_json_if_exists<VideoProcessorConfig>(config_dir_path, "video_preprocessor_config.json");
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
+    m_resize_target_tensor = make_resize_target({m_processor_config.image_size, m_processor_config.image_size});
     initialize_runtime_config(config_dir_path / "config.json");
 }
 
@@ -695,7 +863,8 @@ void VisionEncoderVideoChatFlashQwen::initialize_vision_encoder_queue(
     input_shapes["rotary_pos_emb"] = pos_emb_shape;  // it's a fixed shape: { 1, 1025, 1408 }
     model->reshape(input_shapes);
 
-    auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(properties, "vision_embeddings", device));
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
     m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -717,15 +886,21 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::string& device,
     const ov::AnyMap properties) {
     initialize_shared_config(model_dir);
+    m_use_ov_vision_preprocess = check_vision_preprocess_env();
 
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
     initialize_vision_encoder_queue(model, device, properties);
 
     auto compiled_model_vision =
-        utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, properties);
+        utils::singleton_core().compile_model(
+            model_dir / "openvino_vision_projection_model.xml", device,
+            utils::get_model_properties(properties, "vision_projection", device));
     initialize_vision_projection_queue(compiled_model_vision);
 
     initialize_merge_model_queue();
+    if (m_use_ov_vision_preprocess) {
+        initialize_preprocess_queue(device, properties);
+    }
 }
 
 VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
@@ -734,6 +909,7 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
     const std::string& device,
     const ov::AnyMap properties) {
     initialize_shared_config(config_dir_path);
+    m_use_ov_vision_preprocess = check_vision_preprocess_env();
 
     const auto& [vision_embeddings_model, vision_embeddings_weights] =
         utils::get_model_weights_pair(models_map, "vision_embeddings");
@@ -742,16 +918,51 @@ VisionEncoderVideoChatFlashQwen::VisionEncoderVideoChatFlashQwen(
 
     const auto& [vision_projection_model, vision_projection_weights] =
         utils::get_model_weights_pair(models_map, "vision_projection");
-    auto compiled_model = utils::singleton_core().compile_model(vision_projection_model, vision_projection_weights, device, properties);
+    auto compiled_model = utils::singleton_core().compile_model(
+        vision_projection_model, vision_projection_weights, device,
+        utils::get_model_properties(properties, "vision_projection", device));
     initialize_vision_projection_queue(compiled_model);
 
     initialize_merge_model_queue();
+    if (m_use_ov_vision_preprocess) {
+        initialize_preprocess_queue(device, properties);
+    }
 }
 
 EncodedImage VisionEncoderVideoChatFlashQwen::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     (void)image;
     (void)config_map;
     OPENVINO_THROW("VideoChat-Flash currently does not support image inference. Please use video input.");
+}
+
+VisionEncoderVideoChatFlashQwen::PreprocessFunc VisionEncoderVideoChatFlashQwen::get_preprocess_func() {
+    if (m_use_ov_vision_preprocess) {
+        return [this](const ov::Tensor& sampled_video,
+                      ImageSize target_size,
+                      std::optional<CircularBufferQueueElementGuard<ov::InferRequest>>& preprocess_guard) -> ov::Tensor {
+            std::optional<ov::Tensor> dynamic_resize_target;
+            const ov::Tensor* resize_target_tensor = &m_resize_target_tensor;
+            if (target_size.height != m_processor_config.image_size ||
+                target_size.width != m_processor_config.image_size) {
+                dynamic_resize_target.emplace(make_resize_target(target_size));
+                resize_target_tensor = &*dynamic_resize_target;
+            }
+            // OV-graph preprocess returns a non-owning alias of the InferRequest output
+            // buffer; the caller must keep `preprocess_guard` alive until the next downstream
+            // copy (transpose_video_features) consumes it.
+            preprocess_guard.emplace(this->m_ireq_queue_preprocess.get());
+            return preprocess_ov_graph(sampled_video, *resize_target_tensor, preprocess_guard->get());
+        };
+    } else {
+        return [this](const ov::Tensor& sampled_video,
+                      ImageSize target_size,
+                      std::optional<CircularBufferQueueElementGuard<ov::InferRequest>>& /*preprocess_guard*/) -> ov::Tensor {
+            // Legacy CPU per-frame loop owns its output buffer; no guard required.
+            return preprocess_cpu(
+                sampled_video, target_size,
+                this->m_processor_config.image_mean, this->m_processor_config.image_std);
+        };
+    }
 }
 
 ov::Tensor VisionEncoderVideoChatFlashQwen::sample_video_if_needed(const ov::Tensor& video) const {
@@ -807,12 +1018,24 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     EncodedVideo encoded_video;
     OPENVINO_ASSERT(m_processor_config.image_size > 0, "image_size must be greater than 0.");
     ImageSize target_size{m_processor_config.image_size, m_processor_config.image_size};
+
     ov::Tensor sampled_video = sample_video_if_needed(video);
-    auto preprocessed_video = preprocess(sampled_video, target_size, m_processor_config.image_mean, m_processor_config.image_std);
+
+    // The OV-graph preprocess returns a non-owning alias of its InferRequest output buffer.
+    // The guard below keeps that buffer alive across transpose_video_features (which performs
+    // the only required copy into its own tensor), and is then released so the request can
+    // return to the pool. The legacy CPU path doesn't need the guard.
+    std::optional<CircularBufferQueueElementGuard<ov::InferRequest>> preprocess_guard;
+    auto preprocess_func = get_preprocess_func();
+    ov::Tensor preprocessed_video = preprocess_func(sampled_video, target_size, preprocess_guard);
+
     encoded_video.resized_source_size = target_size;
     encoded_video.frame_num = preprocessed_video.get_shape()[0];
     const size_t mm_local_num_frames = m_mm_local_num_frames;
     auto transpose_features = transpose_video_features(preprocessed_video, mm_local_num_frames);
+    // transpose_video_features has copied all preprocess output into its own buffer; the
+    // preprocess InferRequest can be safely returned to the pool now.
+    preprocess_guard.reset();
 
     CircularBufferQueueElementGuard<ov::InferRequest> vision_guard(m_ireq_queue_vision_encoder.get());
     CircularBufferQueueElementGuard<ov::InferRequest> merge_guard(m_ireq_queue_merge_model.get());
@@ -821,9 +1044,11 @@ EncodedVideo VisionEncoderVideoChatFlashQwen::encode_video(const ov::Tensor& vid
     ov::Tensor processed_vision_embeds = cyclic_vit_infer(transpose_features, vision_guard.get(), m_pos_emb);
     ov::Tensor clipped_vision_embeds = remove_second_dim_first_element(processed_vision_embeds);
     ov::Tensor merged_vision_features = merge_tokens(clipped_vision_embeds, merge_guard.get(), m_target_num_token);
+
     projection_guard.get().set_input_tensor(merged_vision_features);
     projection_guard.get().infer();
     ov::Tensor proj_features = projection_guard.get().get_output_tensor();
+
     ov::Tensor final_features = efficient_flatten(proj_features);
 
     encoded_video.video_features = final_features;

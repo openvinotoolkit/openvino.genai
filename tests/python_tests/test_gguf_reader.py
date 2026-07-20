@@ -5,6 +5,7 @@
 import pytest
 import torch
 import gc
+import struct
 import sys
 from pathlib import Path
 from dataclasses import dataclass
@@ -122,6 +123,7 @@ def test_pipelines_with_gguf_generate(
     ids=["regular_prompt", "only_special_tokens", "multiple_special_tokens", "special_tokens_with_text"],
 )
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
+@pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 @pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725")
 def test_full_gguf_pipeline(
@@ -130,8 +132,6 @@ def test_full_gguf_pipeline(
     enable_save_ov_model: bool,
     prompt: str,
 ):
-    if sys.platform == 'darwin':
-        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_gguf.gguf_model_id
     gguf_full_path = model_gguf.gguf_full_path
     opt_model = model_gguf.opt_model
@@ -197,7 +197,7 @@ def test_full_gguf_pipeline(
         }
     ]
 )
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
+@pytest.mark.xfail(sys.platform == "darwin", reason="CVS-172335")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
@@ -222,3 +222,68 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
+
+
+# GGUF tensor type ids (see gguflib.h enum gguf_tensor_type).
+_GGUF_TYPE_Q4_K = 12
+_GGUF_TYPE_Q6_K = 14
+
+
+def _gguf_string(s: str) -> bytes:
+    b = s.encode()
+    return struct.pack("<Q", len(b)) + b
+
+
+def _gguf_kv_string(key: str, value: str) -> bytes:
+    # key, value_type (8 == GGUF_VALUE_TYPE_STRING), value
+    return _gguf_string(key) + struct.pack("<I", 8) + _gguf_string(value)
+
+
+def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
+    """Write a minimal single-tensor GGUF file that reaches gguf_load_quantized().
+
+    The tensor declares a 1-D shape of [last_dim] and the given quantization
+    type. A trailing data blob is appended so the (padded) super-block read by
+    the dequantizer stays inside the mapped file.
+    """
+    header = (
+        b"GGUF"
+        + struct.pack("<I", 3)  # version
+        + struct.pack("<Q", 1)  # tensor_count
+        + struct.pack("<Q", 1)  # metadata_kv_count
+        + _gguf_kv_string("general.architecture", "llama")
+    )
+    tensor_info = (
+        _gguf_string("x.weight")
+        + struct.pack("<I", 1)  # ndim
+        + struct.pack("<Q", last_dim)  # dim[0]
+        + struct.pack("<I", tensor_type)  # tensor type
+        + struct.pack("<Q", 0)  # offset
+    )
+    blob = header + tensor_info
+    blob += b"\x00" * ((-len(blob)) % 32)  # align tensor data section
+    blob += bytes([0x42]) * 512  # attacker-controlled weight bytes
+    path.write_bytes(blob)
+
+
+@pytest.mark.parametrize(
+    "tensor_type,last_dim",
+    [
+        # Last dim is a multiple of the sub-block size (Q4_K: 32, Q6_K: 16) but
+        # NOT of the 256-weight super-block. Before the fix this overflowed the
+        # output buffer in extract_q4_k_data()/extract_q6_k_data() by 112/240
+        # bytes. See gguf_quants.cpp::gguf_load_quantized().
+        (_GGUF_TYPE_Q4_K, 32),
+        (_GGUF_TYPE_Q6_K, 16),
+    ],
+    ids=["q4_k_last_dim_32", "q6_k_last_dim_16"],
+)
+def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_dim):
+    # Regression test for the K-quant heap-buffer-overflow: a crafted GGUF whose
+    # K-quant tensor has a last dim that is a multiple of the sub-block size but
+    # not of 256 must be rejected at load time rather than overflowing the heap.
+    gguf_path = tmp_path / "malformed_kquant.gguf"
+    _write_minimal_gguf(gguf_path, tensor_type, last_dim)
+
+    with pytest.raises(RuntimeError, match="super-block size 256"):
+        ov_genai.LLMPipeline(str(gguf_path), "CPU")

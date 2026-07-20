@@ -18,7 +18,7 @@ Validates that a HuggingFace model exported via optimum-intel works correctly wi
 
 The user must provide:
 
-- **model_id**: HuggingFace model identifier (e.g. `tencent/HY-MT1.5-1.8B`)
+- **model_id**: HuggingFace model identifier (e.g. `tencent/HY-MT1.5-1.8B`) **or** path to an existing OpenVINO IR directory (e.g. `/tmp/my_model_ir`). When a local path is provided, export is skipped automatically.
 - **task**: optimum-cli export task. Supported values:
   - `text-generation-with-past`
   - `image-text-to-text`
@@ -49,10 +49,12 @@ Run the checker script from the repository root:
 
 ```
 python3 .github/skills/model-checker/scripts/check_model.py \
-    --model-id <model_id> \
+    --model-id <model_id_or_path> \
     --task <export_task> \
     --work-dir .model_enabler/model_checker
 ```
+
+When `--model-id` is a path to an existing directory, the script treats it as a pre-converted OpenVINO IR model and automatically skips the export step.
 
 Run `python3 .github/skills/model-checker/scripts/check_model.py --help` for the full argument reference including defaults. The `--work-dir` is where all intermediate files, logs, and outputs will be stored. Do not pipe with any additional logging or redirection — the script handles its own logging.
 
@@ -60,9 +62,10 @@ Run `python3 .github/skills/model-checker/scripts/check_model.py --help` for the
 
 When a previous run already passed some steps (e.g. export succeeded but inference test failed), use skip flags to avoid repeating expensive passed steps:
 
-- `--skip-export` — reuse existing IR in `<work-dir>/model_ir` instead of re-exporting (avoids re-downloading weights)
+- `--skip-export` — reuse existing IR in `<work-dir>/model_ir` instead of re-exporting (avoids re-downloading weights). When `--model-id` is a local path, export is bypassed automatically and that directory is used directly instead of `<work-dir>/model_ir`.
 - `--skip-llm-bench` — skip the llm_bench inference test
 - `--skip-wwb` — skip the who-what-benchmark accuracy check
+- `--skip-wwb-ground-truth` — skip WWB ground-truth collection and reuse `<work-dir>/wwb/gt.csv`; useful when iterating on GenAI target evaluation after ground truth was already collected
 
 Do **not** use skip flags on the first run. Only use them when retrying after a targeted fix.
 
@@ -74,10 +77,14 @@ The script logs progress for each step and exits with code 0 (pass) or non-zero 
 
 - Export: exit code 0
 - Inference test (llm_bench): exit code 0, metrics line logged
-- WWB accuracy (three sub-steps, all must pass):
-  1. HF ground truth generation: exit code 0
-  2. Optimum target evaluation: similarity ≥ `SIMILARITY_THRESHOLD`
-  3. GenAI target evaluation: similarity ≥ `SIMILARITY_THRESHOLD`
+- WWB accuracy (depends on `--wwb-base` mode):
+  - `--wwb-base optimum` (default):
+    1. Optimum ground truth generation: exit code 0
+    2. GenAI target evaluation: similarity ≥ `SIMILARITY_THRESHOLD`
+  - `--wwb-base hf`:
+    1. HF ground truth generation: exit code 0
+    2. Optimum target evaluation: similarity ≥ `SIMILARITY_THRESHOLD`
+    3. GenAI target evaluation: similarity ≥ `SIMILARITY_THRESHOLD`
 
   Note: the WWB step is skipped automatically for `automatic-speech-recognition` (no WWB support).
 
@@ -99,6 +106,5 @@ Results format:
 
 ### Security
 
-- **NEVER** install any packages. Assume the environment is pre-configured.
 - **NEVER** invoke `optimum-cli`, `wwb`, or `llm_bench` directly. Always go through `check_model.py`.
 - **NEVER** modify `model_id` — pass it exactly as provided by the user.

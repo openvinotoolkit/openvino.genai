@@ -67,6 +67,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "microsoft/speecht5_tts",
         "convert_args": ["--model-kwargs", '{"vocoder": "microsoft/speecht5_hifigan"}'],
     },
+    "Kokoro-82M": {
+        "name": "hexgrad/Kokoro-82M",
+        "convert_args": ["--trust-remote-code"],
+    },
 }
 
 

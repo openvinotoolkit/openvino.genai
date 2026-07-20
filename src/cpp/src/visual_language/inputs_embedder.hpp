@@ -83,6 +83,8 @@ public:
         const std::vector<VideoMetadata>& videos_metadata = {}
     );
 
+    void encode_audios(const std::vector<ov::Tensor>& audios);
+
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
@@ -212,6 +214,8 @@ private:
             const std::vector<ov::Tensor>& videos,
             const std::vector<VideoMetadata>& videos_metadata = {}
         );
+
+        virtual void encode_audios(const std::vector<ov::Tensor>& audios) {}
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
         
@@ -382,7 +386,9 @@ private:
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderQwen3_5;
+    friend class InputsEmbedderQwen3Omni;
     friend class InputsEmbedderGemma3;
+    friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
     friend class InputsEmbedderVideoChatFlashQwen;
 };

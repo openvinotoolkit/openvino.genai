@@ -14,7 +14,7 @@
 /samples/cpp/image_generation/ @likholat
 /samples/cpp/video_generation/ @likholat @sgonorov
 /samples/cpp/speech_generation/ @rkazants
-/samples/cpp/whisper_speech_recognition/ @as-suvorov
+/samples/cpp/automatic_speech_recognition/ @as-suvorov
 /samples/cpp/rag/ @as-suvorov
 /samples/cpp/visual_language_chat/ @yatarkan
 
@@ -59,4 +59,4 @@
 /src/python/py_image_generation_pipelines.cpp @likholat
 
 # GenAI Tools
-/tools/ @sbalandi
+/tools/ @sbalandi @avasenin

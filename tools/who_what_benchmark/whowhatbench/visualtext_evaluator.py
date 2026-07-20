@@ -70,6 +70,9 @@ class VisualTextEvaluator(TextEvaluator):
             predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
         self.predictions = predictions
 
+        # Align gt_data with predictions (handles skipped prompts)
+        self.gt_data = self.gt_data[self.gt_data["prompts"].isin(predictions["prompts"].values)]
+
         all_metrics_per_prompt = {}
         all_metrics = {}
 
@@ -169,6 +172,9 @@ class VisualTextEvaluator(TextEvaluator):
             input_data = prepare_default_data_image(self.num_samples) if self.is_image_input else prepare_default_data_video(self.num_samples, self.frames_num)
             data = pd.DataFrame.from_dict(input_data)
 
+        # Skip prompts that cause issues for specific models
+        self._skip_prompts_for_model(data, model)
+
         prompt_data = data["prompts"]
         image_data = data["images"]
         videos_data = data["videos"]
@@ -202,3 +208,14 @@ class VisualTextEvaluator(TextEvaluator):
         df = pd.DataFrame(res_data)
 
         return df
+
+    def _skip_prompts_for_model(self, data: pd.DataFrame, model):
+        """
+        Skip prompts that cause issues for specific models by mutating the input data.
+        """
+        # Relates to Qwen/Qwen3.5-0.8B
+        if model.config.model_type == "qwen3_5" and model.config.text_config.hidden_size == 1024:
+            # This prompt and corresponding image cause the original model to output incoherent answer,
+            # likely due to image complexity and small model size.
+            prompt_to_skip = 'Extract the letters in the words "Bus Stop" that fall between the wheels of the bus logo drawn above it.'
+            data.drop(data[data["prompts"] == prompt_to_skip].index, inplace=True)

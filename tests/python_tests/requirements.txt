@@ -1,14 +1,14 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-diffusers==0.38.0
-https://github.com/huggingface/optimum-intel/archive/f50a0b326df82d4b05c461a9184a97f616bfa63a.tar.gz#egg=optimum-intel
-pytest==9.0.3
+diffusers==0.39.0
+optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@140e49a68718ab0025a3b5f02864b9ca9f009558
+pytest==9.1.1
 transformers==5.0.0
 hf_transfer==0.1.9
 gguf==0.19.0
 
 # rag requirements
-langchain_community==0.4.1
-langchain-core==1.4.0
+langchain_community==0.4.2
+langchain-core==1.4.9
 
 # requirements for specific models
 # - Qwen/Qwen-7B
@@ -17,11 +17,11 @@ einops==0.8.2
 # - openbmb/MiniCPM-V-2
 torchvision==0.26.0
 # - openbmb/MiniCPM-V-2
-timm==1.0.27
+timm==1.0.28
 # - openai/whisper-base
 librosa==0.11.0
-soundfile==0.13.1
-datasets==4.8.5; sys_platform == "linux"
+soundfile==0.14.0
+datasets==5.0.0; sys_platform == "linux"
 datasets==3.6.0; sys_platform != "linux"
 torchcodec==0.11.0; sys_platform == "linux"
 rouge==1.0.1
@@ -30,9 +30,11 @@ peft==0.19.1
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.11.0
-vector-quantize-pytorch==1.29.0
+vector-quantize-pytorch==1.30.1
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-av==17.0.1
-imageio==2.37.3
+av==18.0.0
+imageio==2.37.4
 decord==0.6.0; platform_system != "Darwin"
-opencv-python==4.13.0.92
+opencv-python==5.0.0.93
+# - kokoro TTS
+kokoro==0.9.4

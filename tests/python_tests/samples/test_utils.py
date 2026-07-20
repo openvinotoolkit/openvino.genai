@@ -3,6 +3,11 @@
 from conftest import logger
 import os
 import subprocess # nosec B404
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
 
 PA_FALLBACK_WARNING = (
     "[WARNING] Paged Attention backend initialization failed. Falling back to SDPA backend. "
@@ -14,6 +19,33 @@ def normalize_sample_output(output: str) -> str:
     if PA_FALLBACK_WARNING not in output:
         return output
     return output.replace(PA_FALLBACK_WARNING, "").strip()
+
+
+def compare_videos(video_path1: Path, video_path2: Path) -> bool:
+    """Compare two videos frame by frame for exact match."""
+    cap1 = cv2.VideoCapture(str(video_path1))
+    cap2 = cv2.VideoCapture(str(video_path2))
+
+    try:
+        if not cap1.isOpened() or not cap2.isOpened():
+            return False
+
+        while True:
+            ret1, frame1 = cap1.read()
+            ret2, frame2 = cap2.read()
+
+            if not ret1 and not ret2:
+                return True
+
+            if ret1 != ret2:
+                return False
+
+            if frame1.shape != frame2.shape or not np.array_equal(frame1, frame2):
+                return False
+    finally:
+        cap1.release()
+        cap2.release()
+
 
 def run_sample(
     command: list[str],
@@ -42,3 +74,69 @@ def run_sample(
     result.stdout = normalize_sample_output(result.stdout)
     logger.info(f"Sample output: {result.stdout}")
     return result
+
+
+def run_js_chat(
+    command: list[str],
+    input_data: str,
+    env: dict[str, str] | None = None,
+    timeout: int = 600,
+):
+    logger.info(f"Running JS sample command: {' '.join(map(str, command))}")
+    inputs = [s for s in input_data.splitlines() if s]
+    logger.info(f"Input data: {input_data}")
+    proc = subprocess.Popen(
+        command,
+        text=True,
+        encoding="utf-8",
+        env=env or os.environ,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    assert proc.stdin is not None
+
+    stdout_chunks: list[str] = []
+    input_index = 0
+    start_time = time.monotonic()
+    try:
+        for line in proc.stdout:
+            stdout_chunks.append(line)
+            if "question:" in line:
+                if input_index < len(inputs):
+                    proc.stdin.write(inputs[input_index])
+                    proc.stdin.write("\n")
+                    proc.stdin.flush()
+                    input_index += 1
+                else:
+                    break
+
+        proc.stdin.close()
+
+        remaining_timeout = timeout - int(time.monotonic() - start_time)
+        if remaining_timeout <= 0:
+            raise subprocess.TimeoutExpired(command, timeout)
+        remaining_output, _ = proc.communicate(timeout=remaining_timeout)
+        if remaining_output:
+            stdout_chunks.append(normalize_sample_output(remaining_output))
+        return_code = proc.returncode
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        stdout = "".join(stdout_chunks)
+        logger.error(f"JS sample timed out. Partial output:\n{stdout}")
+        raise
+    except Exception:
+        proc.kill()
+        proc.wait()
+        raise
+
+    stdout = "".join(stdout_chunks)
+    if return_code != 0:
+        logger.error(f"JS sample returned {return_code}. Output:\n{stdout}")
+        raise subprocess.CalledProcessError(return_code, command, output=stdout)
+
+    logger.info(f"Sample output: {stdout}")
+    return stdout

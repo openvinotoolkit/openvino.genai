@@ -13,7 +13,108 @@ from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
 from .utils import patch_awq_for_inference, get_ignore_parameters_flag
+from .chat_utils import find_common_prefix_length, trim_kv_cache, get_kv_cache_seq_len, get_kv_axes_pos
 import inspect
+
+
+def default_gen_answer(
+    model,
+    tokenizer,
+    prompts,
+    max_new_tokens,
+    _empty_adapters=False,
+    _num_assistant_tokens=0,
+    _assistant_confidence_threshold=0.0,
+    full_chat=False,
+    kv_axes_pos=2,
+    generation_config_extra=None,
+):
+    is_awq = getattr(model, "is_awq", None) is not None
+    device = "cpu"
+    if hasattr(model, "device"):
+        device = model.device
+
+    chat_history = []
+    answers = []
+
+    # transformers manage kv_cache via past_key_values
+    # for optimum-intel statefull model ((),)
+    past_key_values = None
+    tokenized_history: list = []
+    for prompt in prompts:
+        chat_history.append({"role": "user", "content": prompt})
+
+        full_tokenized_chat = tokenizer.apply_chat_template(
+            chat_history,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        ).to(device)
+
+        if "token_type_ids" in full_tokenized_chat and "token_type_ids" not in list(
+            inspect.signature(model.forward).parameters.keys()
+        ):
+            full_tokenized_chat.pop("token_type_ids")
+
+        full_input_ids = full_tokenized_chat["input_ids"]
+        full_input_ids_list = full_input_ids[0].tolist()
+
+        if len(tokenized_history) > 0 and not full_chat:
+            prefix_len = find_common_prefix_length(full_input_ids_list, tokenized_history)
+            if prefix_len < len(tokenized_history):
+                past_key_values = trim_kv_cache(model, past_key_values, prefix_len, kv_axes_pos)
+            tokenized_history = tokenized_history[:prefix_len]
+        else:
+            prefix_len = 0
+
+        new_input_ids = full_input_ids
+        attention_mask = full_input_ids.new_ones(1, full_input_ids.shape[1])
+
+        generate_kwargs = dict(
+            input_ids=new_input_ids,
+            attention_mask=attention_mask,
+            do_sample=False,
+            max_new_tokens=max_new_tokens,
+            return_dict_in_generate=True,
+            **get_ignore_parameters_flag(),
+            use_cache=True,
+        )
+
+        if past_key_values is not None:
+            if "transformers" in str(type(model)):
+                generate_kwargs["past_key_values"] = past_key_values
+            else:
+                # for optimum-intel stateful model past_key_values are not used explicitly, instead they are handled inside the model
+                # to avoid taking into account past_key_values, will set it to [None]
+                generate_kwargs["past_key_values"] = [None]
+
+        if is_awq:
+            with patch_awq_for_inference(is_awq):
+                output = model.generate(**generate_kwargs)
+        else:
+            output = model.generate(**generate_kwargs)
+
+        # output.sequences shape: [1, new_input_len + generated_len]
+        generated_ids = output.sequences[:, new_input_ids.shape[1] :]
+        answer_text = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+
+        # Update the KV cache state for the next turn.
+        new_past_key_values = getattr(output, "past_key_values", None)
+        if new_past_key_values is not None and not full_chat:
+            past_key_values = new_past_key_values
+            tokenized_history = full_input_ids_list + generated_ids[0].tolist()
+            actual_cache_len = get_kv_cache_seq_len(model, past_key_values, tokenized_history)
+            if actual_cache_len > 0 and len(tokenized_history) != actual_cache_len:
+                tokenized_history = tokenized_history[:actual_cache_len]
+        else:
+            past_key_values = None
+            tokenized_history = []
+
+        chat_history.append({"role": "assistant", "content": answer_text[0]})
+        answers.append(answer_text[0])
+
+    return answers
 
 
 @register_evaluator("text-chat")
@@ -34,6 +135,8 @@ class ChatTextEvaluator(TextEvaluator):
         empty_adapters=False,
         num_assistant_tokens=0,
         assistant_confidence_threshold=0.0,
+        device="CPU",
+        generation_config_extra=None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
@@ -47,6 +150,8 @@ class ChatTextEvaluator(TextEvaluator):
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
         self.empty_adapters = empty_adapters
+        self.generation_config_extra = generation_config_extra or {}
+        self.full_chat = device == "NPU"
 
         self.gt_dir = os.path.dirname(gt_data or "")
         if base_model:
@@ -138,51 +243,12 @@ class ChatTextEvaluator(TextEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
-        def default_gen_answer(
-            model,
-            tokenizer,
-            prompts,
-            max_new_tokens,
-            _empty_adapters=False,
-            _num_assistant_tokens=0,
-            _assistant_confidence_threshold=0.0,
-        ):
-            is_awq = getattr(model, "is_awq", None) is not None
-            device = "cpu"
-            if hasattr(model, "device"):
-                device = model.device
-
-            chat_history = []
-            answers = []
-            for prompt in prompts:
-                chat_history.append({"role": "user", "content": prompt})
-                inputs = tokenizer.apply_chat_template(
-                    chat_history, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True
-                ).to(device)
-
-                if "token_type_ids" in inputs and "token_type_ids" not in list(
-                    inspect.signature(model.forward).parameters.keys()
-                ):
-                    inputs.pop("token_type_ids")
-
-                if is_awq:
-                    with patch_awq_for_inference(is_awq):
-                        tokens = model.generate(
-                            **inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
-                        )
-                else:
-                    tokens = model.generate(
-                        **inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag()
-                    )
-
-                answer_tokens = tokens[:, inputs["input_ids"].shape[-1] :]
-                answer_text = tokenizer.batch_decode(answer_tokens, skip_special_tokens=True)
-                chat_history.append({"role": "assistant", "content": answer_text[0]})
-                answers.append(answer_text[0])
-
-            return answers
-
         gen_answer_fn = gen_answer_fn or default_gen_answer
+
+        # applicable for ov model only, 2 is just a default value
+        kv_axes_pos = 2
+        if "optimum" in str(type(model)):
+            kv_axes_pos = get_kv_axes_pos(model.model)
 
         if self.test_data:
             if isinstance(self.test_data, str):
@@ -213,6 +279,7 @@ class ChatTextEvaluator(TextEvaluator):
         if not os.path.exists(prompts_dir):
             os.makedirs(prompts_dir)
 
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
         for i, p in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
             answer = gen_answer_fn(
                 model,
@@ -222,6 +289,9 @@ class ChatTextEvaluator(TextEvaluator):
                 self.empty_adapters,
                 self.num_assistant_tokens,
                 self.assistant_confidence_threshold,
+                self.full_chat,
+                kv_axes_pos,
+                **extra_kwargs,
             )
 
             result_path = os.path.join(result_dir, f"chat_output_{i}.json")

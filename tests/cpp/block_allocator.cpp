@@ -242,20 +242,22 @@ TEST_F(PrefixCachingBlockAllocatorTest, HandlesPrefixHashMapAtHashCollisionCorre
     alloc.free(blkB, cached);  // blk1 → OW store, cached[H]=blk1
     ASSERT_EQ(alloc.num_overwriteable_blocks(), 1);
 
-    alloc.free(blkA, cached);  // hash collision: blk1 evicted from OW to free list, blk1 removed from cached, blk0 → OW
+    alloc.free(blkA, cached);  // hash collision: blk1 evicted from OW to free list, cached[H] now points to blk0
     ASSERT_EQ(alloc.num_overwriteable_blocks(), 1);
-    // ensure cached entry for blk0 is removed
-    ASSERT_TRUE(cached.empty());
+    ASSERT_EQ(cached.count(H), 1);
+    ASSERT_EQ(cached.at(H).at(0), blkA.at(0));
 
     // === Round 2: restore from cache, exhaust free list to create double-ownership ===
     auto r2_a = alloc.get_cached_block(H, cached);  // blk0 from OW store
     ASSERT_FALSE(r2_a.empty());
     ASSERT_EQ(alloc.num_overwriteable_blocks(), 0);
 
-    auto r2_b = alloc.get_cached_block(H, cached);  // blk1 no hit, empty block
-    ASSERT_TRUE(r2_b.empty());
+    auto r2_b = alloc.get_cached_block(H, cached);  // blk0 remains tracked under H in cached
+    ASSERT_FALSE(r2_b.empty());
+    ASSERT_EQ(r2_b.at(0), blkA.at(0));
 
     alloc.free(r2_a, cached);
+    alloc.free(r2_b, cached);
 }
 
 TEST(TestBlockAllocator, CalculatesUsagePercentageCorrectly) {

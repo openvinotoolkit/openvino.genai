@@ -538,6 +538,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_cpu_internal(const ov::Te
     // Process each batch independently
     for (size_t b = 0; b < batch_size; ++b) {
         batch_results[b] = select_single_batch(kernel, b, num_tokens);
+        std::sort(batch_results[b].begin(), batch_results[b].end());
     }
 
     return batch_results;
@@ -554,6 +555,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_opencl_internal(const ov:
     // Process each batch independently, similar to CPU version
     for (size_t b = 0; b < batch_size; ++b) {
         batch_results[b] = select_single_batch_opencl(kernel, b, num_tokens);
+        std::sort(batch_results[b].begin(), batch_results[b].end());
     }
 
     return batch_results;

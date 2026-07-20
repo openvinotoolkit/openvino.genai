@@ -116,8 +116,12 @@ auto scheduler_config_docstring = R"(
                                 Only applicable for models with linear attention cache inputs.
     cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                 The internal interval is KV cache block size * cache_interval_multiplier.
-                                When unset, the default value 8 is used for hybrid models with prefix caching.
-                                Explicit values are supported only for models with linear attention cache inputs.
+                                When unset, the multiplier is derived adaptively from the model's linear-attention
+                                state size so one checkpoint costs roughly one KV block (>= the default of 8); this
+                                prevents the recurrent-state cache of large hybrid SSM models from exhausting the
+                                cache budget on long prompts. Larger values reduce memory at the cost of coarser
+                                prefix-cache reuse.
+                                For models without linear attention cache inputs, this parameter is ignored.
                                 0 is valid only when prefix caching is disabled.
     dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
 
@@ -564,8 +568,20 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("step", &ContinuousBatchingPipeline::step)
         .def("has_non_finished_requests", &ContinuousBatchingPipeline::has_non_finished_requests)
 
-        .def("start_chat", &ContinuousBatchingPipeline::start_chat, py::arg("system_message") = "")
-        .def("finish_chat", &ContinuousBatchingPipeline::finish_chat)
+        .def("start_chat", [](ContinuousBatchingPipeline& pipe, const std::string& system_message) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.start_chat(system_message);
+        }, py::arg("system_message") = "")
+        .def("finish_chat", [](ContinuousBatchingPipeline& pipe) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.finish_chat();
+        })
 
         .def(
             "generate",

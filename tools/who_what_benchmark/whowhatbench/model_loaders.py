@@ -42,7 +42,34 @@ disable_progress_bar()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PYTORCH_MODEL_DTYPE_KWARG = {"torch_dtype": torch.float32}
+
+def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
+    sanitized_kwargs = dict(kwargs)
+    n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
+    is_text_task = model_type in ("text", "text-chat")
+    is_llamacpp_text_backend = is_text_task and use_llamacpp and not use_hf and not use_genai
+
+    if not use_llamacpp:
+        if n_ctx is not None:
+            raise ValueError("--llamacpp-n-ctx requires --llamacpp")
+        sanitized_kwargs.pop("llamacpp_n_ctx", None)
+        return sanitized_kwargs
+
+    if is_llamacpp_text_backend:
+        if n_ctx is None:
+            sanitized_kwargs["llamacpp_n_ctx"] = 8192
+        else:
+            n_ctx_int = int(n_ctx)
+            if n_ctx_int <= 0:
+                raise ValueError("--llamacpp-n-ctx must be a positive integer")
+            sanitized_kwargs["llamacpp_n_ctx"] = n_ctx_int
+        return sanitized_kwargs
+
+    if n_ctx is not None:
+        raise ValueError("--llamacpp-n-ctx is supported only when llama.cpp is the selected text backend")
+
+    sanitized_kwargs.pop("llamacpp_n_ctx", None)
+    return sanitized_kwargs
 
 
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
@@ -67,6 +94,7 @@ class GenAIModelWrapper:
 
     def __init__(self, model, model_dir, model_type):
         self.model = model
+        self.model_dir = model_dir
         self.model_type = model_type
 
         if model_type in (
@@ -176,19 +204,23 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
 
-def load_text_llamacpp_pipeline(model_dir):
+def load_text_llamacpp_pipeline(model_dir, **kwargs):
     try:
         from llama_cpp import Llama
-    except ImportError:
-        logger.error(
-            "Failed to import llama_cpp package. Please install llama-cpp-python.")
-        exit(-1)
-    model = Llama(model_dir)
+    except ImportError as exc:
+        raise ModuleNotFoundError(
+            "Failed to import llama_cpp. Please install llama-cpp-python to use --llamacpp."
+        ) from exc
+    n_ctx = kwargs.get("llamacpp_n_ctx", None)
+    model_kwargs = {}
+    if n_ctx is not None:
+        model_kwargs["n_ctx"] = int(n_ctx)
+    model = Llama(model_dir, **model_kwargs)
     return model
 
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
-    model_kwargs = {**PYTORCH_MODEL_DTYPE_KWARG}
+    model_kwargs = {}
     trust_remote_code = False
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
@@ -198,21 +230,13 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
-        # MoE weights of gpt_oss models post-trained with MXFP4 quantization
-        # they are dequantized with torch.bfloat16 https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/integrations/mxfp4.py#L104
-        # forcing the model to any other type will cause a type mismatch error
-        # https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L117
-        if getattr(config, "model_type", None) == "gpt_oss":
-            model_kwargs["torch_dtype"] = "auto"
 
-    if not torch.cuda.is_available or device.lower() == "cpu":
+    if not torch.cuda.is_available() or device.lower() == "cpu":
         is_gptq = False
         is_awq = False
-        if not kwargs.get('gguf_file'):
-
-            if getattr(config, "quantization_config", None):
-                is_gptq = config.quantization_config["quant_method"] == "gptq"
-                is_awq = config.quantization_config["quant_method"] == "awq"
+        if not kwargs.get("gguf_file") and config and getattr(config, "quantization_config", None):
+            is_gptq = config.quantization_config["quant_method"] == "gptq"
+            is_awq = config.quantization_config["quant_method"] == "awq"
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
@@ -243,8 +267,8 @@ def load_text_model(
     elif use_genai:
         model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:
-        logger.info("Using llama.cpp API")
-        model = load_text_llamacpp_pipeline(model_id)
+        logger.info("Using llama.cpp API (n_ctx=%s)", kwargs.get("llamacpp_n_ctx"))
+        model = load_text_llamacpp_pipeline(model_id, **kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM
@@ -287,16 +311,48 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
-    adapter_config = _create_genai_adapter_config(
-        adapters=kwargs.get("adapters"),
-        alphas=kwargs.get("alphas", None),
-    )
+    ov_config = ov_config or {}
 
-    return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
-        model_dir,
-        "text-to-image"
-    )
+    if device.upper().startswith("NPU"):
+        image_size = kwargs.get("image_size")
+        if image_size is None or image_size <= 0:
+            raise ValueError(
+                "A positive --image-size must be provided for text-to-image GenAI evaluation on NPU "
+                "because the pipeline must be reshaped to static dimensions before compilation"
+            )
+
+        pipe = openvino_genai.Text2ImagePipeline(model_dir)
+        guidance_scale = pipe.get_generation_config().guidance_scale
+        logger.info(
+            "Reshaping text-to-image pipeline to static shapes for NPU: "
+            f"num_images_per_prompt=1, height={image_size}, width={image_size}, guidance_scale={guidance_scale}"
+        )
+        pipe.reshape(
+            num_images_per_prompt=1,
+            height=image_size,
+            width=image_size,
+            guidance_scale=guidance_scale,
+        )
+        pipe.compile(device, **ov_config)
+
+        wrapper = GenAIModelWrapper(pipe, model_dir, "text-to-image")
+        if kwargs.get("adapters") is not None:
+            wrapper.adapter_config = _create_genai_adapter_config(
+                adapters=kwargs.get("adapters"),
+                alphas=kwargs.get("alphas", None),
+            )
+        return wrapper
+    else:
+        adapter_config = _create_genai_adapter_config(
+            adapters=kwargs.get("adapters"),
+            alphas=kwargs.get("alphas", None),
+        )
+
+        return GenAIModelWrapper(
+            openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
+            model_dir,
+            "text-to-image",
+        )
 
 
 def load_text2image_model(
@@ -310,9 +366,9 @@ def load_text2image_model(
 
         logger.info("Using HF Transformers API")
         try:
-            model = DiffusionPipeline.from_pretrained(model_id, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
         except Exception:
-            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -406,14 +462,20 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
-        model_kwargs = {"trust_remote_code": trust_remote_code, **PYTORCH_MODEL_DTYPE_KWARG}
+        model_kwargs = {"trust_remote_code": trust_remote_code}
         try:
             model_cls = None
 
             # AutoModelForVision2Seq was removed in transformers 5.0.0
             # let's try to use AutoModelForImageTextToText instead first
             transformers_version = Version(__version__)
-            if transformers_version < Version("5.0.0"):
+            if config.model_type == "gemma4_unified":
+                if transformers_version < Version("5.10.0"):
+                    raise ImportError(f"gemma4_unified requires transformers>=5.10.0, got {__version__}.")
+                from transformers import AutoModelForMultimodalLM
+
+                model_cls = AutoModelForMultimodalLM
+            elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
                 model_cls = AutoModelForVision2Seq
@@ -430,7 +492,7 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3"]:
+                elif config.model_type in ["gemma3", "gemma3n"]:
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
@@ -526,9 +588,7 @@ def load_imagetext2image_model(
         from diffusers import AutoPipelineForImage2Image
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForImage2Image.from_pretrained(
-            model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG
-        )
+        model = AutoPipelineForImage2Image.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_image2image_genai_pipeline(model_id, device, ov_config)
@@ -575,7 +635,7 @@ def load_inpainting_model(
         from diffusers import AutoPipelineForInpainting
 
         logger.info("Using HF Transformers API")
-        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+        model = AutoPipelineForInpainting.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_inpainting_genai_pipeline(model_id, device, ov_config)
@@ -637,7 +697,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
         from transformers import AutoModel
 
         logger.info("Using HF Transformers API")
-        model = AutoModel.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+        model = AutoModel.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         model = load_embedding_genai_pipeline(model_id, device, ov_config, **kwargs)
@@ -693,13 +753,11 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
         if is_qwen3_causallm(config):
             from transformers import AutoModelForCausalLM
 
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
         else:
             from transformers import AutoModelForSequenceClassification
 
-            model = AutoModelForSequenceClassification.from_pretrained(
-                model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG
-            )
+            model = AutoModelForSequenceClassification.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
         is_qwen3_model = is_qwen3(config)
@@ -754,9 +812,9 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
 
         logger.info("Using HF Transformers API")
         try:
-            model = LTXPipeline.from_pretrained(model_id, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = LTXPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, **PYTORCH_MODEL_DTYPE_KWARG)
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -820,27 +878,39 @@ def _load_speecht5_hifigan_vocoder(vocoder_path=None):
     return SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan")
 
 
+def _is_kokoro_model_id(model_id):
+    if not isinstance(model_id, str):
+        return False
+
+    # Robust detection for local exports (directory name can be arbitrary).
+    model_path = Path(model_id)
+    if model_path.is_dir() and (model_path / "voices").is_dir():
+        return True
+
+    return "kokoro" in model_id.lower()
+
+
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
-    from .speech_generation_evaluator import TextToSpeechModelWrapper
+    from .speech_generation_evaluator import KokoroModelWrapper, SpeechT5Wrapper
 
     vocoder_path = kwargs.get("vocoder_path")
 
     if use_hf:
+        if _is_kokoro_model_id(model_id):
+            logger.info("Using Kokoro HF API")
+            return KokoroModelWrapper(model_id)
+
         logger.info("Using HF Transformers API")
         from transformers import SpeechT5ForTextToSpeech
 
         remote_code, _ = _resolve_remote_code_and_config(model_id)
-        model = SpeechT5ForTextToSpeech.from_pretrained(
-            model_id,
-            trust_remote_code=remote_code,
-            **PYTORCH_MODEL_DTYPE_KWARG,
-        )
+        model = SpeechT5ForTextToSpeech.from_pretrained(model_id, trust_remote_code=remote_code)
         processor = _load_speecht5_processor(model_id, remote_code)
 
         # for HF, we need to explicitly load the vocoder.
         # Assume it's microsoft/speecht5_hifigan for now.
         vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
-        return TextToSpeechModelWrapper(model, processor, vocoder)
+        return SpeechT5Wrapper(model, processor, vocoder)
 
     if use_genai:
         logger.info("Using OpenVINO GenAI API")
@@ -848,6 +918,15 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
     logger.info("Using Optimum API")
     from optimum.intel.openvino import OVModelForTextToSpeechSeq2Seq
+
+    if _is_kokoro_model_id(model_id):
+        model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
+            model_id,
+            device=device,
+            ov_config=ov_config,
+            trust_remote_code=True,
+        )
+        return KokoroModelWrapper(model_id, ov_model=model)
 
     remote_code, model_config = _resolve_remote_code_and_config(model_id)
 
@@ -870,7 +949,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
     # For Optimum, we don't need to load vocoder as it should pick up openvino_vocoder IR by default.
     # And this currently matches GenAI behavior, which will also pick up the same openvino_vocoder IR.
-    return TextToSpeechModelWrapper(model, processor, None)
+    return SpeechT5Wrapper(model, processor, None)
 
 
 def load_model(
@@ -885,26 +964,26 @@ def load_model(
     else:
         ov_options = {}
 
+    sanitized_kwargs = _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs)
+
     if model_type == "text" or model_type == "text-chat":
-        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
+        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
-        return load_text2image_model(
-            model_id, device, ov_options, use_hf, use_genai, **kwargs
-        )
+        return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
-        kwargs["model_type"] = model_type
-        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        sanitized_kwargs["model_type"] = model_type
+        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
-        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-inpainting":
-        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-embedding":
-        return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-reranking":
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "text-to-video":
-        return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "speech-generation":
-        return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+#include <memory>
 #include <napi.h>
 
 #include <filesystem>
@@ -28,7 +29,6 @@ template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
 using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
-/** VLM generate first argument: prompt string or ChatHistory */
 using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
 
 #define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
@@ -170,8 +170,7 @@ template <>
 ov::genai::ImageGenerationPerfMetrics& unwrap<ov::genai::ImageGenerationPerfMetrics>(const Napi::Env& env,
                                                                                        const Napi::Value& value);
 
-template <>
-ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
+ov::genai::ChatHistory unwrap_chat_history(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
