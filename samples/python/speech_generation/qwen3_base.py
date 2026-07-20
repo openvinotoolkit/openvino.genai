@@ -101,9 +101,7 @@ def main():
     # A Base clone always needs a voice source: either reference audio (from which the
     # pipeline extracts the identity) or a pre-saved speaker embedding.
     if not args.ref_audio_wav_path and not args.speaker_embedding_file_path:
-        raise RuntimeError(
-            "Qwen3-TTS Base requires --ref_audio_wav_path or --speaker_embedding_file_path."
-        )
+        raise RuntimeError("Qwen3-TTS Base requires --ref_audio_wav_path or --speaker_embedding_file_path.")
 
     # Pre-saved reference codes are only meaningful in ICL mode, which requires the transcript.
     if args.ref_codec_ids_file_path and not args.ref_text.strip():
@@ -157,8 +155,7 @@ def main():
     if args.save_ref_codec_ids_file_path:
         if not result.voice_clone_ref_codec_ids:
             raise RuntimeError(
-                "No reference codes were produced to save. ICL mode (--ref_text) with "
-                "--ref_audio_wav_path is required."
+                "No reference codes were produced to save. ICL mode (--ref_text) with --ref_audio_wav_path is required."
             )
         _save_reference_codes(args.save_ref_codec_ids_file_path, result.voice_clone_ref_codec_ids)
         print(f'[Info] Saved reference codes to "{args.save_ref_codec_ids_file_path}".')
