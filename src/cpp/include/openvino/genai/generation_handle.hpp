@@ -14,9 +14,7 @@
 
 namespace ov::genai {
 
-namespace detail {
-class GenerationHandleImplAccess;
-}
+class ContinuousBatchingPipeline;
 
 enum class GenerationStatus {
     RUNNING = 0, // Default status for ongoing generation
@@ -106,7 +104,7 @@ class GenerationStream;
 
 class OPENVINO_GENAI_EXPORTS 
 GenerationHandleImpl {
-    friend class detail::GenerationHandleImplAccess;
+    friend class ContinuousBatchingPipeline;
 
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params; 

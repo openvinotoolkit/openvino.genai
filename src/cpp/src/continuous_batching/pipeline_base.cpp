@@ -26,15 +26,6 @@ std::unordered_map<std::string, ov::Tensor> deep_copy_tensors_map(
 
 namespace ov::genai {
 
-namespace detail {
-class GenerationHandleImplAccess {
-public:
-    static void set_vlm_perf_metrics(const GenerationHandle& handle, VLMPerfMetrics metrics) {
-        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
-    }
-};
-}  // namespace detail
-
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
     return m_generation_config;
 }
@@ -816,7 +807,7 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
                              token_type_ids,
                              prompt_ids,
                              m_inputs_embedder->get_lm_extra_inputs());
-        detail::GenerationHandleImplAccess::set_vlm_perf_metrics(handle, std::move(metrics));
+        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }
     return handle;
 }
@@ -867,7 +858,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
                              token_type_ids,
                              prompt_ids,
                              m_inputs_embedder->get_lm_extra_inputs());
-        detail::GenerationHandleImplAccess::set_vlm_perf_metrics(handle, std::move(metrics));
+        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }
     return handle;
 }
