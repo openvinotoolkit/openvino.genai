@@ -125,7 +125,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         def default_gen_image_fn(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
             with torch.no_grad():
                 output = model(
-                    prompt,
+                    prompt=prompt,
                     num_inference_steps=num_inference_steps,
                     output_type="pil",
                     width=self.resolution[1],

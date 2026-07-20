@@ -1,12 +1,11 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <filesystem>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <pybind11/stl_bind.h>
 #include <pybind11/functional.h>
 
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/parsers.hpp"
@@ -88,6 +87,29 @@ public:
     }
 };
 
+class ConstructableOmniSpeechStreamer : public ov::genai::OmniSpeechStreamerBase {
+    ov::genai::StreamingStatus write(const ov::Tensor& audio_chunk) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::StreamingStatus, ov::genai::OmniSpeechStreamerBase, write, audio_chunk);
+    }
+    void end() override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(void, ov::genai::OmniSpeechStreamerBase, end);
+    }
+};
+
+auto omni_speech_streamer_base_docstring = R"(
+    Base class for audio streamers. Inherit and implement write() and end()
+    to receive audio chunks during speech generation.
+
+    write(audio_chunk: ov.Tensor) -> StreamingStatus:
+        Called with each audio chunk [1, 1, N_samples] float32 PCM at 24kHz.
+        Return StreamingStatus.RUNNING to continue or STOP/CANCEL to halt.
+
+    end():
+        Called when speech generation completes (always, even on early stop).
+)";
+
 } // namespace
 
 void init_streamers(py::module_& m) {
@@ -158,4 +180,13 @@ void init_streamers(py::module_& m) {
             }, "Returns the accumulated message.")
         
         .def("reset", &TextParserStreamer::reset, "Resets the internal state of the parser streamer.");
+
+    py::class_<ov::genai::OmniSpeechStreamerBase, ConstructableOmniSpeechStreamer,
+               std::shared_ptr<ov::genai::OmniSpeechStreamerBase>>(m, "OmniSpeechStreamerBase", omni_speech_streamer_base_docstring)
+        .def(py::init<>())
+        .def("write", &ov::genai::OmniSpeechStreamerBase::write,
+             "Called with each audio chunk tensor [1, 1, N_samples]. Return StreamingStatus.",
+             py::arg("audio_chunk"))
+        .def("end", &ov::genai::OmniSpeechStreamerBase::end,
+             "Called when speech generation completes.");
 }

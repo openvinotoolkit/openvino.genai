@@ -55,12 +55,12 @@ setup(
             "optimum-intel==1.27.0",
         ],
         "llm-test-openvino": [
-            "torchaudio==2.8.0",
-            "transformers[sentencepiece]==4.57.6",
+            "torchaudio==2.11.0",
+            "transformers[sentencepiece]==5.0.0",
             "sentence_transformers==5.3.0",
-            "huggingface-hub==0.36.2",
-            "tqdm==4.68.3",
-            "optimum-intel[nncf,tests]==1.27.0",
+            "huggingface-hub==1.22.0",
+            "tqdm==4.68.4",
+            "optimum-intel[nncf,tests]==2.0.0",
         ],
         "kokoro": [
             "spacy==3.8.14",

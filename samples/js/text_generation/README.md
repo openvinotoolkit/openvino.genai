@@ -107,8 +107,18 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
-  node benchmark_genai.js [-m MODEL] [-p PROMPT] [--nw NUM_WARMUP] [-n NUM_ITER] [--mt MAX_NEW_TOKENS] [-d DEVICE]
+  node benchmark_genai.js [-m MODEL] [-p PROMPT] [-N NUM_WARMUP] [-n NUM_ITER] [-M MAX_NEW_TOKENS] [-d DEVICE]
   ```
+
+#### Options
+- `-m`, `--model`: Path to model and tokenizers base directory. [string] [required]
+- `-p`, `--prompt`: The prompt to generate text. If without `-p` and `-F`, the default prompt is `The Sky is blue because`. [string]
+- `-F`, `--prompt_file`: Read prompt from file. [string]
+- `-N`, `--num_warmup`: Number of warmup iterations. [number] [default: 1]
+- `-n`, `--num_iter`: Number of iterations. [number] [default: 3]
+- `-M`, `--max_new_tokens`: Maximal number of new tokens. [number] [default: 20]
+- `-d`, `--device`: Device to run the model on. [string] [default: "CPU"]
+
 
 ### 7. Structured Output Sample (`structured_output_sample`)
 - **Description:**
@@ -200,15 +210,6 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
 - **Notes:**
   This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation and parsing resulting output.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
-
-#### Options
-- `-m`, `--model`: Path to model and tokenizers base directory. [string] [required]
-- `-p`, `--prompt`: The prompt to generate text. If without `-p` and `--pf`, the default prompt is `The Sky is blue because`. [string]
-- `--prompt_file`, `--pf`: Read prompt from file. [string]
-- `--num_warmup`, `--nw`: Number of warmup iterations. [number] [default: 1]
-- `-n`, `--num_iter`: Number of iterations. [number] [default: 2]
-- `--max_new_tokens`, `--mt`: Maximal number of new tokens. [number] [default: 20]
-- `-d`, `--device`: Device to run the model on. [string] [default: "CPU"]
 
 ### Troubleshooting
 

@@ -55,6 +55,12 @@ void add_partial_result(std::unordered_map<uint64_t, GenerationOutput>& partial_
             }
             partial_result_iter->second.score = iteration_result.second.score;
             partial_result_iter->second.finish_reason = iteration_result.second.finish_reason;
+            // Hidden states are emitted only on the terminal push, so the last iteration that
+            // carries them wins; earlier partial iterations leave the field empty.
+            if (!iteration_result.second.intermediate_hidden_states.empty()) {
+                partial_result_iter->second.intermediate_hidden_states =
+                    std::move(iteration_result.second.intermediate_hidden_states);
+            }
         }
     }
 }

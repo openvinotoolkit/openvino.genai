@@ -43,6 +43,35 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
+    sanitized_kwargs = dict(kwargs)
+    n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
+    is_text_task = model_type in ("text", "text-chat")
+    is_llamacpp_text_backend = is_text_task and use_llamacpp and not use_hf and not use_genai
+
+    if not use_llamacpp:
+        if n_ctx is not None:
+            raise ValueError("--llamacpp-n-ctx requires --llamacpp")
+        sanitized_kwargs.pop("llamacpp_n_ctx", None)
+        return sanitized_kwargs
+
+    if is_llamacpp_text_backend:
+        if n_ctx is None:
+            sanitized_kwargs["llamacpp_n_ctx"] = 8192
+        else:
+            n_ctx_int = int(n_ctx)
+            if n_ctx_int <= 0:
+                raise ValueError("--llamacpp-n-ctx must be a positive integer")
+            sanitized_kwargs["llamacpp_n_ctx"] = n_ctx_int
+        return sanitized_kwargs
+
+    if n_ctx is not None:
+        raise ValueError("--llamacpp-n-ctx is supported only when llama.cpp is the selected text backend")
+
+    sanitized_kwargs.pop("llamacpp_n_ctx", None)
+    return sanitized_kwargs
+
+
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
     import openvino_genai
 
@@ -175,14 +204,18 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
 
-def load_text_llamacpp_pipeline(model_dir):
+def load_text_llamacpp_pipeline(model_dir, **kwargs):
     try:
         from llama_cpp import Llama
-    except ImportError:
-        logger.error(
-            "Failed to import llama_cpp package. Please install llama-cpp-python.")
-        exit(-1)
-    model = Llama(model_dir)
+    except ImportError as exc:
+        raise ModuleNotFoundError(
+            "Failed to import llama_cpp. Please install llama-cpp-python to use --llamacpp."
+        ) from exc
+    n_ctx = kwargs.get("llamacpp_n_ctx", None)
+    model_kwargs = {}
+    if n_ctx is not None:
+        model_kwargs["n_ctx"] = int(n_ctx)
+    model = Llama(model_dir, **model_kwargs)
     return model
 
 
@@ -234,8 +267,8 @@ def load_text_model(
     elif use_genai:
         model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:
-        logger.info("Using llama.cpp API")
-        model = load_text_llamacpp_pipeline(model_id)
+        logger.info("Using llama.cpp API (n_ctx=%s)", kwargs.get("llamacpp_n_ctx"))
+        model = load_text_llamacpp_pipeline(model_id, **kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM
@@ -404,7 +437,13 @@ def load_visual_text_model(
             # AutoModelForVision2Seq was removed in transformers 5.0.0
             # let's try to use AutoModelForImageTextToText instead first
             transformers_version = Version(__version__)
-            if transformers_version < Version("5.0.0"):
+            if config.model_type == "gemma4_unified":
+                if transformers_version < Version("5.10.0"):
+                    raise ImportError(f"gemma4_unified requires transformers>=5.10.0, got {__version__}.")
+                from transformers import AutoModelForMultimodalLM
+
+                model_cls = AutoModelForMultimodalLM
+            elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
                 model_cls = AutoModelForVision2Seq
@@ -421,7 +460,7 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3"]:
+                elif config.model_type in ["gemma3", "gemma3n"]:
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
@@ -893,26 +932,26 @@ def load_model(
     else:
         ov_options = {}
 
+    sanitized_kwargs = _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs)
+
     if model_type == "text" or model_type == "text-chat":
-        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **kwargs)
+        return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
-        return load_text2image_model(
-            model_id, device, ov_options, use_hf, use_genai, **kwargs
-        )
+        return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
-        kwargs["model_type"] = model_type
-        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        sanitized_kwargs["model_type"] = model_type
+        return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
-        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-inpainting":
-        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-embedding":
-        return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-reranking":
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "text-to-video":
-        return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "speech-generation":
-        return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
+        return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

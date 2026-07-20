@@ -519,6 +519,104 @@ TEST(TestScheduler, initialize_cache_uses_sequence_aware_block_rounding) {
     }
 }
 
+TEST(TestScheduler, dynamic_alloc_reserves_full_capacity_for_later_larger_prompt) {
+    // In dynamic allocation mode, a prompt that arrives after the cache was sized for a smaller
+    // one must have its capacity reserved in a single scheduling round (grow-to-fit), rather than
+    // growing m_cache_growth_num_tokens at a time across the prefill (which reallocates the whole
+    // cache each step). See openvinotoolkit/openvino.genai#3968.
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;  // small batch => prompt is chunked across steps
+    scheduler_config.num_kv_blocks = 0;            // dynamic allocation
+    scheduler_config.cache_size = 0;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    // Round 1: a small prompt sizes the cache for itself.
+    std::vector<int64_t> small_tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr small = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {small_tokens.size()}, small_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> round1 = {small};
+    std::ignore = scheduler.schedule(round1);
+    for (auto& seq : small->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+
+    // Round 2: a much larger prompt (well beyond the 256-token growth chunk) arrives.
+    const size_t large_prompt_len = 600;
+    std::vector<int64_t> large_tokens(large_prompt_len);
+    std::iota(large_tokens.begin(), large_tokens.end(), 0);
+    SequenceGroup::Ptr large = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {large_tokens.size()}, large_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> round2 = {large};
+    std::ignore = scheduler.schedule(round2);
+
+    // After a single schedule() round, the KV cache must already hold the whole large prompt.
+    const size_t blocks = orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count();
+    const size_t blocks_needed_for_prompt = (large_prompt_len + TEST_BLOCK_SIZE - 1) / TEST_BLOCK_SIZE;
+    EXPECT_GE(blocks, blocks_needed_for_prompt);
+
+    for (auto& seq : large->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+}
+
+TEST(TestScheduler, dynamic_alloc_reserves_capacity_for_new_prompt_on_top_of_running_sequence) {
+    // When a large prompt arrives while another sequence is still generating, the reservation must
+    // account for the running sequence's footprint too, so the new prompt's capacity is added on
+    // top in a single reallocation (not under-reserved). See openvinotoolkit/openvino.genai#3968.
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 32;
+    scheduler_config.num_kv_blocks = 0;  // dynamic allocation
+    scheduler_config.cache_size = 0;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 8;
+
+    auto orchestrator = init_cache_orchestrator(scheduler_config);
+    Scheduler scheduler = Scheduler(orchestrator, scheduler_config);
+
+    // Round 1: a small sequence is prefilled and advanced into the generate phase (running).
+    std::vector<int64_t> small_tokens = {0, 1, 2, 3};
+    SequenceGroup::Ptr small = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {small_tokens.size()}, small_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> running = {small};
+    std::ignore = scheduler.schedule(running);
+    small->get_running_sequences()[0]->append_token(42, 0.9f);
+    small->finish_iteration();
+    ASSERT_TRUE(small->can_generate_tokens());  // now running in generate phase
+
+    // Round 2: a much larger prompt arrives while the small one keeps running.
+    const size_t large_prompt_len = 600;
+    std::vector<int64_t> large_tokens(large_prompt_len);
+    std::iota(large_tokens.begin(), large_tokens.end(), 0);
+    SequenceGroup::Ptr large = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {large_tokens.size()}, large_tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> both = {small, large};
+    std::ignore = scheduler.schedule(both);
+
+    // Capacity must cover BOTH the running sequence's reservation and the new prompt's, reserved in
+    // one round. Targets mirror the scheduler heuristic: min(prompt_len*2, prompt_len + max_new).
+    const size_t max_new = utils::get_greedy_config().max_new_tokens;
+    auto target_blocks = [&](size_t prompt_len) {
+        const size_t tokens = std::min(prompt_len * 2, prompt_len + max_new);
+        return (tokens + TEST_BLOCK_SIZE - 1) / TEST_BLOCK_SIZE;
+    };
+    const size_t blocks = orchestrator->get_block_manager(CacheType::KV_CACHE).get_total_block_count();
+    EXPECT_GE(blocks, target_blocks(small_tokens.size()) + target_blocks(large_prompt_len));
+
+    for (auto& req : both) {
+        for (auto& seq : req->get_sequences()) {
+            scheduler.free_sequence(seq->get_id());
+        }
+    }
+}
+
 TEST(TestScheduler, linear_attention_only_initializes_fixed_size_capacity) {
     SchedulerConfig scheduler_config;
     scheduler_config.max_num_batched_tokens = 32;
@@ -2425,4 +2523,104 @@ TEST(TestScheduler, prefix_caching_embeddings_test) {
             }
          }
     }
+}
+
+TEST(TestScheduler, expected_num_scheduled_tokens_overrides_default_schedule) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 42;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    scheduler.set_expected_num_scheduled_tokens(request_id, 5);
+    EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 5);
+
+    auto out = scheduler.schedule(requests);
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 5);
+    EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    // Release scheduled sequences and acknowledge the iteration so that
+    // Scheduler / BlockManager state is consistent at destruction time.
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
+}
+
+TEST(TestScheduler, expected_num_scheduled_tokens_does_not_override_if_greater_than_available) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 43;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    // Available tokens for the request are 12; expected value above it must be ignored.
+    scheduler.set_expected_num_scheduled_tokens(request_id, 13);
+
+    auto out = scheduler.schedule(requests);
+    // Default scheduling is min(max_num_batched_tokens, available_tokens) = min(8, 12) = 8.
+    EXPECT_EQ(out.m_total_num_scheduled_tokens, 8);
+    EXPECT_FALSE(out.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
+}
+
+TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedule) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 10;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 5;
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    const uint64_t request_id = 44;
+    SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(
+        request_id,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {sequence_group};
+
+    Scheduler scheduler = Scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+
+    scheduler.set_expected_num_scheduled_tokens(request_id, 5);
+    auto out1 = scheduler.schedule(requests);
+    EXPECT_EQ(out1.m_total_num_scheduled_tokens, 5);
+
+    requests[0]->finish_iteration();
+
+    scheduler.clear_expected_num_scheduled_tokens(request_id);
+    EXPECT_EQ(scheduler.get_expected_num_scheduled_tokens(request_id), 0);
+
+    auto out2 = scheduler.schedule(requests);
+    // 7 prompt tokens remain after the first scheduling; default scheduling should now apply.
+    EXPECT_EQ(out2.m_total_num_scheduled_tokens, 7);
+    EXPECT_FALSE(out2.m_scheduled_sequence_groups_ids.empty());
+
+    for (auto& seq : sequence_group->get_sequences()) {
+        scheduler.free_sequence(seq->get_id());
+    }
+    sequence_group->finish_iteration();
 }

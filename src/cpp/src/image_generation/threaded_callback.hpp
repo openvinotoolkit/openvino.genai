@@ -21,6 +21,12 @@ public:
     ThreadedCallbackWrapper(std::function<bool(size_t, size_t, ov::Tensor&)> callback)
         : m_callback{callback} {}
 
+    ~ThreadedCallbackWrapper() noexcept {
+        if (m_worker_thread && m_worker_thread->joinable()) {
+            end();
+        }
+    }
+
     void start() {
         if (!m_callback) {
             return;
