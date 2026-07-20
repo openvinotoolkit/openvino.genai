@@ -5,6 +5,7 @@ from typing import Union, Optional
 from packaging.version import Version
 
 import os
+import sys
 import json
 import torch
 import random
@@ -59,6 +60,35 @@ def patch_diffusers():
     from diffusers.utils import torch_utils
 
     torch_utils.randn_tensor = new_randn_tensor
+
+
+def patch_speechbrain_lazy_import_guard_for_windows() -> None:
+    """Make SpeechBrain's lazy-import guard skip ``inspect.py`` callers on Windows too.
+
+    Its guard uses ``endswith("/inspect.py")`` (POSIX only), so on Windows an ``inspect``
+    scan of ``sys.modules`` imports optional integrations (``k2_fsa``, ``flair``, ...) and
+    crashes on the first missing one.
+    """
+    if sys.platform != "win32":
+        return
+
+    from speechbrain.utils import importutils
+
+    original_ensure_module = importutils.LazyModule.ensure_module
+    if getattr(original_ensure_module, "_win_inspect_guard_fix", False):
+        return
+
+    def ensure_module(self, stacklevel: int):
+        try:
+            filename = sys._getframe(stacklevel + 1).f_code.co_filename
+        except ValueError:
+            filename = ""
+        if os.path.basename(filename) == "inspect.py":
+            raise AttributeError()
+        return original_ensure_module(self, stacklevel)
+
+    ensure_module._win_inspect_guard_fix = True
+    importutils.LazyModule.ensure_module = ensure_module
 
 
 @contextmanager
