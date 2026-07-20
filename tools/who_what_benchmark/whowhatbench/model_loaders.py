@@ -72,6 +72,12 @@ def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     return sanitized_kwargs
 
 
+def _get_hf_device_map(device: str) -> str:
+    if not torch.cuda.is_available() or device.strip().lower() == "cpu":
+        return "cpu"
+    return device.strip().lower()
+
+
 def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=False):
     import openvino_genai
 
@@ -452,7 +458,7 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
-            model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+            model = model_cls.from_pretrained(model_id, device_map=_get_hf_device_map(device), **model_kwargs)
         except ValueError:
             try:
                 model_cls = AutoModel
@@ -463,7 +469,7 @@ def load_visual_text_model(
                 elif config.model_type in ["gemma3", "gemma3n"]:
                     model_cls = AutoModelForCausalLM
 
-                model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+                model = model_cls.from_pretrained(model_id, device_map=_get_hf_device_map(device), **model_kwargs)
             except ValueError:
                 if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
                     if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
@@ -475,7 +481,7 @@ def load_visual_text_model(
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    device_map=device.lower(),
+                    device_map=_get_hf_device_map(device),
                     **from_pretrained_kwargs,
                     **model_kwargs,
                 )
