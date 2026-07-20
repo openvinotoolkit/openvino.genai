@@ -1,13 +1,15 @@
-type TextEmbeddingsModelType = {
+type EmbeddingsModelType = {
   architecture: string;
+  modality: string;
   models: Array<{
     links: string[];
   }>;
 };
 
-export const TEXT_EMBEDDINGS_MODELS: TextEmbeddingsModelType[] = [
+export const EMBEDDINGS_MODELS: EmbeddingsModelType[] = [
   {
     architecture: 'BertModel',
+    modality: 'Text',
     models: [
       {
         links: [
@@ -24,6 +26,7 @@ export const TEXT_EMBEDDINGS_MODELS: TextEmbeddingsModelType[] = [
   },
   {
     architecture: 'MPNetForMaskedLM',
+    modality: 'Text',
     models: [
       {
         links: [
@@ -35,6 +38,7 @@ export const TEXT_EMBEDDINGS_MODELS: TextEmbeddingsModelType[] = [
   },
   {
     architecture: 'RobertaForMaskedLM',
+    modality: 'Text',
     models: [
       {
         links: ['https://huggingface.co/sentence-transformers/all-distilroberta-v1'],
@@ -43,6 +47,7 @@ export const TEXT_EMBEDDINGS_MODELS: TextEmbeddingsModelType[] = [
   },
   {
     architecture: 'XLMRobertaModel',
+    modality: 'Text',
     models: [
       {
         links: [
@@ -55,12 +60,25 @@ export const TEXT_EMBEDDINGS_MODELS: TextEmbeddingsModelType[] = [
   },
   {
     architecture: 'Qwen3ForCausalLM',
+    modality: 'Text',
     models: [
       {
         links: [
           'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B',
           'https://huggingface.co/Qwen/Qwen3-Embedding-4B',
           'https://huggingface.co/Qwen/Qwen3-Embedding-8B',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'Qwen3VLModel',
+    modality: 'Text, Image, Video',
+    models: [
+      {
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B',
+          'https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B',
         ],
       },
     ],

@@ -10,10 +10,14 @@ import UsageOptionsSection from './_sections/_usage_options/index.mdx';
 
 `EmbeddingPipeline` computes embedding vectors for text, images, and videos with a single multimodal embedding model. It enables cross-modal use cases such as retrieving the most relevant image or video for a text query.
 
+:::info
+We recommend using `EmbeddingPipeline` instead of `TextEmbeddingPipeline`. It is more generic — it handles text, images, and videos — while providing all of the features that were available in `TextEmbeddingPipeline`.
+:::
+
 <ConvertModelSection>
     Download and convert a multimodal embedding model (e.g. [Qwen/Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B)) to OpenVINO format from Hugging Face:
 
-    <OptimumCLI model='Qwen/Qwen3-VL-Embedding-2B' outputDir='Qwen3-VL-Embedding-2B' task='image-text-to-text' />
+    <OptimumCLI model='Qwen/Qwen3-VL-Embedding-2B' outputDir='Qwen3-VL-Embedding-2B' task='feature-extraction'/>
 </ConvertModelSection>
 
 <RunModelSection />

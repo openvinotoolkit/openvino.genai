@@ -1,7 +1,7 @@
-## Additional Usage Options
+import OptimumCLI from '@site/src/components/OptimumCLI';
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag) multimodal embedding samples (`image_video_embedding`).
+Check out the [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag/image_video_embedding.py) RAG samples for multimodal embedding examples.
 :::
 
 ### Embedding Inputs
@@ -40,9 +40,11 @@ Some models support a special instruction that describes how an input should be 
     </TabItemCpp>
 </LanguageTabs>
 
+ ## Additional Usage Options
+
 ### Pipeline Configuration
 
-The text-embedding behavior of the pipeline can be tuned by passing configuration parameters at construction time. They can be passed directly as properties or bundled into a `TextEmbeddingPipeline.Config` and supplied via `text_embedding_config`.
+The embedding behavior of the pipeline can be tuned by passing configuration parameters at construction time. They can be passed directly as properties or bundled into a `TextEmbeddingPipeline.Config` and supplied via `text_embedding_config`.
 
 #### Pooling Strategies
 
@@ -90,7 +92,13 @@ Some models support special instructions for queries and documents. Use `query_i
 `query_instruction` and `embed_instruction` apply only to text-only pipelines. For multimodal inputs, set a per-call instruction with the [`embedding_prompt`](#embedding-prompt) parameter instead.
 :::
 
-### Example: Multimodal Retrieval
+### Example: Text-Only Mode
+
+Download and convert a text embedding model (e.g. [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
+
+<OptimumCLI model='BAAI/bge-small-en-v1.5' outputDir='bge-small-en-v1_5_ov' task='feature-extraction' />
+
+See all supported [Embeddings Models](/docs/supported-models/#embeddings-models).
 
 <LanguageTabs>
     <TabItemPython>
@@ -112,14 +120,6 @@ Some models support special instructions for queries and documents. Use `query_i
 
         # Embed the text query
         query = pipeline.embed("a photo of a cat").embeddings
-        query_vec = np.asarray(query.data, dtype=np.float32).reshape(-1)
-
-        # Embed an image and compare it with the query
-        image = ov.Tensor(np.array(Image.open("cat.jpg").convert("RGB")))
-        image_vec = np.asarray(pipeline.embed(images=[image]).embeddings.data, dtype=np.float32).reshape(-1)
-
-        similarity = np.dot(query_vec, image_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(image_vec))
-        print("similarity:", similarity)
         ```
     </TabItemPython>
     <TabItemCpp>
@@ -143,44 +143,7 @@ Some models support special instructions for queries and documents. Use `query_i
 
         // Embed the text query
         ov::genai::EmbedResult query = pipeline.embed("a photo of a cat");
-
-        // Embed an image (image is an ov::Tensor of shape [H, W, 3], uint8)
-        ov::genai::EmbedResult image_embedding = pipeline.embed(std::string{}, {image});
-
-        // Compare query.embeddings with image_embedding.embeddings (e.g. cosine similarity)
         ```
     </TabItemCpp>
 </LanguageTabs>
 
-### Text-Only Mode
-
-`EmbeddingPipeline` can also be used with text-only embedding models. Simply pass text to `embed()` and omit the `images` and `videos` arguments:
-
-<LanguageTabs>
-    <TabItemPython>
-        ```python
-        import openvino_genai as ov_genai
-
-        pipeline = ov_genai.EmbeddingPipeline(models_path, "CPU")
-
-        # Embed a single text or a batch of texts
-        embeddings = pipeline.embed(["What is the capital of France?", "The capital of France is Paris."]).embeddings
-        ```
-    </TabItemPython>
-    <TabItemCpp>
-        ```cpp
-        #include "openvino/genai/rag/embedding_pipeline.hpp"
-
-        ov::genai::EmbeddingPipeline pipeline(models_path, "CPU");
-
-        // Embed a single text or a batch of texts
-        ov::genai::EmbedResult embeddings = pipeline.embed(
-            std::vector<std::string>{"What is the capital of France?", "The capital of France is Paris."}
-        );
-        ```
-    </TabItemCpp>
-</LanguageTabs>
-
-:::info
-For the full list of configuration options, see the [TextEmbeddingPipeline API Reference](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.TextEmbeddingPipeline.html).
-:::
