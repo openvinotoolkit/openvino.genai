@@ -182,7 +182,13 @@ class BenchPrompt(dict):
             return
         self._probed = True
 
-        if self.get("media"):
+        # Image probing is skipped when the prompt carries audio. speech_to_text
+        # prompts store their audio path under the 'audio' key (populated by
+        # BenchPrompter._load_prompts); a 'media' key on such a prompt would be
+        # an audio path, not an image, and PIL-probing it would emit spurious
+        # warnings and waste work. Guarding on 'audio' keeps probe() correct
+        # regardless of which key the audio path arrives under.
+        if self.get("media") and not self.get("audio"):
             self._image_size = self._get_image_size(self["media"])
 
         if self.get("video"):
@@ -307,7 +313,9 @@ class BenchPrompt(dict):
                 parts.append(f"text:{word_count}w")
 
         # ---- image (optionally decorated with mask coverage fraction) ----
-        if self.get("media"):
+        # Mirror probe(): a prompt carrying audio treats 'media' as audio, not
+        # an image, so it is not rendered as an image modality here.
+        if self.get("media") and not self.get("audio"):
             if self._image_size:
                 w, h = self._image_size
                 if self.get("mask_image"):
@@ -350,7 +358,7 @@ class BenchPrompt(dict):
         prompt_repr = repr(self)
         log.info(f"{prefix} Prompt: {prompt_repr}")
 
-    def stamp_repr(self, iter_data_list, start_index, batch_size=1):
+    def stamp_repr(self, iter_data_list, start_index, batch_size=1, input_is_text_only=True):
         """Adopt the tokenized prompt length and tag ``repr`` onto new records.
 
         Callers capture ``len(iter_data_list)`` **before** invoking the
@@ -373,16 +381,27 @@ class BenchPrompt(dict):
         the only meaningful unit, since word count does not determine how many
         tokens the tokenizer produces.  ``batch_size`` divides the recorded
         value back to a per-prompt figure.
+
+        ``input_is_text_only`` guards *what* ``input_size`` measures.  The
+        prompt-length figure must describe the **text** prompt only, so it may
+        be adopted just when ``input_size`` counts text tokens alone (text
+        generation, embeddings, TTS, rerank, and image/video generation whose
+        input_ids come solely from the text prompt).  For visual-language
+        models ``input_size`` conflates text with image/video tokens, so the
+        caller passes ``input_is_text_only=False`` and the text length falls
+        back to the (text-only) word count rather than reporting a token count
+        inflated by non-text tokens.
         """
         new_records = iter_data_list[start_index:]
 
-        sizes = [
-            r["input_size"]
-            for r in new_records
-            if isinstance(r.get("input_size"), (int, float)) and r["input_size"] > 0
-        ]
-        if sizes and batch_size:
-            self._token_count = int(max(sizes) // batch_size)
+        if input_is_text_only and batch_size:
+            sizes = [
+                r["input_size"]
+                for r in new_records
+                if isinstance(r.get("input_size"), (int, float)) and r["input_size"] > 0
+            ]
+            if sizes:
+                self._token_count = int(max(sizes) // batch_size)
 
         prompt_repr = repr(self)
         for record in new_records:
@@ -443,8 +462,10 @@ _PROMPT_SPECS = {
     "image_gen": _PromptSpec(_image_gen_input_key, parse_image_json_data, path_keys=("media", "mask_image")),
     "video_gen": _PromptSpec(["prompt", "negative_prompt"], parse_video_json_data),
     "speech_to_text": _PromptSpec(
-        "media", parse_speech_json_data,
-        path_keys=("media",), rename={"media": "audio"},
+        "media",
+        parse_speech_json_data,
+        path_keys=("media",),
+        rename={"media": "audio"},
         nonjson_wrap=lambda item: {"audio": item},
     ),
     "ldm_super_resolution": _PromptSpec("prompt", parse_image_json_data, path_keys=("prompt",)),
@@ -528,18 +549,22 @@ class BenchPrompter(list):
             # parse_text_json_data returns plain strings; all other parsers
             # return dicts — both are accepted by BenchPrompt.__init__.
             raw_list = spec.parse(output_data_list)
-            # is_json_data is only True when a prompt_file was supplied, but
-            # keep the guard explicit: media paths are resolved relative to it.
+            # Path resolution needs the prompt file to resolve relative paths,
+            # so it is applied only when one is present.  Key renames (e.g.
+            # speech_to_text 'media' -> 'audio') must happen unconditionally so
+            # downstream consumers always find the expected key — decoupling the
+            # rename from prompt_file avoids a latent KeyError on the (currently
+            # unreachable) JSON-without-prompt_file path.
             prompt_file = args.get("prompt_file")
-            if prompt_file and (spec.path_keys or spec.rename):
-                base = prompt_file[0]
-                for entry in raw_list:
+            base = prompt_file[0] if prompt_file else None
+            for entry in raw_list:
+                if base is not None:
                     for key in spec.path_keys:
                         if key in entry:
                             entry[key] = resolve_media_file_path(entry[key], base)
-                    for src, dst in spec.rename.items():
-                        if src in entry:
-                            entry[dst] = entry.pop(src)
+                for src, dst in spec.rename.items():
+                    if src in entry:
+                        entry[dst] = entry.pop(src)
         elif spec.nonjson_wrap is not None:
             raw_list = [spec.nonjson_wrap(item) for item in output_data_list]
         else:
@@ -703,5 +728,9 @@ class BenchPrompter(list):
                         input_data._image_size = pil_img.size
                     img = ov.Tensor(np.array(pil_img)[None]) if genai_flag else pil_img
                     images.append(img)
-            prompts.append(input_data["prompt"])
+            # 'prompt' is optional (e.g. pure image / audio entries); default
+            # to an empty string so the returned prompts list stays aligned
+            # with inputs and never raises KeyError (matches the class docstring
+            # which documents 'prompt' as optional).
+            prompts.append(input_data.get("prompt", ""))
         return prompts, images, videos
