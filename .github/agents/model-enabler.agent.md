@@ -76,12 +76,6 @@ Revalidate with **model-checker**, passing the same Hugging Face model ID or
 local OpenVINO IR directory used during initial validation. Do not replace a
 failing local-artifact check with success from another model.
 
-If any GenAI source file changed, rebuild the edited checkout before running
-model-checker or direct inference. Verify `openvino_genai.__file__` resolves to
-the local build and that its linked OpenVINO libraries match the active
-runtime. A result produced by an installed/prebuilt wheel does not validate
-local source changes.
-
 For every newly enabled VLM, add the repository test coverage required by the
 `vlm-model-enabler` skill. GenAI source changes without a corresponding
 tiny-random test are incomplete.
