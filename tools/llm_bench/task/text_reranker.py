@@ -391,7 +391,7 @@ def run_text_reranker_benchmark(
         iter_data_list.append(
             launch(text_reranker_pipeline, num, p_idx, iter_timestamp, prompt["prompt"], proc_id, bench_hook)
         )
-        prompt.stamp_repr(iter_data_list, before)
+        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False, True, latency_unit="text")
     return iter_data_list, pretrain_time, iter_timestamp
