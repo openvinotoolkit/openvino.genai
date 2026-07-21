@@ -390,7 +390,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_num_scheduled_tokens = 0;
     // context length of longest sequence within a group
     size_t m_max_content_len = 0;
-    // max validation length within a group to check generated tokens
+    // Mutually exclusive: speculative candidates to validate or deferred jump tokens to KV-forward.
     size_t m_num_validation_tokens = 0;
     DeferredKVProcessingMode m_deferred_kv_processing_mode = DeferredKVProcessingMode::NONE;
     size_t m_num_deferred_kv_tokens_left = 0;

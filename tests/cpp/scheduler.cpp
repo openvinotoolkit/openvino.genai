@@ -2723,3 +2723,47 @@ TEST(TestScheduler, deferred_kv_processing_preserves_state_after_cache_retry) {
 
     scheduler.free_sequence(deferred_sequence->get_id());
 }
+
+TEST(TestScheduler, speculative_validation_tokens_survive_cache_retry) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 2;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<int64_t> prompt = {0, 1, 2};
+    auto regular_group = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {prompt.size()}, prompt.data()), utils::get_greedy_config());
+    auto validation_group = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {prompt.size()}, prompt.data()), utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {regular_group, validation_group};
+
+    Scheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::ignore = scheduler.schedule(requests);
+    regular_group->finish_iteration();
+    validation_group->finish_iteration();
+
+    auto regular_sequence = regular_group->get_running_sequences()[0];
+    regular_sequence->append_token(10, 0.0f);
+    auto validation_sequence = validation_group->get_running_sequences()[0];
+    validation_sequence->append_token(20, 0.0f);
+    validation_sequence->append_token(21, 0.0f);
+    validation_group->set_num_validated_tokens(2);
+
+    auto pressured_out = scheduler.schedule(requests);
+    EXPECT_EQ(pressured_out.m_total_num_scheduled_tokens, 1);
+    EXPECT_EQ(validation_group->get_num_scheduled_tokens(), 0);
+    EXPECT_EQ(validation_group->get_num_tokens_to_validate(), 2);
+
+    regular_group->finish_iteration();
+    regular_sequence->set_status(SequenceStatus::FINISHED);
+    scheduler.free_sequence(regular_sequence->get_id());
+    requests.erase(requests.begin());
+
+    auto retry_out = scheduler.schedule(requests);
+    EXPECT_EQ(retry_out.m_total_num_scheduled_tokens, 3);
+    EXPECT_EQ(validation_group->get_num_scheduled_tokens(), 3);
+    EXPECT_EQ(validation_group->get_num_tokens_to_validate(), 2);
+
+    scheduler.free_sequence(validation_sequence->get_id());
+}

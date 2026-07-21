@@ -515,8 +515,9 @@ private:
 
                 _apply_preemption(sequence_group_id, sequence_groups);
 
-                // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
+                // If cache pressure cannot be resolved, retry this group's pending work later.
                 if (!m_cache_orchestrator->can_append_slots(sequence_group)) {
+                    // Preserve validation tokens for speculative or deferred-KV processing.
                     sequence_group->unschedule_tokens();
                     continue;
                 }

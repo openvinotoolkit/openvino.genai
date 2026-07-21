@@ -97,6 +97,35 @@ def test_continuous_batching_const_string_jump_forward_reduces_model_iterations(
     assert jump_forward_iterations < default_iterations
 
 
+def test_continuous_batching_jump_forward_counts_tokens_for_repetition_penalty(jump_forward_cb_pipe):
+    tokenizer = jump_forward_cb_pipe.get_tokenizer()
+    prompt_ids = tokenizer.encode("test").input_ids
+    grammar = SOC.ConstString("constant_string0") + (SOC.ConstString("0") | SOC.ConstString("1"))
+
+    def generate(repetition_penalty, enable_jump_forward):
+        config = ov_genai.GenerationConfig(
+            max_new_tokens=16,
+            do_sample=False,
+            repetition_penalty=repetition_penalty,
+        )
+        config.structured_output_config = SOC(
+            structural_tags_config=grammar,
+            enable_jump_forward=enable_jump_forward,
+        )
+        return jump_forward_cb_pipe.generate([prompt_ids], [config])[0]
+
+    unpenalized_result = generate(repetition_penalty=1.0, enable_jump_forward=True)
+    penalized_result = generate(repetition_penalty=100.0, enable_jump_forward=True)
+    reference_result = generate(repetition_penalty=100.0, enable_jump_forward=False)
+
+    assert tokenizer.decode(unpenalized_result.m_generation_ids[0]) == "constant_string00"
+    assert tokenizer.decode(penalized_result.m_generation_ids[0]) == "constant_string01"
+    assert tokenizer.decode(reference_result.m_generation_ids[0]) == "constant_string01"
+    assert len(penalized_result.perf_metrics.raw_metrics.m_durations) < len(
+        reference_result.perf_metrics.raw_metrics.m_durations
+    )
+
+
 @pytest.mark.parametrize(
     "config_kwargs,error",
     [
