@@ -20,6 +20,7 @@ public:
     virtual ov::Tensor infer(ov::Tensor sample, ov::Tensor timestep) = 0;
     virtual void export_model(const std::filesystem::path& blob_path) = 0;
     virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) = 0;
+    virtual void import_model(const ov::Tensor& blob_tensor, const std::string& device, const ov::AnyMap& properties) = 0;
 
     // utility function to resize model given optional dimensions.
     static void reshape(std::shared_ptr<ov::Model> model,

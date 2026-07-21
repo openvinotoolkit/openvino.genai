@@ -394,6 +394,13 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
                                const ov::AnyMap& properties);
 
 /**
+ * @brief Imports a compiled model from a blob tensor previously exported using export_model and read into an ov::Tensor.
+ */
+ov::CompiledModel import_model(const ov::Tensor& blob_tensor,
+                               const std::string& device,
+                               const ov::AnyMap& properties);
+
+/**
  * @brief Exports a compiled model to a blob file for later use with import_model.
  */
 void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path);
