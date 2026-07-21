@@ -23,11 +23,11 @@
 
 #include "json_utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "sampling/logit_processor.hpp"
+#include "sampling/logit_transformers.hpp"
 #include "utils.hpp"
 
 namespace {
-
-using json = nlohmann::json;
 
 constexpr const char* TALKER_LANGUAGE_NAME = "openvino_talker_language_model.xml";
 constexpr const char* TALKER_EMBEDDING_NAME = "openvino_talker_embedding_model.xml";
@@ -578,7 +578,7 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
     std::ifstream config_stream(config_path);
     OPENVINO_ASSERT(config_stream.is_open(), "Failed to open ", config_path);
 
-    json config = json::parse(config_stream);
+    nlohmann::json config = nlohmann::json::parse(config_stream);
 
     m_tts_model_type = to_lower(config.value("tts_model_type", std::string("custom_voice")));
 
@@ -586,7 +586,7 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
     m_ids.tts_eos_token_id = config.value("tts_eos_token_id", -1);
     m_ids.tts_pad_token_id = config.value("tts_pad_token_id", -1);
 
-    const json talker = config.at("talker_config");
+    const nlohmann::json talker = config.at("talker_config");
     m_ids.codec_bos_id = talker.value("codec_bos_id", -1);
     m_ids.codec_pad_id = talker.value("codec_pad_id", -1);
     m_ids.codec_eos_token_id = talker.value("codec_eos_token_id", -1);
@@ -632,7 +632,7 @@ void Qwen3TTSImpl::init_config(const std::filesystem::path& models_path) {
     if (std::filesystem::exists(speech_tokenizer_config_path)) {
         std::ifstream speech_cfg_stream(speech_tokenizer_config_path);
         if (speech_cfg_stream.is_open()) {
-            json speech_cfg = json::parse(speech_cfg_stream);
+            nlohmann::json speech_cfg = nlohmann::json::parse(speech_cfg_stream);
             m_output_sample_rate = speech_cfg.value("output_sample_rate", static_cast<uint32_t>(24000));
             m_decoder_upsample = speech_cfg.value("decode_upsample_rate", static_cast<uint32_t>(1920));
             m_speech_tokenizer_input_sample_rate = speech_cfg.value("input_sample_rate", static_cast<uint32_t>(24000));
@@ -1181,89 +1181,94 @@ int64_t Qwen3TTSImpl::sample_token_from_logits(const ov::Tensor& logits,
         scores[i] = s;
     }
 
-    if (generation_config.repetition_penalty != 1.0f && !generated.empty()) {
-        for (int64_t t : generated) {
-            if (t >= 0 && static_cast<size_t>(t) < scores.size()) {
-                scores[static_cast<size_t>(t)] /= generation_config.repetition_penalty;
-            }
-        }
-    }
+    // Reuse shared GenAI sampling transforms (repetition penalty, temperature,
+    // top-k/top-p/min-p, structured transformers if configured later).
+    ov::genai::Logits logits_view(scores.data(), vocab);
+    ov::genai::LogitProcessor logit_processor(generation_config, generated);
+    logit_processor.update_generated_len(generated.size());
+    logit_processor.apply(logits_view);
 
-    const float temperature = generation_config.temperature;
-    if (temperature != 1.0f && temperature > 0.0f) {
-        for (auto& s : scores) {
-            s /= temperature;
+    auto greedy_pick = [&]() -> int64_t {
+        if (logits_view.is_vector_initialized()) {
+            const auto it = std::max_element(logits_view.m_vector.begin(), logits_view.m_vector.end(),
+                                             [](const ov::genai::Token& lhs, const ov::genai::Token& rhs) {
+                                                 return lhs.m_log_prob < rhs.m_log_prob;
+                                             });
+            return (it != logits_view.m_vector.end()) ? it->m_index : 0;
         }
-    }
+        return static_cast<int64_t>(std::distance(scores.begin(), std::max_element(scores.begin(), scores.end())));
+    };
 
     if (!generation_config.do_sample) {
-        return static_cast<int64_t>(std::distance(scores.begin(), std::max_element(scores.begin(), scores.end())));
+        return greedy_pick();
     }
 
-        // Stochastic sampling: seed parameter only used here (ignored when do_sample=false with argmax)
-    std::vector<size_t> idx(vocab);
-    std::iota(idx.begin(), idx.end(), static_cast<size_t>(0));
-    std::sort(idx.begin(), idx.end(), [&](size_t a, size_t b) {
-        return scores[a] > scores[b];
-    });
+    auto sample_from_probs = [&](const std::vector<float>& probs,
+                                 const std::vector<int64_t>& token_ids) -> int64_t {
+        OPENVINO_ASSERT(!probs.empty() && probs.size() == token_ids.size(),
+                        "Invalid probability vector for sampling");
+        std::discrete_distribution<size_t> dist(probs.begin(), probs.end());
+        return token_ids[dist(rng)];
+    };
 
-    size_t keep_k = idx.size();
-    if (generation_config.top_k != std::numeric_limits<size_t>::max()) {
-        keep_k = std::min(keep_k, generation_config.top_k);
-    }
-
-    std::vector<size_t> kept;
-    kept.reserve(keep_k);
-    for (size_t i = 0; i < keep_k; ++i) {
-        if (std::isfinite(scores[idx[i]])) {
-            kept.push_back(idx[i]);
+    if (logits_view.m_defer_expf) {
+        OPENVINO_ASSERT(logits_view.is_vector_initialized(),
+                        "defer_expf path requires initialized logits vector");
+        float max_val = logits_view.m_vector[0].m_log_prob;
+        for (size_t i = 1; i < logits_view.m_size; ++i) {
+            max_val = std::max(max_val, logits_view.m_vector[i].m_log_prob);
         }
-    }
 
-    if (kept.empty()) {
-        return static_cast<int64_t>(idx[0]);
+        std::vector<float> weights;
+        std::vector<int64_t> ids;
+        weights.reserve(logits_view.m_size);
+        ids.reserve(logits_view.m_size);
+        float sum_w = 0.0f;
+        for (size_t i = 0; i < logits_view.m_size; ++i) {
+            float w = std::exp(logits_view.m_vector[i].m_log_prob - max_val);
+            if (!std::isfinite(w) || w < 0.0f) {
+                w = 0.0f;
+            }
+            weights.push_back(w);
+            ids.push_back(logits_view.m_vector[i].m_index);
+            sum_w += w;
+        }
+
+        if (!(sum_w > 0.0f && std::isfinite(sum_w))) {
+            return ids.empty() ? greedy_pick() : ids.front();
+        }
+        return sample_from_probs(weights, ids);
     }
 
     std::vector<float> probs;
-    probs.reserve(kept.size());
-    float max_score = -std::numeric_limits<float>::infinity();
-    for (size_t id : kept) {
-        max_score = std::max(max_score, scores[id]);
-    }
-    for (size_t id : kept) {
-        probs.push_back(std::exp(scores[id] - max_score));
-    }
-
-    float norm = std::accumulate(probs.begin(), probs.end(), 0.0f);
-    if (norm <= 0.0f) {
-        return static_cast<int64_t>(kept[0]);
-    }
-
-    for (auto& p : probs) {
-        p /= norm;
-    }
-
-    if (generation_config.top_p < 1.0f) {
-        float cumulative = 0.0f;
-        size_t last = 0;
-        for (; last < probs.size(); ++last) {
-            cumulative += probs[last];
-            if (cumulative >= generation_config.top_p) {
-                break;
+    std::vector<int64_t> ids;
+    if (logits_view.is_vector_initialized()) {
+        probs.reserve(logits_view.m_size);
+        ids.reserve(logits_view.m_size);
+        for (size_t i = 0; i < logits_view.m_size; ++i) {
+            const auto& t = logits_view.m_vector[i];
+            if (std::isfinite(t.m_log_prob) && t.m_log_prob > 0.0f) {
+                probs.push_back(t.m_log_prob);
+                ids.push_back(t.m_index);
             }
         }
-        probs.resize(last + 1);
-        kept.resize(last + 1);
-        float renorm = std::accumulate(probs.begin(), probs.end(), 0.0f);
-        if (renorm > 0.0f) {
-            for (auto& p : probs) {
-                p /= renorm;
+    } else {
+        probs.reserve(vocab);
+        ids.reserve(vocab);
+        for (size_t i = 0; i < vocab; ++i) {
+            const float p = scores[i];
+            if (std::isfinite(p) && p > 0.0f) {
+                probs.push_back(p);
+                ids.push_back(static_cast<int64_t>(i));
             }
         }
     }
 
-    std::discrete_distribution<size_t> dist(probs.begin(), probs.end());
-    return static_cast<int64_t>(kept[dist(rng)]);
+    if (probs.empty()) {
+        return greedy_pick();
+    }
+
+    return sample_from_probs(probs, ids);
 }
 
 std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_hidden,
