@@ -157,6 +157,7 @@ def gen_data_to_csv(
     result['prompt_idx'] = iter_data['prompt_idx']
     chat_idx = iter_data.get("chat_idx", "")
     result["chat_idx"] = chat_idx
+    result['prompt_repr'] = iter_data.get('prompt_repr', '')
     result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
     input_idx = chat_idx if chat_idx != "" else iter_data["prompt_idx"]
@@ -206,6 +207,7 @@ def write_result(
         f"max_increase_sys_mem({mem_unit.value})",
         "prompt_idx",
         "chat_idx",
+        "prompt_repr",
         f"1st_infer_latency({first_latenct_unit})",
         "2nd_infer_avg_latency(ms)",
         "num_beams",
