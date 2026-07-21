@@ -185,7 +185,7 @@ Analyzed **<N>** failed pipeline(s) on commit `<short-sha>`.
 <trimmed raw log excerpt, ≤ 30 lines, with file paths/line numbers verbatim>
 ```
 
-**Root cause**: <2–6 sentences explaining why the failure occurred, referencing PR-changed files when relevant>
+**Root cause**: <2–5 sentences explaining why the failure occurred, referencing PR-changed files when relevant>
 ~~~
 
 Repeat the numbered per-pipeline section for every failed pipeline. Keep excerpts short and use separate fenced blocks for distinct errors. If a failure cannot be localized within the inspection limits, mark it **needs human triage** and include the log evidence collected so far.
