@@ -180,6 +180,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        "optimum-intel-internal-testing/tiny-random-glm-edge-v",
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -187,6 +188,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
+        "optimum-intel-internal-testing/tiny-random-glm-edge-v",
         *VIDEO_MODEL_IDS,
     ]
 
@@ -339,6 +341,11 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
+    if model_id == "optimum-intel-internal-testing/tiny-random-glm-edge-v":
+        pytest.skip(
+            "Tiny-random GLM-Edge-V (vision) fixture not yet published to HuggingFace Hub. "
+            "Enable when optimum-intel-internal-testing/tiny-random-glm-edge-v is available."
+        )
 
 
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:

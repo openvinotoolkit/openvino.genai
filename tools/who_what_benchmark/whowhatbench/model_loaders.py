@@ -463,6 +463,7 @@ def load_visual_text_model(
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
         model_kwargs = {"trust_remote_code": trust_remote_code}
+        model = None
         try:
             model_cls = None
 
@@ -475,6 +476,18 @@ def load_visual_text_model(
                 from transformers import AutoModelForMultimodalLM
 
                 model_cls = AutoModelForMultimodalLM
+            elif config.model_type == "glm" and hasattr(config, "auto_map") and "AutoModelForCausalLM" in config.auto_map:
+                # GLM has a remote-code GlmForCausalLM with pixel_values support.
+                # Installed transformers also has a GlmForCausalLM (text-only), which
+                # AutoModelForCausalLM resolves to and shadows the remote code version.
+                # Load the vision-capable GlmForCausalLM directly from the remote code module.
+                from transformers.dynamic_module_utils import get_class_from_dynamic_module
+
+                glm_cls = get_class_from_dynamic_module(
+                    config.auto_map["AutoModelForCausalLM"],
+                    model_id,
+                )
+                model = glm_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
@@ -484,7 +497,8 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
-            model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
+            if model is None:
+                model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:
             try:
                 model_cls = AutoModel
@@ -492,7 +506,7 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3", "gemma3n"]:
+                elif config.model_type in ["gemma3", "gemma3n", "glm"]:
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)

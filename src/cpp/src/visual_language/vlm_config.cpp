@@ -34,6 +34,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
+        {"glm", VLMModelType::GLM},
     };
 
     auto it = model_types_map.find(value);
@@ -122,6 +123,12 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
                 speaker_ids[key] = val.get<int64_t>();
             }
         }
+    }
+
+    // GLM (GLM-Edge-V): read boi_token_id and vision image size from config.json
+    if (model_type == VLMModelType::GLM) {
+        read_json_param(parsed, "boi_token_id", glm_boi_token_id);
+        read_json_param(parsed, "vision_config.image_size", vision_config_image_size);
     }
 }
 
