@@ -456,6 +456,22 @@ def load_visual_text_model(
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+        # Some VLMs (e.g. GLM-Edge-V, config.model_type == "glm") reuse a
+        # built-in config type but ship the actual multimodal model class via a
+        # remote-code `auto_map`. In that case AutoConfig(trust_remote_code=False)
+        # succeeds, yet loading the model without trust_remote_code silently
+        # falls back to the built-in text-only class and drops the vision tower.
+        # Honor the config's auto_map for the model-loading entries so the real
+        # multimodal implementation is used. This is generic metadata handling,
+        # not a per-model special case.
+        if not trust_remote_code:
+            auto_map = getattr(config, "auto_map", None)
+            if isinstance(auto_map, dict) and any(
+                key.startswith("AutoModel") and "--" not in str(value)
+                for key, value in auto_map.items()
+            ):
+                trust_remote_code = True
+
         # force downloading to .cache image_processing file, as it is not happened by default
         if config.model_type.lower() in ["minicpmo"]:
             from transformers import AutoImageProcessor
@@ -492,7 +508,10 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3", "gemma3n"]:
+                elif config.model_type in ["gemma3", "gemma3n", "glm"]:
+                    # GLM-Edge-V (config.model_type == "glm") exposes generation
+                    # only through its remote-code GlmForCausalLM; AutoModel would
+                    # load the base GlmModel, which has no .generate().
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)

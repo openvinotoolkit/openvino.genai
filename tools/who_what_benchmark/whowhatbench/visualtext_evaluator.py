@@ -70,8 +70,27 @@ class VisualTextEvaluator(TextEvaluator):
             predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
         self.predictions = predictions
 
-        # Align gt_data with predictions (handles skipped prompts)
+        # Align gt_data with predictions (handles skipped prompts).
+        # Predictions are generated from the test/default dataset prompts, while
+        # gt_data holds the reference answers. If the prompt sets do not
+        # intersect (e.g. a target model is scored against a --gt-data file that
+        # was produced from a different prompt set than the default dataset),
+        # the filtered gt_data becomes empty and the subsequent DataFrame
+        # construction fails with an opaque "All arrays must be of the same
+        # length" error. Fail fast with an actionable message instead.
         self.gt_data = self.gt_data[self.gt_data["prompts"].isin(predictions["prompts"].values)]
+
+        if len(self.gt_data) != len(predictions):
+            raise ValueError(
+                "Prompt mismatch between the ground-truth data and the generated "
+                f"predictions: {len(self.gt_data)} reference row(s) intersect the "
+                f"{len(predictions)} generated prediction row(s). This happens when "
+                "the target model is evaluated against prompts that differ from the "
+                "prompts stored in --gt-data (for visual-text, predictions default "
+                "to the built-in dataset when no --dataset/--test-data is given). "
+                "Provide a --dataset that uses the same prompts (and images) as the "
+                "ground-truth file so predictions stay row-aligned with gt_data."
+            )
 
         all_metrics_per_prompt = {}
         all_metrics = {}

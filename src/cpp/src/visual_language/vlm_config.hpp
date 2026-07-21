@@ -32,6 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    GLM_EDGE_V,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -123,6 +124,9 @@ public:
 
     /// @brief A string token denoting start of video embeddings
     std::string video_start = "<video>";
+
+    /// @brief GLM-Edge-V image placeholder token (repeated per image token).
+    std::string glm_edge_image_token = "<|begin_of_image|>";
 
     // Qwen3-VL specific config
     /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.

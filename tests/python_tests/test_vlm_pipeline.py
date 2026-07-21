@@ -166,6 +166,7 @@ else:
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
+MODEL_GLM_EDGE_V = "optimum-intel-internal-testing/tiny-random-glm-edge-v"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -180,6 +181,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        MODEL_GLM_EDGE_V,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -206,6 +208,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
+    MODEL_GLM_EDGE_V: lambda idx: "<|begin_of_image|>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
@@ -243,6 +246,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    MODEL_GLM_EDGE_V: 56,
 }
 
 
@@ -339,6 +343,14 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
+    if model_id == MODEL_GLM_EDGE_V:
+        pytest.skip(
+            "Tiny-random GLM-Edge-V VLM fixture 'optimum-intel-internal-testing/tiny-random-glm-edge-v' "
+            "is not published yet (the existing 'tiny-random-glm-edge' is text-only, without vision_config). "
+            "Enablement was validated locally against a tiny GLM-Edge-V VLM IR "
+            "(GenAI vs optimum-intel exact match and WWB visual-text similarity 0.97). "
+            "Remove this skip once the hosted VLM fixture is uploaded."
+        )
 
 
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
