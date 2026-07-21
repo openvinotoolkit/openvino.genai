@@ -69,6 +69,17 @@ public:
                   const std::string& device,
                   const ov::AnyMap& properties = {});
 
+    AutoencoderKL(const Tensor& vae_decoder_blob_tensor,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
+    AutoencoderKL(const Tensor& vae_encoder_blob_tensor,
+                  const Tensor& vae_decoder_blob_tensor,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  const ov::AnyMap& properties = {});
+
     template <typename... Properties,
               typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
     AutoencoderKL(const std::filesystem::path& vae_decoder_path,
@@ -114,6 +125,30 @@ public:
                         device,
                         ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    AutoencoderKL(const Tensor& vae_decoder_blob_tensor,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  Properties&&... properties)
+        : AutoencoderKL(vae_decoder_blob_tensor,
+                        vae_decoder_config,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    AutoencoderKL(const Tensor& vae_encoder_blob_tensor,
+                  const Tensor& vae_decoder_blob_tensor,
+                  const Config& vae_decoder_config,
+                  const std::string& device,
+                  Properties&&... properties)
+        : AutoencoderKL(vae_encoder_blob_tensor,
+                        vae_decoder_blob_tensor,
+                        vae_decoder_config,
+                        device,
+                        ov::AnyMap{std::forward<Properties>(properties)...}) { }
+
     AutoencoderKL(const AutoencoderKL&);
 
     AutoencoderKL clone();
@@ -150,6 +185,8 @@ public:
 private:
     void merge_vae_image_post_processing() const;
     void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
+    void import_model(const ov::Tensor& vae_decoder_blob_tensor, const std::string& device, const ov::AnyMap& properties = {});
+    void import_model(const ov::Tensor& vae_encoder_blob_tensor, const ov::Tensor& vae_decoder_blob_tensor, const std::string& device, const ov::AnyMap& properties = {});
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;
