@@ -1,4 +1,4 @@
-type WhisperModelType = {
+type SpeechRecognitionModelType = {
   architecture: string;
   models: Array<{
     name: string;
@@ -6,7 +6,7 @@ type WhisperModelType = {
   }>;
 };
 
-export const WHISPER_MODELS: WhisperModelType[] = [
+export const SPEECH_RECOGNITION_MODELS: SpeechRecognitionModelType[] = [
   {
     architecture: 'Qwen3ASRForConditionalGeneration',
     models: [
