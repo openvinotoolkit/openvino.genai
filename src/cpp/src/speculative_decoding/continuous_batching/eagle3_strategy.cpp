@@ -136,8 +136,6 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input(co
                 draft_embeddings = embedder_draft_embeds;
             }
         }
-        if (!draft_embeddings)
-            draft_embeddings = original_input;
         return create_draft_input_embeddings(draft_embeddings);
     }
 }
