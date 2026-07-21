@@ -108,9 +108,19 @@ std::vector<int32_t> parse_layer_ids(const std::string& raw) {
     std::stringstream stream(raw);
     std::string item;
     while (std::getline(stream, item, ',')) {
-        if (!item.empty()) {
-            result.push_back(static_cast<int32_t>(std::stoi(item)));
+        if (item.empty()) {
+            continue;
         }
+        std::istringstream item_stream(item);
+        int32_t layer_id{};
+        if (!(item_stream >> layer_id) || (item_stream >> std::ws && !item_stream.eof())) {
+            OPENVINO_THROW("Malformed dflash_target_layer_ids RT info value: '",
+                           raw,
+                           "'. Invalid layer id: '",
+                           item,
+                           "'.");
+        }
+        result.push_back(layer_id);
     }
     return result;
 }
