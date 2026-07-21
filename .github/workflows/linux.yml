@@ -48,7 +48,7 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 15
         with:
           sparse-checkout: .github
@@ -110,7 +110,7 @@ jobs:
         # event_name: pull_request
 
     - name: Clone docker tag from OpenVINO repo
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
@@ -154,7 +154,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -280,7 +280,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -341,7 +341,7 @@ jobs:
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -467,7 +467,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -541,7 +541,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -792,7 +792,7 @@ jobs:
 
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -912,7 +912,7 @@ jobs:
 
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -1013,7 +1013,7 @@ jobs:
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -1120,7 +1120,7 @@ jobs:
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -1200,7 +1200,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
