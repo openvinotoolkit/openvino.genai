@@ -167,8 +167,8 @@ private:
                         "DFlash CB/PA draft model must have an 'attention_mask' input.");
         if (model_desc.device == "NPU") {
             auto kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
-            auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, model_desc.properties, kv_axes_pos);
-            return compiled.create_infer_request();
+            auto npu_compile_result = utils::compile_decoder_for_npu(model_desc.model, model_desc.properties, kv_axes_pos);
+            return npu_compile_result.first.create_infer_request();
         }
         return utils::singleton_core()
             .compile_model(model_desc.model, model_desc.device, model_desc.properties)
