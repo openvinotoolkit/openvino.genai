@@ -823,7 +823,7 @@ def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=Non
     )
 
 
-def _is_qwen3_custom_voice_model(model_id):
+def _load_qwen3_tts_config(model_id):
     config = None
 
     model_path = Path(model_id) if isinstance(model_id, str) else None
@@ -845,10 +845,24 @@ def _is_qwen3_custom_voice_model(model_id):
         except Exception:
             config = None
 
-    if not isinstance(config, dict):
-        return False
+    return config
 
-    return config.get("model_type") == "qwen3_tts" and config.get("tts_model_type") == "custom_voice"
+
+def _get_qwen3_tts_model_type(model_id):
+    config = _load_qwen3_tts_config(model_id)
+    if not isinstance(config, dict):
+        return None
+    if config.get("model_type") != "qwen3_tts":
+        return None
+    return str(config.get("tts_model_type", "")).strip().lower() or None
+
+
+def _is_qwen3_custom_voice_model(model_id):
+    return _get_qwen3_tts_model_type(model_id) == "custom_voice"
+
+
+def _is_qwen3_voice_design_model(model_id):
+    return _get_qwen3_tts_model_type(model_id) == "voice_design"
 
 
 def _map_qwen3_device(device: str) -> str:
@@ -878,12 +892,40 @@ def load_qwen3_custom_voice_hf_pipeline(model_id, device="CPU", **kwargs):
     return Qwen3CustomVoiceWrapper(model)
 
 
+def load_qwen3_voice_design_hf_pipeline(model_id, device="CPU", **kwargs):
+    from qwen_tts import Qwen3TTSModel
+
+    import torch
+
+    device_map = _map_qwen3_device(device)
+    from_pretrained_kwargs = {"device_map": device_map}
+    if device_map.startswith("cuda"):
+        from_pretrained_kwargs["dtype"] = torch.bfloat16
+        from_pretrained_kwargs["attn_implementation"] = "flash_attention_2"
+    else:
+        from_pretrained_kwargs["dtype"] = torch.float32
+
+    model = Qwen3TTSModel.from_pretrained(model_id, **from_pretrained_kwargs)
+
+    from .speech_generation_evaluator import Qwen3VoiceDesignWrapper
+
+    return Qwen3VoiceDesignWrapper(model)
+
+
 def load_qwen3_custom_voice_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     import openvino_genai
 
     from .speech_generation_evaluator import Qwen3CustomVoiceWrapper
 
     return Qwen3CustomVoiceWrapper(openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {})))
+
+
+def load_qwen3_voice_design_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    import openvino_genai
+
+    from .speech_generation_evaluator import Qwen3VoiceDesignWrapper
+
+    return Qwen3VoiceDesignWrapper(openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {})))
 
 
 def _resolve_remote_code_and_config(model_id):
@@ -926,12 +968,18 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     from .speech_generation_evaluator import KokoroModelWrapper, SpeechT5Wrapper
 
     vocoder_path = kwargs.get("vocoder_path")
-    is_qwen3_custom_voice = _is_qwen3_custom_voice_model(model_id)
+    qwen3_tts_model_type = _get_qwen3_tts_model_type(model_id)
+    is_qwen3_custom_voice = qwen3_tts_model_type == "custom_voice"
+    is_qwen3_voice_design = qwen3_tts_model_type == "voice_design"
 
     if use_hf:
         if is_qwen3_custom_voice:
             logger.info("Using Qwen3 CustomVoice HF API")
             return load_qwen3_custom_voice_hf_pipeline(model_id, device, **kwargs)
+
+        if is_qwen3_voice_design:
+            logger.info("Using Qwen3 VoiceDesign HF API")
+            return load_qwen3_voice_design_hf_pipeline(model_id, device, **kwargs)
 
         if _is_kokoro_model_id(model_id):
             logger.info("Using Kokoro HF API")
@@ -949,10 +997,14 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
         return SpeechT5Wrapper(model, processor, vocoder)
 
-    if use_genai or is_qwen3_custom_voice:
+    if use_genai or is_qwen3_custom_voice or is_qwen3_voice_design:
         if is_qwen3_custom_voice:
             logger.info("Using OpenVINO GenAI API for Qwen3 CustomVoice")
             return load_qwen3_custom_voice_genai_pipeline(model_id, device, ov_config, **kwargs)
+
+        if is_qwen3_voice_design:
+            logger.info("Using OpenVINO GenAI API for Qwen3 VoiceDesign")
+            return load_qwen3_voice_design_genai_pipeline(model_id, device, ov_config, **kwargs)
 
         logger.info("Using OpenVINO GenAI API")
         return load_speech_generation_genai_pipeline(model_id, device, ov_config, **kwargs)

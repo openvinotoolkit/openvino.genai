@@ -340,6 +340,75 @@ class Qwen3CustomVoiceWrapper:
         return self.model.generate(prompt, **generation_properties)
 
 
+class Qwen3VoiceDesignWrapper:
+    """Unified wrapper for Qwen3 VoiceDesign models via HF or GenAI backends."""
+
+    def __init__(self, model):
+        self.model = model
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+    def get_speaker_embedding_shape(self):
+        return None
+
+    def generate(self, prompt, speaker_embedding=None, language="", voice="", instruct="", **kwargs):
+        if speaker_embedding is not None:
+            LOGGER.debug("Ignoring speaker_embedding for Qwen3 VoiceDesign.")
+
+        selected_language = language.strip() if isinstance(language, str) else ""
+        selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
+        selected_voice = voice.strip() if isinstance(voice, str) else ""
+
+        if selected_voice:
+            LOGGER.warning("Ignoring --speech-voice for Qwen3 VoiceDesign.")
+
+        # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
+        kwargs.setdefault("do_sample", False)
+        kwargs.setdefault("subtalker_dosample", False)
+
+        if os.getenv("WWB_QWEN3_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
+            LOGGER.info(
+                "[WWB_QWEN3_DEBUG] language='%s' instruct_len=%d do_sample=%s subtalker_dosample=%s",
+                selected_language,
+                len(selected_instruct),
+                kwargs.get("do_sample"),
+                kwargs.get("subtalker_dosample"),
+            )
+
+        if hasattr(self.model, "generate_voice_design"):
+            wavs, sample_rate = self.model.generate_voice_design(
+                text=prompt,
+                language=selected_language or "Auto",
+                instruct=selected_instruct,
+                **kwargs,
+            )
+
+            class _Speech:
+                def __init__(self, data):
+                    self.data = data
+
+            class _SpeechResult:
+                def __init__(self, data, output_sample_rate):
+                    self.speeches = [_Speech(data)]
+                    self.output_sample_rate = output_sample_rate
+
+            return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        generation_properties = {}
+        if selected_language:
+            generation_properties["language"] = selected_language
+        if selected_instruct:
+            generation_properties["instruct"] = selected_instruct
+
+        generation_properties.update(kwargs)
+
+        return self.model.generate(prompt, **generation_properties)
+
+
 def _safe_metric_mean(values):
     arr = np.array([np.nan if value is None else value for value in values], dtype=float)
     if np.isnan(arr).all():
