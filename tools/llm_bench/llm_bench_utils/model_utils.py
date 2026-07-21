@@ -255,7 +255,9 @@ def analyze_args(args):
         model_args["speaker_embeddings"] = get_speaker_embeddings(
             args.speaker_embeddings, expected_shape=expected_shape
         )
-        model_args["vocoder_path"] = args.vocoder_path
+    model_args["vocoder_path"] = args.vocoder_path
+    if model_args["vocoder_path"] and not Path(model_args["vocoder_path"]).exists():
+        raise RuntimeError(f"==Failure FOUND==: Incorrect vocoder path:{model_args['vocoder_path']}")
 
     model_args["chat_iter"] = args.chat_iter
     if model_args["use_case"].task == "text_gen_chat":

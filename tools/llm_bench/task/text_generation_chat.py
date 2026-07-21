@@ -179,8 +179,6 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
             return past_key_values_len
 
         if "transformers" in str(type(self.model)):
-            from transformers import Cache
-
             if isinstance(self.past_key_values, Cache):
                 if (
                     hasattr(self.past_key_values, "get_seq_length")
@@ -207,8 +205,6 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
                 return [None]
 
         if "transformers" in str(type(self.model)):
-            from transformers import Cache
-
             if isinstance(self.past_key_values, Cache):
                 if hasattr(self.past_key_values, "crop"):
                     self.past_key_values.crop(max_length=prefix_len)
@@ -469,7 +465,7 @@ def run_text_generation_chat_common(
     iter_num: int,
     args: dict,
     iter_data_list: list,
-    md5_list: list,
+    md5_list: dict,
     chat_index: int,
     bench_hook: object,
     model_precision: str,
@@ -478,7 +474,7 @@ def run_text_generation_chat_common(
     prefix: str,
 ):
     if args["batch_size"] != 1:
-        log.warning("Batch size is not applicable for chat scenario.")
+        log.warning("Batch size is not applicable for chat scenario. Parameter will be ignored and set to 1.")
         args["batch_size"] = 1
 
     # ===== Prepare Input Data =====

@@ -20,9 +20,15 @@ def output_comments(result, use_case, writer):
         comment_list.append("output_size: Text/Code generation models: generated text token size")
         comment_list.append("infer_count: Limit the Text/Code generation models' output token size")
         comment_list.append("latency: Text/Code generation models: ms/token. Output token size / generation time")
-        comment_list.append("1st_latency: Text/Code generation models: First token latency")
+        comment_list.append(
+            "1st_latency: Text/Code generation models: First token latency (ms). "
+            "For Text generation in chat mode it is normalized by input_size (ms/input_token)."
+        )
         comment_list.append("2nd_avg_latency: Text/Code generation models: Other tokens (exclude first token) latency")
-        comment_list.append("1st_infer_latency: Text/Code generation models: First inference latency")
+        comment_list.append(
+            "1st_infer_latency: Text/Code generation models: First inference latency (ms). "
+            "For Text generation in chat mode it is normalized by input_size (ms/input_token)."
+        )
         comment_list.append(
             "2nd_infer_avg_latency: Text/Code generation models: Other inferences (exclude first inference) latency"
         )
