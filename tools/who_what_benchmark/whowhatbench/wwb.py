@@ -830,9 +830,6 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
     if max_new_tokens is not None:
         generation_properties["max_new_tokens"] = int(max_new_tokens)
 
-    # Keep WWB speech-generation deterministic and aligned with HF parity checks.
-    generation_properties["repetition_penalty"] = 1.0
-
     selected_voice = voice.strip() if isinstance(voice, str) else ""
     generation_properties["voice"] = selected_voice
 
