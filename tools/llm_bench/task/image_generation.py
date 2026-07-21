@@ -106,6 +106,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
     for bs_idx in range(args['batch_size']):
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(res[bs_idx], args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
+    out_w, out_h = res[0].size  # PIL images -> (width, height)
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args['batch_size'],
@@ -113,6 +114,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=image_id,
+        output_repr=f"image:{out_w}x{out_h}",
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
@@ -173,6 +175,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         rslt_img_fn = llm_bench_utils.output_file.output_gen_image(image, args, image_id, num, bs_idx, proc_id, '.png')
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
     generation_time = end - start
+    out_h, out_w = res[0].shape[0], res[0].shape[1]  # genai returns HxWxC arrays
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         in_size=input_token_size * args['batch_size'],
@@ -180,6 +183,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=image_id,
+        output_repr=f"image:{out_w}x{out_h}",
         **memory_metrics,
     )
     iter_data_list.append(iter_data)
