@@ -7,7 +7,7 @@ import CodeExamplePython from '@site/docs/use-cases/multimodal-embedding/_sectio
 
 export const MultimodalEmbedding = () => (
   <UseCaseCard>
-    <UseCaseCard.Title>Semantic Search using Multimodal Embedding</UseCaseCard.Title>
+    <UseCaseCard.Title>Semantic Search Using Multimodal Embedding</UseCaseCard.Title>
     <UseCaseCard.Description>
       Generate vector representations for text, images, and videos using a single embedding model.
       Useful for semantic search and retrieval augmented generation (RAG).

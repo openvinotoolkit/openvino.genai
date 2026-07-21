@@ -1,6 +1,6 @@
 type EmbeddingModelType = {
   architecture: string;
-  modality: string;
+  modalities: string[];
   models: Array<{
     links: string[];
   }>;
@@ -9,7 +9,7 @@ type EmbeddingModelType = {
 export const EMBEDDING_MODELS: EmbeddingModelType[] = [
   {
     architecture: 'BertModel',
-    modality: 'Text',
+    modalities: ['Text'],
     models: [
       {
         links: [
@@ -26,7 +26,7 @@ export const EMBEDDING_MODELS: EmbeddingModelType[] = [
   },
   {
     architecture: 'MPNetForMaskedLM',
-    modality: 'Text',
+    modalities: ['Text'],
     models: [
       {
         links: [
@@ -38,7 +38,7 @@ export const EMBEDDING_MODELS: EmbeddingModelType[] = [
   },
   {
     architecture: 'RobertaForMaskedLM',
-    modality: 'Text',
+    modalities: ['Text'],
     models: [
       {
         links: ['https://huggingface.co/sentence-transformers/all-distilroberta-v1'],
@@ -47,7 +47,7 @@ export const EMBEDDING_MODELS: EmbeddingModelType[] = [
   },
   {
     architecture: 'XLMRobertaModel',
-    modality: 'Text',
+    modalities: ['Text'],
     models: [
       {
         links: [
@@ -60,7 +60,7 @@ export const EMBEDDING_MODELS: EmbeddingModelType[] = [
   },
   {
     architecture: 'Qwen3ForCausalLM',
-    modality: 'Text',
+    modalities: ['Text'],
     models: [
       {
         links: [
@@ -73,7 +73,7 @@ export const EMBEDDING_MODELS: EmbeddingModelType[] = [
   },
   {
     architecture: 'Qwen3VLModel',
-    modality: 'Text, Image, Video',
+    modalities: ['Text', 'Image', 'Video'],
     models: [
       {
         links: [

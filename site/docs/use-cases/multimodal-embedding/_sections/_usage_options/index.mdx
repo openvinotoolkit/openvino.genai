@@ -46,7 +46,7 @@ Some models support a special instruction that describes how an input should be 
 
 The embedding behavior of the pipeline can be tuned by passing configuration parameters at construction time. They can be passed directly as properties or bundled into a `TextEmbeddingPipeline.Config` and supplied via `text_embedding_config`.
 
-#### Pooling Strategies
+### Pooling Strategies
 
 Embedding models support different pooling strategies to aggregate token embeddings into a single vector:
 
@@ -88,7 +88,7 @@ Fixed shapes are required for NPU device inference.
 
 Some models support special instructions for queries and documents. Use `query_instruction` and `embed_instruction` to provide these if needed.
 
-:::note
+:::info
 `query_instruction` and `embed_instruction` apply only to text-only pipelines. For multimodal inputs, set a per-call instruction with the [`embedding_prompt`](#embedding-prompt) parameter instead.
 :::
 

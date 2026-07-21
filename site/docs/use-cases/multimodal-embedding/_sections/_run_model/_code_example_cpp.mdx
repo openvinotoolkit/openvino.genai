@@ -11,9 +11,9 @@ int main(int argc, char* argv[]) {
     // Embed a text query
     ov::genai::EmbedResult query = pipeline.embed("a photo of a cat");
 
-    // Embed an image (image is an ov::Tensor of shape [H, W, 3], uint8)
-    ov::Tensor image;
-    ov::genai::EmbedResult image_embedding = pipeline.embed(std::string{}, {image});
+    // Embed images  (image is an ov::Tensor of shape [H, W, 3], uint8)
+    std::vector<ov::Tensor> images = utils::load_images("path/to/images");
+    ov::genai::EmbedResult image_embedding = pipeline.embed(std::string{}, images);
 
     return 0;
 }
