@@ -216,7 +216,6 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_param
     auto m_main_eagle_pipeline  = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
     auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
     m_main_eagle_pipeline->set_hidden_state_export_needed(true);
-    m_main_eagle_pipeline->set_query_to_query_bias_needed(true);
     m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
     m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
     m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);

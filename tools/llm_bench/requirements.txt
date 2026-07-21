@@ -42,6 +42,7 @@ torchcodec<=0.11.1; sys_platform == "linux"
 torchvision>=0.16,<=0.27.0
 soundfile==0.14.0
 # For OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-av==18.0.0
+av==17.1.0; python_version < "3.11"
+av==18.0.0; python_version >= "3.11"
 imageio==2.37.3
 decord==0.6.0; platform_system != "Darwin"
