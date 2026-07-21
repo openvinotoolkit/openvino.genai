@@ -5,6 +5,7 @@
 
 #include "continuous_batching/timer.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "sampling/structured_output/jump_forward_validation.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -46,6 +47,7 @@ GenerationConfig StatefulSpeculativePipelineBase::resolve_generation_config(
     }
 
     config.validate();
+    jump_forward_validation::validate_unsupported_pipeline(config, "stateful speculative");
     return config;
 }
 

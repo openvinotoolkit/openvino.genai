@@ -611,7 +611,10 @@ public:
             size_t output_seq_len = 0;
             const bool echo_output = sequence_group->get_sampling_parameters().echo;
             const bool sampling_is_required = sequence_group->requires_sampling();
-            const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
+            const size_t tokens_to_sample_per_sequence =
+                sequence_group->is_deferred_kv_processing()
+                    ? 1
+                    : 1 + sequence_group->get_num_tokens_to_validate();
 
             if (sequence_group_type == SequenceGroupType::EMBEDDINGS 
                 && deepstack_context.have_deepstack_visual_inputs
@@ -751,8 +754,8 @@ public:
                         if (echo_output ||
                             // Skip gathering for prompt tokens
                             group_position_id + token_id >= prompt_len - 1 &&
-                            // Gather only the last scheduled token or 1 + num_tokens_to_validate tokens for SD
-                            // In SD, tokens_to_sample_per_sequence may exceed num_scheduled_tokens
+                            // Deferred KV processing needs only the final logit. Speculative decoding
+                            // still gathers 1 + num_tokens_to_validate logits.
                             token_id + tokens_to_sample_per_sequence >= num_scheduled_tokens) {
                             gather_indices_values.push_back(gathering_current_index);
                             output_seq_len++;

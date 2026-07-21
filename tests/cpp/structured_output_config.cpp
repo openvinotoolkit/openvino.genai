@@ -57,6 +57,14 @@ std::string structural_tag_json(const StructuredOutputConfig& config) {
 
 }  // namespace
 
+TEST(StructuredOutputConfigTest, JumpForwardDefaultsToFalseAndCanBeEnabled) {
+    StructuredOutputConfig default_config;
+    EXPECT_FALSE(default_config.enable_jump_forward);
+
+    StructuredOutputConfig enabled_config({{"regex", std::string("a")}, {"enable_jump_forward", true}});
+    EXPECT_TRUE(enabled_config.enable_jump_forward);
+}
+
 TEST(StructuredOutputConfigTest, JSONSchemaSerializesXGrammarOptions) {
     StructuredOutputConfig::JSONSchema schema("{\"type\":\"object\"}", "qwen_xml", true);
 

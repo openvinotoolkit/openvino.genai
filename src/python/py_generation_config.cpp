@@ -42,6 +42,7 @@ auto structured_output_config_docstring = R"(
     regex:          if set, the output will be constraint by specified regex.
     grammar:        if set, the output will be constraint by specified EBNF grammar.
     structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
+    enable_jump_forward: enables experimental jump-forward decoding for deterministic structured-output spans.
     compound_grammar:
         if set, the output will be constraint by specified compound grammar.
         Compound grammar is a combination of multiple grammars that can be used to generate structured outputs.
@@ -495,13 +496,17 @@ void init_generation_config(py::module_& m) {
             },
             "Configuration for structural tags in structured output generation (can be StructuralTagsConfig or StructuralTag)")
         .def_readwrite("compound_grammar", &StructuredOutputConfig::compound_grammar, "Compound grammar for structured output generation")
+        .def_readwrite("enable_jump_forward",
+                       &StructuredOutputConfig::enable_jump_forward,
+                       "Enable experimental jump-forward decoding")
         .def("__repr__",
             [](const StructuredOutputConfig &self) {
                 return "StructuredOutputConfig(json_schema=" + py::repr(py::cast(self.json_schema)).cast<std::string>() +
                        ", regex=" + py::repr(py::cast(self.regex)).cast<std::string>() +
                        ", grammar=" + py::repr(py::cast(self.grammar)).cast<std::string>() +
                        ", structural_tags_config=" + py::repr(py::cast(self.structural_tags_config)).cast<std::string>() +
-                       ", compound_grammar=" + py::repr(py::cast(self.compound_grammar)).cast<std::string>() + ")";
+                       ", compound_grammar=" + py::repr(py::cast(self.compound_grammar)).cast<std::string>() +
+                       ", enable_jump_forward=" + py::repr(py::cast(self.enable_jump_forward)).cast<std::string>() + ")";
             }
         );
 

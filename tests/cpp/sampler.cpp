@@ -33,6 +33,110 @@ TEST(SamplerStopTokenIdsTest, multiple_stop_sequence_no_match) {
     ASSERT_FALSE(is_stop_token_id_hit(generated_tokens.back(), stop_token_ids));
 }
 
+TEST(DeferredKVProcessing, schedules_exact_pre_and_post_sample_inputs) {
+    auto sampling_config = ov::genai::utils::get_greedy_config();
+    std::vector<int64_t> prompt{0, 1, 2};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, sampling_config);
+
+    sequence_group->update_processed_tokens_num(prompt.size());
+    sequence_group->set_num_validated_tokens(3);
+    sequence_group->set_deferred_kv_processing_mode(DeferredKVProcessingMode::PRE_SAMPLE);
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 3);
+
+    sequence_group->set_deferred_kv_processing_mode(DeferredKVProcessingMode::POST_SAMPLE);
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 4);
+
+    sequence_group->schedule_tokens(4);
+    sequence_group->finish_iteration();
+    EXPECT_FALSE(sequence_group->is_deferred_kv_processing());
+    EXPECT_EQ(sequence_group->get_num_tokens_to_validate(), 0);
+}
+
+TEST(DeferredKVProcessing, pre_sample_pass_samples_only_final_logit) {
+    auto sampling_config = ov::genai::utils::get_greedy_config();
+    std::vector<int64_t> prompt{0, 1, 2};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, sampling_config);
+    auto sequence = sequence_group->get_sequences().front();
+    sequence->append_token(3, 0.0f);
+    sequence->append_token(4, 0.0f);
+    sequence_group->update_processed_tokens_num(prompt.size());
+    sequence_group->set_num_validated_tokens(2);
+    sequence_group->set_deferred_kv_processing_mode(DeferredKVProcessingMode::PRE_SAMPLE);
+    sequence_group->schedule_tokens(2);
+
+    std::vector<float> logits{
+        1.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f, 0.f, 0.f, 1.f,
+    };
+    ov::Tensor logits_tensor(ov::element::f32, ov::Shape{1, 2, 6}, logits.data());
+
+    Sampler sampler;
+    const SamplerOutput output = sampler.sample({sequence_group}, logits_tensor);
+
+    EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{3, 4, 5}));
+    EXPECT_EQ(output.num_generated_tokens, 1);
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), prompt.size() + 2);
+    EXPECT_FALSE(sequence_group->is_deferred_kv_processing());
+}
+
+TEST(DeferredKVProcessing, intermediate_chunk_does_not_sample_and_preserves_pending_state) {
+    auto sampling_config = ov::genai::utils::get_greedy_config();
+    std::vector<int64_t> prompt{0, 1, 2};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, sampling_config);
+    auto sequence = sequence_group->get_sequences().front();
+    for (int64_t token : {3, 4, 5, 6}) {
+        sequence->append_token(token, 0.0f);
+    }
+    sequence_group->update_processed_tokens_num(prompt.size());
+    sequence_group->set_num_validated_tokens(4);
+    sequence_group->set_deferred_kv_processing_mode(DeferredKVProcessingMode::PRE_SAMPLE);
+    sequence_group->schedule_tokens(2);
+
+    std::vector<float> logits(2 * 8, 0.0f);
+    ov::Tensor logits_tensor(ov::element::f32, ov::Shape{1, 2, 8}, logits.data());
+
+    Sampler sampler;
+    const SamplerOutput output = sampler.sample({sequence_group}, logits_tensor);
+
+    EXPECT_EQ(output.num_generated_tokens, 0);
+    EXPECT_EQ(sequence->get_generated_ids(), (TokenIds{3, 4, 5, 6}));
+    EXPECT_EQ(sequence_group->get_num_processed_tokens(), prompt.size() + 2);
+    EXPECT_EQ(sequence_group->get_num_deferred_kv_tokens_left(), 2);
+    EXPECT_EQ(sequence_group->get_num_tokens_to_validate(), 4);
+    EXPECT_EQ(sequence_group->get_deferred_kv_processing_mode(),
+              DeferredKVProcessingMode::PRE_SAMPLE);
+}
+
+TEST(DeferredKVProcessing, preemption_recomputes_before_consuming_remaining_deferred_tokens) {
+    auto sampling_config = ov::genai::utils::get_greedy_config();
+    std::vector<int64_t> prompt{0, 1, 2};
+    auto sequence_group = std::make_shared<SequenceGroup>(0, prompt, sampling_config);
+    auto sequence = sequence_group->get_sequences().front();
+    for (int64_t token : {3, 4, 5, 6}) {
+        sequence->append_token(token, 0.0f);
+    }
+    sequence_group->update_processed_tokens_num(prompt.size());
+    sequence_group->set_num_validated_tokens(4);
+    sequence_group->set_deferred_kv_processing_mode(DeferredKVProcessingMode::PRE_SAMPLE);
+
+    sequence_group->schedule_tokens(2);
+    sequence_group->finish_iteration();
+    ASSERT_EQ(sequence_group->get_num_deferred_kv_tokens_left(), 2);
+
+    sequence_group->preempt_tokens(2);
+    EXPECT_EQ(sequence_group->get_num_available_tokens_for_batching(), 4);
+
+    sequence_group->schedule_tokens(2);
+    EXPECT_FALSE(sequence_group->requires_sampling());
+    sequence_group->finish_iteration();
+    EXPECT_EQ(sequence_group->get_num_deferred_kv_tokens_left(), 2);
+    EXPECT_EQ(sequence_group->get_deferred_kv_processing_mode(),
+              DeferredKVProcessingMode::PRE_SAMPLE);
+
+    sequence_group->schedule_tokens(2);
+    EXPECT_TRUE(sequence_group->requires_sampling());
+}
+
 TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     auto sampling_config = ov::genai::utils::get_greedy_config();
     // create sequence group with prompt [0, 1, 2, 3, 4]

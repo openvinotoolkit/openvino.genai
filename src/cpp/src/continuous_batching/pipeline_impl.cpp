@@ -21,6 +21,7 @@
 #include "lora/helper.hpp"
 #include "continuous_batching/cache/cache_state_dumper.hpp"
 #include "continuous_batching/cache/cache_orchestrator.hpp"
+#include "sampling/structured_output/jump_forward_validation.hpp"
 
 namespace {
 
@@ -288,6 +289,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     if (sampling_params_copy.eos_token_id == -1)
         sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
     sampling_params_copy.validate();
+    jump_forward_validation::validate_continuous(
+        sampling_params_copy,
+        m_model_input_type == ModelInputType::TOKENS,
+        m_is_validation_mode_enabled || m_generation_config.is_assisting_generation());
     size_t prompt_len;
     if (input_ids.get_shape().size() > 1) {
         prompt_len = input_ids.get_shape()[1];

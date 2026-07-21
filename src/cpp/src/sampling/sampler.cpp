@@ -1106,6 +1106,66 @@ std::vector<int64_t> Sampler::_try_finish_generation(SequenceGroup::Ptr& sequenc
     return dropped_seq_ids;
 }
 
+size_t Sampler::_try_jump_forward(SequenceGroup::Ptr& sequence_group,
+                                  Sequence::Ptr& sequence,
+                                  LogitProcessor& logit_processor) {
+    const auto& sampling_params = sequence_group->get_sampling_parameters();
+    if (!sampling_params.structured_output_config ||
+        !sampling_params.structured_output_config->enable_jump_forward ||
+        !logit_processor.has_jump_forward_transformer() ||
+        logit_processor.is_jump_forward_terminated() ||
+        sequence_group->num_total_seqs() != 1 ||
+        sequence_group->num_running_seqs() != 1) {
+        return 0;
+    }
+
+    const size_t generated_len = sequence->get_generated_len();
+    const size_t max_new_tokens = sequence_group->get_max_new_tokens();
+    if (generated_len >= max_new_tokens) {
+        return 0;
+    }
+
+    const size_t remaining_budget = max_new_tokens - generated_len;
+    TokenIds committed_tokens;
+    committed_tokens.reserve(remaining_budget);
+
+    // Every accepted span contains at least one token, so the remaining budget is
+    // also a strict upper bound on the number of useful jump-forward iterations.
+    for (size_t iteration = 0; iteration < remaining_budget; ++iteration) {
+        if (logit_processor.is_jump_forward_terminated()) {
+            break;
+        }
+        std::string jump_forward_string = logit_processor.find_jump_forward_string();
+        if (jump_forward_string.empty()) {
+            break;
+        }
+
+        TokenIds jump_tokens = encode_and_process_string(jump_forward_string, m_tokenizer);
+        if (jump_tokens.empty() ||
+            jump_tokens.size() > remaining_budget - committed_tokens.size() ||
+            std::any_of(jump_tokens.begin(), jump_tokens.end(), [&](int64_t token_id) {
+                return sampling_params.stop_token_ids.count(token_id) > 0;
+            })) {
+            break;
+        }
+
+        if (!logit_processor.accept_jump_forward_string(jump_forward_string)) {
+            break;
+        }
+
+        for (int64_t token_id : jump_tokens) {
+            sequence->append_token(token_id, 0.0f);
+        }
+        committed_tokens.insert(committed_tokens.end(), jump_tokens.begin(), jump_tokens.end());
+    }
+
+    if (!committed_tokens.empty()) {
+        logit_processor.register_generated_token_occurrences(committed_tokens);
+        logit_processor.update_generated_len(sequence->get_generated_len());
+    }
+    return committed_tokens.size();
+}
+
 void register_new_token(const Token& sampled_token,
                         Sequence::Ptr running_sequence,
                         LogitProcessor& logit_processor,
@@ -1456,8 +1516,10 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     AssistingPipelineInfo& assisting_pipeline_info = sg_sampling_info.get_assisting_pipeline_info();
     const ov::genai::GenerationConfig& sampling_params = sequence_group->get_sampling_parameters();
     const size_t output_seq_len = sequence_group->get_output_seq_len();
+    const bool is_deferred_kv_processing = sequence_group->is_deferred_kv_processing();
     // get number of tokens to be validated
-    size_t num_tokens_to_process = sequence_group->get_num_tokens_to_validate();
+    size_t num_tokens_to_process =
+        is_deferred_kv_processing ? 0 : sequence_group->get_num_tokens_to_validate();
     size_t num_generated_tokens_to_validate = num_tokens_to_process;
 
     LogitProcessor& logit_processor = ctx.logit_processor;
@@ -1478,6 +1540,24 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         }
         for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
             auto& running_sequence = running_sequences[running_sequence_id];
+
+            if (!is_validation_mode_enabled && !is_deferred_kv_processing) {
+                const size_t num_jump_tokens =
+                    _try_jump_forward(sequence_group, running_sequence, logit_processor);
+                if (num_jump_tokens > 0) {
+                    sg_sampling_info.sampler_output.num_generated_tokens += num_jump_tokens;
+                    if (running_sequence->get_generated_len() < sequence_group->get_max_new_tokens()) {
+                        sg_sampling_info.num_jump_forward_tokens = num_jump_tokens;
+                        sg_sampling_info.deferred_kv_processing_mode =
+                            DeferredKVProcessingMode::PRE_SAMPLE;
+                    }
+                    assisting_pipeline_info.min_generated_len =
+                        std::min(assisting_pipeline_info.min_generated_len,
+                                 running_sequence->get_generated_len());
+                    continue;
+                }
+            }
+
             bool is_validation_passed = true;
             // make `num_tokens_to_process` iteration to validate a candidate generated by `draft_model` + 1 iteration to generate one more token by `main_model`
             for (size_t i = 0; i <= num_tokens_to_process; ++i) {
@@ -1569,6 +1649,21 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         running_sequence->set_status(SequenceStatus::FINISHED);
                         running_sequence->set_finish_reason(GenerationFinishReason::STOP);
                         sg_sampling_info.sampler_output.m_dropped_sequences.push_back(running_sequence->get_id());
+                    }
+                }
+
+                if (!is_validation_mode_enabled && !running_sequence->has_finished()) {
+                    const size_t num_jump_tokens =
+                        _try_jump_forward(sequence_group, running_sequence, logit_processor);
+                    if (num_jump_tokens > 0) {
+                        sg_sampling_info.sampler_output.num_generated_tokens += num_jump_tokens;
+                        if (running_sequence->get_generated_len() <
+                            sequence_group->get_max_new_tokens()) {
+                            sg_sampling_info.num_jump_forward_tokens = num_jump_tokens;
+                            sg_sampling_info.deferred_kv_processing_mode =
+                                DeferredKVProcessingMode::POST_SAMPLE;
+                        }
+                        break;
                     }
                 }
             }
@@ -1757,6 +1852,13 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones
         const AssistingPipelineInfo& assisting_pipeline_info = std::as_const(sg_sampling_info.get_assisting_pipeline_info());
         sequence_group->finish_iteration();
+        if (sg_sampling_info.num_jump_forward_tokens > 0) {
+            OPENVINO_ASSERT(!sequence_group->has_finished(),
+                            "Finished requests must not schedule deferred KV processing");
+            sequence_group->set_num_validated_tokens(sg_sampling_info.num_jump_forward_tokens);
+            sequence_group->set_deferred_kv_processing_mode(
+                sg_sampling_info.deferred_kv_processing_mode);
+        }
         // decrease sequence_group context in case of candidates generated by draft_model were not accepted by main_model
         if (assisting_pipeline_info.max_removed_tokens_per_request) {
             auto min_processed_tokens = sequence_group->get_prompt_len() + assisting_pipeline_info.min_generated_len - 1;

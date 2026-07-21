@@ -6,9 +6,9 @@
 namespace ov {
 namespace genai {
 
-std::unordered_map<std::string, StructuredOutputController::BackendFactory>&
+std::unordered_map<std::string, StructuredOutputController::BackendRegistration>&
 StructuredOutputController::get_backend_registry() {
-    static std::unordered_map<std::string, BackendFactory> registry;
+    static std::unordered_map<std::string, BackendRegistration> registry;
     return registry;
 }
 
@@ -17,8 +17,23 @@ std::string& StructuredOutputController::get_default_backend_name() {
     return default_backend;
 }
 
-void StructuredOutputController::register_backend(const std::string& name, BackendFactory factory) {
-    get_backend_registry()[name] = std::move(factory);
+void StructuredOutputController::register_backend(const std::string& name,
+                                                  BackendFactory factory,
+                                                  bool supports_jump_forward) {
+    get_backend_registry()[name] = {std::move(factory), supports_jump_forward};
+}
+
+bool StructuredOutputController::supports_jump_forward(
+    const std::optional<StructuredOutputConfig>& structured_output_config) {
+    if (!structured_output_config.has_value()) {
+        return false;
+    }
+
+    const std::string backend_name =
+        structured_output_config->backend.value_or(get_default_backend_name());
+    const auto& registry = get_backend_registry();
+    const auto backend_it = registry.find(backend_name);
+    return backend_it != registry.end() && backend_it->second.supports_jump_forward;
 }
 
 void StructuredOutputController::set_default_backend(const std::string& name) {
@@ -46,7 +61,7 @@ const std::unique_ptr<IStructuredOutputImpl>& StructuredOutputController::get_ba
 
         // Create the backend instance and store it
         const auto start = std::chrono::steady_clock::now();
-        m_impls[backend_name] = factory_it->second(m_tokenizer_impl, m_vocab_size);
+        m_impls[backend_name] = factory_it->second.factory(m_tokenizer_impl, m_vocab_size);
         impl_it = m_impls.find(backend_name);
         const auto end = std::chrono::steady_clock::now();
         m_init_grammar_compiler_times[backend_name] = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();

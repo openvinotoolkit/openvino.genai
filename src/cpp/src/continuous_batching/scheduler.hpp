@@ -503,7 +503,8 @@ private:
                 // of current sequence group were evicted before
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
 
-                size_t num_scheduled_tokens_per_seq = std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
+                size_t num_scheduled_tokens_per_seq =
+                    std::min(available_tokens_per_seq_in_megabatch, num_available_tokens_per_seq);
                 sequence_group->schedule_tokens(num_scheduled_tokens_per_seq);
 
                 while (!m_cache_orchestrator->can_append_slots(sequence_group)) {
@@ -516,7 +517,7 @@ private:
 
                 // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
                 if (!m_cache_orchestrator->can_append_slots(sequence_group)) {
-                    sequence_group->clear_scheduled_tokens();
+                    sequence_group->unschedule_tokens();
                     continue;
                 }
 

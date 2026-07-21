@@ -97,6 +97,7 @@ struct OPENVINO_GENAI_EXPORTS ModelStructuralTagOptions {
 * @param grammar if set, the output will be constrained by specified EBNF grammar.
 * @param structural_tags_config if set, the output could contain substrings constrained by the specified structural tags.
 * @param backend if set, the structured output generation will use specified backend, currently only "xgrammar" is supported.
+* @param enable_jump_forward enables experimental jump-forward decoding for deterministic structured-output spans.
 * 
 * If several parameters are set, e.g. json_schema and regex, then an error will be thrown when validating the configuration.
 */
@@ -709,6 +710,7 @@ public:
     std::optional<std::variant<StructuralTagsConfig, StructuralTag>> structural_tags_config;
     std::optional<CompoundGrammar> compound_grammar;
     std::optional<std::string> backend;
+    bool enable_jump_forward = false;
     void validate() const;
     void validate(Tokenizer& tokenizer) const;
     void update_config(const ov::AnyMap& properties);

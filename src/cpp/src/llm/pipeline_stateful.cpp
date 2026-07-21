@@ -7,6 +7,7 @@
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "sampling/structured_output/jump_forward_validation.hpp"
 
 #include "utils.hpp"
 
@@ -105,6 +106,7 @@ GenerationConfig StatefulLLMPipeline::resolve_generation_config(OptionalGenerati
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
+    jump_forward_validation::validate_unsupported_pipeline(config, "stateful");
     return config;
 }
 
@@ -326,6 +328,8 @@ EncodedResults StatefulLLMPipeline::generate(
     const EncodedInputs& inputs,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer) {
+    GenerationConfig config = resolve_generation_config(generation_config);
+
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS;
 
@@ -390,8 +394,6 @@ EncodedResults StatefulLLMPipeline::generate(
         input_ids = encoded_input.input_ids;
         attention_mask = encoded_input.attention_mask;
     }
-
-    GenerationConfig config = resolve_generation_config(generation_config);
 
     auto batch_size = input_ids.get_shape().at(0);
 

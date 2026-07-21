@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "llm/pipeline_static.hpp"
+#include "sampling/structured_output/jump_forward_validation.hpp"
 
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
@@ -268,6 +269,7 @@ EncodedResults StatefulLLMPipeline::generate(
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
+    jump_forward_validation::validate_unsupported_pipeline(config, "static stateful");
 
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 

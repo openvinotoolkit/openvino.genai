@@ -69,6 +69,8 @@ struct AssistingPipelineInfo {
 struct SequenceGroupSamplingInfo {
     SamplerOutput sampler_output;
     AssistingPipelineInfo assisting_pipeline_info;
+    size_t num_jump_forward_tokens = 0;
+    DeferredKVProcessingMode deferred_kv_processing_mode = DeferredKVProcessingMode::NONE;
 
     AssistingPipelineInfo& get_assisting_pipeline_info() {
         return assisting_pipeline_info;
@@ -139,6 +141,9 @@ class Sampler {
     std::vector<Token> _multinomial_sample(const Logits& logits, size_t num_tokens_per_sequence, std::mt19937& rng_engine);
     std::vector<int64_t> _try_finish_generation(SequenceGroup::Ptr& sequence_group,
                                                  const std::pair<size_t, std::set<std::string>>& stop_strings);
+    size_t _try_jump_forward(SequenceGroup::Ptr& sequence_group,
+                             Sequence::Ptr& sequence,
+                             LogitProcessor& logit_processor);
 
     bool validate_candidate(Sequence::Ptr running_sequence, size_t& token_idx, Token& sampled_token,
                             bool& is_extend_sequence, size_t& max_removed_tokens, bool do_sample, bool has_real_probabilities,

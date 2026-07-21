@@ -325,6 +325,41 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   The sample prints finish reason for each generation turn. In the tool-calling turn, generation is stopped with `TOOL_CALL` as soon as the incremental parser successfully parses the `functools[...]` payload.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
+### 14. Jump-Forward Decoding (`jump_forward_generation`)
+- **Description:**
+  This sample compares regular structured-output decoding with experimental
+  jump-forward decoding in `ContinuousBatchingPipeline`. Its JSON grammar mixes
+  deterministic spans with three model-selected fields: `priority`, `route`,
+  and `approved`. Jump-forward skips model sampling for deterministic spans,
+  while normal inference still selects the other fields.
+
+  Both modes are warmed up and measured five times in alternating order. The
+  sample reports generated-token counts, model iterations, median wall-clock
+  time, and speedup. It also verifies that every greedy run produces identical,
+  valid JSON so the performance comparison uses equivalent output.
+
+- **Main Features:**
+  - Build mixed structured output with `ConstString`, `Union`, and `Concat`
+  - Enable jump-forward with `StructuredOutputConfig.enable_jump_forward`
+  - Compare regular and jump-forward decoding performance
+
+- **Run Command:**
+  ```bash
+  python jump_forward_generation.py model_dir [--device CPU]
+  ```
+
+- **Notes:**
+  The sample requires an already converted OpenVINO text-generation model and
+  is verified with `LFM2-1.2B`. Another model can select different grammar
+  branches after deterministic spans are tokenized differently; the sample
+  reports that as an output mismatch instead of comparing unequal generations.
+
+  Jump-forward decoding is currently limited to token-input continuous
+  batching and a supported structured-output backend. It does not support
+  embedding-input or VLM generation, log probabilities, multiple returned
+  sequences, beam search, prompt lookup, assisting/speculative generation,
+  tree search/EAGLE, or non-empty stop strings.
+
 
 ## Troubleshooting
 

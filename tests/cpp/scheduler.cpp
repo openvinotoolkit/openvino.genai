@@ -2624,3 +2624,102 @@ TEST(TestScheduler, clear_expected_num_scheduled_tokens_restores_default_schedul
     }
     sequence_group->finish_iteration();
 }
+
+TEST(TestScheduler, deferred_kv_processing_progresses_when_span_exceeds_permanent_token_budget) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 2;
+    scheduler_config.num_kv_blocks = 8;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<int64_t> prompt = {0};
+    auto deferred_group = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {prompt.size()}, prompt.data()), utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {deferred_group};
+
+    Scheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::ignore = scheduler.schedule(requests);
+    deferred_group->finish_iteration();
+
+    auto deferred_sequence = deferred_group->get_running_sequences()[0];
+    for (int64_t token : {20, 21, 22, 23, 24, 25}) {
+        deferred_sequence->append_token(token, 0.0f);
+    }
+    deferred_group->set_num_validated_tokens(5);
+    deferred_group->set_deferred_kv_processing_mode(DeferredKVProcessingMode::POST_SAMPLE);
+
+    auto first_chunk = scheduler.schedule(requests);
+    EXPECT_EQ(first_chunk.m_total_num_scheduled_tokens, 2);
+    EXPECT_EQ(deferred_group->get_num_scheduled_tokens(), 2);
+    EXPECT_FALSE(deferred_group->requires_sampling());
+    deferred_group->finish_iteration();
+    EXPECT_EQ(deferred_group->get_num_deferred_kv_tokens_left(), 4);
+    EXPECT_EQ(deferred_group->get_deferred_kv_processing_mode(),
+              DeferredKVProcessingMode::POST_SAMPLE);
+
+    auto second_chunk = scheduler.schedule(requests);
+    EXPECT_EQ(second_chunk.m_total_num_scheduled_tokens, 2);
+    EXPECT_FALSE(deferred_group->requires_sampling());
+    deferred_group->finish_iteration();
+    EXPECT_EQ(deferred_group->get_num_deferred_kv_tokens_left(), 2);
+    EXPECT_EQ(deferred_group->get_deferred_kv_processing_mode(),
+              DeferredKVProcessingMode::POST_SAMPLE);
+
+    auto final_chunk = scheduler.schedule(requests);
+    EXPECT_EQ(final_chunk.m_total_num_scheduled_tokens, 2);
+    EXPECT_TRUE(deferred_group->requires_sampling());
+    deferred_group->finish_iteration();
+    EXPECT_FALSE(deferred_group->is_deferred_kv_processing());
+    EXPECT_EQ(deferred_group->get_num_deferred_kv_tokens_left(), 0);
+
+    scheduler.free_sequence(deferred_sequence->get_id());
+}
+
+TEST(TestScheduler, deferred_kv_processing_preserves_state_after_cache_retry) {
+    SchedulerConfig scheduler_config;
+    scheduler_config.max_num_batched_tokens = 8;
+    scheduler_config.num_kv_blocks = 2;
+    scheduler_config.dynamic_split_fuse = true;
+    scheduler_config.max_num_seqs = 4;
+
+    std::vector<int64_t> prompt = {0, 1, 2};
+    auto regular_group = std::make_shared<SequenceGroup>(
+        0, ov::Tensor(ov::element::i64, {prompt.size()}, prompt.data()), utils::get_greedy_config());
+    auto deferred_group = std::make_shared<SequenceGroup>(
+        1, ov::Tensor(ov::element::i64, {prompt.size()}, prompt.data()), utils::get_greedy_config());
+    std::vector<SequenceGroup::Ptr> requests = {regular_group, deferred_group};
+
+    Scheduler scheduler(init_cache_orchestrator(scheduler_config), scheduler_config);
+    std::ignore = scheduler.schedule(requests);
+    regular_group->finish_iteration();
+    deferred_group->finish_iteration();
+
+    auto regular_sequence = regular_group->get_running_sequences()[0];
+    regular_sequence->append_token(10, 0.0f);
+    auto deferred_sequence = deferred_group->get_running_sequences()[0];
+    deferred_sequence->append_token(20, 0.0f);
+    deferred_sequence->append_token(21, 0.0f);
+    deferred_group->set_num_validated_tokens(2);
+    deferred_group->set_deferred_kv_processing_mode(DeferredKVProcessingMode::PRE_SAMPLE);
+
+    auto pressured_out = scheduler.schedule(requests);
+    EXPECT_EQ(pressured_out.m_total_num_scheduled_tokens, 1);
+    EXPECT_EQ(deferred_group->get_num_scheduled_tokens(), 0);
+    EXPECT_EQ(deferred_group->get_num_tokens_to_validate(), 2);
+    EXPECT_EQ(deferred_group->get_deferred_kv_processing_mode(),
+              DeferredKVProcessingMode::PRE_SAMPLE);
+
+    regular_group->finish_iteration();
+    regular_sequence->set_status(SequenceStatus::FINISHED);
+    scheduler.free_sequence(regular_sequence->get_id());
+    requests.erase(requests.begin());
+
+    auto retry_out = scheduler.schedule(requests);
+    EXPECT_EQ(retry_out.m_total_num_scheduled_tokens, 2);
+    EXPECT_EQ(deferred_group->get_num_scheduled_tokens(), 2);
+    EXPECT_EQ(deferred_group->get_num_tokens_to_validate(), 2);
+    EXPECT_EQ(deferred_group->get_deferred_kv_processing_mode(),
+              DeferredKVProcessingMode::PRE_SAMPLE);
+
+    scheduler.free_sequence(deferred_sequence->get_id());
+}

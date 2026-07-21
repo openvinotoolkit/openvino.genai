@@ -15,6 +15,7 @@ class LogitProcessor {
 protected:
     std::vector<std::shared_ptr<LogitTransformers::ILogitTransformer>> m_logit_transformers;
     std::vector<std::shared_ptr<LogitTransformers::IStatefulLogitTransformer>> m_stateful_logit_transformers;
+    std::shared_ptr<LogitTransformers::IJumpForwardLogitTransformer> m_jump_forward_logit_transformer;
 
     std::shared_ptr<std::map<int64_t, size_t>> m_unique_generated_token_ids = std::shared_ptr<std::map<int64_t, size_t>>(new std::map<int64_t, size_t>);
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
@@ -54,6 +55,13 @@ public:
             auto transformer = structured_output_controller->get_logits_transformer(sampling_params);
             m_logit_transformers.push_back(transformer);
             m_stateful_logit_transformers.emplace_back(std::dynamic_pointer_cast<LogitTransformers::IStatefulLogitTransformer>(transformer));
+            auto jump_forward_transformer =
+                std::dynamic_pointer_cast<LogitTransformers::IJumpForwardLogitTransformer>(transformer);
+            if (jump_forward_transformer) {
+                OPENVINO_ASSERT(!m_jump_forward_logit_transformer,
+                                "LogitProcessor supports at most one jump-forward logit transformer");
+                m_jump_forward_logit_transformer = std::move(jump_forward_transformer);
+            }
         }
 
         if (sampling_params.is_multinomial() || sampling_params.is_greedy_decoding()) {
@@ -131,13 +139,41 @@ public:
         return m_generated_tokens;
     }
 
-    void register_new_generated_token(int64_t new_token_id) {
-        auto it = m_unique_generated_token_ids->find(new_token_id);
-        if (it == m_unique_generated_token_ids->end()) {
-            m_unique_generated_token_ids->insert({new_token_id, 1});
-        } else {
-            it->second++;
+    bool has_jump_forward_transformer() const {
+        return m_jump_forward_logit_transformer != nullptr;
+    }
+
+    bool is_jump_forward_terminated() const {
+        OPENVINO_ASSERT(m_jump_forward_logit_transformer,
+                        "Jump-forward logit transformer is not available");
+        return m_jump_forward_logit_transformer->is_terminated();
+    }
+
+    std::string find_jump_forward_string() {
+        OPENVINO_ASSERT(m_jump_forward_logit_transformer,
+                        "Jump-forward logit transformer is not available");
+        return m_jump_forward_logit_transformer->find_jump_forward_string();
+    }
+
+    bool accept_jump_forward_string(const std::string& jump_forward_string) {
+        OPENVINO_ASSERT(m_jump_forward_logit_transformer,
+                        "Jump-forward logit transformer is not available");
+        return m_jump_forward_logit_transformer->accept_jump_forward_string(jump_forward_string);
+    }
+
+    void register_generated_token_occurrences(const LogitTransformers::TokenIds& token_ids) {
+        for (const auto token_id : token_ids) {
+            auto it = m_unique_generated_token_ids->find(token_id);
+            if (it == m_unique_generated_token_ids->end()) {
+                m_unique_generated_token_ids->insert({token_id, 1});
+            } else {
+                it->second++;
+            }
         }
+    }
+
+    void register_new_generated_token(int64_t new_token_id) {
+        register_generated_token_occurrences({new_token_id});
         for (const auto& transformer : m_stateful_logit_transformers) {
             if (transformer->is_applicable(m_generated_tokens)) {
                 transformer->accept_tokens({new_token_id});

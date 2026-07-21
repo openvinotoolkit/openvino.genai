@@ -3792,6 +3792,7 @@ class StructuredOutputConfig:
         regex:          if set, the output will be constraint by specified regex.
         grammar:        if set, the output will be constraint by specified EBNF grammar.
         structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
+        enable_jump_forward: enables experimental jump-forward decoding for deterministic structured-output spans.
         compound_grammar:
             if set, the output will be constraint by specified compound grammar.
             Compound grammar is a combination of multiple grammars that can be used to generate structured outputs.
@@ -4123,6 +4124,14 @@ class StructuredOutputConfig:
         """
     @compound_grammar.setter
     def compound_grammar(self, arg0: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | openvino_genai.py_openvino_genai.StructuredOutputConfig.Optional | openvino_genai.py_openvino_genai.StructuredOutputConfig.Plus | openvino_genai.py_openvino_genai.StructuredOutputConfig.Star | openvino_genai.py_openvino_genai.StructuredOutputConfig.Repeat | None) -> None:
+        ...
+    @property
+    def enable_jump_forward(self) -> bool:
+        """
+        Enable experimental jump-forward decoding
+        """
+    @enable_jump_forward.setter
+    def enable_jump_forward(self, arg0: bool) -> None:
         ...
     @property
     def grammar(self) -> str | None:

@@ -24,7 +24,8 @@ namespace LogitTransformers {
  * which applies grammar constraints to the logits each time a new token is generated, and 
  * accepts tokens to update the internal state of the grammar matcher.
  */
-class XGrammarLogitsTransformer : public IStatefulLogitTransformer {
+class XGrammarLogitsTransformer : public IStatefulLogitTransformer,
+                                  public IJumpForwardLogitTransformer {
 public:                            
     explicit XGrammarLogitsTransformer(
         const xgrammar::CompiledGrammar& compiled_grammar,
@@ -34,6 +35,9 @@ public:
     );
 
     void accept_tokens(const TokenIds& input_ids) override;
+    bool is_terminated() const override;
+    std::string find_jump_forward_string() override;
+    bool accept_jump_forward_string(const std::string& jump_forward_string) override;
 
     void apply(Logits& logits) override;
 protected:
@@ -82,6 +86,9 @@ public:
      */
     std::shared_ptr<LogitTransformers::ILogitTransformer> get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) override;
     void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) override;
+    bool supports_jump_forward() const override {
+        return true;
+    }
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
 
@@ -95,7 +102,8 @@ static bool registerXGrammarBackend() {
     StructuredOutputController::register_backend("xgrammar",
         [](const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl, std::optional<int> vocab_size) {
             return std::make_unique<XGrammarStructuredOutput>(tokenizer_impl, vocab_size);
-        });
+        },
+        true);
         return true;
 }
 

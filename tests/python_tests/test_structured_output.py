@@ -10,13 +10,28 @@ import pytest
 from openvino_genai import StructuredOutputConfig as SOC
 from pydantic import BaseModel, Field
 from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.ov_genai_pipelines import PipelineType, create_ov_pipeline
 
 
 @pytest.fixture(scope="module")
 def ov_pipe(request):
     models_path = download_and_convert_model(request.param).models_path
     return create_ov_pipeline(models_path)
+
+
+@pytest.fixture(scope="module")
+def jump_forward_model():
+    return download_and_convert_model("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM")
+
+
+@pytest.fixture(scope="module")
+def jump_forward_cb_pipe(jump_forward_model):
+    return create_ov_pipeline(jump_forward_model.models_path, PipelineType.CONTINUOUS_BATCHING)
+
+
+@pytest.fixture(scope="module")
+def jump_forward_stateful_pipe(jump_forward_model):
+    return create_ov_pipeline(jump_forward_model.models_path, PipelineType.STATEFUL)
 
 
 class Person(BaseModel):
@@ -34,6 +49,75 @@ class Transaction(BaseModel):
 class RESTAPIResponse(BaseModel):
     status: Literal["success", "error"]
     data: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+
+
+def test_structured_output_config_jump_forward_property():
+    config = SOC()
+    assert config.enable_jump_forward is False
+
+    config = SOC(regex="a", enable_jump_forward=True)
+    assert config.enable_jump_forward is True
+    assert "enable_jump_forward=True" in repr(config)
+
+    config.enable_jump_forward = False
+    assert config.enable_jump_forward is False
+
+
+def make_jump_forward_config(enabled=True, **kwargs):
+    config = ov_genai.GenerationConfig(max_new_tokens=8, do_sample=False, **kwargs)
+    config.structured_output_config = SOC(
+        structural_tags_config=SOC.ConstString("constant_string"),
+        enable_jump_forward=enabled,
+    )
+    return config
+
+
+def test_continuous_batching_const_string_jump_forward_reduces_model_iterations(jump_forward_cb_pipe):
+    tokenizer = jump_forward_cb_pipe.get_tokenizer()
+    prompt_ids = tokenizer.encode("test").input_ids
+    const_token_count = tokenizer.encode("constant_string", add_special_tokens=False).input_ids.get_size()
+    assert const_token_count > 1
+
+    default_result = jump_forward_cb_pipe.generate(
+        [prompt_ids],
+        [make_jump_forward_config(enabled=False)],
+    )[0]
+    jump_forward_result = jump_forward_cb_pipe.generate(
+        [prompt_ids],
+        [make_jump_forward_config(enabled=True)],
+    )[0]
+
+    default_ids = default_result.m_generation_ids[0]
+    jump_forward_ids = jump_forward_result.m_generation_ids[0]
+    assert tokenizer.decode(default_ids) == tokenizer.decode(jump_forward_ids) == "constant_string"
+
+    default_iterations = len(default_result.perf_metrics.raw_metrics.m_durations)
+    jump_forward_iterations = len(jump_forward_result.perf_metrics.raw_metrics.m_durations)
+    assert default_iterations > 1
+    assert jump_forward_iterations < default_iterations
+
+
+@pytest.mark.parametrize(
+    "config_kwargs,error",
+    [
+        pytest.param({"logprobs": 1}, "does not support logprobs > 0", id="logprobs"),
+        pytest.param({"num_beams": 2}, "does not support beam search", id="beam-search"),
+        pytest.param({"stop_strings": {"stop"}}, "does not support non-empty stop_strings", id="stop-strings"),
+    ],
+)
+def test_continuous_batching_jump_forward_rejects_unsupported_modes(
+    jump_forward_cb_pipe,
+    config_kwargs,
+    error,
+):
+    prompt_ids = jump_forward_cb_pipe.get_tokenizer().encode("test").input_ids
+    with pytest.raises(RuntimeError, match=error):
+        jump_forward_cb_pipe.generate([prompt_ids], [make_jump_forward_config(**config_kwargs)])
+
+
+def test_stateful_pipeline_rejects_jump_forward(jump_forward_stateful_pipe):
+    with pytest.raises(RuntimeError, match="not supported by the stateful pipeline"):
+        jump_forward_stateful_pipe.generate("test", make_jump_forward_config())
 
 
 def test_structured_output_config_from_model_format_python_inputs():

@@ -151,9 +151,6 @@ XGrammarLogitsTransformer::XGrammarLogitsTransformer(
     m_token_bitmask_ov = ov::Tensor(ov::element::i32, {bitmask_size});
     std::fill(m_token_bitmask_ov.data<int32_t>(), m_token_bitmask_ov.data<int32_t>() + bitmask_size, -1);
 
-    for (size_t i = 0; i < bitmask_size; ++i) {
-        m_token_bitmask_ov.data<int32_t>()[i] = -1;
-    }
     m_token_bitmask = std::make_shared<DLTensor>();
     m_token_bitmask->data = m_token_bitmask_ov.data<int32_t>();
     m_token_bitmask->device = DLDevice{kDLCPU, 0};
@@ -182,6 +179,18 @@ void XGrammarLogitsTransformer::accept_tokens(const TokenIds& input_ids) {
         }
         m_grammar_matcher.AcceptToken(token);
     }
+}
+
+bool XGrammarLogitsTransformer::is_terminated() const {
+    return m_grammar_matcher.IsTerminated();
+}
+
+std::string XGrammarLogitsTransformer::find_jump_forward_string() {
+    return m_grammar_matcher.FindJumpForwardString();
+}
+
+bool XGrammarLogitsTransformer::accept_jump_forward_string(const std::string& jump_forward_string) {
+    return m_grammar_matcher.AcceptString(jump_forward_string);
 }
 
 void XGrammarLogitsTransformer::apply(Logits& logits) {

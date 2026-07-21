@@ -49,6 +49,9 @@ public:
     virtual std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer>
         get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters) = 0;
     virtual void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config) = 0;
+    virtual bool supports_jump_forward() const {
+        return false;
+    }
 };
 
 /**
@@ -67,6 +70,10 @@ class StructuredOutputController {
 public:
     using BackendFactory = std::function<std::unique_ptr<ov::genai::IStructuredOutputImpl>(
         const ov::genai::Tokenizer::TokenizerImpl&, std::optional<int>)>;
+    struct BackendRegistration {
+        BackendFactory factory;
+        bool supports_jump_forward = false;
+    };
 
     StructuredOutputController(const ov::genai::Tokenizer::TokenizerImpl& tokenizer_impl,
                               std::optional<int> vocab_size=std::nullopt);
@@ -75,10 +82,13 @@ public:
     void validate_grammar(const std::optional<StructuredOutputConfig>& structured_output_config);
     std::shared_ptr<ov::genai::LogitTransformers::ILogitTransformer> get_logits_transformer(const ov::genai::GenerationConfig& sampling_parameters);
 
-    static void register_backend(const std::string& name, BackendFactory factory);
+    static void register_backend(const std::string& name,
+                                 BackendFactory factory,
+                                 bool supports_jump_forward = false);
+    static bool supports_jump_forward(const std::optional<StructuredOutputConfig>& structured_output_config);
     static void set_default_backend(const std::string& name);
     static std::string& get_default_backend_name();
-    static std::unordered_map<std::string, BackendFactory>& get_backend_registry();
+    static std::unordered_map<std::string, BackendRegistration>& get_backend_registry();
     
     std::pair<std::map<std::string, float>, std::vector<float>> get_times() const;
     void clear_compile_times();

@@ -86,6 +86,14 @@ public:
     virtual void accept_tokens(const TokenIds& input_ids) = 0;
 };
 
+class IJumpForwardLogitTransformer {
+public:
+    virtual ~IJumpForwardLogitTransformer() = default;
+    virtual bool is_terminated() const = 0;
+    virtual std::string find_jump_forward_string() = 0;
+    virtual bool accept_jump_forward_string(const std::string& jump_forward_string) = 0;
+};
+
 
 class TopPFilter : public ILogitTransformer {
 public:

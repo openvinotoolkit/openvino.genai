@@ -925,6 +925,7 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "structural_tags_config", structural_tags_config);
     read_anymap_param(properties, "compound_grammar", compound_grammar);
     read_anymap_param(properties, "backend", backend);
+    read_anymap_param(properties, "enable_jump_forward", enable_jump_forward);
 }
 
 StructuredOutputConfig StructuredOutputConfig::from_model_format(const std::string& model_format,

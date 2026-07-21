@@ -28,6 +28,12 @@ enum class SequenceGroupType {
     EMBEDDINGS
 };
 
+enum class DeferredKVProcessingMode {
+    NONE,
+    PRE_SAMPLE,
+    POST_SAMPLE
+};
+
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
 
@@ -386,6 +392,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_max_content_len = 0;
     // max validation length within a group to check generated tokens
     size_t m_num_validation_tokens = 0;
+    DeferredKVProcessingMode m_deferred_kv_processing_mode = DeferredKVProcessingMode::NONE;
+    size_t m_num_deferred_kv_tokens_left = 0;
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
     // output seq len at current iteration
@@ -700,6 +708,10 @@ public:
     }
 
     bool requires_sampling() const {
+        if (is_deferred_kv_processing() &&
+            m_num_scheduled_tokens < get_num_available_tokens_for_deferred_kv_processing()) {
+            return false;
+        }
         return get_context_len() >= get_prompt_len() && get_context_len() > m_max_content_len && get_max_new_tokens() > 0;
     }
 
@@ -712,6 +724,13 @@ public:
     void clear_scheduled_tokens() {
         m_num_scheduled_tokens = 0;
         m_num_validation_tokens = 0;
+        m_deferred_kv_processing_mode = DeferredKVProcessingMode::NONE;
+        m_num_deferred_kv_tokens_left = 0;
+        m_output_seq_len = 0;
+    }
+
+    void unschedule_tokens() {
+        m_num_scheduled_tokens = 0;
         m_output_seq_len = 0;
     }
 
@@ -729,6 +748,39 @@ public:
         return m_num_validation_tokens;
     }
 
+    void set_deferred_kv_processing_mode(DeferredKVProcessingMode mode) {
+        OPENVINO_ASSERT(mode == DeferredKVProcessingMode::NONE || m_num_validation_tokens > 0,
+                        "Deferred KV processing requires at least one jump-forward token");
+        m_deferred_kv_processing_mode = mode;
+        m_num_deferred_kv_tokens_left =
+            mode == DeferredKVProcessingMode::NONE
+                ? 0
+                : m_num_validation_tokens +
+                      (mode == DeferredKVProcessingMode::POST_SAMPLE ? 1 : 0);
+    }
+
+    DeferredKVProcessingMode get_deferred_kv_processing_mode() const {
+        return m_deferred_kv_processing_mode;
+    }
+
+    bool is_deferred_kv_processing() const {
+        return m_deferred_kv_processing_mode != DeferredKVProcessingMode::NONE;
+    }
+
+    size_t get_num_deferred_kv_tokens_left() const {
+        return m_num_deferred_kv_tokens_left;
+    }
+
+    size_t get_num_available_tokens_for_deferred_kv_processing() const {
+        OPENVINO_ASSERT(is_deferred_kv_processing(),
+                        "Deferred KV token count is only available during deferred processing");
+        const size_t num_tokens_to_recompute =
+            m_max_content_len > m_num_processed_tokens
+                ? m_max_content_len - m_num_processed_tokens
+                : 0;
+        return num_tokens_to_recompute + m_num_deferred_kv_tokens_left;
+    }
+
     void set_stream_window_size(size_t k) {
         m_stream_window_size = k;
     }
@@ -736,6 +788,9 @@ public:
     size_t get_num_available_tokens_for_batching() const {
         OPENVINO_ASSERT(!has_finished(), "Internal error: this function cannot be called on finished sequence group");
         OPENVINO_ASSERT(get_num_scheduled_tokens() == 0, "Internal error: this function cannot be called when we are already in scheduling phase");
+        if (is_deferred_kv_processing()) {
+            return get_num_available_tokens_for_deferred_kv_processing();
+        }
         // if sequence group has not finished, it has at least one token to process
         size_t num_available_tokens = std::max(get_prompt_len(), m_max_content_len);
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
@@ -743,9 +798,25 @@ public:
 
     // mark current schedule phase as finished and updates internal counters
     void finish_iteration() {
+        if (is_deferred_kv_processing()) {
+            const size_t num_tokens_to_recompute =
+                m_max_content_len > m_num_processed_tokens
+                    ? m_max_content_len - m_num_processed_tokens
+                    : 0;
+            const size_t num_forwarded_deferred_tokens =
+                m_num_scheduled_tokens > num_tokens_to_recompute
+                    ? m_num_scheduled_tokens - num_tokens_to_recompute
+                    : 0;
+            OPENVINO_ASSERT(num_forwarded_deferred_tokens <= m_num_deferred_kv_tokens_left);
+            m_num_deferred_kv_tokens_left -= num_forwarded_deferred_tokens;
+        }
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
         m_max_content_len = std::max(m_max_content_len, m_num_processed_tokens);
+        if (is_deferred_kv_processing() && m_num_deferred_kv_tokens_left > 0) {
+            unschedule_tokens();
+            return;
+        }
         clear_scheduled_tokens();
     }
 
