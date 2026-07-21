@@ -29,14 +29,14 @@ auto vlm_generate_prompt_param = R"(
     :param prompt: Input prompt
     :type prompt: str
     For using image and video tags in prompt, see:
-    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
 )";
 
 auto vlm_generate_history_param = R"(
     :param history: Chat history
     :type history: ChatHistory
     For using image and video tags in prompt, see:
-    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
 )";
 
 auto vlm_generate_common_params = R"(
