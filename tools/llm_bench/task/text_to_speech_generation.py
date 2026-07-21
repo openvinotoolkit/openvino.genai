@@ -107,6 +107,7 @@ def run_text_to_speech_generation_optimum(
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=prompt_index,
+        output_repr=f"audio:{out_size}smp@{sample_rate}Hz",
         **tokenization_kwargs,
         **memory_metrics,
     )
@@ -212,6 +213,7 @@ def run_text_to_speech_generation_genai(
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=prompt_index,
+        output_repr=f"audio:{out_size}smp@{sample_rate}Hz",
         **tokenization_kwargs,
         **memory_metrics,
     )

@@ -45,12 +45,18 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         result_md5_list.append(hashlib.md5(Image.open(rslt_img_fn).tobytes(), usedforsecurity=False).hexdigest())
 
     generation_time = end - start
+    out_img = res[0]
+    if hasattr(out_img, "shape"):  # numpy array (H, W, C)
+        out_h, out_w = out_img.shape[0], out_img.shape[1]
+    else:  # PIL image (.size == (width, height))
+        out_w, out_h = out_img.size
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         infer_count=nsteps,
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=image_id,
+        output_repr=f"image:{out_w}x{out_h}",
         **memory_metrics,
     )
     iter_data_list.append(iter_data)

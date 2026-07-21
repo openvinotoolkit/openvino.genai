@@ -171,6 +171,7 @@ class TextToVideoOptimum(CommonPipeline):
             max_sys_mem=max_sys_mem_consumption,
             max_sys_mem_increase=sys_mem_increase,
             prompt_idx=prompt_index,
+            output_repr=f"video:{self.width}x{self.height}@{self.num_frames}f",
         )
         metrics_print.print_metrics(
             iter_num,
@@ -324,6 +325,7 @@ class TextToVideoGenAI(CommonPipeline):
             max_sys_mem=max_sys_mem_consumption,
             max_sys_mem_increase=sys_mem_increase,
             prompt_idx=prompt_index,
+            output_repr=f"video:{self.width}x{self.height}@{self.num_frames}f",
         )
 
         metrics_print.print_metrics(

@@ -61,6 +61,13 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "input_size": iter_data["input_size"],
             "infer_count": iter_data["infer_count"],
             "output_size": iter_data["output_size"],
+            # output_length: generated output length under a name symmetric with
+            # prompt_length. Same value as output_size (tokens for text/VLM/
+            # speech, audio samples for TTS, empty when the task records none).
+            "output_length": iter_data["output_size"],
+            # output_repr: compact output summary, symmetric with prompt_repr
+            # ("<N>t" for text outputs, media dimensions for image/video/audio).
+            "output_repr": iter_data.get("output_repr", ""),
             "generation_time": generation_time,
             "latency": round(latency, 5) if latency != "" else latency,
             "first_latency": round(first_latency, 5) if first_latency != "" else first_latency,
@@ -71,6 +78,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "detokenization_time": detokenization_time,
             "prompt_idx": iter_data["prompt_idx"],
             "prompt_repr": iter_data.get("prompt_repr", ""),
+            "prompt_length": iter_data.get("prompt_length", ""),
             "result_md5": result_md5,
             "start": timestamp_start,
             "end": timestamp_end,

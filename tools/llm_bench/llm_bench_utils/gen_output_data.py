@@ -20,12 +20,18 @@ def gen_iterate_data(
     prompt_idx="",
     tokenization_time=[],
     mm_embeddings_preparation_time="",
+    output_repr="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
     iter_data["input_size"] = in_size
     iter_data["infer_count"] = infer_count
     iter_data["output_size"] = out_size
+    # output_repr: compact summary of the generated output. Text-producing
+    # tasks pass out_size (a token count) and get "<N>t" for free here; tasks
+    # whose output is media (image/video/audio) pass an explicit output_repr
+    # string (e.g. "image:512x512"). Empty when neither applies.
+    iter_data["output_repr"] = output_repr or (f"{out_size}t" if isinstance(out_size, int) and out_size > 0 else "")
     iter_data["generation_time"] = gen_time
     iter_data["latency"] = latency
     iter_data["result_md5"] = res_md5
@@ -84,4 +90,5 @@ def embed_iterate_data(
     iter_data["detokenization_time"] = ""
     iter_data["result_md5"] = ""
     iter_data["output_size"] = ""
+    iter_data["output_repr"] = ""  # embeddings have no generated output
     return iter_data

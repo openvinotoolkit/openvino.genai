@@ -140,7 +140,7 @@ class BenchPrompt(dict):
         self._video_shape = None  # (frames, height, width) | None
         self._audio_info = None  # (duration_sec, sample_rate) | None
         self._mask_fraction = None  # float | None  cached mask coverage % (extra feedback fix)
-        self._token_count = None  # int | None  post-tokenization prompt length (set by stamp_repr)
+        self._prompt_length = None  # int | None  total tokens over all inputs (set by stamp_repr)
         self._probed = False
         self._load(data)
 
@@ -278,39 +278,34 @@ class BenchPrompt(dict):
 
     def __repr__(self):
         """
-        Human-readable description of the prompt and its media dimensions.
+        Human-readable description of the prompt and its input **sizes**.
 
         Format (``+`` separates modalities):
 
-            text:12t
-            text:12t + image:512x512
-            text:12t + video:640x480@30f
-            text:12t + audio:30.0s@44100Hz
-            text:12t + image:512x512/35.2%
-            text:12t + image:1024x768 + video:640x480@16f
+            text:7w
+            text:7w + image:512x512
+            text:7w + video:640x480@30f
+            text:7w + audio:30.0s@44100Hz
+            text:7w + image:512x512/35.2%
+            text:7w + image:1024x768 + video:640x480@16f
             audio:30.0s@44100Hz      <- no text prompt
 
-        The text prompt length is reported as a token count with a ``t``
-        suffix (e.g. ``text:12t``).  Tokens are the meaningful unit — a
-        prompt's word count does not determine how many tokens the model's
-        tokenizer produces.  The count is adopted from the generation
-        function's recorded ``input_size`` (see :meth:`stamp_repr`), so it is
-        only available *after* tokenization.  Before that (e.g. the very first
-        warm-up stdout line) the length falls back to a whitespace word count
-        with a ``w`` suffix (``text:7w``).
+        This is a *size* summary: the text is shown as a whitespace word count
+        (``w`` suffix), images/videos as pixel dimensions, audio as duration.
+        The tokenized length of all inputs combined (text + media) is a
+        separate metric reported as ``prompt_length`` (see :meth:`stamp_repr`),
+        not part of this string.
         """
         self.probe()
         parts = []
 
         # ---- text (optional) ----
-        # Prefer the post-tokenization token count; fall back to a word count
-        # only before tokenization has happened (e.g. the warm-up stdout line).
+        # prompt_repr describes input *sizes*; the text size is its word count.
+        # The tokenized length of all inputs (text + media) is reported
+        # separately as prompt_length (see stamp_repr).
         if self.get("prompt"):
-            if self._token_count is not None:
-                parts.append(f"text:{self._token_count}t")
-            else:
-                word_count = len(self["prompt"].split())
-                parts.append(f"text:{word_count}w")
+            word_count = len(self["prompt"].split())
+            parts.append(f"text:{word_count}w")
 
         # ---- image (optionally decorated with mask coverage fraction) ----
         # Mirror probe(): a prompt carrying audio treats 'media' as audio, not
@@ -358,8 +353,8 @@ class BenchPrompt(dict):
         prompt_repr = repr(self)
         log.info(f"{prefix} Prompt: {prompt_repr}")
 
-    def stamp_repr(self, iter_data_list, start_index, batch_size=1, input_is_text_only=True):
-        """Adopt the tokenized prompt length and tag ``repr`` onto new records.
+    def stamp_repr(self, iter_data_list, start_index, batch_size=1):
+        """Tag ``prompt_repr`` and ``prompt_length`` onto the new records.
 
         Callers capture ``len(iter_data_list)`` **before** invoking the
         generation function, then pass that length here afterwards. This tags
@@ -371,41 +366,39 @@ class BenchPrompt(dict):
         * multiple records appended (e.g. per-batch) -> all of them are tagged.
 
         This replaces the fragile ``iter_data_list[-1]["prompt_repr"] = ...``
-        positional assignment, which silently mis-attributed the repr whenever
+        positional assignment, which silently mis-attributed the value whenever
         a call appended a number of records other than exactly one.
 
-        The generation function records the post-tokenization input length in
-        ``iter_data["input_size"]`` (``= per-prompt tokens * batch_size``).
-        We adopt it here as the prompt's token count so that ``repr`` reports
-        ``text:<N>t`` (tokens) instead of a word-count estimate — tokens being
-        the only meaningful unit, since word count does not determine how many
-        tokens the tokenizer produces.  ``batch_size`` divides the recorded
-        value back to a per-prompt figure.
+        Two fields are written to each new record:
 
-        ``input_is_text_only`` guards *what* ``input_size`` measures.  The
-        prompt-length figure must describe the **text** prompt only, so it may
-        be adopted just when ``input_size`` counts text tokens alone (text
-        generation, embeddings, TTS, rerank, and image/video generation whose
-        input_ids come solely from the text prompt).  For visual-language
-        models ``input_size`` conflates text with image/video tokens, so the
-        caller passes ``input_is_text_only=False`` and the text length falls
-        back to the (text-only) word count rather than reporting a token count
-        inflated by non-text tokens.
+        * ``prompt_repr`` — the input *size* summary string (``repr(self)``:
+          text word count + media dimensions).
+        * ``prompt_length`` — the total tokenized length of **all** inputs
+          combined (text + image/video/audio tokens). Sourced from the
+          post-tokenization ``iter_data["input_size"]`` the generation function
+          records (``= per-prompt tokens * batch_size``); ``batch_size`` divides
+          it back to a per-prompt figure. For visual-language models this
+          already includes image/video tokens. The mask image is never
+          tokenized, so it is naturally excluded. Left empty for tasks that do
+          not record a token ``input_size`` (e.g. speech_to_text,
+          super_resolution).
         """
         new_records = iter_data_list[start_index:]
 
-        if input_is_text_only and batch_size:
+        if batch_size:
             sizes = [
                 r["input_size"]
                 for r in new_records
                 if isinstance(r.get("input_size"), (int, float)) and r["input_size"] > 0
             ]
             if sizes:
-                self._token_count = int(max(sizes) // batch_size)
+                self._prompt_length = int(max(sizes) // batch_size)
 
         prompt_repr = repr(self)
+        prompt_length = self._prompt_length if self._prompt_length is not None else ""
         for record in new_records:
             record["prompt_repr"] = prompt_repr
+            record["prompt_length"] = prompt_length
 
 
 # ---------------------------------------------------------------------------
