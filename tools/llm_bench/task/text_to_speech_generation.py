@@ -337,10 +337,10 @@ def run_omni_text_to_speech_generation_optimum(
         raise RuntimeError("Qwen3-Omni text_to_speech: talker did not produce a waveform")
 
     result_md5_list = []
-    _, md5 = _save_omni_speech(waveform, args, prompt_index, num, 0, proc_id, sample_rate)
+    audio_array, md5 = _save_omni_speech(waveform, args, prompt_index, num, 0, proc_id, sample_rate)
     result_md5_list.append(md5)
 
-    out_size = int(np.asarray(waveform).size)
+    out_size = int(audio_array.size)
     tokenization_kwargs = {"tokenization_time": [tok_encode_time]}
     _record_omni_iter(
         num,

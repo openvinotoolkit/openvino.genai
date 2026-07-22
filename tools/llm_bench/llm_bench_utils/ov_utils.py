@@ -866,6 +866,11 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
         log.info("Selected Optimum Intel for benchmarking")
         ov_config.pop("ATTENTION_BACKEND", None)
         model_class = kwargs['use_case'].ov_cls
+        if model_class is None:
+            raise RuntimeError(
+                "Optimum Intel path requires OVModelForMultimodalLM, which is not exposed by the installed "
+                "optimum-intel. Upgrade optimum-intel or rerun with --genai."
+            )
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()
         start = time.perf_counter()
@@ -929,6 +934,11 @@ def create_optimum_omni_text_2_speech_model(
 ):
     log.info("Selected Optimum Intel for benchmarking")
     model_class = kwargs["use_case"].ov_cls
+    if model_class is None:
+        raise RuntimeError(
+            "Optimum Intel path requires OVModelForMultimodalLM, which is not exposed by the installed "
+            "optimum-intel. Upgrade optimum-intel or rerun with --genai."
+        )
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()

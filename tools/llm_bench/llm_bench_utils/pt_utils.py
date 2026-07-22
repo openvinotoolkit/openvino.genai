@@ -262,6 +262,10 @@ class Qwen3OmniPTWrapper:
         if num_beams and num_beams > 1:
             kwargs.setdefault("thinker_num_beams", int(num_beams))
 
+        device = self._model.device
+        args = tuple(a.to(device) if isinstance(a, torch.Tensor) else a for a in args)
+        kwargs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in kwargs.items()}
+
         with torch.no_grad():
             return self._model.generate(*args, **kwargs)
 
@@ -324,6 +328,10 @@ class Qwen3OmniVisualTextPTWrapper:
         # Suppress talker: visual_text_gen only consumes token ids and would otherwise pay the
         # cost of audio synthesis (and fail when the checkpoint has no talker).
         kwargs["return_audio"] = False
+
+        device = self._model.device
+        args = tuple(a.to(device) if isinstance(a, torch.Tensor) else a for a in args)
+        kwargs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in kwargs.items()}
 
         with torch.no_grad():
             result = self._model.generate(*args, **kwargs)

@@ -267,13 +267,13 @@ USE_CASES = {
 try:
     from optimum.intel.openvino import OVModelForMultimodalLM
 except ImportError:
-    pass
-else:
-    USE_CASES["visual_text_gen"].append(UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM))
-    USE_CASES["speech_to_text"].append(UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM))
-    USE_CASES["text_to_speech"].append(
-        UseCaseTextToSpeech(["qwen3-omni"], ov_cls=OVModelForMultimodalLM, tokenizer_cls=AutoProcessor)
-    )
+    OVModelForMultimodalLM = None
+
+USE_CASES["visual_text_gen"].append(UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM))
+USE_CASES["speech_to_text"].append(UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM))
+USE_CASES["text_to_speech"].append(
+    UseCaseTextToSpeech(["qwen3-omni"], ov_cls=OVModelForMultimodalLM, tokenizer_cls=AutoProcessor)
+)
 
 PA_ATTENTION_BACKEND = "PA"
 SDPA_ATTENTION_BACKEND = "SDPA"
