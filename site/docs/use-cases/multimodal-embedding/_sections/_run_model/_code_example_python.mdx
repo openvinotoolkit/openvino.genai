@@ -21,21 +21,27 @@ def read_images(path: str) -> list[ov.Tensor]:
 
 def read_video(path: str, num_frames: int = 8) -> tuple[ov.Tensor, ov_genai.VideoMetadata]:
     cap = cv2.VideoCapture(path)
-    total_num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    indices = np.arange(0, total_num_frames, total_num_frames / num_frames).astype(int)
-
-    metadata = ov_genai.VideoMetadata()
-    metadata.fps = cap.get(cv2.CAP_PROP_FPS)
-    metadata.frames_indices = indices.tolist()
+    fps = cap.get(cv2.CAP_PROP_FPS)
 
     frames = []
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        frames.append(np.array(frame))
+        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     cap.release()
-    return ov.Tensor(frames), metadata
+
+    total_num_frames = len(frames)
+    if total_num_frames == 0:
+        raise RuntimeError(f"Failed to read frames from video: {path}")
+    indices = np.linspace(0, total_num_frames - 1, num=min(num_frames, total_num_frames), dtype=int)
+
+    metadata = ov_genai.VideoMetadata()
+    metadata.fps = fps
+    metadata.frames_indices = indices.tolist()
+
+    sampled_frames = [frames[i] for i in indices.tolist()]
+    return ov.Tensor(np.stack(sampled_frames, axis=0)), metadata
 
 pipeline = ov_genai.EmbeddingPipeline(models_path, "${props.device || 'CPU'}")
 
