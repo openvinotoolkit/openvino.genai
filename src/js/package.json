@@ -30,7 +30,7 @@
     "text-embedding",
     "text-rerank",
     "image-generation",
-    "image-processing",
+    "visual-processing",
     "speech-generation",
     "speech-recognition"
   ],

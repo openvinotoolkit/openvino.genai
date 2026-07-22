@@ -824,6 +824,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         videos_list = [[], []]
 
     res_generate = []
+    res_cb_generate = []
     for idx, images in enumerate(images_list):
         videos = videos_list[idx]
         res_generate.append(
@@ -833,6 +834,14 @@ def test_vlm_continuous_batching_generate_vs_add_request(
                 videos=videos,
                 generation_config=generation_config,
             )
+        )
+        res_cb_generate.append(
+            ov_continuous_batching_pipe.generate(
+                [PROMPTS[0]],
+                images=[images],
+                videos=[videos],
+                generation_config=[generation_config],
+            )[0]
         )
 
     tokenizer = ov_continuous_batching_pipe.get_tokenizer()
@@ -849,6 +858,38 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         while handle.get_status() != GenerationStatus.FINISHED:
             ov_continuous_batching_pipe.step()
         outputs = handle.read_all()
+        perf_metrics = handle.get_perf_metrics()
+        vlm_perf_metrics = handle.get_vlm_perf_metrics()
+        cb_vlm_perf_metrics = res_cb_generate[idx].perf_metrics
+
+        assert perf_metrics.get_num_generated_tokens() > 0
+        assert len(perf_metrics.raw_metrics.token_infer_durations) == perf_metrics.get_num_generated_tokens()
+        assert sum(perf_metrics.raw_metrics.m_batch_sizes) == perf_metrics.get_num_generated_tokens()
+        assert len(perf_metrics.raw_metrics.sampling_durations) == len(perf_metrics.raw_metrics.m_batch_sizes)
+        assert perf_metrics.get_sampling_duration().mean > 0
+        assert perf_metrics.get_load_time() > 0
+        assert vlm_perf_metrics.get_load_time() == perf_metrics.get_load_time()
+        assert vlm_perf_metrics.get_num_generated_tokens() == perf_metrics.get_num_generated_tokens()
+        assert perf_metrics.get_num_input_tokens() == cb_vlm_perf_metrics.get_num_input_tokens()
+        assert perf_metrics.get_num_generated_tokens() == cb_vlm_perf_metrics.get_num_generated_tokens()
+        assert vlm_perf_metrics.get_num_input_tokens() == cb_vlm_perf_metrics.get_num_input_tokens()
+        assert vlm_perf_metrics.get_num_generated_tokens() == cb_vlm_perf_metrics.get_num_generated_tokens()
+        assert vlm_perf_metrics.get_tokenization_duration().mean > 0
+        assert cb_vlm_perf_metrics.get_tokenization_duration().mean > 0
+        assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == 1
+        assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations
+        )
+        assert vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
+        assert cb_vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
+        assert (
+            vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
+            == cb_vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
+        )
+        assert vlm_perf_metrics.get_total_image_slice_count() == sum(
+            vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
+        )
+        assert vlm_perf_metrics.get_total_image_slice_count() == cb_vlm_perf_metrics.get_total_image_slice_count()
         for out_idx, output in enumerate(outputs):
             text = tokenizer.decode(output.generated_ids)
             assert text == res_generate[idx].texts[out_idx]
@@ -1381,6 +1422,12 @@ def test_perf_metrics(
     mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+    # Test per-image and request-level image slice metrics.
+    assert perf_metrics.get_total_image_slice_count() > 0
+    assert len(vlm_raw_metrics.per_image_slice_counts) > 0
+    assert all(count > 0 for count in vlm_raw_metrics.per_image_slice_counts)
+    assert perf_metrics.get_total_image_slice_count() == sum(vlm_raw_metrics.per_image_slice_counts)
 
 
 @pytest.mark.transformers_dependent(

@@ -9,6 +9,7 @@ import llm_bench_utils.ov_utils
 import llm_bench_utils.pt_utils
 import llm_bench_utils.model_utils as model_utils
 import numpy as np
+import torch
 import hashlib
 import threading
 import llm_bench_utils.metrics_print as metrics_print
@@ -696,3 +697,140 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers used by the chat pipeline (task/text_generation_chat.py).
+# Kept here so both the plain and chat text-generation pipelines share a single
+# implementation of input-saving, output-printing and gen-config setup.
+# ---------------------------------------------------------------------------
+def save_input_data_to_file(
+    input_text_list: list,
+    args: dict,
+    model_precision: str,
+    prompt_index: int,
+    iter_num: int,
+    proc_id: int,
+    is_chat: bool = False,
+):
+    if args["output_dir"] is None or iter_num > 0:
+        return
+
+    if is_chat:
+        llm_bench_utils.output_file.output_input_text(
+            input_text_list, args, model_precision, prompt_index, 0, proc_id, is_chat
+        )
+    else:
+        for bs_index, in_text in enumerate(input_text_list):
+            llm_bench_utils.output_file.output_input_text(
+                in_text, args, model_precision, prompt_index, bs_index, proc_id, is_chat
+            )
+
+
+def print_generated_output(
+    prompt_index: int,
+    iter_num: int,
+    result_md5_list: list,
+    md5_list: list,
+    generated_text: list,
+    enable_prompt_permutations: bool = False,
+    chat_prompts_num: int = None,
+    chat_idx: int = None,
+):
+    if iter_num > 0 and not enable_prompt_permutations:
+        if chat_idx is not None:
+            prev_md5 = md5_list[iter_num - 1][chat_idx][prompt_index]
+        else:
+            prev_md5 = md5_list[iter_num - 1][prompt_index]
+        if result_md5_list != prev_md5:
+            log.warning(
+                f"[{iter_num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                f"is different from md5 of the {iter_num - 1} iteration {prev_md5}"
+            )
+            metrics_print.print_generated(
+                iter_num,
+                warm_up=(iter_num == 0),
+                generated=generated_text[0],
+                prompt_idx=prompt_index,
+                chat_idx=chat_idx,
+            )
+    else:
+        if chat_prompts_num is None or chat_prompts_num - 1 == prompt_index:
+            metrics_print.print_generated(
+                iter_num,
+                warm_up=(iter_num == 0),
+                generated=generated_text[0],
+                prompt_idx=prompt_index,
+                chat_idx=chat_idx,
+            )
+
+
+def setup_additional_optimum_args(args: dict, model: object, tokenizer: object, streaming, tokens_len: int):
+    additional_args = model_utils.setup_gen_config_use_custom_args()
+
+    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
+    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
+    # Override it to preserve max_new_tokens.
+    additional_args["max_length"] = 2**64 - 1
+    if streaming:
+        additional_args["streamer"] = OptimumChunkStreamer(tokenizer, tokens_len=tokens_len)
+
+    if args["infer_count"] is not None and args["end_token_stopping"] is False:
+        model.generation_config.eos_token_id = None
+        model.config.eos_token_id = None
+        additional_args["eos_token_id"] = None
+
+    return additional_args
+
+
+def calc_generated_token_size_optimum(
+    result: torch.Tensor,
+    batch_idx: int,
+    model: object,
+    input_tokens: torch.Tensor,
+    input_token_size: int,
+    model_name: str,
+):
+    if "sum" not in model_name and result[batch_idx][:input_token_size].equal(input_tokens[batch_idx]):
+        generated_token_size = len(result[batch_idx]) - input_tokens[batch_idx].numel()
+    else:
+        generated_token_size = len(result[batch_idx])
+    # Encoder-decoder models expect the `decoder_input_ids` to start with a special token
+    # When counting the output length, subtract 1. The last token does not participate in inference.
+    if model.config.is_encoder_decoder and result[batch_idx][0] == model.config.decoder_start_token_id:
+        generated_token_size = generated_token_size - 1
+
+    return generated_token_size
+
+
+def genai_generation_config_setup(model: object, max_gen_tokens: int, args: dict):
+    from openvino_genai import GenerationConfig
+
+    gen_config = model.get_generation_config() if hasattr(model, "get_generation_config") else GenerationConfig()
+    gen_config.max_new_tokens = max_gen_tokens
+    # llama-3-8b-instruct's generation_config.json has 4096 max_length.
+    # This is too small because test prompt may contain 4096 tokens which leaves no space for new tokens.
+    # Override it to preserve max_new_tokens.
+    gen_config.max_length = 2**64 - 1
+    gen_config.ignore_eos = True
+    gen_config.rng_seed = args["seed"]
+    gen_config.num_beams = args["num_beams"]
+    gen_config.do_sample = False
+    if gen_config.num_beams > 1:
+        gen_config.frequency_penalty = 0
+        gen_config.presence_penalty = 0
+        gen_config.repetition_penalty = 1
+    if hasattr(gen_config, "apply_chat_template"):
+        gen_config.apply_chat_template = False
+    if args.get("draft_model", ""):
+        apply_sd_generation_config(args, gen_config)
+    if args.get("max_ngram_size") and args.get("num_assistant_tokens"):
+        config_info = "Prompt Lookup decoding config: "
+        gen_config.max_ngram_size = int(args["max_ngram_size"])
+        gen_config.num_assistant_tokens = int(args["num_assistant_tokens"])
+        config_info += (
+            f"max_ngram_size {gen_config.max_ngram_size}, num_assistant_tokens {gen_config.num_assistant_tokens}"
+        )
+        log.info(config_info)
+
+    return gen_config

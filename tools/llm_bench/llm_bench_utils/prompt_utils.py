@@ -157,6 +157,11 @@ class BenchPrompt(dict):
         """
         if isinstance(data, str):
             self["prompt"] = data
+        elif isinstance(data, list):
+            # Multi-turn chat prompt: a list of per-turn strings. Stored as-is
+            # under 'prompt'; the chat pipeline expands it via
+            # get_chat_input_data (task/text_generation_chat.py).
+            self["prompt"] = data
         elif isinstance(data, dict):
             # Store all keys so that task-specific extra parameters
             # (e.g. language/timestamp for speech-to-text, or
@@ -164,7 +169,7 @@ class BenchPrompt(dict):
             # preserved and accessible via normal dict lookups.
             self.update(data)
         else:
-            raise TypeError(f"BenchPrompt: unsupported data type {type(data)!r}. Expected str or dict.")
+            raise TypeError(f"BenchPrompt: unsupported data type {type(data)!r}. Expected str, list or dict.")
 
     # ------------------------------------------------------------------ #
     # Lazy media probing                                                   #
@@ -304,7 +309,11 @@ class BenchPrompt(dict):
         # The tokenized length of all inputs (text + media) is reported
         # separately as prompt_length (see stamp_repr).
         if self.get("prompt"):
-            word_count = len(self["prompt"].split())
+            prompt_val = self["prompt"]
+            # Multi-turn chat prompts arrive as a list of per-turn strings;
+            # count words across all turns.
+            text = " ".join(prompt_val) if isinstance(prompt_val, list) else prompt_val
+            word_count = len(text.split())
             parts.append(f"text:{word_count}w")
 
         # ---- image (optionally decorated with mask coverage fraction) ----
