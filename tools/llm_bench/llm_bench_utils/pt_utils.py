@@ -209,6 +209,26 @@ def _force_fp32_configs(config):
             stack.append(getattr(cfg, sub_name, None))
 
 
+def _load_qwen3_omni_hf_model(model_path):
+    import transformers
+
+    config = AutoConfig.from_pretrained(str(model_path), trust_remote_code=True)
+    _force_fp32_configs(config)
+
+    model_type = getattr(config, "model_type", "")
+    cls_name = _QWEN3_OMNI_MODEL_TYPES.get(model_type)
+    model_cls = getattr(transformers, cls_name, None) if cls_name else None
+    if model_cls is None:
+        raise RuntimeError(
+            f"Qwen3-Omni model_type '{model_type}' at {model_path} is not supported by the "
+            f"installed transformers build (expected class {cls_name})."
+        )
+
+    model = model_cls.from_pretrained(str(model_path), config=config, trust_remote_code=True, dtype=torch.float32)
+    model.eval()
+    return model
+
+
 class Qwen3OmniPTWrapper:
     """
     HF/PyTorch wrapper that adapts Qwen3-Omni's `generate(return_audio=True)` to the
@@ -216,24 +236,7 @@ class Qwen3OmniPTWrapper:
     """
 
     def __init__(self, model_path):
-        import transformers
-
-        config = AutoConfig.from_pretrained(str(model_path), trust_remote_code=True)
-        _force_fp32_configs(config)
-
-        model_type = getattr(config, "model_type", "")
-        cls_name = _QWEN3_OMNI_MODEL_TYPES.get(model_type)
-        model_cls = getattr(transformers, cls_name, None) if cls_name else None
-        if model_cls is None:
-            raise RuntimeError(
-                f"Qwen3-Omni model_type '{model_type}' at {model_path} is not supported by the "
-                f"installed transformers build (expected class {cls_name})."
-            )
-
-        self._model = model_cls.from_pretrained(
-            str(model_path), config=config, trust_remote_code=True, dtype=torch.float32
-        )
-        self._model.eval()
+        self._model = _load_qwen3_omni_hf_model(model_path)
         self.config = self._model.config
 
     def to(self, device):
@@ -261,6 +264,121 @@ class Qwen3OmniPTWrapper:
 
         with torch.no_grad():
             return self._model.generate(*args, **kwargs)
+
+
+class Qwen3OmniVisualTextPTWrapper:
+    """
+    HF/PyTorch wrapper that adapts Qwen3-Omni's multimodal `generate()` to the interface the
+    visual-text-generation runner expects: `preprocess_inputs(image/video/audio/text, **processor)`
+    and `generate(...)` returning a plain token-id tensor. Talker output is suppressed since only
+    the text sequence is needed.
+    """
+
+    def __init__(self, model_path):
+        self._model = _load_qwen3_omni_hf_model(model_path)
+        self.config = self._model.config
+
+    @property
+    def generation_config(self):
+        return self._model.generation_config
+
+    def to(self, device):
+        self._model.to(device)
+        return self
+
+    @staticmethod
+    def preprocess_inputs(text, image=None, video=None, audio=None, processor=None, **kwargs):
+        if processor is None:
+            raise ValueError("Processor is required for Qwen3-Omni preprocessing.")
+        if video is not None:
+            raise ValueError("Video input is not supported")
+
+        # extract_prompt_data returns audio from librosa.load as (array, sample_rate); unwrap.
+        sampling_rate = None
+        if isinstance(audio, (list, tuple)) and len(audio) == 1:
+            audio = audio[0]
+        if isinstance(audio, tuple) and len(audio) == 2:
+            audio, sampling_rate = audio
+
+        conversation = [{"role": "user", "content": [{"type": "text", "text": text}]}]
+        if image is not None:
+            conversation[0]["content"].insert(0, {"type": "image"})
+        if audio is not None:
+            conversation[0]["content"].insert(0, {"type": "audio"})
+
+        prompt = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
+        processor_kwargs = {}
+        if sampling_rate is not None:
+            processor_kwargs["sampling_rate"] = sampling_rate
+        return processor(images=image, text=[prompt], audio=audio, return_tensors="pt", **processor_kwargs)
+
+    def generate(self, *args, **kwargs):
+        # HF Qwen3-Omni exposes `thinker_max_new_tokens` / `thinker_num_beams` instead of the plain
+        # kwargs; translate them so the shared visual_text_gen path works unchanged.
+        max_new_tokens = kwargs.pop("max_new_tokens", None)
+        num_beams = kwargs.pop("num_beams", None)
+        if max_new_tokens is not None:
+            kwargs.setdefault("thinker_max_new_tokens", int(max_new_tokens))
+        if num_beams and num_beams > 1:
+            kwargs.setdefault("thinker_num_beams", int(num_beams))
+        # Suppress talker: visual_text_gen only consumes token ids and would otherwise pay the
+        # cost of audio synthesis (and fail when the checkpoint has no talker).
+        kwargs["return_audio"] = False
+
+        with torch.no_grad():
+            result = self._model.generate(*args, **kwargs)
+        # generate() returns (thinker_result, waveform_or_None) — waveform is None here since
+        # return_audio=False. thinker_result is a tensor of token ids unless return_dict_in_generate
+        # was requested (it isn't on the visual_text_gen path).
+        if isinstance(result, tuple):
+            result = result[0]
+        return result
+
+
+def create_image_text_gen_model(model_path, device, memory_data_collector, **kwargs):
+    model_path = Path(model_path)
+    if not model_path.exists():
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
+    if not model_path.is_dir() or len(os.listdir(model_path)) == 0:
+        raise RuntimeError(f"==Failure ==: model path:{model_path} is not directory or directory is empty")
+    if not device:
+        raise RuntimeError("==Failure ==: no device to load")
+    if not kwargs.get("is_omni_model", False):
+        # Only qwen3-omni currently registers a UseCaseVLM without a pt_cls, so a generic
+        # AutoModel load would silently produce a text-only backbone and mismatch preprocess_inputs.
+        raise RuntimeError("PyTorch framework for visual_text_gen is only supported for qwen3-omni models.")
+
+    log.info(f"Load Qwen3-Omni HF visual-text model from model path: {model_path}")
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.start()
+    start = time.perf_counter()
+    pipe = Qwen3OmniVisualTextPTWrapper(model_path)
+    processor = AutoProcessor.from_pretrained(str(model_path), trust_remote_code=True)
+    from_pretrain_time = time.perf_counter() - start
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.stop_and_collect_data("pretrained")
+        memory_data_collector.log_data(compilation=True)
+    log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
+
+    if device.upper() == "GPU":
+        if torch.cuda.is_available():
+            torch_device = torch.device("cuda")
+        else:
+            log.info("CUDA device is unavailable")
+            torch_device = torch.device("cpu")
+    else:
+        torch_device = torch.device(device.lower())
+    log.info(f"Torch device was set to: {torch_device}")
+    pipe.to(torch_device)
+
+    # visual_language_generation calls model.preprocess_inputs(..., **processor), so the returned
+    # processor mapping must expose the same keys the Optimum path uses: processor / tokenizer / config.
+    processor_config = {
+        "processor": processor,
+        "tokenizer": getattr(processor, "tokenizer", processor),
+        "config": pipe.config,
+    }
+    return pipe, processor_config, from_pretrain_time, None, False
 
 
 def create_text_2_speech_model(model_path, device, memory_data_collector, **kwargs):
