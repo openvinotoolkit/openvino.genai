@@ -152,7 +152,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
 
 
 def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption, speech_file_list):
-    # Qwen3-Omni consumes audio as one more VLM modality, so reuse the visual-language path.
+    # Qwen3-Omni treats audio as another VLM modality; reuse the visual-language path.
     from task.visual_language_generation import run_visual_language_generation_benchmark
 
     vlm_input_list = [

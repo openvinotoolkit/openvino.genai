@@ -908,8 +908,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
         ):
             convert_ov_tokenizer(model_path)
         if not is_omni:
-            # OmniPipeline handles tokenization internally and reports input token counts via
-            # perf_metrics.get_num_input_tokens(), so no processor is loaded here.
+            # OmniPipeline tokenizes internally and reports input tokens via perf_metrics.
             tokenizer_class = kwargs["use_case"].tokenizer_cls
             processor = tokenizer_class.from_pretrained(model_path)
 

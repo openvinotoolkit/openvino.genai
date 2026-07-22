@@ -185,9 +185,8 @@ _QWEN3_OMNI_MODEL_TYPES = {
 
 
 def _force_fp32_configs(config):
-    # Qwen3-Omni configs mark thinker as bfloat16 but leave talker/code2wav dtype unset.
-    # The default heterogeneous mix crashes at matmul time — force fp32 across the whole
-    # config tree so matmul dtypes stay consistent.
+    # Qwen3-Omni mixes bfloat16 (thinker) with unset dtype (talker/code2wav); the resulting
+    # heterogeneous matmul dtypes crash at runtime, so pin every subconfig to fp32.
     stack = [config]
     seen = set()
     while stack:
@@ -225,23 +224,14 @@ def _load_qwen3_omni_hf_model(model_path):
         )
 
     model = model_cls.from_pretrained(str(model_path), config=config, trust_remote_code=True, dtype=torch.float32)
-    # Some Qwen3-Omni submodules (e.g. audio_tower) retain the checkpoint's bfloat16 parameters
-    # despite dtype=float32 on from_pretrained, causing dtype-mismatch crashes at matmul/conv.
-    # Cast the whole tree to fp32 so parameter dtype is homogeneous.
+    # from_pretrained(dtype=float32) leaves some submodules (e.g. audio_tower) at bf16; force fp32.
     model = model.to(torch.float32)
     model.eval()
     return model
 
 
-_MISSING = object()
-
-
 class Qwen3OmniPTWrapper:
-    """
-    HF/PyTorch wrapper adapting Qwen3-Omni's multimodal `generate()` to two runner interfaces:
-    the TTS path (`return_audio=True`, returns the `(tokens, waveform)` tuple the runner unpacks)
-    and the visual-text path (talker suppressed, tuple unwrapped to just the token-id tensor).
-    """
+    """Adapts Qwen3-Omni's multimodal generate() to the visual-text and TTS runner paths."""
 
     def __init__(self, model_path):
         self._model = _load_qwen3_omni_hf_model(model_path)
@@ -260,7 +250,7 @@ class Qwen3OmniPTWrapper:
         if processor is None:
             raise ValueError("Processor is required for Qwen3-Omni preprocessing.")
 
-        # extract_prompt_data returns audio from librosa.load as (array, sample_rate); unwrap.
+        # extract_prompt_data delivers audio as librosa's (array, sample_rate) tuple.
         sampling_rate = None
         if isinstance(audio, (list, tuple)) and len(audio) == 1:
             audio = audio[0]
@@ -284,25 +274,20 @@ class Qwen3OmniPTWrapper:
         )
 
     def generate(self, *args, **kwargs):
-        # HF Qwen3-Omni exposes `thinker_*` counterparts instead of the plain generate kwargs;
-        # translate so the shared runner paths work unchanged. thinker_eos_token_id has an
-        # upstream default of [151645, 151643], so a plain `eos_token_id` in **kwargs is silently
-        # dropped by the prefix-strip dispatch loop — translate explicitly (including None, which
-        # disables EOS stopping so --infer_count runs to the requested token count).
+        # Qwen3-Omni's generate() only reads `thinker_*` kwargs; plain eos_token_id is silently
+        # dropped and defaults to [151645, 151643], so translate explicitly (None disables EOS).
         max_new_tokens = kwargs.pop("max_new_tokens", None)
         num_beams = kwargs.pop("num_beams", None)
-        eos_token_id = kwargs.pop("eos_token_id", _MISSING)
         kwargs.pop("talker_seed", None)
         if max_new_tokens is not None:
             kwargs.setdefault("thinker_max_new_tokens", int(max_new_tokens))
         if num_beams and num_beams > 1:
             kwargs.setdefault("thinker_num_beams", int(num_beams))
-        if eos_token_id is not _MISSING:
-            kwargs["thinker_eos_token_id"] = eos_token_id
+        if "eos_token_id" in kwargs:
+            kwargs["thinker_eos_token_id"] = kwargs.pop("eos_token_id")
 
-        # Speaker names vary by checkpoint (MoE: Ethan/Chelsie/Aiden/Cherry; dense multilingual:
-        # f245/m02/... ). If the requested speaker isn't in this model's speaker_id map, fall back
-        # to the first one it does define so the default keeps working across variants.
+        # Speaker names vary by checkpoint (MoE vs. dense multilingual); fall back to the first
+        # speaker this checkpoint defines so the default speaker works across variants.
         speaker = kwargs.get("speaker")
         speaker_id_map = getattr(getattr(self._model.config, "talker_config", None), "speaker_id", None) or {}
         if speaker is not None and speaker_id_map and speaker.lower() not in speaker_id_map:
@@ -310,9 +295,7 @@ class Qwen3OmniPTWrapper:
             log.warning("Speaker '%s' not available for this checkpoint; falling back to '%s'.", speaker, fallback)
             kwargs["speaker"] = fallback
 
-        # Default to talker-off for the visual-text path: it only consumes token ids and would
-        # otherwise pay the cost of audio synthesis (and fail when the checkpoint has no talker).
-        # The TTS caller sets return_audio=True explicitly and receives the raw tuple.
+        # Visual-text path only consumes token ids; TTS caller sets return_audio=True explicitly.
         kwargs.setdefault("return_audio", False)
 
         device = self._model.device
@@ -321,12 +304,38 @@ class Qwen3OmniPTWrapper:
 
         with torch.no_grad():
             result = self._model.generate(*args, **kwargs)
-        # generate() returns (thinker_result, waveform_or_None). When return_audio=False the
-        # waveform is None and callers want the token tensor directly; when True the TTS caller
-        # unpacks the tuple itself, so pass it through unchanged.
+        # generate() returns (thinker_result, waveform_or_None); unwrap for the visual-text path.
         if kwargs.get("return_audio") is False and isinstance(result, tuple):
             result = result[0]
         return result
+
+
+def _select_torch_device(device):
+    if device.upper() == "GPU":
+        if not torch.cuda.is_available():
+            log.info("CUDA device is unavailable")
+            return torch.device("cpu")
+        return torch.device("cuda")
+    return torch.device(device.lower())
+
+
+def _load_qwen3_omni_pt_pipeline(model_path, device, memory_data_collector, mem_consumption):
+    log.info(f"Load Qwen3-Omni HF model from model path: {model_path}")
+    if mem_consumption:
+        memory_data_collector.start()
+    start = time.perf_counter()
+    pipe = Qwen3OmniPTWrapper(model_path)
+    processor = AutoProcessor.from_pretrained(str(model_path), trust_remote_code=True)
+    from_pretrain_time = time.perf_counter() - start
+    if mem_consumption:
+        memory_data_collector.stop_and_collect_data("pretrained")
+        memory_data_collector.log_data(compilation=True)
+    log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
+    if device:
+        torch_device = _select_torch_device(device)
+        log.info(f"Torch device was set to: {torch_device}")
+        pipe.to(torch_device)
+    return pipe, processor, from_pretrain_time
 
 
 def create_image_text_gen_model(model_path, device, memory_data_collector, **kwargs):
@@ -338,40 +347,16 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
     if not device:
         raise RuntimeError("==Failure ==: no device to load")
     if not kwargs.get("is_omni_model", False):
-        # Only qwen3-omni currently registers a UseCaseVLM without a pt_cls, so a generic
-        # AutoModel load would silently produce a text-only backbone and mismatch preprocess_inputs.
         raise RuntimeError("PyTorch framework for visual_text_gen is only supported for qwen3-omni models.")
 
-    log.info(f"Load Qwen3-Omni HF visual-text model from model path: {model_path}")
-    if kwargs.get("mem_consumption"):
-        memory_data_collector.start()
-    start = time.perf_counter()
-    pipe = Qwen3OmniPTWrapper(model_path)
-    processor = AutoProcessor.from_pretrained(str(model_path), trust_remote_code=True)
-    from_pretrain_time = time.perf_counter() - start
-    if kwargs.get("mem_consumption"):
-        memory_data_collector.stop_and_collect_data("pretrained")
-        memory_data_collector.log_data(compilation=True)
-    log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
+    pipe, processor, from_pretrain_time = _load_qwen3_omni_pt_pipeline(
+        model_path, device, memory_data_collector, kwargs.get("mem_consumption")
+    )
 
-    if device.upper() == "GPU":
-        if torch.cuda.is_available():
-            torch_device = torch.device("cuda")
-        else:
-            log.info("CUDA device is unavailable")
-            torch_device = torch.device("cpu")
-    else:
-        torch_device = torch.device(device.lower())
-    log.info(f"Torch device was set to: {torch_device}")
-    pipe.to(torch_device)
-
-    # Hook the thinker submodule (the actual text-generation loop) so we get first/other-token
-    # and per-infer latencies. Qwen3-Omni's top-level generate() delegates token generation to
-    # self.thinker.generate(); hooking the outer wrapper would miss the sampling calls entirely.
+    # Hook the thinker submodule; the top-level generate() delegates sampling to it.
     bench_hook = hook_common.get_bench_hook(kwargs["num_beams"], pipe._model.thinker)
 
-    # visual_language_generation calls model.preprocess_inputs(..., **processor), so the returned
-    # processor mapping must expose the same keys the Optimum path uses: processor / tokenizer / config.
+    # Mirror the Optimum VLM path's processor mapping expected by visual_language_generation.
     processor_config = {
         "processor": processor,
         "tokenizer": getattr(processor, "tokenizer", processor),
@@ -384,24 +369,9 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     model_path = Path(model_path)
     from_pretrain_time = 0
     if kwargs.get("is_omni_model", False):
-        log.info(f"Load Qwen3-Omni HF model from model path: {model_path}")
-        if kwargs.get("mem_consumption"):
-            memory_data_collector.start()
-        start = time.perf_counter()
-        pipe = Qwen3OmniPTWrapper(model_path)
-        processor = AutoProcessor.from_pretrained(str(model_path), trust_remote_code=True)
-        from_pretrain_time = time.perf_counter() - start
-        if kwargs.get("mem_consumption"):
-            memory_data_collector.stop_and_collect_data("pretrained")
-            memory_data_collector.log_data(compilation=True)
-        log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
-        if device:
-            if device.upper() == "GPU" and not torch.cuda.is_available():
-                log.info("CUDA device is unavailable")
-            else:
-                torch_device = torch.device("cuda" if device.upper() == "GPU" else device.lower())
-                log.info(f"Torch device was set to: {torch_device}")
-                pipe.to(torch_device)
+        pipe, processor, from_pretrain_time = _load_qwen3_omni_pt_pipeline(
+            model_path, device, memory_data_collector, kwargs.get("mem_consumption")
+        )
         return pipe, processor, None, from_pretrain_time, False
     if model_path.exists():
         if model_path.is_dir() and len(os.listdir(model_path)) != 0:

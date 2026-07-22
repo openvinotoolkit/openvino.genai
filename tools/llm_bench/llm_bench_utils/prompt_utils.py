@@ -105,7 +105,7 @@ def load_audio_genai(audio_path):
 
 
 def load_audio_optimum(audio_path):
-    # Optimum processors resample internally, so keep the native rate and pass it along.
+    # Optimum processors resample internally; return (array, native_rate).
     return librosa.load(audio_path, sr=None, mono=True)
 
 
