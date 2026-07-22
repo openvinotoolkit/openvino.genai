@@ -2080,24 +2080,77 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
         }
     }
 
-    // Part 2: text_side — (text_embed + tts_eos) blended with codec_pad per-position
-    auto codec_pad_for_text = infer_embedding_seq(m_talker_embedding, std::vector<int64_t>(text_eos_len, m_ids.codec_pad_id));
-    ov::Tensor text_side(ov::element::f32, ov::Shape{1, text_eos_len, hidden});
-    for (size_t i = 0; i < text_side.get_size(); ++i) {
-        text_side.data<float>()[i] = text_embed_with_eos.data<const float>()[i] + codec_pad_for_text.data<const float>()[i];
-    }
-
-    // Part 3: codec_side — (codec_bos + ref_codes) blended with tts_pad per-position
+    // Part 2: codec_side source = (codec_bos + ref_codes)
     ov::Tensor codec_bos_plus_ref = concat_embed({codec_bos_embed, ref_code_embed});
     const size_t codec_side_len = codec_bos_plus_ref.get_shape()[1];
-    ov::Tensor codec_side(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
-    for (size_t i = 0; i < codec_side.get_size(); ++i) {
-        codec_side.data<float>()[i] = codec_bos_plus_ref.data<const float>()[i] + tts_pad.data<const float>()[i % hidden];
+    ov::Tensor icl_input_embed;
+    ov::Tensor trailing_text_hidden;
+    if (generation_config.non_streaming_mode) {
+        // HF ICL non-streaming: (text_with_eos + codec_pad) + (codec_bos_plus_ref + tts_pad)
+        auto codec_pad_for_text = infer_embedding_seq(m_talker_embedding, std::vector<int64_t>(text_eos_len, m_ids.codec_pad_id));
+        ov::Tensor text_side(ov::element::f32, ov::Shape{1, text_eos_len, hidden});
+        for (size_t i = 0; i < text_side.get_size(); ++i) {
+            text_side.data<float>()[i] = text_embed_with_eos.data<const float>()[i] + codec_pad_for_text.data<const float>()[i];
+        }
+
+        ov::Tensor codec_side(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+        for (size_t i = 0; i < codec_side_len; ++i) {
+            const float* src = codec_bos_plus_ref.data<const float>() + i * hidden;
+            float* dst = codec_side.data<float>() + i * hidden;
+            const float* pad = tts_pad.data<const float>();
+            for (size_t h = 0; h < hidden; ++h) {
+                dst[h] = src[h] + pad[h];
+            }
+        }
+
+        icl_input_embed = concat_embed({text_side, codec_side});
+    } else {
+        // HF ICL streaming: align text_with_eos and codec_bos_plus_ref by min(text_len, codec_len),
+        // and carry remaining text as trailing_text_hidden (or tts_pad when text is shorter).
+        if (text_eos_len > codec_side_len) {
+            ov::Tensor overlap(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+            for (size_t i = 0; i < codec_side_len; ++i) {
+                const float* text_ptr = text_embed_with_eos.data<const float>() + i * hidden;
+                const float* codec_ptr = codec_bos_plus_ref.data<const float>() + i * hidden;
+                float* out = overlap.data<float>() + i * hidden;
+                for (size_t h = 0; h < hidden; ++h) {
+                    out[h] = text_ptr[h] + codec_ptr[h];
+                }
+            }
+            icl_input_embed = overlap;
+
+            const size_t trailing_len = text_eos_len - codec_side_len;
+            trailing_text_hidden = ov::Tensor(ov::element::f32, ov::Shape{1, trailing_len, hidden});
+            std::copy_n(text_embed_with_eos.data<const float>() + codec_side_len * hidden,
+                        trailing_text_hidden.get_size(),
+                        trailing_text_hidden.data<float>());
+        } else {
+            ov::Tensor text_padded(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+            if (text_eos_len > 0) {
+                std::copy_n(text_embed_with_eos.data<const float>(),
+                            text_embed_with_eos.get_size(),
+                            text_padded.data<float>());
+            }
+            for (size_t i = text_eos_len; i < codec_side_len; ++i) {
+                std::copy_n(tts_pad.data<const float>(), hidden, text_padded.data<float>() + i * hidden);
+            }
+
+            ov::Tensor overlap(ov::element::f32, ov::Shape{1, codec_side_len, hidden});
+            for (size_t i = 0; i < codec_side_len; ++i) {
+                const float* text_ptr = text_padded.data<const float>() + i * hidden;
+                const float* codec_ptr = codec_bos_plus_ref.data<const float>() + i * hidden;
+                float* out = overlap.data<float>() + i * hidden;
+                for (size_t h = 0; h < hidden; ++h) {
+                    out[h] = text_ptr[h] + codec_ptr[h];
+                }
+            }
+            icl_input_embed = overlap;
+            trailing_text_hidden = tts_pad;
+        }
     }
 
-    // Full prefill: role | codec_input_part | text_side | codec_side
-    // Matches Python non-streaming ICL: role + codec_prefill/speaker + (text+tts_eos+cpad) + (cbos+ref_codes+tpad)
-    ov::Tensor talker_prefill = concat_embed({role_embed, codec_input_part, text_side, codec_side});
+    // Full prefill: role | codec_input_part | icl_input_embed
+    ov::Tensor talker_prefill = concat_embed({role_embed, codec_input_part, icl_input_embed});
 
     if (!generation_config.instruct.empty()) {
         const std::string instruct_text = "<|im_start|>user\n" + generation_config.instruct + "<|im_end|>\n";
@@ -2108,11 +2161,11 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
         talker_prefill = concat_embed({instruct_embed, talker_prefill});
     }
 
-    // Force non-streaming decode behavior: always add tts_pad to each generated token embed.
-    // This matches Python's trailing_text_hidden = tts_pad_embed for ICL mode when text_len <= codec_len.
-    SpeechGenerationConfig vc_config = generation_config;
-    vc_config.non_streaming_mode = true;
-    return decode_from_prefill(talker_prefill, tts_pad, ov::Tensor{}, vc_config, suppress_tokens);
+    return decode_from_prefill(talker_prefill,
+                               tts_pad,
+                               trailing_text_hidden,
+                               generation_config,
+                               suppress_tokens);
 }
 
 void Qwen3TTSImpl::perf_print_and_reset() const {
