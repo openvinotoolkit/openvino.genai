@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <cassert>
+#include <chrono>
 #include <set>
 #include <cstdlib>
 #include <string_view>
@@ -429,6 +430,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_output_seq_len = 0;
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
+    TimePoint m_start_time = std::chrono::steady_clock::now();
+    PerfMetrics m_perf_metrics;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params)
         : m_request_id(request_id),
@@ -891,6 +894,43 @@ public:
 
     void set_generation_status(GenerationStatus status) {
         m_generation_stream->set_generation_status(status);
+    }
+
+    void update_perf_metrics(MicroSeconds inference_duration,
+                             MicroSeconds sampling_duration,
+                             size_t batch_size,
+                             TimePoint step_end_time) {
+        auto& raw_metrics = m_perf_metrics.raw_metrics;
+        if (raw_metrics.m_inference_durations.empty()) {
+            raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+        }
+        raw_metrics.m_inference_durations[0] += inference_duration;
+        if (batch_size > 0) {
+            const auto per_token_inference_duration = inference_duration / batch_size;
+            raw_metrics.m_token_infer_durations.insert(raw_metrics.m_token_infer_durations.end(),
+                                                       batch_size,
+                                                       per_token_inference_duration);
+            raw_metrics.m_new_token_times.emplace_back(step_end_time);
+            raw_metrics.m_batch_sizes.emplace_back(batch_size);
+            raw_metrics.m_sampling_durations.emplace_back(sampling_duration);
+        }
+    }
+
+    PerfMetrics get_perf_metrics() {
+        auto& raw_metrics = m_perf_metrics.raw_metrics;
+        if (raw_metrics.m_inference_durations.empty()) {
+            raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+        }
+        // Record total generate duration from request start to now
+        if (raw_metrics.generate_durations.empty()) {
+            auto now = std::chrono::steady_clock::now();
+            auto total_duration = std::chrono::duration_cast<MicroSeconds>(now - m_start_time);
+            raw_metrics.generate_durations.push_back(total_duration);
+        }
+        m_perf_metrics.num_input_tokens = get_prompt_len();
+        m_perf_metrics.m_evaluated = false;
+        m_perf_metrics.evaluate_statistics(m_start_time);
+        return m_perf_metrics;
     }
 
     bool handle_stopped() const {

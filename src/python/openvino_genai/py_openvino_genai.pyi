@@ -722,6 +722,25 @@ class AutoencoderKL:
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, vae_decoder_blob_tensor: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config, device: str, **kwargs) -> None:
+        """
+                    AutoencoderKL class initialized only with decoder model from blob tensor.
+                    vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
+                    vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, vae_encoder_blob_tensor: openvino._pyopenvino.Tensor, vae_decoder_blob_tensor: openvino._pyopenvino.Tensor, vae_decoder_config: AutoencoderKL.Config, device: str, **kwargs) -> None:
+        """
+                    AutoencoderKL class initialized with both encoder and decoder models from blob tensors.
+                    vae_encoder_blob_tensor (ov.Tensor): Pre-read compiled VAE encoder model blob tensor.
+                    vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
+                    vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -906,6 +925,16 @@ class CLIPTextModel:
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, blob_tensor: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
+        """
+                    CLIPTextModel class constructor from blob tensor.
+                    blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
+                    config (CLIPTextModel.Config): CLIPTextModel configuration.
+                    clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -969,6 +998,16 @@ class CLIPTextModelWithProjection(CLIPTextModel):
                     CLIPTextModelWithProjection class constructor.
                     model (str): Pre-read model.
                     weights (ov.Tensor): Pre-read model weights tensor.
+                    config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
+                    clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, blob_tensor: openvino._pyopenvino.Tensor, config: CLIPTextModel.Config, clip_tokenizer: Tokenizer, device: str, **kwargs) -> None:
+        """
+                    CLIPTextModelWithProjection class constructor from blob tensor.
+                    blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
                     config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
                     clip_tokenizer (Tokenizer): Tokenizer for text encoding.
                     device (str): Device on which inference will be done.
@@ -1898,7 +1937,11 @@ class GenerationHandle:
         ...
     def cancel(self) -> None:
         ...
+    def get_perf_metrics(self) -> PerfMetrics:
+        ...
     def get_status(self) -> GenerationStatus:
+        ...
+    def get_vlm_perf_metrics(self) -> VLMPerfMetrics:
         ...
     def read(self) -> dict[int, GenerationOutput]:
         ...
@@ -5297,6 +5340,16 @@ class UNet2DConditionModel:
                     device (str): Device on which inference will be done.
                     kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, blob_tensor: openvino._pyopenvino.Tensor, config: UNet2DConditionModel.Config, vae_scale_factor: typing.SupportsInt, device: str, **kwargs) -> None:
+        """
+                    UNet2DConditionModel class constructor from blob tensor.
+                    blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
+                    config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
+                    vae_scale_factor (int): VAE scale factor.
+                    device (str): Device on which inference will be done.
+                    kwargs: Device properties.
+        """
     def compile(self, device: str, **kwargs) -> None:
         """
                         Compiles the model.
@@ -5372,6 +5425,11 @@ class VLMPerfMetrics(PerfMetrics):
         ...
     def get_prepare_embeddings_duration(self) -> MeanStdPair:
         ...
+    def get_total_image_slice_count(self) -> int:
+        """
+        Returns the total number of image slices processed for the request.
+        An input image without explicit slicing metadata counts as one slice.
+        """
     @property
     def vlm_raw_metrics(self) -> VLMRawPerfMetrics:
         ...
@@ -5408,7 +5466,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5447,7 +5505,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5486,7 +5544,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5525,7 +5583,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5564,7 +5622,7 @@ class VLMPipeline(VLMPipelineBase):
             :param prompt: Input prompt
             :type prompt: str
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
@@ -5590,7 +5648,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5629,7 +5687,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5668,7 +5726,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -5707,7 +5765,7 @@ class VLMPipeline(VLMPipelineBase):
             :param history: Chat history
             :type history: ChatHistory
             For using image and video tags in prompt, see:
-            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
@@ -5748,6 +5806,9 @@ class VLMRawPerfMetrics:
         :type prepare_embeddings_durations: list[MicroSeconds]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def per_image_slice_counts(self) -> list[int]:
         ...
     @property
     def prepare_embeddings_durations(self) -> list[float]:

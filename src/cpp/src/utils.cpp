@@ -281,6 +281,8 @@ bool has_op_with_type(const std::shared_ptr<const ov::Model>& function, const st
     return false;
 }
 
+}  // namespace
+
 std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<ov::Model>& model) {
     auto last_node = model->output(0).get_node()->input_value(0).get_node_shared_ptr();
     std::shared_ptr<ov::Node> matmul = ov::as_type_ptr<ov::op::v0::MatMul>(last_node);
@@ -311,8 +313,6 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
     }
     return std::make_tuple(matmul, slice_gather_dim);
 }
-
-} // namespace
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model) {
     std::shared_ptr<ov::Node> matmul = nullptr;
@@ -1062,6 +1062,14 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
                                const ov::AnyMap& properties) {
     OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
     ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
+    return import_model(blob_tensor, device, properties);
+}
+
+ov::CompiledModel import_model(const ov::Tensor& blob_tensor,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(blob_tensor.get_element_type() == ov::element::u8, "Blob tensor should have uint8 element type");
+    OPENVINO_ASSERT(blob_tensor.get_size() > 0, "Blob tensor is empty");
     return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
 }
 

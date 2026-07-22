@@ -6,6 +6,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <tuple>
 #include <cstdint>
 
 #include "openvino/genai/omni/speech_streamer_base.hpp"
@@ -124,6 +125,8 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
 void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
+
+std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<ov::Model>& model);
 
 ov::Core& singleton_core();
 
@@ -390,6 +393,13 @@ std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_prope
  * @brief Imports a compiled model from a blob file previously exported using export_model.
  */
 ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties);
+
+/**
+ * @brief Imports a compiled model from a blob tensor previously exported using export_model and read into an ov::Tensor.
+ */
+ov::CompiledModel import_model(const ov::Tensor& blob_tensor,
                                const std::string& device,
                                const ov::AnyMap& properties);
 

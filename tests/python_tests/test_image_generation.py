@@ -265,6 +265,108 @@ class TestImageGenerationOnNpuByNpuwCpu:
         assert (cpu_image.data == imported_npuw_image.data).all()
 
 
+class TestImageGenerationWithBlobTensorModels:
+    def _construct_reshaped(self, model_dir):
+        pipe = ov_genai.Text2ImagePipeline(model_dir)
+        pipe.reshape(
+            num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
+        )
+        pipe.compile("CPU")
+        return pipe
+
+    def _get_generation_args(self):
+        return {
+            "prompt": "Will Smith eating spaghetti",
+            "num_inference_steps": 5,
+            "rng_seed": 69,
+            "width": 64,
+            "height": 64,
+            "num_images_per_prompt": 1,
+        }
+
+    def _read_blob_tensor(self, blob_dir, model_folder):
+        from pathlib import Path
+
+        blob_path = Path(blob_dir) / model_folder / "openvino_model.blob"
+        try:
+            with open(blob_path, "rb") as file:
+                binary_data = file.read()
+            return ov.Tensor(np.frombuffer(binary_data, dtype=np.uint8))
+        except Exception as e:
+            raise RuntimeError(f"Failed to read blob tensor from {blob_path}: {e}")
+
+    def _read_tokenizer(self, model_dir, tokenizer_name="tokenizer"):
+        tokenizer_path = model_dir / tokenizer_name
+        try:
+            return ov_genai.Tokenizer(str(tokenizer_path))
+        except Exception as e:
+            raise RuntimeError(f"Failed to read tokenizer from {tokenizer_path}: {e}")
+
+    def _load_blob_pipeline(self, model_dir, blob_dir):
+        from pathlib import Path
+
+        model_dir = Path(model_dir)
+        # This test case only supports text2image pipelines.
+        tokenizer = self._read_tokenizer(model_dir)
+        tokenizer_2 = self._read_tokenizer(model_dir, tokenizer_name="tokenizer_2")
+        text_encoder_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder")
+        text_encoder_2_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder_2")
+        unet_blob_tensor = self._read_blob_tensor(blob_dir, "unet")
+        vae_decoder_blob_tensor = self._read_blob_tensor(blob_dir, "vae_decoder")
+
+        text_encoder = ov_genai.CLIPTextModel(
+            text_encoder_blob_tensor,
+            ov_genai.CLIPTextModel.Config(model_dir / "text_encoder" / "config.json"),
+            tokenizer,
+            "CPU",
+        )
+
+        text_encoder_2 = ov_genai.CLIPTextModelWithProjection(
+            text_encoder_2_blob_tensor,
+            ov_genai.CLIPTextModelWithProjection.Config(model_dir / "text_encoder_2" / "config.json"),
+            tokenizer_2,
+            "CPU",
+        )
+
+        vae = ov_genai.AutoencoderKL(
+            vae_decoder_blob_tensor,
+            ov_genai.AutoencoderKL.Config(model_dir / "vae_decoder" / "config.json"),
+            "CPU",
+        )
+
+        unet = ov_genai.UNet2DConditionModel(
+            unet_blob_tensor,
+            ov_genai.UNet2DConditionModel.Config(model_dir / "unet" / "config.json"),
+            vae.get_vae_scale_factor(),
+            "CPU",
+        )
+
+        blob_pipe = ov_genai.Text2ImagePipeline.stable_diffusion_xl(
+            scheduler=ov_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
+            clip_text_model=text_encoder,
+            clip_text_model_with_projection=text_encoder_2,
+            unet=unet,
+            vae=vae,
+        )
+
+        return blob_pipe
+
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_text2image_pipeline_with_blob_tensor_models(self, image_generation_model, tmp_path):
+        blob_dir = tmp_path / "blob_model"
+        generation_args = self._get_generation_args()
+
+        general_pipe = self._construct_reshaped(image_generation_model)
+        general_image = general_pipe.generate(**generation_args)
+        general_pipe.export_model(blob_dir)
+
+        blob_pipe = self._load_blob_pipeline(image_generation_model, blob_dir)
+        blob_image = blob_pipe.generate(**generation_args)
+
+        assert general_image.data.shape == blob_image.data.shape
+        assert (general_image.data == blob_image.data).all()
+
+
 class TestFlux2KleinImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
     def test_flux2_klein_text2image(self, image_generation_model):

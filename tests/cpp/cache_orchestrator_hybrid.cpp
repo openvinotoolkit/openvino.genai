@@ -286,6 +286,48 @@ TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTable
     orchestrator->free_sequence(sequence->get_id());
 }
 
+TEST(TestCacheOrchestratorHybrid, SchedulerEmitsLinearAttentionCheckpointPaging) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/4,
+        /*num_la_blocks=*/5,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+
+    SchedulerConfig config;
+    config.max_num_batched_tokens = 4;
+    config.dynamic_split_fuse = false;
+    config.max_num_seqs = 1;
+    Scheduler scheduler(orchestrator, config);
+
+    std::vector<int64_t> tokens = {1, 2, 3, 4};
+    auto group = std::make_shared<SequenceGroup>(
+        400,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = group->get_running_sequences().at(0)->get_id();
+
+    scheduler.reserve_linear_attention_checkpoints_for_next_schedule(seq_id, tokens.size());
+    std::vector<SequenceGroup::Ptr> requests = {group};
+    const auto output = scheduler.schedule(requests);
+
+    const auto paging_it = output.m_linear_attention_paging_data.find(seq_id);
+    ASSERT_NE(paging_it, output.m_linear_attention_paging_data.end());
+    const auto& paging = paging_it->second;
+    ASSERT_EQ(paging.block_indices.size(), tokens.size() + 1);
+    EXPECT_EQ(paging.past_length, 0);
+    EXPECT_EQ(paging.cache_interval, 1);
+
+    const auto committed_block = orchestrator->get_linear_attention_block_table(seq_id).front()->get_index();
+    EXPECT_EQ(paging.block_indices.front(), committed_block);
+    for (size_t idx = 1; idx < paging.block_indices.size(); ++idx) {
+        EXPECT_NE(paging.block_indices[idx], committed_block);
+    }
+
+    scheduler.release_linear_attention_checkpoints(seq_id);
+    scheduler.free_sequence(seq_id);
+}
+
 TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalMultiplierForHybridModel) {
     ov::Core core;
     ov::InferRequest request = core.compile_model(get_dummy_hybrid_model(core,

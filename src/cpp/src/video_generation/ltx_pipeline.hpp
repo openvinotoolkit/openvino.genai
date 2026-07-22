@@ -55,7 +55,7 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     0.0,                     // guidance_rescale
     161,                     // num_frames
     25.0f,                   // frame_rate
-    TaylorSeerCacheConfig{}  // taylorseer_config
+    std::nullopt             // taylorseer_config
 };
 
 // Some defaults aren't special values so it's not possible to distinguish
@@ -964,10 +964,12 @@ public:
                                             transformer_spatial_patch_size,
                                             transformer_temporal_patch_size);
 
+        // Prepare timesteps
         size_t video_sequence_length = latent.get_shape().at(1);
-        m_scheduler->set_timesteps(video_sequence_length,
-                                   merged_generation_config.num_inference_steps,
-                                   1.0f);
+        const double mu = m_scheduler->calculate_shift(video_sequence_length);
+        m_scheduler->set_timesteps_with_mu(mu,
+                                           merged_generation_config.num_inference_steps,
+                                           1.0f);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         // Prepare micro-conditions

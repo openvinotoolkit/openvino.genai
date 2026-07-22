@@ -9,9 +9,9 @@ import CodeExampleJS from '@site/docs/use-cases/speech-recognition/_sections/_ru
 
 export const SpeechRecognition = () => (
   <UseCaseCard>
-    <UseCaseCard.Title>Speech Recognition Using Whisper</UseCaseCard.Title>
+    <UseCaseCard.Title>Automatic Speech Recognition</UseCaseCard.Title>
     <UseCaseCard.Description>
-      Convert speech to text using Whisper models for video transcription, meeting notes,
+      Convert speech to text using ASR models for video transcription, meeting notes,
       multilingual audio content processing, and accessibility applications.
     </UseCaseCard.Description>
     <UseCaseCard.Features>
