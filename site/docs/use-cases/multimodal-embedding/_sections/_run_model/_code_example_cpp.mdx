@@ -3,6 +3,7 @@ import CodeBlock from '@theme/CodeBlock';
 <CodeBlock language="cpp" showLineNumbers>
 {`#include "openvino/genai/rag/embedding_pipeline.hpp"
 #include "load_image.hpp"
+#include "load_video.hpp"
 
 int main(int argc, char* argv[]) {
     std::string models_path = argv[1];
@@ -15,6 +16,10 @@ int main(int argc, char* argv[]) {
     // Embed images  (image is an ov::Tensor of shape [H, W, 3], uint8)
     std::vector<ov::Tensor> images = utils::load_images("path/to/images");
     ov::genai::EmbedResult image_embedding = pipeline.embed(std::string{}, images);
+
+    // Embed a video  (video is an ov::Tensor of shape [F, H, W, 3], uint8)
+    auto [video, video_metadata] = utils::load_video("path/to/video.mp4");
+    ov::genai::EmbedResult video_embedding = pipeline.embed(std::string{}, {}, {video}, {video_metadata});
 
     return 0;
 }

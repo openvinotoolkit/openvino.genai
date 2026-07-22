@@ -1,7 +1,8 @@
 import CodeBlock from '@theme/CodeBlock';
 
 <CodeBlock language="python" showLineNumbers>
-{`import numpy as np
+{`import cv2
+import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 from PIL import Image
@@ -18,6 +19,24 @@ def read_images(path: str) -> list[ov.Tensor]:
         return [read_image(str(file)) for file in sorted(entry.iterdir())]
     return [read_image(path)]
 
+def read_video(path: str, num_frames: int = 8) -> tuple[ov.Tensor, ov_genai.VideoMetadata]:
+    cap = cv2.VideoCapture(path)
+    total_num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    indices = np.arange(0, total_num_frames, total_num_frames / num_frames).astype(int)
+
+    metadata = ov_genai.VideoMetadata()
+    metadata.fps = cap.get(cv2.CAP_PROP_FPS)
+    metadata.frames_indices = indices.tolist()
+
+    frames = []
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(np.array(frame))
+    cap.release()
+    return ov.Tensor(frames), metadata
+
 pipeline = ov_genai.EmbeddingPipeline(models_path, "${props.device || 'CPU'}")
 
 # Embed a text query
@@ -26,5 +45,9 @@ query_embedding = pipeline.embed("a photo of a cat").embeddings
 # Embed images
 images: list[ov.Tensor] = read_images("path/to/images")
 image_embedding = pipeline.embed(images=images).embeddings
+
+# Embed a video
+video, video_metadata = read_video("path/to/video.mp4")
+video_embedding = pipeline.embed(videos=[video], videos_metadata=[video_metadata]).embeddings
 `}
 </CodeBlock>
