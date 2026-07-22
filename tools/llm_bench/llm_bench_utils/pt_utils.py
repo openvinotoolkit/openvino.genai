@@ -225,57 +225,22 @@ def _load_qwen3_omni_hf_model(model_path):
         )
 
     model = model_cls.from_pretrained(str(model_path), config=config, trust_remote_code=True, dtype=torch.float32)
+    # Some Qwen3-Omni submodules (e.g. audio_tower) retain the checkpoint's bfloat16 parameters
+    # despite dtype=float32 on from_pretrained, causing dtype-mismatch crashes at matmul/conv.
+    # Cast the whole tree to fp32 so parameter dtype is homogeneous.
+    model = model.to(torch.float32)
     model.eval()
     return model
 
 
+_MISSING = object()
+
+
 class Qwen3OmniPTWrapper:
     """
-    HF/PyTorch wrapper that adapts Qwen3-Omni's `generate(return_audio=True)` to the
-    interface the TTS runner expects (`preprocess_inputs` + `generate(return_audio=..., speaker=...)`).
-    """
-
-    def __init__(self, model_path):
-        self._model = _load_qwen3_omni_hf_model(model_path)
-        self.config = self._model.config
-
-    def to(self, device):
-        self._model.to(device)
-        return self
-
-    @staticmethod
-    def preprocess_inputs(text, processor=None, **kwargs):
-        if processor is None:
-            raise ValueError("Processor is required for Qwen3-Omni preprocessing.")
-        conversation = [{"role": "user", "content": [{"type": "text", "text": text}]}]
-        prompt = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
-        return processor(text=[prompt], return_tensors="pt")
-
-    def generate(self, *args, **kwargs):
-        # Mirror the Optimum path: HF exposes `thinker_max_new_tokens` / `thinker_num_beams`
-        # instead of the plain kwargs, and has no seed kwarg on generate.
-        max_new_tokens = kwargs.pop("max_new_tokens", None)
-        num_beams = kwargs.pop("num_beams", None)
-        kwargs.pop("talker_seed", None)
-        if max_new_tokens is not None:
-            kwargs.setdefault("thinker_max_new_tokens", int(max_new_tokens))
-        if num_beams and num_beams > 1:
-            kwargs.setdefault("thinker_num_beams", int(num_beams))
-
-        device = self._model.device
-        args = tuple(a.to(device) if isinstance(a, torch.Tensor) else a for a in args)
-        kwargs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in kwargs.items()}
-
-        with torch.no_grad():
-            return self._model.generate(*args, **kwargs)
-
-
-class Qwen3OmniVisualTextPTWrapper:
-    """
-    HF/PyTorch wrapper that adapts Qwen3-Omni's multimodal `generate()` to the interface the
-    visual-text-generation runner expects: `preprocess_inputs(image/video/audio/text, **processor)`
-    and `generate(...)` returning a plain token-id tensor. Talker output is suppressed since only
-    the text sequence is needed.
+    HF/PyTorch wrapper adapting Qwen3-Omni's multimodal `generate()` to two runner interfaces:
+    the TTS path (`return_audio=True`, returns the `(tokens, waveform)` tuple the runner unpacks)
+    and the visual-text path (talker suppressed, tuple unwrapped to just the token-id tensor).
     """
 
     def __init__(self, model_path):
@@ -294,8 +259,6 @@ class Qwen3OmniVisualTextPTWrapper:
     def preprocess_inputs(text, image=None, video=None, audio=None, processor=None, **kwargs):
         if processor is None:
             raise ValueError("Processor is required for Qwen3-Omni preprocessing.")
-        if video is not None:
-            raise ValueError("Video input is not supported")
 
         # extract_prompt_data returns audio from librosa.load as (array, sample_rate); unwrap.
         sampling_rate = None
@@ -307,6 +270,8 @@ class Qwen3OmniVisualTextPTWrapper:
         conversation = [{"role": "user", "content": [{"type": "text", "text": text}]}]
         if image is not None:
             conversation[0]["content"].insert(0, {"type": "image"})
+        if video is not None:
+            conversation[0]["content"].insert(0, {"type": "video"})
         if audio is not None:
             conversation[0]["content"].insert(0, {"type": "audio"})
 
@@ -314,20 +279,41 @@ class Qwen3OmniVisualTextPTWrapper:
         processor_kwargs = {}
         if sampling_rate is not None:
             processor_kwargs["sampling_rate"] = sampling_rate
-        return processor(images=image, text=[prompt], audio=audio, return_tensors="pt", **processor_kwargs)
+        return processor(
+            images=image, videos=video, text=[prompt], audio=audio, return_tensors="pt", **processor_kwargs
+        )
 
     def generate(self, *args, **kwargs):
-        # HF Qwen3-Omni exposes `thinker_max_new_tokens` / `thinker_num_beams` instead of the plain
-        # kwargs; translate them so the shared visual_text_gen path works unchanged.
+        # HF Qwen3-Omni exposes `thinker_*` counterparts instead of the plain generate kwargs;
+        # translate so the shared runner paths work unchanged. thinker_eos_token_id has an
+        # upstream default of [151645, 151643], so a plain `eos_token_id` in **kwargs is silently
+        # dropped by the prefix-strip dispatch loop — translate explicitly (including None, which
+        # disables EOS stopping so --infer_count runs to the requested token count).
         max_new_tokens = kwargs.pop("max_new_tokens", None)
         num_beams = kwargs.pop("num_beams", None)
+        eos_token_id = kwargs.pop("eos_token_id", _MISSING)
+        kwargs.pop("talker_seed", None)
         if max_new_tokens is not None:
             kwargs.setdefault("thinker_max_new_tokens", int(max_new_tokens))
         if num_beams and num_beams > 1:
             kwargs.setdefault("thinker_num_beams", int(num_beams))
-        # Suppress talker: visual_text_gen only consumes token ids and would otherwise pay the
-        # cost of audio synthesis (and fail when the checkpoint has no talker).
-        kwargs["return_audio"] = False
+        if eos_token_id is not _MISSING:
+            kwargs["thinker_eos_token_id"] = eos_token_id
+
+        # Speaker names vary by checkpoint (MoE: Ethan/Chelsie/Aiden/Cherry; dense multilingual:
+        # f245/m02/... ). If the requested speaker isn't in this model's speaker_id map, fall back
+        # to the first one it does define so the default keeps working across variants.
+        speaker = kwargs.get("speaker")
+        speaker_id_map = getattr(getattr(self._model.config, "talker_config", None), "speaker_id", None) or {}
+        if speaker is not None and speaker_id_map and speaker.lower() not in speaker_id_map:
+            fallback = next(iter(speaker_id_map))
+            log.warning("Speaker '%s' not available for this checkpoint; falling back to '%s'.", speaker, fallback)
+            kwargs["speaker"] = fallback
+
+        # Default to talker-off for the visual-text path: it only consumes token ids and would
+        # otherwise pay the cost of audio synthesis (and fail when the checkpoint has no talker).
+        # The TTS caller sets return_audio=True explicitly and receives the raw tuple.
+        kwargs.setdefault("return_audio", False)
 
         device = self._model.device
         args = tuple(a.to(device) if isinstance(a, torch.Tensor) else a for a in args)
@@ -335,10 +321,10 @@ class Qwen3OmniVisualTextPTWrapper:
 
         with torch.no_grad():
             result = self._model.generate(*args, **kwargs)
-        # generate() returns (thinker_result, waveform_or_None) — waveform is None here since
-        # return_audio=False. thinker_result is a tensor of token ids unless return_dict_in_generate
-        # was requested (it isn't on the visual_text_gen path).
-        if isinstance(result, tuple):
+        # generate() returns (thinker_result, waveform_or_None). When return_audio=False the
+        # waveform is None and callers want the token tensor directly; when True the TTS caller
+        # unpacks the tuple itself, so pass it through unchanged.
+        if kwargs.get("return_audio") is False and isinstance(result, tuple):
             result = result[0]
         return result
 
@@ -360,7 +346,7 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
-    pipe = Qwen3OmniVisualTextPTWrapper(model_path)
+    pipe = Qwen3OmniPTWrapper(model_path)
     processor = AutoProcessor.from_pretrained(str(model_path), trust_remote_code=True)
     from_pretrain_time = time.perf_counter() - start
     if kwargs.get("mem_consumption"):
@@ -379,6 +365,11 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
     log.info(f"Torch device was set to: {torch_device}")
     pipe.to(torch_device)
 
+    # Hook the thinker submodule (the actual text-generation loop) so we get first/other-token
+    # and per-infer latencies. Qwen3-Omni's top-level generate() delegates token generation to
+    # self.thinker.generate(); hooking the outer wrapper would miss the sampling calls entirely.
+    bench_hook = hook_common.get_bench_hook(kwargs["num_beams"], pipe._model.thinker)
+
     # visual_language_generation calls model.preprocess_inputs(..., **processor), so the returned
     # processor mapping must expose the same keys the Optimum path uses: processor / tokenizer / config.
     processor_config = {
@@ -386,7 +377,7 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
         "tokenizer": getattr(processor, "tokenizer", processor),
         "config": pipe.config,
     }
-    return pipe, processor_config, from_pretrain_time, None, False
+    return pipe, processor_config, from_pretrain_time, bench_hook, False
 
 
 def create_text_2_speech_model(model_path, device, memory_data_collector, **kwargs):

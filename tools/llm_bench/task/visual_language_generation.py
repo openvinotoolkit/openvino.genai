@@ -129,7 +129,10 @@ def run_visual_language_generation_optimum(
     tm_mm_embeddings = ""
     if bench_hook is not None:
         tm_list = bench_hook.get_time_list()
-        tm_mm_embeddings = np.mean(bench_hook.get_mm_embeddings_time_list()) * 1000 * 1000
+        mm_embeddings_list = bench_hook.get_mm_embeddings_time_list()
+        # Some models (e.g. Qwen3-Omni's thinker) route multimodal inputs through per-modality
+        # helpers instead of a single get_multimodal_embeddings, so the hook list stays empty.
+        tm_mm_embeddings = np.mean(mm_embeddings_list) * 1000 * 1000 if mm_embeddings_list else ""
         log.debug('latency of all tokens:')
         [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
         tm_infer_list = bench_hook.get_time_infer_list()

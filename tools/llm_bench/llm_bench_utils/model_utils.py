@@ -114,13 +114,6 @@ def read_wav(filepath, sampling_rate):
     return raw_speech[0]
 
 
-def is_omni_model(args):
-    use_case = args.get("use_case")
-    if use_case is None:
-        return False
-    return any(model_type.startswith("qwen3-omni") for model_type in use_case.model_types)
-
-
 def set_default_param_for_ov_config(ov_config):
     # With this PR https://github.com/huggingface/optimum-intel/pull/362, we are able to disable model cache
     if 'CACHE_DIR' not in ov_config:
@@ -213,7 +206,7 @@ def analyze_args(args):
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
     model_args["use_case"] = use_case
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
-    model_args["is_omni_model"] = is_omni_model(model_args)
+    model_args["is_omni_model"] = isinstance(model_type, str) and model_type.startswith("qwen3-omni")
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}
