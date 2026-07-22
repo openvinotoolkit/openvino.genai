@@ -502,7 +502,11 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
-    if args.speech_ref_audio is not None and str(args.speech_ref_audio).strip() != "" and not os.path.exists(args.speech_ref_audio):
+    if (
+        args.speech_ref_audio is not None
+        and str(args.speech_ref_audio).strip() != ""
+        and not os.path.exists(args.speech_ref_audio)
+    ):
         raise ValueError(f"Reference audio file does not exist: {args.speech_ref_audio}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
         raise ValueError(f"--gt-data must be a file path, not a directory: '{args.gt_data}'")
