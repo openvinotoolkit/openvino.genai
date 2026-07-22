@@ -19,8 +19,8 @@ import glob
 import json
 import os
 import re
-import urllib.request
 
+import requests
 from github import Auth, Github
 from github.WorkflowRun import WorkflowRun
 
@@ -28,9 +28,7 @@ LOG_DIR = "/tmp/gh-aw/agent/ci-doctor/logs"
 FILTERED_DIR = "/tmp/gh-aw/agent/ci-doctor/filtered"
 SUMMARY_FILE = "/tmp/gh-aw/agent/ci-doctor/summary.txt"
 
-HINT_RE = re.compile(
-    r"(error[: ]|ERROR|FAIL|panic:|fatal[: ]|undefined[: ]|exception|exit status [^0])"
-)
+HINT_RE = re.compile(r"(error[: ]|ERROR|FAIL|panic:|fatal[: ]|undefined[: ]|exception|exit status [^0])")
 
 MAX_HINT_LINES = 30
 
@@ -44,8 +42,9 @@ def download_job_log(job) -> None:
     log_file = os.path.join(LOG_DIR, f"job-{job.id}.log")
     print(f"Downloading log for job {job.id}...")
     try:
-        with urllib.request.urlopen(job.logs_url()) as response:
-            content = response.read().decode("utf-8", "replace")
+        response = requests.get(job.logs_url(), timeout=30)
+        response.raise_for_status()
+        content = response.content.decode("utf-8", "replace")
     except Exception:
         content = "(log download failed)\n"
     with open(log_file, "w", encoding="utf-8") as handle:
@@ -148,12 +147,14 @@ def process_pull_request(repo, pr_number: str) -> None:
     try:
         for workflow_run in repo.get_workflow_runs(head_sha=head_sha):
             if workflow_run.conclusion in ("failure", "cancelled"):
-                failed_runs.append({
-                    "id": workflow_run.id,
-                    "name": workflow_run.name,
-                    "url": workflow_run.html_url,
-                    "conclusion": workflow_run.conclusion,
-                })
+                failed_runs.append(
+                    {
+                        "id": workflow_run.id,
+                        "name": workflow_run.name,
+                        "url": workflow_run.html_url,
+                        "conclusion": workflow_run.conclusion,
+                    }
+                )
     except Exception:
         failed_runs = []
 
