@@ -14,7 +14,7 @@ concurrency:
   group: gh-aw-${{ github.workflow }}
 
 # Only allow a select few users to invoke /ci-doctor
-if: ${{ contains(fromJSON('["akashchi","mryzhov","akladiev","ababushk","dorloff","as-suvorov"]'), github.actor) }}
+if: ${{ contains(fromJSON('["akashchi","as-suvorov", "Wovchena", "sbalandi"]'), github.actor) }}
 
 permissions: read-all
 
@@ -121,8 +121,9 @@ For **each** failed pipeline:
      opening source files at random — proceed to reporting with the log-derived
      findings instead.
    - **Component scoping**: Identify the affected component (e.g., a single
-     plugin under `src/plugins/<name>/`, a frontend under `src/frontends/<name>/`,
-     a binding under `src/bindings/<lang>/`, or a specific test suite directory).
+     pipeline - `src/cpp/src/visual_language`, `src/cpp/src/image_generation`, ..., 
+     a specific model type under `src/cpp/src/visual_language/<name>/`, 
+     or a specific test suite directory).
      Restrict all source code reads to that component's directory and the exact
      files referenced in the logs or in the PR diff.
    - **File budget**: Read at most **10 source files** total per investigation,
