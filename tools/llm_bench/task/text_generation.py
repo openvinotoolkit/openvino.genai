@@ -19,7 +19,7 @@ import llm_bench_utils.output_file
 import llm_bench_utils.gen_output_data as gen_output_data
 from llm_bench_utils.prompt_utils import BenchPrompter
 
-FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
+FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
 _SD_SUPPORTED_KEYS = {
     "num_assistant_tokens": int,
@@ -210,18 +210,20 @@ def run_text_generation(
     save_input_data_to_file(input_text_list, args, model_precision, prompt_index, num, proc_id)
 
     if args["apply_chat_template"]:
-        input_text_hist = [{'role': 'user', 'content': input_text}]
-        templated_input_text = tokenizer.apply_chat_template(input_text_hist, tokenize=False, add_generation_prompt=True)
-        input_text_list = [templated_input_text] * args['batch_size']
+        input_text_hist = [{"role": "user", "content": input_text}]
+        templated_input_text = tokenizer.apply_chat_template(
+            input_text_hist, tokenize=False, add_generation_prompt=True
+        )
+        input_text_list = [templated_input_text] * args["batch_size"]
 
     # ===== Tokenization =====
     tok_encode_start = time.perf_counter()
-    input_data = tokenizer(input_text_list, return_tensors='pt')
+    input_data = tokenizer(input_text_list, return_tensors="pt")
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-    input_data.pop('token_type_ids', None)
+    input_data.pop("token_type_ids", None)
     # Remove `token_type_ids` from inputs
-    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
+    input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
     input_token_size = input_tokens[0].numel()
     print_input_info(args, num, input_token_size)
 
@@ -256,40 +258,42 @@ def run_text_generation(
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
-    for bs_idx in range(args['batch_size']):
+    for bs_idx in range(args["batch_size"]):
         generated_token_size = calc_generated_token_size_optimum(
             result, bs_idx, model, input_tokens, input_token_size, args["model_name"]
         )
         num_tokens += generated_token_size
         if generated_token_size > max_gen_tokens:
-            log.error('Output token size is over max output token size!')
+            log.error("Output token size is over max output token size!")
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
-            llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
+            llm_bench_utils.output_file.output_gen_text(
+                result_text, args, model_precision, prompt_index, num, bs_idx, proc_id
+            )
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
     if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_index : result_md5_list}
+        md5_list[num] = {prompt_index: result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
     per_token_time = ""
     if num_tokens > 0:
-        per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+        per_token_time = generation_time * 1000 / (num_tokens / args["batch_size"])
     else:
         log.warning("No generated tokens")
     tm_list = []
     tm_infer_list = []
     if bench_hook is not None:
         tm_list = bench_hook.get_time_list()
-        log.debug('latency of all tokens:')
-        [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+        log.debug("latency of all tokens:")
+        [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
         tm_infer_list = bench_hook.get_time_infer_list()
-        log.debug('latency of all infers:')
-        [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
-        if args['num_beams'] == 1 and generated_token_size != len(tm_infer_list):
-            log.warning(f'Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})')
+        log.debug("latency of all infers:")
+        [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
+        if args["num_beams"] == 1 and generated_token_size != len(tm_infer_list):
+            log.warning(f"Output token size({generated_token_size}) is not equal to infer count({len(tm_infer_list)})")
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        in_size=input_token_size * args['batch_size'],
+        in_size=input_token_size * args["batch_size"],
         infer_count=len(tm_infer_list),
         out_size=num_tokens,
         gen_time=generation_time,
@@ -307,8 +311,8 @@ def run_text_generation(
         tm_infer_list,
         warm_up=(num == 0),
         tokenization_time=(tok_encode_time, tok_decode_time),
-        batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        batch_size=args["batch_size"],
+        prompt_idx=prompt_index,
     )
     print_generated_output(
         prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations=False
@@ -321,6 +325,7 @@ def run_text_generation(
 def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_data, batch_size, prefix):
     import openvino_genai
     import openvino as ov
+
     cb_pipeline = isinstance(model, openvino_genai.ContinuousBatchingPipeline)
     if cb_pipeline:
         input_data = [ov.Tensor([input]) for input in input_data.input_ids.data]
@@ -334,25 +339,19 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         def token_printer():
             # Getting next elements from iterable will be blocked until a new token is available.
             for word in text_print_streamer:
-                print(word, end='', flush=True)
+                print(word, end="", flush=True)
+
         printer_thread = threading.Thread(target=token_printer, daemon=True)
         printer_thread.start()
-        if (empty_lora and (gen_config.adapters is not None)):
+        if empty_lora and (gen_config.adapters is not None):
             generation_result = model.generate(
-                input_data,
-                gen_config,
-                streamer=text_print_streamer,
-                adapters=openvino_genai.AdapterConfig()
+                input_data, gen_config, streamer=text_print_streamer, adapters=openvino_genai.AdapterConfig()
             )
         else:
-            generation_result = model.generate(
-                input_data,
-                gen_config,
-                streamer=text_print_streamer
-            )
+            generation_result = model.generate(input_data, gen_config, streamer=text_print_streamer)
         printer_thread.join()
     else:
-        if (empty_lora and (gen_config.adapters is not None)):
+        if empty_lora and (gen_config.adapters is not None):
             generation_result = model.generate(input_data, gen_config, adapters=openvino_genai.AdapterConfig())
         else:
             generation_result = model.generate(input_data, gen_config)
@@ -497,42 +496,47 @@ def run_text_generation_genai(
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
-    for bs_idx in range(args['batch_size']):
+    for bs_idx in range(args["batch_size"]):
         generated_text_len = generated_tokens[bs_idx].shape[-1]
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
-            log.error('Output token size is over max output token size!')
+            log.error("Output token size is over max output token size!")
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
-            llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
+            llm_bench_utils.output_file.output_gen_text(
+                result_text, args, model_precision, prompt_index, num, bs_idx, proc_id
+            )
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
 
     if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_index : result_md5_list}
+        md5_list[num] = {prompt_index: result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
 
     per_token_time = ""
     if num_tokens > 0:
-        per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+        per_token_time = generation_time * 1000 / (num_tokens / args["batch_size"])
     else:
         log.warning("No generated tokens")
-    first_token_time = (perf_metrics.get_ttft().mean)
+    first_token_time = perf_metrics.get_ttft().mean
     second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_durations) / 1000).tolist()
     tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
     inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
-    log.debug('latency of all tokens:')
-    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+    log.debug("latency of all tokens:")
+    [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
 
     cache_usage = None
-    if hasattr(model, 'get_metrics'):
+    if hasattr(model, "get_metrics"):
         pipeline_metrics = model.get_metrics()
-        if hasattr(pipeline_metrics, 'avg_cache_usage') and hasattr(pipeline_metrics, 'max_cache_usage'):
-            cache_usage = {"avg_cache_usage": pipeline_metrics.avg_cache_usage, "max_cache_usage": pipeline_metrics.max_cache_usage}
+        if hasattr(pipeline_metrics, "avg_cache_usage") and hasattr(pipeline_metrics, "max_cache_usage"):
+            cache_usage = {
+                "avg_cache_usage": pipeline_metrics.avg_cache_usage,
+                "max_cache_usage": pipeline_metrics.max_cache_usage,
+            }
 
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        in_size=num_input_tokens * args['batch_size'],
+        in_size=num_input_tokens * args["batch_size"],
         infer_count=len(tm_list),
         out_size=num_tokens,
         gen_time=generation_time,
@@ -551,9 +555,9 @@ def run_text_generation_genai(
         inference_durations,
         warm_up=(num == 0),
         tokenization_time=tokenization_time,
-        batch_size=args['batch_size'],
+        batch_size=args["batch_size"],
         prompt_idx=prompt_index,
-        cb_metric=cache_usage
+        cb_metric=cache_usage,
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
@@ -593,7 +597,7 @@ def run_text_generation_genai_with_stream(
     print_input_info(args, num, input_token_size)
 
     # ===== Prompt permutation and Generation Config =====
-    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
+    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
     streamer.reset()
     gen_config = genai_generation_config_setup(model, max_gen_tokens, args)
     enable_prompt_permutations = not args.get("disable_prompt_permutation", False)
@@ -630,33 +634,35 @@ def run_text_generation_genai_with_stream(
     # Only text_gen need to minus length of input_data, because generated_text may include input_text
     num_tokens = 0
     result_md5_list = []
-    for bs_idx in range(args['batch_size']):
+    for bs_idx in range(args["batch_size"]):
         generated_text_len = len(generated_tokens[bs_idx])
         num_tokens += generated_text_len
         if generated_text_len > max_gen_tokens:
-            log.error('Output token size is over max output token size!')
+            log.error("Output token size is over max output token size!")
         result_text = generated_text[bs_idx]
         if args["output_dir"] is not None:
-            llm_bench_utils.output_file.output_gen_text(result_text, args, model_precision, prompt_index, num, bs_idx, proc_id)
+            llm_bench_utils.output_file.output_gen_text(
+                result_text, args, model_precision, prompt_index, num, bs_idx, proc_id
+            )
         result_md5_list.append(hashlib.new("md5", result_text.encode(), usedforsecurity=False).hexdigest())
 
     if len(md5_list[num]) == 0:
-        md5_list[num] = {prompt_index : result_md5_list}
+        md5_list[num] = {prompt_index: result_md5_list}
     else:
         md5_list[num][prompt_index] = result_md5_list
 
     per_token_time = ""
     if num_tokens > 0:
-        per_token_time = generation_time * 1000 / (num_tokens / args['batch_size'])
+        per_token_time = generation_time * 1000 / (num_tokens / args["batch_size"])
     else:
         log.warning("No generated tokens")
     tm_list = streamer.get_time_list()
-    log.debug('latency of all tokens:')
-    [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+    log.debug("latency of all tokens:")
+    [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
 
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
-        in_size=input_token_size * args['batch_size'],
+        in_size=input_token_size * args["batch_size"],
         infer_count=len(tm_list),
         out_size=num_tokens,
         gen_time=generation_time,
@@ -675,20 +681,24 @@ def run_text_generation_genai_with_stream(
         tms_infer=None,
         warm_up=(num == 0),
         tokenization_time=(tok_encode_time, tok_decode_time),
-        batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        batch_size=args["batch_size"],
+        prompt_idx=prompt_index,
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
     streamer.reset()
 
 
-def run_text_generation_benchmark(model_path, framework, device, tokens_len, streaming, args, num_iters, mem_consumption):
+def run_text_generation_benchmark(
+    model_path, framework, device, tokens_len, streaming, args, num_iters, mem_consumption
+):
     mem_consumption.update_marker("model")
-    model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(model_path, device, mem_consumption, **args)
+    model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_gen_model(
+        model_path, device, mem_consumption, **args
+    )
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
-    md5_list = {num : {} for num in range(num_iters + 1)}
+    md5_list = {num: {} for num in range(num_iters + 1)}
 
     # Build the prompt schedule via BenchPrompter, which handles both
     # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
@@ -697,8 +707,10 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
     prompt_idx_list = prompter.active_indices
     text_list = [p["prompt"] for p in prompter.active_items]
 
-    log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
-             f'prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
+    log.info(
+        f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
+        f"prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}"
+    )
 
     # if num_iters == 0, just output warm-up data
     if not use_genai:
@@ -742,5 +754,5 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
         iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
         log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
-    metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
+    metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], True)
     return iter_data_list, pretrain_time, iter_timestamp
