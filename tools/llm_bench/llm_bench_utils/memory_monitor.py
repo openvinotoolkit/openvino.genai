@@ -1107,6 +1107,14 @@ class MemorySamplerW(MemorySampler):
         # integrated-GPU usage visible (dedicated is ~0 for iGPUs).
         self._wmi_conn      = None
         self._gpu_instances = []   # ordered adapter instance names (LUID keys)
+        # QW-1: throttle WMI GPU polling. A single GPUAdapterMemory query can
+        # take 100–500 ms, so re-querying on every collect() would dominate a
+        # short sampling interval and pollute the measurement. Cache the last
+        # reading and refresh at most once per _gpu_poll_min_interval seconds;
+        # GPU memory moves slowly, so a slightly stale value is acceptable.
+        self._gpu_poll_min_interval = 1.0
+        self._gpu_cache = ()  # last flat (ded_0, shr_0, …) tuple
+        self._gpu_last_ts = None  # perf_counter() of last WMI query
         if _wmi_available:
             try:
                 self._wmi_conn = _wmi_module.WMI()
@@ -1116,6 +1124,16 @@ class MemorySamplerW(MemorySampler):
                     f"MemorySamplerW: WMI GPU detection failed ({exc}) "
                     "— gpu_<index> metrics disabled."
                 )
+        else:
+            # QW-2: MemorySamplerW is only instantiated when the user explicitly
+            # asks for --memory_sampler W, so if the optional 'wmi' package is
+            # missing they should be told why GPU metrics are absent — the
+            # import-time notice is only DEBUG level and easily missed.
+            log.warning(
+                "MemorySamplerW: optional 'wmi' package not installed "
+                "— per-GPU memory metrics (gpu_<index>_ded/shr) are disabled. "
+                "Install it with:  pip install wmi"
+            )
 
         for i in range(len(self._gpu_instances)):
             for pool in ("ded", "shr"):
@@ -1178,7 +1196,10 @@ class MemorySamplerW(MemorySampler):
         GPUs) and ``SharedUsage`` is system RAM used as GPU memory (nonzero
         on integrated GPUs).  Values are bytes, system-wide per adapter.
         The cached ``self._wmi_conn`` is reused on every call to avoid COM
-        re-initialisation overhead.
+        re-initialisation overhead.  The query *result* is additionally cached
+        for ``self._gpu_poll_min_interval`` seconds (QW-1): a call made sooner
+        than that returns the previous reading, so a short process-sampling
+        interval never triggers an expensive WMI query on every sample.
 
         Two values are returned **per GPU index** — ``(ded, shr)`` — flattened
         in the same order as the ``gpu_<index>_ded`` / ``gpu_<index>_shr``
@@ -1193,24 +1214,33 @@ class MemorySamplerW(MemorySampler):
         """
         if self._wmi_conn is None or not self._gpu_instances:
             return ()
+
+        # QW-1: serve the cached reading when the previous WMI query is still
+        # fresh, decoupling the expensive GPU poll from the (usually much
+        # shorter) process-sampling interval.
+        now = time.perf_counter()
+        if self._gpu_last_ts is not None and (now - self._gpu_last_ts) < self._gpu_poll_min_interval:
+            return self._gpu_cache
+
         try:
             rows = {
                 r.Name: r
                 for r in getattr(self._wmi_conn, self._GPU_ADAPTER_CLS)()
             }
         except Exception as exc:
-            log.debug(
-                f"MemorySamplerW: WMI GPU memory query failed ({exc})"
-                " — returning zeros."
-            )
-            return (0,) * (2 * len(self._gpu_instances))
+            log.debug(f"MemorySamplerW: WMI GPU memory query failed ({exc}) — returning zeros.")
+            self._gpu_cache = (0,) * (2 * len(self._gpu_instances))
+            self._gpu_last_ts = now
+            return self._gpu_cache
 
         out = []
         for name in self._gpu_instances:
             r = rows.get(name)
             out.append(int(getattr(r, "DedicatedUsage", 0) or 0) if r is not None else 0)
-            out.append(int(getattr(r, "SharedUsage",   0) or 0) if r is not None else 0)
-        return tuple(out)
+            out.append(int(getattr(r, "SharedUsage", 0) or 0) if r is not None else 0)
+        self._gpu_cache = tuple(out)
+        self._gpu_last_ts = now
+        return self._gpu_cache
 
     @staticmethod
     def _query_win_mem(pid):
@@ -1304,6 +1334,17 @@ class MemorySamplerW(MemorySampler):
         # ── GPU memory (two values per adapter: dedicated + shared, via WMI) ─
         gpu_vals = self._collect_gpu_mem()  # flat (ded_0, shr_0, ded_1, shr_1, …)
         vals = (wset_total, priv_total, pagefile_total, sys_mem, nsys_mem, *gpu_vals)
+        # QW-3: aggregate_and_format() zips vals with self.metrics and silently
+        # truncates on a length mismatch, which would corrupt the running stats
+        # (e.g. leave a metric's min at +inf). Flag it loudly. Kept non-fatal so
+        # a transient GPU-adapter-count hiccup never kills the background
+        # memory-monitor process.
+        if len(vals) != len(self.metrics):
+            log.error(
+                "MemorySamplerW: metric/value count mismatch "
+                f"({len(vals)} values vs {len(self.metrics)} metrics) "
+                "— GPU adapter set may have changed; sample stats may be unreliable."
+            )
         return self.aggregate_and_format(marker, vals)
 
 
