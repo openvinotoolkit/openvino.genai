@@ -10,7 +10,7 @@ import llm_bench_utils.hook_greedy_search
 logger = log.getLogger(__name__)
 
 
-class WhisperHook:
+class ASRHook:
     def __init__(self):
         self.enc_infer_count = 0
         self.time_data = []

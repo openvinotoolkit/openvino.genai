@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 class UseCase:
     task = ""
     model_types: list[str] = field(default_factory=list)
+    model_type: str | None = None
     ov_cls: type | None = None
     pt_cls: type | None = AutoModel
     tokenizer_cls: type = AutoTokenizer
@@ -178,7 +179,7 @@ USE_CASES = {
             ]
         )
     ],
-    "speech_to_text": [UseCaseSpeech2Text(["whisper"])],
+    "speech_to_text": [UseCaseSpeech2Text(["whisper", "qwen3-asr"])],
     "image_cls": [UseCaseImageCls(["vit"])],
     "code_gen": [
         UseCaseCodeGen(["codegen", "codegen2", "stable-code"]),

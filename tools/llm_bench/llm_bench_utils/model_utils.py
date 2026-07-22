@@ -5,8 +5,11 @@ import os
 import json
 import torch
 import numpy as np
+import tempfile
+import urllib.request
 import logging as log
 from pathlib import Path
+from urllib.parse import urlparse
 from llm_bench_utils.config_class import (
     PA_ATTENTION_BACKEND,
     SDPA_ATTENTION_BACKEND,
@@ -110,7 +113,21 @@ def get_param_from_file(args, input_key):
 
 
 def read_wav(filepath, sampling_rate):
-    raw_speech = librosa.load(filepath, sr=sampling_rate)
+    filepath_str = str(filepath)
+
+    parsed = urlparse(filepath_str)
+    if parsed.scheme in {"http", "https"}:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
+            urllib.request.urlretrieve(filepath_str, temp_wav.name)  # nosec B310 check exists above
+            temp_path = temp_wav.name
+        try:
+            raw_speech = librosa.load(temp_path, sr=sampling_rate)
+            return raw_speech[0]
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    raw_speech = librosa.load(filepath_str, sr=sampling_rate)
     return raw_speech[0]
 
 
@@ -204,6 +221,7 @@ def analyze_args(args):
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
+        use_case.model_type = model_type
     model_args["use_case"] = use_case
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
