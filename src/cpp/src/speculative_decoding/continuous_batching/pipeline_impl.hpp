@@ -10,6 +10,22 @@
 #include "update_request_structs.hpp"
 
 namespace ov::genai {
+
+namespace detail {
+
+struct MtpDraftUpdatePlan {
+    size_t hidden_state_start = 0;
+    size_t hidden_state_count = 0;
+    size_t processed_tokens_to_rewind = 0;
+    size_t num_tokens_to_validate = 0;
+};
+
+// Plans the first draft forward after target validation. The target hidden-state window contains
+// one base token followed by all draft candidates; removed_draft_tokens is the rejected suffix.
+MtpDraftUpdatePlan make_mtp_draft_update_plan(size_t main_hidden_state_len, size_t removed_draft_tokens);
+
+}  // namespace detail
+
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:
     const std::size_t default_num_assistant_tokens = 5;

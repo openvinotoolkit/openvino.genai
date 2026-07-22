@@ -154,6 +154,31 @@ ov::Tensor select_rows_by_indices(const ov::Tensor& tensor, const std::vector<si
     return result;
 }
 
+detail::MtpDraftUpdatePlan detail::make_mtp_draft_update_plan(size_t main_hidden_state_len,
+                                                              size_t removed_draft_tokens) {
+    OPENVINO_ASSERT(main_hidden_state_len > 0, "MTP requires at least one main-model hidden state.");
+    OPENVINO_ASSERT(removed_draft_tokens < main_hidden_state_len,
+                    "Cannot remove ",
+                    removed_draft_tokens,
+                    " draft tokens with ",
+                    main_hidden_state_len,
+                    " main-model hidden states.");
+
+    if (removed_draft_tokens > 0) {
+        // For N candidates and k accepted candidates, draft KV already ends at candidate k.
+        // Rewind past the rejected KV suffix and forward only the target's replacement token,
+        // pairing it with target hidden[k].
+        return {main_hidden_state_len - removed_draft_tokens - 1, 1, removed_draft_tokens - 1, 0};
+    }
+
+    OPENVINO_ASSERT(main_hidden_state_len >= 2,
+                    "Full MTP acceptance requires hidden states for the last draft candidate and verifier bonus.");
+    // Draft KV ends at candidate N-1. Candidate N and the target's bonus token are the only
+    // unprocessed tokens; one validation token tells the draft sampler to consume both and
+    // sample only after the bonus token.
+    return {main_hidden_state_len - 2, 2, 0, 1};
+}
+
 // Look up a candidate for the given running sequence.
 // Tree-search drafting may produce a candidate whose grouped_id no longer matches any
 // surviving running sequence on the consuming side.
@@ -342,6 +367,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         OPENVINO_ASSERT(running_sequences.size() > 0);
         size_t min_generated_tokens, min_candidate_len;
         int num_tokens_needs_kv_update = -1;
+        detail::MtpDraftUpdatePlan mtp_update_plan;
+        bool has_mtp_update_plan = false;
         if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
             m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
@@ -375,7 +402,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 candidate_token_log_probs.resize(min_candidate_len);
                 result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
                 // handle hidden states for eagle mode
-                if ((eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
+                if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
                     // Eagle mode hidden state management currently supports only single sequence
                     OPENVINO_ASSERT(running_sequences.size() == 1,
                                    "Eagle mode hidden state update currently supports only single sequence generation. "
@@ -418,6 +445,28 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // Calculate the number of tokens that need KV cache re-generation in draft model
                     // Safe cast: we know indices is not empty (asserted above)
                     num_tokens_needs_kv_update = static_cast<int>(indices.size()) - 1;
+                } else if (mtp_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
+                    OPENVINO_ASSERT(running_sequences.size() == 1,
+                                    "MTP hidden state update supports only single sequence generation. Found ",
+                                    running_sequences.size(),
+                                    " sequences.");
+                    OPENVINO_ASSERT(!request->get_sampling_parameters().is_tree_search(),
+                                    "MTP hidden state update does not support tree search.");
+
+                    const auto& hidden_state = candidate_sequence.hidden_states;
+                    OPENVINO_ASSERT(hidden_state.get_size() > 0,
+                                    "Hidden states are required for MTP but the main model returned an empty tensor.");
+                    OPENVINO_ASSERT(!hidden_state.get_shape().empty(),
+                                    "Hidden states are required for MTP but the main model returned a scalar tensor.");
+
+                    mtp_update_plan =
+                        detail::make_mtp_draft_update_plan(hidden_state.get_shape()[0], result.removed_tokens_cnt);
+                    has_mtp_update_plan = true;
+
+                    std::vector<size_t> indices(mtp_update_plan.hidden_state_count);
+                    std::iota(indices.begin(), indices.end(), mtp_update_plan.hidden_state_start);
+                    m_model_runner->set_initial_hidden_state(request_id, select_rows_by_indices(hidden_state, indices));
+                    num_tokens_needs_kv_update = static_cast<int>(mtp_update_plan.num_tokens_to_validate);
                 }
                 if (candidate_sequence.tree_metadata && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
                     TreeMetaData merged = *candidate_sequence.tree_metadata;
@@ -441,7 +490,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
 
         // Update processed tokens count based on KV cache update requirements
         if (generated_len > 0) {
-            if (num_tokens_needs_kv_update > 0) {
+            if (has_mtp_update_plan) {
+                OPENVINO_ASSERT(mtp_update_plan.processed_tokens_to_rewind <= num_processed_tokens,
+                                "MTP processed-token rewind exceeds the processed prefix.");
+                request->update_processed_tokens_num(num_processed_tokens -
+                                                     mtp_update_plan.processed_tokens_to_rewind);
+            } else if (num_tokens_needs_kv_update > 0) {
                 // rewind to stable KV position accounting for tree structure
                 request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1 - num_tokens_needs_kv_update);
             } else if (result.removed_tokens_cnt > 0) {

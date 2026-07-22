@@ -75,6 +75,58 @@ TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnosticsReturnNanWithoutDenominator
     EXPECT_TRUE(std::isnan(metrics.get_draft_to_main_inference_duration_ratio()));
 }
 
+TEST(MtpDraftUpdatePlan, PreservesAcceptedPrefixAfterPartialRejection) {
+    struct TestCase {
+        size_t removed_draft_tokens;
+        size_t accepted_draft_tokens;
+        size_t hidden_state_start;
+        size_t processed_tokens_to_rewind;
+    };
+    constexpr size_t hidden_state_len = 5;
+    constexpr size_t num_draft_tokens = hidden_state_len - 1;
+    constexpr size_t processed_tokens_before_update = 100;
+    const std::vector<TestCase> test_cases{
+        {4, 0, 0, 3},  // first candidate rejected
+        {2, 2, 2, 1},  // two candidates accepted
+        {1, 3, 3, 0},  // only the unforwarded tail candidate rejected
+    };
+
+    for (const auto& test_case : test_cases) {
+        SCOPED_TRACE(test_case.removed_draft_tokens);
+        const auto plan =
+            ov::genai::detail::make_mtp_draft_update_plan(hidden_state_len, test_case.removed_draft_tokens);
+
+        EXPECT_EQ(plan.hidden_state_start, test_case.hidden_state_start);
+        EXPECT_EQ(plan.hidden_state_count, 1);
+        EXPECT_EQ(plan.processed_tokens_to_rewind, test_case.processed_tokens_to_rewind);
+        EXPECT_EQ(plan.num_tokens_to_validate, 0);
+        EXPECT_EQ(plan.hidden_state_count, plan.num_tokens_to_validate + 1);
+        EXPECT_EQ(processed_tokens_before_update - plan.processed_tokens_to_rewind,
+                  processed_tokens_before_update - test_case.removed_draft_tokens + 1);
+        EXPECT_EQ(test_case.accepted_draft_tokens,
+                  num_draft_tokens - test_case.removed_draft_tokens);
+        if (test_case.accepted_draft_tokens > 0) {
+            EXPECT_LT(plan.hidden_state_count, test_case.accepted_draft_tokens + 1);
+        }
+    }
+}
+
+TEST(MtpDraftUpdatePlan, FullAcceptanceProcessesOnlyUnforwardedTailAndBonus) {
+    constexpr size_t hidden_state_len = 5;
+    constexpr size_t num_draft_tokens = hidden_state_len - 1;
+    constexpr size_t processed_tokens_before_update = 100;
+    const auto plan = ov::genai::detail::make_mtp_draft_update_plan(hidden_state_len, 0);
+
+    EXPECT_EQ(plan.hidden_state_start, num_draft_tokens - 1);
+    EXPECT_EQ(plan.hidden_state_count, 2);
+    EXPECT_EQ(plan.processed_tokens_to_rewind, 0);
+    EXPECT_EQ(plan.num_tokens_to_validate, 1);
+    EXPECT_EQ(plan.hidden_state_count, plan.num_tokens_to_validate + 1);
+    EXPECT_LT(plan.hidden_state_count, hidden_state_len);
+    EXPECT_EQ(processed_tokens_before_update - plan.processed_tokens_to_rewind,
+              processed_tokens_before_update);
+}
+
 TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
