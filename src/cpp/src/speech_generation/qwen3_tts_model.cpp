@@ -1401,6 +1401,7 @@ std::vector<int64_t> Qwen3TTSImpl::generate_codec_groups(const ov::Tensor& past_
 
 Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& talker_prefill,
                                                             const ov::Tensor& tts_pad,
+                                                            const ov::Tensor& trailing_text_hidden,
                                                             const SpeechGenerationConfig& generation_config,
                                                             const std::vector<bool>& suppress_tokens) {
     Text2SpeechDecodedResults result;
@@ -1424,7 +1425,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
 
     std::mt19937 rng(generation_config.rng_seed != 0 ? static_cast<uint32_t>(generation_config.rng_seed) : std::random_device{}());
     size_t absolute_pos = talker_prefill.get_shape()[1];
-
     for (size_t step = 0; step < max_steps; ++step) {
         int64_t token = sample_token_from_logits(logits, generation_config, generated_main, suppress_tokens, rng);
         if (token == m_ids.codec_eos_token_id) {
@@ -1454,6 +1454,24 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
             const float* tts_pad_ptr = tts_pad.data<const float>();
             for (size_t h_i = 0; h_i < token_embed.get_shape()[2]; ++h_i) {
                 token_embed_ptr[h_i] += tts_pad_ptr[h_i];
+            }
+        } else if (trailing_text_hidden) {
+            OPENVINO_ASSERT(trailing_text_hidden.get_shape().size() == 3,
+                            "trailing_text_hidden is expected to have shape [1, T, H]");
+            OPENVINO_ASSERT(trailing_text_hidden.get_shape()[0] == 1,
+                            "trailing_text_hidden batch size is expected to be 1");
+            OPENVINO_ASSERT(trailing_text_hidden.get_shape()[2] == token_embed.get_shape()[2],
+                            "trailing_text_hidden hidden size mismatch");
+            const size_t trailing_len = trailing_text_hidden.get_shape()[1];
+            const float* trailing_ptr = trailing_text_hidden.data<const float>();
+            const float* add_ptr = nullptr;
+            if (step < trailing_len) {
+                add_ptr = trailing_ptr + step * token_embed.get_shape()[2];
+            } else {
+                add_ptr = tts_pad.data<const float>();
+            }
+            for (size_t h_i = 0; h_i < token_embed.get_shape()[2]; ++h_i) {
+                token_embed_ptr[h_i] += add_ptr[h_i];
             }
         }
 
@@ -1826,6 +1844,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
         }
 
         ov::Tensor talker_prefill;
+        ov::Tensor trailing_text_hidden;
         if (generation_config.non_streaming_mode) {
             ov::Tensor text_with_eos(ov::element::f32, ov::Shape{1, trimmed_len + 1, hidden});
             if (trimmed_len > 0) {
@@ -1847,41 +1866,29 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
 
             talker_prefill = concat_embed({role_embed, left_codec_sum, text_side, pad_plus_codec_bos});
         } else {
-            // Streaming-style prompt assembly follows helper logic:
-            // align text and codec prefill by min(text_len, codec_len) and carry no explicit
-            // text-side + codec-pad block in prefill.
-            const size_t codec_prefill_len = left_codec_sum.get_shape()[1];
-            const size_t overlap_len = std::min(trimmed_len, codec_prefill_len);
+            // Mirror HF streaming prompt assembly for the non-ICL voice-clone path.
+            // prefill = role + left_codec_sum + (first_text_token + last_codec_token)
+            // trailing_text_hidden = remaining_text_tokens + tts_eos
+            OPENVINO_ASSERT(trimmed_len > 0,
+                            "Streaming mode expects at least one target text token after trimming");
 
-            ov::Tensor stream_mix(ov::element::f32, ov::Shape{1, overlap_len, hidden});
-            for (size_t i = 0; i < overlap_len * hidden; ++i) {
-                stream_mix.data<float>()[i] = text_embed_trimmed.data<const float>()[i] + left_codec_sum.data<const float>()[i];
+            ov::Tensor first_text_plus_last_codec(ov::element::f32, ov::Shape{1, 1, hidden});
+            const float* text0 = text_embed_trimmed.data<const float>();
+            const float* codec_last = codec_input_embedding.data<const float>() + (codec_len - 1) * hidden;
+            for (size_t j = 0; j < hidden; ++j) {
+                first_text_plus_last_codec.data<float>()[j] = text0[j] + codec_last[j];
             }
+            talker_prefill = concat_embed({role_embed, left_codec_sum, first_text_plus_last_codec});
 
-            if (trimmed_len > codec_prefill_len) {
-                // Text dominates: only overlap section is part of prompt prefill.
-                talker_prefill = concat_embed({role_embed, stream_mix});
-            } else if (trimmed_len < codec_prefill_len) {
-                // Codec dominates: pad text with tts_pad and continue with remaining codec prefix.
-                const size_t pad_count = codec_prefill_len - trimmed_len;
-                ov::Tensor text_pad(ov::element::f32, ov::Shape{1, pad_count, hidden});
-                for (size_t i = 0; i < pad_count; ++i) {
-                    std::copy_n(tts_pad.data<const float>(), hidden, text_pad.data<float>() + i * hidden);
-                }
-
-                ov::Tensor mixed_with_pad(ov::element::f32, ov::Shape{1, codec_prefill_len, hidden});
-                if (overlap_len > 0) {
-                    std::copy_n(stream_mix.data<const float>(), stream_mix.get_size(), mixed_with_pad.data<float>());
-                }
-                for (size_t i = 0; i < pad_count * hidden; ++i) {
-                    mixed_with_pad.data<float>()[overlap_len * hidden + i] =
-                        text_pad.data<const float>()[i] + left_codec_sum.data<const float>()[overlap_len * hidden + i];
-                }
-
-                talker_prefill = concat_embed({role_embed, mixed_with_pad});
-            } else {
-                talker_prefill = concat_embed({role_embed, stream_mix});
+            const size_t trailing_text_tokens = (trimmed_len > 1 ? (trimmed_len - 1) : 0);
+            ov::Tensor trailing_text_without_eos(ov::element::f32, ov::Shape{1, trailing_text_tokens, hidden});
+            if (trailing_text_tokens > 0) {
+                const float* src = text_embed_trimmed.data<const float>() + hidden;
+                std::copy_n(src,
+                            trailing_text_without_eos.get_size(),
+                            trailing_text_without_eos.data<float>());
             }
+            trailing_text_hidden = concat_embed({trailing_text_without_eos, tts_eos});
         }
 
         if (!generation_config.instruct.empty()) {
@@ -1893,7 +1900,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
             talker_prefill = concat_embed({instruct_embed, talker_prefill});
         }
 
-        auto decoded = decode_from_prefill(talker_prefill, tts_pad, generation_config, suppress_tokens);
+        auto decoded = decode_from_prefill(talker_prefill, tts_pad, trailing_text_hidden, generation_config, suppress_tokens);
         result.speeches.insert(result.speeches.end(), decoded.speeches.begin(), decoded.speeches.end());
         result.perf_metrics.num_generated_samples += decoded.perf_metrics.num_generated_samples;
     }
@@ -2060,8 +2067,6 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     ov::Tensor text_embed_with_eos = concat_embed({content_embed, tts_eos});
     const size_t text_eos_len = text_embed_with_eos.get_shape()[1];
 
-    std::cerr << "[DEBUG] ICL path: text_eos_len=" << text_eos_len << " ref_len=" << ref_len << " hidden=" << hidden << std::endl;
-
     // Part 1: codec_input_part — blend codec_input_no_bos with [tts_pad × (len-2), tts_bos]
     // Matches Python's: [(tts_pad*(N-2) + tts_bos)] + codec_input_embedding[:-1]
     const size_t ci_len = codec_input_no_bos.get_shape()[1];
@@ -2107,7 +2112,7 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     // This matches Python's trailing_text_hidden = tts_pad_embed for ICL mode when text_len <= codec_len.
     SpeechGenerationConfig vc_config = generation_config;
     vc_config.non_streaming_mode = true;
-    return decode_from_prefill(talker_prefill, tts_pad, vc_config, suppress_tokens);
+    return decode_from_prefill(talker_prefill, tts_pad, ov::Tensor{}, vc_config, suppress_tokens);
 }
 
 void Qwen3TTSImpl::perf_print_and_reset() const {

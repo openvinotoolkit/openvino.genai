@@ -104,6 +104,7 @@ private:
 
     Text2SpeechDecodedResults decode_from_prefill(const ov::Tensor& talker_prefill,
                                                   const ov::Tensor& tts_pad,
+                                                  const ov::Tensor& trailing_text_hidden,
                                                   const SpeechGenerationConfig& generation_config,
                                                   const std::vector<bool>& suppress_tokens);
 
