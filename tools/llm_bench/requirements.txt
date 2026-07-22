@@ -46,5 +46,3 @@ av==17.1.0; python_version < "3.11"
 av==18.0.0; python_version >= "3.11"
 imageio==2.37.4
 decord==0.6.0; platform_system != "Darwin"
-# For Qwen3-ASR
-qwen-asr

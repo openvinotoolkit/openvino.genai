@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import re
+import time
 
 
 class Qwen3ASROptimumPipeline:
@@ -14,8 +15,6 @@ class Qwen3ASROptimumPipeline:
         self.processor = processor
 
     def preprocess(self, sample, **kwargs):
-        import time
-
         start = time.perf_counter()
         generate_kwargs = kwargs.get("generate_kwargs", {})
         language = generate_kwargs.get("language") or kwargs.get("language")
@@ -33,8 +32,6 @@ class Qwen3ASROptimumPipeline:
         return inputs, end - start, language
 
     def generate(self, sample, **kwargs):
-        import time
-
         max_new_tokens = kwargs.get("max_new_tokens", 1000)
         generate_kwargs = kwargs.get("generate_kwargs", {})
         max_new_tokens = generate_kwargs.get("max_new_tokens", max_new_tokens)

@@ -2,10 +2,10 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
+import io
 import json
 import torch
 import numpy as np
-import tempfile
 import urllib.request
 import logging as log
 from pathlib import Path
@@ -117,15 +117,9 @@ def read_wav(filepath, sampling_rate):
 
     parsed = urlparse(filepath_str)
     if parsed.scheme in {"http", "https"}:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
-            urllib.request.urlretrieve(filepath_str, temp_wav.name)  # nosec B310 check exists above
-            temp_path = temp_wav.name
-        try:
-            raw_speech = librosa.load(temp_path, sr=sampling_rate)
+        with urllib.request.urlopen(filepath_str) as response:  # nosec B310 check exists above
+            raw_speech = librosa.load(io.BytesIO(response.read()), sr=sampling_rate)
             return raw_speech[0]
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
 
     raw_speech = librosa.load(filepath_str, sr=sampling_rate)
     return raw_speech[0]
