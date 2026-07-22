@@ -773,3 +773,28 @@ class TestBenchmarkLLM:
             "Transcribe this audio.",
         ] + sample_args
         run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.skipif(
+        TRANSFORMERS_VERSION is None or TRANSFORMERS_VERSION < (5, 1),
+        reason="Requires transformers >= 5.1",
+    )
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_omni_text_to_speech(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+        ] + sample_args
+        run_sample(benchmark_py_command)

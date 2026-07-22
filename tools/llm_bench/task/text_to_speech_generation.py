@@ -19,6 +19,7 @@ from llm_bench_utils.tts_utils import (
     kokoro_preprocess_once,
     kokoro_generate_from_preprocessed,
     resolve_kokoro_speaker_embedding,
+    resolve_omni_generation_settings,
 )
 import llm_bench_utils.metrics_print as metrics_print
 from transformers import set_seed
@@ -233,12 +234,219 @@ def run_text_to_speech_generation_genai(
                         f"is different from md5 of the {num - 1} iteration {prev_md5}")
 
 
+def _save_omni_speech(waveform, args, prompt_index, num, bs_idx, proc_id, sample_rate):
+    audio_array = extract_audio_array(waveform)
+    audio_file_path = llm_bench_utils.output_file.output_gen_audio(
+        audio_array, args, prompt_index, num, bs_idx, proc_id, ".wav", samplerate=sample_rate
+    )
+    data, _ = sf.read(audio_file_path)
+    return audio_array, hashlib.md5(data.tobytes(), usedforsecurity=False).hexdigest()
+
+
+def _record_omni_iter(
+    num,
+    args,
+    iter_data_list,
+    md5_list,
+    prompt_index,
+    result_md5_list,
+    in_size,
+    out_size,
+    generation_time,
+    tokenization_kwargs,
+    memory_metrics,
+):
+    iter_data = gen_output_data.gen_iterate_data(
+        iter_idx=num,
+        in_size=in_size,
+        out_size=out_size,
+        gen_time=generation_time,
+        res_md5=result_md5_list,
+        prompt_idx=prompt_index,
+        **tokenization_kwargs,
+        **memory_metrics,
+    )
+    iter_data_list.append(iter_data)
+    metrics_print.print_metrics(
+        iter_num=num,
+        iter_data=iter_data,
+        warm_up=(num == 0),
+        **tokenization_kwargs,
+        batch_size=args["batch_size"],
+        prompt_idx=prompt_index,
+    )
+    md5_list[num][prompt_index] = result_md5_list
+    if num > 0:
+        prev_md5 = md5_list[num - 1][prompt_index]
+        if result_md5_list != prev_md5:
+            log.warning(
+                f"[{num}] Prompt[{prompt_index}]'s md5 {result_md5_list} "
+                f"is different from md5 of the {num - 1} iteration {prev_md5}"
+            )
+
+
+def run_omni_text_to_speech_generation_optimum(
+    input_text,
+    num,
+    model,
+    processor,
+    vocoder,
+    args,
+    iter_data_list,
+    md5_list,
+    prompt_index,
+    tts_hook,
+    model_precision,
+    proc_id,
+    mem_consumption,
+):
+    settings = resolve_omni_generation_settings(args)
+    set_seed(settings["seed"])
+    if args["output_dir"] is not None and num == 0:
+        llm_bench_utils.output_file.output_input_text(input_text, args, model_precision, prompt_index, 0, proc_id)
+
+    sample_rate = get_tts_sample_rate(args)
+
+    tok_encode_start = time.perf_counter()
+    input_data = model.preprocess_inputs(text=input_text, processor=processor)
+    tok_encode_end = time.perf_counter()
+    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+
+    input_tokens = input_data["input_ids"]
+    input_token_size = input_tokens[0].numel()
+
+    generate_kwargs = {
+        "return_audio": True,
+        "speaker": settings["speaker"],
+        "talker_seed": settings["seed"],
+    }
+    if settings["max_new_tokens"] is not None:
+        generate_kwargs["max_new_tokens"] = settings["max_new_tokens"]
+        generate_kwargs["talker_max_new_tokens"] = settings["max_new_tokens"]
+    if settings["num_beams"] and settings["num_beams"] > 1:
+        generate_kwargs["num_beams"] = settings["num_beams"]
+
+    mem_consumption.start(num)
+    start = time.perf_counter()
+    _, waveform = model.generate(**input_data, **generate_kwargs)
+    end = time.perf_counter()
+    generation_time = end - start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
+    if waveform is None:
+        raise RuntimeError("Qwen3-Omni text_to_speech: talker did not produce a waveform")
+
+    result_md5_list = []
+    _, md5 = _save_omni_speech(waveform, args, prompt_index, num, 0, proc_id, sample_rate)
+    result_md5_list.append(md5)
+
+    out_size = int(np.asarray(waveform).size)
+    tokenization_kwargs = {"tokenization_time": [tok_encode_time]}
+    _record_omni_iter(
+        num,
+        args,
+        iter_data_list,
+        md5_list,
+        prompt_index,
+        result_md5_list,
+        in_size=input_token_size,
+        out_size=out_size,
+        generation_time=generation_time,
+        tokenization_kwargs=tokenization_kwargs,
+        memory_metrics=memory_metrics,
+    )
+
+
+def run_omni_text_to_speech_generation_genai(
+    input_text,
+    num,
+    model,
+    processor,
+    vocoder,
+    args,
+    iter_data_list,
+    md5_list,
+    prompt_index,
+    tts_hook,
+    model_precision,
+    proc_id,
+    mem_consumption,
+):
+    import openvino_genai
+
+    if args["output_dir"] is not None and num == 0:
+        llm_bench_utils.output_file.output_input_text(input_text, args, model_precision, prompt_index, 0, proc_id)
+
+    sample_rate = get_tts_sample_rate(args)
+    settings = resolve_omni_generation_settings(args)
+
+    text_config = openvino_genai.GenerationConfig(os.path.join(str(args["model_path"]), "generation_config.json"))
+    if settings["max_new_tokens"] is not None:
+        text_config.max_new_tokens = settings["max_new_tokens"]
+    text_config.do_sample = False
+    text_config.num_beams = settings["num_beams"]
+    text_config.rng_seed = settings["seed"]
+
+    talker_speech_config = openvino_genai.OmniTalkerSpeechConfig(args["model_path"])
+    talker_speech_config.return_audio = True
+    talker_speech_config.speaker = settings["speaker"]
+    talker_speech_config.rng_seed = settings["seed"]
+    if settings["max_new_tokens"] is not None:
+        talker_speech_config.max_new_tokens = settings["max_new_tokens"]
+
+    mem_consumption.start(num)
+    start = time.perf_counter()
+    generation_result = model.generate(
+        input_text,
+        text_config=text_config,
+        talker_speech_config=talker_speech_config,
+    )
+    end = time.perf_counter()
+    generation_time = end - start
+    memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
+
+    waveforms = generation_result.speech_result.waveforms
+    if not waveforms:
+        raise RuntimeError("Qwen3-Omni text_to_speech: OmniPipeline returned no speech waveforms")
+
+    result_md5_list = []
+    _, md5 = _save_omni_speech(waveforms[0], args, prompt_index, num, 0, proc_id, sample_rate)
+    result_md5_list.append(md5)
+
+    out_size = generation_result.speech_result.perf_metrics.num_generated_samples
+
+    perf_metrics = generation_result.perf_metrics
+    tokenization_duration = perf_metrics.get_tokenization_duration().mean
+    tokenization_kwargs = {"tokenization_time": [tokenization_duration]} if tokenization_duration > 0 else {}
+
+    _record_omni_iter(
+        num,
+        args,
+        iter_data_list,
+        md5_list,
+        prompt_index,
+        result_md5_list,
+        in_size=perf_metrics.get_num_input_tokens(),
+        out_size=out_size,
+        generation_time=generation_time,
+        tokenization_kwargs=tokenization_kwargs,
+        memory_metrics=memory_metrics,
+    )
+
+    log.debug(
+        "[%s][P%s] talker generation time: %.2fms",
+        "warm-up" if num == 0 else num,
+        prompt_index,
+        generation_result.speech_result.perf_metrics.generation_time_ms,
+    )
+
+
 def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     mem_consumption.update_marker("model")
     model, processor, vocoder, pretrain_time, use_genai = FW_UTILS[framework].create_text_2_speech_model(model_path, device, mem_consumption, **args)
     args["model_path"] = model_path
-    if args.get("is_kokoro_model", False) and args.get("batch_size", 1) != 1:
-        log.warning("Only batch size 1 available for benchmarking with kokoro model")
+    if (args.get("is_kokoro_model", False) or args.get("is_omni_model", False)) and args.get("batch_size", 1) != 1:
+        log.warning("Only batch size 1 available for benchmarking with kokoro / qwen3-omni models")
         args["batch_size"] = 1
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
@@ -260,14 +468,17 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
              f'prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
 
     tts_hook = None
-    if framework == "ov" and not use_genai and not args.get("is_kokoro_model", False):
+    is_omni_model = args.get("is_omni_model", False)
+    if framework == "ov" and not use_genai and not args.get("is_kokoro_model", False) and not is_omni_model:
         tts_hook = TTSHook()
         tts_hook.new_encoder(model)
         tts_hook.new_decoder(model)
         tts_hook.new_postnet(model)
         tts_hook.new_vocoder(model)
 
-    if use_genai:
+    if is_omni_model:
+        gen_fn = run_omni_text_to_speech_generation_genai if use_genai else run_omni_text_to_speech_generation_optimum
+    elif use_genai:
         gen_fn = run_text_to_speech_generation_genai
     else:
         gen_fn = run_text_to_speech_generation_optimum

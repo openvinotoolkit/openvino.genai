@@ -9,7 +9,9 @@ SPEECHT5_SPEAKER_EMB_SHAPE = (1, 512)
 KOKORO_SPEAKER_EMB_SHAPE = (510, 1, 256)
 DEFAULT_KOKORO_VOICE = "af_heart"
 KOKORO_SAMPLE_RATE = 24000
+OMNI_TTS_SAMPLE_RATE = 24000
 DEFAULT_TTS_SAMPLE_RATE = 16000
+DEFAULT_OMNI_SPEAKER = "Ethan"
 
 
 def is_kokoro_model_id(model_id_or_path):
@@ -87,7 +89,11 @@ def resolve_kokoro_speaker_embedding(model_path, speech_voice="", speaker_embedd
 
 
 def get_tts_sample_rate(args):
-    return KOKORO_SAMPLE_RATE if args.get("is_kokoro_model", False) else DEFAULT_TTS_SAMPLE_RATE
+    if args.get("is_omni_model", False):
+        return OMNI_TTS_SAMPLE_RATE
+    if args.get("is_kokoro_model", False):
+        return KOKORO_SAMPLE_RATE
+    return DEFAULT_TTS_SAMPLE_RATE
 
 
 def extract_audio_array(output):
@@ -98,6 +104,12 @@ def extract_audio_array(output):
             return output.detach().cpu().reshape(-1).numpy()
     except ImportError:
         pass
+
+    if hasattr(output, "data") and not isinstance(output, (list, tuple, np.ndarray)):
+        try:
+            return np.asarray(output.data, dtype=np.float32).reshape(-1)
+        except Exception:
+            pass
 
     if hasattr(output, "numpy"):
         return output.numpy().reshape(-1)
@@ -118,6 +130,19 @@ def kokoro_preprocess_once(model, input_text, args):
             voice=speech_voice,
         )
     return input_text
+
+
+def resolve_omni_generation_settings(args):
+    speaker = (args.get("speech_voice") or "").strip() or DEFAULT_OMNI_SPEAKER
+    max_new_tokens = int(args["infer_count"]) if args.get("infer_count") is not None else None
+    num_beams = args.get("num_beams", 1) or 1
+    seed = int(args.get("seed", 0) or 0)
+    return {
+        "speaker": speaker,
+        "max_new_tokens": max_new_tokens,
+        "num_beams": num_beams,
+        "seed": seed,
+    }
 
 
 def kokoro_generate_from_preprocessed(model, preprocessed_input, args):

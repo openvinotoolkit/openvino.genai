@@ -265,14 +265,17 @@ pip install kokoro
 optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code models/ov_Kokoro-82M
 # run benchmark.py with Kokoro (Optimum or GenAI)
 python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice af_heart --speech_language en-us
+
+# Qwen3-Omni text-to-speech
+python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice Ethan
 ```
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
-- `--speech_voice`: Voice to use for Kokoro models. Default is `af_heart`
+- `--speech_voice`: Voice to use for Kokoro (default `af_heart`) and Qwen3-Omni (default `Ethan`; other options: `Chelsie`, `Aiden`, `Cherry`)
 - `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
 
-> **Supported Text to Speech model types:** speecht5, kokoro
+> **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni
 
 ### Speech to Text models
 ```sh

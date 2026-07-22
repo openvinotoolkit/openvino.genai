@@ -78,6 +78,9 @@ Prompt file example：
 {"prompt": "what is openvino?"}
 {"prompt": "A chat between a curious user and an artificial intelligence assistant."}
 
+For Qwen3-Omni, the speaker can be selected via `--speech_voice` (default `Ethan`; other
+options: `Chelsie`, `Aiden`, `Cherry`). Speech output is produced at 24 kHz.
+
 ## 9.Video generation
 Supported parameters that can be set are:
 * `num_steps` - inference steps (default 25)

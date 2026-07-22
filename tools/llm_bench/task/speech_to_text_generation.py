@@ -22,10 +22,6 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 1000
 DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
 
 
-def is_omni_speech_model(args):
-    return any(model_type.startswith("qwen3-omni") for model_type in args["use_case"].model_types)
-
-
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     result_md5_list = []
     pipe = input_param['pipe']
@@ -173,7 +169,7 @@ def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_ite
 
 def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     speech_file_list = get_speech_files(args)
-    if is_omni_speech_model(args):
+    if model_utils.is_omni_model(args):
         return run_omni_speech_2_txt_benchmark(
             model_path, framework, device, args, num_iters, mem_consumption, speech_file_list
         )
