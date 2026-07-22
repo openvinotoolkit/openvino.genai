@@ -14,6 +14,7 @@ import openvino as ov
 import pandas as pd
 from PIL import Image
 from datasets import load_dataset
+import soundfile as sf
 from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
@@ -424,6 +425,18 @@ def parse_args():
         help="Optional natural-language style instruction for Qwen3 CustomVoice and VoiceDesign.",
     )
     parser.add_argument(
+        "--speech-ref-audio",
+        type=str,
+        default="",
+        help="Optional reference wav path for Qwen3 Base voice-clone generation.",
+    )
+    parser.add_argument(
+        "--speech-ref-text",
+        type=str,
+        default="",
+        help="Optional reference transcript text for Qwen3 Base voice-clone generation.",
+    )
+    parser.add_argument(
         "--tts-eval-whisper-model",
         type=str,
         default="base.en",
@@ -489,6 +502,8 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
+    if args.speech_ref_audio is not None and str(args.speech_ref_audio).strip() != "" and not os.path.exists(args.speech_ref_audio):
+        raise ValueError(f"Reference audio file does not exist: {args.speech_ref_audio}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
         raise ValueError(f"--gt-data must be a file path, not a directory: '{args.gt_data}'")
     if args.output is not None and os.path.isfile(args.output):
@@ -816,7 +831,17 @@ def _is_voice_pack_enabled_model(model):
     return voices_dir.is_dir()
 
 
-def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="", instruct="", max_new_tokens=None):
+def genai_gen_speech(
+    model,
+    prompt,
+    speaker_embedding=None,
+    language="",
+    voice="",
+    instruct="",
+    max_new_tokens=None,
+    ref_audio="",
+    ref_text="",
+):
     if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
         speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
@@ -832,6 +857,19 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
 
     selected_voice = voice.strip() if isinstance(voice, str) else ""
     generation_properties["voice"] = selected_voice
+
+    selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
+    if selected_ref_text:
+        generation_properties["voice_clone_ref_text"] = selected_ref_text
+
+    selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
+    if selected_ref_audio:
+        audio_data, _sr = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
+        audio_array = np.asarray(audio_data, dtype=np.float32)
+        if audio_array.ndim > 1:
+            # Keep input shape deterministic for the Base pipeline by downmixing to mono.
+            audio_array = np.mean(audio_array, axis=-1, dtype=np.float32)
+        generation_properties["voice_clone_ref_audio"] = ov.Tensor(audio_array.reshape(-1))
 
     # Only Kokoro voice-pack exports use named voice bins under <model_dir>/voices.
     if _is_voice_pack_enabled_model(model) and speaker_embedding is None:
@@ -1042,6 +1080,8 @@ def create_evaluator(base_model, args):
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
                 speech_instruct=args.speech_instruct,
+                speech_ref_audio=args.speech_ref_audio,
+                speech_ref_text=args.speech_ref_text,
                 max_new_tokens=args.max_new_tokens,
             )
         elif task == "visual-text" or task == "visual-video-text":

@@ -865,6 +865,10 @@ def _is_qwen3_voice_design_model(model_id):
     return _get_qwen3_tts_model_type(model_id) == "voice_design"
 
 
+def _is_qwen3_base_model(model_id):
+    return _get_qwen3_tts_model_type(model_id) == "base"
+
+
 def _map_qwen3_device(device: str) -> str:
     normalized_device = (device or "CPU").strip().lower()
     if normalized_device == "gpu":
@@ -912,6 +916,26 @@ def load_qwen3_voice_design_hf_pipeline(model_id, device="CPU", **kwargs):
     return Qwen3VoiceDesignWrapper(model)
 
 
+def load_qwen3_base_hf_pipeline(model_id, device="CPU", **kwargs):
+    from qwen_tts import Qwen3TTSModel
+
+    import torch
+
+    device_map = _map_qwen3_device(device)
+    from_pretrained_kwargs = {"device_map": device_map}
+    if device_map.startswith("cuda"):
+        from_pretrained_kwargs["dtype"] = torch.bfloat16
+        from_pretrained_kwargs["attn_implementation"] = "flash_attention_2"
+    else:
+        from_pretrained_kwargs["dtype"] = torch.float32
+
+    model = Qwen3TTSModel.from_pretrained(model_id, **from_pretrained_kwargs)
+
+    from .speech_generation_evaluator import Qwen3BaseWrapper
+
+    return Qwen3BaseWrapper(model)
+
+
 def load_qwen3_custom_voice_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     import openvino_genai
 
@@ -926,6 +950,14 @@ def load_qwen3_voice_design_genai_pipeline(model_dir, device="CPU", ov_config=No
     from .speech_generation_evaluator import Qwen3VoiceDesignWrapper
 
     return Qwen3VoiceDesignWrapper(openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {})))
+
+
+def load_qwen3_base_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    import openvino_genai
+
+    from .speech_generation_evaluator import Qwen3BaseWrapper
+
+    return Qwen3BaseWrapper(openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {})))
 
 
 def _resolve_remote_code_and_config(model_id):
@@ -971,6 +1003,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     qwen3_tts_model_type = _get_qwen3_tts_model_type(model_id)
     is_qwen3_custom_voice = qwen3_tts_model_type == "custom_voice"
     is_qwen3_voice_design = qwen3_tts_model_type == "voice_design"
+    is_qwen3_base = qwen3_tts_model_type == "base"
 
     if use_hf:
         if is_qwen3_custom_voice:
@@ -980,6 +1013,10 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         if is_qwen3_voice_design:
             logger.info("Using Qwen3 VoiceDesign HF API")
             return load_qwen3_voice_design_hf_pipeline(model_id, device, **kwargs)
+
+        if is_qwen3_base:
+            logger.info("Using Qwen3 Base HF API")
+            return load_qwen3_base_hf_pipeline(model_id, device, **kwargs)
 
         if _is_kokoro_model_id(model_id):
             logger.info("Using Kokoro HF API")
@@ -997,7 +1034,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         vocoder = _load_speecht5_hifigan_vocoder(vocoder_path)
         return SpeechT5Wrapper(model, processor, vocoder)
 
-    if use_genai or is_qwen3_custom_voice or is_qwen3_voice_design:
+    if use_genai or is_qwen3_custom_voice or is_qwen3_voice_design or is_qwen3_base:
         if is_qwen3_custom_voice:
             logger.info("Using OpenVINO GenAI API for Qwen3 CustomVoice")
             return load_qwen3_custom_voice_genai_pipeline(model_id, device, ov_config, **kwargs)
@@ -1005,6 +1042,10 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         if is_qwen3_voice_design:
             logger.info("Using OpenVINO GenAI API for Qwen3 VoiceDesign")
             return load_qwen3_voice_design_genai_pipeline(model_id, device, ov_config, **kwargs)
+
+        if is_qwen3_base:
+            logger.info("Using OpenVINO GenAI API for Qwen3 Base")
+            return load_qwen3_base_genai_pipeline(model_id, device, ov_config, **kwargs)
 
         logger.info("Using OpenVINO GenAI API")
         return load_speech_generation_genai_pipeline(model_id, device, ov_config, **kwargs)

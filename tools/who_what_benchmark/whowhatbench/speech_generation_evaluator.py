@@ -409,6 +409,109 @@ class Qwen3VoiceDesignWrapper:
         return self.model.generate(prompt, **generation_properties)
 
 
+class Qwen3BaseWrapper:
+    """Unified wrapper for Qwen3 Base models via HF or GenAI backends."""
+
+    def __init__(self, model):
+        self.model = model
+        self.model_type = "speech-generation"
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.model, attr)
+
+    def get_speaker_embedding_shape(self):
+        return None
+
+    @staticmethod
+    def _preview_ids(values, max_items=80):
+        seq = list(values)
+        head = seq[:max_items]
+        suffix = ",..." if len(seq) > max_items else ""
+        return f"len={len(seq)} [{','.join(str(int(x)) for x in head)}{suffix}]"
+
+    def generate(
+        self,
+        prompt,
+        speaker_embedding=None,
+        language="",
+        voice="",
+        instruct="",
+        ref_audio="",
+        ref_text="",
+        **kwargs,
+    ):
+        if speaker_embedding is not None:
+            LOGGER.debug("Ignoring speaker_embedding for Qwen3 Base.")
+
+        selected_language = language.strip() if isinstance(language, str) else ""
+        selected_instruct = instruct.strip() if isinstance(instruct, str) else ""
+        selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
+        selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
+
+        if not selected_ref_audio:
+            raise ValueError("Qwen3 Base requires --speech-ref-audio (or speech_ref_audio column in prompt data).")
+
+        # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
+        kwargs.setdefault("do_sample", False)
+        kwargs.setdefault("subtalker_dosample", False)
+        # GenAI currently defaults non_streaming_mode to True, whereas HF seems to default
+        # it to False. So, force them both to True for now...
+        kwargs.setdefault("non_streaming_mode", True)
+        # Qwen3 Base currently behaves better in WWB with a slightly stronger
+        # repetition penalty, regardless of the backend-specific default merge.
+        kwargs["repetition_penalty"] = 1.2
+
+        if hasattr(self.model, "generate_voice_clone"):
+            if not selected_ref_text:
+                # HF Base requires x_vector_only_mode for ref-audio-only cloning.
+                kwargs.setdefault("x_vector_only_mode", True)
+
+            wavs, sample_rate = self.model.generate_voice_clone(
+                text=prompt,
+                language=selected_language or "Auto",
+                instruct=selected_instruct,
+                ref_audio=selected_ref_audio,
+                ref_text=selected_ref_text if selected_ref_text else None,
+                **kwargs,
+            )
+
+            class _Speech:
+                def __init__(self, data):
+                    self.data = data
+
+            class _SpeechResult:
+                def __init__(self, data, output_sample_rate):
+                    self.speeches = [_Speech(data)]
+                    self.output_sample_rate = output_sample_rate
+
+            return _SpeechResult(np.array(wavs[0]).reshape(-1), sample_rate)
+
+        generation_properties = {}
+        if selected_language:
+            generation_properties["language"] = selected_language
+        if selected_instruct:
+            generation_properties["instruct"] = selected_instruct
+        if selected_ref_text:
+            generation_properties["voice_clone_ref_text"] = selected_ref_text
+
+        audio_data, _sr = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
+        audio_array = np.asarray(audio_data, dtype=np.float32)
+        if audio_array.ndim > 1:
+            audio_array = np.mean(audio_array, axis=-1, dtype=np.float32)
+        import openvino as ov
+
+        generation_properties["voice_clone_ref_audio"] = ov.Tensor(audio_array.reshape(-1))
+
+        generation_properties.update(kwargs)
+        generation_properties["repetition_penalty"] = 1.2
+
+        result = self.model.generate(prompt, **generation_properties)
+
+        return result
+
+
 def _safe_metric_mean(values):
     arr = np.array([np.nan if value is None else value for value in values], dtype=float)
     if np.isnan(arr).all():
@@ -431,6 +534,8 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         speech_language: str = "",
         speech_voice: str = "",
         speech_instruct: str = "",
+        speech_ref_audio: str = "",
+        speech_ref_text: str = "",
         max_new_tokens: int = None,
     ) -> None:
         if base_model is None and gt_data is None:
@@ -447,7 +552,12 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         self.speech_language = speech_language.strip() if isinstance(speech_language, str) else ""
         self.speech_voice = speech_voice.strip() if isinstance(speech_voice, str) else ""
         self.speech_instruct = speech_instruct.strip() if isinstance(speech_instruct, str) else ""
+        self.speech_ref_audio = speech_ref_audio.strip() if isinstance(speech_ref_audio, str) else ""
+        self.speech_ref_text = speech_ref_text.strip() if isinstance(speech_ref_text, str) else ""
         self.max_new_tokens = max_new_tokens
+
+        if self.speech_ref_audio and not os.path.exists(self.speech_ref_audio):
+            raise ValueError(f"Reference audio file does not exist: {self.speech_ref_audio}")
 
         if self.speaker_embedding_file_path is not None and not os.path.exists(self.speaker_embedding_file_path):
             raise ValueError(f"Speaker embedding file does not exist: {self.speaker_embedding_file_path}")
@@ -606,18 +716,23 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             language="",
             voice="",
             instruct="",
+            ref_audio="",
+            ref_text="",
             max_new_tokens=None,
         ):
             generation_kwargs = {}
             effective_max_new_tokens = max_new_tokens if max_new_tokens is not None else self.max_new_tokens
             if effective_max_new_tokens is not None:
                 generation_kwargs["max_new_tokens"] = effective_max_new_tokens
+            generation_kwargs["repetition_penalty"] = 1.0
             result = model.generate(
                 prompt,
                 speaker_embedding,
                 language=language,
                 voice=voice,
                 instruct=instruct,
+                ref_audio=ref_audio,
+                ref_text=ref_text,
                 **generation_kwargs,
             )
             audio_data = np.array(result.speeches[0].data).reshape(-1)
@@ -678,6 +793,14 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             if "speech_instruct" in data.columns and pd.notna(data.iloc[idx]["speech_instruct"]):
                 speech_instruct = str(data.iloc[idx]["speech_instruct"]).strip()
 
+            speech_ref_audio = self.speech_ref_audio
+            if "speech_ref_audio" in data.columns and pd.notna(data.iloc[idx]["speech_ref_audio"]):
+                speech_ref_audio = str(data.iloc[idx]["speech_ref_audio"]).strip()
+
+            speech_ref_text = self.speech_ref_text
+            if "speech_ref_text" in data.columns and pd.notna(data.iloc[idx]["speech_ref_text"]):
+                speech_ref_text = str(data.iloc[idx]["speech_ref_text"]).strip()
+
             generated_audio, generated_sr = generation_fn(
                 model,
                 prompt,
@@ -685,6 +808,8 @@ class SpeechGenerationEvaluator(BaseEvaluator):
                 language=speech_language,
                 voice=speech_voice,
                 instruct=speech_instruct,
+                ref_audio=speech_ref_audio,
+                ref_text=speech_ref_text,
                 max_new_tokens=self.max_new_tokens,
             )
 
