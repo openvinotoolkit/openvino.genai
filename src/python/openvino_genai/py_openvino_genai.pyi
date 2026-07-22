@@ -3514,42 +3514,54 @@ class SpeechGenerationConfig(GenerationConfig):
                                              omit this key instead of passing None because kwargs-to-AnyMap
                                              conversion rejects None values.
         :type phonemize_fallback_model_dir: str | None
-
+    
         Qwen3-TTS-specific parameters:
         :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
         :type speaker: str
-
+    
         :param instruct: optional instruction text that controls speaking style.
         :type instruct: str
-
+    
         :param non_streaming_mode: Qwen3 prompt assembly mode.
                                    ``True`` means non-streaming prompt assembly.
                                    ``False`` means streaming-style prompt assembly.
         :type non_streaming_mode: bool
-
+    
         :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
         :type subtalker_dosample: bool
-
+    
         :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
         :type subtalker_top_k: int
-
+    
         :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
         :type subtalker_top_p: float
-
+    
         :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
         :type subtalker_temperature: float
-
+    
         Qwen3 Base voice-clone over ``generate``:
         :param voice_clone_ref_text: reference transcript for ICL mode.
         :type voice_clone_ref_text: str
-
+    
         :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                               Expected shape: [T], [1, T], or [1, 1, T].
+                               Expected dtype: float32.
+                               Expected sample rate: 24000 Hz.
+                               OV GenAI does not decode audio files or resample this tensor.
         :type voice_clone_ref_audio: openvino.Tensor
-
+    
         :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
         :type voice_clone_ref_codec_ids: openvino.Tensor
+    
     """
+    instruct: str
     language: str
+    non_streaming_mode: bool
+    speaker: str
+    subtalker_dosample: bool
+    voice_clone_ref_audio: openvino._pyopenvino.Tensor
+    voice_clone_ref_codec_ids: openvino._pyopenvino.Tensor
+    voice_clone_ref_text: str
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -3559,12 +3571,6 @@ class SpeechGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
-        ...
-    @property
-    def instruct(self) -> str:
-        ...
-    @instruct.setter
-    def instruct(self, arg0: str) -> None:
         ...
     @property
     def max_phoneme_length(self) -> int:
@@ -3585,34 +3591,16 @@ class SpeechGenerationConfig(GenerationConfig):
     def minlenratio(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
-    def non_streaming_mode(self) -> bool:
-        ...
-    @non_streaming_mode.setter
-    def non_streaming_mode(self, arg0: bool) -> None:
-        ...
-    @property
     def phonemize_fallback_model_dir(self) -> pathlib.Path | None:
         ...
     @phonemize_fallback_model_dir.setter
     def phonemize_fallback_model_dir(self, arg0: os.PathLike | str | bytes | None) -> None:
         ...
     @property
-    def speaker(self) -> str:
-        ...
-    @speaker.setter
-    def speaker(self, arg0: str) -> None:
-        ...
-    @property
     def speed(self) -> float:
         ...
     @speed.setter
     def speed(self, arg0: typing.SupportsFloat) -> None:
-        ...
-    @property
-    def subtalker_dosample(self) -> bool:
-        ...
-    @subtalker_dosample.setter
-    def subtalker_dosample(self, arg0: bool) -> None:
         ...
     @property
     def subtalker_temperature(self) -> float:
@@ -3637,24 +3625,6 @@ class SpeechGenerationConfig(GenerationConfig):
         ...
     @threshold.setter
     def threshold(self, arg0: typing.SupportsFloat) -> None:
-        ...
-    @property
-    def voice_clone_ref_audio(self) -> openvino._pyopenvino.Tensor:
-        ...
-    @voice_clone_ref_audio.setter
-    def voice_clone_ref_audio(self, arg0: openvino._pyopenvino.Tensor) -> None:
-        ...
-    @property
-    def voice_clone_ref_codec_ids(self) -> openvino._pyopenvino.Tensor:
-        ...
-    @voice_clone_ref_codec_ids.setter
-    def voice_clone_ref_codec_ids(self, arg0: openvino._pyopenvino.Tensor) -> None:
-        ...
-    @property
-    def voice_clone_ref_text(self) -> str:
-        ...
-    @voice_clone_ref_text.setter
-    def voice_clone_ref_text(self, arg0: str) -> None:
         ...
 class SpeechGenerationPerfMetrics(PerfMetrics):
     """
@@ -4394,12 +4364,12 @@ class Text2SpeechDecodedResults:
     
         :param perf_metrics: performance metrics
         :type perf_metrics: SpeechGenerationPerfMetrics
-
+    
         :param speaker_embedding: Qwen3-TTS Base voice-clone speaker embedding used for generation.
                                   Persist and pass it back as the ``speaker_embedding`` argument to reuse a
                                   cloned voice without re-encoding reference audio. Empty for other backends.
         :type speaker_embedding: openvino.Tensor
-
+    
         :param voice_clone_ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
                                           Persist and pass it back via the ``voice_clone_ref_codec_ids``
                                           property to reuse the reference prompt. Empty otherwise.
@@ -4443,7 +4413,9 @@ class Text2SpeechPipeline:
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
                                      `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                                     to prepare this tensor externally and pass it explicitly.
+                                     to prepare this tensor externally and pass it explicitly. Qwen3-TTS Base backend also
+                                     expects caller-provided speaker embedding (x-vector style cloning), while Qwen3-TTS
+                                     CustomVoice uses predefined speaker ids and does not require this tensor.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -4486,6 +4458,44 @@ class Text2SpeechPipeline:
                                                  omit this key instead of passing None because kwargs-to-AnyMap
                                                  conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
+        
+            Qwen3-TTS-specific parameters:
+            :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+            :type speaker: str
+        
+            :param instruct: optional instruction text that controls speaking style.
+            :type instruct: str
+        
+            :param non_streaming_mode: Qwen3 prompt assembly mode.
+                                       ``True`` means non-streaming prompt assembly.
+                                       ``False`` means streaming-style prompt assembly.
+            :type non_streaming_mode: bool
+        
+            :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+            :type subtalker_dosample: bool
+        
+            :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_k: int
+        
+            :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_p: float
+        
+            :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+            :type subtalker_temperature: float
+        
+            Qwen3 Base voice-clone over ``generate``:
+            :param voice_clone_ref_text: reference transcript for ICL mode.
+            :type voice_clone_ref_text: str
+        
+            :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                                   Expected shape: [T], [1, T], or [1, 1, T].
+                                   Expected dtype: float32.
+                                   Expected sample rate: 24000 Hz.
+                                   OV GenAI does not decode audio files or resample this tensor.
+            :type voice_clone_ref_audio: openvino.Tensor
+        
+            :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+            :type voice_clone_ref_codec_ids: openvino.Tensor
         """
     @typing.overload
     def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
@@ -4498,7 +4508,9 @@ class Text2SpeechPipeline:
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
                                      `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                                     to prepare this tensor externally and pass it explicitly.
+                                     to prepare this tensor externally and pass it explicitly. Qwen3-TTS Base backend also
+                                     expects caller-provided speaker embedding (x-vector style cloning), while Qwen3-TTS
+                                     CustomVoice uses predefined speaker ids and does not require this tensor.
             :type speaker_embedding: openvino.Tensor or None
         
             :param properties: speech generation parameters specified as properties
@@ -4541,12 +4553,50 @@ class Text2SpeechPipeline:
                                                  omit this key instead of passing None because kwargs-to-AnyMap
                                                  conversion rejects None values.
             :type phonemize_fallback_model_dir: str | None
+        
+            Qwen3-TTS-specific parameters:
+            :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+            :type speaker: str
+        
+            :param instruct: optional instruction text that controls speaking style.
+            :type instruct: str
+        
+            :param non_streaming_mode: Qwen3 prompt assembly mode.
+                                       ``True`` means non-streaming prompt assembly.
+                                       ``False`` means streaming-style prompt assembly.
+            :type non_streaming_mode: bool
+        
+            :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+            :type subtalker_dosample: bool
+        
+            :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_k: int
+        
+            :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+            :type subtalker_top_p: float
+        
+            :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+            :type subtalker_temperature: float
+        
+            Qwen3 Base voice-clone over ``generate``:
+            :param voice_clone_ref_text: reference transcript for ICL mode.
+            :type voice_clone_ref_text: str
+        
+            :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                                   Expected shape: [T], [1, T], or [1, 1, T].
+                                   Expected dtype: float32.
+                                   Expected sample rate: 24000 Hz.
+                                   OV GenAI does not decode audio files or resample this tensor.
+            :type voice_clone_ref_audio: openvino.Tensor
+        
+            :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+            :type voice_clone_ref_codec_ids: openvino.Tensor
         """
     def get_generation_config(self) -> SpeechGenerationConfig:
         ...
     def get_speaker_embedding_shape(self) -> openvino._pyopenvino.Shape:
         """
-        Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}
+        Get the expected speaker embedding shape for the loaded model. SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}. Qwen3 Base: Shape{1, 1, D}.
         """
     def set_generation_config(self, config: SpeechGenerationConfig) -> None:
         ...
