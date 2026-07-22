@@ -50,6 +50,7 @@ private:
     friend class CacheStateDumper;
 
     bool m_dynamic_memory_allocation = false;
+    std::map<uint64_t, size_t> m_linear_attention_checkpoint_counts;
 
     // Dynamic KV-cache allocation params
     size_t m_kv_blocks_initial_multiplier = 2;
@@ -279,6 +280,7 @@ public:
     }
 
     void free_sequence(uint64_t seq_id) {
+        m_linear_attention_checkpoint_counts.erase(seq_id);
         m_cache_orchestrator->free_sequence(seq_id);
     }
 
@@ -292,6 +294,31 @@ public:
 
     const SchedulerConfig& get_config() const {
         return m_config;
+    }
+
+    bool has_linear_attention_cache() const {
+        return m_cache_orchestrator->has_linear_attention_cache();
+    }
+
+    void reserve_linear_attention_checkpoints_for_next_schedule(uint64_t seq_id, size_t checkpoint_count) {
+        OPENVINO_ASSERT(checkpoint_count > 0, "Linear attention checkpoint count must be greater than zero");
+        if (!m_cache_orchestrator->has_linear_attention_cache()) {
+            return;
+        }
+        m_linear_attention_checkpoint_counts[seq_id] = checkpoint_count;
+    }
+
+    void promote_linear_attention_checkpoint(uint64_t seq_id, size_t checkpoint_slot) {
+        m_linear_attention_checkpoint_counts.erase(seq_id);
+        if (!m_cache_orchestrator->has_linear_attention_cache()) {
+            return;
+        }
+        m_cache_orchestrator->promote_linear_attention_temporary_block(seq_id, checkpoint_slot);
+    }
+
+    void release_linear_attention_checkpoints(uint64_t seq_id) {
+        m_linear_attention_checkpoint_counts.erase(seq_id);
+        m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
     }
 
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free, CacheType cache_type) {
@@ -341,7 +368,7 @@ private:
             auto sequences = victim->get_not_finished_sequences();
             for (size_t s = 0; s < sequences.size(); ++s) {
                 auto seq_id = sequences[s]->get_id();
-                m_cache_orchestrator->free_sequence(seq_id);
+                free_sequence(seq_id);
             }
             victim->preempt_tokens(processed_tokens);
             if (was_evicted_from) {
@@ -367,7 +394,7 @@ private:
             for (auto sequence: victim->get_not_finished_sequences()) {
                 auto seq_id = sequence->get_id();
                 if (m_cache_orchestrator->has_block_table(seq_id)) {
-                    m_cache_orchestrator->free_sequence(seq_id);
+                    free_sequence(seq_id);
                 }
             }
         }
@@ -772,6 +799,33 @@ private:
         const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
 
         paging_data.past_length = checked_size_to_int32(num_processed_tokens, "past length", seq_id);
+        auto checkpoint_it = m_linear_attention_checkpoint_counts.find(seq_id);
+        if (checkpoint_it != m_linear_attention_checkpoint_counts.end()) {
+            OPENVINO_ASSERT(!m_config.enable_prefix_caching,
+                            "Linear attention checkpoint paging currently supports fixed one-block state only");
+            OPENVINO_ASSERT(num_scheduled_tokens <= checkpoint_it->second,
+                            "Linear attention checkpoint count must cover scheduled tokens for sequence ", seq_id,
+                            ": checkpoints ", checkpoint_it->second, ", scheduled tokens ", num_scheduled_tokens);
+            if (num_scheduled_tokens == 0) {
+                m_linear_attention_checkpoint_counts.erase(checkpoint_it);
+                m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
+            } else {
+                const int32_t committed_block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
+                const auto temporary_block_indices =
+                    m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, num_scheduled_tokens);
+
+                paging_data.block_indices.reserve(1 + temporary_block_indices.size());
+                paging_data.block_indices.push_back(committed_block_index);
+                for (int block_index : temporary_block_indices) {
+                    paging_data.block_indices.push_back(checked_block_index_to_int32(block_index, seq_id));
+                }
+                paging_data.cache_interval = 1;
+                scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+                m_linear_attention_checkpoint_counts.erase(checkpoint_it);
+                return;
+            }
+        }
+
         if (!m_config.enable_prefix_caching) {
             const int32_t block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
             paging_data.block_indices.push_back(block_index);

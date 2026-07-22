@@ -7,6 +7,7 @@ import numpy as np
 import logging
 import os
 from pathlib import Path
+from itertools import zip_longest
 
 from transformers import AutoTokenizer, AutoProcessor, AutoConfig
 import openvino as ov
@@ -138,6 +139,8 @@ def parse_args():
             "image-to-image",
             "image-inpainting",
             "text-embedding",
+            "image-embedding",
+            "video-embedding",
             "text-reranking",
         ],
         default="text",
@@ -153,6 +156,8 @@ def parse_args():
         "text-to-video - for video generation, \n"
         "text-reranking - for reranking a list of texts based on relevance to query, \n"
         "text-embedding - for creation of embedding for a list of texts, \n"
+        "image-embedding - for creation of embedding for a list of texts and images, \n"
+        "video-embedding - for creation of embedding for a list of texts and videos, \n"
         "speech-generation - for text to speech generation ",
     )
     parser.add_argument(
@@ -494,6 +499,16 @@ def check_args(args):
     if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
             "Whether --target-model, --target-data or --gt-data should be provided")
+    if (
+        args.genai
+        and args.model_type == "text-to-image"
+        and args.device.upper().startswith("NPU")
+        and (args.image_size is None or args.image_size <= 0)
+    ):
+        raise ValueError(
+            "A positive --image-size must be provided for text-to-image GenAI evaluation on NPU "
+            "because the pipeline must be reshaped to static dimensions before compilation"
+        )
     if args.adapters is not None and args.alphas is not None and len(args.adapters) != len(args.alphas):
         raise ValueError(
             "If --adapters is provided and --alphas is provided, they should have the same length."
@@ -757,6 +772,9 @@ def llamacpp_gen_text(
 
 def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_adapters=False):
     kwargs = {}
+    adapter_config = getattr(model, "adapter_config", None)
+    if adapter_config is not None:
+        kwargs["adapters"] = adapter_config
     if empty_adapters:
         import openvino_genai
         kwargs["adapters"] = openvino_genai.AdapterConfig()
@@ -979,9 +997,27 @@ def genai_gen_visual_text_chat(
     return answers
 
 
-def genai_gen_embedding(model, tokenizer, passages, **kwargs):
-    embeddings = model.embed_documents(passages)
-    return embeddings
+def genai_gen_embedding(model, tokenizer, processor, texts, images, videos, prompt, **kwargs):
+    text_input = []
+    if texts is not None:
+        text_input.append(texts)
+
+    media_inputs = {}
+
+    if prompt:
+        media_inputs["embedding_prompt"] = prompt
+
+    if images is not None:
+        media_inputs["images"] = []
+        for im in images:
+            media_inputs["images"].append(ov.Tensor(np.array(im)))
+
+    if videos is not None:
+        media_inputs["videos"] = []
+        for video in videos:
+            media_inputs["videos"].append(ov.Tensor(np.stack(video, axis=0)))
+
+    return np.asarray(model.embed(*text_input, **media_inputs).embeddings.data, dtype=np.float32)
 
 
 def genai_gen_reranking(model, tokenizer, query, documents):
@@ -1133,10 +1169,18 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
-        elif task == "text-embedding":
+        elif task == "text-embedding" or task == "image-embedding" or task == "video-embedding":
+            if task == "image-embedding" or task == "video-embedding":
+                processor, config = load_processor(args)
+                tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+            else:
+                processor = None
+                tokenizer = load_tokenizer(args)
+
             return EvaluatorCLS(
                 base_model=base_model,
-                tokenizer=load_tokenizer(args),
+                processor=processor,
+                tokenizer=tokenizer,
                 gt_data=args.gt_data,
                 test_data=prompts,
                 num_samples=args.num_samples,
@@ -1145,6 +1189,7 @@ def create_evaluator(base_model, args):
                 normalize=args.embeds_normalize,
                 padding_side=args.embeds_padding_side,
                 batch_size=args.embeds_batch_size,
+                pipeline_type=args.model_type,
             )
         elif task == "text-reranking":
             return EvaluatorCLS(
@@ -1242,9 +1287,7 @@ def print_text_results(evaluator):
         ref_text = ""
         actual_text = ""
         diff = ""
-        for l1, l2 in zip(
-            e["source_model"].splitlines(), e["optimized_model"].splitlines()
-        ):
+        for l1, l2 in zip_longest(e["source_model"].splitlines(), e["optimized_model"].splitlines(), fillvalue=""):
             if l1 == "" and l2 == "":
                 continue
             ref_text += l1 + "\n"
@@ -1287,6 +1330,8 @@ def print_embeds_results(evaluator):
         logger.info(f"Top-{i+1} example:")
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
+        logger.info("## Source:\n%s\n", e["source_model"])
+        logger.info("## Optimized:\n%s\n", e["optimized_model"])
 
 
 def print_rag_results(evaluator):
@@ -1414,11 +1459,13 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
-    if args.model_type == "text-embedding":
+    if args.model_type in ("text-embedding", "image-embedding", "video-embedding"):
         kwargs["embeds_pooling"] = args.embeds_pooling_type
         kwargs["embeds_normalize"] = args.embeds_normalize
         kwargs["embeds_padding_side"] = args.embeds_padding_side
         kwargs["embeds_batch_size"] = args.embeds_batch_size
+    if args.model_type == "text-to-image":
+        kwargs["image_size"] = args.image_size
 
     if args.draft_model is not None:
         kwargs["draft_model"] = args.draft_model
@@ -1536,7 +1583,7 @@ def main():
             print_image_results(evaluator)
         elif args.model_type in ["speech-generation"]:
             print_speech_results(evaluator)
-        elif args.model_type in ['text-embedding']:
+        elif args.model_type in ["text-embedding", "video-embedding", "image-embedding"]:
             print_embeds_results(evaluator)
         elif args.model_type in ['text-reranking']:
             print_rag_results(evaluator)

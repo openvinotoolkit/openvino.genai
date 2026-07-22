@@ -349,6 +349,44 @@ public:
     }
 
     /**
+     * Allocates one block per layer without registering the block in prefix-cache
+     * hash bookkeeping. Intended for transient state checkpoints that are
+     * overwritten before they become visible as sequence cache.
+     */
+    BlocksPerLayer allocate_uncached_block() {
+        OPENVINO_ASSERT(can_allocate_blocks(1));
+        BlocksPerLayer allocated_blocks;
+        allocated_blocks.reserve(m_num_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            OPENVINO_ASSERT(m_free_blocks_num[layer_idx] > 0,
+                            "Uncached checkpoint allocation requires a free physical block");
+            CacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
+            allocated_block->increment();
+            allocated_blocks.push_back(allocated_block);
+            m_free_blocks[layer_idx].pop_front();
+            --m_free_blocks_num[layer_idx];
+        }
+        return allocated_blocks;
+    }
+
+    /**
+     * Releases an uncached block set directly to the free pool. This bypasses
+     * prefix-cache overwrite storage because transient checkpoints do not have
+     * stable prefix hashes.
+     */
+    void free_uncached(const BlocksPerLayer& blocks_for_all_layers) {
+        OPENVINO_ASSERT(blocks_for_all_layers.size() == m_num_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            auto& block_ptr = blocks_for_all_layers[layer_idx];
+            block_ptr->release();
+            if (block_ptr->is_free()) {
+                m_free_blocks[layer_idx].push_back(block_ptr);
+                ++m_free_blocks_num[layer_idx];
+            }
+        }
+    }
+
+    /**
      * Frees a block for each layer. If no sequence is associated with the blocks after freeing, the blocks
      * are either returned to the "free" pool, or, if prefix caching is enabled, stored internally for its contents
      * to be potentially reused if a prefix of a new sequence matches to the prefix with which the currently freed blocks
@@ -592,6 +630,7 @@ class BlockManager {
     // stores blocks for each sequence (not sequence group)
     // the same block can be seen in multiple block_tables for different sequences
     std::map<uint64_t, std::vector<BlocksPerLayer>> m_block_table;
+    std::map<uint64_t, std::vector<BlocksPerLayer>> m_temporary_block_table;
     std::map<uint64_t, size_t> m_block_table_logical_start;
 
     std::mutex m_cached_blocks_map_mutex;
@@ -909,6 +948,85 @@ public:
         return m_allocator.num_free_blocks(0); // relying on the invariant that all layers have identical number of blocks
     }
 
+    std::vector<int> reserve_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        OPENVINO_ASSERT(m_block_table.count(seq_id) > 0,
+                        "Cannot reserve temporary cache blocks for unknown sequence ", seq_id);
+        OPENVINO_ASSERT(m_num_layers == 1,
+                        "Temporary cache checkpoint reservation expects a shared one-layer block table");
+        OPENVINO_ASSERT(m_temporary_block_table[seq_id].empty(),
+                        "Temporary cache blocks are already reserved for sequence ", seq_id);
+        OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
+                        "Not enough cache blocks to reserve ", num_blocks,
+                        " temporary checkpoints for sequence ", seq_id);
+
+        auto& temporary_blocks = m_temporary_block_table[seq_id];
+        temporary_blocks.reserve(num_blocks);
+        std::vector<int> block_indices;
+        block_indices.reserve(num_blocks);
+        for (size_t idx = 0; idx < num_blocks; ++idx) {
+            BlocksPerLayer blocks = m_allocator.allocate_uncached_block();
+            OPENVINO_ASSERT(!blocks.empty(), "Temporary cache block allocation returned no blocks");
+            block_indices.push_back(blocks.front()->get_index());
+            temporary_blocks.push_back(std::move(blocks));
+        }
+        return block_indices;
+    }
+
+    void release_temporary_blocks(uint64_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        auto it = m_temporary_block_table.find(seq_id);
+        if (it == m_temporary_block_table.end()) {
+            return;
+        }
+        for (const auto& blocks : it->second) {
+            m_allocator.free_uncached(blocks);
+        }
+        m_temporary_block_table.erase(it);
+    }
+
+    void promote_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        OPENVINO_ASSERT(checkpoint_slot > 0,
+                        "Checkpoint slot is one-based and must be greater than zero");
+        auto temporary_it = m_temporary_block_table.find(seq_id);
+        OPENVINO_ASSERT(temporary_it != m_temporary_block_table.end(),
+                        "No temporary cache blocks reserved for sequence ", seq_id);
+        auto& temporary_blocks = temporary_it->second;
+        OPENVINO_ASSERT(checkpoint_slot <= temporary_blocks.size(),
+                        "Checkpoint slot ", checkpoint_slot, " is out of range for sequence ", seq_id,
+                        ", reserved checkpoints: ", temporary_blocks.size());
+
+        auto table_it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(table_it != m_block_table.end(),
+                        "Cannot promote temporary cache block for unknown sequence ", seq_id);
+        auto& block_table = table_it->second;
+        OPENVINO_ASSERT(block_table.size() == m_num_layers,
+                        "Temporary cache promotion expects one block table per layer");
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            OPENVINO_ASSERT(block_table[layer_idx].size() == 1,
+                            "Temporary cache promotion supports fixed one-block sequence state only");
+        }
+
+        const size_t selected_index = checkpoint_slot - 1;
+        BlocksPerLayer selected_blocks = temporary_blocks[selected_index];
+        BlocksPerLayer previous_blocks;
+        previous_blocks.reserve(m_num_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            previous_blocks.push_back(block_table[layer_idx][0]);
+            block_table[layer_idx][0] = selected_blocks[layer_idx];
+        }
+        m_allocator.free_uncached(previous_blocks);
+
+        for (size_t idx = 0; idx < temporary_blocks.size(); ++idx) {
+            if (idx == selected_index) {
+                continue;
+            }
+            m_allocator.free_uncached(temporary_blocks[idx]);
+        }
+        m_temporary_block_table.erase(temporary_it);
+    }
+
     /**
      * Returns the number of additional tokens that can be accommodated for a given sequence group,
      * accounting for unused slots in already-allocated blocks and free blocks.
@@ -1047,6 +1165,13 @@ public:
      */
     void free_sequence(size_t seq_id) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        auto temporary_it = m_temporary_block_table.find(seq_id);
+        if (temporary_it != m_temporary_block_table.end()) {
+            for (const auto& blocks : temporary_it->second) {
+                m_allocator.free_uncached(blocks);
+            }
+            m_temporary_block_table.erase(temporary_it);
+        }
         OPENVINO_ASSERT(m_block_table.find(seq_id) != m_block_table.end(), "sequence with id ", seq_id,
                         " not found in BlockManager, but requested to free");
         auto& block_table = m_block_table[seq_id];
@@ -1396,6 +1521,7 @@ public:
         // KV-cache should not be cleared if prefix caching is enabled
         OPENVINO_ASSERT(m_enable_prefix_caching == false);
 
+        m_temporary_block_table.clear();
         m_allocator.clear();
         m_prefix_hash_to_cached_blocks.clear();
         m_cached_content_length_ref_counts.clear();

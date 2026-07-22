@@ -19,11 +19,13 @@ from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 import llm_bench_utils.llm_hook_sample.hook_sample as hook_sample
 from packaging import version
+from dataclasses import dataclass
 
 
 logger = log.getLogger(__name__)
 
 
+@dataclass
 class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -33,6 +35,7 @@ class GenerateDecoderOnlyOutput(ModelOutput):
     past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
+@dataclass
 class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -388,7 +391,17 @@ class GreedySearchHook:
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
         trans_version = version.parse(transformers.__version__)
-        if trans_version >= version.parse("5.3.0"):
+        if trans_version >= version.parse("5.11.0"):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v5_11 as hook_sample_v5_11
+
+            type(model)._sample = hook_sample_v5_11.new_sample
+            type(model)._prefill = hook_sample_v5_11.new_prefill
+        elif trans_version >= version.parse("5.4.0"):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v5_4 as hook_sample_v5_4
+
+            type(model)._sample = hook_sample_v5_4.new_sample
+            type(model)._prefill = hook_sample_v5_4.new_prefill
+        elif trans_version >= version.parse("5.3.0"):
             import llm_bench_utils.llm_hook_sample.hook_sample_v5_3 as hook_sample_v5_3
 
             type(model)._sample = hook_sample_v5_3.new_sample

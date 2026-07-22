@@ -544,6 +544,42 @@ size_t ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl:
     return m_batch_size;
 }
 
+std::optional<uint64_t> ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
+reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t checkpoint_count) {
+    if (!m_scheduler || !m_scheduler->has_linear_attention_cache()) {
+        return std::nullopt;
+    }
+    for (const auto& request : m_requests) {
+        if (request->get_request_id() != request_id) {
+            continue;
+        }
+        const auto running_sequences = request->get_running_sequences();
+        OPENVINO_ASSERT(running_sequences.size() == 1,
+                        "Linear attention checkpointing supports one running sequence per DFlash request.");
+        const uint64_t seq_id = running_sequences.front()->get_id();
+        m_scheduler->reserve_linear_attention_checkpoints_for_next_schedule(seq_id, checkpoint_count);
+        return seq_id;
+    }
+    OPENVINO_ASSERT(false, "Cannot reserve linear attention checkpoints: request ", request_id, " was not found.");
+    return std::nullopt;
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
+promote_linear_attention_checkpoint_for_sequence(std::optional<uint64_t> seq_id, size_t checkpoint_slot) {
+    if (!m_scheduler || !seq_id) {
+        return;
+    }
+    m_scheduler->promote_linear_attention_checkpoint(*seq_id, checkpoint_slot);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::
+release_linear_attention_checkpoints_for_sequence(std::optional<uint64_t> seq_id) {
+    if (!m_scheduler || !seq_id) {
+        return;
+    }
+    m_scheduler->release_linear_attention_checkpoints(*seq_id);
+}
+
 bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::rewind_awaiting_request_prefix(
     uint64_t request_id,
     size_t processed_tokens) {
@@ -631,7 +667,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             } else if (sampling_params.is_tree_search() && sampling_params.tree_depth <= generated_tokens_cnt) {
                 // ensure a stable tree structure
                 request->pause_generation(true);
-            } else if (eagle_mode_enabled && m_scheduler && m_scheduler->get_config().dynamic_split_fuse &&
+            } else if (eagle_mode_enabled && m_scheduler->get_config().dynamic_split_fuse &&
                        m_scheduler->get_expected_num_scheduled_tokens(request->get_request_id()) > 0 &&
                        request->get_num_processed_tokens() < request->get_prompt_len()) {
                 // During the prompt processing phase, this is a safety measure to prevent `draft model` from
@@ -639,9 +675,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();
-            if (m_scheduler) {
-                m_scheduler->clear_expected_num_scheduled_tokens(request->get_request_id());
-            }
+            m_scheduler->clear_expected_num_scheduled_tokens(request->get_request_id());
         }
     }
     if (eagle_mode_enabled)

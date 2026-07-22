@@ -59,4 +59,4 @@
 /src/python/py_image_generation_pipelines.cpp @likholat
 
 # GenAI Tools
-/tools/ @sbalandi
+/tools/ @sbalandi @avasenin

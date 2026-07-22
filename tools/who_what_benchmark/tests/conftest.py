@@ -71,6 +71,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "hexgrad/Kokoro-82M",
         "convert_args": ["--trust-remote-code"],
     },
+    "tiny-random-qwen3-vl-embedding": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding",
+        "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
+    },
 }
 
 
