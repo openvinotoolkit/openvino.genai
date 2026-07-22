@@ -39,7 +39,7 @@ print(ov_pipe.generate("Describe images", images))`,
   {
     title: 'Speech Recognition API',
     Icon: SoundIcon,
-    code: `ov_pipe = ov_genai.WhisperPipeline("whisper-base")
+    code: `ov_pipe = ov_genai.ASRPipeline("whisper-base")
 print(ov_pipe.generate(read_wav("sample.wav")))`,
   },
   {
