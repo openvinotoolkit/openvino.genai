@@ -45,16 +45,9 @@ jobs:
         with:
           sparse-checkout: .github
 
-      - name: Create Smart CI dependency constraints
-        # ghapi 1.0.4 used by Smart CI breaks with fastcore 2.x; create the constraint before the action upgrades pip.
-        run: echo "fastcore==1.12.1" > "${{ runner.temp }}/smart-ci-constraints.txt"
-        shell: bash
-
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@46c59b29a3cbdaf30e9eaacf5c04686b196d9a0f
-        env:
-          PIP_CONSTRAINT: ${{ runner.temp }}/smart-ci-constraints.txt
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@009fce994252679e838bfa14efc0c27f7e66daad
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
