@@ -47,14 +47,15 @@ public:
                                  bool recalculate_merged_embeddings = true,
                                  const std::vector<size_t>& image_sequence = {}) override;
 
-    ov::Tensor get_inputs_embeds(const std::string& prompt,
-                                 const std::vector<ov::genai::EncodedImage>& images,
-                                 const std::vector<ov::genai::EncodedVideo>& videos,
-                                 ov::genai::VLMPerfMetrics& metrics,
-                                 bool recalculate_merged_embeddings = true,
-                                 const std::vector<size_t>& image_sequence = {},
-                                 const std::vector<size_t>& videos_sequence = {},
-                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
+    ov::Tensor get_inputs_embeds(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
         const std::string& prompt,
@@ -77,23 +78,18 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<VideoMetadata>& videos_metadata = {}) override;
+    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos,
+                                                       const std::vector<VideoMetadata>& videos_metadata = {}) override;
 
-    NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_id,
-        const std::vector<EncodedImage>& images
-    ) const override;
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t base_id,
+                                      const std::vector<EncodedImage>& images) const override;
 
-    NormalizedPrompt normalize_prompt(
-        const std::string& prompt,
-        size_t base_image_id,
-        size_t base_video_id,
-        const std::vector<EncodedImage>& images,
-        const std::vector<EncodedVideo>& videos
-    ) const override;
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t base_image_id,
+                                      size_t base_video_id,
+                                      const std::vector<EncodedImage>& images,
+                                      const std::vector<EncodedVideo>& videos) const override;
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
@@ -114,12 +110,10 @@ private:
     // Extra inputs to pass to the language model
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
 
-    void expand_video_tags_in_prompt(
-        std::string& unified_prompt,
-        const std::vector<EncodedVideo>& encoded_videos,
-        const std::vector<size_t>& videos_sequence,
-        size_t video_base_id
-    ) const;
+    void expand_video_tags_in_prompt(std::string& unified_prompt,
+                                     const std::vector<EncodedVideo>& encoded_videos,
+                                     const std::vector<size_t>& videos_sequence,
+                                     size_t video_base_id) const;
 
     ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
 
@@ -130,14 +124,12 @@ private:
     /// @brief Compute merged text+image embeddings together with the encoded input_ids.
     /// Shared implementation behind get_inputs_embeds() and get_inputs_embeds_with_token_type_ids().
     /// @return A pair of (inputs_embeds, input_ids).
-    std::pair<ov::Tensor, ov::Tensor> compute_inputs_embeds(
-        const std::string& prompt,
-        const std::vector<EncodedImage>& images,
-        const std::vector<EncodedVideo>& videos,
-        VLMPerfMetrics& metrics,
-        const std::vector<size_t>& images_sequence,
-        const std::vector<size_t>& videos_sequence
-    );
+    std::pair<ov::Tensor, ov::Tensor> compute_inputs_embeds(const std::string& prompt,
+                                                            const std::vector<EncodedImage>& images,
+                                                            const std::vector<EncodedVideo>& videos,
+                                                            VLMPerfMetrics& metrics,
+                                                            const std::vector<size_t>& images_sequence,
+                                                            const std::vector<size_t>& videos_sequence);
 
     ov::Tensor get_token_type_ids(const ov::Tensor& input_ids);
 
