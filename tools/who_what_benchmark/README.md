@@ -139,16 +139,41 @@ wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-typ
 ```
 
 ### Compare Text Embeddings models
+
+**Supported options:**
+- `--embeds_pooling_type` - Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side. CLS by default.
+- `--embeds_normalize` - Normalize embeddings. False by default.
+- `--embeds_padding_side` - Side to use for padding 'left' or 'right'. 'right' by default.
+- `--embeds_batch_size` - Batch size value.
+
 ```sh
-# Export FP16 model to OpenVINO
+# Export model to OpenVINO
 optimum-cli export openvino -m BAAI/bge-small-en-v1.5 bge-small-en-v1.5 --task feature-extraction
 
 # Collect the references and save the mapping in the .csv file.
 # Reference data will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --hf
+wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --hf
 # Compute the metric
 # Target data will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --genai
+wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --genai
+```
+
+### Compare Visual Embeddings models
+
+**Supported scenarios:**
+- `image-embedding` - for creation of embedding for a list of texts and images.
+- `video-embedding` - for creation of embedding for a list of texts and videos.
+
+```sh
+# Export model to OpenVINO
+optimum-cli export openvino -m Qwen/Qwen3-VL-Embedding-2B qwen3-vl-embedding-2B --task feature-extraction
+
+# Collect the references and save the mapping in the .csv file.
+# Reference data will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Qwen/Qwen3-VL-Embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --hf
+# Compute the metric
+# Target data will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model ./qwen3-vl-embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --genai
 ```
 
 ### Compare Text-to-video models

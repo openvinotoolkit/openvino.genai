@@ -337,7 +337,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("stop", &GenerationHandleImpl::stop, py::arg_v("finish_reason", GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
-        .def("read_all", &GenerationHandleImpl::read_all);
+        .def("read_all", &GenerationHandleImpl::read_all)
+        .def("get_perf_metrics", &GenerationHandleImpl::get_perf_metrics)
+        .def("get_vlm_perf_metrics", &GenerationHandleImpl::get_vlm_perf_metrics);
 
     py::enum_<AggregationMode>(m, "AggregationMode",
                             R"(Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache

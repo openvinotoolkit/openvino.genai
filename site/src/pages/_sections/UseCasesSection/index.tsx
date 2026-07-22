@@ -4,7 +4,7 @@ import Heading from '@theme/Heading';
 
 import Link from '@docusaurus/Link';
 import { ImageGeneration } from './components/image-generation';
-import { ImageProcessing } from './components/image-processing';
+import { VisualProcessing } from './components/visual-processing';
 import { SpeechGeneration } from './components/speech-generation';
 import { SpeechRecognition } from './components/speech-recognition';
 import { TextGeneration } from './components/text-generation';
@@ -19,7 +19,7 @@ export const UseCasesSection = () => (
     </Heading>
     <div className={styles.sectionContent}>
       <TextGeneration />
-      <ImageProcessing />
+      <VisualProcessing />
       <ImageGeneration />
       <VideoGeneration />
       <SpeechRecognition />
