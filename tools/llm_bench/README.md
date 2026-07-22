@@ -278,7 +278,7 @@ python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --task 
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
-- `--speech_voice`: Voice to use for Kokoro (default `af_heart`) and Qwen3-Omni (default `Ethan`; other options: `Chelsie`, `Aiden`, `Cherry`)
+- `--speech_voice`: Voice to use for Kokoro (default `af_heart`) and Qwen3-Omni (default `Ethan`)
 - `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
 
 > **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni

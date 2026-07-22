@@ -796,6 +796,34 @@ class TestBenchmarkLLM:
         ] + sample_args
         run_sample(benchmark_py_command)
 
+    @pytest.mark.samples
+    @pytest.mark.transformers_higher_v5_1
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "-f", "pt", "--task", "visual_text_gen"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_omni_moe_pt_visual_text_gen(
+        self, download_test_content, download_model, sample_args
+    ):
+        # PyTorch path loads raw HF weights (not the OpenVINO IR produced by convert_model).
+        # Qwen3OmniMoeForConditionalGeneration is exported by public transformers>=5.1.
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "What animal is in this image?",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
     @pytest.mark.parametrize(
         "sample_args",
         [

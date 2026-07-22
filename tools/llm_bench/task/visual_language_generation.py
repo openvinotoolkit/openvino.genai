@@ -315,7 +315,7 @@ def run_visual_language_generation_benchmark(
             if 0 <= i < len(input_image_text_list):
                 image_text_list.append(input_image_text_list[i])
                 prompt_idx_list.append(i)
-    if len(input_image_text_list) == 0:
+    if len(image_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
              f'prompt nums: {len(image_text_list)}, prompt idx: {prompt_idx_list}')

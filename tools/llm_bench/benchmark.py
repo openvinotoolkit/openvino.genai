@@ -473,8 +473,7 @@ def get_argparser():
         type=str,
         default="",
         help=(
-            "Speech voice for text-to-speech models. For Kokoro defaults to af_heart. "
-            "For Qwen3-Omni defaults to Ethan (other options: Chelsie, Aiden, Cherry)."
+            "Speech voice for text-to-speech models. For Kokoro defaults to af_heart. For Qwen3-Omni defaults to Ethan."
         ),
     )
     parser.add_argument(

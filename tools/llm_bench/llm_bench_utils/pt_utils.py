@@ -313,8 +313,10 @@ class Qwen3OmniPTWrapper:
 def _select_torch_device(device):
     if device.upper() == "GPU":
         if not torch.cuda.is_available():
-            log.info("CUDA device is unavailable")
-            return torch.device("cpu")
+            raise RuntimeError(
+                "PyTorch GPU execution was requested (-d GPU) but CUDA is not available. "
+                "Install a CUDA-enabled PyTorch build or rerun with -d CPU."
+            )
         return torch.device("cuda")
     return torch.device(device.lower())
 
