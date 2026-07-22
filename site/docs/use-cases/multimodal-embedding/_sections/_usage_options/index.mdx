@@ -1,18 +1,11 @@
 import OptimumCLI from '@site/src/components/OptimumCLI';
 
+## Additional Usage Options
+
 :::tip
 Check out the [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag/image_video_embedding.py) RAG samples for multimodal embedding examples.
+For text embedding example check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/rag) samples.
 :::
-
-### Embedding Inputs
-
-`EmbeddingPipeline` computes a single embedding vector for each call to `embed()`. The input can be:
-
-- **Text** — a single string or a batch of strings.
-- **Images** — each image is a tensor of shape `[H, W, C]` (`uint8`), or a batch `[N, H, W, C]`.
-- **Videos** — each video is a tensor of shape `[F, H, W, C]` (`uint8`), where `F` is the number of frames. Accompanying video metadata (frame rate, sampled frame indices) can be provided via `videos_metadata`.
-
-Text, images, and videos are mapped into the same embedding space, so embeddings produced from different modalities can be compared directly (for example, with cosine similarity).
 
 ### Embedding Prompt
 
@@ -38,9 +31,15 @@ Some models support a special instruction that describes how an input should be 
         );
         ```
     </TabItemCpp>
-</LanguageTabs>
+    <TabItemJS>
 
- ## Additional Usage Options
+:::info
+JS bindings currently expose only `TextEmbeddingPipeline` (text-only).
+Multimodal `EmbeddingPipeline` support in JS is not available yet.
+:::
+
+    </TabItemJS>
+</LanguageTabs>
 
 ### Pipeline Configuration
 
@@ -92,9 +91,9 @@ Some models support special instructions for queries and documents. Use `query_i
 `query_instruction` and `embed_instruction` apply only to text-only pipelines. For multimodal inputs, set a per-call instruction with the [`embedding_prompt`](#embedding-prompt) parameter instead.
 :::
 
-### Example: Text-Only Mode
+### Example for Pipeline Configuration
 
-Download and convert a text embedding model (e.g. [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
+Download and convert embedding model (e.g. multimodal [Qwen/Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B), or text only model [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
 
 <OptimumCLI model='BAAI/bge-small-en-v1.5' outputDir='bge-small-en-v1_5_ov' task='feature-extraction' />
 
@@ -145,4 +144,26 @@ See all supported [Embedding Models](/docs/supported-models/#embedding-models).
         ov::genai::EmbedResult query = pipeline.embed("a photo of a cat");
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```javascript
+        // JS bindings currently expose only TextEmbeddingPipeline (text-only).
+        // EmbeddingPipeline (multimodal) support in JS is not available yet.
+        import { TextEmbeddingPipeline, PoolingType } from "openvino-genai-node";
+
+        const pipeline = await TextEmbeddingPipeline(
+            models_path,
+            "CPU",
+            {
+                pooling_type: PoolingType.LAST_TOKEN,
+                normalize: true,
+                max_length: 512,
+                pad_to_max_length: true,
+                padding_side: "left",
+            }
+        );
+
+        // Embed the text query
+        const query = await pipeline.embedQuery("a photo of a cat");
+        ```
+    </TabItemJS>
 </LanguageTabs>

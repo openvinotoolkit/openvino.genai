@@ -5,6 +5,18 @@ import CodeBlock from '@theme/CodeBlock';
 import openvino as ov
 import openvino_genai as ov_genai
 from PIL import Image
+from pathlib import Path
+
+def read_image(path: str) -> ov.Tensor:
+    pic = Image.open(path).convert("RGB")
+    image_data = np.array(pic)[None]
+    return ov.Tensor(image_data)
+
+def read_images(path: str) -> list[ov.Tensor]:
+    entry = Path(path)
+    if entry.is_dir():
+        return [read_image(str(file)) for file in sorted(entry.iterdir())]
+    return [read_image(path)]
 
 pipeline = ov_genai.EmbeddingPipeline(models_path, "${props.device || 'CPU'}")
 
