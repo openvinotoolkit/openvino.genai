@@ -541,6 +541,11 @@ class TestImage2VideoPipeline:
         with pytest.raises(RuntimeError, match="vae_encoder"):
             ov_genai.Image2VideoPipeline(str(no_encoder_dir))
 
+    @pytest.mark.xfail(
+        reason="Test model exports rank-1 timestep. Needs optimum-intel PR #1762, "
+        "blocked by safetensors<0.8.0 vs diffusers==0.39.0",
+        raises=RuntimeError,
+    )
     def test_generate_runs(self, video_generation_model):
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
         image = self._make_image()
@@ -550,6 +555,11 @@ class TestImage2VideoPipeline:
         video = np.array(result.video)
         assert video.shape == (1, 9, 32, 32, 3)
 
+    @pytest.mark.xfail(
+        reason="Test model exports rank-1 timestep. Needs optimum-intel PR #1762, "
+        "blocked by safetensors<0.8.0 vs diffusers==0.39.0",
+        raises=RuntimeError,
+    )
     def test_determinism(self, video_generation_model):
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
         image = self._make_image()
@@ -557,6 +567,11 @@ class TestImage2VideoPipeline:
         result2 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
         np.testing.assert_array_equal(np.array(result1.video), np.array(result2.video))
 
+    @pytest.mark.xfail(
+        reason="Test model exports rank-1 timestep. Needs optimum-intel PR #1762, "
+        "blocked by safetensors<0.8.0 vs diffusers==0.39.0",
+        raises=RuntimeError,
+    )
     def test_lora_passthrough(self, video_generation_model):
         adapter_config = ov_genai.AdapterConfig()
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
