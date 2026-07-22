@@ -25,22 +25,6 @@ from utils.atomic_download import AtomicDownloadManager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-def get_transformers_version():
-    """Return (major, minor) of the installed transformers, or None if unavailable."""
-    try:
-        version = metadata.version("transformers")
-    except metadata.PackageNotFoundError:
-        return None
-    try:
-        major, minor = version.split(".")[:2]
-        return int(major), int(minor)
-    except ValueError:
-        return None
-
-
-TRANSFORMERS_VERSION = get_transformers_version()
-
 # Dictionary containing model configurations.
 # Each key is a model identifier, and the value is a dictionary with:
 # - "name": the model's name or path

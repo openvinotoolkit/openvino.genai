@@ -12,8 +12,7 @@ from utils.hugging_face import download_gguf_model
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.kokoro_test_assets import prepare_tiny_kokoro_model_path
 from utils.kokoro_test_assets import prepare_tiny_kokoro_ov_path
-from conftest import SAMPLES_PY_DIR, convert_model, download_test_content, TRANSFORMERS_VERSION
-
+from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
@@ -722,20 +721,19 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.skipif(
-        TRANSFORMERS_VERSION is None or TRANSFORMERS_VERSION < (5, 1),
-        reason="Requires transformers >= 5.1",
-    )
+    @pytest.mark.transformers_higher_v5_1
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "visual_text_gen", "--optimum"],
-            ["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "visual_text_gen", "--genai"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "visual_text_gen", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "visual_text_gen", "--genai"],
         ],
     )
-    def test_python_tool_llm_benchmark_visual_text_gen(self, download_test_content, convert_model, sample_args):
+    def test_python_tool_llm_benchmark_qwen3_omni_visual_text_gen(
+        self, download_test_content, convert_model, sample_args
+    ):
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [
             sys.executable,
@@ -750,10 +748,7 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.skipif(
-        TRANSFORMERS_VERSION is None or TRANSFORMERS_VERSION < (5, 1),
-        reason="Requires transformers >= 5.1",
-    )
+    @pytest.mark.transformers_higher_v5_1
     @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
     @pytest.mark.parametrize(
@@ -780,10 +775,7 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
-    @pytest.mark.skipif(
-        TRANSFORMERS_VERSION is None or TRANSFORMERS_VERSION < (5, 1),
-        reason="Requires transformers >= 5.1",
-    )
+    @pytest.mark.transformers_higher_v5_1
     @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
     @pytest.mark.parametrize(
         "sample_args",
@@ -802,6 +794,7 @@ class TestBenchmarkLLM:
             "--prompt",
             "Hello OpenVINO GenAI",
         ] + sample_args
+        run_sample(benchmark_py_command)
 
     @pytest.mark.parametrize(
         "sample_args",

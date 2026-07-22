@@ -169,7 +169,7 @@ def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_ite
 
 def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     speech_file_list = get_speech_files(args)
-    if model_utils.is_omni_model(args):
+    if args.get("is_omni_model", False):
         return run_omni_speech_2_txt_benchmark(
             model_path, framework, device, args, num_iters, mem_consumption, speech_file_list
         )

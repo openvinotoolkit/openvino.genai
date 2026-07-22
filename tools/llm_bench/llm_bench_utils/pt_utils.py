@@ -8,7 +8,7 @@ import json
 import numpy as np
 import logging as log
 from pathlib import Path
-from transformers import AutoConfig
+from transformers import AutoConfig, AutoProcessor
 import llm_bench_utils.hook_common as hook_common
 from llm_bench_utils.tts_utils import is_kokoro_model_id, normalize_kokoro_lang_code, DEFAULT_KOKORO_VOICE
 
@@ -178,6 +178,37 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     return pipe, from_pretrain_time, False, None
 
 
+_QWEN3_OMNI_MODEL_TYPES = {
+    "qwen3_omni_moe": "Qwen3OmniMoeForConditionalGeneration",
+    "qwen3_omni": "Qwen3OmniForConditionalGeneration",
+}
+
+
+def _force_fp32_configs(config):
+    # Qwen3-Omni configs mark thinker as bfloat16 but leave talker/code2wav dtype unset.
+    # The default heterogeneous mix crashes at matmul time — force fp32 across the whole
+    # config tree so matmul dtypes stay consistent.
+    stack = [config]
+    seen = set()
+    while stack:
+        cfg = stack.pop()
+        if cfg is None or id(cfg) in seen:
+            continue
+        seen.add(id(cfg))
+        for attr in ("torch_dtype", "dtype"):
+            if hasattr(cfg, attr):
+                setattr(cfg, attr, "float32")
+        for sub_name in (
+            "thinker_config",
+            "talker_config",
+            "code2wav_config",
+            "text_config",
+            "code_predictor_config",
+            "audio_encoder_config",
+        ):
+            stack.append(getattr(cfg, sub_name, None))
+
+
 class Qwen3OmniPTWrapper:
     """
     HF/PyTorch wrapper that adapts Qwen3-Omni's `generate(return_audio=True)` to the
@@ -185,53 +216,20 @@ class Qwen3OmniPTWrapper:
     """
 
     def __init__(self, model_path):
-        from transformers import AutoConfig
+        import transformers
 
         config = AutoConfig.from_pretrained(str(model_path), trust_remote_code=True)
-        # Sub-configs (talker/code2wav) often omit torch_dtype so PyTorch loads them fp32
-        # while thinker is bf16; this heterogeneous mix crashes at matmul. Force fp32 across
-        # the whole config tree.
-        for cfg in (
-            config,
-            getattr(config, "thinker_config", None),
-            getattr(config, "talker_config", None),
-            getattr(config, "code2wav_config", None),
-        ):
-            if cfg is None:
-                continue
-            if hasattr(cfg, "torch_dtype"):
-                cfg.torch_dtype = "float32"
-            if hasattr(cfg, "dtype"):
-                cfg.dtype = "float32"
-            for sub_name in ("text_config", "code_predictor_config", "audio_encoder_config"):
-                sub = getattr(cfg, sub_name, None)
-                if sub is not None:
-                    if hasattr(sub, "torch_dtype"):
-                        sub.torch_dtype = "float32"
-                    if hasattr(sub, "dtype"):
-                        sub.dtype = "float32"
+        _force_fp32_configs(config)
+
         model_type = getattr(config, "model_type", "")
-        model_cls = None
-        if model_type == "qwen3_omni_moe":
-            from transformers import Qwen3OmniMoeForConditionalGeneration
+        cls_name = _QWEN3_OMNI_MODEL_TYPES.get(model_type)
+        model_cls = getattr(transformers, cls_name, None) if cls_name else None
+        if model_cls is None:
+            raise RuntimeError(
+                f"Qwen3-Omni model_type '{model_type}' at {model_path} is not supported by the "
+                f"installed transformers build (expected class {cls_name})."
+            )
 
-            model_cls = Qwen3OmniMoeForConditionalGeneration
-        elif model_type == "qwen3_omni":
-            try:
-                from transformers import Qwen3OmniForConditionalGeneration
-
-                model_cls = Qwen3OmniForConditionalGeneration
-            except ImportError:
-                raise RuntimeError(
-                    f"Qwen3-Omni dense (model_type='qwen3_omni') requires a transformers "
-                    f"build that exports Qwen3OmniForConditionalGeneration. "
-                    f"Installed transformers does not."
-                )
-        else:
-            raise RuntimeError(f"Unsupported Qwen3-Omni model_type '{model_type}' at {model_path}")
-        # Qwen3-Omni configs mark thinker as bfloat16 but leave talker/code2wav dtype unset;
-        # loading with the default heterogeneous dtype crashes at matmul time. Force a single
-        # dtype for the whole model to keep matmul dtypes consistent.
         self._model = model_cls.from_pretrained(
             str(model_path), config=config, trust_remote_code=True, dtype=torch.float32
         )
@@ -248,15 +246,13 @@ class Qwen3OmniPTWrapper:
             raise ValueError("Processor is required for Qwen3-Omni preprocessing.")
         conversation = [{"role": "user", "content": [{"type": "text", "text": text}]}]
         prompt = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
-        inputs = processor(text=[prompt], return_tensors="pt")
-        return inputs
+        return processor(text=[prompt], return_tensors="pt")
 
     def generate(self, *args, **kwargs):
-        # Mirror the Optimum path: accept `talker_max_new_tokens`, `talker_seed`, `num_beams`,
-        # `max_new_tokens`, plus return_audio/speaker; forward what HF generate accepts.
+        # Mirror the Optimum path: HF exposes `thinker_max_new_tokens` / `thinker_num_beams`
+        # instead of the plain kwargs, and has no seed kwarg on generate.
         max_new_tokens = kwargs.pop("max_new_tokens", None)
         num_beams = kwargs.pop("num_beams", None)
-        # `talker_seed` is Optimum-only; drop it (HF has no seed kwarg on generate).
         kwargs.pop("talker_seed", None)
         if max_new_tokens is not None:
             kwargs.setdefault("thinker_max_new_tokens", int(max_new_tokens))
@@ -276,24 +272,18 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
             memory_data_collector.start()
         start = time.perf_counter()
         pipe = Qwen3OmniPTWrapper(model_path)
-        from transformers import AutoProcessor
-
         processor = AutoProcessor.from_pretrained(str(model_path), trust_remote_code=True)
-        end = time.perf_counter()
-        from_pretrain_time = end - start
+        from_pretrain_time = time.perf_counter() - start
         if kwargs.get("mem_consumption"):
             memory_data_collector.stop_and_collect_data("pretrained")
             memory_data_collector.log_data(compilation=True)
         log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
         if device:
-            if device.upper() == "GPU":
-                torch_device = torch.device("cuda") if torch.cuda.is_available() else None
-                if torch_device is None:
-                    log.info("CUDA device is unavailable")
+            if device.upper() == "GPU" and not torch.cuda.is_available():
+                log.info("CUDA device is unavailable")
             else:
-                torch_device = torch.device(device.lower())
-            log.info(f"Torch device was set to: {torch_device}")
-            if torch_device is not None:
+                torch_device = torch.device("cuda" if device.upper() == "GPU" else device.lower())
+                log.info(f"Torch device was set to: {torch_device}")
                 pipe.to(torch_device)
         return pipe, processor, None, from_pretrain_time, False
     if model_path.exists():

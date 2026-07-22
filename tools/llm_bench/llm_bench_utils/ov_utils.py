@@ -959,9 +959,8 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     else:
         # Detect Kokoro before calling AutoConfig — Kokoro uses a custom model_type that
         # is not registered in Transformers, so AutoConfig.from_pretrained would raise.
-        from llm_bench_utils.model_utils import is_omni_model as _is_omni_model
         is_kokoro_model = is_kokoro_model_id(model_path)
-        is_omni_model = _is_omni_model(kwargs)
+        is_omni_model = kwargs.get("is_omni_model", False)
         remote_code = False
         model_config = None
         if not is_kokoro_model:
