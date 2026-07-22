@@ -62,6 +62,14 @@ public:
         m_request = compiled_model.create_infer_request();
     }
 
+    virtual void import_model(const ov::Tensor& blob_tensor,
+                              const std::string& device,
+                              const ov::AnyMap& properties) override {
+        auto compiled_model = utils::import_model(blob_tensor, device, properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition dynamic model");
+        m_request = compiled_model.create_infer_request();
+    }
+
 private:
     ov::InferRequest m_request;
 };
