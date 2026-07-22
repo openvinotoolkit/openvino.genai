@@ -71,7 +71,7 @@ Read the hint files first and jump to ~50 lines around each hinted line number i
 2. **If there are no failed pipelines** (the list is empty or the files are missing because the pre-download step found nothing): call the `noop` tool with a message such as "No failed CI pipelines found on this pull request - nothing to investigate" and **stop immediately**.
 3. **If the pre-download step could not resolve a pull request** (e.g. `/ci-doctor` was not posted on a PR): call `noop` explaining that this command must be run from a pull request comment, and **stop immediately**.
 4. **Enumerate** each failed pipeline. You will investigate every one of them and produce a per-pipeline entry in the final comment.
-5. **Fallback discovery**: if the pre-downloaded files are unavailable, use the GitHub `actions` tools to list workflow runs for the PR head SHA (`list_workflow_runs`) and identify the failed ones yourself.
+5. **Fallback discovery**: if the pre-downloaded files are unavailable, use the GitHub `actions` tools to list recent workflow runs for the PR head branch (per workflow), then call `get_workflow_run` on candidate run IDs and keep only runs whose `head_sha` matches the PR head commit; investigate the failed ones.
 
 ### Phase 2: Deep Log Analysis (per failed pipeline)
 
