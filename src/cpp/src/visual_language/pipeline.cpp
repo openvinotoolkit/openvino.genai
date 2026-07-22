@@ -23,6 +23,7 @@
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 using namespace ov::genai;
 
@@ -54,9 +55,11 @@ void npu_auto_default_properties(ov::AnyMap& device_properties) {
 
 }
 
-class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
+class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // A config to follow for text generation.
     GenerationConfig m_generation_config;
+    // VLM model config (model_type, enable_audio_output, etc.); loaded from config.json.
+    VLMConfig m_vlm_config;
     // A tokenizer encoding a prompt.
     Tokenizer m_tokenizer;
     // A model to compute token embeddings.
@@ -80,7 +83,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
-    size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
@@ -168,7 +170,6 @@ private:
                 lm_properties,
                 kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
-            m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
             npu_auto_default_properties(device_properties);
         } else {
             // Slice-before-matmul rewrites LM logits to be produced only for the last token.
@@ -245,6 +246,9 @@ public:
             utils::from_config_json_if_exists<GenerationConfig>(
                 models_dir, "generation_config.json"
             )
+        },
+        m_vlm_config{
+            utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json")
         } {
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto properties_copy = properties;
@@ -263,7 +267,10 @@ public:
         const ov::AnyMap& properties,
         const GenerationConfig& generation_config
     ) :
-        m_generation_config{generation_config} {
+        m_generation_config{generation_config},
+        m_vlm_config{
+            utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json")
+        } {
         auto properties_copy = properties;
         utils::extract_extensions_to_core(properties_copy);
         const auto& language_pair = utils::get_model_weights_pair(models_map, "language");
@@ -281,6 +288,9 @@ public:
             utils::from_config_json_if_exists<GenerationConfig>(
                 models_dir, "generation_config.json"
             )
+        },
+        m_vlm_config{
+            utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json")
         } {
         initialize_from_model_and_dir(language_model, models_dir, device, properties);
     }
@@ -294,37 +304,44 @@ public:
         const ov::AnyMap& properties,
         const GenerationConfig& generation_config
     ) :
-        m_generation_config{generation_config} {
+        m_generation_config{generation_config},
+        m_vlm_config{
+            utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json")
+        } {
         initialize_from_model_and_map(language_model, models_map, tokenizer, config_dir_path, device, properties);
     }
 
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, videos, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, videos, {}, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
         const std::string& prompt,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
+        const std::vector<ov::Tensor>& audios,
         const std::vector<VideoMetadata>& videos_metadata,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config_in,
         const StreamerVariant& streamer
     ) override {
+        // Local mutable copy: setup_generation_config(...) and downstream callees mutate fields
+        // (rng_seed, eos_token_id, ...). The public-base signature is const-ref by contract.
+        GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -346,7 +363,9 @@ public:
                                                            generation_config.relevance_weight);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
+        m_inputs_embedder->encode_audios(audios);
         auto encoded_images = m_inputs_embedder->encode_images(images);
+        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
         auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
@@ -458,7 +477,7 @@ public:
         }
 
         auto generate_end_time = std::chrono::steady_clock::now();
-        decoded.perf_metrics = encoded_result.perf_metrics;
+        decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -475,6 +494,11 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
+        decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
+            decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.end()
+        );
 
         // Evaluate statistics
         decoded.perf_metrics.m_evaluated = false;
@@ -486,30 +510,32 @@ public:
     VLMDecodedResults generate(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(history, images, {}, std::move(generation_config), streamer);
+        return generate(history, images, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(history, images, videos, {}, std::move(generation_config), streamer);
+        return generate(history, images, videos, {}, {}, generation_config, streamer);
     }
 
     VLMDecodedResults generate(
         const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
+        const std::vector<ov::Tensor>& audios,
         const std::vector<VideoMetadata>& videos_metadata,
-        GenerationConfig generation_config,
+        const GenerationConfig& generation_config_in,
         const StreamerVariant& streamer
     ) override {
+        GenerationConfig generation_config = generation_config_in;
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -565,6 +591,8 @@ public:
             ? processed_chat_data.vision_counts
             : std::vector<std::pair<std::size_t, std::size_t>>{ {video_seq.size(), image_seq.size()} };
 
+        vlm_utils::update_image_slice_counts(perf_metrics, images_embeds);
+
         generation_finish_info = prepare_inputs_and_generate(
             templated_history,
             images_embeds,
@@ -580,7 +608,7 @@ public:
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
-        
+
         // Update pruned content after generation (CDPruner has run during prepare_inputs_and_generate)
         if (generation_config.pruning_ratio > 0) {
             chat_context.apply_pruning_to_last_message();
@@ -604,7 +632,7 @@ public:
         }
 
         auto generate_end_time = std::chrono::steady_clock::now();
-        decoded.perf_metrics = encoded_result.perf_metrics;
+        decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -620,6 +648,11 @@ public:
             decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
+        );
+        decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
+            decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.end()
         );
 
         // Evaluate statistics
@@ -681,6 +714,14 @@ public:
             m_generation_config.set_eos_token_id(default_eos_token_id);
 
         m_generation_config.validate();
+    }
+
+    bool supports_hidden_states_collection() const override {
+        return false;
+    }
+
+    bool is_audio_output_enabled() const override {
+        return m_vlm_config.enable_audio_output;
     }
 
 private:
@@ -753,7 +794,7 @@ private:
         } else {
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(
                 unified_prompt,
-                encoded_images, 
+                encoded_images,
                 encoded_videos,
                 perf_metrics,
                 recalculate_merged_embeddings,
@@ -832,6 +873,10 @@ private:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
+        size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
+        if (m_is_npu) {
+            max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
+        }
         return ov::genai::get_lm_encoded_results(m_language,
                                                  inputs_embeds,
                                                  new_atten_mask,
@@ -843,7 +888,7 @@ private:
                                                  cache_state,
                                                  m_embedding,
                                                  rope_delta,
-                                                 m_max_kv_cache_size,
+                                                 max_kv_cache_size,
                                                  use_intermediate_remote_tensor,
                                                  lm_extra_inputs,
                                                  std::move(per_layer_callback));
@@ -851,11 +896,10 @@ private:
 };
 
 bool requires_sdpa(const std::filesystem::path& models_dir) {
-    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
-    // TODO: remove it when GEMMA3 ticket-171180 is fixed
-    return vlm_config.model_type == VLMModelType::GEMMA3
-        // ticket: 189844
-        || vlm_config.model_type == VLMModelType::GEMMA4_UNIFIED;
+    // Force models to use SDPA backend by default until PA is supported. Example:
+    // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    // vlm_config.model_type == VLMModelType::GEMMA3;
+    return false;
 }
 
 VLMPipeline::VLMPipeline(
@@ -871,7 +915,7 @@ VLMPipeline::VLMPipeline(
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
-        m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
+        m_pimpl = std::make_shared<VLMPipelineImpl>(models_dir, device, properties);
     } else {
         utils::extract_extensions_to_core(properties);
         auto language_model_path = models_dir / "openvino_language_model.xml";
@@ -881,8 +925,7 @@ VLMPipeline::VLMPipeline(
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(
-                language_model, models_dir, scheduler_config, device, plugin_properties);
+            m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
         } else if (attention_backend == PA_BACKEND && !requires_sdpa(models_dir)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
@@ -890,8 +933,7 @@ VLMPipeline::VLMPipeline(
                 // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
                 // but cannot perform its inference later
     #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(
-                    language_model, models_dir, scheduler_config, device, plugin_properties);
+                m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
 #endif
             } catch (const ov::Exception& exception) {
                 log_paged_attention_fallback(exception);
@@ -900,7 +942,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            m_pimpl = std::make_unique<VLMPipelineImpl>(language_model, models_dir, device, properties);
+            m_pimpl = std::make_shared<VLMPipelineImpl>(language_model, models_dir, device, properties);
         }
     }
 
@@ -924,7 +966,7 @@ VLMPipeline::VLMPipeline(
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
-        m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
+        m_pimpl = std::make_shared<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
     } else {
         utils::extract_extensions_to_core(properties);
         const auto& [model_str, weights] = utils::get_model_weights_pair(models_map, "language");
@@ -933,7 +975,7 @@ VLMPipeline::VLMPipeline(
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         if (utils::explicitly_requires_paged_attention(user_properties)) {
             auto [plugin_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-            m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+            m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
         } else if (attention_backend == PA_BACKEND && !requires_sdpa(config_dir_path)) {
             // try to call CB adapter one more time, but with safe guard to silent exception
             try {
@@ -941,7 +983,7 @@ VLMPipeline::VLMPipeline(
                 // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
                 // but cannot perform its inference later
     #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
-                m_pimpl = std::make_unique<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
+                m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     #endif
             } catch (const ov::Exception& exception) {
                 log_paged_attention_fallback(exception);
@@ -950,7 +992,7 @@ VLMPipeline::VLMPipeline(
         }
 
         if (m_pimpl == nullptr) {
-            m_pimpl = std::make_unique<VLMPipelineImpl>(language_model, models_map, tokenizer, config_dir_path, device, properties, generation_config);
+            m_pimpl = std::make_shared<VLMPipelineImpl>(language_model, models_map, tokenizer, config_dir_path, device, properties, generation_config);
         }
 
     }
@@ -986,7 +1028,19 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, {image}, generation_config, streamer);
+    return m_pimpl->generate(prompt, std::vector<ov::Tensor>{image}, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::Tensor>& audios,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1021,7 +1075,19 @@ VLMDecodedResults VLMPipeline::generate(
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(history, {image}, generation_config, streamer);
+    return m_pimpl->generate(history, std::vector<ov::Tensor>{image}, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const ChatHistory& history,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::Tensor>& audios,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
@@ -1054,4 +1120,12 @@ GenerationConfig VLMPipeline::get_generation_config() const {
 
 void VLMPipeline::set_generation_config(const GenerationConfig& new_config) {
     m_pimpl->set_generation_config(new_config);
+}
+
+bool VLMPipeline::supports_hidden_states_collection() const {
+    return m_pimpl->supports_hidden_states_collection();
+}
+
+bool VLMPipeline::is_audio_output_enabled() const {
+    return m_pimpl->is_audio_output_enabled();
 }

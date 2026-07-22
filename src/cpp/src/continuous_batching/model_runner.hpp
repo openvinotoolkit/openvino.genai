@@ -10,6 +10,7 @@
 #include <openvino/runtime/infer_request.hpp>
 
 #include "visual_language/embedding_model.hpp"
+#include "visual_language/inputs_embedder.hpp"
 #include "sequence_group.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/timer.hpp"
@@ -316,7 +317,6 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
-    bool m_enable_query_to_query_bias = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     std::unordered_map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
@@ -389,8 +389,20 @@ public:
                     name.compare(name.size() - marker.size(), marker.size(), marker) == 0) {
                     std::string prefix = name.substr(0, name.size() - marker.size());
                     m_linear_attention_paging_groups.push_back({prefix, {}, {}, {}, {}});
+                } else if (name == "qq_bias_begins") {
+                    m_has_qq_bias_input = true;
                 }
                 break;  // use first name per input
+            }
+        }
+
+        // Detect model output names for hidden state handling (Qwen3-Omni)
+        for (const auto& output : compiled_model.outputs()) {
+            const auto& name = output.get_any_name();
+            if (name == "hidden_states") {
+                m_has_hidden_states_output = true;
+            } else if (name == "intermediate_hidden_states") {
+                m_has_intermediate_hidden_states_output = true;
             }
         }
     }
@@ -405,7 +417,6 @@ public:
     void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
-    void enable_query_to_query_bias(bool on)   { m_enable_query_to_query_bias = on; }
 
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
@@ -505,7 +516,7 @@ public:
             {}, ov::element::i32);
 
         ov::Tensor token_type_ids = _get_or_resize_tensor(m_cached_token_type_ids, "token_type_ids",
-            {1, total_num_tokens}, ov::element::i64);
+            {total_num_tokens, 1}, ov::element::i64);
         
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
@@ -723,7 +734,7 @@ public:
                         //   - tokens[3-6] are grandchildren at tree layer 2 (branching from layer 1 nodes)
                         // These IDs compute relative position offsets for parallel evaluation in tree-based speculative decoding (e.g., EAGLE).
                         const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
-                        if (_is_hs_export_only() && m_enable_query_to_query_bias && !tree_pos_ids.empty()) {
+                        if (_is_hs_export_only() && !tree_pos_ids.empty()) {
                             OPENVINO_ASSERT(num_scheduled_tokens <= tree_pos_ids.size(),
                                            "num_scheduled_tokens (", num_scheduled_tokens,
                                            ") exceeds tree_position_ids.size() (", tree_pos_ids.size(),
@@ -852,12 +863,15 @@ public:
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
             m_request.set_tensor("hidden_states", hidden_state_input);
         }
-        if (_is_hs_export_only() && m_enable_query_to_query_bias) {
+        if (_is_hs_export_only() && m_has_qq_bias_input) {
             _set_query_to_query_tensors(sequence_groups, scheduler_output);
         }
         if (position_ids.get_shape().size() == 3 && position_ids.get_shape()[1] == 1) {
-            // M-RoPE: squeeze pseudo-batch dim [dim, 1, total_token_num] -> [dim, total_token_num]
+            // M-RoPE: squeeze pseudo-batch dim [N, 1, total_token_num] -> [N, total_token_num]
+            // Validate that N is within expected range (3 for Qwen2/2.5/3-VL, 4 for Qwen3-Omni)
             const auto& position_ids_shape = position_ids.get_shape();
+            OPENVINO_ASSERT(position_ids_shape[0] >= 3 && position_ids_shape[0] <= 4,
+                            "M-RoPE position_ids first dimension must be 3 or 4, got ", position_ids_shape[0]);
             position_ids.set_shape({position_ids_shape[0], position_ids_shape[2]});
         }
         // typical LLM parameters
@@ -926,7 +940,18 @@ public:
         _reset_cache_rotation_coefficients();
 
         if (_is_hs_export()) {
-            m_hidden_states = m_request.get_tensor("last_hidden_state");
+            // Use "hidden_states" output only when the model also exports "intermediate_hidden_states"
+            // (Qwen3-Omni pattern). Otherwise prefer "last_hidden_state" to preserve existing behavior
+            // for speculative decoding and other models.
+            m_hidden_states = (m_has_hidden_states_output && m_has_intermediate_hidden_states_output)
+                ? m_request.get_tensor("hidden_states")
+                : m_request.get_tensor("last_hidden_state");
+
+            // Capture intermediate hidden states if available (Qwen3-Omni talker support)
+            if (m_has_intermediate_hidden_states_output) {
+                m_intermediate_hidden_states = m_request.get_tensor("intermediate_hidden_states");
+            }
+
             for (size_t i = 0; i < num_sequence_groups; ++i) {
                 size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
                 SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
@@ -935,6 +960,25 @@ public:
                     Sequence::Ptr sequence = running_sequences[seq_idx];
                     sequence->update_hidden_state(
                         _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                    if (m_has_intermediate_hidden_states_output) {
+                        auto ihs = _get_intermediate_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id());
+                        if (ihs.get_size() == 0) {
+                            continue;
+                        }
+                        auto ihs_shape = ihs.get_shape();
+                        size_t num_tokens = ihs_shape.at(0);
+                        if (num_tokens > 1) {
+                            // Prefill: slice the batch tensor into per-token tensors so that
+                            // the accumulated vector is indexed by absolute token position.
+                            for (size_t t = 0; t < num_tokens; ++t) {
+                                const auto [start_coord, end_coord] = ov::genai::utils::make_roi(ihs_shape, 0, t, t + 1);
+                                ov::Tensor token_hs(ihs, start_coord, end_coord);
+                                sequence->update_intermediate_hidden_state(token_hs);
+                            }
+                        } else {
+                            sequence->update_intermediate_hidden_state(ihs);
+                        }
+                    }
                 }
             }
         }
@@ -1005,6 +1049,15 @@ public:
 
 private:
     ov::Tensor m_hidden_states;
+    ov::Tensor m_intermediate_hidden_states;
+    // Whether model has "hidden_states" vs "last_hidden_state" output name
+    bool m_has_hidden_states_output = false;
+    // Whether model has intermediate_hidden_states output (e.g., Qwen3-Omni)
+    bool m_has_intermediate_hidden_states_output = false;
+    // Whether model has the Eagle3 "qq_bias_begins" input (tree-decoding query-to-query bias).
+    // Guards _set_query_to_query_tensors so the HS_EXPORT flag, which Qwen3-Omni also reuses to
+    // collect thinker hidden states, does not trigger an Eagle3-only tensor bind on Omni models.
+    bool m_has_qq_bias_input = false;
 
     // Hidden state flags and helpers
     bool _is_hs_export()   const { return m_hidden_state_flags & HS_EXPORT; }
@@ -1109,21 +1162,12 @@ private:
             }
         }
     }
-    /**
-     * @brief Retrieves a slice of the hidden state tensor corresponding to a specific request and sequence group.
-     *
-     * This method looks up the hidden state mapping for the given request and sequence group IDs.
-     * If the mapping exists and the hidden states tensor is available, it returns a sub-tensor (region of interest)
-     * representing the hidden state for the specified sequence. If the mapping does not exist or the hidden states
-     * tensor is empty, an empty tensor is returned.
-     *
-     * @param request_id        The unique identifier for the request.
-     * @param seq_grouped_id    The identifier for the sequence group within the request.
-     * @return ov::Tensor       The tensor slice representing the hidden state for the specified sequence,
-     *                          or an empty tensor if not found.
-     */
-    ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
-        if (m_hidden_states.get_size() == 0) {
+    /// @brief Extract a per-sequence slice from a hidden states tensor using the sequence mapping.
+    /// Returns an empty tensor if the tensor is empty or the sequence is not found.
+    ov::Tensor _get_hidden_state_slice(const ov::Tensor& states_tensor,
+                                       uint64_t request_id,
+                                       uint64_t seq_grouped_id) const {
+        if (states_tensor.get_size() == 0) {
             return ov::Tensor();
         }
 
@@ -1133,15 +1177,22 @@ private:
             return ov::Tensor();
         }
 
-        size_t start_idx = it->second.start_token_idx;
-        size_t length = it->second.length;
+        const size_t start_idx = it->second.start_token_idx;
+        const size_t length = it->second.length;
 
-        auto shape = m_hidden_states.get_shape();
-        OPENVINO_ASSERT(shape.size() >= 2,
-                        "Hidden states tensor rank is less than 2.");
+        const auto shape = states_tensor.get_shape();
+        OPENVINO_ASSERT(shape.size() >= 2, "Hidden states tensor rank is less than 2.");
 
-        auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, start_idx, start_idx + length);
-        return ov::Tensor(m_hidden_states, start_coord, end_coord);
+        const auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, start_idx, start_idx + length);
+        return ov::Tensor(states_tensor, start_coord, end_coord);
+    }
+
+    ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
+        return _get_hidden_state_slice(m_hidden_states, request_id, seq_grouped_id);
+    }
+
+    ov::Tensor _get_intermediate_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
+        return _get_hidden_state_slice(m_intermediate_hidden_states, request_id, seq_grouped_id);
     }
 
     /**

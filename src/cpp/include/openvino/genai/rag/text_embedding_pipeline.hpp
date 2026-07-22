@@ -162,6 +162,11 @@ public:
     EmbeddingResults embed_documents(const std::vector<std::string>& texts);
 
     /**
+     * @brief Computes embeddings for a vector of texts prepended with a prompt
+     */
+    EmbeddingResults embed(const std::vector<std::string>& texts, const std::string& prompt);
+
+    /**
      * @brief Asynchronously computes embeddings for a vector of texts. Only one method of async family can be active.
      */
     void start_embed_documents_async(const std::vector<std::string>& texts);

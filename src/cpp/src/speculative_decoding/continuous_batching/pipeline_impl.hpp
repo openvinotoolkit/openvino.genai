@@ -60,12 +60,6 @@ public:
         }
     }
 
-    void set_query_to_query_bias_needed(bool is_needed) {
-        if (m_model_runner) {
-            m_model_runner->enable_query_to_query_bias(is_needed);
-        }
-    }
-
     RawPerfMetrics raw_perf_metrics;
 
     ov::Any get_model_property(const std::string& name) {
@@ -116,7 +110,7 @@ public:
                                             const ov::AnyMap& plugin_config,
                                             bool is_validation_mode_enabled)
         : ContinuousBatchingForSpeculativeDecodingImpl(model,
-                                                       inputs_embedder,
+                                                       std::move(inputs_embedder),
                                                        tokenizer,
                                                        generation_config,
                                                        scheduler_config,

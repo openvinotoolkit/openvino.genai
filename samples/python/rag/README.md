@@ -1,6 +1,6 @@
 # Retrieval Augmented Generation Sample
 
-This example showcases inference of Text Embedding and Text Rerank Models. The application has limited configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.TextEmbeddingPipeline` and `openvino_genai.TextRerankPipeline` and uses text as an input source.
+This example showcases inference of Text Embedding, Text Rerank, and multimodal Embedding Models. The application has limited configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.TextEmbeddingPipeline`, `openvino_genai.TextRerankPipeline`, and `openvino_genai.EmbeddingPipeline` and uses text, image, and video as input sources.
 
 ## Download and Convert the Model and Tokenizers
 
@@ -22,6 +22,12 @@ To export text reranking model run Optimum CLI command:
 
 ```sh
 optimum-cli export openvino --task text-classification --model cross-encoder/ms-marco-MiniLM-L6-v2 cross-encoder/ms-marco-MiniLM-L6-v2
+```
+
+To export multimodal embedding model run Optimum CLI command:
+
+```sh
+optimum-cli export openvino --task image-text-to-text --model Qwen/Qwen3-VL-Embedding-2B Qwen3-VL-Embedding-2B
 ```
 
 Alternatively, do it in Python code:
@@ -59,6 +65,15 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 - **Run Command:**
   ```sh
   python text_rerank.py <MODEL_DIR> "<QUERY>" "<TEXT 1>" ["<TEXT 2>" ...]
+  ```
+
+### 3. Image and Video Embedding Sample (`image_video_embedding.py`)
+- **Description:**
+  Demonstrates multimodal retrieval with OpenVINO GenAI `EmbeddingPipeline`. Embeds a user text query and multiple image or video inputs, ranks the inputs by cosine similarity, and prints the most similar image or video.
+- **Dependencies:** Requires `opencv-python` for video decoding (`cv2`).
+- **Run Command:**
+  ```sh
+  python image_video_embedding.py <MODEL_DIR> --query "<QUERY>" --images <IMAGE_PATH_1> [<IMAGE_PATH_2> ...] --videos <VIDEO_PATH_1> [<VIDEO_PATH_2> ...] [--num-video-frames 8] [--device CPU]
   ```
 
 

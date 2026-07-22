@@ -1745,6 +1745,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             // If there is a future assigned to a sequence group we read it's result (blocking if results not available yet)
             sg_sampling_info = sg_sampling_future_map[request_id].get();
             sampler_output.num_generated_tokens += sg_sampling_info.sampler_output.num_generated_tokens;
+            sampler_output.num_generated_tokens_per_request[request_id] =
+                sg_sampling_info.sampler_output.num_generated_tokens;
 
             // Merge sampler output from sequence group to the main one
             sampler_output.m_dropped_sequences.insert(
@@ -1760,6 +1762,10 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                     forked_seq.second.end()
                 );
             }
+        } else {
+            // A scheduled request that does not require sampling is processing a
+            // prompt chunk and has not produced a generated token in this step.
+            sampler_output.num_generated_tokens_per_request[request_id] = 0;
         }
         // NOTE: it should be before 'get_num_scheduled_tokens' is used
         // update internal state of sequence group to reset scheduler tokens and update currently processed ones
