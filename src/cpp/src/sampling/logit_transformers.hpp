@@ -549,28 +549,25 @@ public:
     ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id,
                             const TokenIds& prompt_ids)
         : m_budget(budget), m_start_id(start_id), m_end_id(end_id) {
-        // Scan prompt_ids to find whether the last think-related token
-        // is start_id (open <think>) or end_id/none (closed/no think block).
-        bool found_open_think = false;
-        for (auto id : prompt_ids) {
-            if (id == start_id) {
-                found_open_think = true;
-            } else if (id == end_id) {
-                found_open_think = false;
+        // Scan prompt_ids in reverse to find the last think-related token.
+        // Once found, set initial state and trailing token count, then break.
+        //   - start_id → prompt ends with open <think> block → COUNTING
+        //   - end_id   → think block already closed            → DONE
+        //   - neither  → no think block in prompt             → IDLE
+        m_state = IDLE;
+        size_t count = 0;
+        for (auto it = prompt_ids.rbegin(); it != prompt_ids.rend(); ++it) {
+            if (*it == start_id) {
+                m_state = COUNTING;
+                m_count = count;
+                break;
+            } else if (*it == end_id) {
+                m_state = DONE;
+                break;
             }
+            ++count;
         }
-
-        if (found_open_think) {
-            // Prompt ends with an open <think> block (e.g. Qwen3.5/3.6 default
-            // template). The model won't emit <think> again during generation,
-            // so start counting from the first generated token.
-            m_state = COUNTING;
-        } else {
-            // No open think block in prompt. Wait for the model to emit
-            // <think> before entering COUNTING.
-            m_state = IDLE;
-        }
-        m_count = 0;
+        // budget=0 overrides: force close thinking immediately
         if (m_budget == 0) {
             m_state = FORCING;
         }
@@ -640,7 +637,7 @@ private:
     int64_t m_budget;
     int64_t m_start_id;
     int64_t m_end_id;
-    State m_state = COUNTING;
+    State m_state = IDLE;
     size_t m_count = 0;
 };
 
