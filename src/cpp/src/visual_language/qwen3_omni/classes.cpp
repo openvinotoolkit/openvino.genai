@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 
 #include "utils.hpp"
@@ -29,33 +30,27 @@ namespace ov::genai {
 
 namespace {
 
-// Patch preprocessing offload mode, selected by the VISION_PREPROCESS env var.
-// Default (unset or "GPU") is GpuFull (Stage 2): resize + normalize + reshape/transpose/flatten all on GPU.
-// Accuracy is comparable to the host CPU path (borderline-resolution noise only, both directions).
-// Opt-in fallbacks: VISION_PREPROCESS=GPU_REARRANGE for Stage 1 (GPU reshape/transpose only,
-// bit-identical to CPU), or VISION_PREPROCESS=CPP for the fully host-side path. Other values are rejected.
-VisionEncoderQwen3Omni::PatchPreprocMode parse_preproc_mode_env() {
+// An empty optional selects automatic fallback. A value forces that implementation.
+std::optional<VisionEncoderQwen3Omni::PatchPreprocMode> parse_preproc_mode_env() {
     const char* env = std::getenv("VISION_PREPROCESS");
-    if (!env) {
-        return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
+    if (!env || env[0] == '\0') {
+        return std::nullopt;
     }
 
     const std::string value(env);
     if (value == "CPP") {
-        return VisionEncoderQwen3Omni::PatchPreprocMode::Cpu;
+        return VisionEncoderQwen3Omni::PatchPreprocMode::CPP;
     }
-    if (value == "GPU_REARRANGE") {
-        return VisionEncoderQwen3Omni::PatchPreprocMode::GpuRearrange;
+    if (value == "OV_REARRANGE") {
+        return VisionEncoderQwen3Omni::PatchPreprocMode::OV_REARRANGE;
     }
-    if (value == "GPU") {
-        return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
+    if (value == "OV") {
+        return VisionEncoderQwen3Omni::PatchPreprocMode::OV;
     }
 
-    OPENVINO_ASSERT(false,
-                    "Unsupported VISION_PREPROCESS value: ",
-                    value,
-                    ". Expected GPU, GPU_REARRANGE, or CPP.");
-    return VisionEncoderQwen3Omni::PatchPreprocMode::GpuFull;
+    OPENVINO_THROW("Unsupported VISION_PREPROCESS value: ",
+                   value,
+                   ". Expected OV, OV_REARRANGE, CPP, or an empty value for automatic selection.");
 }
 
 // Append the patch reshape/transpose/flatten tail (bit-identical to
@@ -221,6 +216,10 @@ namespace qwen3_omni_testing {
 std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test() {
     return build_patch_rearrange_model();
 }
+
+std::shared_ptr<ov::Model> build_patch_preprocess_model_for_test() {
+    return build_patch_preprocess_model();
+}
 }  // namespace qwen3_omni_testing
 
 // --- VisionEncoderQwen3Omni ---
@@ -244,47 +243,53 @@ void VisionEncoderQwen3Omni::initialize_patch_preprocessing(const std::string& d
                                                              const ov::AnyMap& properties) {
     // Vision encoder runs no transformer inference, but a tiny model offloads patch
     // preprocessing (resize/normalize and/or reshape/transpose/flatten) to `device`.
-    // VISION_PREPROCESS selects the mode (default: GpuFull, Stage 2 full GPU preprocessing).
-    m_preproc_mode = parse_preproc_mode_env();
+    const auto requested_mode = parse_preproc_mode_env();
+    m_preproc_mode = requested_mode.value_or(PatchPreprocMode::OV);
 
     auto compile = [&](PatchPreprocMode mode) {
-        auto model = mode == PatchPreprocMode::GpuFull ? build_patch_preprocess_model()
-                                                       : build_patch_rearrange_model();
-        auto compiled = utils::singleton_core().compile_model(model, device, properties);
+        auto model = mode == PatchPreprocMode::OV ? build_patch_preprocess_model()
+                                                  : build_patch_rearrange_model();
+        auto compiled = utils::singleton_core().compile_model(
+            model, device, utils::get_model_properties(properties, "vision_embeddings", device));
         m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
             compiled.get_property(ov::optimal_number_of_infer_requests),
             [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
     };
 
-    if (m_preproc_mode == PatchPreprocMode::Cpu) {
+    if (m_preproc_mode == PatchPreprocMode::CPP) {
         return;
     }
 
+    // Explicit requests are strict: preserve the requested device and propagate compilation errors.
+    if (requested_mode) {
+        compile(*requested_mode);
+        return;
+    }
+
+    // Automatic selection preserves the requested device while progressively reducing the OV graph.
     try {
-        compile(m_preproc_mode);
+        compile(PatchPreprocMode::OV);
         return;
     } catch (const ov::Exception& exception) {
-        GENAI_WARN("Qwen3-Omni preprocessing compilation failed on device %s: %s",
+        GENAI_WARN("Qwen3-Omni full OV preprocessing compilation failed on device %s; "
+                   "falling back to OV_REARRANGE: %s",
                    device.c_str(),
                    exception.what());
     }
 
-    if (m_preproc_mode == PatchPreprocMode::GpuFull) {
-        try {
-            compile(PatchPreprocMode::GpuRearrange);
-            m_preproc_mode = PatchPreprocMode::GpuRearrange;
-            GENAI_WARN("Qwen3-Omni preprocessing is falling back to GPU_REARRANGE mode.");
-            return;
-        } catch (const ov::Exception& exception) {
-            GENAI_WARN("Qwen3-Omni GPU_REARRANGE compilation failed on device %s: %s",
-                       device.c_str(),
-                       exception.what());
-        }
+    try {
+        compile(PatchPreprocMode::OV_REARRANGE);
+        m_preproc_mode = PatchPreprocMode::OV_REARRANGE;
+        return;
+    } catch (const ov::Exception& exception) {
+        GENAI_WARN("Qwen3-Omni OV_REARRANGE preprocessing compilation failed on device %s; "
+                   "falling back to the host CPP implementation: %s",
+                   device.c_str(),
+                   exception.what());
     }
 
     m_ireq_queue_patch_rearrange.reset();
-    m_preproc_mode = PatchPreprocMode::Cpu;
-    GENAI_WARN("Qwen3-Omni preprocessing is falling back to the host CPU implementation.");
+    m_preproc_mode = PatchPreprocMode::CPP;
 }
 
 void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>& images,
@@ -338,8 +343,8 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
     std::memcpy(shape2d_tensor.data(), shape2d, sizeof(shape2d));
 
     ov::Tensor flattened;
-    if (m_preproc_mode == PatchPreprocMode::GpuFull) {
-        // Stage 2: upload raw u8 frame(s) and run resize + normalize + reshape/transpose/flatten on GPU.
+    if (m_preproc_mode == PatchPreprocMode::OV) {
+        // Stage 2: upload raw u8 frame(s) and run resize + normalize + reshape/transpose/flatten on the OV device.
         // For an image the same frame fills both temporal slots (matching the CPU loop, which resizes
         // the image twice). For video the two adjacent frames fill the slots.
         ov::Tensor resize_target_tensor(ov::element::i64, ov::Shape{2});
@@ -391,8 +396,8 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
                         patch_tensor.get_byte_size());
         }
 
-        if (m_preproc_mode == PatchPreprocMode::GpuRearrange) {
-            // Stage 1: GPU reshape/transpose/flatten only (bit-identical to the CPU path).
+        if (m_preproc_mode == PatchPreprocMode::OV_REARRANGE) {
+            // Stage 1: OV-device reshape/transpose/flatten only (bit-identical to the host path).
             CircularBufferQueueElementGuard<ov::InferRequest> guard(m_ireq_queue_patch_rearrange.get());
             auto& ireq = guard.get();
             ireq.set_tensor("tiled_patches", tiled_patches);
@@ -404,7 +409,7 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
             flattened = ov::Tensor(out.get_element_type(), out.get_shape());
             std::memcpy(flattened.data(), out.data(), out.get_byte_size());
         } else {
-            // Reference host CPU reshape/transpose/flatten (VISION_PREPROCESS=CPP).
+            // Reference host reshape/transpose/flatten (VISION_PREPROCESS=CPP).
             auto reshaped = qwen2_vl_utils::reshape_image_patches(tiled_patches,
                                                                   grid_t,
                                                                   grid_h,
@@ -509,7 +514,8 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
         // Sets rt_info "model_type_hint"="QWenVL" so the GPU SDPAToVLSDPA pass can replace the dense
         // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
         utils::request_vl_sdpa_transformations(model);
-        auto compiled = utils::singleton_core().compile_model(model, device, device_config);
+        auto compiled = utils::singleton_core().compile_model(
+            model, device, utils::get_model_properties(device_config, "vision_embeddings", device));
         m_with_cu_seqlens_input = utils::has_vl_sdpa_input(compiled, "cu_seq_lens");
         ov::genai::utils::print_compiled_model_properties(compiled,
             m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"
@@ -545,7 +551,8 @@ InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
         // Sets rt_info "model_type_hint"="QWenVL" so the GPU SDPAToVLSDPA pass can replace the dense
         // "attention_mask" parameter with a packed "cu_seq_lens" input (eliminates N*N score I/O).
         utils::request_vl_sdpa_transformations(model);
-        auto compiled = utils::singleton_core().compile_model(model, device, device_config);
+        auto compiled = utils::singleton_core().compile_model(
+            model, device, utils::get_model_properties(device_config, "vision_embeddings", device));
         m_with_cu_seqlens_input = utils::has_vl_sdpa_input(compiled, "cu_seq_lens");
         ov::genai::utils::print_compiled_model_properties(compiled,
             m_with_cu_seqlens_input ? "Omni vision embeddings model with VLSDPA optimization ENABLED"

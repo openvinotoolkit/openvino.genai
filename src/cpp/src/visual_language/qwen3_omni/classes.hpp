@@ -3,12 +3,10 @@
 
 #pragma once
 
+#include "openvino/core/model.hpp"
+
 #include "visual_language/qwen3_omni/audio_encoder.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
-
-namespace ov {
-class Model;
-}
 
 namespace ov::genai {
 
@@ -16,6 +14,8 @@ namespace qwen3_omni_testing {
 /// @brief Test-only accessor for the in-graph patch rearrange model
 /// (inputs: "tiled_patches", "reshape_shape8d"/"4d"/"2d"; output: "patches_2d").
 std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test();
+/// @brief Test-only accessor for the full in-graph resize, normalize, and patch rearrange model.
+std::shared_ptr<ov::Model> build_patch_preprocess_model_for_test();
 }  // namespace qwen3_omni_testing
 
 /// @brief Vision encoder for Qwen3-Omni.
@@ -24,13 +24,15 @@ std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test();
 /// The merged vision model is loaded and used by InputsEmbedderQwen3Omni.
 class VisionEncoderQwen3Omni : public VisionEncoderQwen3VL {
 public:
-    // Patch preprocessing offload mode, selected by the VISION_PREPROCESS env var:
-    //   unset           -> GpuFull      : resize + normalize + reshape/transpose/flatten on GPU (Stage 2) [default]
-    //   "GPU"           -> GpuFull      : resize + normalize + reshape/transpose/flatten on GPU (Stage 2)
-    //   "GPU_REARRANGE"-> GpuRearrange : CPU resize+normalize, GPU reshape/transpose/flatten (Stage 1, bit-identical)
-    //   "CPP"          -> Cpu          : full host CPU path (reference)
-    // Any other value is rejected.
-    enum class PatchPreprocMode { Cpu, GpuRearrange, GpuFull };
+    // Patch preprocessing mode selected by VISION_PREPROCESS. OV graphs run on the device requested
+    // in the constructor; they are not GPU-specific.
+    //   unset/empty    -> auto          : try Stage 2, then Stage 1, then Stage 0 on compilation failure
+    //   "OV"           -> OV            : force Stage 2 (resize + normalize + rearrange on the OV device)
+    //   "OV_REARRANGE"-> OV_REARRANGE  : force Stage 1 (host resize + normalize, OV-device rearrange)
+    //   "CPP"          -> CPP           : force Stage 0 (fully host-side reference implementation)
+    // Stage 1 is bit-identical to Stage 0. Stage 2 can have small numerical differences near resize
+    // boundaries. An explicit mode never falls back, and an unknown value is rejected.
+    enum class PatchPreprocMode { CPP, OV_REARRANGE, OV };
 
     explicit VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,
                                     const std::string& device,
@@ -55,7 +57,7 @@ private:
 
     void initialize_patch_preprocessing(const std::string& device, const ov::AnyMap& properties);
 
-    PatchPreprocMode m_preproc_mode = PatchPreprocMode::GpuFull;
+    PatchPreprocMode m_preproc_mode = PatchPreprocMode::OV;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_patch_rearrange;
 };
 
