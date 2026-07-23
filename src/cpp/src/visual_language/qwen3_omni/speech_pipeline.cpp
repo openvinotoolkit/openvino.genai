@@ -122,6 +122,53 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
     m_code_predictor = load_model("openvino_code_predictor_model");
     m_code2wav = load_model("openvino_code2wav_model");
 
+    initialize(model_dir);
+}
+
+Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
+                                                 const VLMConfig& config,
+                                                 const std::filesystem::path& config_dir_path,
+                                                 const std::map<std::string, std::string>& device_mapping,
+                                                 const std::string& default_device,
+                                                 const ov::AnyMap& properties)
+    : m_config(Qwen3OmniSpeechConfig::from_vlm_config(config)) {
+    // Compile each submodel from its in-memory IR + weights, placing it on the device named in
+    // device_mapping (falling back to default_device). Submodels absent from models_map stay empty
+    // and trip the availability check in initialize().
+    auto load_model = [&](const std::string& name) -> ov::InferRequest {
+        auto it = models_map.find(name);
+        if (it == models_map.end()) {
+            return {};
+        }
+        const auto& [ir, weights] = it->second;
+        auto model = utils::singleton_core().read_model(ir, weights);
+
+        auto dev_it = device_mapping.find(name);
+        const std::string& device = dev_it != device_mapping.end() ? dev_it->second : default_device;
+
+        // Force FP32 inference precision on GPU (see disk ctor): GPU FP16 shifts talker logits,
+        // changing sampled tokens and corrupting speech length.
+        ov::AnyMap compilation_props = properties;
+        if (device == "GPU" || device.find("GPU") == 0) {
+            compilation_props["INFERENCE_PRECISION_HINT"] = "f32";
+            GENAI_DEBUG("Speech: forcing FP32 precision for %s on GPU", name.c_str());
+        }
+
+        auto compiled = utils::singleton_core().compile_model(model, device, compilation_props);
+        return compiled.create_infer_request();
+    };
+
+    m_thinker_text_embeddings = load_model("text_embeddings");
+    m_talker = load_model("talker");
+    m_talker_text_embeddings = load_model("talker_text_embeddings");
+    m_talker_projections = load_model("talker_projections");
+    m_code_predictor = load_model("code_predictor");
+    m_code2wav = load_model("code2wav");
+
+    initialize(config_dir_path);
+}
+
+void Qwen3OmniSpeechPipeline::initialize(const std::filesystem::path& config_dir) {
     // All speech models must be present for speech generation
     m_talker_available = m_talker && m_talker_text_embeddings && m_talker_projections && m_code_predictor &&
                          m_code2wav && m_thinker_text_embeddings;
@@ -177,7 +224,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
     // Load talker and CodePredictor generation parameters from generation_config.json.
     // CP defaults (1.0 / 50 / 1.0) match the reference Qwen3-Omni implementation; json keys
     // cp_temperature / cp_top_k / cp_repetition_penalty may override them if present.
-    auto gen_config_path = model_dir / "generation_config.json";
+    auto gen_config_path = config_dir / "generation_config.json";
     if (std::filesystem::exists(gen_config_path)) {
         std::ifstream f(gen_config_path);
         auto gen_data = nlohmann::json::parse(f);

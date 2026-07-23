@@ -2959,7 +2959,12 @@ class OmniTalkerSpeechConfig:
         :type speaker: str | openvino.Tensor
     
         :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-            audio chunk. Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
+            audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
+            24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
+            every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
+            is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
+            warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
+            decoded chunks in streaming mode.
         :type audio_chunk_frames: int
     
         :param max_new_tokens: Cap on talker AR steps. Independent of
@@ -4484,12 +4489,32 @@ class Talker(TalkerBase):
             openvino_code2wav_model.xml, plus the talker text-embedding and projection
             submodels and config.json.
     """
+    @typing.overload
     def __init__(self, model_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                         Talker constructor.
                         model_dir (os.PathLike): Folder with Qwen3-Omni speech submodels + config.json.
                         device (str): Device to run inference on (e.g., CPU, GPU).
                         kwargs: Device properties.
+        """
+    @typing.overload
+    def __init__(self, models_map: collections.abc.Mapping[str, tuple[str, openvino._pyopenvino.Tensor]], config: openvino_genai.py_openvino_genai.OmniTalkerSpeechConfig, config_dir_path: os.PathLike | str | bytes, device_mapping: collections.abc.Mapping[str, str], **kwargs) -> None:
+        """
+                        Talker constructor from in-memory model IRs (blob deployment / per-submodel device placement).
+                        models_map (dict[str, tuple[str, openvino.Tensor]]): Keys: text_embeddings, talker,
+                            talker_text_embeddings, talker_projections, code_predictor, code2wav.
+                        config (OmniTalkerSpeechConfig): Stored default speech config.
+                        config_dir_path (os.PathLike): Folder with config.json and optional generation_config.json.
+                        device_mapping (dict[str, str]): Submodel name -> device; missing entries load on CPU.
+                        kwargs: Device properties.
+        """
+    def get_speech_config(self) -> openvino_genai.py_openvino_genai.OmniTalkerSpeechConfig:
+        """
+        Return the talker's stored default OmniTalkerSpeechConfig.
+        """
+    def set_speech_config(self, config: openvino_genai.py_openvino_genai.OmniTalkerSpeechConfig) -> None:
+        """
+        Set the talker's stored default OmniTalkerSpeechConfig (validated).
         """
 class TalkerBase:
     """
