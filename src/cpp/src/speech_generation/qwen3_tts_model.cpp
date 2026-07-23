@@ -1141,15 +1141,20 @@ ov::Tensor Qwen3TTSImpl::infer_predictor_embedding(int64_t token_id, int64_t gen
 
 ov::Tensor Qwen3TTSImpl::infer_predictor_embedding_seq(const std::vector<int64_t>& token_ids, int64_t generation_step) {
     if (token_ids.empty()) {
-        return ov::Tensor(ov::element::f32, ov::Shape{1, 0, m_speaker_embedding_dim});
+        return ov::Tensor(ov::element::f32, ov::Shape{1, 0, m_talker_hidden_size});
     }
 
-    ov::Tensor out(ov::element::f32, ov::Shape{1, token_ids.size(), m_speaker_embedding_dim});
+    ov::Tensor out(ov::element::f32, ov::Shape{1, token_ids.size(), m_talker_hidden_size});
     for (size_t i = 0; i < token_ids.size(); ++i) {
         auto emb = infer_predictor_embedding(token_ids[i], generation_step);
-        OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[1] == 1,
+        OPENVINO_ASSERT(emb.get_shape().size() == 3 && emb.get_shape()[0] == 1 && emb.get_shape()[1] == 1,
                         "Qwen3 predictor embedding must produce shape [1, 1, D]");
-        std::copy_n(emb.data<const float>(), m_speaker_embedding_dim, out.data<float>() + i * m_speaker_embedding_dim);
+        OPENVINO_ASSERT(emb.get_shape()[2] == m_talker_hidden_size,
+                        "Qwen3 predictor embedding hidden size mismatch. Got ",
+                        emb.get_shape()[2],
+                        ", expected ",
+                        m_talker_hidden_size);
+        std::copy_n(emb.data<const float>(), m_talker_hidden_size, out.data<float>() + i * m_talker_hidden_size);
     }
     return out;
 }
@@ -1617,6 +1622,9 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate(const std::vector<std::string>&
                         "Qwen3 VoiceDesign does not support 'speaker'. Remove speaker and use 'instruct'.");
         OPENVINO_ASSERT(!speaker_embedding,
                         "Qwen3 VoiceDesign does not accept external speaker_embedding. Use language/instruct only.");
+    } else if (m_tts_model_type == "custom_voice") {
+        OPENVINO_ASSERT( !speaker_embedding,
+            "Qwen3 CustomVoice does not accept external speaker_embedding. Use 'speaker' property instead.");
     }
 
     if (!base_model &&
@@ -1913,6 +1921,8 @@ Text2SpeechDecodedResults Qwen3TTSImpl::generate_voice_clone(const std::string& 
     OPENVINO_ASSERT(is_base_model(), "Qwen3 voice-clone prompt generation is supported only for Base models");
     OPENVINO_ASSERT(!prompt.ref_text.empty(), "Qwen3 voice-clone ICL mode requires a non-empty reference transcript");
     OPENVINO_ASSERT(!prompt.ref_code.get_shape().empty(), "Qwen3 voice-clone ICL mode requires reference codec ids");
+    OPENVINO_ASSERT(prompt.ref_code.get_element_type() == ov::element::i64,
+                    "Qwen3 voice-clone ref_code tensor must have element type i64");
     OPENVINO_ASSERT(prompt.ref_code.get_shape().size() == 2 || prompt.ref_code.get_shape().size() == 3,
                     "Qwen3 voice-clone prompt expects ref_code shaped [T, G] or [1, T, G]");
 
