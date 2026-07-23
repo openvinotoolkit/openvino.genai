@@ -141,27 +141,27 @@ py::object call_vlm_generate(
 ) {
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
 
-    // ── 自动检测 thinking token ID（VLM 路径 1） ──
-    // 当用户未手动设置 token ID，且满足以下任一条件时自动检测：
-    //   1. enable_thinking=false
-    //   2. reasoning_budget_tokens >= 0
-    // 通过 tokenizer 编码 <think> 和 </think> 来获取正确的 ID。
-    // 条件：
-    //   1. 未设置 thinking_start_token_id（即仍为默认值 -1）
-    //   2. <think> 和 </think> 都是单个 token
-    // 如果失败（例如 tokenizer 不支持这些特殊 token），静默跳过。
+    // ── Auto-detect thinking token IDs (VLM path 1) ──
+    // Triggered when thinking_start_token_id is not set and either:
+    //   1. enable_thinking is false, or
+    //   2. reasoning_budget_tokens is >= 0
+    // Encodes <think> and </think> via the tokenizer to get the correct IDs.
+    // Conditions:
+    //   1. thinking_start_token_id is unset (still at default -1)
+    //   2. Both <think> and </think> encode as single tokens
+    // Silently skips on failure (e.g. tokenizer doesn't support these special tokens).
     if (updated_config.thinking_start_token_id < 0 &&
         (!updated_config.enable_thinking || updated_config.reasoning_budget_tokens >= 0)) {
         try {
             auto tok = pipe.get_tokenizer();
             auto start = tok.encode("<think>");
             auto end = tok.encode("</think>");
-            // 只有都是单 token 时才可信，多 token 的跳过
+            // Only trust single-token encodings; skip multi-token results
             if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
                 updated_config.thinking_start_token_id = *start.input_ids.data<int64_t>();
                 updated_config.thinking_end_token_id = *end.input_ids.data<int64_t>();
             }
-        } catch (...) { /* 自动检测失败时静默跳过 */ }
+        } catch (...) { /* skip auto-detect on failure */ }
     }
 
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
@@ -396,21 +396,21 @@ void init_vlm_pipeline(py::module_& m) {
                     gen_cfg = it->second.as<ov::genai::GenerationConfig>();
                     map.erase(it);
                 }
-                // ── 自动检测 thinking token ID（VLM 路径 2：kwargs 方式） ──
-                // 当用户通过 kwargs 传 generation_config 时的路径。
-                // 当 enable_thinking=false 或 reasoning_budget_tokens>=0 时触发。
+                // ── Auto-detect thinking token IDs (VLM path 2: kwargs) ──
+                // Used when generation_config is passed via kwargs.
+                // Triggers when enable_thinking=false or reasoning_budget_tokens>=0.
                 if (gen_cfg.thinking_start_token_id < 0 &&
                     (!gen_cfg.enable_thinking || gen_cfg.reasoning_budget_tokens >= 0)) {
                     try {
                         auto tok = pipe.get_tokenizer();
                         auto start = tok.encode("<think>");
                         auto end = tok.encode("</think>");
-                        // 只有都是单 token 时才可信，多 token 的跳过
+                        // Only trust single-token encodings; skip multi-token results
                         if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
                             gen_cfg.thinking_start_token_id = *start.input_ids.data<int64_t>();
                             gen_cfg.thinking_end_token_id = *end.input_ids.data<int64_t>();
                         }
-                    } catch (...) { /* 自动检测失败时静默跳过 */ }
+                    } catch (...) { /* skip auto-detect on failure */ }
                 }
                 map["generation_config"] = gen_cfg;
                 ov::genai::VLMDecodedResults res;
