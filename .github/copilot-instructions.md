@@ -45,7 +45,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
     - Avoid adding new samples unless there is a strong, clearly justified reason.
     - Keep command‑line arguments in samples minimal. Prefer hardcoding values.
     - Ensure new samples have corresponding tests.
-20. Keep the names of related entities aligned. For example, env var names must match the enum names.
+20. Keep the names of related entities aligned (use the same base term across layers). Example: enum/class `VisionPreprocess` ↔ env var `VISION_PREPROCESS`.
 21. Avoid overspecifying device. Don't limit the device to a specific one unless necessary.
 22. Don't introduce try/catch blocks just to be safe. Only catch if an exception is expected.
 23. Avoid reporting the same algorithmic branch choice multiple times.
