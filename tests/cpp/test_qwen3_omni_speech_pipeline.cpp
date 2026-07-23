@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-// Regression tests for Qwen3-Omni speech pipeline CodePredictor GPU precision fix.
+// Tests for Qwen3-Omni speech pipeline CodePredictor GPU precision fix.
 //
 // Case 1 — GPU device detection: device.find("GPU") != std::string::npos
 // Case 2 — Precision hint type:  compilation_props["INFERENCE_PRECISION_HINT"] = ov::element::f32
