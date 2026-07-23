@@ -518,9 +518,72 @@ def check_args(args):
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
 
+def _load_local_csv_prompts(csv_path):
+    """Load prompts (and optional images/videos) from a local CSV file.
+
+    The CSV must contain a ``prompts`` column and may additionally contain
+    ``images`` and/or ``videos`` columns. Values in ``images``/``videos`` are
+    treated as file paths that are resolved deterministically relative to the
+    directory containing the CSV when they are not absolute. Empty cells are
+    interpreted as "no media" (None). This keeps the interface generic and does
+    not special-case any particular model.
+    """
+    from .utils import load_image
+
+    data = pd.read_csv(csv_path, keep_default_na=False)
+    if "prompts" not in data.columns:
+        raise ValueError(
+            f"Local dataset CSV '{csv_path}' must contain a 'prompts' column, "
+            f"found columns: {list(data.columns)}."
+        )
+
+    base_dir = os.path.dirname(os.path.abspath(csv_path))
+
+    def _resolve_path(value):
+        value = str(value).strip()
+        if value == "":
+            return None
+        if not os.path.isabs(value):
+            value = os.path.normpath(os.path.join(base_dir, value))
+        return value
+
+    res = {"prompts": [str(p) for p in data["prompts"].tolist()]}
+
+    has_images = "images" in data.columns
+    has_videos = "videos" in data.columns
+
+    if has_images or has_videos:
+        # This is a multimodal local dataset. The visual-text evaluators expect
+        # all of 'prompts', 'images' and 'videos' keys to be present, so fill in
+        # the missing modality column with None values.
+        n = len(res["prompts"])
+        if has_images:
+            images = []
+            for cell in data["images"].tolist():
+                resolved = _resolve_path(cell)
+                images.append(load_image(resolved) if resolved is not None else None)
+            res["images"] = images
+        else:
+            res["images"] = [None] * n
+
+        if has_videos:
+            res["videos"] = [_resolve_path(cell) for cell in data["videos"].tolist()]
+        else:
+            res["videos"] = [None] * n
+
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Support a deterministic, offline local CSV dataset (with optional
+    # 'images'/'videos' columns) through the same --dataset interface. This
+    # avoids depending on the remote default dataset loader.
+    if args.dataset.lower().endswith(".csv") and os.path.exists(args.dataset):
+        return _load_local_csv_prompts(args.dataset)
+
     split = "validation"
     if args.split is not None:
         split = args.split
