@@ -191,22 +191,42 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
         OPENVINO_ASSERT(m_audio_token_id >= 0, "Qwen3-ASR NPU decoder requires a valid audio token ID");
         OPENVINO_ASSERT(m_hidden_size > 0, "Qwen3-ASR NPU decoder requires a positive hidden size");
 
+        const auto text_embedding_properties =
+            getTextEmbeddingProperties(utils::get_model_properties(properties, "text_embeddings", "NPU"));
+
+        // Prefill embeds the whole prompt in one shot, so it needs the full
+        // [1, max_prompt_len] lookup.
         decoder_models.textEmbedding->reshape(
             {{"input_ids", ov::PartialShape{1, static_cast<int64_t>(m_max_prompt_len)}}});
         if (npu_dump_dir) {
             ov::save_model(decoder_models.textEmbedding,
                            (*npu_dump_dir / "npu_text_embedding_static.xml").string());
         }
-        const auto text_embedding_properties =
-            getTextEmbeddingProperties(utils::get_model_properties(properties, "text_embeddings", "NPU"));
         auto compiled_text_embedding =
             core.compile_model(decoder_models.textEmbedding, "NPU", text_embedding_properties);
-        ov::genai::utils::print_compiled_model_properties(compiled_text_embedding, "qwen3-asr text embedding model");
+        ov::genai::utils::print_compiled_model_properties(compiled_text_embedding,
+                                                          "qwen3-asr text embedding model (prefill)");
         m_text_embedding_request = compiled_text_embedding.create_infer_request();
         m_text_embedding_input = ov::Tensor(ov::element::i64, {1, m_max_prompt_len});
         // Untouched positions must always contain a valid vocabulary ID.
         std::fill_n(m_text_embedding_input.data<int64_t>(), m_max_prompt_len, 0);
         m_text_embedding_request.set_tensor("input_ids", m_text_embedding_input);
+
+        // Decode embeds a single new token per step. A dedicated [1, 1] lookup avoids
+        // recomputing all max_prompt_len embedding rows and discarding all but the last.
+        decoder_models.textEmbedding->reshape({{"input_ids", ov::PartialShape{1, 1}}});
+        if (npu_dump_dir) {
+            ov::save_model(decoder_models.textEmbedding,
+                           (*npu_dump_dir / "npu_text_embedding_decode_static.xml").string());
+        }
+        auto compiled_text_embedding_decode =
+            core.compile_model(decoder_models.textEmbedding, "NPU", text_embedding_properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_text_embedding_decode,
+                                                          "qwen3-asr text embedding model (decode)");
+        m_text_embedding_decode_request = compiled_text_embedding_decode.create_infer_request();
+        m_text_embedding_decode_input = ov::Tensor(ov::element::i64, {1, 1});
+        m_text_embedding_decode_input.data<int64_t>()[0] = 0;
+        m_text_embedding_decode_request.set_tensor("input_ids", m_text_embedding_decode_input);
     } else {
         compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
     }
@@ -461,24 +481,20 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
             OPENVINO_ASSERT(total_num_tokens == 1 && next_beams.size() == 1 && next_beams.front() == 0,
                             "Qwen3-ASR NPU decoder only supports one non-beam sequence");
 
-            m_text_embedding_input.data<int64_t>()[m_max_prompt_len - 1] = new_input_ids.data<const int64_t>()[0];
+            m_text_embedding_decode_input.data<int64_t>()[0] = new_input_ids.data<const int64_t>()[0];
 
-            // The static model still computes all embedding rows. Reusing it avoids a
-            // second copy of the tied embedding weights.
-            m_text_embedding_request.infer();
-            const ov::Tensor static_embeddings = m_text_embedding_request.get_tensor("inputs_embeds");
+            // Dedicated [1, 1] embedding lookup: only the single new token is embedded.
+            m_text_embedding_decode_request.infer();
+            const ov::Tensor static_embeddings = m_text_embedding_decode_request.get_tensor("inputs_embeds");
             const ov::Shape static_embeddings_shape = static_embeddings.get_shape();
             OPENVINO_ASSERT(static_embeddings.get_element_type() == ov::element::f32 &&
                                 static_embeddings_shape.size() == 3 && static_embeddings_shape[0] == 1 &&
-                                static_embeddings_shape[1] == m_max_prompt_len &&
-                                static_embeddings_shape[2] == m_hidden_size,
-                            "Unexpected Qwen3-ASR static token embedding tensor");
+                                static_embeddings_shape[1] == 1 && static_embeddings_shape[2] == m_hidden_size,
+                            "Unexpected Qwen3-ASR decode token embedding tensor");
 
-            // Embedding rows are token-independent, so only the final static row is
-            // needed.
             ov::Tensor token_embedding(ov::element::f32, {1, 1, m_hidden_size});
             std::memcpy(token_embedding.data<float>(),
-                        static_embeddings.data<const float>() + (m_max_prompt_len - 1) * m_hidden_size,
+                        static_embeddings.data<const float>(),
                         m_hidden_size * sizeof(float));
 
             ++context_len;

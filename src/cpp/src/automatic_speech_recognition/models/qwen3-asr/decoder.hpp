@@ -32,6 +32,8 @@ private:
     InferRequest m_request;
     InferRequest m_text_embedding_request;
     ov::Tensor m_text_embedding_input;
+    InferRequest m_text_embedding_decode_request;
+    ov::Tensor m_text_embedding_decode_input;
     Sampler m_sampler;
     bool m_is_npu = false;
     size_t m_max_prompt_len = 0;
