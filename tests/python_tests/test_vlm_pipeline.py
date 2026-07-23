@@ -167,6 +167,10 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 
+# GLM-Edge-V (config.model_type == "glm" with a nested SigLIP vision_config,
+# GlmForCausalLM remote code). Uploaded by the optimum-intel testing infra.
+GLM_EDGE_V_MODEL_ID = "optimum-intel-internal-testing/tiny-random-glm-edge-v"
+
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
     # minicpmv, internvl_chat architectures are deprecating support for transformers >= v5 by optimum-intel
@@ -180,6 +184,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        GLM_EDGE_V_MODEL_ID,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -216,6 +221,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
+    GLM_EDGE_V_MODEL_ID: lambda idx: "<image>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -340,6 +346,20 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
 
+    if model_id == GLM_EDGE_V_MODEL_ID:
+        # GLM-Edge-V export support was added to optimum-intel; the tiny-random
+        # test model is published separately by the optimum-intel testing infra.
+        # Skip cleanly until the referenced model id is available on the Hub.
+        from huggingface_hub import model_info
+        from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
+        try:
+            model_info(model_id)
+        except (RepositoryNotFoundError, HfHubHTTPError):
+            pytest.skip(
+                f"{model_id} is not available on the Hub yet. GLM-Edge-V GenAI "
+                "support is validated locally against a tiny GLM-Edge-V model."
+            )
+
 
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
     _maybe_skip_unsupported_model_export(VLM_EAGLE3_MAIN_MODEL_ID)
@@ -426,12 +446,21 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+                    GLM_EDGE_V_MODEL_ID,
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
                 },
             )
         )
         if model.config.model_type == "llava-qwen2" or _is_videochat_flash_qwen_model(model_id):
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
+        # GLM-Edge-V (model_type "glm" + vision_config) ships a text tokenizer as
+        # its AutoProcessor and a separate MllamaImageProcessor for images.
+        elif model_id == GLM_EDGE_V_MODEL_ID or (
+            getattr(model.config, "model_type", None) == "glm"
+            and getattr(model.config, "vision_config", None) is not None
+        ):
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
+            processor = transformers.AutoImageProcessor.from_pretrained(model_cached, trust_remote_code=True)
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
             tokenizer = processor

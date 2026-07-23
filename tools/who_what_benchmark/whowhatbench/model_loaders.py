@@ -456,6 +456,24 @@ def load_visual_text_model(
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+        # Some visual-language models reuse a config.model_type that also has a
+        # built-in *text-only* implementation in transformers (e.g. GLM-Edge-V
+        # ships config.model_type == "glm" with a vision_config and custom
+        # remote modeling code). In that case AutoConfig(trust_remote_code=False)
+        # succeeds and would silently load the text-only class, dropping the
+        # vision tower and rejecting pixel_values. Detect the custom multimodal
+        # remote code via auto_map + vision_config and force remote code loading.
+        if (
+            not trust_remote_code
+            and getattr(config, "vision_config", None) is not None
+            and isinstance(getattr(config, "auto_map", None), dict)
+            and any(
+                key in config.auto_map
+                for key in ("AutoModelForCausalLM", "AutoModelForImageTextToText", "AutoModelForVision2Seq")
+            )
+        ):
+            trust_remote_code = True
+
         # force downloading to .cache image_processing file, as it is not happened by default
         if config.model_type.lower() in ["minicpmo"]:
             from transformers import AutoImageProcessor
@@ -492,7 +510,11 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3", "gemma3n"]:
+                elif config.model_type in ["gemma3", "gemma3n", "glm"]:
+                    # These VLMs expose the generation-capable class through
+                    # AutoModelForCausalLM (their auto_map maps AutoModel to the
+                    # base model without a generate() method). GLM-Edge-V uses
+                    # config.model_type == "glm" with a vision_config.
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
