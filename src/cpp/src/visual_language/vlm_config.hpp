@@ -32,6 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    GLM,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -162,6 +163,12 @@ public:
     int64_t video_token_id = -1;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
+
+    // GLM (GLM-Edge-V) specific config
+    /// @brief Token ID of the image placeholder token (<|begin_of_image|>) for GLM model.
+    int64_t glm_boi_token_id = 59256;
+    /// @brief Image size for the GLM SigLIP vision encoder (height and width are equal).
+    size_t vision_config_image_size = 672;
 
     /// @brief Default constructor.
     VLMConfig() = default;

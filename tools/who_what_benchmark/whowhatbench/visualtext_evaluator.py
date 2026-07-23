@@ -70,30 +70,43 @@ class VisualTextEvaluator(TextEvaluator):
             predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
         self.predictions = predictions
 
-        # Align gt_data with predictions (handles skipped prompts)
-        self.gt_data = self.gt_data[self.gt_data["prompts"].isin(predictions["prompts"].values)]
+        # Align gt_data with predictions by prompt text when both share common prompts
+        # (handles skipped prompts). Fall back to positional alignment when prompts differ
+        # — e.g. when the default streaming dataset returns a different shuffle each run.
+        gt_prompts = set(self.gt_data["prompts"].values)
+        pred_prompts = set(predictions["prompts"].values)
+        common_prompts = gt_prompts & pred_prompts
+        if common_prompts:
+            aligned_gt = self.gt_data[self.gt_data["prompts"].isin(common_prompts)].reset_index(drop=True)
+            aligned_pred = predictions[predictions["prompts"].isin(common_prompts)].reset_index(drop=True)
+        else:
+            # No prompt overlap: align positionally up to the shorter length
+            n = min(len(self.gt_data), len(predictions))
+            aligned_gt = self.gt_data.iloc[:n].reset_index(drop=True)
+            aligned_pred = predictions.iloc[:n].reset_index(drop=True)
 
         all_metrics_per_prompt = {}
         all_metrics = {}
 
         if self.similarity:
             metric_dict, metric_per_question = self.similarity.evaluate(
-                self.gt_data, predictions
+                aligned_gt, aligned_pred
             )
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
         if self.divergency:
             metric_dict, metric_per_question = self.divergency.evaluate(
-                self.gt_data, predictions
+                aligned_gt, aligned_pred
             )
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
+        compared_rows = min(len(aligned_gt), len(aligned_pred))
         self.last_cmp = all_metrics_per_prompt
-        self.last_cmp["prompts"] = predictions["prompts"].values
-        self.last_cmp["source_model"] = self.gt_data["answers"].values
-        self.last_cmp["optimized_model"] = predictions["answers"].values
+        self.last_cmp["prompts"] = aligned_pred["prompts"].values[:compared_rows]
+        self.last_cmp["source_model"] = aligned_gt["answers"].values[:compared_rows]
+        self.last_cmp["optimized_model"] = aligned_pred["answers"].values[:compared_rows]
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 

@@ -521,6 +521,24 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # If dataset is a local CSV file, read it directly.
+    # For visual-text tasks the CSV may have prompts, images, and videos columns.
+    import os
+    if os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        import pandas as pd
+        df = pd.read_csv(args.dataset)
+        res = {}
+        if "prompts" in df.columns:
+            res["prompts"] = df["prompts"].tolist()
+        elif args.dataset_field in df.columns:
+            res["prompts"] = df[args.dataset_field].tolist()
+        if "images" in df.columns:
+            res["images"] = df["images"].tolist()
+        if "videos" in df.columns:
+            res["videos"] = df["videos"].tolist()
+        return res
+
     split = "validation"
     if args.split is not None:
         split = args.split
