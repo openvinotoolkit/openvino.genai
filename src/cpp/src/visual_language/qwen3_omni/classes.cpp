@@ -112,27 +112,14 @@ EncodedVideo VisionEncoderQwen3Omni::encode_frames(const std::vector<ov::Tensor>
     EncodedVideo encoded_video;
     const auto& config = m_video_processor_config;
 
-    fill_video_metadata(encoded_video, frames.size(), config);
-
-    std::vector<ov::Tensor> sampled_frames;
-    if (!config.do_sample_frames) {
-        sampled_frames = frames;
-    } else {
-        sampled_frames.reserve(encoded_video.metadata.frames_indices.size());
-        for (size_t idx : encoded_video.metadata.frames_indices) {
-            OPENVINO_ASSERT(idx < frames.size(), "Frame index ", idx, " out of range for ", frames.size(), " frames.");
-            sampled_frames.push_back(frames.at(idx));
-        }
-    }
-
-    const auto frames_size = sampled_frames.size();
+    const auto frames_size = frames.size();
     encoded_video.frame_num = (frames_size + config.temporal_patch_size - 1) / config.temporal_patch_size;
 
     size_t frame_id = 0;
     size_t i = 0;
     for (; i + config.temporal_patch_size <= frames_size; i += config.temporal_patch_size) {
-        preprocess_to_patches(std::vector<ov::Tensor>(sampled_frames.begin() + i,
-                                                      sampled_frames.begin() + i + config.temporal_patch_size),
+        preprocess_to_patches(std::vector<ov::Tensor>(frames.begin() + i,
+                                                      frames.begin() + i + config.temporal_patch_size),
                               config,
                               encoded_video.video_features,
                               encoded_video.resized_source_size,
@@ -141,7 +128,7 @@ EncodedVideo VisionEncoderQwen3Omni::encode_frames(const std::vector<ov::Tensor>
         frame_id++;
     }
     for (; i < frames_size; i++) {
-        preprocess_to_patches({sampled_frames[i]},
+        preprocess_to_patches({frames[i]},
                               config,
                               encoded_video.video_features,
                               encoded_video.resized_source_size,
