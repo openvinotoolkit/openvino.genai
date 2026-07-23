@@ -33,7 +33,7 @@ def main():
         generation_properties["language"] = args.language
 
     # VoiceDesign does not use an external speaker embedding.
-    result = pipe.generate(args.text, **generation_properties)
+    result = pipe.generate(args.text, None, **generation_properties)
 
     assert len(result.speeches) == 1, "Expected only one waveform for the requested input text"
     speech_data = np.array(result.speeches[0].data).reshape(-1)
