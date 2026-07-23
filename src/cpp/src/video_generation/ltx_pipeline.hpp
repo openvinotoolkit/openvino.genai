@@ -776,6 +776,10 @@ public:
                                 "Transformer input batch must be divisible by latent batch");
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
+            // timestep is sized to B_ts; the repeat above must not desync latent_cfg from it.
+            OPENVINO_ASSERT(latent_cfg.get_shape()[0] == B_ts,
+                            "latent batch (", latent_cfg.get_shape()[0],
+                            ") must match timestep batch (", B_ts, ")");
 
             const float t = timesteps[inference_step];
             for (size_t b = 0; b < B_ts; ++b) {
@@ -1024,6 +1028,10 @@ public:
                                 "Transformer input batch must be divisible by latent batch");
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
+            // timestep batch must stay in sync with latent_cfg after the repeat above.
+            OPENVINO_ASSERT(latent_cfg.get_shape()[0] == timestep.get_shape()[0],
+                            "latent batch (", latent_cfg.get_shape()[0],
+                            ") must match timestep batch (", timestep.get_shape()[0], ")");
 
             std::fill_n(timestep_data, timestep.get_size(), timesteps[inference_step]);
 
