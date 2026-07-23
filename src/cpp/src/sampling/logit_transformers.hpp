@@ -536,17 +536,40 @@ public:
 // FORCING:  All logits = -inf, only thinking_end_token_id allowed.
 // DONE:    Passthrough forever. Re-arms on new start token (multi-block).
 //
-// Constructor starts in COUNTING, assuming prompt already contains the
-// start token (as Qwen/DeepSeek chat templates do).
+// Constructor scans prompt_ids to determine initial state:
+//   - last token is start_id  → prompt has open <think> block → COUNTING
+//   - last token is end_id    → think block already closed    → IDLE
+//   - no think tokens found   → prompt has no think block     → IDLE
+// This avoids always starting in COUNTING, which would over-count
+// tokens generated before the model emits <think>.
 class ThinkingBudgetTransform : public ILogitTransformer {
 public:
     enum State { IDLE, COUNTING, FORCING, DONE };
 
-    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id)
+    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id,
+                            const TokenIds& prompt_ids)
         : m_budget(budget), m_start_id(start_id), m_end_id(end_id) {
-        // Qwen/DeepSeek chat templates insert <think> in the prompt,
-        // so start in COUNTING to account for the pre-inserted start token.
-        m_state = COUNTING;
+        // Scan prompt_ids to find whether the last think-related token
+        // is start_id (open <think>) or end_id/none (closed/no think block).
+        bool found_open_think = false;
+        for (auto id : prompt_ids) {
+            if (id == start_id) {
+                found_open_think = true;
+            } else if (id == end_id) {
+                found_open_think = false;
+            }
+        }
+
+        if (found_open_think) {
+            // Prompt ends with an open <think> block (e.g. Qwen3.5/3.6 default
+            // template). The model won't emit <think> again during generation,
+            // so start counting from the first generated token.
+            m_state = COUNTING;
+        } else {
+            // No open think block in prompt. Wait for the model to emit
+            // <think> before entering COUNTING.
+            m_state = IDLE;
+        }
         m_count = 0;
         if (m_budget == 0) {
             m_state = FORCING;
