@@ -194,22 +194,17 @@ export merely because the command requested fp32.
 
 Every newly enabled model must add repository tests:
 
-1. Find the matching tiny-random model ID. First inspect the Optimum Intel
-   model description, tests, or release notes; if it is not documented there,
-   look it up on the Hugging Face Hub. Use the
-   `optimum-intel-internal-testing/tiny-random-*` fixture matching the model
-   architecture.
-2. Prefer adding the tiny-random model to
-   `tests/python_tests/test_vlm_pipeline.py`, including the prompt, image or
-   video tag where applicable, resolution, and any targeted skip/xfail entry
-   required by an already tracked issue.
-3. Add a dedicated `tests/python_tests/test_<model_type>_*.py` only when the
-   behavior cannot fit the shared VLM suite. Reuse existing fixtures and
-   conversion-cache helpers; never use a full-size model in repository tests.
-4. Run the narrow pytest selection for the new model from the activated
-   environment.
-5. If special Transformers or Optimum dependencies are required, add a
-   dedicated VLM CI matrix entry instead of changing unrelated jobs.
+1. **Find the tiny-random model id**:
+   - First infer it from the optimum-intel model description, tests, or release notes when available.
+   - If it is not documented there, look it up directly on HuggingFace Hub.
+   - Matching the `optimum-intel-internal-testing/tiny-random-*` prefix, for example `optimum-intel-internal-testing/tiny-random-gemma4-unified-it`.
+2. **Add the model to VLM Python tests**:
+   - Prefer extending `tests/python_tests/test_vlm_pipeline.py` with the tiny-random model id, prompt image tag, video tag if applicable, resolution, and any targeted skip/xfail entry required by an already-tracked issue.
+   - Add a dedicated `tests/python_tests/test_<model_type>_*.py` only when the new model requires behavior that does not fit the shared VLM pipeline suite.
+   - Use the existing VLM fixtures and converted-model cache helpers; do not use the full-size model in repository tests.
+3. **Validate locally**:
+   - Run the narrow pytest target for the added or modified tests from the activated virtual environment.
+   - If the test cannot run locally, document the exact command, blocker, and expected CI coverage.
 
 Apply model-specific dependency entries consistently to the relevant Linux,
 manylinux, and Windows VLM workflows. Do not update a shared dependency for all
