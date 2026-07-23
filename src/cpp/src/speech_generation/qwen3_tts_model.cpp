@@ -6,14 +6,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cctype>
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <random>
-#include <iomanip>
 #include <sstream>
 
 #include <nlohmann/json.hpp>
