@@ -724,7 +724,12 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             effective_max_new_tokens = max_new_tokens if max_new_tokens is not None else self.max_new_tokens
             if effective_max_new_tokens is not None:
                 generation_kwargs["max_new_tokens"] = effective_max_new_tokens
-            generation_kwargs["repetition_penalty"] = 1.0
+
+            # default repetition_penalty to 1.2
+            # The default for Qwen3 TTS models is typically 1.05, but with do_sample/subtalker_do_sample
+            # set to False, a higher repetition_penalty helps prevent repetitive outputs,
+            # long periods of silence, etc.
+            generation_kwargs["repetition_penalty"] = 1.2
             result = model.generate(
                 prompt,
                 speaker_embedding,
