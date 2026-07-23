@@ -45,6 +45,11 @@ Follow these rules when writing, modifying, or reviewing code in this repository
     - Avoid adding new samples unless there is a strong, clearly justified reason.
     - Keep command‑line arguments in samples minimal. Prefer hardcoding values.
     - Ensure new samples have corresponding tests.
+20. Keep the names of related entities aligned. For example, env var names must match the enum names.
+21. Avoid overspecifying device. Don't limit the device to a specific one unless necessary.
+22. Don't introduce try/catch blocks just to be safe. Only catch if an exception is expected.
+23. Avoid reporting the same algorithmic branch choice multiple times.
+24. Avoid ambiguous words like "some", or "capable".
 
 ## Code Review Instructions for PRs
 
@@ -56,7 +61,8 @@ When performing a code review on a Pull Request, additionally follow this protoc
 4. Include C++ Core Guidelines references in review comments.
 5. Python Bindings: if C++ APIs are changed, check if the corresponding Python pybind11 wrappers in src/python need updates.
 6. Documentation: ensure that any new public APIs have docstrings in C++ headers and Python bindings. Ensure that new public APIs have documentation updated in /site.
-7. Test Coverage: ensure that new features or changes have corresponding tests.
+7. Test Coverage: ensure that new features or changes have corresponding tests in Python. C++ tests are optional.
 8. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
 9. Helper scripts shouldn't be committed.
 10. ABI stability isn't required.
+11. PR description must include a link to built docs if the documentation is updated.
