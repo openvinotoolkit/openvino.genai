@@ -4,6 +4,7 @@
 #include "decoder_model_split.hpp"
 
 #include <limits>
+#include <optional>
 #include <openvino/core/except.hpp>
 #include <openvino/opsets/opset13.hpp>
 #include <set>
@@ -64,14 +65,21 @@ bool isEmbeddingGatherWithZeroBatchDims(const std::shared_ptr<ov::Node>& node) {
     return ov::is_type<ov::op::v1::Gather>(node);
 }
 
-// Detects an NNCF-style weight-decompression chain rooted at a low-precision
-// Constant: Convert(Constant) [- Convert(zero_point)] then * Constant(scale), cast
-// back to f32. Covers both asymmetric (int8, with zero point) and symmetric
-// (int4_sym, no zero point) weight compression of the embedding table.
+// Detects a decompressed embedding weight feeding the Gather through a
+// Convert-to-f32. Covers three exported forms:
+//   * fp16-stored weight: Constant(f16) -> Convert(f32), no scale/zero-point;
+//   * symmetric weight compression (int4_sym): Convert(Constant) * Constant(scale);
+//   * asymmetric weight compression (int8): Convert(Constant) - Convert(zp), then * scale.
 bool isDecompressedEmbeddingWeight(const ov::Output<ov::Node>& output) {
     const auto convertToF32 = ov::as_type_ptr<ov::opset13::Convert>(output.get_node_shared_ptr());
     if (convertToF32 == nullptr || convertToF32->get_output_element_type(0) != ov::element::f32) {
         return false;
+    }
+
+    // fp16-stored weights: the Convert consumes a Constant directly, with no
+    // scale/zero-point dequantization in between.
+    if (ov::is_type<ov::opset13::Constant>(convertToF32->input_value(0).get_node_shared_ptr())) {
+        return true;
     }
 
     const auto multiply = ov::as_type_ptr<ov::opset13::Multiply>(convertToF32->input_value(0).get_node_shared_ptr());
@@ -418,6 +426,30 @@ std::shared_ptr<ov::opset13::Range> traceRangeThroughUnsqueezes(ov::Output<ov::N
     }
 }
 
+// Resolves a scalar f32 value from either a plain f32 rank-0 Constant, or a
+// rank-0 Constant of another type (e.g. f16) feeding an f32 Convert -- the
+// causal-mask thresholds are stored this second way in some exports.
+std::optional<float> resolveScalarFloatConstant(const ov::Output<ov::Node>& output) {
+    if (const auto constant = ov::as_type_ptr<ov::opset13::Constant>(output.get_node_shared_ptr())) {
+        if (constant->get_element_type() != ov::element::f32 || getStaticRank(output) != 0) {
+            return std::nullopt;
+        }
+        const auto values = constant->cast_vector<float>();
+        return values.size() == 1 ? std::optional<float>(values.front()) : std::nullopt;
+    }
+
+    const auto convert = ov::as_type_ptr<ov::opset13::Convert>(output.get_node_shared_ptr());
+    if (convert == nullptr || convert->get_output_element_type(0) != ov::element::f32 || getStaticRank(output) != 0) {
+        return std::nullopt;
+    }
+    const auto constant = ov::as_type_ptr<ov::opset13::Constant>(convert->input_value(0).get_node_shared_ptr());
+    if (constant == nullptr || getStaticRank(constant->output(0)) != 0) {
+        return std::nullopt;
+    }
+    const auto values = constant->cast_vector<float>();
+    return values.size() == 1 ? std::optional<float>(values.front()) : std::nullopt;
+}
+
 bool hasCausalLessEqualRangeTopology(const std::shared_ptr<ov::opset13::Select>& select) {
     if (select->get_input_size() != 3 || getStaticRank(select->input_value(0)) != 4 ||
         select->input_value(0).get_element_type() != ov::element::boolean) {
@@ -443,17 +475,12 @@ bool hasCausalLessEqualRangeTopology(const std::shared_ptr<ov::opset13::Select>&
         return false;
     }
 
-    const auto zero = ov::as_type_ptr<ov::opset13::Constant>(select->input_value(1).get_node_shared_ptr());
-    const auto negative = ov::as_type_ptr<ov::opset13::Constant>(select->input_value(2).get_node_shared_ptr());
-    if (zero == nullptr || negative == nullptr || zero->get_element_type() != ov::element::f32 ||
-        negative->get_element_type() != ov::element::f32 || getStaticRank(zero->output(0)) != 0 ||
-        getStaticRank(negative->output(0)) != 0) {
+    const auto zeroValue = resolveScalarFloatConstant(select->input_value(1));
+    const auto negativeValue = resolveScalarFloatConstant(select->input_value(2));
+    if (!zeroValue.has_value() || !negativeValue.has_value()) {
         return false;
     }
-    const auto zeroValues = zero->cast_vector<float>();
-    const auto negativeValues = negative->cast_vector<float>();
-    return zeroValues.size() == 1 && zeroValues.front() == 0.0f && negativeValues.size() == 1 &&
-           negativeValues.front() < 0.0f;
+    return *zeroValue == 0.0f && *negativeValue < 0.0f;
 }
 
 bool hasExclusiveSdpaMaskPaths(const std::shared_ptr<ov::opset13::Select>& select,

@@ -145,8 +145,11 @@ Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
             language_model_properties.count("NPUW_LLM_GENERATE_CONFIG") == 0 &&
             language_model_properties.count("++GENERATE_CONFIG") == 0 &&
             language_model_properties.count("++NPUW_LLM_GENERATE_CONFIG") == 0) {
-            language_model_properties.emplace("++GENERATE_CONFIG",
-                                              ov::AnyMap{{"NPUW_DQ", "NO"}, {"NPUW_ONLINE_PIPELINE", "NONE"}});
+            // Override NPUW's own BEST_PERF-hint default (NPUW_ONLINE_PIPELINE=NONE)
+            // so the generate stage is online-partitioned into multiple subgraphs too,
+            // matching the prefill stage's default (REP) behavior.
+            language_model_properties.emplace(
+                "++GENERATE_CONFIG", ov::AnyMap{{"NPUW_DQ", "YES"}, {"NPUW_ONLINE_PIPELINE", "REP"}, {"NPU_COMPILER_DYNAMIC_QUANTIZATION", "YES"}});
         }
         language_model_properties.emplace("NPUW_LLM_SHARED_HEAD", "NO");
         language_model_properties.emplace("NPUW_LLM_CACHE_ROPE", "NO");
