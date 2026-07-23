@@ -470,7 +470,15 @@ _PROMPT_SPECS = {
         rename={"media": "audio"},
         nonjson_wrap=lambda item: {"audio": item},
     ),
-    "ldm_super_resolution": _PromptSpec("prompt", parse_image_json_data, path_keys=("prompt",)),
+    "ldm_super_resolution": _PromptSpec(
+        "prompt",
+        parse_image_json_data,
+        path_keys=("prompt",),
+        # Route the input image path to the 'media' key so BenchPrompt.__repr__
+        # renders it as an image (image:WxH) instead of a text word count.
+        rename={"prompt": "media"},
+        nonjson_wrap=lambda item: {"media": item},
+    ),
 }
 
 # text_gen, code_gen, text_embed, text2speech, text_rerank, ...
