@@ -10,6 +10,7 @@
 
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/youtu_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
 #include "visual_language/qwen3_omni/classes.hpp"
@@ -130,6 +131,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen2VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN2_5_VL) {
         return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::YOUTU_VL) {
+        return std::make_shared<VisionEncoderYoutuVL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN3_VL) {
         return std::make_shared<VisionEncoderQwen3VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN3_5 || model_type == VLMModelType::QWEN3_5_MOE) {
@@ -177,6 +180,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen2VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN2_5_VL) {
         return std::make_shared<VisionEncoderQwen2_5_VL>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::YOUTU_VL) {
+        return std::make_shared<VisionEncoderYoutuVL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN3_VL) {
         return std::make_shared<VisionEncoderQwen3VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN3_5 || model_type == VLMModelType::QWEN3_5_MOE) {

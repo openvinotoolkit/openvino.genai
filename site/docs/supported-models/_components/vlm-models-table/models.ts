@@ -263,4 +263,15 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'YoutuVLForConditionalGeneration',
+    models: [
+      {
+        name: 'Youtu-VL',
+        links: [
+          'https://huggingface.co/tencent/Youtu-VL-4B-Instruct',
+        ],
+      },
+    ],
+  },
 ];
