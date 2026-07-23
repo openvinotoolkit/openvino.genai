@@ -124,8 +124,9 @@ public:
             }
 
             if (start_id >= 0 && end_id >= 0 && budget >= 0) {
+                // Pass prompt token IDs to determine initial state (IDLE vs COUNTING).
                 m_thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
-                    budget, start_id, end_id);
+                    budget, start_id, end_id, input_ids);
                 m_logit_transformers.push_back(m_thinking_budget);
             }
         }
