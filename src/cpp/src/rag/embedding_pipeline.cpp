@@ -92,50 +92,73 @@ namespace genai {
 
 class EmbeddingPipeline::EmbeddingPipelineImpl {
 public:
-    EmbeddingPipelineImpl(const std::filesystem::path& models_path,
-                          const std::string& device,
-                          const ov::AnyMap& properties)
+    virtual ~EmbeddingPipelineImpl() = default;
+
+    virtual EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) = 0;
+
+    virtual EmbedResult embed(const StringInputs& text,
+                             const std::vector<ov::Tensor>& images,
+                             const std::vector<ov::Tensor>& videos,
+                             const std::vector<VideoMetadata>& videos_metadata,
+                             const ov::AnyMap& properties) = 0;
+
+    class TextOnly;
+    class Multimodal;
+};
+
+class EmbeddingPipeline::EmbeddingPipelineImpl::TextOnly : public EmbeddingPipeline::EmbeddingPipelineImpl {
+public:
+    TextOnly(const std::filesystem::path& models_path,
+             const std::string& device,
+             const ov::AnyMap& properties)
+        : m_text_embedding_pipeline(std::make_unique<TextEmbeddingPipeline>(
+              models_path,
+              device,
+              TextEmbeddingPipeline::Config(properties),
+              utils::remove_config_properties(properties))) {}
+
+    EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) override {
+        std::optional<std::string> prompt;
+        utils::read_anymap_param(properties, ov::genai::embedding_prompt.name(), prompt);
+        const std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+            ? std::vector<std::string>{std::get<std::string>(text)}
+            : std::get<std::vector<std::string>>(text);
+
+        if (prompt.has_value()) {
+            return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
+        }
+        return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
+    }
+
+    EmbedResult embed(const StringInputs& text,
+                     const std::vector<ov::Tensor>& images,
+                     const std::vector<ov::Tensor>& videos,
+                     const std::vector<VideoMetadata>& videos_metadata,
+                     const ov::AnyMap& properties) override {
+        OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
+                        "TextEmbeddingPipeline fallback is active and does not support image/video input");
+        return embed(text, properties);
+    }
+
+private:
+    std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
+};
+
+class EmbeddingPipeline::EmbeddingPipelineImpl::Multimodal : public EmbeddingPipeline::EmbeddingPipelineImpl {
+public:
+    Multimodal(const std::filesystem::path& models_path,
+               const std::string& device,
+               const ov::AnyMap& properties)
         : m_config{get_multimodal_config(properties)} {
         m_config.validate();
         const ov::AnyMap plugin_properties = utils::remove_config_properties(properties);
-        try {
-            init_multimodal(models_path, device, plugin_properties);
-            m_mode = Mode::MULTIMODAL;
-        } catch (const std::exception& multimodal_error) {
-            try {
-                m_text_embedding_pipeline = std::make_unique<TextEmbeddingPipeline>(models_path,
-                                                                                   device,
-                                                                                   TextEmbeddingPipeline::Config(properties),
-                                                                                   plugin_properties);
-                m_mode = Mode::TEXT_ONLY;
-            } catch (const std::exception& text_error) {
-                OPENVINO_THROW("EmbeddingPipeline initialization failed. "
-                               "Multimodal initialization error: ",
-                               multimodal_error.what(),
-                               ". TextEmbeddingPipeline fallback error: ",
-                               text_error.what());
-            }
-        }
+        init_multimodal(models_path, device, plugin_properties);
     }
 
-    EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) {
+    EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) override {
         std::optional<std::string> prompt;
         utils::read_anymap_param(properties, ov::genai::embedding_prompt.name(), prompt);
-        if (m_mode == Mode::TEXT_ONLY) {
-            if (std::holds_alternative<std::string>(text)) {
-                const std::vector<std::string> texts{std::get<std::string>(text)};
-                if (prompt.has_value()) {
-                    return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
-                }
-                return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
-            } else {
-                const std::vector<std::string>& texts = std::get<std::vector<std::string>>(text);
-                if (prompt.has_value()) {
-                    return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
-                }
-                return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
-            }
-        }
+
         std::vector<std::string> texts = std::holds_alternative<std::string>(text)
             ? std::vector<std::string>{std::get<std::string>(text)}
             : std::get<std::vector<std::string>>(text);
@@ -149,12 +172,7 @@ public:
                      const std::vector<ov::Tensor>& images,
                      const std::vector<ov::Tensor>& videos,
                      const std::vector<VideoMetadata>& videos_metadata,
-                     const ov::AnyMap& properties) {
-        if (m_mode == Mode::TEXT_ONLY) {
-            OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
-                            "TextEmbeddingPipeline fallback is active and does not support image/video input");
-            return embed(text, properties);
-        }
+                     const ov::AnyMap& properties) override {
         std::optional<std::string> prompt;
         utils::read_anymap_param(properties, ov::genai::embedding_prompt.name(), prompt);
 
@@ -176,11 +194,6 @@ public:
     }
 
 private:
-    enum class Mode {
-        MULTIMODAL,
-        TEXT_ONLY,
-    };
-
     void init_multimodal(const std::filesystem::path& models_path,
                          const std::string& device,
                          const ov::AnyMap& properties) {
@@ -439,9 +452,7 @@ private:
         return text + tokenizer.decode(added_tokens, ov::genai::skip_special_tokens(false));
     }
 
-    Mode m_mode = Mode::MULTIMODAL;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
     TextEmbeddingPipeline::Config m_config;
     ov::CompiledModel m_compiled_language_model;
     ov::InferRequest m_language_model_request;
@@ -452,8 +463,21 @@ private:
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const std::string& device,
-                                     const ov::AnyMap& properties)
-    : m_impl(std::make_unique<EmbeddingPipelineImpl>(models_path, device, properties)) {}
+                                     const ov::AnyMap& properties) {
+    try {
+        m_impl = std::make_unique<EmbeddingPipelineImpl::Multimodal>(models_path, device, properties);
+    } catch (const std::exception& multimodal_error) {
+        try {
+            m_impl = std::make_unique<EmbeddingPipelineImpl::TextOnly>(models_path, device, properties);
+        } catch (const std::exception& text_error) {
+            OPENVINO_THROW("EmbeddingPipeline initialization failed. "
+                           "Multimodal initialization error: ",
+                           multimodal_error.what(),
+                           ". TextEmbeddingPipeline fallback error: ",
+                           text_error.what());
+        }
+    }
+}
 
 EmbedResult EmbeddingPipeline::embed(const StringInputs& text,
                                     const std::vector<ov::Tensor>& images,
