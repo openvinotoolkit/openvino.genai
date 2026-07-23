@@ -31,8 +31,11 @@ def run_ldm_super_resolution(img, num, pipe, args, framework, iter_data_list, im
         f"[{'warm-up' if num == 0 else num}][P{image_id}] Input params: steps={nsteps}, "
         f'resize_width={resize_image_width}, resize_height={resize_image_height}'
     )
-    low_res_img = Image.open(img['prompt']).convert('RGB')
+    low_res_img = Image.open(img["media"]).convert("RGB")
     low_res_img = low_res_img.resize((resize_image_width, resize_image_height))
+    # Report the actual low-res input dimensions (what gets upscaled) in
+    # prompt_repr, pairing with the upscaled output dims shown in output_repr.
+    img._image_size = (resize_image_width, resize_image_height)
     mem_consumption.start(num)
     start = time.perf_counter()
     res = pipe(low_res_img, num_inference_steps=nsteps, tm_list=tm_list)
@@ -101,11 +104,12 @@ def run_ldm_super_resolution_benchmark(model_path, framework, device, args, num_
     for num, p_idx, prompt in prompter.iter_schedule(num_iters):
         mem_consumption.update_marker(f"step-{num}-{p_idx}")
         prefix = prompter.get_prefix(num, p_idx)
-        # introduce_in_stdout prints prompt['prompt'] (the image path) on
-        # num==0 and always logs repr(prompt) which includes probed dimensions.
+        # introduce_in_stdout logs repr(prompt), which for super-resolution is
+        # the input image size (image:WxH); the input image path lives under
+        # the 'media' key.
         prompt.introduce_in_stdout(num, prefix)
         if num == 0 and args["output_dir"] is not None:
-            llm_bench_utils.output_file.output_image_input_text(str(prompt["prompt"]), args, p_idx, None, proc_id)
+            llm_bench_utils.output_file.output_image_input_text(str(prompt["media"]), args, p_idx, None, proc_id)
         iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
         before = len(iter_data_list)
         run_ldm_super_resolution(
