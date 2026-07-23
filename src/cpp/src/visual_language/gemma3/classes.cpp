@@ -54,9 +54,10 @@ EncodedImage VisionEncoderGemma3::encode(const ov::Tensor& image, const ov::AnyM
 InputsEmbedderGemma3::InputsEmbedderGemma3(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
         patch_chat_template();
     }
 

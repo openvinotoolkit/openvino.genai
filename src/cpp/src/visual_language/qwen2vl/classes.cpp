@@ -938,9 +938,10 @@ void VisionEncoderQwen2VL::encode_frames_with_config(
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
     auto merger_path = model_dir / "openvino_vision_embeddings_merger_model.xml";
     if (std::filesystem::exists(merger_path)) {
         auto model = utils::singleton_core().read_model(merger_path);

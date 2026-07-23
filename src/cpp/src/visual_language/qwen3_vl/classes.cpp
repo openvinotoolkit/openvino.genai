@@ -340,9 +340,10 @@ EncodedVideo VisionEncoderQwen3VL::encode_frames(const std::vector<ov::Tensor>& 
 InputsEmbedderQwen3VL::InputsEmbedderQwen3VL(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config),
+) : InputsEmbedderQwen2VL(vlm_config, model_dir, tokenizer, device, device_config),
     m_use_patched_pos_model(!is_cpp_pos_embeds_fallback_requested()) {
     auto pos_model = utils::singleton_core().read_model(
         model_dir / "openvino_vision_embeddings_pos_model.xml");

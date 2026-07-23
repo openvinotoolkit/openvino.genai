@@ -440,9 +440,10 @@ NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::strin
 InputsEmbedderLLaVANextVideo::InputsEmbedderLLaVANextVideo(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    InputsEmbedderLLaVANext(vlm_config, model_dir, device, device_config) { }
+    InputsEmbedderLLaVANext(vlm_config, model_dir, tokenizer, device, device_config) { }
 
 InputsEmbedderLLaVANextVideo::InputsEmbedderLLaVANextVideo(
     const VLMConfig& vlm_config,

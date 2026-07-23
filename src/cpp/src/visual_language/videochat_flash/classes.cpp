@@ -1077,9 +1077,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderVideoChatFlashQwen::encode_vi
 InputsEmbedderVideoChatFlashQwen::InputsEmbedderVideoChatFlashQwen(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+) : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {}
 
 InputsEmbedderVideoChatFlashQwen::InputsEmbedderVideoChatFlashQwen(
     const VLMConfig& vlm_config,
