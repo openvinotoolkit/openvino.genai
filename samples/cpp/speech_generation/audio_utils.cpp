@@ -83,6 +83,7 @@ ov::Tensor read_wav_mono_f32(const std::filesystem::path& file_path, uint32_t ex
                     ". OV GenAI does not resample reference audio.");
 
     const uint64_t num_frames = wav.totalPCMFrameCount;
+    const uint32_t channels = wav.channels;
     std::vector<float> interleaved(num_frames * wav.channels, 0.0f);
     const uint64_t frames_read = drwav_read_pcm_frames_f32(&wav, num_frames, interleaved.data());
     drwav_uninit(&wav);
@@ -93,7 +94,7 @@ ov::Tensor read_wav_mono_f32(const std::filesystem::path& file_path, uint32_t ex
 
     ov::Tensor waveform(ov::element::f32, ov::Shape{static_cast<size_t>(num_frames)});
     float* out = waveform.data<float>();
-    if (wav.channels == 1) {
+    if (channels == 1) {
         std::copy_n(interleaved.data(), static_cast<size_t>(num_frames), out);
     } else {
         for (uint64_t i = 0; i < num_frames; ++i) {
