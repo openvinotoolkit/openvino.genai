@@ -13,6 +13,12 @@ import openvino_genai as ov_genai
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
+from conftest import (
+    MODELS_REQUIRING_OPTIMUM_MASTER,
+    OPTIMUM_INTEL_MASTER,
+    _get_optimum_intel_requirement,
+    _install_package,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +33,19 @@ def video_generation_model() -> str:
 
     manager = AtomicDownloadManager(model_path)
 
+    use_optimum_master = MODEL_ID in MODELS_REQUIRING_OPTIMUM_MASTER
+
     def convert_model(temp_path: Path) -> None:
+        if use_optimum_master:
+            _install_package(OPTIMUM_INTEL_MASTER)
+
         command = ["optimum-cli", "export", "openvino", "--model", MODEL_NAME, "--trust-remote-code", str(temp_path)]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
+        try:
+            retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
+        finally:
+            if use_optimum_master:
+                _install_package(_get_optimum_intel_requirement())
 
     try:
         manager.execute(convert_model)
@@ -541,11 +556,6 @@ class TestImage2VideoPipeline:
         with pytest.raises(RuntimeError, match="vae_encoder"):
             ov_genai.Image2VideoPipeline(str(no_encoder_dir))
 
-    @pytest.mark.xfail(
-        reason="Test model exports rank-1 timestep. Needs optimum-intel PR #1762, "
-        "blocked by safetensors<0.8.0 vs diffusers==0.39.0",
-        raises=RuntimeError,
-    )
     def test_generate_runs(self, video_generation_model):
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
         image = self._make_image()
@@ -555,11 +565,6 @@ class TestImage2VideoPipeline:
         video = np.array(result.video)
         assert video.shape == (1, 9, 32, 32, 3)
 
-    @pytest.mark.xfail(
-        reason="Test model exports rank-1 timestep. Needs optimum-intel PR #1762, "
-        "blocked by safetensors<0.8.0 vs diffusers==0.39.0",
-        raises=RuntimeError,
-    )
     def test_determinism(self, video_generation_model):
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
         image = self._make_image()
@@ -567,11 +572,6 @@ class TestImage2VideoPipeline:
         result2 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
         np.testing.assert_array_equal(np.array(result1.video), np.array(result2.video))
 
-    @pytest.mark.xfail(
-        reason="Test model exports rank-1 timestep. Needs optimum-intel PR #1762, "
-        "blocked by safetensors<0.8.0 vs diffusers==0.39.0",
-        raises=RuntimeError,
-    )
     def test_lora_passthrough(self, video_generation_model):
         adapter_config = ov_genai.AdapterConfig()
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
