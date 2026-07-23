@@ -676,6 +676,10 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_
 }
 
 void InputsEmbedderGemma4::patch_chat_template() {
+    if (m_vlm_config.model_type != VLMModelType::GEMMA4_UNIFIED) {
+        return;
+    }
+
     std::string patched_chat_template = m_tokenizer.get_chat_template();
     // minja does not support Python-style implicit concatenation of adjacent multiline string literals:
     //     "first "
