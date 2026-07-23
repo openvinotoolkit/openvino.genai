@@ -100,6 +100,7 @@ class ChatIterationResult:
     tokenization_time: Any
     rendered_chat: str
     cache_usage: dict | None = None
+    answer_text: str = ""  # assistant reply for this turn (for output_repr word count)
 
 
 class TextGenerationChatAdapter(ABC):
@@ -334,6 +335,7 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
             tm_infer_list=tm_infer_list,
             tokenization_time=(tok_encode_time, tok_decode_time),
             rendered_chat=rendered_chat,
+            answer_text=generated_text[0],
         )
 
     def get_messages(self):
@@ -451,6 +453,7 @@ class GenAITextGenerationChatAdapter(TextGenerationChatAdapter):
             tokenization_time=tokenization_time,
             rendered_chat=rendered_chat,
             cache_usage=cache_usage,
+            answer_text=decoded_results.texts[0],
         )
 
     def get_messages(self):
@@ -521,6 +524,7 @@ def run_text_generation_chat_common(
             in_size=chat_iteration_result.input_size,
             infer_count=chat_iteration_result.infer_count,
             out_size=chat_iteration_result.output_size,
+            output_repr=gen_output_data.text_output_repr(chat_iteration_result.answer_text),
             gen_time=chat_iteration_result.generation_time,
             latency=per_token_time,
             res_md5=result_md5_list,

@@ -114,6 +114,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
         out_size=out_token_size,
+        output_repr=gen_output_data.text_output_repr(result_text),
         gen_time=generation_time,
         res_md5=result_md5_list,
         prompt_idx=speech_id,

@@ -132,7 +132,6 @@ def gen_data_to_csv(
     result["infer_count"] = iter_data["infer_count"]
     result["generation_time(s)"] = round(generation_time, 5) if generation_time != "" else generation_time
     result["output_size"] = iter_data["output_size"]
-    result["output_length"] = iter_data["output_size"]  # symmetric name for prompt_length
     result["output_repr"] = iter_data.get("output_repr", "")  # symmetric with prompt_repr
     result["latency(ms)"] = round(latency, 5) if latency != "" else latency
     result["result_md5"] = iter_data["result_md5"]
@@ -164,7 +163,7 @@ def gen_data_to_csv(
     )
     result["prompt_idx"] = iter_data["prompt_idx"]
     result["prompt_repr"] = iter_data.get("prompt_repr", "")
-    result["prompt_length"] = iter_data.get("prompt_length", "")
+    result["input_tokens"] = iter_data.get("input_tokens", "")
     result["chat_idx"] = iter_data["chat_idx"]
     result["tokenization_time"] = round(token_time, 5) if token_time != "" else token_time
     result["detokenization_time"] = round(detoken_time, 5) if detoken_time != "" else detoken_time
@@ -205,7 +204,6 @@ def write_result(
         "infer_count",
         "generation_time(s)",
         "output_size",
-        "output_length",
         "output_repr",
         "latency(ms)",
         f"1st_latency({first_latenct_unit})",
@@ -217,7 +215,7 @@ def write_result(
         f"max_increase_sys_mem({mem_unit.value})",
         "prompt_idx",
         "prompt_repr",
-        "prompt_length",
+        "input_tokens",
         "chat_idx",
         f"1st_infer_latency({first_latenct_unit})",
         "2nd_infer_avg_latency(ms)",

@@ -114,6 +114,18 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 python ./benchmark.py -h # for more information
 ```
 
+**Report fields (CSV columns / JSON keys):**
+
+Besides the timing and memory columns, each record carries the following input/output descriptors. `input_size` and `output_size` are the **raw** numeric sizes the pipeline records; `input_tokens`, `prompt_repr` and `output_repr` are **derived** from them (or from the prompt/output text) for readability.
+
+- `input_size`: **Raw** input token count for the record (per prompt × `batch_size`).
+- `input_tokens`: **Derived** from `input_size` — the true per-prompt input token count **after tokenization, including all media** (for visual-language models this already includes image/video tokens; `= input_size / batch_size`). Empty for tasks that record no token `input_size` (e.g. speech-to-text, super-resolution).
+- `prompt_repr`: **Derived** from the prompt — a human-readable summary of the **input** size: text as a whitespace word count (`w` suffix), media as dimensions. Examples: `text:7w`, `text:7w + image:512x512`, `audio:30.0s@44100Hz`. It is a pre-tokenization size hint (word count), so it stays in `w` across all iterations; use `input_tokens` for the exact token count.
+- `output_size`: **Raw** generated output size — generated text tokens for text/VLM/speech-to-text; **audio samples** for text-to-speech; empty for image/video generation.
+- `output_repr`: **Derived** from the output — a human-readable summary, symmetric with `prompt_repr`: generated text as a word count (`text:<N>w`), media as dimensions (`image:512x512`, `audio:48000smp@22050Hz`, `video:640x480@16f`).
+
+> **Note (text-to-speech):** TTS has no discrete output "tokens" — `output_size` reports the number of generated **audio samples**, and `output_repr` shows `audio:<samples>smp@<rate>Hz`. Divide samples by the sample rate for the duration in seconds.
+
 #### Benchmarking the Original PyTorch Model:
 To benchmark the original PyTorch model, first download the model locally and then run benchmark by specifying PyTorch as the framework with parameter `-f pt`
 

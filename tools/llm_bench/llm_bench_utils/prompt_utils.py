@@ -140,7 +140,7 @@ class BenchPrompt(dict):
         self._video_shape = None  # (frames, height, width) | None
         self._audio_info = None  # (duration_sec, sample_rate) | None
         self._mask_fraction = None  # float | None  cached mask coverage % (extra feedback fix)
-        self._prompt_length = None  # int | None  total tokens over all inputs (set by stamp_repr)
+        self._input_tokens = None  # int | None  true input token count incl. media (set by stamp_repr)
         self._probed = False
         self._load(data)
 
@@ -298,7 +298,7 @@ class BenchPrompt(dict):
         This is a *size* summary: the text is shown as a whitespace word count
         (``w`` suffix), images/videos as pixel dimensions, audio as duration.
         The tokenized length of all inputs combined (text + media) is a
-        separate metric reported as ``prompt_length`` (see :meth:`stamp_repr`),
+        separate metric reported as ``input_tokens`` (see :meth:`stamp_repr`),
         not part of this string.
         """
         self.probe()
@@ -307,7 +307,7 @@ class BenchPrompt(dict):
         # ---- text (optional) ----
         # prompt_repr describes input *sizes*; the text size is its word count.
         # The tokenized length of all inputs (text + media) is reported
-        # separately as prompt_length (see stamp_repr).
+        # separately as input_tokens (see stamp_repr).
         if self.get("prompt"):
             prompt_val = self["prompt"]
             # Multi-turn chat prompts arrive as a list of per-turn strings;
@@ -363,7 +363,7 @@ class BenchPrompt(dict):
         log.info(f"{prefix} Prompt: {prompt_repr}")
 
     def stamp_repr(self, iter_data_list, start_index, batch_size=1):
-        """Tag ``prompt_repr`` and ``prompt_length`` onto the new records.
+        """Tag ``prompt_repr`` and ``input_tokens`` onto the new records.
 
         Callers capture ``len(iter_data_list)`` **before** invoking the
         generation function, then pass that length here afterwards. This tags
@@ -382,7 +382,7 @@ class BenchPrompt(dict):
 
         * ``prompt_repr`` — the input *size* summary string (``repr(self)``:
           text word count + media dimensions).
-        * ``prompt_length`` — the total tokenized length of **all** inputs
+        * ``input_tokens`` — the true total token count of **all** inputs
           combined (text + image/video/audio tokens). Sourced from the
           post-tokenization ``iter_data["input_size"]`` the generation function
           records (``= per-prompt tokens * batch_size``); ``batch_size`` divides
@@ -401,13 +401,13 @@ class BenchPrompt(dict):
                 if isinstance(r.get("input_size"), (int, float)) and r["input_size"] > 0
             ]
             if sizes:
-                self._prompt_length = int(max(sizes) // batch_size)
+                self._input_tokens = int(max(sizes) // batch_size)
 
         prompt_repr = repr(self)
-        prompt_length = self._prompt_length if self._prompt_length is not None else ""
+        input_tokens = self._input_tokens if self._input_tokens is not None else ""
         for record in new_records:
             record["prompt_repr"] = prompt_repr
-            record["prompt_length"] = prompt_length
+            record["input_tokens"] = input_tokens
 
 
 # ---------------------------------------------------------------------------
