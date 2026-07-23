@@ -137,12 +137,14 @@ auto text_to_speech_generate_docstring = R"(
     :param text_or_texts: input text(s) for which to generate speech
     :type text_or_texts: str or list[str]
 
-    :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
-                             voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                             `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                             to prepare this tensor externally and pass it explicitly. Qwen3-TTS Base backend also
-                             expects caller-provided speaker embedding (x-vector style cloning), while Qwen3-TTS
-                             CustomVoice uses predefined speaker ids and does not require this tensor.
+    :param speaker_embedding: speaker embedding tensor representing the target voice characteristics.
+                              Behavior depends on backend/model variant:
+                                - SpeechT5: optional. If omitted, a default x-vector is used.
+                                - Kokoro: required.
+                                - Qwen3-TTS Base: optional. Can be provided directly, or derived internally
+                                    from ``voice_clone_ref_audio`` passed via properties.
+                                - Qwen3-TTS CustomVoice: ignored and should not be provided.
+                                - Qwen3-TTS VoiceDesign: ignored and should not be provided.
     :type speaker_embedding: openvino.Tensor or None
 
     :param properties: speech generation parameters specified as properties
