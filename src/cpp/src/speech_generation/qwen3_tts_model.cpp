@@ -474,7 +474,6 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         }
 
         if (predictor_static) {
-            std::cout << "Using static all-heads code predictor variant (explicit KV cache)" << std::endl;
             reshape_predictor_to_static(predictor_model);
             // Plain static compile (works identically on NPU/GPU/CPU). Host manages
             // the explicit KV cache; see infer_predictor / generate_codec_groups.
@@ -705,28 +704,28 @@ ov::Tensor Qwen3TTSImpl::normalize_external_speaker_embedding(const ov::Tensor& 
 }
 
 std::vector<float> Qwen3TTSImpl::normalize_ref_audio_waveform(const ov::Tensor& ref_audio) const {
-    OPENVINO_ASSERT(ref_audio, "qwen_ref_audio must be a non-empty tensor");
+    OPENVINO_ASSERT(ref_audio, "voice_clone_ref_audio must be a non-empty tensor");
     OPENVINO_ASSERT(ref_audio.get_element_type() == ov::element::f32,
-                    "qwen_ref_audio must be float32 tensor with shape [T], [1, T], or [1, 1, T]");
+                    "voice_clone_ref_audio must be float32 tensor with shape [T], [1, T], or [1, 1, T]");
 
     const auto shape = ref_audio.get_shape();
-    OPENVINO_ASSERT(!shape.empty(), "qwen_ref_audio tensor rank must be 1, 2, or 3");
+    OPENVINO_ASSERT(!shape.empty(), "voice_clone_ref_audio tensor rank must be 1, 2, or 3");
 
     size_t num_samples = 0;
     if (shape.size() == 1) {
         num_samples = shape[0];
     } else if (shape.size() == 2) {
-        OPENVINO_ASSERT(shape[0] == 1, "qwen_ref_audio rank-2 tensor must have shape [1, T]");
+        OPENVINO_ASSERT(shape[0] == 1, "voice_clone_ref_audio rank-2 tensor must have shape [1, T]");
         num_samples = shape[1];
     } else if (shape.size() == 3) {
         OPENVINO_ASSERT(shape[0] == 1 && shape[1] == 1,
-                        "qwen_ref_audio rank-3 tensor must have shape [1, 1, T]");
+                        "voice_clone_ref_audio rank-3 tensor must have shape [1, 1, T]");
         num_samples = shape[2];
     } else {
-        OPENVINO_THROW("qwen_ref_audio tensor rank must be 1, 2, or 3");
+        OPENVINO_THROW("voice_clone_ref_audio tensor rank must be 1, 2, or 3");
     }
 
-    OPENVINO_ASSERT(num_samples > 0, "qwen_ref_audio must contain at least one sample");
+    OPENVINO_ASSERT(num_samples > 0, "voice_clone_ref_audio must contain at least one sample");
 
     const float* src = ref_audio.data<const float>();
     std::vector<float> waveform(num_samples, 0.0f);
@@ -736,9 +735,9 @@ std::vector<float> Qwen3TTSImpl::normalize_ref_audio_waveform(const ov::Tensor& 
 
 ov::Tensor Qwen3TTSImpl::extract_qwen3_speaker_embedding_from_audio(const ov::Tensor& ref_audio) const {
     OPENVINO_ASSERT(m_has_speaker_encoder,
-                    "qwen_ref_audio requires 'openvino_speaker_encoder_model.xml' in the model directory");
+                    "voice_clone_ref_audio requires 'openvino_speaker_encoder_model.xml' in the model directory");
     OPENVINO_ASSERT(m_has_qwen3_mel_preprocess,
-                    "qwen_ref_audio requires internal mel preprocessing model initialization");
+                    "voice_clone_ref_audio requires internal mel preprocessing model initialization");
     OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
                     "Qwen3 internal ref-audio extraction assumes 24000 Hz speaker encoder sample rate");
 
@@ -779,7 +778,7 @@ ov::Tensor Qwen3TTSImpl::extract_qwen3_speaker_embedding_from_audio(const ov::Te
 
 ov::Tensor Qwen3TTSImpl::extract_qwen3_ref_code_from_audio(const ov::Tensor& ref_audio) const {
     OPENVINO_ASSERT(m_has_speech_tokenizer_encoder,
-                    "qwen_ref_audio ICL mode requires 'speech_tokenizer/openvino_speech_tokenizer_encoder_model.xml'");
+                    "voice_clone_ref_audio ICL mode requires 'speech_tokenizer/openvino_speech_tokenizer_encoder_model.xml'");
     OPENVINO_ASSERT(m_speech_tokenizer_input_sample_rate == 24000,
                     "Qwen3 internal ref-audio extraction assumes 24000 Hz speech tokenizer input sample rate");
 
@@ -1002,9 +1001,6 @@ void Qwen3TTSImpl::reshape_predictor_to_static(const std::shared_ptr<ov::Model>&
         }
     }
 
-    std::cout << "Reshaping dynamic code predictor to static: inputs_embeds=[1,1," << hidden
-              << "] attention_mask=[1," << kv_len << "] past_key_values=[1," << n_kv << "," << past_len << ","
-              << head_dim << "]" << std::endl;
     model->reshape(shapes);
 }
 
@@ -1039,11 +1035,6 @@ void Qwen3TTSImpl::init_static_predictor_meta(const std::shared_ptr<ov::Model>& 
     m_pred_past_k.reserve(m_pred_num_layers);
     m_pred_past_v.reserve(m_pred_num_layers);
     reset_predictor_state();
-
-    std::cout << "static code predictor: layers=" << m_pred_num_layers
-              << " n_kv=" << m_pred_n_kv << " head_dim=" << m_pred_head_dim
-              << " past_len=" << m_pred_past_len << " kv_len=" << m_pred_kv_len
-              << " heads=" << m_pred_num_heads << " vocab=" << m_pred_vocab << std::endl;
 }
 
 // Zero the host KV buffers and reset the running absolute-position counter. Call
@@ -2207,7 +2198,7 @@ ov::Shape Qwen3TTSImpl::get_speaker_embedding_shape() const {
         return ov::Shape{1, 1, m_speaker_embedding_dim};
     }
     // Qwen3 CustomVoice does not consume external speaker embeddings in the GenAI API.
-    return ov::Shape{1};
+    return ov::Shape{};
 }
 
 }  // namespace genai
