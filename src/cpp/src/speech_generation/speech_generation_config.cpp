@@ -76,14 +76,13 @@ void SpeechGenerationConfig::validate() const {
     OPENVINO_ASSERT(max_phoneme_length > 0, "max_phoneme_length must be positive");
     OPENVINO_ASSERT(!phonemize_fallback_model_dir.has_value() || !phonemize_fallback_model_dir->empty(),
                     "phonemize_fallback_model_dir must be unset or a non-empty path");
-
-    OPENVINO_ASSERT(subtalker_top_k > 0, "subtalker_top_k must be positive");
-    OPENVINO_ASSERT(0.0f <= subtalker_top_p && subtalker_top_p <= 1.0f,
-                    "subtalker_top_p must be in the range [0; 1]");
-    OPENVINO_ASSERT(subtalker_temperature > 0.0f, "subtalker_temperature must be positive");
-
-        // Note: seed parameter is only used when do_sample=true; ignored when do_sample=false (argmax)
+    if (subtalker_dosample) {
+        OPENVINO_ASSERT(subtalker_top_k > 0, "subtalker_top_k must be positive");
+        OPENVINO_ASSERT(0.0f <= subtalker_top_p && subtalker_top_p <= 1.0f,
+                        "subtalker_top_p must be in the range [0; 1]");
+        OPENVINO_ASSERT(subtalker_temperature > 0.0f, "subtalker_temperature must be positive");
     }
+}
 
 }  // namespace genai
 }  // namespace ov
