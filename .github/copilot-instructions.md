@@ -49,7 +49,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 21. Avoid overspecifying device. Don't limit the device to a specific one unless necessary.
 22. Don't introduce try/catch blocks just to be safe. Only catch if an exception is expected.
 23. Avoid reporting the same algorithmic branch choice multiple times.
-24. Avoid ambiguous words like "some", or "capable".
+24. Avoid ambiguous words like "some" or "capable".
 
 ## Code Review Instructions for PRs
 
