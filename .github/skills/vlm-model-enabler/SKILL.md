@@ -85,11 +85,11 @@ Follow the checklist in [genai-vlm-architecture.md](genai-vlm-architecture.md) "
 
 ### 2.2 Build
 
-For normal local development, install the current checkout into the active
-environment using the repository instructions in `src/docs/BUILD.md`:
+For normal local development, install the current checkout with nightly
+OpenVINO packages:
 
 ```bash
-python -m pip install .
+pip install --pre -U . --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 ```
 
 This is the default validation path. Do not validate edited source through a
