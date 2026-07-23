@@ -156,9 +156,10 @@ EncodedVideo VisionEncoderQwen3Omni::encode_frames(const std::vector<ov::Tensor>
 
 InputsEmbedderQwen3Omni::InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
                                                  const std::filesystem::path& model_dir,
+                                                 const Tokenizer& tokenizer,
                                                  const std::string& device,
                                                  const ov::AnyMap device_config)
-    : InputsEmbedderQwen3VL(vlm_config, model_dir, device, device_config),
+    : InputsEmbedderQwen3VL(vlm_config, model_dir, tokenizer, device, device_config),
       m_audio_token_id(vlm_config.audio_token_id) {
     // Audio encoder is optional — check is_available() / has_audio_encoder() before encoding
     m_audio_encoder = std::make_unique<AudioEncoderQwen3Omni>(model_dir, vlm_config, device, device_config);
@@ -646,14 +647,12 @@ std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3Omni::create_position_ids(
         }
     }
 
-    // Calculate rope delta from maximum position value 
+    // Calculate rope delta from maximum position value
     // (exclude text dimension which tracks sequence position but isn't consumed by RoPE)
     const size_t num_position_dims = position_ids.get_shape().at(0);
     const size_t num_spatial_dims = num_position_dims - 1;
-    const int64_t position_ids_max_element = *std::max_element(
-        position_ids.data<int64_t>(),
-        position_ids.data<int64_t>() + num_spatial_dims * seq_len
-    );
+    const int64_t position_ids_max_element =
+        *std::max_element(position_ids.data<int64_t>(), position_ids.data<int64_t>() + num_spatial_dims * seq_len);
     const int64_t rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(seq_len);
 
     return {position_ids, rope_delta};

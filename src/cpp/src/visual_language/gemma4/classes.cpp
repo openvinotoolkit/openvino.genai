@@ -8,6 +8,7 @@
 #include <cstring>
 #include <iomanip>
 #include <numeric>
+#include <regex>
 #include <sstream>
 
 #include "logger.hpp"
@@ -311,9 +312,12 @@ EncodedVideo VisionEncoderGemma4::encode_frames(const std::vector<ov::Tensor>& f
 
 InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::filesystem::path& model_dir,
+                                           const Tokenizer& tokenizer,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
-    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
+    patch_chat_template();
+
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
         return;
@@ -339,6 +343,8 @@ InputsEmbedderGemma4::InputsEmbedderGemma4(const VLMConfig& vlm_config,
                                            const std::string& device,
                                            const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    patch_chat_template();
+
     // per-layer embeddings model is optional, large MOE models don't have it
     if (!has_per_layer_embeddings()) {
         return;
@@ -667,6 +673,18 @@ void InputsEmbedderGemma4::encode_vision_token_ids() {
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_extra_inputs() const {
     return m_lm_extra_inputs;
+}
+
+void InputsEmbedderGemma4::patch_chat_template() {
+    std::string patched_chat_template = m_tokenizer.get_chat_template();
+    // minja does not support Python-style implicit concatenation of adjacent multiline string literals:
+    //     "first "
+    //     "second"
+    // Normalize the pair to "first second" before parsing.
+    const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
+    patched_chat_template = std::regex_replace(patched_chat_template, multiline_string_concatenation, "");
+
+    m_tokenizer.set_chat_template(patched_chat_template);
 }
 
 }  // namespace ov::genai

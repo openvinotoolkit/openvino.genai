@@ -890,9 +890,10 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const ModelsMap& models_map,
 InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config
-) : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
+) : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {}
 
 
 InputsEmbedderPhi3V::InputsEmbedderPhi3V(
