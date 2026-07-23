@@ -18,7 +18,6 @@ def remove_artifacts(artifacts_path: Path):
     shutil.rmtree(artifacts_path)
 
 
-@pytest.mark.wwb_rerank
 @pytest.mark.parametrize(
     ("model_id", "threshold"),
     [
