@@ -70,8 +70,6 @@ Before modifying shared model code, check backward compatibility:
 - Preserve existing behavior. Prefer branching on explicit code-visible capabilities or model contracts instead of broad model-family checks.
 
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
-If model-checker passes, complete Step 4 — **Repository Test Coverage** in the
-**vlm-model-enabler** skill before updating documentation.
 
 Revalidate with **model-checker**, passing the same Hugging Face model ID or
 local OpenVINO IR directory used during initial validation. Do not replace a
