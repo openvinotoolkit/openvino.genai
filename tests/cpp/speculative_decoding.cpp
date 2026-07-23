@@ -29,6 +29,13 @@ protected:
             return std::make_shared<ov::genai::GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
         };
 
+        void register_generated_tokens(uint64_t request_id, const std::vector<int64_t>& token_ids) {
+            auto& logit_processor = m_sampler->get_logit_processor(request_id);
+            for (auto token_id : token_ids) {
+                logit_processor.register_new_generated_token(token_id);
+            }
+        }
+
     };
 
     PipelineTestInstance m_pipeline = PipelineTestInstance();
@@ -188,6 +195,50 @@ TEST_F(CBForSDTest, add_tokens__one_sequence) {
     ASSERT_NE(after.at(0).at(0).log_probs, before.at(0).at(0).log_probs);
     ASSERT_EQ(after.at(0).at(0).token_ids, tokens);
     ASSERT_EQ(after.at(0).at(0).log_probs, log_probs);
+}
+
+TEST_F(CBForSDTest, dflash_candidate_update_without_logit_processor_update__one_sequence) {
+    std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    m_pipeline.add_request(0, input_tensor);
+
+    std::vector<int64_t> target_seed_tokens = {10, 11};
+    std::vector<float> target_seed_log_probs = {0.1f, 0.2f};
+    ov::genai::GeneratedSequences target_seed{
+        {0, ov::genai::GeneratedSequence(target_seed_tokens, target_seed_log_probs)}
+    };
+    auto update_result = m_pipeline.update_request(0, target_seed, true);
+    ASSERT_EQ(update_result.removed_tokens_cnt, 0);
+    ASSERT_EQ(update_result.inserted_tokens_cnt, 2);
+
+    std::vector<int64_t> draft_candidate_tokens = {10, 11, 20, 21, 22};
+    std::vector<float> draft_candidate_log_probs = {0.0f, 0.0f, 0.3f, 0.4f, 0.5f};
+    ov::genai::GeneratedSequences draft_candidate{
+        {0, ov::genai::GeneratedSequence(draft_candidate_tokens, draft_candidate_log_probs)}
+    };
+    update_result = m_pipeline.update_request(0, draft_candidate, false);
+    ASSERT_EQ(update_result.removed_tokens_cnt, 0);
+    ASSERT_EQ(update_result.inserted_tokens_cnt, 3);
+
+    auto after_draft_update = m_pipeline.get_generated_requests();
+    std::vector<float> expected_draft_log_probs = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f};
+    ASSERT_EQ(after_draft_update.at(0).at(0).token_ids, draft_candidate_tokens);
+    ASSERT_EQ(after_draft_update.at(0).at(0).log_probs, expected_draft_log_probs);
+    m_pipeline.register_generated_tokens(0, {20, 21, 22});
+
+    std::vector<int64_t> validated_tokens = {10, 11, 20, 99};
+    std::vector<float> validated_log_probs = {0.0f, 0.0f, 0.3f, 0.9f};
+    ov::genai::GeneratedSequences validated_target{
+        {0, ov::genai::GeneratedSequence(validated_tokens, validated_log_probs)}
+    };
+    update_result = m_pipeline.update_request(0, validated_target, false);
+    ASSERT_EQ(update_result.removed_tokens_cnt, 2);
+    ASSERT_EQ(update_result.inserted_tokens_cnt, 1);
+
+    auto after_validation_update = m_pipeline.get_generated_requests();
+    std::vector<float> expected_validated_log_probs = {0.1f, 0.2f, 0.3f, 0.9f};
+    ASSERT_EQ(after_validation_update.at(0).at(0).token_ids, validated_tokens);
+    ASSERT_EQ(after_validation_update.at(0).at(0).log_probs, expected_validated_log_probs);
 }
 
 TEST_F(CBForSDTest, update_empty_sequence_by_not_empty__two_sequence) {

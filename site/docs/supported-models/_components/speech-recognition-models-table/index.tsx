@@ -1,11 +1,11 @@
 import React from 'react';
 import { BaseModelsTable, LinksCell } from '../base-models-table';
-import { WHISPER_MODELS } from './models';
+import { SPEECH_RECOGNITION_MODELS } from './models';
 
-export default function WhisperModelsTable(): React.JSX.Element {
+export default function SpeechRecognitionModelsTable(): React.JSX.Element {
   const headers = ['Architecture', 'Models', 'Example HuggingFace Models'];
 
-  const rows = WHISPER_MODELS.map(({ architecture, models }) => (
+  const rows = SPEECH_RECOGNITION_MODELS.map(({ architecture, models }) => (
     <>
       <tr key={architecture}>
         <td rowSpan={models.length}>

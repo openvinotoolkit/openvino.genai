@@ -250,6 +250,8 @@ void filter_properties(ov::AnyMap& properties) {
         ov::hint::performance_mode.name(),
         ov::hint::num_requests.name(),
         ov::hint::enable_cpu_pinning.name(),
+        ov::num_streams.name(),
+        ov::inference_num_threads.name(),
         ov::hint::execution_mode.name(),
         ov::hint::compiled_blob.name(),
         ov::hint::enable_hyper_threading.name(),

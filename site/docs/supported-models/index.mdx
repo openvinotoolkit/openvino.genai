@@ -2,7 +2,7 @@ import ImageGenerationModelsTable from './_components/image-generation-models-ta
 import VideoGenerationModelsTable from './_components/video-generation-models-table';
 import LLMModelsTable from './_components/llm-models-table';
 import VLMModelsTable from './_components/vlm-models-table';
-import WhisperModelsTable from './_components/whisper-models-table';
+import SpeechRecognitionModelsTable from './_components/speech-recognition-models-table';
 import TextEmbeddingsModelsTable from './_components/text-embeddings-models-table';
 import SpeechGenerationModelsTable from './_components/speech-generation-models-table';
 import TextRerankModelsTable from './_components/text-rerank-models-table';
@@ -107,13 +107,21 @@ The model requires `transformers==5.2` for the export with `optimum-cli`.
 The model requires `transformers>=4.48` for the export with `optimum-cli`.
 :::
 
-## Speech Recognition Models (Whisper-based)
+## Speech Recognition Models
 
 :::info LoRA Support
 Speech recognition pipeline does **not** support LoRA adapters.
 :::
 
-<WhisperModelsTable />
+<SpeechRecognitionModelsTable />
+
+:::warning Speech Recognition Models Notes
+Qwen3-ASR models require the `qwen-asr` package for export with `optimum-cli`:
+
+```bash
+pip install qwen-asr
+```
+:::
 
 ## Speech Generation Models
 
