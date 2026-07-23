@@ -138,7 +138,7 @@ wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-ty
 wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --genai
 ```
 
-### Compare Text Embeddings models
+### Compare Text Embedding models
 
 **Supported options:**
 - `--embeds_pooling_type` - Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side. CLS by default.
@@ -158,7 +158,7 @@ wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type
 wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --genai
 ```
 
-### Compare Visual Embeddings models
+### Compare Visual Embedding models
 
 **Supported scenarios:**
 - `image-embedding` - for creation of embedding for a list of texts and images.

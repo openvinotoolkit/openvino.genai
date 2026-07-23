@@ -1,58 +1,19 @@
 import CodeBlock from '@theme/CodeBlock';
 
 <CodeBlock language="python" showLineNumbers>
-{`import cv2
-import numpy as np
-import openvino as ov
+{`import openvino as ov
 import openvino_genai as ov_genai
-from PIL import Image
-from pathlib import Path
-
-def read_image(path: str) -> ov.Tensor:
-    pic = Image.open(path).convert("RGB")
-    image_data = np.array(pic)[None]
-    return ov.Tensor(image_data)
-
-def read_images(path: str) -> list[ov.Tensor]:
-    entry = Path(path)
-    if entry.is_dir():
-        return [read_image(str(file)) for file in sorted(entry.iterdir())]
-    return [read_image(path)]
-
-def read_video(path: str, num_frames: int = 8) -> tuple[ov.Tensor, ov_genai.VideoMetadata]:
-    cap = cv2.VideoCapture(path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-
-    frames = []
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    cap.release()
-
-    total_num_frames = len(frames)
-    if total_num_frames == 0:
-        raise RuntimeError(f"Failed to read frames from video: {path}")
-    indices = np.linspace(0, total_num_frames - 1, num=min(num_frames, total_num_frames), dtype=int)
-
-    metadata = ov_genai.VideoMetadata()
-    metadata.fps = fps
-    metadata.frames_indices = indices.tolist()
-
-    sampled_frames = [frames[i] for i in indices.tolist()]
-    return ov.Tensor(np.stack(sampled_frames, axis=0)), metadata
 
 pipeline = ov_genai.EmbeddingPipeline(models_path, "${props.device || 'CPU'}")
 
 # Embed a text query
 query_embedding = pipeline.embed("a photo of a cat").embeddings
 
-# Embed images
+# Embed images  (image is an ov.Tensor of shape [1, H, W, 3], uint8)
 images: list[ov.Tensor] = read_images("path/to/images")
 image_embedding = pipeline.embed(images=images).embeddings
 
-# Embed a video
+# Embed a video  (video is an ov.Tensor of shape [F, H, W, 3], uint8)
 video, video_metadata = read_video("path/to/video.mp4")
 video_embedding = pipeline.embed(videos=[video], videos_metadata=[video_metadata]).embeddings
 `}

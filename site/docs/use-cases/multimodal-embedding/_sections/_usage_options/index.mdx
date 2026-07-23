@@ -45,7 +45,7 @@ Multimodal `EmbeddingPipeline` support in JS is not available yet.
 
 The embedding behavior of the pipeline can be tuned by passing configuration parameters at construction time. They can be passed directly as properties or bundled into a `TextEmbeddingPipeline.Config` and supplied via `text_embedding_config`.
 
-### Pooling Strategies
+#### Pooling Strategies
 
 Embedding models support different pooling strategies to aggregate token embeddings into a single vector:
 
@@ -90,14 +90,6 @@ Some models support special instructions for queries and documents. Use `query_i
 :::info
 `query_instruction` and `embed_instruction` apply only to text-only pipelines. For multimodal inputs, set a per-call instruction with the [`embedding_prompt`](#embedding-prompt) parameter instead.
 :::
-
-### Example for Pipeline Configuration
-
-Download and convert embedding model (e.g. multimodal [Qwen/Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B), or text only model [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
-
-<OptimumCLI model='BAAI/bge-small-en-v1.5' outputDir='bge-small-en-v1_5_ov' task='feature-extraction' />
-
-See all supported [Embedding Models](/docs/supported-models/#embedding-models).
 
 <LanguageTabs>
     <TabItemPython>

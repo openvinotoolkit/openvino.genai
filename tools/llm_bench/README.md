@@ -309,7 +309,7 @@ python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 
 > **Supported Text Rerank model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
 
-### Compare Text Embeddings models
+### Compare Text Embedding models
 ```sh
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5
