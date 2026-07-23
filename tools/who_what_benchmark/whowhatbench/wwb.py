@@ -518,9 +518,52 @@ def check_args(args):
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
 
+def _resolve_local_image(value, base_dir):
+    """Resolve an image reference from a local dataset into a PIL image.
+
+    Empty/NA values yield None. String values are treated as file paths
+    resolved deterministically relative to the dataset directory when they are
+    not absolute. Already-loaded image objects are returned unchanged.
+    """
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    if isinstance(value, str):
+        if value.strip() == "":
+            return None
+        img_path = value if os.path.isabs(value) else os.path.join(base_dir, value)
+        return Image.open(img_path).convert("RGB")
+    return value
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Support a local CSV dataset generically. This lets visual-text and other
+    # multimodal tasks provide the required columns (e.g. "prompts", "images",
+    # "videos") through the same --dataset interface without depending on a
+    # remote dataset. Image/video paths are resolved deterministically relative
+    # to the CSV location. WWB still generates the ground-truth answers itself.
+    if os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        base_dir = os.path.dirname(os.path.abspath(args.dataset))
+        frame = pd.read_csv(args.dataset, keep_default_na=True)
+        res = {}
+        for column in frame.columns:
+            values = list(frame[column])
+            if column == "images":
+                values = [_resolve_local_image(v, base_dir) for v in values]
+            elif column == "videos":
+                values = [
+                    None if (v is None or (isinstance(v, float) and pd.isna(v)) or (isinstance(v, str) and v.strip() == "")) else v
+                    for v in values
+                ]
+            res[column] = values
+        if "prompts" not in res and args.dataset_field in res:
+            res["prompts"] = res[args.dataset_field]
+        return res
+
     split = "validation"
     if args.split is not None:
         split = args.split

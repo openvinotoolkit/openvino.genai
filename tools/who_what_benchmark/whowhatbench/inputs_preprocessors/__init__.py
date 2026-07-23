@@ -8,6 +8,7 @@ from .qwen2 import Qwen2VLInputsPreprocessor
 from .qwen3 import Qwen3VLInputsPreprocessor, Qwen3_5VLInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
 from .gemma4 import Gemma4InputsPreprocessor, Gemma4UnifiedInputsPreprocessor
+from .youtu_vl import YoutuVLInputsPreprocessor
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
@@ -30,6 +31,7 @@ MODEL_TYPE_TO_CLS_MAPPING = {
     "llava_next": LLAVAInputsPreprocessor,
     "llava-qwen2": NanoLlavaInputsPreprocessor,
     "internvl_chat": InternVLInputsPreprocessor,
+    "youtu_vl": YoutuVLInputsPreprocessor,
 }
 
 __all__ = ["MODEL_TYPE_TO_CLS_MAPPING", "VLMInputsPreprocessor"]

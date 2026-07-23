@@ -167,6 +167,12 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 
+# Youtu-VL (tencent/Youtu-VL-4B-Instruct): SigLIP2-naflex vision front-end + DeepSeek-style
+# MLA/MoE language model. Requires transformers >= 4.57 and remote code.
+# NOTE: a hosted tiny-random fixture is not yet published (see optimum-intel
+# tests/openvino/utils_tests.py::_create_tiny_youtu_vl_model, which builds it locally).
+MODEL_YOUTU_VL = "optimum-intel-internal-testing/tiny-random-youtu_vl"
+
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
     # minicpmv, internvl_chat architectures are deprecating support for transformers >= v5 by optimum-intel
@@ -180,6 +186,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        MODEL_YOUTU_VL,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -204,6 +211,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    MODEL_YOUTU_VL: lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
@@ -294,6 +302,13 @@ VLM_EAGLE3_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-vl
 
 
 def _maybe_skip_unsupported_model_export(model_id: str) -> None:
+    if model_id == MODEL_YOUTU_VL:
+        pytest.skip(
+            "Hosted tiny-random youtu_vl fixture is not yet published on the "
+            "'optimum-intel-internal-testing' hub. optimum-intel builds it locally "
+            "(tests/openvino/utils_tests.py::_create_tiny_youtu_vl_model). Enable this "
+            "test once the fixture is published. Requires transformers >= 4.57."
+        )
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4"

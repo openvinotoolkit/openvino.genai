@@ -68,6 +68,9 @@ public:
     size_t temporal_patch_size = 2;
     size_t merge_size = 2;
 
+    // youtu_vl / siglip2-naflex specific params
+    size_t max_num_patches = 256;
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 

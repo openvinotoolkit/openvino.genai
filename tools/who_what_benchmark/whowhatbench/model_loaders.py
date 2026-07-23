@@ -503,7 +503,12 @@ def load_visual_text_model(
                     config._attn_implementation = "sdpa"
                     from_pretrained_kwargs = {"config": config}
                 else:
-                    from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
+                    # Rely on _attn_implementation="eager" to disable flash attention.
+                    # The deprecated use_flash_attention_2 flag is no longer consumed by
+                    # transformers.from_pretrained and gets forwarded to the model
+                    # constructor, which breaks remote-code VLMs whose __init__ only
+                    # accepts (config) with no **kwargs (e.g. youtu_vl).
+                    from_pretrained_kwargs = {"_attn_implementation": "eager"}
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,

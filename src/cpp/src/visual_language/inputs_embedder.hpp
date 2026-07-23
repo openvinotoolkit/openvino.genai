@@ -391,6 +391,7 @@ private:
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
     friend class InputsEmbedderVideoChatFlashQwen;
+    friend class InputsEmbedderYoutuVL;
 };
 
 template <typename Func>

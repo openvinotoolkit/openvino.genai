@@ -70,8 +70,22 @@ class VisualTextEvaluator(TextEvaluator):
             predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
         self.predictions = predictions
 
-        # Align gt_data with predictions (handles skipped prompts)
+        # Align gt_data with predictions (handles skipped prompts). Keep the
+        # ground-truth rows in the same order as predictions so per-prompt
+        # source/optimized answers stay row-aligned when only a subset matches.
         self.gt_data = self.gt_data[self.gt_data["prompts"].isin(predictions["prompts"].values)]
+
+        # Restrict predictions to the intersecting prompts as well so both
+        # frames describe the same prompt set before similarity is computed.
+        predictions = predictions[predictions["prompts"].isin(self.gt_data["prompts"].values)]
+
+        if len(self.gt_data) == 0 or len(predictions) == 0:
+            raise ValueError(
+                "No common prompts between ground-truth data and target predictions. "
+                "The ground-truth CSV and the target evaluation must use the same "
+                "prompt/image source. Pass the same --dataset (or --target-data) that "
+                "was used to generate --gt-data so their prompts intersect."
+            )
 
         all_metrics_per_prompt = {}
         all_metrics = {}
@@ -90,10 +104,14 @@ class VisualTextEvaluator(TextEvaluator):
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
+        # Guard against any residual length mismatch between the metric arrays
+        # and the prompt/answer arrays so DataFrame construction never raises an
+        # opaque "All arrays must be of the same length" error.
+        compared_rows = min(len(self.gt_data), len(predictions))
         self.last_cmp = all_metrics_per_prompt
-        self.last_cmp["prompts"] = predictions["prompts"].values
-        self.last_cmp["source_model"] = self.gt_data["answers"].values
-        self.last_cmp["optimized_model"] = predictions["answers"].values
+        self.last_cmp["prompts"] = predictions["prompts"].values[:compared_rows]
+        self.last_cmp["source_model"] = self.gt_data["answers"].values[:compared_rows]
+        self.last_cmp["optimized_model"] = predictions["answers"].values[:compared_rows]
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
