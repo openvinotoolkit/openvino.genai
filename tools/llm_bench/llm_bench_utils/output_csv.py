@@ -132,6 +132,7 @@ def gen_data_to_csv(
     result["infer_count"] = iter_data["infer_count"]
     result["generation_time(s)"] = round(generation_time, 5) if generation_time != "" else generation_time
     result["output_size"] = iter_data["output_size"]
+    result["output_repr"] = iter_data.get("output_repr", "")  # symmetric with prompt_repr
     result["latency(ms)"] = round(latency, 5) if latency != "" else latency
     result["result_md5"] = iter_data["result_md5"]
     if first_latency < 0:
@@ -149,15 +150,23 @@ def gen_data_to_csv(
     if other_token_infer_latency < 0:
         result['2nd_infer_avg_latency(ms)'] = 'NA'
     else:
-        result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
-    result[f'max_rss_mem({mem_unit.value})'] = round(rss_mem, 5) if rss_mem != '' else rss_mem
-    result[f'max_sys_mem({mem_unit.value})'] = round(sys_mem, 5) if sys_mem != '' else sys_mem
-    result[f'max_increase_rss_mem({mem_unit.value})'] = round(rss_mem_increase, 5) if rss_mem_increase != '' else rss_mem_increase
-    result[f'max_increase_sys_mem({mem_unit.value})'] = round(sys_mem_increase, 5) if sys_mem_increase != '' else sys_mem_increase
-    result['prompt_idx'] = iter_data['prompt_idx']
+        result["2nd_infer_avg_latency(ms)"] = (
+            round(other_token_infer_latency, 5) if other_token_infer_latency != "" else other_token_infer_latency
+        )
+    result[f"max_rss_mem({mem_unit.value})"] = round(rss_mem, 5) if rss_mem != "" else rss_mem
+    result[f"max_sys_mem({mem_unit.value})"] = round(sys_mem, 5) if sys_mem != "" else sys_mem
+    result[f"max_increase_rss_mem({mem_unit.value})"] = (
+        round(rss_mem_increase, 5) if rss_mem_increase != "" else rss_mem_increase
+    )
+    result[f"max_increase_sys_mem({mem_unit.value})"] = (
+        round(sys_mem_increase, 5) if sys_mem_increase != "" else sys_mem_increase
+    )
+    result["prompt_idx"] = iter_data["prompt_idx"]
+    result["prompt_repr"] = iter_data.get("prompt_repr", "")
+    result["input_tokens"] = iter_data.get("input_tokens", "")
     result["chat_idx"] = iter_data["chat_idx"]
-    result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
-    result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
+    result["tokenization_time"] = round(token_time, 5) if token_time != "" else token_time
+    result["detokenization_time"] = round(detoken_time, 5) if detoken_time != "" else detoken_time
     input_idx = iter_data["chat_idx"] if iter_data["chat_idx"] != "" else iter_data["prompt_idx"]
     result["start"], result["end"] = output_json.get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
     result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
@@ -195,6 +204,7 @@ def write_result(
         "infer_count",
         "generation_time(s)",
         "output_size",
+        "output_repr",
         "latency(ms)",
         f"1st_latency({first_latenct_unit})",
         "2nd_avg_latency(ms)",
@@ -204,6 +214,8 @@ def write_result(
         f"max_increase_rss_mem({mem_unit.value})",
         f"max_increase_sys_mem({mem_unit.value})",
         "prompt_idx",
+        "prompt_repr",
+        "input_tokens",
         "chat_idx",
         f"1st_infer_latency({first_latenct_unit})",
         "2nd_infer_avg_latency(ms)",

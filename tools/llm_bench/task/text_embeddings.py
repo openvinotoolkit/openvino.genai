@@ -12,7 +12,7 @@ import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import llm_bench_utils.output_file
-from llm_bench_utils.prompt_utils import get_text_prompt
+from llm_bench_utils.prompt_utils import BenchPrompter
 import llm_bench_utils.gen_output_data as gen_output_data
 
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
@@ -155,19 +155,12 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
     mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_embeddings_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
-    input_text_list = get_text_prompt(args)
-    if args['prompt_index'] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_text_list)]
-        text_list = input_text_list
-    else:
-        prompt_idx_list = []
-        text_list = []
-        for i in args['prompt_index']:
-            if 0 <= i < len(input_text_list):
-                text_list.append(input_text_list[i])
-                prompt_idx_list.append(i)
-    if len(input_text_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
+    # Build the prompt schedule via BenchPrompter, which handles both
+    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
+    # in a single unified iter_schedule() loop.
+    prompter = BenchPrompter(args)
+    prompt_idx_list = prompter.active_indices
+    text_list = [p["prompt"] for p in prompter.active_items]
 
     if not use_genai:
         text_emb_fn = run_text_embeddings_optimum
@@ -177,33 +170,18 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
     proc_id = os.getpid()
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
-    if args['subsequent'] is False:
-        for num in range(num_iters + 1):
-            for idx, input_text in enumerate(text_list):
-                p_idx = prompt_idx_list[idx]
-                mem_consumption.update_marker(f"step-{num}-{p_idx}")
-                if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
-                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                text_emb_fn(input_text, num, model, tokenizer, args, iter_data_list, p_idx, bench_hook, proc_id, mem_consumption)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
-    else:
-        for idx, input_text in enumerate(text_list):
-            p_idx = prompt_idx_list[idx]
-            for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{p_idx}")
-                if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
-                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                text_emb_fn(input_text, num, model, tokenizer, args, iter_data_list,
-                            prompt_idx_list[idx], bench_hook, proc_id, mem_consumption)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-                log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        prompt.introduce_in_stdout(num, prefix)
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
+        text_emb_fn(
+            prompt["prompt"], num, model, tokenizer, args, iter_data_list, p_idx, bench_hook, proc_id, mem_consumption
+        )
+        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
+        log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False, True, latency_unit="prompt")
     return iter_data_list, pretrain_time, iter_timestamp

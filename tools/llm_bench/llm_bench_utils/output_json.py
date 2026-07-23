@@ -62,6 +62,9 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "input_size": iter_data["input_size"],
             "infer_count": iter_data["infer_count"],
             "output_size": iter_data["output_size"],
+            # output_repr: compact output summary, symmetric with prompt_repr
+            # ("<N>t" for text outputs, media dimensions for image/video/audio).
+            "output_repr": iter_data.get("output_repr", ""),
             "generation_time": generation_time,
             "latency": round(latency, 5) if latency != "" else latency,
             "first_latency": round(first_latency, 5) if first_latency != "" else first_latency,
@@ -71,6 +74,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "tokenization_time": tokenization_time,
             "detokenization_time": detokenization_time,
             "prompt_idx": iter_data["prompt_idx"],
+            "prompt_repr": iter_data.get("prompt_repr", ""),
+            "input_tokens": iter_data.get("input_tokens", ""),
             "chat_idx": iter_data["chat_idx"],
             "result_md5": result_md5,
             "start": timestamp_start,

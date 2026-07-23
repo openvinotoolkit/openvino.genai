@@ -14,8 +14,7 @@ from transformers import set_seed
 import llm_bench_utils.output_file
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-from llm_bench_utils.prompt_utils import extract_prompt_data
-from llm_bench_utils.prompt_utils import get_vlm_prompt
+from llm_bench_utils.prompt_utils import BenchPrompter
 
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
@@ -34,7 +33,7 @@ def run_visual_language_generation_optimum(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, False)
+    prompts, images, videos = BenchPrompter.extract_prompt_data(inputs, decim_frames, False)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -137,6 +136,7 @@ def run_visual_language_generation_optimum(
         in_size=input_token_size * args['batch_size'],
         infer_count=len(tm_infer_list),
         out_size=num_tokens,
+        output_repr=gen_output_data.text_output_repr(generated_text[0]),
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
@@ -178,7 +178,7 @@ def run_visual_language_generation_genai(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, True)
+    prompts, images, videos = BenchPrompter.extract_prompt_data(inputs, decim_frames, True)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -255,6 +255,7 @@ def run_visual_language_generation_genai(
         in_size=args['batch_size'] * perf_metrics.get_num_input_tokens(),
         infer_count=len(tm_list),
         out_size=generated_text_len,
+        output_repr=gen_output_data.text_output_repr(generated_text[0]),
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
@@ -292,19 +293,13 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
-    input_image_text_list = get_vlm_prompt(args)
-    if args['prompt_index'] is None:
-        prompt_idx_list = list(range(0, len(input_image_text_list)))
-        image_text_list = input_image_text_list
-    else:
-        prompt_idx_list = []
-        image_text_list = []
-        for i in args['prompt_index']:
-            if 0 <= i < len(input_image_text_list):
-                image_text_list.append(input_image_text_list[i])
-                prompt_idx_list.append(i)
-    if len(input_image_text_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
+    # Build the prompt schedule via BenchPrompter, which handles both
+    # subsequent=False (iter-major) and subsequent=True (prompt-major) modes
+    # in a single unified iter_schedule() loop.
+    prompter = BenchPrompter(args)
+    prompt_idx_list = prompter.active_indices
+    image_text_list = prompter.active_items
+
     log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
              f'prompt nums: {len(image_text_list)}, prompt idx: {prompt_idx_list}')
 
@@ -316,36 +311,29 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     proc_id = os.getpid()
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, image_text_list, prompt_idx_list)
-    if args['subsequent'] is False:
-        for num in range(num_iters + 1):
-            for idx, input_text in enumerate(image_text_list):
-                mem_consumption.update_marker(f"step-{num}-{idx}")
-                p_idx = prompt_idx_list[idx]
-                if num == 0:
-                    prefix = f'[warm-up][P{p_idx}] Input text: {input_text}'
-                    metrics_print.print_unicode(prefix, max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                gen_fn(
-                    input_text, num, model, processor, args, iter_data_list, md5_list,
-                    p_idx, bench_hook, model_precision, proc_id, mem_consumption)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
-                log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
-    else:
-        for idx, input_text in enumerate(image_text_list):
-            p_idx = prompt_idx_list[idx]
-            for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{idx}")
-                if num == 0:
-                    prefix = f'[warm-up][P{p_idx}] Input text: {input_text}'
-                    metrics_print.print_unicode(prefix, max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
-                iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
-                gen_fn(
-                    input_text, num, model, processor, args, iter_data_list, md5_list,
-                    prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
-                iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
-                prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
-                log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        prompt.introduce_in_stdout(num, prefix)
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
+        gen_fn(
+            prompt,
+            num,
+            model,
+            processor,
+            args,
+            iter_data_list,
+            md5_list,
+            p_idx,
+            bench_hook,
+            model_precision,
+            proc_id,
+            mem_consumption,
+        )
+        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
+        log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], True)
     return iter_data_list, pretrain_time, iter_timestamp

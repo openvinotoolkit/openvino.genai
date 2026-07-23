@@ -21,7 +21,7 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 
-from llm_bench_utils.prompt_utils import get_text_prompt
+from llm_bench_utils.prompt_utils import BenchPrompter
 from llm_bench_utils.memory_monitor import MemoryMonitorHandler
 from task.text_generation import (
     save_input_data_to_file,
@@ -100,6 +100,7 @@ class ChatIterationResult:
     tokenization_time: Any
     rendered_chat: str
     cache_usage: dict | None = None
+    answer_text: str = ""  # assistant reply for this turn (for output_repr word count)
 
 
 class TextGenerationChatAdapter(ABC):
@@ -334,6 +335,7 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
             tm_infer_list=tm_infer_list,
             tokenization_time=(tok_encode_time, tok_decode_time),
             rendered_chat=rendered_chat,
+            answer_text=generated_text[0],
         )
 
     def get_messages(self):
@@ -451,6 +453,7 @@ class GenAITextGenerationChatAdapter(TextGenerationChatAdapter):
             tokenization_time=tokenization_time,
             rendered_chat=rendered_chat,
             cache_usage=cache_usage,
+            answer_text=decoded_results.texts[0],
         )
 
     def get_messages(self):
@@ -521,6 +524,7 @@ def run_text_generation_chat_common(
             in_size=chat_iteration_result.input_size,
             infer_count=chat_iteration_result.infer_count,
             out_size=chat_iteration_result.output_size,
+            output_repr=gen_output_data.text_output_repr(chat_iteration_result.answer_text),
             gen_time=chat_iteration_result.generation_time,
             latency=per_token_time,
             res_md5=result_md5_list,
@@ -579,19 +583,16 @@ def run_text_generation_benchmark(
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num: {} for num in range(num_iters + 1)}
-    input_text_list = get_text_prompt(args)
-    if args["prompt_index"] is None:
-        inputs_idx_list = [prompt_idx for prompt_idx, input_text in enumerate(input_text_list)]
-        text_list = input_text_list
-    else:
-        inputs_idx_list = []
-        text_list = []
-        for i in args["prompt_index"]:
-            if 0 <= i < len(input_text_list):
-                text_list.append(input_text_list[i])
-                inputs_idx_list.append(i)
+    # Load prompts via BenchPrompter, matching the other benchmark tasks.
+    # BenchPrompter handles prompt-file/CLI loading and the --prompt_index
+    # subset. Each chat prompt value is either a single string or a list of
+    # per-turn strings (multi-turn); it is passed through unchanged and later
+    # expanded by get_chat_input_data().
+    prompter = BenchPrompter(args)
+    inputs_idx_list = prompter.active_indices
+    text_list = [p["prompt"] for p in prompter.active_items]
 
-    if len(input_text_list) == 0 or any(len(chat_prompts_list) == 0 for chat_prompts_list in input_text_list):
+    if any(len(chat_prompts_list) == 0 for chat_prompts_list in text_list):
         raise RuntimeError("==Failure prompts is empty ==")
     chat_info = f", chat iteration {args['chat_iter']}" if args.get("chat_iter") else ""
     log.info(
@@ -611,70 +612,39 @@ def run_text_generation_benchmark(
     iter_alias = "C"
     mem_consumption.activate_cooldown("after model compilation")
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, inputs_idx_list)
-    if args["subsequent"] is False:
-        for num in range(num_iters + 1):
-            for idx, input_text in enumerate(text_list):
-                chat_idx = inputs_idx_list[idx]
-                # Set the logger prefix for current iteration and prompt index
-                prefix = f"[warm-up][{iter_alias}{chat_idx}]" if num == 0 else f"[{num}][{iter_alias}{chat_idx}]"
-                mem_consumption.update_marker(f"step-{num}-{chat_idx}")
-                if num == 0:
-                    metrics_print.print_unicode(
-                        f"[warm-up][{iter_alias}{chat_idx}] Input text: {input_text}",
-                        f"[warm-up][{iter_alias}{chat_idx}] Unable print input text",
-                        max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
-                    )
-                iter_timestamp[num][chat_idx]["start"] = datetime.datetime.now().isoformat()
-                run_text_generation_chat_common(
-                    pipeline,
-                    input_text,
-                    num,
-                    args,
-                    iter_data_list,
-                    md5_list,
-                    chat_idx,
-                    bench_hook,
-                    model_precision,
-                    proc_id,
-                    mem_consumption,
-                    prefix,
-                )
-                iter_timestamp[num][chat_idx]["end"] = datetime.datetime.now().isoformat()
-                log.info(
-                    f"{prefix} start: {iter_timestamp[num][chat_idx]['start']}, end: {iter_timestamp[num][chat_idx]['end']}"
-                )
-    else:
-        for idx, input_text in enumerate(text_list):
-            chat_idx = inputs_idx_list[idx]
-            for num in range(num_iters + 1):
-                mem_consumption.update_marker(f"step-{num}-{chat_idx}")
-                # Set the logger prefix for current iteration and prompt index
-                prefix = f"[warm-up][{iter_alias}{chat_idx}]" if num == 0 else f"[{num}][{iter_alias}{chat_idx}]"
-                if num == 0:
-                    metrics_print.print_unicode(
-                        f"[warm-up][{iter_alias}{chat_idx}] Input text: {input_text}",
-                        f"[warm-up][{iter_alias}{chat_idx}] Unable print input text",
-                        max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
-                    )
-                iter_timestamp[num][chat_idx]["start"] = datetime.datetime.now().isoformat()
-                run_text_generation_chat_common(
-                    pipeline,
-                    input_text,
-                    num,
-                    args,
-                    iter_data_list,
-                    md5_list,
-                    chat_idx,
-                    bench_hook,
-                    model_precision,
-                    proc_id,
-                    mem_consumption,
-                    prefix,
-                )
-                iter_timestamp[num][chat_idx]["end"] = datetime.datetime.now().isoformat()
-                log.info(
-                    f"{prefix} start: {iter_timestamp[num][chat_idx]['start']}, end: {iter_timestamp[num][chat_idx]['end']}"
-                )
+    # Single scheduling loop for both subsequent=False (iter-major) and
+    # subsequent=True (chat-major); BenchPrompter.iter_schedule() encodes the
+    # ordering. prompt["prompt"] is the raw str/list value expanded downstream.
+    for num, chat_idx, prompt in prompter.iter_schedule(num_iters):
+        input_text = prompt["prompt"]
+        mem_consumption.update_marker(f"step-{num}-{chat_idx}")
+        # Set the logger prefix for current iteration and chat index
+        prefix = f"[warm-up][{iter_alias}{chat_idx}]" if num == 0 else f"[{num}][{iter_alias}{chat_idx}]"
+        if num == 0:
+            metrics_print.print_unicode(
+                f"{prefix} Input text: {input_text}",
+                f"{prefix} Unable print input text",
+                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG,
+            )
+        iter_timestamp[num][chat_idx]["start"] = datetime.datetime.now().isoformat()
+        run_text_generation_chat_common(
+            pipeline,
+            input_text,
+            num,
+            args,
+            iter_data_list,
+            md5_list,
+            chat_idx,
+            bench_hook,
+            model_precision,
+            proc_id,
+            mem_consumption,
+            prefix,
+        )
+        iter_timestamp[num][chat_idx]["end"] = datetime.datetime.now().isoformat()
+        log.info(
+            f"{prefix} start: {iter_timestamp[num][chat_idx]['start']}, end: {iter_timestamp[num][chat_idx]['end']}"
+        )
 
     metrics_print.print_average(iter_data_list, inputs_idx_list, args["batch_size"], True, chat_mode=True)
     return iter_data_list, pretrain_time, iter_timestamp
