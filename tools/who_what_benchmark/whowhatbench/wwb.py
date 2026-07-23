@@ -15,7 +15,6 @@ import openvino as ov
 import pandas as pd
 from PIL import Image
 from datasets import load_dataset
-import soundfile as sf
 from typing import Any, Optional
 
 from whowhatbench.model_loaders import load_model
@@ -882,16 +881,11 @@ def genai_gen_speech(
 
     selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
     if selected_ref_text:
-        generation_properties["voice_clone_ref_text"] = selected_ref_text
+        generation_properties["ref_text"] = selected_ref_text
 
     selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
     if selected_ref_audio:
-        audio_data, _sr = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
-        audio_array = np.asarray(audio_data, dtype=np.float32)
-        if audio_array.ndim > 1:
-            # Keep input shape deterministic for the Base pipeline by downmixing to mono.
-            audio_array = np.mean(audio_array, axis=-1, dtype=np.float32)
-        generation_properties["voice_clone_ref_audio"] = ov.Tensor(audio_array.reshape(-1))
+        generation_properties["ref_audio"] = selected_ref_audio
 
     # Only Kokoro voice-pack exports use named voice bins under <model_dir>/voices.
     if _is_voice_pack_enabled_model(model) and speaker_embedding is None:

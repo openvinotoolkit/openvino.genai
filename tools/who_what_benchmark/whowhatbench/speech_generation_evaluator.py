@@ -497,6 +497,11 @@ class Qwen3BaseWrapper:
             generation_properties["voice_clone_ref_text"] = selected_ref_text
 
         audio_data, _sr = sf.read(selected_ref_audio, dtype="float32", always_2d=False)
+        if _sr != 24000:
+            raise ValueError(
+                f"Qwen3 Base strict check failed: reference audio sample rate must be 24000 Hz, got {_sr} Hz "
+                f"for '{selected_ref_audio}'."
+            )
         audio_array = np.asarray(audio_data, dtype=np.float32)
         if audio_array.ndim > 1:
             audio_array = np.mean(audio_array, axis=-1, dtype=np.float32)
