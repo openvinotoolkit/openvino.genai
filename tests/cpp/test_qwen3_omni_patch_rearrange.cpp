@@ -219,7 +219,7 @@ TEST(Qwen3OmniPatchRearrange, FullOvInferenceMatchesHostReference) {
     constexpr size_t patch = 2;
     constexpr size_t merge = 2;
     const std::vector<float> mean{0.48145466f, 0.4578275f, 0.40821073f};
-    const std::vector<float> std{0.26862954f, 0.26130258f, 0.27577711f};
+    const std::vector<float> image_std{0.26862954f, 0.26130258f, 0.27577711f};
 
     struct ShapeCase {
         size_t input_height;
@@ -236,10 +236,9 @@ TEST(Qwen3OmniPatchRearrange, FullOvInferenceMatchesHostReference) {
         auto frame0 = make_test_image(shape.input_height, shape.input_width, 3);
         auto frame1 = make_test_image(shape.input_height, shape.input_width, 29);
         auto expected = make_host_preprocess_reference(
-            frame0, frame1, shape.target_height, shape.target_width, patch, merge, mean, std);
+            frame0, frame1, shape.target_height, shape.target_width, patch, merge, mean, image_std);
         auto actual = run_full_preprocess_on_cpu(
-            frame0, frame1, shape.target_height, shape.target_width, patch, merge, mean, std);
-
+            frame0, frame1, shape.target_height, shape.target_width, patch, merge, mean, image_std);
         ASSERT_EQ(actual.get_size(), expected.get_size());
         ASSERT_EQ(actual.get_shape(),
               (ov::Shape{shape.target_height / patch * (shape.target_width / patch), 3 * 2 * patch * patch}));
