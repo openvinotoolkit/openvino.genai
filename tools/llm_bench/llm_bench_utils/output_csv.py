@@ -155,10 +155,11 @@ def gen_data_to_csv(
     result[f'max_increase_rss_mem({mem_unit.value})'] = round(rss_mem_increase, 5) if rss_mem_increase != '' else rss_mem_increase
     result[f'max_increase_sys_mem({mem_unit.value})'] = round(sys_mem_increase, 5) if sys_mem_increase != '' else sys_mem_increase
     result['prompt_idx'] = iter_data['prompt_idx']
-    result["chat_idx"] = iter_data["chat_idx"]
+    chat_idx = iter_data.get("chat_idx", "")
+    result["chat_idx"] = chat_idx
     result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
-    input_idx = iter_data["chat_idx"] if iter_data["chat_idx"] != "" else iter_data["prompt_idx"]
+    input_idx = chat_idx if chat_idx != "" else iter_data["prompt_idx"]
     result["start"], result["end"] = output_json.get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
     result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
 
