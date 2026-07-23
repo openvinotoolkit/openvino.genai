@@ -18,6 +18,7 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 asr_hook = ASRHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000
+DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
 
 
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
@@ -33,7 +34,11 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     default_language = "English" if use_case.model_type in ["qwen3-asr"] else "<|en|>"
     speech_language = input_param["speech_param"].get("language", default_language)
     ret_timestamps = input_param["speech_param"].get("timestamp", True)
-    max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args["infer_count"] is None else args["infer_count"]
+    max_gen_tokens = args["infer_count"]
+    if max_gen_tokens is None:
+        max_gen_tokens = (
+            DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE if use_case.model_type in ["whisper"] else DEFAULT_OUTPUT_TOKEN_SIZE
+        )
 
     perf_kwargs = {}
     mem_consumption = input_param["mem_consumption"]
