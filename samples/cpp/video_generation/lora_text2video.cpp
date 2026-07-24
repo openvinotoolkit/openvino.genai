@@ -18,7 +18,13 @@ void print_perf_metrics(ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
 }
 
 int main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...]");
+    int64_t num_frames = 161;
+    if (argc >= 4 && std::string(argv[argc - 2]) == "--num-frames") {
+        num_frames = std::stoll(argv[argc - 1]);
+        argc -= 2;
+    }
+    OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0,
+                    "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...] [--num-frames N]");
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
@@ -43,6 +49,7 @@ int main(int32_t argc, char* argv[]) try {
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
+        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(25),
         ov::genai::callback(progress_bar),
         ov::genai::guidance_scale(3)
@@ -57,6 +64,7 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::adapters(),  // passing adapters in generate overrides adapters set in the constructor; adapters() means no adapters
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
         ov::genai::height(480),
+        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(25),
         ov::genai::callback(progress_bar),
         ov::genai::guidance_scale(3)

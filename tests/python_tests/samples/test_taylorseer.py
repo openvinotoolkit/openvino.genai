@@ -97,12 +97,12 @@ class TestTaylorSeerText2Video:
 
         # Run Python sample
         py_script = SAMPLES_PY_DIR / "video_generation" / "taylorseer_text2video.py"
-        py_command = [sys.executable, py_script, convert_model, sample_args]
+        py_command = [sys.executable, py_script, convert_model, sample_args, "--num-frames", "5"]
         run_sample(py_command, cwd=str(py_dir))
 
         # Run C++ sample
         cpp_sample = SAMPLES_CPP_DIR / "taylorseer_text2video"
-        cpp_command = [cpp_sample, convert_model, sample_args]
+        cpp_command = [cpp_sample, convert_model, sample_args, "--num-frames", "5"]
         run_sample(cpp_command, cwd=str(cpp_dir))
 
         # Verify videos exist and are identical

@@ -968,6 +968,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-4-cores-8gb-test'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
+          - name: 'Video generation'
+            marker: 'video_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb-test'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Video_generation_samples.test }}
           - name: 'LLM with transformers under 5.0'
             extra_cmd: 'python -m pip install transformers==4.55.4 diffusers==0.37.1'
             marker: 'llm and (transformers_dependent or transformers_lower_v5)'

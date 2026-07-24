@@ -867,6 +867,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
+          - name: 'Video generation'
+            marker: 'video_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Video_generation_samples.test }}
           - name: 'Eagle3 decoding'
             marker: 'eagle3_decoding'
             cmd: 'tests/python_tests/samples'

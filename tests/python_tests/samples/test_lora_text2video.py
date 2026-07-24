@@ -5,7 +5,7 @@ import pytest
 import sys
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
-from test_utils import run_sample
+from test_utils import run_sample, compare_videos
 
 
 class TestLoraText2Video:
@@ -21,12 +21,33 @@ class TestLoraText2Video:
         indirect=["convert_model"],
     )
     @pytest.mark.parametrize("download_test_content", ["ltx_tiny_dummy_lora.safetensors"], indirect=True)
-    @pytest.mark.parametrize(
-        "executable",
-        [
-            [SAMPLES_CPP_DIR / "lora_text2video"],
-            [sys.executable, SAMPLES_PY_DIR / "video_generation/lora_text2video.py"],
-        ],
-    )
-    def test_sample_lora_text2video(self, convert_model, sample_args, download_test_content, executable):
-        run_sample(executable + [convert_model, sample_args, download_test_content, "0.7"])
+    def test_sample_lora_text2video(self, convert_model, sample_args, download_test_content, tmp_path):
+        py_dir = tmp_path / "python_output"
+        cpp_dir = tmp_path / "cpp_output"
+        py_dir.mkdir()
+        cpp_dir.mkdir()
+
+        py_script = SAMPLES_PY_DIR / "video_generation/lora_text2video.py"
+        py_command = [
+            sys.executable,
+            py_script,
+            convert_model,
+            sample_args,
+            download_test_content,
+            "0.7",
+            "--num-frames",
+            "5",
+        ]
+        run_sample(py_command, cwd=str(py_dir))
+
+        cpp_sample = SAMPLES_CPP_DIR / "lora_text2video"
+        cpp_command = [cpp_sample, convert_model, sample_args, download_test_content, "0.7", "--num-frames", "5"]
+        run_sample(cpp_command, cwd=str(cpp_dir))
+
+        for video_name in ("lora_video.avi", "baseline_video.avi"):
+            py_video = py_dir / video_name
+            cpp_video = cpp_dir / video_name
+
+            assert py_video.exists(), f"Python video not found: {py_video}"
+            assert cpp_video.exists(), f"C++ video not found: {cpp_video}"
+            assert compare_videos(py_video, cpp_video), f"{video_name} from Python and C++ samples are not identical"

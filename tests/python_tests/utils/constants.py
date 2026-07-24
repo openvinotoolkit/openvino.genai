@@ -50,7 +50,8 @@ def get_disabled_mmap_ov_config():
 def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
     if "OV_CACHE" in os.environ:
         date_subfolder = datetime.now().strftime("%Y%m%d")
-        ov_cache = os.path.join(os.environ["OV_CACHE"], date_subfolder)
+        ov_cache_root = os.path.abspath(os.path.expanduser(os.environ["OV_CACHE"]))
+        ov_cache = os.path.join(ov_cache_root, date_subfolder)
         try:
             optimum_intel_version = metadata.version("optimum-intel")
             transformers_version = metadata.version("transformers")
