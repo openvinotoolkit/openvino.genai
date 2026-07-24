@@ -179,7 +179,7 @@ def get_argparser():
         "--memory_sampler",
         default="5",
         choices=["5", "W"],
-        type=str.upper,   # QW-7: normalise 'w' -> 'W' before choices validation
+        type=str.upper,  # QW-7: normalise 'w' -> 'W' before choices validation
         required=False,
         help="Memory sampler implementation to use when process-based monitoring is active\n"
         "(--memory_consumption 3 or 4).\n"

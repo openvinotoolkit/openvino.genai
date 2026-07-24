@@ -263,6 +263,7 @@ class MemoryMonitorHandler:
         self.stop_and_collect_data(dir_name)
         return self.mth.get_data(dict_format)
 
+
 ######################################################
 # Memory Monitoring (in separate thread)
 
@@ -717,6 +718,7 @@ def _subtract_first_element(data):
     data[0] = 0
     return data
 
+
 ######################################################
 # Memory Marker Monitoring (in separate process)
 
@@ -887,7 +889,7 @@ class MemorySampler(dict, SamplerTiming):
 
 # Sentinels — always defined so non-Windows imports never raise NameError.
 _wmi_available = False
-_wmi_module    = None
+_wmi_module = None
 
 # Windows-specific ctypes + WMI setup for MemorySamplerW
 #
@@ -929,41 +931,42 @@ if sys.platform == "win32":
                           (= Private Bytes / Commit Size in Task Manager).
         PagefileUsage   : Amount of the page-file currently consumed.
         """
+
         _fields_ = [
-            ("cb",                         _wintypes.DWORD),
-            ("PageFaultCount",             _wintypes.DWORD),
-            ("PeakWorkingSetSize",         ctypes.c_size_t),
-            ("WorkingSetSize",             ctypes.c_size_t),
-            ("QuotaPeakPagedPoolUsage",    ctypes.c_size_t),
-            ("QuotaPagedPoolUsage",        ctypes.c_size_t),
+            ("cb", _wintypes.DWORD),
+            ("PageFaultCount", _wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
             ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-            ("QuotaNonPagedPoolUsage",     ctypes.c_size_t),
-            ("PagefileUsage",              ctypes.c_size_t),
-            ("PeakPagefileUsage",          ctypes.c_size_t),
-            ("PrivateUsage",               ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+            ("PrivateUsage", ctypes.c_size_t),
         ]
 
     # Load DLLs once; use_last_error=True makes ctypes preserve the Win32
     # last-error code so we can call ctypes.get_last_error() for diagnostics.
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _psapi    = ctypes.WinDLL("psapi",    use_last_error=True)
+    _psapi = ctypes.WinDLL("psapi", use_last_error=True)
 
     # Declare argument / return types explicitly so ctypes performs correct
     # marshalling and we avoid silent truncation on 64-bit pointers.
-    _kernel32.OpenProcess.restype  = _wintypes.HANDLE
+    _kernel32.OpenProcess.restype = _wintypes.HANDLE
     _kernel32.OpenProcess.argtypes = [
-        _wintypes.DWORD,   # dwDesiredAccess
-        _wintypes.BOOL,    # bInheritHandle
-        _wintypes.DWORD,   # dwProcessId
+        _wintypes.DWORD,  # dwDesiredAccess
+        _wintypes.BOOL,  # bInheritHandle
+        _wintypes.DWORD,  # dwProcessId
     ]
-    _kernel32.CloseHandle.restype  = _wintypes.BOOL
+    _kernel32.CloseHandle.restype = _wintypes.BOOL
     _kernel32.CloseHandle.argtypes = [_wintypes.HANDLE]
 
-    _psapi.GetProcessMemoryInfo.restype  = _wintypes.BOOL
+    _psapi.GetProcessMemoryInfo.restype = _wintypes.BOOL
     _psapi.GetProcessMemoryInfo.argtypes = [
-        _wintypes.HANDLE,                              # hProcess
+        _wintypes.HANDLE,  # hProcess
         ctypes.POINTER(_PROCESS_MEMORY_COUNTERS_EX),  # ppsmemCounters
-        _wintypes.DWORD,                               # cb  (struct size)
+        _wintypes.DWORD,  # cb  (struct size)
     ]
 
     # ── WMI — GPU memory monitoring ──────────────────────────────────────────
@@ -971,11 +974,9 @@ if sys.platform == "win32":
     # skipped.  Install with:  pip install wmi
     try:
         import wmi as _wmi_module  # type: ignore[import]
+
         _wmi_available = True
-        log.debug(
-            "MemorySamplerW: wmi module loaded "
-            "— GPU memory metrics (gpu_<index>) enabled."
-        )
+        log.debug("MemorySamplerW: wmi module loaded — GPU memory metrics (gpu_<index>) enabled.")
     except ImportError:
         log.debug(  # QW-4: noise-free default; warning only if user explicitly picks -W
             "MemorySamplerW: wmi module not found "
@@ -1081,13 +1082,11 @@ class MemorySamplerW(MemorySampler):
     # directly.
     metrics = OrderedDict(
         [
-            # fmt: off
-            ("wset",     {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # Working Set
-            ("priv",     {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # Private Bytes
-            ("pagefile", {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # Page-File Usage
-            ("sys",      {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),   # System-wide used RAM
-            ("nsys",     {"denom": 1,         "unit": "%",   "digits": 3, "cv": False}),  # System-wide used RAM %
-            # fmt: on
+            ("wset", {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),  # Working Set
+            ("priv", {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),  # Private Bytes
+            ("pagefile", {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),  # Page-File Usage
+            ("sys", {"denom": 1_048_576, "unit": "MiB", "digits": 3, "cv": True}),  # System-wide used RAM
+            ("nsys", {"denom": 1, "unit": "%", "digits": 3, "cv": False}),  # System-wide used RAM %
         ]
     )
 
@@ -1105,8 +1104,8 @@ class MemorySamplerW(MemorySampler):
         # enumeration order: gpu_<index>_ded (dedicated VRAM) and
         # gpu_<index>_shr (shared system RAM).  The shared pool is what makes
         # integrated-GPU usage visible (dedicated is ~0 for iGPUs).
-        self._wmi_conn      = None
-        self._gpu_instances = []   # ordered adapter instance names (LUID keys)
+        self._wmi_conn = None
+        self._gpu_instances = []  # ordered adapter instance names (LUID keys)
         # QW-1: throttle WMI GPU polling. A single GPUAdapterMemory query can
         # take 100–500 ms, so re-querying on every collect() would dominate a
         # short sampling interval and pollute the measurement. Cache the last
@@ -1120,10 +1119,7 @@ class MemorySamplerW(MemorySampler):
                 self._wmi_conn = _wmi_module.WMI()
                 self._discover_gpu_adapters()
             except Exception as exc:
-                log.warning(
-                    f"MemorySamplerW: WMI GPU detection failed ({exc}) "
-                    "— gpu_<index> metrics disabled."
-                )
+                log.warning(f"MemorySamplerW: WMI GPU detection failed ({exc}) — gpu_<index> metrics disabled.")
         else:
             # QW-2: MemorySamplerW is only instantiated when the user explicitly
             # asks for --memory_sampler W, so if the optional 'wmi' package is
@@ -1138,10 +1134,10 @@ class MemorySamplerW(MemorySampler):
         for i in range(len(self._gpu_instances)):
             for pool in ("ded", "shr"):
                 self.metrics[f"gpu_{i}_{pool}"] = {
-                    "denom":  1_048_576,   # bytes → MiB
-                    "unit":   "MiB",
+                    "denom": 1_048_576,  # bytes → MiB
+                    "unit": "MiB",
                     "digits": 3,
-                    "cv":     True,
+                    "cv": True,
                 }
 
         # Call parent __init__ *after* self.metrics is fully populated so
@@ -1174,8 +1170,7 @@ class MemorySamplerW(MemorySampler):
             return
 
         try:
-            names = [getattr(v, "Name", None) or "GPU"
-                     for v in self._wmi_conn.Win32_VideoController()]
+            names = [getattr(v, "Name", None) or "GPU" for v in self._wmi_conn.Win32_VideoController()]
         except Exception:
             names = []
 
@@ -1223,10 +1218,7 @@ class MemorySamplerW(MemorySampler):
             return self._gpu_cache
 
         try:
-            rows = {
-                r.Name: r
-                for r in getattr(self._wmi_conn, self._GPU_ADAPTER_CLS)()
-            }
+            rows = {r.Name: r for r in getattr(self._wmi_conn, self._GPU_ADAPTER_CLS)()}
         except Exception as exc:
             log.debug(f"MemorySamplerW: WMI GPU memory query failed ({exc}) — returning zeros.")
             self._gpu_cache = (0,) * (2 * len(self._gpu_instances))
@@ -1258,9 +1250,7 @@ class MemorySamplerW(MemorySampler):
         if sys.platform != "win32":
             return 0, 0, 0
 
-        hProcess = _kernel32.OpenProcess(
-            _PROCESS_QUERY_INFORMATION | _PROCESS_VM_READ, False, pid
-        )
+        hProcess = _kernel32.OpenProcess(_PROCESS_QUERY_INFORMATION | _PROCESS_VM_READ, False, pid)
         if not hProcess:
             return 0, 0, 0
 
@@ -1303,14 +1293,14 @@ class MemorySamplerW(MemorySampler):
         :returns: A formatted tuple of metric values as produced by
                   :meth:`MemorySampler.aggregate_and_format`.
         """
-        wset_total    = 0
-        priv_total    = 0
+        wset_total = 0
+        priv_total = 0
         pagefile_total = 0
 
         # ── Main (parent) process ────────────────────────────────────────
         ws, pr, pf = self._query_win_mem(self.process_id)
-        wset_total    += ws
-        priv_total    += pr
+        wset_total += ws
+        priv_total += pr
         pagefile_total += pf
 
         # ── Child processes (recursive) ──────────────────────────────────
@@ -1318,8 +1308,8 @@ class MemorySamplerW(MemorySampler):
             parent = psutilProcess(self.process_id)
             for child in parent.children(recursive=True):
                 ws, pr, pf = self._query_win_mem(child.pid)
-                wset_total    += ws
-                priv_total    += pr
+                wset_total += ws
+                priv_total += pr
                 pagefile_total += pf
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             # The target process may have exited between the parent query
@@ -1327,8 +1317,8 @@ class MemorySamplerW(MemorySampler):
             pass
 
         # ── System-wide memory ───────────────────────────────────────────
-        vm       = psutil.virtual_memory()
-        sys_mem  = vm.total - vm.available
+        vm = psutil.virtual_memory()
+        sys_mem = vm.total - vm.available
         nsys_mem = 100.0 * sys_mem / vm.total
 
         # ── GPU memory (two values per adapter: dedicated + shared, via WMI) ─
