@@ -57,11 +57,32 @@ std::shared_ptr<ov::Model> create_language_model(
 
     auto hidden_states = inputs_embeds;
 
-    // Initialize RoPE
+    // Initialize RoPE (with optional YaRN scaling for mistral3/Devstral etc.).
+    // Defaults keep the linear / no-scaling path for llama, qwen2/qwen3, ...
+    RopeScalingParams rope_scaling;
+    if (configs.count("rope_scaling_type")) {
+        rope_scaling.type = std::get<std::string>(configs.at("rope_scaling_type"));
+    }
+    if (configs.count("rope_scaling_factor")) {
+        rope_scaling.factor = std::get<float>(configs.at("rope_scaling_factor"));
+    }
+    if (configs.count("rope_original_context_length")) {
+        rope_scaling.original_context_length =
+            std::get<int>(configs.at("rope_original_context_length"));
+    }
+    if (configs.count("yarn_beta_fast")) {
+        rope_scaling.yarn_beta_fast = std::get<float>(configs.at("yarn_beta_fast"));
+    }
+    if (configs.count("yarn_beta_slow")) {
+        rope_scaling.yarn_beta_slow = std::get<float>(configs.at("yarn_beta_slow"));
+    }
+
     auto rope_const = init_rope(
         std::get<int>(configs.at("head_size")),
         std::get<int>(configs.at("max_position_embeddings")),
-        std::get<float>(configs.at("rope_freq_base")));
+        std::get<float>(configs.at("rope_freq_base")),
+        1.0f,
+        rope_scaling);
 
     // Get input shape components
     auto input_shape = std::make_shared<ov::op::v3::ShapeOf>(input_ids);
@@ -155,7 +176,8 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     ss.str("");
     ss << "Start generating OpenVINO model...";
     ov::genai::utils::print_gguf_debug_info(ss.str());
-    if (!model_arch.compare("llama") || !model_arch.compare("qwen2") || !model_arch.compare("qwen3")) {
+    if (!model_arch.compare("llama") || !model_arch.compare("qwen2") || !model_arch.compare("qwen3") ||
+        !model_arch.compare("mistral") || !model_arch.compare("mistral3")) {
         model = create_language_model(config, consts, qtypes);
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);

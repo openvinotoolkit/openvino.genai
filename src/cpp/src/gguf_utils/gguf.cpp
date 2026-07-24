@@ -375,6 +375,30 @@ std::map<std::string, GGUFMetaData> config_from_meta(const std::unordered_map<st
     config["rms_norm_eps"] = metadata_to_float(metadata, arch + ".attention.layer_norm_rms_epsilon");
     config["rope_freq_base"] = metadata.count(arch + ".rope.freq_base") ?
             metadata_to_float(metadata, arch + ".rope.freq_base") : 10000.0f;
+
+    // RoPE scaling (YaRN / linear). Defaults below are no-ops so that
+    // non-scaled models (llama, qwen2/qwen3, ...) are byte-for-byte unaffected:
+    // scaling type "" => init_rope keeps its existing linear/no-scaling path.
+    config["rope_scaling_type"] = metadata.count(arch + ".rope.scaling.type") ?
+            std::get<std::string>(metadata.at(arch + ".rope.scaling.type")) : std::string("");
+    config["rope_scaling_factor"] = metadata.count(arch + ".rope.scaling.factor") ?
+            metadata_to_float(metadata, arch + ".rope.scaling.factor") : 1.0f;
+    config["rope_original_context_length"] = metadata.count(arch + ".rope.scaling.original_context_length") ?
+            metadata_to_int(metadata, arch + ".rope.scaling.original_context_length") :
+            std::get<int>(config["max_position_embeddings"]);
+    // YaRN NTK-by-parts ramp bounds (llama.cpp defaults: 32 / 1).
+    config["yarn_beta_fast"] = metadata.count(arch + ".rope.scaling.yarn_beta_fast") ?
+            metadata_to_float(metadata, arch + ".rope.scaling.yarn_beta_fast") : 32.0f;
+    config["yarn_beta_slow"] = metadata.count(arch + ".rope.scaling.yarn_beta_slow") ?
+            metadata_to_float(metadata, arch + ".rope.scaling.yarn_beta_slow") : 1.0f;
+    // YaRN attention magnitude (mscale) multiplier. 0.0 => "unset" => mscale=1.0.
+    config["yarn_log_multiplier"] = metadata.count(arch + ".rope.scaling.yarn_log_multiplier") ?
+            metadata_to_float(metadata, arch + ".rope.scaling.yarn_log_multiplier") : 0.0f;
+    // Long-context attention temperature tuning (llama4 / mistral3 style).
+    // 0.0 => unset / no-op.
+    config["attention_temperature_scale"] = metadata.count(arch + ".attention.temperature_scale") ?
+            metadata_to_float(metadata, arch + ".attention.temperature_scale") : 0.0f;
+
     config["file_type"] = metadata_to_int(metadata, "general.file_type");
     return config;
 }

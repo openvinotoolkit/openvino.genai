@@ -52,8 +52,20 @@ std::tuple<ov::Output<ov::Node>,
         const std::pair<ov::Output<ov::Node>, ov::Output<ov::Node>>& cos_sin_cached,
         const std::shared_ptr<ov::Node>& output_shape);
 
+// RoPE scaling parameters. Defaults are a no-op (type == "none"/"") so that
+// non-scaled models are unaffected. When type == "yarn", NTK-by-parts (YaRN)
+// frequency interpolation is applied using the beta_fast/beta_slow ramp.
+struct RopeScalingParams {
+    std::string type = "";            // "", "none", "linear", or "yarn"
+    float factor = 1.0f;              // scaling factor (s)
+    int64_t original_context_length = 0;  // pre-extension context length
+    float yarn_beta_fast = 32.0f;     // llama.cpp default
+    float yarn_beta_slow = 1.0f;      // llama.cpp default
+};
+
 ov::Output<ov::Node> init_rope(
     int64_t head_dim,
     int64_t max_position_embeddings = 2048,
     float base = 10000.0f,
-    float scaling_factor = 1.0f);
+    float scaling_factor = 1.0f,
+    const RopeScalingParams& rope_scaling = RopeScalingParams{});
