@@ -79,6 +79,8 @@ PNDMScheduler::PNDMScheduler(const Config& scheduler_config): m_config(scheduler
 void PNDMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
     m_timesteps.clear(), m_prk_timesteps.clear(), m_plms_timesteps.clear();
 
+    OPENVINO_ASSERT(num_inference_steps > 0,
+                    "`num_inference_steps` must be greater than 0");
     OPENVINO_ASSERT(num_inference_steps <= m_config.num_train_timesteps,
                     "`num_inference_steps` cannot be larger than `m_config.num_train_timesteps`");
 
@@ -118,9 +120,13 @@ void PNDMScheduler::set_timesteps(size_t num_inference_steps, float strength) {
 
     if (m_config.skip_prk_steps) {
         m_prk_timesteps = {};
-        std::copy(m_timesteps.begin(), m_timesteps.end() - 1, std::back_inserter(m_plms_timesteps));
-        m_plms_timesteps.push_back(m_timesteps[m_timesteps.size() - 2]);
-        m_plms_timesteps.push_back(m_timesteps[m_timesteps.size() - 1]);
+        if (m_timesteps.size() >= 2) {
+            std::copy(m_timesteps.begin(), m_timesteps.end() - 1, std::back_inserter(m_plms_timesteps));
+            m_plms_timesteps.push_back(m_timesteps[m_timesteps.size() - 2]);
+            m_plms_timesteps.push_back(m_timesteps[m_timesteps.size() - 1]);
+        } else {
+            m_plms_timesteps.push_back(m_timesteps[0]);
+        }
         std::reverse(m_plms_timesteps.begin(), m_plms_timesteps.end());
     } else {
         OPENVINO_THROW("'skip_prk_steps=false' case isn't supported. Please, add support.");
