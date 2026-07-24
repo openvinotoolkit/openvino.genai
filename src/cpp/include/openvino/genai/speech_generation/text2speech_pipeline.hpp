@@ -72,9 +72,10 @@ public:
                                        const ov::AnyMap& properties = {});
 
     template <typename... Properties>
-    Text2SpeechDecodedResults generate(const std::vector<std::string>& texts,
-                                       const ov::Tensor& speaker_embedding = ov::Tensor(),
-                                       Properties&&... properties) {
+    ov::util::EnableIfAllStringAny<Text2SpeechDecodedResults, Properties...> generate(
+        const std::vector<std::string>& texts,
+        const ov::Tensor& speaker_embedding = ov::Tensor(),
+        Properties&&... properties) {
         return generate(texts, speaker_embedding, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
