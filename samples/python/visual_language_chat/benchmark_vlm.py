@@ -58,8 +58,8 @@ def weight_0_1(value):
 def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
-    parser.add_argument("-dm", "--draft_model", type=str, help="Path to draft model and tokenizers base directory")
-    parser.add_argument("-nat", "--num_assistant_tokens", type=int, default=5, help="Number of assistant tokens")
+    parser.add_argument("-D", "--draft_model", type=str, help="Path to draft model and tokenizers base directory")
+    parser.add_argument("-A", "--num_assistant_tokens", type=int, default=5, help="Number of assistant tokens")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-F", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument(

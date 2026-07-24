@@ -873,7 +873,6 @@ jobs:
             runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
           - name: 'Eagle3 decoding'
-            extra_cmd: 'python -m pip install transformers==4.57.6'
             marker: 'eagle3_decoding'
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-4-cores-16gb'
