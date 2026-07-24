@@ -21,7 +21,7 @@ You are the OpenVINO GenAI Architect. Your job is to fully enable a new HuggingF
 
 Expect the user to provide:
 
-- **model_id**: HuggingFace model identifier (e.g. `google/gemma-3-4b-it`)
+- **model_id**: HuggingFace model identifier (e.g. `google/gemma-3-4b-it`), or path to local directory with exported OpenVINO IR model (tiny-random or real weights).
 - **task**: optimum export task (e.g. `image-text-to-text`, `text-generation-with-past`)
 
 If either is missing, ask for them before proceeding.
@@ -70,33 +70,16 @@ Before modifying shared model code, check backward compatibility:
 - Preserve existing behavior. Prefer branching on explicit code-visible capabilities or model contracts instead of broad model-family checks.
 
 After enablement, re-run **model-checker** with `--skip-export` to validate the fix.
-If model-checker passes, proceed to Step 4.
 
-### Step 4: Add Tests
+Revalidate with **model-checker**, passing the same Hugging Face model ID or
+local OpenVINO IR directory used during initial validation. Do not replace a
+failing local-artifact check with success from another model.
 
-Add repository Python tests for every newly enabled VLM model before updating docs.
-
-For `image-text-to-text` models:
-
-1. **Find the tiny-random model id**:
-   - First infer it from the optimum-intel model description, tests, or release notes when available.
-   - If it is not documented there, look it up directly on HuggingFace Hub.
-   - Matching the `optimum-intel-internal-testing/tiny-random-*` prefix, for example `optimum-intel-internal-testing/tiny-random-gemma4-unified-it`.
-2. **Add the model to VLM Python tests**:
-   - Prefer extending `tests/python_tests/test_vlm_pipeline.py` with the tiny-random model id, prompt image tag, video tag if applicable, resolution, and any targeted skip/xfail entry required by an already-tracked issue.
-   - Add a dedicated `tests/python_tests/test_<model_type>_*.py` only when the new model requires behavior that does not fit the shared VLM pipeline suite.
-   - Use the existing VLM fixtures and converted-model cache helpers; do not use the full-size model in repository tests.
-3. **Validate locally**:
-   - Run the narrow pytest target for the added or modified tests from the activated virtual environment.
-   - If the test cannot run locally, document the exact command, blocker, and expected CI coverage in Step 6.
-
-Do not proceed to Step 5 until tiny-random Python tests are added or an explicit blocker is recorded.
-
-### Step 5: Documentation Update
+### Step 4: Documentation Update
 
 Read and follow the **update-docs** skill.
 
-### Step 6: Final Report
+### Step 5: Final Report
 
 Report a structured summary:
 
