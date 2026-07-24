@@ -238,7 +238,7 @@ class TextRerankerGenAI(CommonPipeline):
 
         self._is_qwen3 = UseCaseTextReranker.is_qwen3(model_config)
 
-        # according to transformers Qwen3-Embedding-0.6B model card:
+        # according to transformers Qwen3-Reranker-0.6B model card:
         # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
         if self._is_qwen3:
             suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
@@ -247,8 +247,10 @@ class TextRerankerGenAI(CommonPipeline):
             self.text_processed = self.texts
 
     def _build_qwen3_query(self, input_text: str) -> str:
-        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
-                 + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        prefix = (
+            "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the "
+            + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        )
         task = "Given a web search query, retrieve relevant passages that answer the query"
         return f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: "
 
