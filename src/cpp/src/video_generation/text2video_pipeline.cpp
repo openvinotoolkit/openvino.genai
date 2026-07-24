@@ -6,13 +6,27 @@
 
 using namespace ov::genai;
 
-Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path)
-    : m_impl{std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(model_path)} {}
+Text2VideoPipeline::Text2VideoPipeline(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
+
+Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path) {
+    const std::string class_name = get_class_name(model_path);
+    OPENVINO_ASSERT(class_name == "LTXPipeline",
+                    "Unsupported video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
+    m_impl = std::make_unique<Impl>(VideoPipelineType::TEXT_2_VIDEO, model_path);
+}
 
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& models_dir,
                                        const std::string& device,
-                                       const AnyMap& properties)
-    : m_impl{std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(models_dir, device, properties)} {}
+                                       const AnyMap& properties) {
+    const std::string class_name = get_class_name(models_dir);
+    OPENVINO_ASSERT(class_name == "LTXPipeline",
+                    "Unsupported video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
+    m_impl = std::make_unique<Impl>(VideoPipelineType::TEXT_2_VIDEO, models_dir, device, properties);
+}
+
+Text2VideoPipeline Text2VideoPipeline::clone() {
+    return Text2VideoPipeline(m_impl->clone<Impl>());
+}
 
 VideoGenerationResult Text2VideoPipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
     return m_impl->generate(positive_prompt, properties);

@@ -7,11 +7,18 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
+from conftest import (
+    MODELS_REQUIRING_OPTIMUM_MASTER,
+    OPTIMUM_INTEL_MASTER,
+    _get_optimum_intel_requirement,
+    _install_package,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +33,19 @@ def video_generation_model() -> str:
 
     manager = AtomicDownloadManager(model_path)
 
+    use_optimum_master = MODEL_ID in MODELS_REQUIRING_OPTIMUM_MASTER
+
     def convert_model(temp_path: Path) -> None:
+        if use_optimum_master:
+            _install_package(OPTIMUM_INTEL_MASTER)
+
         command = ["optimum-cli", "export", "openvino", "--model", MODEL_NAME, "--trust-remote-code", str(temp_path)]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
+        try:
+            retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
+        finally:
+            if use_optimum_master:
+                _install_package(_get_optimum_intel_requirement())
 
     try:
         manager.execute(convert_model)
@@ -276,6 +292,85 @@ class TestAutoEncoderKLLTXVideo:
             assert hasattr(config, "scaling_factor")
 
 
+class TestAutoEncoderKLLTXVideoEncoder:
+    @pytest.fixture(autouse=True)
+    def require_encoder(self, video_generation_model):
+        if not Path(video_generation_model, "vae_encoder").exists():
+            pytest.skip("vae_encoder not available in test model")
+        if not Path(video_generation_model, "vae_decoder").exists():
+            pytest.skip("vae_decoder not available in test model")
+
+    def _make_vae(self, video_generation_model, compiled=True):
+        enc = str(Path(video_generation_model) / "vae_encoder")
+        dec = str(Path(video_generation_model) / "vae_decoder")
+        return ov_genai.AutoencoderKLLTXVideo(enc, dec, "CPU") if compiled else ov_genai.AutoencoderKLLTXVideo(enc, dec)
+
+    def _encoder_output_name(self, video_generation_model):
+        enc_xml = str(Path(video_generation_model) / "vae_encoder" / "openvino_model.xml")
+        return ov.Core().read_model(enc_xml).outputs[0].get_any_name()
+
+    def test_constructor_with_encoder(self, video_generation_model):
+        assert self._make_vae(video_generation_model, compiled=False) is not None
+
+    def test_encode_without_compile_raises(self, video_generation_model):
+        vae = self._make_vae(video_generation_model, compiled=False)
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+        with pytest.raises(RuntimeError, match="must be compiled first"):
+            vae.encode(dummy, ov_genai.CppStdGenerator(42))
+
+    def test_encode_without_encoder_raises(self, video_generation_model):
+        decoder_path = Path(video_generation_model) / "vae_decoder"
+        if not decoder_path.exists():
+            pytest.skip("vae_decoder not available in test model")
+        vae = ov_genai.AutoencoderKLLTXVideo(str(decoder_path))
+        vae.compile("CPU")
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+        with pytest.raises(RuntimeError, match="without 'VAE encoder' capability"):
+            vae.encode(dummy, ov_genai.CppStdGenerator(42))
+
+    def test_encode_output_shape(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        config = vae.get_config()
+        dummy = ov.Tensor(np.zeros([1, 3, 9, 32, 32], dtype=np.float32))
+        latent = vae.encode(dummy, ov_genai.CppStdGenerator(42))
+        assert latent is not None
+        shape = latent.shape
+        assert len(shape) == 5, f"Expected 5D latent [B, C, F, H, W], got shape {shape}"
+        assert shape[0] == 1
+        assert shape[1] == config.latent_channels
+
+    def test_encode_is_deterministic(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        latent2 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        np.testing.assert_array_equal(latent1.data, latent2.data)
+
+    def test_encode_varies_with_seed(self, video_generation_model):
+        vae = self._make_vae(video_generation_model)
+        output_name = self._encoder_output_name(video_generation_model)
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        latent1 = vae.encode(video, ov_genai.CppStdGenerator(42))
+        latent2 = vae.encode(video, ov_genai.CppStdGenerator(99))
+        if output_name == "latent_parameters":
+            assert not np.array_equal(latent1.data, latent2.data), (
+                "Different generator seeds should produce different latents"
+            )
+        elif output_name == "latent_sample":
+            np.testing.assert_array_equal(latent1.data, latent2.data)
+        else:
+            pytest.skip(f"Unexpected encoder output name '{output_name}'")
+
+    def test_encode_none_generator_raises_for_stochastic_encoder(self, video_generation_model):
+        output_name = self._encoder_output_name(video_generation_model)
+        if output_name != "latent_parameters":
+            pytest.skip("Encoder is deterministic (latent_sample) — generator=None is valid")
+        vae = self._make_vae(video_generation_model)
+        video = ov.Tensor(np.ones([1, 3, 9, 32, 32], dtype=np.float32) * 0.5)
+        with pytest.raises(RuntimeError, match="requires a non-null generator"):
+            vae.encode(video, None)
+
+
 class TestText2VideoPipelineAdvanced:
     def test_reshape(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
@@ -433,3 +528,53 @@ class TestLoRAVideoGeneration:
         assert hasattr(model, "set_adapters")
 
         model.set_adapters(None)
+
+
+class TestImage2VideoPipeline:
+    GENERATE_KWARGS = dict(height=32, width=32, num_frames=9, num_inference_steps=2)
+
+    @pytest.fixture(autouse=True)
+    def require_encoder(self, video_generation_model):
+        if not Path(video_generation_model, "vae_encoder").exists():
+            pytest.skip("vae_encoder not present in test model")
+
+    def _make_image(self, height=32, width=32):
+        return ov.Tensor(np.zeros([1, height, width, 3], dtype=np.uint8))
+
+    def test_constructor_without_encoder_raises(self, video_generation_model, tmp_path):
+        no_encoder_dir = tmp_path / "no_encoder_model"
+        no_encoder_dir.mkdir()
+        import shutil
+
+        for subdir in ["text_encoder", "transformer", "vae_decoder", "scheduler"]:
+            src = Path(video_generation_model) / subdir
+            if src.exists():
+                shutil.copytree(src, no_encoder_dir / subdir)
+        model_index = Path(video_generation_model) / "model_index.json"
+        if model_index.exists():
+            shutil.copy(model_index, no_encoder_dir / "model_index.json")
+        with pytest.raises(RuntimeError, match="vae_encoder"):
+            ov_genai.Image2VideoPipeline(str(no_encoder_dir))
+
+    def test_generate_runs(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS)
+        assert result is not None
+        assert result.video is not None
+        video = np.array(result.video)
+        assert video.shape == (1, 9, 32, 32, 3)
+
+    def test_determinism(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result1 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
+        result2 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
+        np.testing.assert_array_equal(np.array(result1.video), np.array(result2.video))
+
+    def test_lora_passthrough(self, video_generation_model):
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
+        image = self._make_image()
+        result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, adapters=adapter_config)
+        assert result.video is not None
