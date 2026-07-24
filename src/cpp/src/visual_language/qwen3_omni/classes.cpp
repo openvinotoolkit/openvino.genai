@@ -6,7 +6,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <optional>
 #include <string>
 
 #include "utils.hpp"
@@ -30,11 +29,10 @@ namespace ov::genai {
 
 namespace {
 
-// An empty optional selects automatic fallback. A value forces that implementation.
-std::optional<VisionEncoderQwen3Omni::PatchPreprocMode> parse_preproc_mode_env() {
+VisionEncoderQwen3Omni::PatchPreprocMode parse_preproc_mode_env() {
     const char* env = std::getenv("VISION_PREPROCESS");
     if (!env || env[0] == '\0') {
-        return std::nullopt;
+        return VisionEncoderQwen3Omni::PatchPreprocMode::OV;
     }
 
     const std::string value(env);
@@ -50,7 +48,7 @@ std::optional<VisionEncoderQwen3Omni::PatchPreprocMode> parse_preproc_mode_env()
 
     OPENVINO_THROW("Unsupported VISION_PREPROCESS value: ",
                    value,
-                   ". Expected OV, OV_REARRANGE, CPP, or an empty value for automatic selection.");
+                   ". Expected OV, OV_REARRANGE, CPP, or an empty value for the default OV implementation.");
 }
 
 // Append the patch reshape/transpose/flatten tail (bit-identical to
@@ -243,8 +241,7 @@ void VisionEncoderQwen3Omni::initialize_patch_preprocessing(const std::string& d
                                                              const ov::AnyMap& properties) {
     // Vision encoder runs no transformer inference, but a tiny model offloads patch
     // preprocessing (resize/normalize and/or reshape/transpose/flatten) to `device`.
-    const auto requested_mode = parse_preproc_mode_env();
-    m_preproc_mode = requested_mode.value_or(PatchPreprocMode::OV);
+    m_preproc_mode = parse_preproc_mode_env();
 
     auto compile = [&](PatchPreprocMode mode) {
         auto model = mode == PatchPreprocMode::OV ? build_patch_preprocess_model()
@@ -260,36 +257,8 @@ void VisionEncoderQwen3Omni::initialize_patch_preprocessing(const std::string& d
         return;
     }
 
-    // Explicit requests are strict: preserve the requested device and propagate compilation errors.
-    if (requested_mode) {
-        compile(*requested_mode);
-        return;
-    }
-
-    // Automatic selection preserves the requested device while progressively reducing the OV graph.
-    try {
-        compile(PatchPreprocMode::OV);
-        return;
-    } catch (const ov::Exception& exception) {
-        GENAI_WARN("Qwen3-Omni full OV preprocessing compilation failed on device %s; "
-                   "falling back to OV_REARRANGE: %s",
-                   device.c_str(),
-                   exception.what());
-    }
-
-    try {
-        compile(PatchPreprocMode::OV_REARRANGE);
-        m_preproc_mode = PatchPreprocMode::OV_REARRANGE;
-        return;
-    } catch (const ov::Exception& exception) {
-        GENAI_WARN("Qwen3-Omni OV_REARRANGE preprocessing compilation failed on device %s; "
-                   "falling back to the host CPP implementation: %s",
-                   device.c_str(),
-                   exception.what());
-    }
-
-    m_ireq_queue_patch_rearrange.reset();
-    m_preproc_mode = PatchPreprocMode::CPP;
+    // Preserve the requested device and surface compilation errors instead of silently changing paths.
+    compile(m_preproc_mode);
 }
 
 void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>& images,

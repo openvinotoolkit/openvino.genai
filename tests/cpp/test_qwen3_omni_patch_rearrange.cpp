@@ -149,20 +149,22 @@ ov::Tensor run_full_preprocess_on_cpu(const ov::Tensor& frame0,
 
 }  // namespace
 
-TEST(Qwen3OmniPatchRearrange, AutoModeFallsBackToHostWhenDeviceCompilationFails) {
+TEST(Qwen3OmniPatchRearrange, UnsetModeUsesOvAndPropagatesCompilationFailure) {
     ScopedVisionPreprocessEnv env(nullptr);
 
-    EXPECT_NO_THROW(ov::genai::VisionEncoderQwen3Omni(std::filesystem::temp_directory_path(),
-                                                       "QWEN3_OMNI_TEST_INVALID_DEVICE",
-                                                       {}));
+    EXPECT_THROW(ov::genai::VisionEncoderQwen3Omni(std::filesystem::temp_directory_path(),
+                                                    "QWEN3_OMNI_TEST_INVALID_DEVICE",
+                                                    {}),
+                 ov::Exception);
 }
 
-TEST(Qwen3OmniPatchRearrange, EmptyModeUsesAutomaticFallback) {
+TEST(Qwen3OmniPatchRearrange, EmptyModeUsesOvAndPropagatesCompilationFailure) {
     ScopedVisionPreprocessEnv env("");
 
-    EXPECT_NO_THROW(ov::genai::VisionEncoderQwen3Omni(std::filesystem::temp_directory_path(),
-                                                       "QWEN3_OMNI_TEST_INVALID_DEVICE",
-                                                       {}));
+    EXPECT_THROW(ov::genai::VisionEncoderQwen3Omni(std::filesystem::temp_directory_path(),
+                                                    "QWEN3_OMNI_TEST_INVALID_DEVICE",
+                                                    {}),
+                 ov::Exception);
 }
 
 TEST(Qwen3OmniPatchRearrange, ExplicitFullOvModePropagatesCompilationFailure) {
@@ -239,6 +241,7 @@ TEST(Qwen3OmniPatchRearrange, FullOvInferenceMatchesHostReference) {
             frame0, frame1, shape.target_height, shape.target_width, patch, merge, mean, image_std);
         auto actual = run_full_preprocess_on_cpu(
             frame0, frame1, shape.target_height, shape.target_width, patch, merge, mean, image_std);
+
         ASSERT_EQ(actual.get_size(), expected.get_size());
         ASSERT_EQ(actual.get_shape(),
               (ov::Shape{shape.target_height / patch * (shape.target_width / patch), 3 * 2 * patch * patch}));

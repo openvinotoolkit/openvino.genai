@@ -166,6 +166,7 @@ else:
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
+MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -309,6 +310,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if "qwen3-vl" in model_id and is_transformers_version("<", "4.57.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
+        )
+    if model_id == MODEL_QWEN3_OMNI and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Qwen3-Omni. Minimum required is 4.57.0."
         )
     if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
         pytest.skip(
@@ -3201,4 +3206,33 @@ def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_te
         f"VISION_POS_EMBEDS modes produced different results.\n"
         f"Default (patched model): '{result_default.texts[0]}'\n"
         f"CPP (CPU fallback):      '{result_cpp.texts[0]}'"
+    )
+
+
+def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
+    """Qwen3-Omni CPP and OV_REARRANGE preprocessing must produce identical generation results."""
+    model_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    previous_value = os.environ.get("VISION_PREPROCESS")
+    results = {}
+
+    try:
+        for mode in ("CPP", "OV_REARRANGE"):
+            os.environ["VISION_PREPROCESS"] = mode
+            pipeline = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="SDPA")
+            generation_config = GenerationConfig()
+            generation_config.max_new_tokens = 20
+            generation_config.do_sample = False
+            results[mode] = pipeline.generate(
+                PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+            ).texts[0]
+    finally:
+        if previous_value is None:
+            os.environ.pop("VISION_PREPROCESS", None)
+        else:
+            os.environ["VISION_PREPROCESS"] = previous_value
+
+    assert results["CPP"] == results["OV_REARRANGE"], (
+        "Qwen3-Omni vision preprocessing modes produced different results.\n"
+        f"CPP:          '{results['CPP']}'\n"
+        f"OV_REARRANGE: '{results['OV_REARRANGE']}'"
     )

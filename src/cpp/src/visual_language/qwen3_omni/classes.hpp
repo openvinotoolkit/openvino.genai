@@ -3,10 +3,12 @@
 
 #pragma once
 
-#include "openvino/core/model.hpp"
-
 #include "visual_language/qwen3_omni/audio_encoder.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
+
+namespace ov {
+class Model;
+}
 
 namespace ov::genai {
 
@@ -26,12 +28,12 @@ class VisionEncoderQwen3Omni : public VisionEncoderQwen3VL {
 public:
     // Patch preprocessing mode selected by VISION_PREPROCESS. OV graphs run on the device requested
     // in the constructor; they are not GPU-specific.
-    //   unset/empty    -> auto          : try Stage 2, then Stage 1, then Stage 0 on compilation failure
+    //   unset/empty    -> OV            : use Stage 2 (the default)
     //   "OV"           -> OV            : force Stage 2 (resize + normalize + rearrange on the OV device)
     //   "OV_REARRANGE"-> OV_REARRANGE  : force Stage 1 (host resize + normalize, OV-device rearrange)
     //   "CPP"          -> CPP           : force Stage 0 (fully host-side reference implementation)
     // Stage 1 is bit-identical to Stage 0. Stage 2 can have small numerical differences near resize
-    // boundaries. An explicit mode never falls back, and an unknown value is rejected.
+    // boundaries. Compilation errors are propagated without fallback, and an unknown value is rejected.
     enum class PatchPreprocMode { CPP, OV_REARRANGE, OV };
 
     explicit VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,

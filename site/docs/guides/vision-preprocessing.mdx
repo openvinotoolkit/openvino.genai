@@ -4,24 +4,20 @@ sidebar_position: 9
 
 # Vision Preprocessing
 
-OpenVINO GenAI normally selects the most capable vision preprocessing implementation supported by the device passed to the pipeline. For Qwen3-Omni, the `VISION_PREPROCESS` environment variable can force a specific implementation for debugging and accuracy comparisons.
+OpenVINO GenAI normally selects the most performant vision preprocessing implementation supported by the device passed to the pipeline. For Qwen3-Omni, the `VISION_PREPROCESS` environment variable can select a specific implementation for debugging and accuracy comparisons.
 
 ## Qwen3-Omni preprocessing modes
 
 | `VISION_PREPROCESS` | Stage | Processing path |
 | --- | --- | --- |
-| Unset or empty | Automatic | Tries Stage 2, then Stage 1, and finally Stage 0. OpenVINO graph stages use the device passed to the pipeline. |
+| Unset or empty | Stage 2 | Uses the default `OV` implementation. |
 | `OV` | Stage 2 | Forces resize, normalization, patch reshape, transpose, and flatten in an OpenVINO graph on the requested device. |
 | `OV_REARRANGE` | Stage 1 | Forces resize and normalization on the host, followed by patch reshape, transpose, and flatten in an OpenVINO graph on the requested device. |
 | `CPP` | Stage 0 | Forces the complete host C++ reference implementation. No preprocessing model is compiled on the requested device. |
 
 The OpenVINO modes are device-agnostic. For example, constructing the pipeline for `CPU` compiles the preprocessing graph on CPU, while constructing it for `GPU` compiles the same graph on GPU.
 
-When the variable is unset or empty, compilation failures produce a warning and automatic selection tries the next stage without changing the requested OpenVINO device. When the variable explicitly selects `OV` or `OV_REARRANGE`, the requested implementation is mandatory and a compilation failure is propagated to the caller. Unknown values are rejected.
-
-Automatic fallback applies only while compiling the preprocessing model. Errors raised while executing preprocessing inference are propagated to the caller without changing the selected mode.
-
-Compilation can fail when the selected device or plugin is unavailable, when it does not support an operation or dynamic-shape combination in the preprocessing graph, when supplied device properties are unsupported, or because of a runtime or driver resource error. Use automatic mode when graceful fallback is preferred and an explicit mode when verifying a specific implementation.
+The selected implementation is mandatory. Compilation failures are propagated to the caller instead of silently changing the preprocessing path. Unknown values are rejected. Use `OV_REARRANGE` or `CPP` explicitly when diagnosing device support or accuracy differences.
 
 ## Accuracy considerations
 
@@ -42,4 +38,4 @@ Stage 1 performs only data rearrangement in the OpenVINO graph and is bit-identi
     </TabItem>
 </Tabs>
 
-Remove the variable or assign an empty value to restore automatic selection.
+Remove the variable or assign an empty value to restore the default `OV` implementation.
