@@ -1,0 +1,372 @@
+schema_version: 1
+suite: python
+reporting:
+  label: Python
+  artifact_group: python
+  artifact_name_template: coverage-{suite}-{profile}-{lane}
+  selection_env: PY_TEST_NAMES
+  stats_file: python-coverage-stats.env
+  duration_file: python-test-durations.csv
+  coverage_file: python-coverage.xml
+  extra_files:
+    - coverage.info
+  debug_dirs:
+    - src: .tmp/cpp-coverage-parts
+      dest: native-cpp-debug
+  uploads:
+    - name_template: Python API, CPU
+      artifact_pattern: coverage-python-cpu-*
+      file: python-coverage.xml
+      flag: genai-python-cpu
+    - name_template: C++ runtime, Python suite, CPU
+      artifact_pattern: coverage-python-cpu-*
+      file: coverage.info
+      flag: genai-native-python-cpu
+tests:
+  - name: whisper
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_whisper_pipeline.py
+      ./tests/python_tests/test_whisper_pipeline_static.py
+      -m "not transformers_lower_v5"
+      -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"
+
+  - name: whisper_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.57.6
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
+
+  - name: cacheopt_e2e_part_1
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py
+
+  - name: cacheopt_e2e_part_2
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py
+
+  - name: cacheopt_e2e_xattention
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_sparse_prefill.py
+
+  - name: llm
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_llm_pipeline.py
+      ./tests/python_tests/test_llm_pipeline_static.py
+      ./tests/python_tests/test_structured_output.py
+      ./tests/python_tests/test_image_generation.py
+      ./tests/python_tests/test_image_generation_multi_call.py
+      -m "not transformers_lower_v5"
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: llm_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.55.4 diffusers==0.37.1
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tests/python_tests/test_llm_pipeline.py ./tests/python_tests/test_llm_pipeline_static.py ./tests/python_tests/test_structured_output.py ./tests/python_tests/test_image_generation.py ./tests/python_tests/test_image_generation_multi_call.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: vlm_match_optimum_with_resolutions
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_vlm_pipeline.py
+      -k "test_vlm_pipeline_match_optimum_with_resolutions"
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: vlm
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_vlm_pipeline.py
+      -k "not test_vlm_pipeline_match_optimum_with_resolutions"
+      -m "not transformers_lower_v5"
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: vlm_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.55.4 diffusers==0.37.1
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: video_generation
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_video_generation.py
+      --override-ini cache_dir=/mount/caches/pytest/
+
+  - name: gguf_reader
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_gguf_reader.py
+
+  - name: tokenizer
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_tokenizer.py
+
+  - name: api
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_continuous_batching.py
+      -k "not eagle3 and not transformers_lower_v5"
+      ./tests/python_tests/test_generation_config.py
+      ./tests/python_tests/test_sampling.py
+      ./tests/python_tests/test_text_streamer.py
+
+  - name: api_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.55.4 diffusers==0.37.1
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+
+  - name: rag
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tests/python_tests/test_rag.py
+
+  - name: wwb
+    kind: command
+    profiles: [cpu]
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v
+      ./tools/who_what_benchmark/tests
+      -m "not nanollava and not transformers_lower_v5"
+      -k "not videochat"
+
+  - name: wwb_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.57.6
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tools/who_what_benchmark/tests -m "transformers_dependent or transformers_lower_v5" -k "not videochat"
+
+  - name: eagle3_speculative_decoding
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.57.6
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
+
+  - name: wwb_nanollava
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.48.0 diffusers==0.35.2
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tools/who_what_benchmark/tests -m nanollava
+
+  - name: wwb_videochat
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.57.6
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@0d632c6afbb4d885625d5cb3f7c41ffa5f7bd3f0
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tools/who_what_benchmark/tests -k "videochat"
+
+  - name: vlm_minicpm_o_2_6
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.51.3 diffusers==0.37.1
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v ./tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
+
+  - name: vlm_videochat
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.57.6
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@cba3f3157d18f309f87e3f50f47741582ee645d3
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v ./tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
+
+  - name: vlm_qwen3_vl_and_qwen3_next
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install transformers==4.57.6 git+https://github.com/huggingface/optimum-intel.git@0566b76f094d4c3084e06d29a248b39a1bff3fa4
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v ./tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl"
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v ./tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
+
+  - name: vlm_qwen3_5
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@c656558f8288d44fe7ce0dd7c98753af0c740b15
+      python3 -m pip install transformers==5.2.0
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v ./tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5"
+
+  - name: vlm_gemma4
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@39121884e050a32f9ded590f8597760d7e7ac205
+      python3 -m pip install transformers==5.5.0
+      pip show transformers optimum-intel openvino_tokenizers openvino_genai
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -s -v ./tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4"
+
+  - name: samples_llm
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "llm and not transformers_lower_v5"
+
+  - name: samples_llm_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: |
+      set -e
+      python3 -m pip install transformers==4.55.4 diffusers==0.37.1
+      python3 -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs ./tests/python_tests/samples -m "llm and (transformers_dependent or transformers_lower_v5)"
+
+  - name: samples_whisper
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "whisper"
+
+  - name: samples_dreamlike_anime_1_0
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "dreamlike_anime_1_0"
+
+  - name: samples_lcm_dreamshaper_v7_int8_ov
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "LCM_Dreamshaper_v7_int8_ov"
+
+  - name: samples_rag
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "rag"
+
+  - name: samples_speech_generation
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "speech_generation"
+
+  - name: samples_eagle3_decoding
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${INSTALL_PKG_DIR}/samples/python SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_C_DIR=${INSTALL_PKG_DIR}/samples_bin SAMPLES_JS_DIR=${OV_WORKSPACE}/samples/js"
+    command: >-
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vvs
+      ./tests/python_tests/samples
+      -m "eagle3_decoding"
+
+  - name: continuous_batching_tools
+    kind: command
+    profiles: [cpu]
+    env: "TEST_MODELS_BASE_DIR=${HF_HOME}/ov_test_models CACHE_TYPES_CSV=${BIN_DIR}/data/cache_types_models.csv OPENVINO_TOKENIZERS_PATH_GENAI=${INSTALL_PKG_DIR}/runtime/lib/intel64/libopenvino_tokenizers.so SAMPLES_CPP_DIR=${INSTALL_PKG_DIR}/samples_bin"
+    command: |
+      set -e
+      source "${OV_INSTALL_DIR}/setupvars.sh"
+      chmod +x "${BIN_DIR}/tests_continuous_batching"
+      "${BIN_DIR}/tests_continuous_batching" --gtest_filter="-AddSecondInputTest.*"
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vs ./tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
+
+  - name: llm_benchmark_tools
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${OV_WORKSPACE}/tools"
+    command: |
+      set -e
+      source "${OV_INSTALL_DIR}/setupvars.sh"
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vs ./tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5"
+
+  - name: llm_benchmark_tools_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    env: "SAMPLES_PY_DIR=${OV_WORKSPACE}/tools"
+    command: |
+      set -e
+      source "${OV_INSTALL_DIR}/setupvars.sh"
+      python3 -m pip install transformers==4.57.6
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -vs ./tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_lower_v5"
+
+  - name: xgrammar_off
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      export PYTHONPATH="${XGRAMMAR_BUILD_DIR}:${PYTHONPATH:-}"
+      source "${OV_INSTALL_DIR}/setupvars.sh"
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tests/python_tests/test_llm_pipeline.py -k "not test_perf_metrics_with_structured_output" -m "not transformers_lower_v5"
+
+  - name: xgrammar_off_transformers_under_5
+    kind: command
+    profiles: [cpu]
+    command: |
+      set -e
+      export PYTHONPATH="${XGRAMMAR_BUILD_DIR}:${PYTHONPATH:-}"
+      source "${OV_INSTALL_DIR}/setupvars.sh"
+      python3 -m pip install transformers==4.55.4 diffusers==0.37.1
+      python3 -m pytest -ra --durations=50 ${PYTEST_COVERAGE_ARGS} -v ./tests/python_tests/test_llm_pipeline.py -m "transformers_lower_v5 or transformers_dependent"

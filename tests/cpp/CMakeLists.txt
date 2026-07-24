@@ -25,6 +25,7 @@ file(GLOB tests_src "*.cpp")
 set(TEST_TARGET_NAME "tests_continuous_batching")
 
 add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_obj>)
+ov_genai_enable_coverage(${TEST_TARGET_NAME})
 
 add_subdirectory(custom_op)
 

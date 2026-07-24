@@ -28,6 +28,7 @@ file(GLOB python_sources "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 set(TARGET_NAME py_openvino_genai)
 pybind11_add_module(${TARGET_NAME} ${python_sources})
+ov_genai_enable_coverage(${TARGET_NAME})
 if(NOT ENABLE_GIL_PYTHON_API)
     # disable GIL for free-threaded python build
     target_compile_definitions(${TARGET_NAME} PRIVATE Py_GIL_DISABLED=1)
