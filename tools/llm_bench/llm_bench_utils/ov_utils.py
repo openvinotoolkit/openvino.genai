@@ -24,6 +24,7 @@ from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
 from openvino_genai import StreamingStatus
+from wrappers.speech_to_text import Qwen3ASROptimumPipeline
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -581,20 +582,20 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
     return ov_model, from_pretrained_time
 
 
-def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
+def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs):
     import openvino_genai as ov_genai
 
     ov_config = kwargs['config']
+    pipeline_class = ov_genai.ASRPipeline if hasattr(ov_genai, "ASRPipeline") else ov_genai.WhisperPipeline
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
-    genai_pipe = ov_genai.WhisperPipeline(model_path, device.upper(), **ov_config)
+    genai_pipe = pipeline_class(model_path, device.upper(), **ov_config)
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    processor = AutoProcessor.from_pretrained(model_path)
     return genai_pipe, processor, end - start, True
 
 
@@ -606,37 +607,52 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     """
     from optimum.intel.utils.import_utils import is_transformers_version
 
+    model_path = Path(model_path)
+    if not model_path.exists():
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
+
     use_case = kwargs['use_case']
     model_class = use_case.ov_cls
-    model_path = Path(model_path)
-    model_path_existed = model_path.exists()
-    # load model
-    if not model_path_existed:
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
-    else:
-        if kwargs.get("genai", True):
-            if not is_genai_available(log_msg=True):
-                raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-            if model_class not in [UseCaseSpeech2Text.ov_cls]:
-                raise RuntimeError("OpenVINO GenAI based benchmarking is not available for required model type.")
+    trust_remote_code = False
 
-            log.info("Selected OpenVINO GenAI for benchmarking")
-            return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs)
+    # run to avoid fail:
+    # ValueError: The checkpoint you are trying to load has model type `qwen3_asr`
+    # but Transformers does not recognize this architecture.
+    Qwen3ASROptimumPipeline.init_model(use_case.model_type)
 
-        log.info("Selected Optimum Intel for benchmarking")
-        ov_config = kwargs['config']
-        if kwargs.get("mem_consumption"):
-            memory_data_collector.start()
-        start = time.perf_counter()
-        ov_model = model_class.from_pretrained(
-            model_path,
-            device=device,
-            ov_config=ov_config
-        )
-        end = time.perf_counter()
-        if kwargs.get("mem_consumption"):
-            memory_data_collector.stop_and_collect_data("compilation")
-            memory_data_collector.log_data(compilation=True)
+    try:
+        processor = AutoProcessor.from_pretrained(model_path)
+    except Exception:
+        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        trust_remote_code = True
+
+    if kwargs.get("genai", True):
+        if not is_genai_available(log_msg=True):
+            raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
+        if model_class not in [UseCaseSpeech2Text.ov_cls]:
+            raise RuntimeError("OpenVINO GenAI based benchmarking is not available for required model type.")
+
+        log.info("Selected OpenVINO GenAI for benchmarking")
+        return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs)
+
+    log.info("Selected Optimum Intel for benchmarking")
+    load_kwargs = {
+        "device": device,
+        "ov_config": kwargs["config"],
+    }
+    if trust_remote_code:
+        load_kwargs["trust_remote_code"] = True
+
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.start()
+    start = time.perf_counter()
+
+    ov_model = model_class.from_pretrained(model_path, **load_kwargs)
+    end = time.perf_counter()
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.stop_and_collect_data("compilation")
+        memory_data_collector.log_data(compilation=True)
+
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     if is_transformers_version(">=", "4.51.0"):
@@ -646,13 +662,19 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
             if hasattr(ov_model.generation_config, 'forced_decoder_ids'):
                 ov_model.generation_config.forced_decoder_ids = None
 
-    processor = AutoProcessor.from_pretrained(model_path)
-    pipe = pipeline(
-        "automatic-speech-recognition",
-        model=ov_model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor
-    )
+    if use_case.model_type == "qwen3-asr":
+        pipe = Qwen3ASROptimumPipeline(model=ov_model, processor=processor)
+    elif use_case.model_type == "whisper":
+        pipe = pipeline(
+            "automatic-speech-recognition",
+            model=ov_model,
+            tokenizer=processor.tokenizer,
+            feature_extractor=processor.feature_extractor,
+        )
+    else:
+        raise RuntimeError(
+            f"OpenVINO GenAI based benchmarking is not available for required model type {use_case.model_type}."
+        )
 
     return pipe, processor, from_pretrained_time, False
 
