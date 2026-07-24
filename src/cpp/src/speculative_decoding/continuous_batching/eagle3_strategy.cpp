@@ -125,7 +125,18 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input(co
     if (m_model_input_type == ModelInputType::TOKENS) {
         return create_draft_input_ids(original_input);
     } else {
-        return create_draft_input_embeddings(original_input);
+        // Prefer the draft-specific input embeddings prepared by the inputs embedder (e.g. MiniCPM),
+        // which lets the draft model consume embeddings decoupled from the main model's inputs.
+        // Fall back to the main model's embeddings when the embedder does not provide a dedicated one.
+        // The original embeddings (original_input) stay untouched and are still fed to the main model.
+        ov::Tensor draft_embeddings = original_input;
+        if (m_inputs_embedder) {
+            const ov::Tensor embedder_draft_embeds = m_inputs_embedder->get_draft_inputs_embeds();
+            if (embedder_draft_embeds && embedder_draft_embeds.get_size() > 0) {
+                draft_embeddings = embedder_draft_embeds;
+            }
+        }
+        return create_draft_input_embeddings(draft_embeddings);
     }
 }
 

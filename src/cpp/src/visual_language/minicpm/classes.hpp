@@ -67,6 +67,11 @@ public:
         const std::vector<EncodedImage>& images
     ) const override;
 
+    ov::Tensor get_draft_inputs_embeds() const override {
+        return draft_inputs_embeds;
+    }
+private:
+    ov::Tensor draft_inputs_embeds;
 };
 
 } // namespace ov::genai
