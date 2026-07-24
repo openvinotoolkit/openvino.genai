@@ -243,22 +243,18 @@ void VisionEncoderQwen3Omni::initialize_patch_preprocessing(const std::string& d
     // preprocessing (resize/normalize and/or reshape/transpose/flatten) to `device`.
     m_preproc_mode = parse_preproc_mode_env();
 
-    auto compile = [&](PatchPreprocMode mode) {
-        auto model = mode == PatchPreprocMode::OV ? build_patch_preprocess_model()
-                                                  : build_patch_rearrange_model();
-        auto compiled = utils::singleton_core().compile_model(
-            model, device, utils::get_model_properties(properties, "vision_embeddings", device));
-        m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-            compiled.get_property(ov::optimal_number_of_infer_requests),
-            [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
-    };
-
     if (m_preproc_mode == PatchPreprocMode::CPP) {
         return;
     }
 
     // Preserve the requested device and surface compilation errors instead of silently changing paths.
-    compile(m_preproc_mode);
+    auto model = m_preproc_mode == PatchPreprocMode::OV ? build_patch_preprocess_model()
+                                                        : build_patch_rearrange_model();
+    auto compiled = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(properties, "vision_embeddings", device));
+    m_ireq_queue_patch_rearrange = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled]() -> ov::InferRequest { return compiled.create_infer_request(); });
 }
 
 void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>& images,
