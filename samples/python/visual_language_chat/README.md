@@ -105,8 +105,8 @@ python benchmark_vlm.py [OPTIONS]
 ### Options
 
 - `-m, --model` (required): Path to the model and tokenizers base directory.
-- `-dm, --draft_model` (default: `None`): Path to the draft model and tokenizers base directory. Not supported with `-d NPU`.
-- `-nat, --num_assistant_tokens` (default: `5`): Number of assistant tokens used for speculative decoding when `--draft_model` is provided.
+- `-D, --draft_model` (default: `None`): Path to the draft model and tokenizers base directory. Not supported with `-d NPU`.
+- `-A, --num_assistant_tokens` (default: `5`): Number of assistant tokens used for speculative decoding when `--draft_model` is provided.
 - `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p, --prompt`, and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file`: Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to image. Can be a single image or a directory of images.
