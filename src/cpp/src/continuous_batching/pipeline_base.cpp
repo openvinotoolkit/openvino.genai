@@ -524,9 +524,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
 
-        // Propagate hidden states for speech generation (Qwen3-Omni). Both fields stay empty
-        // on the text-only path (CB only fills m_intermediate_hidden_states when return_omni_outputs is set).
-        if (!result.m_intermediate_hidden_states.empty()) {
+        // Propagate hidden states for speech generation (Qwen3-Omni). The outer vectors are always
+        // sized to num_return_sequences and full_token_ids is filled unconditionally, so gate on the
+        // request flag rather than emptiness to keep text-only results free of speech-only payload.
+        if (sampling_params[i].return_omni_outputs) {
             gen_result.intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
             gen_result.full_token_ids = std::move(result.m_full_token_ids);
         }
@@ -777,9 +778,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
 
-        // Propagate hidden states for speech generation (Qwen3-Omni). Both fields stay empty
-        // on the text-only path (CB only fills m_intermediate_hidden_states when return_omni_outputs is set).
-        if (!result.m_intermediate_hidden_states.empty()) {
+        // Propagate hidden states for speech generation (Qwen3-Omni). The outer vectors are always
+        // sized to num_return_sequences and full_token_ids is filled unconditionally, so gate on the
+        // request flag rather than emptiness to keep text-only results free of speech-only payload.
+        if (sampling_params[i].return_omni_outputs) {
             gen_result.intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
             gen_result.full_token_ids = std::move(result.m_full_token_ids);
         }

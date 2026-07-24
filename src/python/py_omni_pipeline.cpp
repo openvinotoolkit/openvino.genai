@@ -323,14 +323,16 @@ void init_omni_pipeline(py::module_& m) {
              py::arg("config_dir_path"),
              "folder with config.json (and optional generation_config.json)",
              py::arg("device_mapping"),
-             "submodel name -> device; submodels absent from the map load on CPU",
+             "submodel name -> device; entries absent from this map fall back to CPU, "
+             "while submodels absent from models_map stay unavailable",
              R"(
                 Talker constructor from in-memory model IRs (blob deployment / per-submodel device placement).
                 models_map (dict[str, tuple[str, openvino.Tensor]]): Keys: text_embeddings, talker,
                     talker_text_embeddings, talker_projections, code_predictor, code2wav.
                 config (OmniTalkerSpeechConfig): Stored default speech config.
                 config_dir_path (os.PathLike): Folder with config.json and optional generation_config.json.
-                device_mapping (dict[str, str]): Submodel name -> device; missing entries load on CPU.
+                device_mapping (dict[str, str]): Submodel name -> device; entries absent from this map
+                    fall back to CPU, while submodels absent from models_map stay unavailable.
                 kwargs: Device properties.
              )")
         .def("get_speech_config",

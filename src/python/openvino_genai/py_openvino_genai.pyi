@@ -4505,7 +4505,8 @@ class Talker(TalkerBase):
                             talker_text_embeddings, talker_projections, code_predictor, code2wav.
                         config (OmniTalkerSpeechConfig): Stored default speech config.
                         config_dir_path (os.PathLike): Folder with config.json and optional generation_config.json.
-                        device_mapping (dict[str, str]): Submodel name -> device; missing entries load on CPU.
+                        device_mapping (dict[str, str]): Submodel name -> device; entries absent from this map
+                            fall back to CPU, while submodels absent from models_map stay unavailable.
                         kwargs: Device properties.
         """
     def get_speech_config(self) -> OmniTalkerSpeechConfig:
