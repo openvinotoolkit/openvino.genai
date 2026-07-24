@@ -4498,7 +4498,7 @@ class Talker(TalkerBase):
                         kwargs: Device properties.
         """
     @typing.overload
-    def __init__(self, models_map: collections.abc.Mapping[str, tuple[str, openvino._pyopenvino.Tensor]], config: openvino_genai.py_openvino_genai.OmniTalkerSpeechConfig, config_dir_path: os.PathLike | str | bytes, device_mapping: collections.abc.Mapping[str, str], **kwargs) -> None:
+    def __init__(self, models_map: collections.abc.Mapping[str, tuple[str, openvino._pyopenvino.Tensor]], config: OmniTalkerSpeechConfig, config_dir_path: os.PathLike | str | bytes, device_mapping: collections.abc.Mapping[str, str], **kwargs) -> None:
         """
                         Talker constructor from in-memory model IRs (blob deployment / per-submodel device placement).
                         models_map (dict[str, tuple[str, openvino.Tensor]]): Keys: text_embeddings, talker,
@@ -4508,11 +4508,11 @@ class Talker(TalkerBase):
                         device_mapping (dict[str, str]): Submodel name -> device; missing entries load on CPU.
                         kwargs: Device properties.
         """
-    def get_speech_config(self) -> openvino_genai.py_openvino_genai.OmniTalkerSpeechConfig:
+    def get_speech_config(self) -> OmniTalkerSpeechConfig:
         """
         Return the talker's stored default OmniTalkerSpeechConfig.
         """
-    def set_speech_config(self, config: openvino_genai.py_openvino_genai.OmniTalkerSpeechConfig) -> None:
+    def set_speech_config(self, config: OmniTalkerSpeechConfig) -> None:
         """
         Set the talker's stored default OmniTalkerSpeechConfig (validated).
         """
