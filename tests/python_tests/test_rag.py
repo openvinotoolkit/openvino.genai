@@ -19,7 +19,7 @@ from PIL import Image
 from torch import Tensor
 import torch
 import torch.nn.functional as F
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoProcessor, AutoTokenizer
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
@@ -34,6 +34,11 @@ MULTIMODAL_EMBEDDINGS_TEST_MODELS = [
     # "Qwen/Qwen3-VL-Embedding-2B",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding"
 ]
+
+# nomic_bert is a bidirectional RoPE + gated-MLP BERT-family encoder (not a generative
+# architecture). It is not yet listed in EMBEDDINGS_TEST_MODELS (large download vs. the
+# tiny models above), but TextEmbeddingPipeline serves it out-of-the-box with MEAN pooling.
+NOMIC_EMBED_TEXT_MODEL = "nomic-ai/nomic-embed-text-v1.5"
 
 RERANK_TEST_MODELS = [
     "cross-encoder/ms-marco-TinyBERT-L2-v2",  # sigmoid applied
@@ -484,6 +489,53 @@ def test_embedding_pipeline_prompt_matches_embed_instruction(emb_model):
         atol=MAX_EMBEDDING_ERROR,
         rtol=0,
     )
+
+
+@pytest.fixture(scope="module")
+def nomic_embed_model() -> OVConvertedModelSchema:
+    try:
+        return download_and_convert_model_class(NOMIC_EMBED_TEXT_MODEL, OVModelForFeatureExtraction)
+    except ValueError as e:
+        # nomic_bert OpenVINO export support (NomicBertOpenVINOConfig) is only available once
+        # huggingface/optimum-intel#1864 is merged and released. Until then, CI installs a
+        # stock optimum-intel from PyPI that does not recognize this architecture. Skip
+        # cleanly rather than failing so this test starts running automatically once the
+        # dependency lands.
+        if "unsupported architecture" in str(e) or "nomic_bert" in str(e):
+            pytest.skip(
+                f"nomic_bert export not yet supported by installed optimum-intel "
+                f"(depends on huggingface/optimum-intel#1864): {e}"
+            )
+        raise
+
+
+def test_nomic_bert_text_embedding_pipeline_matches_hf(nomic_embed_model):
+    """
+    nomic_bert (bidirectional RoPE + gated-MLP encoder, feature-extraction/embedding model)
+    has no generative pipeline of its own. This test confirms that the generic,
+    architecture-agnostic TextEmbeddingPipeline (MEAN pooling + normalize, matching the
+    model's native sentence-transformers config) already serves it correctly, so no new
+    GenAI pipeline class is required for this architecture.
+    """
+    docs = [
+        "search_document: OpenVINO is a toolkit for optimizing deep learning models.",
+        "search_document: The quick brown fox jumps over the lazy dog.",
+    ]
+
+    tokenizer = AutoTokenizer.from_pretrained(NOMIC_EMBED_TEXT_MODEL)
+    hf_model = AutoModel.from_pretrained(NOMIC_EMBED_TEXT_MODEL, trust_remote_code=True).eval()
+    encoded = tokenizer(docs, padding=True, truncation=True, return_tensors="pt")
+    with torch.no_grad():
+        hf_out = hf_model(**encoded)
+    mask = encoded["attention_mask"].unsqueeze(-1).expand(hf_out.last_hidden_state.size()).float()
+    pooled = (hf_out.last_hidden_state * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+    hf_embeddings = F.normalize(pooled, p=2, dim=1).numpy()
+
+    config = TextEmbeddingPipeline.Config(pooling_type=TextEmbeddingPipeline.PoolingType.MEAN, normalize=True)
+    pipeline = TextEmbeddingPipeline(nomic_embed_model.models_path, "CPU", config)
+    genai_embeddings = np.asarray(pipeline.embed_documents(docs), dtype=np.float32)
+
+    np.testing.assert_allclose(genai_embeddings, hf_embeddings, atol=MAX_EMBEDDING_ERROR, rtol=0)
 
 
 def run_text_embedding_langchain(

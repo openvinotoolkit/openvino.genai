@@ -65,4 +65,12 @@ export const TEXT_EMBEDDINGS_MODELS: TextEmbeddingsModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'NomicBertModel',
+    models: [
+      {
+        links: ['https://huggingface.co/nomic-ai/nomic-embed-text-v1.5'],
+      },
+    ],
+  },
 ];
