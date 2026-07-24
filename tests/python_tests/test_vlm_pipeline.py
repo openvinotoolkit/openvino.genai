@@ -358,6 +358,7 @@ def _setup_generation_config(
     set_eos_token: bool = True,
     do_sample: bool = True,
     prompt_lookup: bool = False,
+    tree_search: bool = False,
 ) -> GenerationConfig:
     generation_config = pipeline.get_generation_config()
     generation_config.max_new_tokens = max_new_tokens
@@ -373,6 +374,11 @@ def _setup_generation_config(
 
     if ignore_eos:
         generation_config.ignore_eos = True
+
+    if tree_search:
+        generation_config.num_assistant_tokens = 8
+        generation_config.branching_factor = 4
+        generation_config.tree_depth = 2
 
     return generation_config
 
@@ -3035,12 +3041,21 @@ def test_vlm_eagle3(cat_tensor):
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    generation_config_with_tree = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
+    )
     result_with_draft = ov_pipe_with_draft.generate(
         PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
+    )
+    result_with_draft_tree = ov_pipe_with_draft.generate(
+        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_tree
     )
 
     assert result_without_draft.texts[0].strip() == result_with_draft.texts[0].strip(), (
         "Result should be the same when Eagle3 draft model is enabled and disabled."
+    )
+    assert result_without_draft.texts[0].strip() == result_with_draft_tree.texts[0].strip(), (
+        "Result should be the same when Eagle3 draft model and tree search are enabled and disabled."
     )
 
 
@@ -3086,13 +3101,23 @@ def test_vlm_eagle3_chat_with_videos(
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    generation_config_with_tree = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
+    )
     results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
+    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_tree)
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
     )
     assert results_without_draft[1] == results_with_draft[1], (
         "Second mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
+    )
+    assert results_without_draft[0] == results_with_draft_tree[0], (
+        "First mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
+    )
+    assert results_without_draft[1] == results_with_draft_tree[1], (
+        "Second mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
     )
 
 
