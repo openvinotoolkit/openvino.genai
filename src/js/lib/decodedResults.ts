@@ -7,6 +7,7 @@ import {
   PerfMetrics,
   VLMPerfMetrics,
   WhisperPerfMetrics,
+  ASRPerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
 import { GenerationFinishReason } from "./utils.js";
@@ -116,6 +117,44 @@ export class WhisperDecodedResults extends DecodedResults {
 
   /** Whisper-specific performance metrics. */
   override perfMetrics: WhisperPerfMetrics;
+}
+
+/**
+ * Time-aligned text chunk for ASR results (segment- or word-level).
+ * Returned when `return_timestamps` (segments) or `word_timestamps` (words) is enabled.
+ */
+export type ASRDecodedResultChunk = {
+  /** Chunk text. */
+  text: string;
+  /** Chunk start time in seconds. */
+  startTs: number;
+  /** Chunk end time in seconds (-1 if not predicted by the model). */
+  endTs: number;
+  /** Token identifiers composing the chunk as `BigInt64Array`. */
+  tokenIds?: BigInt64Array;
+};
+
+/**
+ * Result of ASRPipeline.generate() with texts, scores, detected languages,
+ * perf metrics, and optional segment- and word-level timestamps.
+ *
+ * `chunks` and `words` are nested per input: `chunks[inputIndex][chunkIndex]`.
+ */
+export class ASRDecodedResults extends DecodedResults {
+  constructor(
+    texts: string[],
+    scores: number[],
+    perfMetrics: ASRPerfMetrics,
+    public languages: string[] = [],
+    public chunks?: ASRDecodedResultChunk[][],
+    public words?: ASRDecodedResultChunk[][],
+  ) {
+    super(texts, scores, perfMetrics, []);
+    this.perfMetrics = perfMetrics;
+  }
+
+  /** ASR-specific performance metrics. */
+  override perfMetrics: ASRPerfMetrics;
 }
 
 /**
