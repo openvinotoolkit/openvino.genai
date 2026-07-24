@@ -56,7 +56,12 @@ auto omni_talker_speech_config_docstring = R"(
     :type speaker: str | openvino.Tensor
 
     :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-        audio chunk. Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
+        audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
+        24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
+        every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
+        is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
+        warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
+        decoded chunks in streaming mode.
     :type audio_chunk_frames: int
 
     :param max_new_tokens: Cap on talker AR steps. Independent of
@@ -211,41 +216,9 @@ py::object call_omni_generate_history(OmniPipeline& pipe,
 }  // namespace
 
 void init_omni_pipeline(py::module_& m) {
-    py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
-        R"(Abstract speech-output backend for OmniPipeline.
-
-        Subclass to plug a custom talker into OmniPipeline. The default implementation
-        is Talker. Subclasses must override generate(), list_speakers(), and
-        get_speaker_embedding().)")
-        .def("list_speakers", &TalkerBase::list_speakers)
-        .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"));
-
-    py::class_<Talker, TalkerBase, std::shared_ptr<Talker>>(m, "Talker",
-        R"(Default OmniPipeline talker for the Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
-
-        Loads the speech submodels from a directory containing
-        openvino_talker_model.xml, openvino_code_predictor_model.xml,
-        openvino_code2wav_model.xml, plus the talker text-embedding and projection
-        submodels and config.json.)")
-        .def(py::init([](const std::filesystem::path& model_dir,
-                         const std::string& device,
-                         const py::kwargs& kwargs) {
-                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
-                 py::gil_scoped_release rel;
-                 return std::make_shared<Talker>(model_dir, device, properties);
-             }),
-             py::arg("model_dir"),
-             "folder with Qwen3-Omni speech submodels + config.json",
-             py::arg("device"),
-             "device on which inference will be done",
-             R"(
-                Talker constructor.
-                model_dir (os.PathLike): Folder with Qwen3-Omni speech submodels + config.json.
-                device (str): Device to run inference on (e.g., CPU, GPU).
-                kwargs: Device properties.
-             )");
-
+    // Register OmniTalkerSpeechConfig before Talker: Talker's constructor and config
+    // accessors reference it, and pybind emits the raw C++ type name in their signatures
+    // (which pybind11_stubgen cannot parse) unless the Python type is already registered.
     py::class_<OmniTalkerSpeechConfig>(m, "OmniTalkerSpeechConfig", omni_talker_speech_config_docstring)
         .def(py::init<>())
         .def(py::init<std::filesystem::path>(),
@@ -298,6 +271,78 @@ void init_omni_pipeline(py::module_& m) {
         .def_readwrite("cp_temperature", &OmniTalkerSpeechConfig::cp_temperature)
         .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k)
         .def_readwrite("cp_repetition_penalty", &OmniTalkerSpeechConfig::cp_repetition_penalty);
+
+    py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
+        R"(Abstract speech-output backend for OmniPipeline.
+
+        Subclass to plug a custom talker into OmniPipeline. The default implementation
+        is Talker. Subclasses must override generate(), list_speakers(), and
+        get_speaker_embedding().)")
+        .def("list_speakers", &TalkerBase::list_speakers)
+        .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"));
+
+    py::class_<Talker, TalkerBase, std::shared_ptr<Talker>>(m, "Talker",
+        R"(Default OmniPipeline talker for the Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
+
+        Loads the speech submodels from a directory containing
+        openvino_talker_model.xml, openvino_code_predictor_model.xml,
+        openvino_code2wav_model.xml, plus the talker text-embedding and projection
+        submodels and config.json.)")
+        .def(py::init([](const std::filesystem::path& model_dir,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 py::gil_scoped_release rel;
+                 return std::make_shared<Talker>(model_dir, device, properties);
+             }),
+             py::arg("model_dir"),
+             "folder with Qwen3-Omni speech submodels + config.json",
+             py::arg("device"),
+             "device on which inference will be done",
+             R"(
+                Talker constructor.
+                model_dir (os.PathLike): Folder with Qwen3-Omni speech submodels + config.json.
+                device (str): Device to run inference on (e.g., CPU, GPU).
+                kwargs: Device properties.
+             )")
+        .def(py::init([](const ov::genai::ModelsMap& models_map,
+                         const OmniTalkerSpeechConfig& config,
+                         const std::filesystem::path& config_dir_path,
+                         const std::map<std::string, std::string>& device_mapping,
+                         const py::kwargs& kwargs) {
+                 ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+                 ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                 py::gil_scoped_release rel;
+                 return std::make_shared<Talker>(models_map, config, config_dir_path, device_mapping, properties);
+             }),
+             py::arg("models_map"),
+             "map with decrypted Qwen3-Omni speech submodels: name -> (IR string, weights tensor)",
+             py::arg("config"),
+             "stored default OmniTalkerSpeechConfig",
+             py::arg("config_dir_path"),
+             "folder with config.json (and optional generation_config.json)",
+             py::arg("device_mapping"),
+             "submodel name -> device; entries absent from this map fall back to CPU, "
+             "while submodels absent from models_map stay unavailable",
+             R"(
+                Talker constructor from in-memory model IRs (blob deployment / per-submodel device placement).
+                models_map (dict[str, tuple[str, openvino.Tensor]]): Keys: text_embeddings, talker,
+                    talker_text_embeddings, talker_projections, code_predictor, code2wav.
+                config (OmniTalkerSpeechConfig): Stored default speech config.
+                config_dir_path (os.PathLike): Folder with config.json and optional generation_config.json.
+                device_mapping (dict[str, str]): Submodel name -> device; entries absent from this map
+                    fall back to CPU, while submodels absent from models_map stay unavailable.
+                kwargs: Device properties.
+             )")
+        .def("get_speech_config",
+             &Talker::get_speech_config,
+             py::return_value_policy::copy,
+             "Return the talker's stored default OmniTalkerSpeechConfig.")
+        .def("set_speech_config",
+             &Talker::set_speech_config,
+             py::arg("config"),
+             "Set the talker's stored default OmniTalkerSpeechConfig (validated).");
 
     py::class_<ov::genai::TalkerPerfMetrics>(m, "TalkerPerfMetrics",
         R"(Performance metrics for Talker speech generation.
