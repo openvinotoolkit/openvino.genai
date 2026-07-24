@@ -11,6 +11,7 @@ from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 FLUX_MODEL_ID = "tiny-random-flux"
 FLUX2_KLEIN_MODEL_ID = "tiny-random-flux.2-klein"
+QWEN_IMAGE_MODEL_ID = "tiny-random-qwenimage"
 SD3_MODEL_ID = "tiny-random-sd3"
 SDXL_MODEL_ID = "tiny-random-sdxl"
 
@@ -435,6 +436,57 @@ class TestFlux2KleinImageGeneration:
             "test prompt",
             input_image,
             strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            callback=callback,
+        )
+
+        assert len(callback_calls) > 0, "Callback should be called at least once"
+        assert image is not None
+
+
+class TestQwenImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_qwen_image_text2image(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_qwen_image_text2image_with_negative_prompt(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            negative_prompt="bad quality",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            guidance_scale=4.0,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_qwen_image_text2image_with_callback(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        image = pipe.generate(
+            "test prompt",
             width=64,
             height=64,
             num_inference_steps=2,
