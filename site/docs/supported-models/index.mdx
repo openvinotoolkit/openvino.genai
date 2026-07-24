@@ -3,10 +3,9 @@ import VideoGenerationModelsTable from './_components/video-generation-models-ta
 import LLMModelsTable from './_components/llm-models-table';
 import VLMModelsTable from './_components/vlm-models-table';
 import SpeechRecognitionModelsTable from './_components/speech-recognition-models-table';
-import TextEmbeddingsModelsTable from './_components/text-embeddings-models-table';
+import EmbeddingModelsTable from './_components/embedding-models-table';
 import SpeechGenerationModelsTable from './_components/speech-generation-models-table';
 import TextRerankModelsTable from './_components/text-rerank-models-table';
-
 
 # Supported Models
 
@@ -131,15 +130,17 @@ Speech generation pipeline does **not** support LoRA adapters.
 
 <SpeechGenerationModelsTable />
 
-## Text Embeddings Models
+## Embedding Models
+
+Embedding models are used with the `EmbeddingPipeline`, which supports both text-only and multimodal (text, image, and video) embedding models.
 
 :::info LoRA Support
-Text embeddings pipeline does **not** support LoRA adapters.
+The embedding pipeline does **not** support LoRA adapters.
 :::
 
-<TextEmbeddingsModelsTable />
+<EmbeddingModelsTable />
 
-:::warning Text Embeddings Models Notes
+:::warning Embedding Models Notes
 Qwen3 Embedding models require `--task feature-extraction` during the conversion with `optimum-cli`.
 :::
 

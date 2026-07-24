@@ -1,0 +1,30 @@
+---
+sidebar_position: 6
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Semantic Search Using Multimodal Embedding
+
+`EmbeddingPipeline` computes embedding vectors for text, images, and videos with a single multimodal embedding model. It enables cross-modal use cases such as retrieving the most relevant image or video for a text query.
+
+:::info
+We recommend using `EmbeddingPipeline` instead of `TextEmbeddingPipeline`. It is more generic — it handles text, images, and videos — while providing all of the features that were available in `TextEmbeddingPipeline`.
+:::
+
+<ConvertModelSection>
+    Download and convert an embedding model (e.g. multimodal [Qwen/Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B), or a text-only model [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) to OpenVINO format from Hugging Face:
+    <OptimumCLI model='Qwen/Qwen3-VL-Embedding-2B' outputDir='Qwen3-VL-Embedding-2B' task='feature-extraction'/>
+
+    See all supported [Embedding Models](/docs/supported-models/#embedding-models).
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />
+
+:::info
+For the full list of configuration options, see [EmbeddingPipeline API Reference](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.EmbeddingPipeline.html) and [TextEmbeddingPipeline API Reference](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.TextEmbeddingPipeline.html).
+:::
