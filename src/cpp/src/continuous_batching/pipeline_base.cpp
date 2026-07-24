@@ -640,12 +640,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
-    // FIXME original_prompt_ids_list is not populated for VLM prompt lookup with ChatHistory API
     std::vector<ov::Tensor> original_prompt_ids_list;
     std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
 
     std::vector<VLMPerfMetrics> vlm_perf_metrics(histories.size());
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
+    const bool capture_prompt_ids = std::any_of(sampling_params.begin(), sampling_params.end(),
+                                                [](const GenerationConfig& params) {
+                                                    return params.return_omni_outputs;
+                                                });
 
     std::vector<VLMChatContext> chat_contexts;
     chat_contexts.reserve(histories.size());
@@ -687,6 +690,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
+        // Capture the exact multimodal prompt-token slice consumed by the Thinker. Omni Talker
+        // needs these IDs, but collecting them must not force ChatHistory through the string path.
+        const size_t cache_size_before = capture_prompt_ids
+                             ? m_inputs_embedder->get_cache_state().get_state().size()
+                             : 0;
+
         if (m_inputs_embedder->has_token_type_ids()) {
             auto [embeds, tt_ids] =
                 m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
@@ -709,6 +718,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                 processed_chat_data.video_sequence,
                                                                                 processed_chat_data.vision_counts));
         }
+
+                                            if (capture_prompt_ids) {
+                                                const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
+                                                OPENVINO_ASSERT(cache_ids.size() >= cache_size_before,
+                                                                "Inputs embedder token cache unexpectedly shrank while processing ChatHistory");
+                                                const size_t new_tokens = cache_ids.size() - cache_size_before;
+                                                ov::Tensor prompt_ids_tensor(ov::element::i64, {1, new_tokens});
+                                                std::copy(cache_ids.begin() + cache_size_before, cache_ids.end(), prompt_ids_tensor.data<int64_t>());
+                                                original_prompt_ids_list.push_back(std::move(prompt_ids_tensor));
+                                            }
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
@@ -754,6 +773,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
+
+        if (!result.m_intermediate_hidden_states.empty()) {
+            gen_result.intermediate_hidden_states = std::move(result.m_intermediate_hidden_states);
+            gen_result.full_token_ids = std::move(result.m_full_token_ids);
+        }
 
         results.emplace_back(gen_result);
 
