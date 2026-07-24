@@ -4,6 +4,7 @@
 
 import argparse
 
+import sys
 import numpy as np
 import openvino_genai
 from PIL import Image
@@ -55,6 +56,9 @@ def main():
     parser.add_argument(
         "prompt_lookup", nargs="?", default="false", help="Enable prompt lookup decoding (default: false)"
     )
+    parser.add_argument(
+        "--cm_path", action="store_true", help="(optional): Use CM path scheduler config (default: false)."
+    )
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
@@ -68,6 +72,21 @@ def main():
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.
         properties["CACHE_DIR"] = "vlm_cache"
+        
+        scheduler_config = openvino_genai.SchedulerConfig()
+        scheduler_config.enable_prefix_caching = False
+        scheduler_config.max_num_batched_tokens = sys.maxsize
+        if hasattr(args, "cm_path") and args.cm_path:
+            # CM PA path w/o sparse
+            sparse_attention_config = openvino_genai.SparseAttentionConfig()
+            sparse_attention_config.mode = openvino_genai.SparseAttentionMode.XATTENTION
+            sparse_attention_config.xattention_threshold = 100.0
+            scheduler_config.use_sparse_attention = True
+            scheduler_config.sparse_attention_config = sparse_attention_config
+            
+            # Set KV cache precision to int8 for CM path
+            properties["KV_CACHE_PRECISION"] = "i8"           
+        properties["scheduler_config"] = scheduler_config
 
     pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, **properties)
 

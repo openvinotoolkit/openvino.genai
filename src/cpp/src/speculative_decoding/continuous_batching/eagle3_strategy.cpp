@@ -55,7 +55,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // to create kv cache update pipeline for main model post-validation
     auto kv_model = utils::eagle3::create_eagle3_kv_update_model(main_model);
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
-
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
                                                                                     m_inputs_embedder,
@@ -104,13 +103,14 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
     kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
+    if (main_model_desc.scheduler_config.use_sparse_attention)
+        kv_model->set_rt_info(true, "sparse_enabled");
     if (kv_cache_precision == ov::element::u4) {
         kv_cache_precision = ov::element::u8;
     }
     ov::pass::PaKVReorderFusion(kv_cache_precision).run_on_model(kv_model);
     // add rt_info for real kv precision into kv_model
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
-
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};

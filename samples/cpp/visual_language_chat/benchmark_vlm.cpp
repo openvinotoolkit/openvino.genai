@@ -8,6 +8,7 @@
 
 #include "load_image.hpp"
 #include <openvino/genai/visual_language/pipeline.hpp>
+#include <openvino/genai/speculative_decoding/perf_metrics.hpp>
 #include "../text_generation/read_prompt_from_file.h"
 
 int main(int argc, char* argv[]) try {
@@ -15,6 +16,10 @@ int main(int argc, char* argv[]) try {
 
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value(""))
+    ("dm,draft_model", "Path to draftmodel", cxxopts::value<std::string>()->default_value(""))
+    ("nat,num_assistant_tokens", "Number of assistant tokens", cxxopts::value<size_t>()->default_value(std::to_string(15)))
+    ("bf,branching_factor", "Branching factor", cxxopts::value<size_t>()->default_value(std::to_string(8)))
+    ("td,depth", "Depth", cxxopts::value<size_t>()->default_value(std::to_string(4)))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("F,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Path to image. Can be a single image or a directory of images.", cxxopts::value<std::string>()->default_value("image.jpg"))
@@ -27,6 +32,7 @@ int main(int argc, char* argv[]) try {
     ("P,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
     ("R,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
     ("h,help", "Print usage");
+    ("cm_path", "(optional): Use CM path scheduler config (default: false).", cxxopts::value<bool>()->default_value("false"));
 
     cxxopts::ParseResult result;
     try {
@@ -65,6 +71,7 @@ int main(int argc, char* argv[]) try {
         std::cout << "Model path is not provided!" << std::endl;
         return EXIT_FAILURE;
     }
+    const std::string draft_model_path = result["draft_model"].as<std::string>();
 
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();
@@ -91,7 +98,13 @@ int main(int argc, char* argv[]) try {
     }
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
-
+    ov::AnyMap properties;
+    if (!draft_model_path.empty()) {
+        properties.insert(ov::genai::draft_model(draft_model_path, device));
+        config.num_assistant_tokens = result["num_assistant_tokens"].as<size_t>();
+        config.branching_factor = result["branching_factor"].as<size_t>();
+        config.tree_depth = result["depth"].as<size_t>();
+    }
     std::cout << ov::get_openvino_version() << std::endl;
 
     std::unique_ptr<ov::genai::VLMPipeline> pipe;
@@ -102,12 +115,25 @@ int main(int argc, char* argv[]) try {
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
-        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, ov::genai::scheduler_config(scheduler_config));
+        bool use_cm_path = result["cm_path"].as<bool>();
+        if (use_cm_path) {
+            // CM PA path w/o sparse
+            ov::genai::SparseAttentionConfig sparse_attention_config;
+            sparse_attention_config.mode = ov::genai::SparseAttentionMode::XATTENTION;
+            sparse_attention_config.xattention_threshold = 100.0f;
+
+            scheduler_config.use_sparse_attention = true;
+            scheduler_config.sparse_attention_config = sparse_attention_config;
+            properties.insert(ov::hint::kv_cache_precision(ov::element::i8));
+        }
+        properties.insert(ov::genai::scheduler_config(scheduler_config));
+        pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device, properties);
     }
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
     std::cout << "Number of images: " << images.size() << ", Prompt token size: " << prompt_token_size << std::endl;
+    std::cout << prompt << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
         pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
@@ -133,7 +159,34 @@ int main(int argc, char* argv[]) try {
     std::cout << "TTFT: " << metrics.get_ttft().mean  << " ± " << metrics.get_ttft().std << " ms" << std::endl;
     std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
     std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;
+   auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(res.extended_perf_metrics);
+    if (sd_perf_metrics) {
+        auto main_model_metrics = sd_perf_metrics->main_model_metrics;
+        std::cout << "\nMAIN MODEL " << std::endl;
+        std::cout << "  Generate time: " << main_model_metrics.get_generate_duration().mean << " ms" << std::endl;
+        std::cout << "  TTFT: " << main_model_metrics.get_ttft().mean  << " ± " << main_model_metrics.get_ttft().std << " ms" << std::endl;
+        std::cout << "  TTST: " << main_model_metrics.get_ttst().mean  << " ± " << main_model_metrics.get_ttst().std << " ms/token " << std::endl;
+        std::cout << "  TPOT: " << main_model_metrics.get_tpot().mean  << " ± " << main_model_metrics.get_tpot().std << " ms/iteration " << std::endl;
+        std::cout << "  AVG Latency: " << main_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/token " << std::endl;
+        std::cout << "  Num generated token: " << main_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+        std::cout << "  Total iteration number: " << main_model_metrics.raw_metrics.m_durations.size() << std::endl;
+        std::cout << "  Num accepted token: " << sd_perf_metrics->get_num_accepted_tokens() << " tokens" << std::endl;
 
+        auto draft_model_metrics = sd_perf_metrics->draft_model_metrics;
+        std::cout << "\nDRAFT MODEL " << std::endl;
+        std::cout << "  Generate time: " << draft_model_metrics.get_generate_duration().mean << " ms" << std::endl;
+        std::cout << "  TTFT: " << draft_model_metrics.get_ttft().mean  << " ms" << std::endl;
+        std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ms/token " << std::endl;
+        std::cout << "  TPOT: " << draft_model_metrics.get_tpot().mean  << " ± " << draft_model_metrics.get_tpot().std << " ms/token " << std::endl;
+        std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << draft_model_metrics.get_latency().std << " ms/iteration " << std::endl;
+        std::cout << "  Num generated token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+        std::cout << "  Total iteration number: " << draft_model_metrics.raw_metrics.m_durations.size() << std::endl;
+        const float accept_length = main_model_metrics.raw_metrics.m_durations.empty()
+            ? 0.f
+            : static_cast<float>(sd_perf_metrics->get_num_generated_tokens()) /
+                static_cast<float>(main_model_metrics.raw_metrics.m_durations.size());
+        std::cout << "  Accept length: " << accept_length << std::endl;
+    }
     return 0;
 } catch (const std::exception& error) {
     try {
