@@ -3211,7 +3211,26 @@ def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_te
 
 def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
     """Qwen3-Omni CPP and OV_REARRANGE preprocessing must produce identical generation results."""
-    model_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    try:
+        model_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    except AttributeError as error:
+        error_message = str(error)
+        if (
+            is_transformers_version(">=", "5.0")
+            and is_transformers_version("<", "5.1")
+            and "Qwen3OmniMoeTalkerCodePredictorConfig" in error_message
+            and "use_sliding_window" in error_message
+        ):
+            # Transformers 5.0 generated this config with an uninitialized
+            # use_sliding_window reference. The optimum-intel revision pinned by CI
+            # predates its workaround. Mark only this known export failure as expected;
+            # once either dependency fixes it, export succeeds and this test runs normally.
+            pytest.xfail(
+                "Known Transformers 5.0.x Qwen3-Omni config initialization bug; "
+                "the optimum-intel revision pinned by CI does not contain its workaround"
+            )
+        raise
+
     previous_value = os.environ.get("VISION_PREPROCESS")
     results = {}
 
