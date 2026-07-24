@@ -94,19 +94,23 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
                                                  const ov::AnyMap& properties)
     : m_config(Qwen3OmniSpeechConfig::from_vlm_config(config)) {
     // Load all 6 speech sub-models (all optional)
-    auto load_model = [&](const std::string& filename) -> ov::InferRequest {
+    //
+    // Per-submodel GPU inference precision (verified empirically 2026-07):
+    //   - code_predictor MUST be f32: its argmax discretization collapses in f16 (15/15 code
+    //     flips → degenerate attractor). This is the ONLY speech submodel that requires f32.
+    //   - all other models keep the caller/plugin defaults (FP16 on GPU). In particular, forcing
+    //     code2wav to f32 produces an attenuated, incorrect waveform.
+    auto load_model = [&](const std::string& filename, bool force_fp32 = false) -> ov::InferRequest {
         auto path = model_dir / (filename + ".xml");
         if (!std::filesystem::exists(path)) {
             return {};
         }
         auto model = utils::singleton_core().read_model(path);
 
-        // Force FP32 inference precision on GPU for talker models to match CPU behavior
-        // GPU FP16 causes numerical differences in logits → different sampled tokens → wrong speech length
         ov::AnyMap compilation_props = properties;
-        if (device == "GPU" || device.find("GPU") == 0) {
-            compilation_props["INFERENCE_PRECISION_HINT"] = "f32";
-            GENAI_DEBUG("Speech: forcing FP32 precision for %s on GPU", filename.c_str());
+        if (force_fp32 && device.find("GPU") != std::string::npos) {
+            compilation_props["INFERENCE_PRECISION_HINT"] = ov::element::f32;
+            GENAI_DEBUG("Speech: forcing f32 precision for %s on GPU", filename.c_str());
         }
 
         auto compiled = utils::singleton_core().compile_model(model, device, compilation_props);
@@ -119,7 +123,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
     m_talker = load_model("openvino_talker_model");
     m_talker_text_embeddings = load_model("openvino_talker_text_embeddings_model");
     m_talker_projections = load_model("openvino_talker_projections_model");
-    m_code_predictor = load_model("openvino_code_predictor_model");
+    m_code_predictor = load_model("openvino_code_predictor_model", true);
     m_code2wav = load_model("openvino_code2wav_model");
 
     // All speech models must be present for speech generation
