@@ -703,13 +703,19 @@ ov::Output<ov::Node> make_weights_subgraph(const std::string& key,
     case gguf_tensor_type::GGUF_TYPE_F16:
         return make_fp16_weights(key, consts, reorder, head_size);
     case gguf_tensor_type::GGUF_TYPE_Q8_0:
-        return make_int8_weights(key, consts, reorder, head_size);
+        return make_int8_weights(key, consts, reorder, head_size, 16);
     case gguf_tensor_type::GGUF_TYPE_Q4_0:
         return make_int4_weights(key, consts, reorder, head_size);
     case gguf_tensor_type::GGUF_TYPE_Q4_1:
         return make_int4_weights(key, consts, reorder, head_size);
     case gguf_tensor_type::GGUF_TYPE_Q4_K:
         return make_int4_weights(key, consts, reorder, head_size);
+    case gguf_tensor_type::GGUF_TYPE_Q5_0:
+        return make_int8_weights(key, consts, reorder, head_size, 16);
+    case gguf_tensor_type::GGUF_TYPE_Q5_1:
+        return make_int8_weights(key, consts, reorder, head_size, 16);
+    case gguf_tensor_type::GGUF_TYPE_Q5_K:
+        return make_int8_weights(key, consts, reorder, head_size, 16);
     case gguf_tensor_type::GGUF_TYPE_Q6_K:
         return make_int8_weights(key, consts, reorder, head_size, 16);
     default:
