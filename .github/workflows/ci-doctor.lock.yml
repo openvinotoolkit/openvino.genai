@@ -42,14 +42,14 @@
 #   - actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
 #   - actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
 #   - actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # 3d3c42e5aac5ba805825da76410c181273ba90b1
-#   - actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+#   - actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 #   - actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 (source v9)
 #   - actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-#   - actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # a309ff8b426b58ec0e2a45f0f869d46889d02405
+#   - actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # a309ff8b426b58ec0e2a45f0f869d46889d02405
 #   - actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-#   - github/gh-aw-actions/setup@b6d1443e05b8716267fa19425b99aa4f12006b4a # v0.82.14
+#   - github/gh-aw-actions/setup@39143c7eb25e92c0ab748285770483709db03c05 # v0.83.2
 #
 # Container images used:
 #   - ghcr.io/github/gh-aw-firewall/agent:0.27.37@sha256:0d35e8682845f183c1c634699a8e8a6cbe2c271b867031410df74533243c5f67
@@ -110,7 +110,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b6d1443e05b8716267fa19425b99aa4f12006b4a # v0.82.14
+        uses: github/gh-aw-actions/setup@39143c7eb25e92c0ab748285770483709db03c05 # v0.83.2
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -219,7 +219,7 @@ jobs:
           GH_AW_GITHUB_TOKEN: ${{ secrets.GH_AW_GITHUB_TOKEN }}
           GH_AW_GITHUB_MCP_SERVER_TOKEN: ${{ secrets.GH_AW_GITHUB_MCP_SERVER_TOKEN }}
       - name: Checkout .github and .agents folders
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -479,7 +479,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b6d1443e05b8716267fa19425b99aa4f12006b4a # v0.82.14
+        uses: github/gh-aw-actions/setup@39143c7eb25e92c0ab748285770483709db03c05 # v0.83.2
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -517,7 +517,7 @@ jobs:
           sparse-checkout: .github/scripts/ci-doctor
           sparse-checkout-cone-mode: false
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # a309ff8b426b58ec0e2a45f0f869d46889d02405
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: "3.11"
       - name: Install dependencies
@@ -1066,7 +1066,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b6d1443e05b8716267fa19425b99aa4f12006b4a # v0.82.14
+        uses: github/gh-aw-actions/setup@39143c7eb25e92c0ab748285770483709db03c05 # v0.83.2
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -1339,7 +1339,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b6d1443e05b8716267fa19425b99aa4f12006b4a # v0.82.14
+        uses: github/gh-aw-actions/setup@39143c7eb25e92c0ab748285770483709db03c05 # v0.83.2
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -1367,7 +1367,7 @@ jobs:
           echo "GH_AW_AGENT_OUTPUT=/tmp/gh-aw/agent_output.json" >> "$GITHUB_OUTPUT"
       - name: Checkout repository for patch context
         if: needs.agent.outputs.has_patch == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # --- Threat Detection ---
@@ -1581,7 +1581,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b6d1443e05b8716267fa19425b99aa4f12006b4a # v0.82.14
+        uses: github/gh-aw-actions/setup@39143c7eb25e92c0ab748285770483709db03c05 # v0.83.2
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
@@ -1657,7 +1657,7 @@ jobs:
     steps:
       - name: Setup Scripts
         id: setup
-        uses: github/gh-aw-actions/setup@b6d1443e05b8716267fa19425b99aa4f12006b4a # v0.82.14
+        uses: github/gh-aw-actions/setup@39143c7eb25e92c0ab748285770483709db03c05 # v0.83.2
         with:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
