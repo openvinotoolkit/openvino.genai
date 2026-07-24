@@ -307,6 +307,18 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
     std::memcpy(shape4d_tensor.data(), shape4d, sizeof(shape4d));
     std::memcpy(shape2d_tensor.data(), shape2d, sizeof(shape2d));
 
+    auto copy_to_output = [&](const ov::Tensor& patches) {
+        const auto& patches_shape = patches.get_shape();
+        if (frame_id == 0u) {
+            auto out_shape = patches_shape;
+            out_shape[0] = patches_shape[0] * frame_num;
+            out_tensor = ov::Tensor(patches.get_element_type(), out_shape);
+        }
+        std::memcpy(reinterpret_cast<uint8_t*>(out_tensor.data()) + frame_id * patches.get_byte_size(),
+                    patches.data(),
+                    patches.get_byte_size());
+    };
+
     ov::Tensor flattened;
     if (m_preproc_mode == PatchPreprocMode::OV) {
         // Stage 2: upload raw u8 frame(s) and run resize + normalize + reshape/transpose/flatten on the OV device.
@@ -340,8 +352,9 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
         ireq.set_tensor("reshape_shape2d", shape2d_tensor);
         ireq.infer();
         const auto& out = ireq.get_tensor("patches_2d");
-        flattened = ov::Tensor(out.get_element_type(), out.get_shape());
-        std::memcpy(flattened.data(), out.data(), out.get_byte_size());
+        copy_to_output(out);
+        out_rsz_size = ImageSize{grid_h, grid_w};
+        return;
     } else {
         // CPU resize + normalize into the temporal-stacked f32 NCHW patches.
         ov::Tensor tiled_patches(ov::element::f32,
@@ -371,8 +384,9 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
             ireq.set_tensor("reshape_shape2d", shape2d_tensor);
             ireq.infer();
             const auto& out = ireq.get_tensor("patches_2d");
-            flattened = ov::Tensor(out.get_element_type(), out.get_shape());
-            std::memcpy(flattened.data(), out.data(), out.get_byte_size());
+            copy_to_output(out);
+            out_rsz_size = ImageSize{grid_h, grid_w};
+            return;
         } else {
             // Reference host reshape/transpose/flatten (VISION_PREPROCESS=CPP).
             auto reshaped = qwen2_vl_utils::reshape_image_patches(tiled_patches,
@@ -389,17 +403,7 @@ void VisionEncoderQwen3Omni::preprocess_to_patches(const std::vector<ov::Tensor>
             std::memcpy(flattened.data(), transposed.data(), transposed.get_byte_size());
         }
     }
-    const ov::Shape flat_shape = flattened.get_shape();
-
-    // Accumulate into output tensor (same pattern as VisionEncoderQwen2VL)
-    if (frame_id == 0u) {
-        auto out_shape = flat_shape;
-        out_shape[0] = flat_shape[0] * frame_num;
-        out_tensor = ov::Tensor(flattened.get_element_type(), out_shape);
-    }
-    std::memcpy(reinterpret_cast<uint8_t*>(out_tensor.data()) + frame_id * flattened.get_byte_size(),
-                flattened.data(),
-                flattened.get_byte_size());
+    copy_to_output(flattened);
     out_rsz_size = ImageSize{grid_h, grid_w};
 }
 
