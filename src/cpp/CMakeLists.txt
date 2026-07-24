@@ -134,10 +134,22 @@ FetchContent_Declare(safetensors.h
 FetchContent_MakeAvailable(safetensors.h)
 
 if(ENABLE_GGUF)
+    find_package(Git QUIET)
+    if(NOT Git_FOUND)
+        message(FATAL_ERROR "Git is required to apply the gguflib security patch (ENABLE_GGUF=ON)")
+    endif()
+    # Patch the vendored gguflib to add a hard runtime bound on the per-tensor
+    # dimension count. Upstream only guards this with assert(), which is compiled
+    # out under NDEBUG, allowing a crafted .gguf to overflow the caller's
+    # stack-allocated gguf_tensor (CWE-787). See cmake/patches/.
     FetchContent_Declare(
       gguflib
       URL https://github.com/Lourdle/gguf-tools/archive/bac796ada809ac293e685db59b075971181cb008.zip
-      URL_HASH SHA256=4d6eab5055468d222833f3f83fe2f7909ccd06114278c2c0b468570ef002c22d)
+      URL_HASH SHA256=4d6eab5055468d222833f3f83fe2f7909ccd06114278c2c0b468570ef002c22d
+      PATCH_COMMAND ${CMAKE_COMMAND}
+                    -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+                    -DPATCH_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/gguflib-ndim-bounds-check.patch
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply_gguf_patch.cmake)
     FetchContent_MakeAvailable(gguflib)
     set_target_properties(gguf-tools PROPERTIES EXCLUDE_FROM_ALL ON)
 

@@ -264,6 +264,17 @@ void load_arrays(gguf_ctx* ctx,
     };
 
     while (gguf_get_tensor(ctx, &tensor)) {
+        // Defense-in-depth: gguf_get_tensor() is patched to reject ndim larger
+        // than the fixed-size dim[] array, but validate here as well so an
+        // out-of-bounds dimension count can never propagate into get_shape().
+        OPENVINO_ASSERT(tensor.ndim <= GGUF_TENSOR_MAX_DIM,
+                        "[load_gguf] Tensor '",
+                        std::string(tensor.name, tensor.namelen),
+                        "' declares ",
+                        tensor.ndim,
+                        " dimensions, exceeding the maximum of ",
+                        GGUF_TENSOR_MAX_DIM,
+                        ". The GGUF file is malformed or corrupted.");
         if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
             tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
             gguf_load_quantized(array_map, qtype_map, tensor);
