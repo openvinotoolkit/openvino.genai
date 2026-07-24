@@ -10,11 +10,13 @@
 #include <memory>
 
 #include "openvino/runtime/properties.hpp"
+#include "openvino/pass/sdpa_to_paged_attention.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
@@ -473,6 +475,39 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 
 bool has_linear_attention_states(const std::shared_ptr<ov::Model>& model) {
     return get_cache_types(*model).has_linear();
+}
+
+bool supports_paged_attention(const std::shared_ptr<ov::Model>& model) {
+    // Continuous batching requires the model to pass ov::pass::SDPAToPagedAttention, which
+    // rewrites ScaledDotProductAttention into PagedAttention, adds the paged-attention inputs
+    // and drops the attention_mask/beam_idx inputs. The presence of a ScaledDotProductAttention
+    // op is necessary but not sufficient, so the only reliable check is to run the transformation
+    // (on a clone, leaving the caller's model untouched for a non-paged fallback) and verify it
+    // produced a PagedAttention op with no leftover attention_mask/beam_idx inputs.
+    std::shared_ptr<ov::Model> clone;
+    try {
+        clone = model->clone();
+        ov::pass::SDPAToPagedAttention().run_on_model(clone);
+    } catch (const std::exception&) {
+        // Transformation failed -> the model cannot be served with paged attention.
+        return false;
+    }
+
+    // If attention_mask or beam_idx survive the transformation, the SDPAs were not converted.
+    for (const auto& input : clone->inputs()) {
+        for (const auto& name : input.get_names()) {
+            if (name == "attention_mask" || name == "beam_idx") {
+                return false;
+            }
+        }
+    }
+    // A successful conversion inserts at least one PagedAttentionExtension op.
+    for (const auto& op : clone->get_ops()) {
+        if (std::string(op->get_type_name()) == "PagedAttentionExtension") {
+            return true;
+        }
+    }
+    return false;
 }
 
 CacheTypes get_cache_types(const ov::Model& model) {

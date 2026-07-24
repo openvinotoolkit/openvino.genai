@@ -386,6 +386,26 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_batches
 );
 
+/**
+ * @brief Reports whether a model can be served by the continuous batching pipeline.
+ *
+ * Continuous batching requires the model to pass the SDPAToPagedAttention transformation.
+ * This runs that transformation on a clone of the model and reports whether it succeeded
+ * (a PagedAttention op was produced and the attention_mask/beam_idx inputs were removed).
+ * Some architectures (e.g. certain Gemma exports) cannot be converted; callers can use this
+ * to choose a non-paged pipeline instead of attempting construction and handling a failure.
+ *
+ * This is a per-model query, not a per-pipeline one. For a pipeline composed of several
+ * models (e.g. an omni pipeline with a separate language decoder and talker model), call
+ * this once for each sub-model's ov::Model and combine the results according to that
+ * pipeline's own requirements; this function does not attempt to report a single aggregate
+ * answer for a multi-model pipeline.
+ *
+ * @param model The model to inspect.
+ * @return true if the model supports paged attention (continuous batching), false otherwise.
+ */
+OPENVINO_GENAI_EXPORTS bool supports_paged_attention(const std::shared_ptr<ov::Model>& model);
+
 /// @brief Factory for audios_batches AnyMap entry.
 /// Audios must be encoded before text tokenization for Qwen3-Omni's interleaved layout.
 /// @note This is a preview API and is subject to change.
