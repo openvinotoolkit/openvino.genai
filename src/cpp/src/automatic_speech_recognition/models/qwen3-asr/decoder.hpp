@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <openvino/runtime/core.hpp>
 
 #include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
@@ -28,7 +30,16 @@ public:
 
 private:
     InferRequest m_request;
+    InferRequest m_text_embedding_request;
+    ov::Tensor m_text_embedding_input;
+    InferRequest m_text_embedding_decode_request;
+    ov::Tensor m_text_embedding_decode_input;
     Sampler m_sampler;
+    bool m_is_npu = false;
+    size_t m_max_prompt_len = 0;
+    size_t m_max_kv_cache_size = 0;
+    int64_t m_audio_token_id = -1;
+    size_t m_hidden_size = 0;
 };
 
 }  // namespace ov::genai
