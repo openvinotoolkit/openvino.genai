@@ -12,6 +12,8 @@ from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
     "qwen3_vl": Qwen3VLInputsPreprocessor,
+    # Cosmos3Omni's Reasoner surface is architecturally identical to Qwen3-VL.
+    "cosmos3_omni": Qwen3VLInputsPreprocessor,
     "qwen3_5_moe": Qwen3_5VLInputsPreprocessor,
     "qwen3_5": Qwen3_5VLInputsPreprocessor,
     "qwen2_vl_text": Qwen2VLInputsPreprocessor,
