@@ -59,6 +59,45 @@ auto speech_generation_config_docstring = R"(
                                          omit this key instead of passing None because kwargs-to-AnyMap
                                          conversion rejects None values.
     :type phonemize_fallback_model_dir: str | None
+
+    Qwen3-TTS-specific parameters:
+    :param speaker: predefined speaker name for Qwen3 CustomVoice variants.
+    :type speaker: str
+
+    :param instruct: optional instruction text that controls speaking style.
+    :type instruct: str
+
+    :param non_streaming_mode: Qwen3 prompt assembly mode.
+                               ``True`` means non-streaming prompt assembly.
+                               ``False`` means streaming-style prompt assembly.
+    :type non_streaming_mode: bool
+
+    :param subtalker_dosample: whether to sample residual code groups with Qwen3 subtalker.
+    :type subtalker_dosample: bool
+
+    :param subtalker_top_k: top-k parameter for Qwen3 subtalker sampling.
+    :type subtalker_top_k: int
+
+    :param subtalker_top_p: top-p parameter for Qwen3 subtalker sampling.
+    :type subtalker_top_p: float
+
+    :param subtalker_temperature: temperature parameter for Qwen3 subtalker sampling.
+    :type subtalker_temperature: float
+
+    Qwen3 Base voice-clone over ``generate``:
+    :param voice_clone_ref_text: reference transcript for ICL mode.
+    :type voice_clone_ref_text: str
+
+    :param voice_clone_ref_audio: reference audio waveform tensor used to internally derive Qwen3 Base clone artifacts.
+                           Expected shape: [T], [1, T], or [1, 1, T].
+                           Expected dtype: float32.
+                           Expected sample rate: 24000 Hz.
+                           OV GenAI does not decode audio files or resample this tensor.
+    :type voice_clone_ref_audio: openvino.Tensor
+
+    :param voice_clone_ref_codec_ids: reference codec ids tensor for ICL mode, shape [T, G] or [1, T, G].
+    :type voice_clone_ref_codec_ids: openvino.Tensor
+
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -80,6 +119,16 @@ auto text_to_speech_decoded_results = R"(
 
     :param perf_metrics: performance metrics
     :type perf_metrics: SpeechGenerationPerfMetrics
+
+    :param speaker_embedding: Qwen3-TTS Base voice-clone speaker embedding used for generation.
+                              Persist and pass it back as the ``speaker_embedding`` argument to reuse a
+                              cloned voice without re-encoding reference audio. Empty for other backends.
+    :type speaker_embedding: openvino.Tensor
+
+    :param voice_clone_ref_codec_ids: Qwen3-TTS Base reference codec ids used for ICL-mode cloning.
+                                      Persist and pass it back via the ``voice_clone_ref_codec_ids``
+                                      property to reuse the reference prompt. Empty otherwise.
+    :type voice_clone_ref_codec_ids: openvino.Tensor
 )";
 
 auto text_to_speech_generate_docstring = R"(
@@ -88,10 +137,14 @@ auto text_to_speech_generate_docstring = R"(
     :param text_or_texts: input text(s) for which to generate speech
     :type text_or_texts: str or list[str]
 
-    :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
-                             voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
-                             `Matthijs/cmu-arctic-xvectors` dataset is used by default. Kokoro backend requires callers
-                             to prepare this tensor externally and pass it explicitly.
+    :param speaker_embedding: speaker embedding tensor representing the target voice characteristics.
+                              Behavior depends on backend/model variant:
+                                - SpeechT5: optional. If omitted, a default x-vector is used.
+                                - Kokoro: required.
+                                - Qwen3-TTS Base: optional. Can be provided directly, or derived internally
+                                    from ``voice_clone_ref_audio`` passed via properties.
+                                - Qwen3-TTS CustomVoice: ignored and should not be provided.
+                                - Qwen3-TTS VoiceDesign: ignored and should not be provided.
     :type speaker_embedding: openvino.Tensor or None
 
     :param properties: speech generation parameters specified as properties
@@ -132,6 +185,16 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def_readwrite("language", &SpeechGenerationConfig::language)
         .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
         .def_readwrite("phonemize_fallback_model_dir", &SpeechGenerationConfig::phonemize_fallback_model_dir)
+        .def_readwrite("speaker", &SpeechGenerationConfig::speaker)
+        .def_readwrite("instruct", &SpeechGenerationConfig::instruct)
+        .def_readwrite("non_streaming_mode", &SpeechGenerationConfig::non_streaming_mode)
+        .def_readwrite("subtalker_dosample", &SpeechGenerationConfig::subtalker_dosample)
+        .def_readwrite("subtalker_top_k", &SpeechGenerationConfig::subtalker_top_k)
+        .def_readwrite("subtalker_top_p", &SpeechGenerationConfig::subtalker_top_p)
+        .def_readwrite("subtalker_temperature", &SpeechGenerationConfig::subtalker_temperature)
+        .def_readwrite("voice_clone_ref_text", &SpeechGenerationConfig::voice_clone_ref_text)
+        .def_readwrite("voice_clone_ref_audio", &SpeechGenerationConfig::voice_clone_ref_audio)
+        .def_readwrite("voice_clone_ref_codec_ids", &SpeechGenerationConfig::voice_clone_ref_codec_ids)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -149,7 +212,9 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readonly("speeches", &Text2SpeechDecodedResults::speeches)
         .def_readonly("output_sample_rate", &Text2SpeechDecodedResults::output_sample_rate)
-        .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics);
+        .def_readonly("perf_metrics", &Text2SpeechDecodedResults::perf_metrics)
+        .def_readonly("speaker_embedding", &Text2SpeechDecodedResults::speaker_embedding)
+        .def_readonly("voice_clone_ref_codec_ids", &Text2SpeechDecodedResults::voice_clone_ref_codec_ids);
 
     py::class_<Text2SpeechPipeline>(m, "Text2SpeechPipeline", "Text-to-speech pipeline")
         .def(
@@ -222,5 +287,6 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def("set_generation_config", &Text2SpeechPipeline::set_generation_config, py::arg("config"))
         .def("get_speaker_embedding_shape", &Text2SpeechPipeline::get_speaker_embedding_shape,
              "Get the expected speaker embedding shape for the loaded model. "
-             "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}");
+               "SpeechT5: Shape{1, 512}. Kokoro: Shape{510, 1, 256}. "
+               "Qwen3 Base: Shape{1, 1, D}.");
 }

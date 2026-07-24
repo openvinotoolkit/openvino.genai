@@ -64,5 +64,46 @@ ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path, const 
     return tensor;
 }
 
+ov::Tensor read_wav_mono_f32(const std::filesystem::path& file_path, uint32_t expected_sample_rate) {
+    drwav wav;
+    OPENVINO_ASSERT(drwav_init_file(&wav, file_path.string().c_str(), nullptr),
+                    "Failed to open WAV file: ",
+                    file_path.string());
+
+    OPENVINO_ASSERT(wav.channels == 1 || wav.channels == 2,
+                    "WAV file must be mono or stereo: ",
+                    file_path.string());
+    OPENVINO_ASSERT(wav.sampleRate == expected_sample_rate,
+                    "WAV file sample rate must be ",
+                    expected_sample_rate,
+                    " Hz. Got ",
+                    wav.sampleRate,
+                    " Hz for ",
+                    file_path.string(),
+                    ". OV GenAI does not resample reference audio.");
+
+    const uint64_t num_frames = wav.totalPCMFrameCount;
+    const uint32_t channels = wav.channels;
+    std::vector<float> interleaved(num_frames * wav.channels, 0.0f);
+    const uint64_t frames_read = drwav_read_pcm_frames_f32(&wav, num_frames, interleaved.data());
+    drwav_uninit(&wav);
+
+    OPENVINO_ASSERT(frames_read == num_frames,
+                    "Failed to read full WAV payload from ",
+                    file_path.string());
+
+    ov::Tensor waveform(ov::element::f32, ov::Shape{static_cast<size_t>(num_frames)});
+    float* out = waveform.data<float>();
+    if (channels == 1) {
+        std::copy_n(interleaved.data(), static_cast<size_t>(num_frames), out);
+    } else {
+        for (uint64_t i = 0; i < num_frames; ++i) {
+            out[i] = 0.5f * (interleaved[2 * i] + interleaved[2 * i + 1]);
+        }
+    }
+
+    return waveform;
+}
+
 }  // namespace audio
 }  // namespace utils
