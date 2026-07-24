@@ -738,3 +738,26 @@ TEST(ThinkingBudgetTransformTest, ForcingMasksVectorPathToo) {
         }
     }
 }
+
+TEST(ThinkingBudgetTransformTest, TrailingCountReachingBudgetForcesAtConstruction) {
+    // Open <think> block whose trailing prompt tokens already reach the budget:
+    // the first generated token should be the forced </think>, no overshoot.
+    TokenIds prompt{7, THINKING_START_ID, 1, 2};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+
+    transform.accept_token(THINKING_END_ID); // the forced </think> is sampled
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, TrailingCountOverBudgetForcesAtConstruction) {
+    TokenIds prompt{THINKING_START_ID, 1, 2, 4, 6};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, UnlimitedBudgetIgnoresTrailingCount) {
+    TokenIds prompt{THINKING_START_ID, 1, 2, 4};
+    auto transform = ThinkingBudgetTransform(-1, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+}
