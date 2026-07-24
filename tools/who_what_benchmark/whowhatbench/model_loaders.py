@@ -25,6 +25,7 @@ from .reranking_evaluator import (
     is_qwen3,
 )
 from .utils import (
+    OMNI_MODEL_TYPES,
     apply_peft_adapters,
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
@@ -83,7 +84,6 @@ def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=Fa
     for adapter, alpha in zip(adapters, alphas):
         ov_adapter = openvino_genai.Adapter(adapter)
         adapter_config.add(ov_adapter, alpha)
-
     return adapter_config
 
 
@@ -219,9 +219,37 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     return model
 
 
+def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **kwargs):
+    import transformers
+
+    model_cls_name = OMNI_MODEL_TYPES.get(getattr(config, "model_type", None))
+    if model_cls_name is None:
+        raise ValueError(
+            f"Unsupported Qwen3-Omni model_type='{getattr(config, 'model_type', None)}'. "
+            f"Supported types: {', '.join(sorted(OMNI_MODEL_TYPES))}."
+        )
+    model_cls = getattr(transformers, model_cls_name, None)
+    if model_cls is None:
+        raise ValueError(
+            f"Qwen3-Omni model_type='{config.model_type}' requires '{model_cls_name}' to be available in transformers. "
+            "Please upgrade transformers to a version that provides this class."
+        )
+    if device.lower() == "gpu":
+        device = "cuda"
+    device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
+    model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
+
+    if kwargs.get("adapters") is not None:
+        model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
+
+    model.eval()
+    return model
+
+
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
     trust_remote_code = False
+    config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
@@ -272,6 +300,7 @@ def load_text_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM
+
         try:
             model = OVModelForCausalLM.from_pretrained(
                 model_id, device=device, ov_config=ov_config, **kwargs
@@ -462,6 +491,9 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
+        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
+            return load_omni_hf_pipeline(model_id, device, config, trust_remote_code, **kwargs)
+
         model_kwargs = {"trust_remote_code": trust_remote_code}
         try:
             model_cls = None
@@ -553,13 +585,26 @@ def load_visual_text_model(
 
         if "adapters" in kwargs and kwargs["adapters"] is not None:
             raise ValueError("Adapters are not supported for OVModelForVisualCausalLM.")
+
         try:
-            model = OVModelForVisualCausalLM.from_pretrained(
-                model_id, device=device, ov_config=ov_config
-            )
-        except ValueError:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            model = OVModelForVisualCausalLM.from_pretrained(
+
+        model_cls = OVModelForVisualCausalLM
+        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
+            try:
+                from optimum.intel.openvino import OVModelForMultimodalLM
+            except ImportError as exc:
+                raise ValueError(
+                    "This Optimum version does not provide OVModelForMultimodalLM required for Qwen3-Omni models. "
+                    "Please upgrade optimum-intel to a version that supports Qwen3-Omni export/loading."
+                ) from exc
+            model_cls = OVModelForMultimodalLM
+        try:
+            model = model_cls.from_pretrained(model_id, device=device, ov_config=ov_config)
+        except ValueError:
+            model = model_cls.from_pretrained(
                 model_id,
                 config=config,
                 trust_remote_code=True,

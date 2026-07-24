@@ -200,6 +200,27 @@ def test_vlm_chat(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 
+# The optimum-intel-internal-testing/tiny-random-qwen3-omni model has to be regenerated upstream
+# its chat_template emits <|image_pad|> while image_token_id refers to <|IMAGE|>,
+# and its tokenizer.json ships an empty BPE vocab.
+# The config also requires transformers>=5.1.
+@pytest.mark.xfail(
+    reason=(
+        "tiny-random-qwen3-omni HF model must be regenerated upstream "
+        "(chat_template image placeholder mismatches image_token_id; empty tokenizer vocab) "
+        "and requires transformers>=5.1"
+    ),
+)
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("optimum-intel-internal-testing/tiny-random-qwen3-omni", "visual-text"),
+    ],
+)
+def test_vlm_qwen3_omni(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
 @pytest.mark.nanollava
 @pytest.mark.parametrize(
     ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
