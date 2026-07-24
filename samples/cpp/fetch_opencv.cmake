@@ -7,7 +7,12 @@ function(ov_genai_link_opencv target_name)
         set(required_components core imgproc videoio imgcodecs)
     endif()
 
+    set(OpenCV_STATIC ON)
     find_package(OpenCV QUIET COMPONENTS ${required_components})
+
+    if(OpenCV_FOUND AND OpenCV_SHARED)
+        message(FATAL_ERROR "Found a shared OpenCV, but a static one is required. Set -DOpenCV_DIR to a static build or make it undiscoverable.")
+    endif()
 
     if(NOT OpenCV_FOUND)
         include(FetchContent)
@@ -16,7 +21,10 @@ function(ov_genai_link_opencv target_name)
             cmake_policy(SET CMP0135 NEW)
         endif()
 
-        set(BUILD_SHARED_LIBS ON)
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        set(BUILD_WITH_STATIC_CRT OFF CACHE BOOL "" FORCE)
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+        set(OPENCV_ENABLE_PLUGINS OFF CACHE BOOL "" FORCE)
         set(WITH_FFMPEG ON)
         set(WITH_PROTOBUF OFF CACHE BOOL "" FORCE)
         set(WITH_GSTREAMER OFF CACHE BOOL "" FORCE)
@@ -67,21 +75,6 @@ function(ov_genai_link_opencv target_name)
             target_include_directories(${target_name} PRIVATE
                 ${OPENCV_MODULE_opencv_${component}_LOCATION}/include)
         endforeach()
-
-        if(LINUX)
-            set_target_properties(${target_name} ${opencv_targets} PROPERTIES
-                INSTALL_RPATH "$ORIGIN/../lib"
-                INSTALL_RPATH_USE_LINK_PATH ON)
-        elseif(APPLE)
-            set_target_properties(${target_name} ${opencv_targets} PROPERTIES
-                INSTALL_RPATH "@loader_path/../lib"
-                INSTALL_RPATH_USE_LINK_PATH ON)
-        endif()
-
-        # Signal to callers that OpenCV was built from source via FetchContent,
-        # so target-scoped CMake can emit any runtime deployment rules it needs
-        # (e.g., installing the fetched DLLs next to a Windows sample EXE).
-        set_property(GLOBAL PROPERTY OV_GENAI_FETCHED_OPENCV TRUE)
     else()
         set(opencv_targets ${OpenCV_LIBS})
         if(OpenCV_INCLUDE_DIRS)
