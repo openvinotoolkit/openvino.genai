@@ -56,6 +56,19 @@ public:
     // - unset: default to espeak-ng G2P fallback.
     std::optional<std::filesystem::path> phonemize_fallback_model_dir;
 
+    // ---------------------------------------------------------------------
+    // Piper-specific parameters
+    // ---------------------------------------------------------------------
+
+    // Stochastic duration/flow predictor noise scale; controls prosody variety.
+    float noise_scale = 0.667f;
+
+    // Multiplier applied to predicted phoneme durations; controls speaking rate.
+    float length_scale = 1.0f;
+
+    // Stochastic duration predictor noise weight.
+    float noise_w = 0.8f;
+
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
@@ -77,6 +90,10 @@ static constexpr ov::Property<float> speed{"speed"};
 static constexpr ov::Property<std::string> speech_language{"language"};
 static constexpr ov::Property<uint32_t> max_phoneme_length{"max_phoneme_length"};
 static constexpr ov::Property<std::filesystem::path> phonemize_fallback_model_dir{"phonemize_fallback_model_dir"};
+
+static constexpr ov::Property<float> noise_scale{"noise_scale"};
+static constexpr ov::Property<float> length_scale{"length_scale"};
+static constexpr ov::Property<float> noise_w{"noise_w"};
 
 }  // namespace genai
 }  // namespace ov

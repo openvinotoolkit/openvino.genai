@@ -30,6 +30,9 @@ SpeechGenerationConfig::SpeechGenerationConfig(const std::filesystem::path& json
         read_json_param(data, "language", language);
         read_json_param(data, "max_phoneme_length", max_phoneme_length);
         read_json_param(data, "phonemize_fallback_model_dir", phonemize_fallback_model_dir);
+        read_json_param(data, "noise_scale", noise_scale);
+        read_json_param(data, "length_scale", length_scale);
+        read_json_param(data, "noise_w", noise_w);
     }
     validate();
 }
@@ -44,6 +47,9 @@ void SpeechGenerationConfig::update_generation_config(const ov::AnyMap& config_m
     read_anymap_param(config_map, "language", language);
     read_anymap_param(config_map, "max_phoneme_length", max_phoneme_length);
     read_anymap_param(config_map, "phonemize_fallback_model_dir", phonemize_fallback_model_dir);
+    read_anymap_param(config_map, "noise_scale", noise_scale);
+    read_anymap_param(config_map, "length_scale", length_scale);
+    read_anymap_param(config_map, "noise_w", noise_w);
 
     GenerationConfig::update_generation_config(config_map);
 }
@@ -56,6 +62,9 @@ void SpeechGenerationConfig::validate() const {
     OPENVINO_ASSERT(max_phoneme_length > 0, "max_phoneme_length must be positive");
     OPENVINO_ASSERT(!phonemize_fallback_model_dir.has_value() || !phonemize_fallback_model_dir->empty(),
                     "phonemize_fallback_model_dir must be unset or a non-empty path");
+    OPENVINO_ASSERT(noise_scale >= 0.0f, "noise_scale must be non-negative");
+    OPENVINO_ASSERT(length_scale > 0.0f, "length_scale must be positive");
+    OPENVINO_ASSERT(noise_w >= 0.0f, "noise_w must be non-negative");
 }
 
 }  // namespace genai

@@ -88,7 +88,7 @@ public:
 
     /// @brief Get the expected speaker embedding shape for the loaded model.
     /// @return Shape describing the required tensor layout.
-    ///         SpeechT5: {1, 512}.  Kokoro: {510, 1, 256}
+    ///         SpeechT5: {1, 512}.  Kokoro: {510, 1, 256}.  Piper: {0} (single-speaker, no embedding used).
     ov::Shape get_speaker_embedding_shape() const;
 
 private:

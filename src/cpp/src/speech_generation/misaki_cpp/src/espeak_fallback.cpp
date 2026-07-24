@@ -331,7 +331,8 @@ std::string normalize_espeak_to_misaki(std::string ps, bool british, const std::
 
 std::optional<std::string> raw_espeak_phonemize(EspeakApi &api,
                                                 const std::string &text,
-                                                const std::string &voice_name) {
+                                                const std::string &voice_name,
+                                                bool use_tie = true) {
   if (api.set_voice_by_name(voice_name.c_str()) != kEspeakOk) {
     return std::nullopt;
   }
@@ -339,7 +340,10 @@ std::optional<std::string> raw_espeak_phonemize(EspeakApi &api,
   const void *text_ptr = static_cast<const void *>(text.c_str());
   std::string raw;
 
-  const int phoneme_mode = kEspeakPhonemesIpa | kEspeakPhonemesTie | (static_cast<int>('^') << 8);
+  int phoneme_mode = kEspeakPhonemesIpa;
+  if (use_tie) {
+    phoneme_mode |= kEspeakPhonemesTie | (static_cast<int>('^') << 8);
+  }
   while (text_ptr != nullptr) {
     const char *chunk = api.text_to_phonemes(&text_ptr, kEspeakCharsUtf8, phoneme_mode);
     if (!chunk) {
@@ -664,6 +668,20 @@ std::optional<std::string> EspeakG2P::backend_error() const {
     return std::nullopt;
   }
   return state.error;
+}
+
+std::optional<std::string> raw_espeak_ipa_phonemize(const std::string &text,
+                                                    const std::string &voice_name,
+                                                    std::string library_path) {
+  static std::mutex api_mutex;
+  std::scoped_lock lock(api_mutex);
+
+  auto &state = get_cached_load_state(library_path);
+  if (!state.api.has_value()) {
+    return std::nullopt;
+  }
+
+  return raw_espeak_phonemize(*(state.api), text, voice_name, /*use_tie=*/false);
 }
 
 } // namespace misaki
