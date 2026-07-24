@@ -4,7 +4,7 @@ sentence-transformers>=2.2.2,<=5.3.0
 openvino-genai
 # last supported commit f50a0b326df82d4b05c461a9184a97f616bfa63a
 optimum-intel[nncf]>=1.19.0
-pandas>=2.0.3,<=3.0.4
+pandas>=2.0.3,<=3.0.5
 numpy>=1.23.5,<=2.5.1
 tqdm>=4.66.1,<=4.69.0
 diffusers>=0.22.0,<=0.39.0
