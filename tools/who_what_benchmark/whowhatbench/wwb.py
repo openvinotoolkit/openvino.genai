@@ -419,9 +419,9 @@ def parse_args():
         "--speech-voice",
         type=str,
         default="",
-        help="Speech-generation voice name (for example, af_heart for Kokoro). This is currently used only for Kokoro. \n"
-        "For other TTS models (such as SpeechT5), please use --speaker_embeddings parameter to specify the voice. "
-        "If omitted for Kokoro, the default voice used is 'af_heart'",
+        help="Speech-generation voice name (for example, af_heart for Kokoro or Ethan for Qwen3-Omni). \n"
+        "For SpeechT5, please use --speaker_embeddings parameter to specify the voice. "
+        "If omitted, WWB uses the model-specific default speaker/voice.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
@@ -830,24 +830,26 @@ def _is_voice_pack_enabled_model(model):
 
 
 def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
-    if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
-        speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
+    from whowhatbench.speech_generation_evaluator import GenAIOmniSpeechWrapper
 
-    generation_properties = {}
-    if isinstance(language, str) and language.strip():
-        generation_properties["language"] = language.strip().lower()
+    if isinstance(model, GenAIOmniSpeechWrapper):
+        # Omni takes a named voice — skip voice-pack .bin lookup and ov.Tensor coercion.
+        result = model.generate(prompt, speaker_embedding, language=language, voice=voice)
+    else:
+        if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
+            speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
-    selected_voice = voice.strip() if isinstance(voice, str) else ""
+        generation_properties = {}
+        if isinstance(language, str) and language.strip():
+            generation_properties["language"] = language.strip().lower()
 
-    # Only Kokoro voice-pack exports use named voice bins under <model_dir>/voices.
-    if _is_voice_pack_enabled_model(model) and speaker_embedding is None:
-        if not selected_voice:
-            selected_voice = "af_heart"
-
-        # Voice selection loads <model_dir>/voices/<voice>.bin.
-        voices_dir = Path(model.model_dir) / "voices"
-        voice_path = voices_dir / f"{selected_voice}.bin"
-        if voice_path.exists():
+        # Kokoro voice-pack exports select the voice by loading <model_dir>/voices/<voice>.bin
+        # and forwarding it as the speaker embedding.
+        if _is_voice_pack_enabled_model(model) and speaker_embedding is None:
+            selected_voice = voice.strip() if isinstance(voice, str) and voice.strip() else "af_heart"
+            voice_path = Path(model.model_dir) / "voices" / f"{selected_voice}.bin"
+            if not voice_path.exists():
+                raise ValueError(f"Voice embedding file does not exist: {voice_path}")
             speaker_data = np.fromfile(voice_path, dtype=np.float32)
             expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
             expected_flat_size = int(np.prod(expected_shape))
@@ -856,16 +858,16 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
                     f"Voice embedding file {voice_path} has {speaker_data.size} values; expected {expected_flat_size}."
                 )
             speaker_embedding = ov.Tensor(speaker_data.reshape(expected_shape))
-        else:
-            raise ValueError(f"Voice embedding file does not exist: {voice_path}")
 
-    result = model.generate(prompt, speaker_embedding, **generation_properties)
+        result = model.generate(prompt, speaker_embedding, **generation_properties)
+
     if len(result.speeches) != 1:
         raise ValueError(f"Expected exactly one generated waveform per prompt, got {len(result.speeches)}")
 
     speech = np.array(result.speeches[0].data).reshape(-1)
     sample_rate = int(getattr(result, "output_sample_rate", 16000))
-    return speech, sample_rate
+    text = getattr(result, "text", "") or ""
+    return speech, sample_rate, text
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
