@@ -228,24 +228,51 @@ class TextRerankerGenAI(CommonPipeline):
         self.top_n = args.get("rerank_top_n")
 
         self.max_length = args.get("rerank_max_length")
-        if self.max_length is None:
-            try:
-                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
-            except Exception:
-                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+        try:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+        except Exception:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
 
+        if self.max_length is None:
             self.max_length = UseCaseTextReranker.get_default_max_length(model_config)
+
+        self._is_qwen3 = UseCaseTextReranker.is_qwen3(model_config)
+
+        # according to transformers Qwen3-Reranker-0.6B model card:
+        # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
+        if self._is_qwen3:
+            suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+            self.text_processed = [doc + suffix for doc in self.texts]
+        else:
+            self.text_processed = self.texts
+
+    def _build_qwen3_query(self, input_text: str) -> str:
+        prefix = (
+            "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the "
+            + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        )
+        task = "Given a web search query, retrieve relevant passages that answer the query"
+        return f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: "
+
+    def tokenize_qwen(self, input_text: str):
+        query = self._build_qwen3_query(input_text)
+        pairs = [query + doc for doc in self.text_processed]
+        inputs = self.tokenizer(
+            pairs, padding=True, truncation=True, max_length=self.max_length, return_tensors="pt", padding_side="left"
+        )
+        input_tokens = inputs["input_ids"] if "input_ids" in inputs else inputs
+        return input_tokens
 
     def tokenize(self, input_text: str, **kwargs):
         tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": self.max_length}
         inputs = [input_text] * len(self.texts)
-        input_data = self.tokenizer(inputs, return_tensors="pt", **tokenizer_kwargs)
+        input_data = self.tokenizer(inputs, self.texts, return_tensors="pt", **tokenizer_kwargs)
         input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
         return input_tokens
 
     @execution_time_in_sec
-    def generate(self, input_data: Any, **kwargs):
-        return self.model.rerank(input_data, self.texts)
+    def generate(self, query: str, **kwargs):
+        return self.model.rerank(query, self.text_processed)
 
     def print_generated(self, iter_num: int, generation_result: Any, prompt_idx: int):
         iter_str = "warm-up" if iter_num == 0 else f"{iter_num}"
@@ -331,12 +358,17 @@ class TextRerankerGenAI(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
-        tokenized_input = self.tokenize(input_text)
+        if self._is_qwen3:
+            tokenized_input = self.tokenize_qwen(input_text)
+            query = self._build_qwen3_query(input_text)
+        else:
+            tokenized_input = self.tokenize(input_text)
+            query = input_text
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
         self.mem_consumption_meter.start(iter_num)
-        generation_result, generation_time = self.generate(input_text)
+        generation_result, generation_time = self.generate(query)
         memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
