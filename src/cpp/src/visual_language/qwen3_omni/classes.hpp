@@ -6,7 +6,19 @@
 #include "visual_language/qwen3_omni/audio_encoder.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
 
+namespace ov {
+class Model;
+}
+
 namespace ov::genai {
+
+namespace qwen3_omni_testing {
+/// @brief Test-only accessor for the in-graph patch rearrange model
+/// (inputs: "tiled_patches", "reshape_shape8d"/"4d"/"2d"; output: "patches_2d").
+std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test();
+/// @brief Test-only accessor for the full in-graph resize, normalize, and patch rearrange model.
+std::shared_ptr<ov::Model> build_patch_preprocess_model_for_test();
+}  // namespace qwen3_omni_testing
 
 /// @brief Vision encoder for Qwen3-Omni.
 /// Does NOT load the vision_embeddings model (it's merged with the merger in the new export format).
@@ -14,6 +26,16 @@ namespace ov::genai {
 /// The merged vision model is loaded and used by InputsEmbedderQwen3Omni.
 class VisionEncoderQwen3Omni : public VisionEncoderQwen3VL {
 public:
+    // Patch preprocessing mode selected by VISION_PREPROCESS. OV graphs run on the device requested
+    // in the constructor; they are not GPU-specific.
+    //   unset/empty    -> OV            : use Stage 2 (the default)
+    //   "OV"           -> OV            : force Stage 2 (resize + normalize + rearrange on the OV device)
+    //   "OV_REARRANGE"-> OV_REARRANGE  : force Stage 1 (host resize + normalize, OV-device rearrange)
+    //   "CPP"          -> CPP           : force Stage 0 (fully host-side reference implementation)
+    // Stage 1 is bit-identical to Stage 0. Stage 2 can have small numerical differences near resize
+    // boundaries. Compilation errors are propagated without fallback, and an unknown value is rejected.
+    enum class PatchPreprocMode { CPP, OV_REARRANGE, OV };
+
     explicit VisionEncoderQwen3Omni(const std::filesystem::path& model_dir,
                                     const std::string& device,
                                     const ov::AnyMap properties);
@@ -34,6 +56,11 @@ private:
                                ImageSize& out_rsz_size,
                                size_t frame_num,
                                size_t frame_id);
+
+    void initialize_patch_preprocessing(const std::string& device, const ov::AnyMap& properties);
+
+    PatchPreprocMode m_preproc_mode = PatchPreprocMode::OV;
+    std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_patch_rearrange;
 };
 
 /// @brief InputsEmbedder for Qwen3-Omni. Extends Qwen3-VL with audio encoding support.
@@ -134,6 +161,9 @@ private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_merged_vision;
     // Cached rotary embedding dimension from merged vision model (avoids queue lock in get_rotary_pos_emb)
     size_t m_rotary_dim = 0;
+    // True when the GPU SDPAToVLSDPA pass fired and the vision model now expects a packed
+    // "cu_seq_lens" input instead of the dense "attention_mask".
+    bool m_with_cu_seqlens_input = false;
 
     /// @brief Replace audio token positions in input_embeds with audio features.
     void merge_audio_embeddings(ov::Tensor& input_embeds, const std::vector<int64_t>& input_ids);

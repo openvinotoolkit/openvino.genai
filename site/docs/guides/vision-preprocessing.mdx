@@ -1,0 +1,41 @@
+---
+sidebar_position: 9
+---
+
+# Vision Preprocessing
+
+OpenVINO GenAI normally selects the most performant vision preprocessing implementation supported by the device passed to the pipeline. For Qwen3-Omni, the `VISION_PREPROCESS` environment variable can select a specific implementation for debugging and accuracy comparisons.
+
+## Qwen3-Omni preprocessing modes
+
+| `VISION_PREPROCESS` | Stage | Processing path |
+| --- | --- | --- |
+| Unset or empty | Stage 2 | Uses the default `OV` implementation. |
+| `OV` | Stage 2 | Forces resize, normalization, patch reshape, transpose, and flatten in an OpenVINO graph on the requested device. |
+| `OV_REARRANGE` | Stage 1 | Forces resize and normalization on the host, followed by patch reshape, transpose, and flatten in an OpenVINO graph on the requested device. |
+| `CPP` | Stage 0 | Forces the complete host C++ reference implementation. No preprocessing model is compiled on the requested device. |
+
+The OpenVINO modes are device-agnostic. For example, constructing the pipeline for `CPU` compiles the preprocessing graph on CPU, while constructing it for `GPU` compiles the same graph on GPU.
+
+The selected implementation is mandatory. Compilation failures are propagated to the caller instead of silently changing the preprocessing path. Unknown values are rejected. Use `OV_REARRANGE` or `CPP` explicitly when diagnosing device support or accuracy differences.
+
+## Accuracy considerations
+
+Stage 1 performs only data rearrangement in the OpenVINO graph and is bit-identical to Stage 0. Stage 2 uses OpenVINO `BICUBIC_PILLOW` resize to match the antialiased Pillow bicubic algorithm used by the host implementation. Its accuracy is comparable to the host path, but small numerical differences can occur around resize boundaries because device implementations can use different floating-point evaluation orders. Use `OV_REARRANGE` to isolate rearrangement from resize and normalization, or `CPP` as the complete host reference when investigating an accuracy difference.
+
+## Examples
+
+<Tabs groupId="os">
+    <TabItem label="Linux & macOS" value="linux_macos">
+        ```sh
+        export VISION_PREPROCESS=OV_REARRANGE
+        ```
+    </TabItem>
+    <TabItem label="Windows" value="windows">
+        ```bat
+        set VISION_PREPROCESS=OV_REARRANGE
+        ```
+    </TabItem>
+</Tabs>
+
+Remove the variable or assign an empty value to restore the default `OV` implementation.
