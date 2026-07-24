@@ -567,6 +567,11 @@ public:
             }
             ++count;
         }
+        // If trailing prompt tokens already count up to the budget,
+        // force immediately without waiting for the first generated token.
+        if (m_state == COUNTING && m_budget >= 0 && m_count >= static_cast<size_t>(m_budget)) {
+            m_state = FORCING;
+        }
         // budget=0 overrides: force close thinking immediately
         if (m_budget == 0) {
             m_state = FORCING;
