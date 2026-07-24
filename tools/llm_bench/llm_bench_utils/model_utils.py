@@ -206,6 +206,7 @@ def analyze_args(args):
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
     model_args["use_case"] = use_case
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
+    model_args["is_omni_model"] = isinstance(model_type, str) and model_type.startswith("qwen3-omni")
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"
     model_args["config"] = {}

@@ -34,7 +34,7 @@ def run_visual_language_generation_optimum(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, False)
+    prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, False)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -42,12 +42,17 @@ def run_visual_language_generation_optimum(
                 prompt_index, bs_index, proc_id)
     tok_encode_start = time.perf_counter()
 
-    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-    log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
-    log.info(f'{prefix}[P{prompt_index}] Input video nums: {len(videos)}')
-    input_data = model.preprocess_inputs(image=images[0] if images else None,
-                                         video=videos[0] if videos else None,
-                                         text=prompts[0], **processor)
+    prefix = "[warm-up]" if num == 0 else "[{}]".format(num)
+    log.info(f"{prefix}[P{prompt_index}] Input image nums: {len(images)}")
+    log.info(f"{prefix}[P{prompt_index}] Input video nums: {len(videos)}")
+    log.info(f"{prefix}[P{prompt_index}] Input audio nums: {len(audios)}")
+    input_data = model.preprocess_inputs(
+        image=images[0] if images else None,
+        video=videos[0] if videos else None,
+        audio=audios[0] if audios else None,
+        text=prompts[0],
+        **processor,
+    )
 
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
@@ -124,7 +129,9 @@ def run_visual_language_generation_optimum(
     tm_mm_embeddings = ""
     if bench_hook is not None:
         tm_list = bench_hook.get_time_list()
-        tm_mm_embeddings = np.mean(bench_hook.get_mm_embeddings_time_list()) * 1000 * 1000
+        mm_embeddings_list = bench_hook.get_mm_embeddings_time_list()
+        # Models with per-modality embedding helpers (e.g. Qwen3-Omni) leave this list empty.
+        tm_mm_embeddings = np.mean(mm_embeddings_list) * 1000 * 1000 if mm_embeddings_list else ""
         log.debug('latency of all tokens:')
         [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
         tm_infer_list = bench_hook.get_time_infer_list()
@@ -178,7 +185,7 @@ def run_visual_language_generation_genai(
         args["batch_size"] = 1
 
     decim_frames = args["video_frames"]
-    prompts, images, videos = extract_prompt_data(inputs, decim_frames, True)
+    prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, True)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -201,14 +208,17 @@ def run_visual_language_generation_genai(
 
         apply_sd_generation_config(args, gen_config)
     kwargs = {}
-    prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
-    log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
-    log.info(f'{prefix}[P{prompt_index}] Input video nums: {len(videos)}')
+    prefix = "[warm-up]" if num == 0 else "[{}]".format(num)
+    log.info(f"{prefix}[P{prompt_index}] Input image nums: {len(images)}")
+    log.info(f"{prefix}[P{prompt_index}] Input video nums: {len(videos)}")
+    log.info(f"{prefix}[P{prompt_index}] Input audio nums: {len(audios)}")
 
     if images:
         kwargs["images"] = images
     if videos:
         kwargs["videos"] = videos
+    if audios:
+        kwargs["audios"] = audios
 
     log.info("%s[P%s] Text generation start: %s", prefix, prompt_index, datetime.datetime.now().isoformat())
     start = time.perf_counter()
@@ -285,14 +295,16 @@ def run_visual_language_generation_genai(
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
-def run_visual_language_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+def run_visual_language_generation_benchmark(
+    model_path, framework, device, args, num_iters, mem_consumption, input_list=None
+):
     mem_consumption.update_marker("model")
     outs = FW_UTILS[framework].create_image_text_gen_model(model_path, device, mem_consumption, **args)
     model, processor, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
-    input_image_text_list = get_vlm_prompt(args)
+    input_image_text_list = input_list if input_list is not None else get_vlm_prompt(args)
     if args['prompt_index'] is None:
         prompt_idx_list = list(range(0, len(input_image_text_list)))
         image_text_list = input_image_text_list
@@ -303,7 +315,7 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
             if 0 <= i < len(input_image_text_list):
                 image_text_list.append(input_image_text_list[i])
                 prompt_idx_list.append(i)
-    if len(input_image_text_list) == 0:
+    if len(image_text_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
     log.info(f"Numbeams: {args['num_beams']}, benchmarking iter nums(exclude warm-up): {num_iters}, "
              f'prompt nums: {len(image_text_list)}, prompt idx: {prompt_idx_list}')

@@ -1068,7 +1068,7 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools transformers under 5.0
@@ -1077,6 +1077,15 @@ jobs:
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pip install transformers==4.57.6
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_lower_v5"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
+      - name: Test LLM Benchmark Tools with Qwen3-Omni model
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install transformers==5.1
+          python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
 

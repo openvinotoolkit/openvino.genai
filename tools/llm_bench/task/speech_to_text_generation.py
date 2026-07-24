@@ -19,6 +19,7 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 whisper_hook = WhisperHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000
+DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
 
 
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
@@ -150,9 +151,29 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         whisper_hook.clear_statistics()
 
 
+def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption, speech_file_list):
+    # Qwen3-Omni treats audio as another VLM modality; reuse the visual-language path.
+    from task.visual_language_generation import run_visual_language_generation_benchmark
+
+    vlm_input_list = [
+        {
+            "prompt": speech_file.get("prompt") or args.get("prompt") or DEFAULT_SPEECH_PROMPT,
+            "audio": speech_file["media"],
+        }
+        for speech_file in speech_file_list
+    ]
+    return run_visual_language_generation_benchmark(
+        model_path, framework, device, args, num_iters, mem_consumption, input_list=vlm_input_list
+    )
+
+
 def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    iter_data_list = []
     speech_file_list = get_speech_files(args)
+    if args.get("is_omni_model", False):
+        return run_omni_speech_2_txt_benchmark(
+            model_path, framework, device, args, num_iters, mem_consumption, speech_file_list
+        )
+    iter_data_list = []
     if args['prompt_index'] is None:
         speech_idx_list = [prompt_idx for prompt_idx, speech_data in enumerate(speech_file_list)]
         speech_list = speech_file_list

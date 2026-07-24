@@ -4,6 +4,7 @@
 from transformers import AutoTokenizer
 from transformers import (
     AutoModelForCausalLM,
+    AutoProcessor,
     T5ForConditionalGeneration,
     BlenderbotForConditionalGeneration,
     AutoModel,
@@ -26,6 +27,11 @@ from optimum.intel.openvino import (
     OVModelForSequenceClassification,
     OVLTXPipeline,
 )
+
+try:
+    from optimum.intel.openvino import OVModelForMultimodalLM
+except ImportError:
+    OVModelForMultimodalLM = None
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 from dataclasses import dataclass, field
 
@@ -176,9 +182,13 @@ USE_CASES = {
                 "videochat-flash-qwen",
                 "gemma4",
             ]
-        )
+        ),
+        UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
-    "speech_to_text": [UseCaseSpeech2Text(["whisper"])],
+    "speech_to_text": [
+        UseCaseSpeech2Text(["whisper"]),
+        UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
+    ],
     "image_cls": [UseCaseImageCls(["vit"])],
     "code_gen": [
         UseCaseCodeGen(["codegen", "codegen2", "stable-code"]),
@@ -260,7 +270,10 @@ USE_CASES = {
     "ldm_super_resolution": [UseCaseLDMSuperResolution(["ldm-super-resolution"])],
     "text_embed": [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     "text_rerank": [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
-    "text_to_speech": [UseCaseTextToSpeech(["speecht5", "kokoro"])],
+    "text_to_speech": [
+        UseCaseTextToSpeech(["speecht5", "kokoro"]),
+        UseCaseTextToSpeech(["qwen3-omni"], ov_cls=OVModelForMultimodalLM, tokenizer_cls=AutoProcessor),
+    ],
 }
 
 PA_ATTENTION_BACKEND = "PA"

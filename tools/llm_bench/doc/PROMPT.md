@@ -31,19 +31,22 @@ Supported parameters that can be set are:
 Prompt file example：
 {"steps": "20", "width": "256", "height": "256", "prompt": "./image_256x256_size/4.png"}
 
-## 4.Whisper
+## 4. Speech to Text
 Supported parameters that can be set are:
 * `media` - audio file path
+* `prompt` - optional transcription instruction for multimodal speech models
 * `language` - language of audio (default <|en|>)
 * `timestamp` - timestamp for whisper (default true)
 Prompt file example：
 {"media": "./audio/intel_ad_90s_128kbps.mp3", "language": "<|en|>", "timestamp":false}
 {"media": "./audio/intel_ad_120s_128kbps.mp3", "language": "<|en|>", "timestamp":true}
+{"media": "./audio/how_are_you_doing_today.wav", "prompt": "Transcribe this audio."}
 
 ## 5. Visual Language Models
 Supported parameters that can be set are:
 * `media` - image file path or url
-* `prompt`- input text prompt
+* `video` - video file path
+* `prompt` - input text prompt
 
 ## 6. Image to Image Generation
 Supported parameters that can be set are:
@@ -76,6 +79,9 @@ Supported parameters that can be set are:
 Prompt file example：
 {"prompt": "what is openvino?"}
 {"prompt": "A chat between a curious user and an artificial intelligence assistant."}
+
+For Qwen3-Omni, the speaker can be selected via `--speech_voice` (default `Ethan`).
+Speech output is produced at 24 kHz.
 
 ## 9.Video generation
 Supported parameters that can be set are:
