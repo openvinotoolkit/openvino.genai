@@ -4,7 +4,7 @@
 // Unit tests for the VLSDPA enablement helpers used by the Qwen vision encoders:
 //   request_vl_sdpa_transformations() - tags a model with the "QWenVL" hint the GPU plugin keys off.
 //   check_vl_sdpa_transformations()   - reports whether a compiled model exposes the packed
-//                                       "cu_seq_lens"/"cu_window_seqlens" input.
+//                                       "cu_seq_lens" input expected by its callers.
 // Both are device-independent, so the assertions run on CPU.
 
 #include <gtest/gtest.h>
@@ -52,11 +52,11 @@ TEST(VlSdpaTransformations, CheckDetectsCuSeqLens) {
     EXPECT_TRUE(utils::check_vl_sdpa_transformations(compiled));
 }
 
-// The alternate windowed-attention input name must also be detected.
-TEST(VlSdpaTransformations, CheckDetectsCuWindowSeqlens) {
+// A window-only input must not enable callers that unconditionally set "cu_seq_lens".
+TEST(VlSdpaTransformations, CheckRejectsCuWindowSeqlensOnly) {
     ov::Core core;
     auto compiled = core.compile_model(make_named_input_model("cu_window_seqlens"), "CPU");
-    EXPECT_TRUE(utils::check_vl_sdpa_transformations(compiled));
+    EXPECT_FALSE(utils::check_vl_sdpa_transformations(compiled));
 }
 
 // Callers that feed a specific packed input must be able to distinguish the two names.

@@ -24,8 +24,7 @@ bool has_vl_sdpa_input(const ov::CompiledModel& compiled_model, const std::strin
 }
 
 bool check_vl_sdpa_transformations(const ov::CompiledModel& compiled_model) {
-    return has_vl_sdpa_input(compiled_model, "cu_seq_lens") ||
-           has_vl_sdpa_input(compiled_model, "cu_window_seqlens");
+    return has_vl_sdpa_input(compiled_model, "cu_seq_lens");
 }
 
 }  // namespace utils
