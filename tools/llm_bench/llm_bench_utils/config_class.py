@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 @dataclass
 class UseCase:
     task = ""
-    model_types: list[str] = field(default_factory=list)
+    supported_model_types: list[str] = field(default_factory=list)
     model_type: str | None = None
     ov_cls: type | None = None
     pt_cls: type | None = AutoModel
@@ -247,14 +247,14 @@ USE_CASES = {
             ]
         ),
         UseCaseTextGen(["t5"], ov_cls=OVModelForSeq2SeqLM, pt_cls=T5ForConditionalGeneration),
-        UseCaseTextGen(["mpt"], OVMPTModel),
+        UseCaseTextGen(["mpt"], ov_cls=OVMPTModel),
         UseCaseTextGen(["blenderbot"], ov_cls=OVModelForSeq2SeqLM, pt_cls=BlenderbotForConditionalGeneration),
         UseCaseTextGen(["chatglm"], ov_cls=OVChatGLMModel, pt_cls=AutoModel),
     ],
     "text_gen_chat": [
         UseCaseTextGenChat([]),
         UseCaseTextGenChat(["t5"], ov_cls=OVModelForSeq2SeqLM, pt_cls=T5ForConditionalGeneration),
-        UseCaseTextGenChat(["mpt"], OVMPTModel),
+        UseCaseTextGenChat(["mpt"], ov_cls=OVMPTModel),
         UseCaseTextGenChat(["blenderbot"], ov_cls=OVModelForSeq2SeqLM, pt_cls=BlenderbotForConditionalGeneration),
         UseCaseTextGenChat(["chatglm"], ov_cls=OVChatGLMModel, pt_cls=AutoModel),
     ],

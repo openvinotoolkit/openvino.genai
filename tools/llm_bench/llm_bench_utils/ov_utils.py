@@ -129,8 +129,8 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
                 raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
             if (
                 model_class != UseCaseTextGen.ov_cls
-                and "mpt" not in use_case.model_types
-                and "chatglm" not in use_case.model_types
+                and "mpt" not in use_case.supported_model_types
+                and "chatglm" not in use_case.supported_model_types
             ):
                 raise RuntimeError("OpenVINO GenAI based benchmarking is not available for required model type.")
             log.info("Selected OpenVINO GenAI for benchmarking")
