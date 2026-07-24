@@ -97,6 +97,10 @@ void EulerAncestralDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     m_timesteps.clear();
     m_sigmas.clear();
     m_step_index = m_begin_index = -1;
+
+    OPENVINO_ASSERT(num_inference_steps <= m_config.num_train_timesteps,
+                    "`num_inference_steps` cannot be larger than `num_train_timesteps`");
+
     m_num_inference_steps = num_inference_steps;
     std::vector<float> sigmas;
 
@@ -119,7 +123,8 @@ void EulerAncestralDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     }
     case TimestepSpacing::TRAILING: {
         float step_ratio = static_cast<float>(m_config.num_train_timesteps) / static_cast<float>(m_num_inference_steps);
-        for (float i = m_config.num_train_timesteps; i > 0; i -= step_ratio) {
+        for (size_t s = 0; s < num_inference_steps; ++s) {
+            const float i = static_cast<float>(m_config.num_train_timesteps) - static_cast<float>(s) * step_ratio;
             m_timesteps.push_back(static_cast<int64_t>(std::round(i)) - 1);
         }
         break;

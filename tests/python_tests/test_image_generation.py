@@ -1,10 +1,12 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import pytest
 import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
+from pathlib import Path
 
 from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
@@ -443,3 +445,51 @@ class TestFlux2KleinImageGeneration:
 
         assert len(callback_calls) > 0, "Callback should be called at least once"
         assert image is not None
+
+
+class TestTrailingTimestepSpacing:
+    @pytest.mark.parametrize("num_inference_steps", [9, 11, 12, 18, 22, 30])
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_trailing_spacing_step_count(self, image_generation_model, num_inference_steps):
+        """Regression test: TRAILING spacing with non-divisible step counts must not produce extra steps."""
+        model_dir = Path(image_generation_model)
+        scheduler_config_path = model_dir / "scheduler" / "scheduler_config.json"
+
+        with open(scheduler_config_path) as f:
+            original_config = json.load(f)
+
+        patched_config = original_config.copy()
+        patched_config["timestep_spacing"] = "trailing"
+        patched_config["steps_offset"] = 0
+
+        try:
+            with open(scheduler_config_path, "w") as f:
+                json.dump(patched_config, f)
+
+            pipe = ov_genai.Text2ImagePipeline(str(model_dir), "CPU")
+
+            callback_calls = []
+
+            def callback(step, num_steps, latent):
+                callback_calls.append((step, num_steps))
+                return False
+
+            pipe.generate(
+                "test",
+                width=64,
+                height=64,
+                num_inference_steps=num_inference_steps,
+                rng_seed=42,
+                callback=callback,
+            )
+
+            assert len(callback_calls) == num_inference_steps, (
+                f"Expected {num_inference_steps} callback calls, got {len(callback_calls)}"
+            )
+            for step, num_steps in callback_calls:
+                assert num_steps == num_inference_steps, (
+                    f"Callback reported num_steps={num_steps}, expected {num_inference_steps}"
+                )
+        finally:
+            with open(scheduler_config_path, "w") as f:
+                json.dump(original_config, f, indent=2)
