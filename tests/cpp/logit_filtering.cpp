@@ -535,3 +535,229 @@ TEST(TopKThenTemperatureTest, DeferredExpfPathTemperatureOneIsNoOp) {
         EXPECT_EQ(logits.m_vector[i].m_log_prob, before[i].m_log_prob);
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// ThinkingBudgetTransform (PR #4139)
+//
+// Unit tests for the state machine: IDLE -> COUNTING -> FORCING -> DONE, with
+// the initial state chosen by a reverse scan of the prompt token ids (the
+// last think-related token wins): start_id -> COUNTING with the tokens after
+// it pre-counted against the budget, end_id -> DONE, neither -> IDLE.
+// budget==0 overrides the scan and forces immediately even when the prompt's
+// think block is already closed (confirmed deliberate in the PR discussion:
+// models that never emit think tags would otherwise lose suppression).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr size_t THINKING_VOCAB_SIZE = 8;
+constexpr int64_t THINKING_START_ID = 3;
+constexpr int64_t THINKING_END_ID = 5;
+
+// Returns true when apply() is forcing (every logit except end_id set to -inf),
+// false when it is a passthrough (no logit modified). Any other pattern fails
+// the calling test.
+bool thinking_transform_is_forcing(ThinkingBudgetTransform& transform) {
+    float data[THINKING_VOCAB_SIZE];
+    std::fill_n(data, THINKING_VOCAB_SIZE, 1.0f);
+    Logits logits(data, THINKING_VOCAB_SIZE);
+    transform.apply(logits);
+
+    const float neg_inf = -std::numeric_limits<float>::infinity();
+    bool any_masked = false;
+    bool all_others_masked = true;
+    for (size_t i = 0; i < THINKING_VOCAB_SIZE; ++i) {
+        if (static_cast<int64_t>(i) == THINKING_END_ID) {
+            EXPECT_EQ(logits.m_data[i], 1.0f) << "the end token itself must never be masked";
+            continue;
+        }
+        if (logits.m_data[i] == neg_inf) {
+            any_masked = true;
+        } else {
+            all_others_masked = false;
+        }
+    }
+    EXPECT_EQ(any_masked, all_others_masked)
+        << "apply() must either mask all non-end tokens or none of them";
+    return any_masked && all_others_masked;
+}
+
+} // anonymous namespace
+
+TEST(ThinkingBudgetTransformTest, BudgetZeroWithOpenThinkPromptForcesImmediately) {
+    // Template-style prompt ending in an open <think> block (e.g. "...<think>\n").
+    TokenIds prompt{7, THINKING_START_ID, 1};
+    auto transform = ThinkingBudgetTransform(0, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, OpenThinkPromptForcesAtExactBudget) {
+    // Prompt ends exactly at <think>: no trailing tokens, so the full budget
+    // is available to generation.
+    TokenIds prompt{7, THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(3, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    transform.accept_token(6);
+    transform.accept_token(7);
+    EXPECT_FALSE(thinking_transform_is_forcing(transform)) << "must not force before the budget";
+
+    transform.accept_token(6); // 3rd reasoning token reaches budget=3
+    EXPECT_TRUE(thinking_transform_is_forcing(transform)) << "must force once the budget is reached";
+}
+
+TEST(ThinkingBudgetTransformTest, TrailingPromptTokensCountTowardBudget) {
+    // Real templates end with tokens after <think> (e.g. "\n"), and a
+    // continue_final_message prompt may carry many partial-thought tokens.
+    // The reverse scan pre-counts them, so generation gets budget minus the
+    // trailing count.
+    TokenIds prompt{7, THINKING_START_ID, 1};
+    auto transform = ThinkingBudgetTransform(3, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    transform.accept_token(6);
+    EXPECT_FALSE(thinking_transform_is_forcing(transform)) << "2 of 3 budget tokens used";
+
+    transform.accept_token(6); // 1 trailing + 2 generated reaches budget=3
+    EXPECT_TRUE(thinking_transform_is_forcing(transform))
+        << "trailing prompt tokens must count toward the budget";
+}
+
+TEST(ThinkingBudgetTransformTest, NaturalCloseBeforeBudgetBecomesPassthrough) {
+    TokenIds prompt{THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(10, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    transform.accept_token(6);
+    transform.accept_token(THINKING_END_ID); // model closes the block on its own -> DONE
+    transform.accept_token(7);
+    transform.accept_token(1);
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, ClosedThinkBlockPromptDoesNotEngageBudget) {
+    // Prompt already contains a closed block, e.g. a chat template rendered with
+    // enable_thinking=false ("...<think>\n\n</think>\n\n"). The reverse scan
+    // finds end_id last -> DONE, so the budget must not engage until the model
+    // opens a new think block itself.
+    TokenIds prompt{7, THINKING_START_ID, 1, THINKING_END_ID, 2};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    for (int i = 0; i < 6; ++i) { // well past the budget
+        transform.accept_token(6);
+    }
+    EXPECT_FALSE(thinking_transform_is_forcing(transform))
+        << "budget must not engage while no think block is open";
+
+    transform.accept_token(THINKING_START_ID); // model reopens thinking
+    transform.accept_token(6);
+    transform.accept_token(6);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform))
+        << "a new think block after a prompt-closed one re-arms the budget";
+}
+
+TEST(ThinkingBudgetTransformTest, LastThinkTokenInPromptWins) {
+    // A closed-then-reopened block in the prompt: the reverse scan stops at the
+    // last think-related token, so the earlier </think> must not matter.
+    TokenIds prompt{1, THINKING_END_ID, 7, THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(1, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    transform.accept_token(6); // 1st reasoning token reaches budget=1
+    EXPECT_TRUE(thinking_transform_is_forcing(transform))
+        << "the open <think> after a closed block must put the transform in COUNTING";
+}
+
+TEST(ThinkingBudgetTransformTest, BudgetZeroForcesEvenWithClosedBlockPrompt) {
+    // budget==0 bypasses the prompt scan and forces immediately, even though the
+    // prompt's think block is already closed. Deliberate per the PR discussion:
+    // models that reason without emitting think tags (regardless of the prompt)
+    // would otherwise lose suppression entirely.
+    TokenIds prompt{7, THINKING_START_ID, 1, THINKING_END_ID, 2};
+    auto transform = ThinkingBudgetTransform(0, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, ThinkFreePromptWaitsForGeneratedThinkBlock) {
+    TokenIds prompt{1, 2, 7};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    transform.accept_token(6);
+    transform.accept_token(6);
+    transform.accept_token(6);
+    EXPECT_FALSE(thinking_transform_is_forcing(transform)) << "IDLE until the model emits <think>";
+
+    transform.accept_token(THINKING_START_ID); // model opens a think block mid-generation
+    transform.accept_token(6);
+    EXPECT_FALSE(thinking_transform_is_forcing(transform)) << "1 of 2 budget tokens used";
+
+    transform.accept_token(6);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform)) << "budget reached inside the block";
+}
+
+TEST(ThinkingBudgetTransformTest, ForcedCloseThenNewThinkBlockRearms) {
+    TokenIds prompt{THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    transform.accept_token(6);
+    transform.accept_token(6);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+
+    transform.accept_token(THINKING_END_ID); // the forced </think> is sampled -> DONE
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+
+    transform.accept_token(THINKING_START_ID); // a second think block opens
+    transform.accept_token(6);
+    transform.accept_token(6);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform)) << "budget applies per block after re-arm";
+}
+
+TEST(ThinkingBudgetTransformTest, UnlimitedBudgetNeverForces) {
+    TokenIds prompt{THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(-1, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    for (int i = 0; i < 100; ++i) {
+        transform.accept_token(6);
+    }
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, ForcingMasksVectorPathToo) {
+    TokenIds prompt{THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(0, THINKING_START_ID, THINKING_END_ID, prompt);
+
+    float data[THINKING_VOCAB_SIZE];
+    std::fill_n(data, THINKING_VOCAB_SIZE, 1.0f);
+    Logits logits(data, THINKING_VOCAB_SIZE);
+    logits.initialize_vector();
+    transform.apply(logits);
+
+    const float neg_inf = -std::numeric_limits<float>::infinity();
+    for (const auto& token : logits.m_vector) {
+        if (token.m_index == THINKING_END_ID) {
+            EXPECT_EQ(token.m_log_prob, 1.0f);
+        } else {
+            EXPECT_EQ(token.m_log_prob, neg_inf);
+        }
+    }
+}
+
+TEST(ThinkingBudgetTransformTest, TrailingCountReachingBudgetForcesAtConstruction) {
+    // Open <think> block whose trailing prompt tokens already reach the budget:
+    // the first generated token should be the forced </think>, no overshoot.
+    TokenIds prompt{7, THINKING_START_ID, 1, 2};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+
+    transform.accept_token(THINKING_END_ID); // the forced </think> is sampled
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, TrailingCountOverBudgetForcesAtConstruction) {
+    TokenIds prompt{THINKING_START_ID, 1, 2, 4, 6};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, UnlimitedBudgetIgnoresTrailingCount) {
+    TokenIds prompt{THINKING_START_ID, 1, 2, 4};
+    auto transform = ThinkingBudgetTransform(-1, THINKING_START_ID, THINKING_END_ID, prompt);
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+}

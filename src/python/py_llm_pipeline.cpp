@@ -57,6 +57,29 @@ py::object call_common_generate(
     const ov::genai::GenerationConfig& default_config = config.value_or(pipe.get_generation_config());
     auto updated_config = pyutils::update_config_from_kwargs(default_config, kwargs);
 
+    // ── Auto-detect thinking token IDs ──
+    // Triggered when thinking_start_token_id is not set and either:
+    //   1. enable_thinking is false, or
+    //   2. reasoning_budget_tokens is >= 0
+    // Encodes <think> and </think> via the tokenizer to get the correct IDs.
+    // Conditions:
+    //   1. thinking_start_token_id is unset (still at default -1)
+    //   2. Both <think> and </think> encode as single tokens
+    // Silently skips on failure (e.g. tokenizer doesn't support these special tokens).
+    if (updated_config.thinking_start_token_id < 0 &&
+        (!updated_config.enable_thinking || updated_config.reasoning_budget_tokens >= 0)) {
+        try {
+            auto tok = pipe.get_tokenizer();
+            auto start = tok.encode("<think>");
+            auto end = tok.encode("</think>");
+            // Only trust single-token encodings; skip multi-token results
+            if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
+                updated_config.thinking_start_token_id = *start.input_ids.data<int64_t>();
+                updated_config.thinking_end_token_id = *end.input_ids.data<int64_t>();
+            }
+        } catch (...) { /* skip auto-detect on failure */ }
+    }
+
     py::object results;
     StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
 

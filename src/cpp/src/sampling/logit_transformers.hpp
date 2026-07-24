@@ -524,5 +524,127 @@ public:
     }
 };
 
+// Forces thinking_end_token_id when reasoning budget is exhausted.
+//
+// State machine:
+//   IDLE -> COUNTING -> FORCING -> DONE
+//     ^                         |
+//     +--- re-arm (DONE -> COUNTING) ---+
+//
+// IDLE:    Passthrough, watches for thinking_start_token_id.
+// COUNTING: Counts tokens in the think block, watches for natural end.
+// FORCING:  All logits = -inf, only thinking_end_token_id allowed.
+// DONE:    Passthrough forever. Re-arms on new start token (multi-block).
+//
+// Constructor scans prompt_ids to determine initial state:
+//   - last token is start_id  → prompt has open <think> block → COUNTING
+//   - last token is end_id    → think block already closed    → IDLE
+//   - no think tokens found   → prompt has no think block     → IDLE
+// This avoids always starting in COUNTING, which would over-count
+// tokens generated before the model emits <think>.
+class ThinkingBudgetTransform : public ILogitTransformer {
+public:
+    enum State { IDLE, COUNTING, FORCING, DONE };
+
+    ThinkingBudgetTransform(int64_t budget, int64_t start_id, int64_t end_id,
+                            const TokenIds& prompt_ids)
+        : m_budget(budget), m_start_id(start_id), m_end_id(end_id) {
+        // Scan prompt_ids in reverse to find the last think-related token.
+        // Once found, set initial state and trailing token count, then break.
+        //   - start_id → prompt ends with open <think> block → COUNTING
+        //   - end_id   → think block already closed            → DONE
+        //   - neither  → no think block in prompt             → IDLE
+        m_state = IDLE;
+        size_t count = 0;
+        for (auto it = prompt_ids.rbegin(); it != prompt_ids.rend(); ++it) {
+            if (*it == start_id) {
+                m_state = COUNTING;
+                m_count = count;
+                break;
+            } else if (*it == end_id) {
+                m_state = DONE;
+                break;
+            }
+            ++count;
+        }
+        // If trailing prompt tokens already count up to the budget,
+        // force immediately without waiting for the first generated token.
+        if (m_state == COUNTING && m_budget >= 0 && m_count >= static_cast<size_t>(m_budget)) {
+            m_state = FORCING;
+        }
+        // budget=0 overrides: force close thinking immediately
+        if (m_budget == 0) {
+            m_state = FORCING;
+        }
+    }
+
+    void apply(Logits& logits) override {
+        if (m_state != FORCING) return;
+        if (m_end_id < 0) return;
+
+        const float neg_inf = -std::numeric_limits<float>::infinity();
+        if (logits.is_vector_initialized()) {
+            for (auto& t : logits.m_vector) {
+                if (t.m_index != m_end_id) {
+                    t.m_log_prob = neg_inf;
+                }
+            }
+        } else {
+            for (size_t i = 0; i < logits.m_size; ++i) {
+                if (static_cast<int64_t>(i) != m_end_id) {
+                    logits.m_data[i] = neg_inf;
+                }
+            }
+        }
+    }
+
+    bool is_applicable(size_t /*generated_tokens_cnt*/) override { return true; }
+
+    // Called by LogitProcessor::register_new_generated_token
+    void accept_token(int64_t token_id) {
+        // token_text is not passed (LogitProcessor has no tokenizer reference),
+        // so UTF-8 safe truncation is not available.
+        switch (m_state) {
+        case IDLE:
+            if (token_id == m_start_id) {
+                m_state = COUNTING;
+                m_count = 0;
+            }
+            break;
+
+        case COUNTING:
+            if (token_id == m_end_id) {
+                m_state = DONE;
+            } else {
+                ++m_count;
+                if (m_budget >= 0 && m_count >= static_cast<size_t>(m_budget)) {
+                    m_state = FORCING;
+                }
+            }
+            break;
+
+        case FORCING:
+            if (token_id == m_end_id) {
+                m_state = DONE;
+            }
+            break;
+
+        case DONE:
+            if (token_id == m_start_id) {
+                m_state = (m_budget == 0) ? FORCING : COUNTING;
+                m_count = 0;
+            }
+            break;
+        }
+    }
+
+private:
+    int64_t m_budget;
+    int64_t m_start_id;
+    int64_t m_end_id;
+    State m_state = IDLE;
+    size_t m_count = 0;
+};
+
 } // namespace LogitTransformers
 } // namespace ov::genai
