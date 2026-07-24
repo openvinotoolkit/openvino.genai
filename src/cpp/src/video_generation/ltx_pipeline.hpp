@@ -770,13 +770,9 @@ public:
             } else {
                 latent_cfg = latent;
             }
-            const size_t request_input_batch = m_transformer->get_request_input_batch();
-            if (request_input_batch > latent_cfg.get_shape()[0]) {
-                OPENVINO_ASSERT(request_input_batch % latent_cfg.get_shape()[0] == 0,
-                                "Transformer input batch must be divisible by latent batch");
-                latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
-            }
-            // timestep is sized to B_ts; the repeat above must not desync latent_cfg from it.
+            // batch_size_multiplier already incorporates m_transformer->get_expected_batch_size()
+            // (see the override above), so latent_cfg's batch can never fall short of it here.
+            // Tripwire: latent_cfg must stay in sync with the B_ts-sized timestep tensor.
             OPENVINO_ASSERT(latent_cfg.get_shape()[0] == B_ts,
                             "latent batch (", latent_cfg.get_shape()[0],
                             ") must match timestep batch (", B_ts, ")");
@@ -1021,14 +1017,9 @@ public:
             } else {
                 latent_cfg = latent;
             }
-            // Repeat latent if model was compiled for CFG but current call has guidance_scale<=1.
-            const size_t request_input_batch = m_transformer->get_request_input_batch();
-            if (request_input_batch > latent_cfg.get_shape()[0]) {
-                OPENVINO_ASSERT(request_input_batch % latent_cfg.get_shape()[0] == 0,
-                                "Transformer input batch must be divisible by latent batch");
-                latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
-            }
-            // timestep batch must stay in sync with latent_cfg after the repeat above.
+            // batch_size_multiplier already incorporates m_transformer->get_expected_batch_size()
+            // (see the override above), so latent_cfg's batch can never fall short of it here.
+            // Tripwire: latent_cfg must stay in sync with the timestep tensor's batch.
             OPENVINO_ASSERT(latent_cfg.get_shape()[0] == timestep.get_shape()[0],
                             "latent batch (", latent_cfg.get_shape()[0],
                             ") must match timestep batch (", timestep.get_shape()[0], ")");

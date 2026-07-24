@@ -134,17 +134,6 @@ size_t LTXVideoTransformer3DModel::get_expected_batch_size() const {
     return m_expected_batch_size;
 }
 
-size_t LTXVideoTransformer3DModel::get_request_input_batch() {
-    if (!m_request) {
-        return 0;
-    }
-    const ov::Shape shape = m_request.get_input_tensor(0).get_shape();
-    if (shape.empty()) {
-        return 0;
-    }
-    return shape[0];
-}
-
 ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
     if (m_model) {
         for (auto&& input : m_model->inputs()) {
