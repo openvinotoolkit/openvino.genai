@@ -106,7 +106,7 @@ public:
     class Multimodal;
 };
 
-class EmbeddingPipeline::EmbeddingPipelineImpl::TextOnly : public EmbeddingPipeline::EmbeddingPipelineImpl {
+class EmbeddingPipeline::EmbeddingPipelineImpl::TextOnly : public EmbeddingPipelineImpl {
 public:
     TextOnly(const std::filesystem::path& models_path,
              const std::string& device,
@@ -144,7 +144,7 @@ private:
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
 };
 
-class EmbeddingPipeline::EmbeddingPipelineImpl::Multimodal : public EmbeddingPipeline::EmbeddingPipelineImpl {
+class EmbeddingPipeline::EmbeddingPipelineImpl::Multimodal : public EmbeddingPipelineImpl {
 public:
     Multimodal(const std::filesystem::path& models_path,
                const std::string& device,
@@ -163,6 +163,7 @@ public:
             ? std::vector<std::string>{std::get<std::string>(text)}
             : std::get<std::vector<std::string>>(text);
 
+        // What a stupid design? Do we need to pass empty vectors for images and videos to multimodal_embed???
         std::vector<EncodedImage> encoded_images;
         std::vector<EncodedVideo> encoded_videos;
         return multimodal_embed(texts, encoded_images, encoded_videos, prompt);
