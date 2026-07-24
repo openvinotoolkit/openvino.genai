@@ -6,7 +6,6 @@
 #include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
-#include <numeric>
 
 #include <openvino/op/convert.hpp>
 #include <openvino/op/maximum.hpp>
@@ -24,6 +23,7 @@
 #include "lora/helper.hpp"
 #include "logger.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
+#include "video_generation/compression_utils.hpp"
 #include "generation_config_utils.hpp"
 
 #include "utils.hpp"
@@ -563,16 +563,12 @@ public:
         }
 
         size_t num_channels_latents = transformer_config.in_channels;
-        size_t spatial_compression_ratio =
-            m_vae->get_config().patch_size * std::pow(2,
-                                                      std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                  m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                  0));
-        size_t temporal_compression_ratio =
-            m_vae->get_config().patch_size_t * std::pow(2,
-                                                        std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
-                                                                    m_vae->get_config().spatio_temporal_scaling.end(),
-                                                                    0));
+        const std::pair<size_t, size_t> compression_ratios = utils::get_spatial_temporal_compression_ratios(
+            m_vae->get_config().patch_size,
+            m_vae->get_config().patch_size_t,
+            m_vae->get_config().spatio_temporal_scaling);
+        const size_t spatial_compression_ratio = compression_ratios.first;
+        const size_t temporal_compression_ratio = compression_ratios.second;
         size_t transformer_spatial_patch_size = transformer_config.patch_size;
         size_t transformer_temporal_patch_size = transformer_config.patch_size_t;
 

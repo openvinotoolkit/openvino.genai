@@ -5,7 +5,6 @@
 
 #include <fstream>
 #include <memory>
-#include <numeric>
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
@@ -17,6 +16,7 @@
 #include "openvino/op/constant.hpp"
 
 #include "utils.hpp"
+#include "video_generation/compression_utils.hpp"
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
 
@@ -145,16 +145,16 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     // TODO: for img2video
     // if (m_encoder_model) {...}
 
-    int64_t spatial_compression_ratio =
-        get_config().patch_size *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
-    int64_t temporal_compression_ratio =
-        get_config().patch_size_t *
-        std::pow(
-            2,
-            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
+    const auto& config = get_config();
+    OPENVINO_ASSERT(config.patch_size > 0, "patch_size must be positive but got ", config.patch_size);
+    OPENVINO_ASSERT(config.patch_size_t > 0, "patch_size_t must be positive but got ", config.patch_size_t);
+
+    const std::pair<size_t, size_t> compression_ratios = utils::get_spatial_temporal_compression_ratios(
+        config.patch_size,
+        config.patch_size_t,
+        config.spatio_temporal_scaling);
+    const int64_t spatial_compression_ratio = static_cast<int64_t>(compression_ratios.first);
+    const int64_t temporal_compression_ratio = static_cast<int64_t>(compression_ratios.second);
 
     num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
     height /= (spatial_compression_ratio * m_transformer_patch_size);
@@ -179,8 +179,9 @@ const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {
     return m_config;
 }
 
-size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {  // TODO: compare with reference. Drop?
-    return std::pow(2, m_config.block_out_channels.size() - 1);
+size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {
+    OPENVINO_ASSERT(m_config.patch_size > 0, "AutoencoderKLLTXVideo config patch_size must be greater than 0");
+    return utils::get_spatial_compression_ratio(m_config.patch_size, m_config.spatio_temporal_scaling);
 }
 
 void AutoencoderKLLTXVideo::merge_vae_video_post_processing() const {
