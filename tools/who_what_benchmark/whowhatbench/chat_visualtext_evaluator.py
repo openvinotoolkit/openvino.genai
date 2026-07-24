@@ -53,6 +53,7 @@ def default_gen_answer(
     kv_axes_pos,
     crop_question=False,
     full_chat=False,
+    generation_config_extra=None,
 ):
     if model.config.model_type not in MODEL_TYPE_TO_CLS_MAPPING:
         raise ValueError(
@@ -184,6 +185,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
         relevance_weight=None,
         crop_question=True,
         device="CPU",
+        generation_config_extra=None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
@@ -198,6 +200,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
         self.processor = processor
         self._crop_question = crop_question
         self._full_chat = device == "NPU"
+        self.generation_config_extra = generation_config_extra or {}
 
         self.gt_dir = Path(gt_data or "").parent
         if base_model:
@@ -327,6 +330,8 @@ class ChatVisualTextEvaluator(TextEvaluator):
         prompts_dir = Path(result_dir) / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
 
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
+
         inputs: List[VisualTextChatInput]
         for i, inputs in tqdm(
             enumerate(input_data),
@@ -343,6 +348,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
                 kv_axes_pos,
                 self._crop_question,
                 _full_chat,
+                **extra_kwargs,
             )
 
             result_path = Path(result_dir) / f"chat_vlm_output_{i}.json"

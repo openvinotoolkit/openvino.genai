@@ -117,3 +117,50 @@ class TestBenchmarkVLM:
             for command in [cpp_command, py_command]:
                 with pytest.raises(subprocess.CalledProcessError):
                     run_sample(command)
+
+    @pytest.mark.vlm
+    @pytest.mark.samples
+    @pytest.mark.eagle3_decoding
+    @pytest.mark.parametrize(
+        "convert_model, convert_draft_model, download_test_content",
+        [
+            pytest.param("tiny-random-qwen3-vl-layer10", "tiny-random-qwen3-vl-eagle3", "images/image.png"),
+        ],
+        indirect=["convert_model", "convert_draft_model", "download_test_content"],
+    )
+    def test_benchmark_eagle3_vlm(self, convert_model, convert_draft_model, download_test_content):
+        num_iter = "3"
+        num_assistant_tokens = "5"
+
+        benchmark_sample = SAMPLES_CPP_DIR / "benchmark_vlm"
+        benchmark_cpp_command = [
+            benchmark_sample,
+            "-m",
+            convert_model,
+            "-D",
+            convert_draft_model,
+            "-A",
+            num_assistant_tokens,
+            "-i",
+            download_test_content,
+            "-n",
+            num_iter,
+        ]
+        run_sample(benchmark_cpp_command)
+
+        benchmark_script = SAMPLES_PY_DIR / "visual_language_chat/benchmark_vlm.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-D",
+            convert_draft_model,
+            "-A",
+            num_assistant_tokens,
+            "-i",
+            download_test_content,
+            "-n",
+            num_iter,
+        ]
+        run_sample(benchmark_py_command)

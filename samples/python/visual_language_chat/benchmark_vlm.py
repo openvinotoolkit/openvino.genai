@@ -58,6 +58,8 @@ def weight_0_1(value):
 def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
+    parser.add_argument("-D", "--draft_model", type=str, help="Path to draft model and tokenizers base directory")
+    parser.add_argument("-A", "--num_assistant_tokens", type=int, default=5, help="Number of assistant tokens")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-F", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument(
@@ -96,6 +98,9 @@ def main():
 
     args = parser.parse_args()
 
+    if args.device == "NPU" and args.draft_model:
+        parser.error("--draft_model is not supported when --device is NPU")
+
     if args.prompt is not None and args.prompt_file is not None:
         raise RuntimeError(f'Prompt and prompt file should not exist together!')
     else:
@@ -112,6 +117,7 @@ def main():
     # Perf metrics is stored in VLMDecodedResults.
     # In order to get VLMDecodedResults instead of a string input should be a list.
     models_path = args.model
+    draft_model_path = args.draft_model
     image_width = args.image_width
     image_height = args.image_height
     if (image_height is None) != (image_width is None):
@@ -131,6 +137,11 @@ def main():
     if args.relevance_weight is not None:
         config.relevance_weight = args.relevance_weight
 
+    properties = {}
+    if draft_model_path:
+        properties["draft_model"] = ov_genai.draft_model(draft_model_path, device)
+        config.num_assistant_tokens = args.num_assistant_tokens
+
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)
     else:
@@ -138,7 +149,8 @@ def main():
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
-        pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
+        properties["scheduler_config"] = scheduler_config
+        pipe = ov_genai.VLMPipeline(models_path, device, **properties)
 
     input_data = pipe.get_tokenizer().encode(prompt)
     prompt_token_size = input_data.input_ids.get_shape()[1]
@@ -169,6 +181,41 @@ def main():
     print(f"TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms/token")
     print(f"Throughput: {perf_metrics.get_throughput().mean:.2f} ± {perf_metrics.get_throughput().std:.2f} tokens/s")
 
+    sd_perf_metrics = res.extended_perf_metrics
+    if sd_perf_metrics:
+        main_model_metrics = sd_perf_metrics.main_model_metrics
+        print("\nMAIN MODEL ")
+        print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms")
+        print(f"  TTFT: {main_model_metrics.get_ttft().mean:.2f}  ± {main_model_metrics.get_ttft().std:.2f} ms")
+        print(f"  TTST: {main_model_metrics.get_ttst().mean:.2f}  ± {main_model_metrics.get_ttst().std:.2f} ms")
+        print(f"  TPOT: {main_model_metrics.get_tpot().mean:.2f}  ± {main_model_metrics.get_tpot().std:.2f} ms/token ")
+        print(
+            f"  AVG Latency: {main_model_metrics.get_latency().mean:.2f}  ± {main_model_metrics.get_latency().std:.2f} ms/iteration "
+        )
+        print(f"  Num generated token: {main_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(main_model_metrics.raw_metrics.m_durations)}")
+        print(f"  Num accepted token: {sd_perf_metrics.get_num_accepted_tokens()} tokens")
+
+        draft_model_metrics = sd_perf_metrics.draft_model_metrics
+        print("\nDRAFT MODEL ")
+        print(f"  Generate time: {draft_model_metrics.get_generate_duration().mean:.2f} ms")
+        print(f"  TTFT: {draft_model_metrics.get_ttft().mean:.2f}  ± {draft_model_metrics.get_ttft().std:.2f} ms")
+        print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f}  ± {draft_model_metrics.get_ttst().std:.2f} ms ")
+        print(
+            f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f}  ± {draft_model_metrics.get_tpot().std:.2f} ms/token "
+        )
+        print(
+            f"  AVG Latency: {draft_model_metrics.get_latency().mean:.2f}  ± {draft_model_metrics.get_latency().std:.2f} ms/iteration "
+        )
+        print(f"  Num generated token: {draft_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(draft_model_metrics.raw_metrics.m_durations)}")
+        accept_length = (
+            0.0
+            if not main_model_metrics.raw_metrics.m_durations
+            else float(sd_perf_metrics.get_num_generated_tokens())
+            / float(len(main_model_metrics.raw_metrics.m_durations))
+        )
+        print(f"  Accept length: {accept_length:.2f}")
 
 if __name__ == "__main__":
     main()

@@ -42,12 +42,14 @@ class VisualTextEvaluator(TextEvaluator):
         relevance_weight=None,
         task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
         frames_num: int | None = None,
+        generation_config_extra=None,
     ) -> None:
         self.processor = processor
         self.is_image_input = (task_type == "visual-text")
         self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
+        self.generation_config_extra = generation_config_extra or {}
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -61,6 +63,7 @@ class VisualTextEvaluator(TextEvaluator):
             gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
+            generation_config_extra=self.generation_config_extra,
         )
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
@@ -123,6 +126,7 @@ class VisualTextEvaluator(TextEvaluator):
             crop_question,
             pruning_ratio,
             relevance_weight,
+            generation_config_extra=None,
         ):
             if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
@@ -184,6 +188,8 @@ class VisualTextEvaluator(TextEvaluator):
         images = image_data.values
         videos = videos_data.values
 
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
+
         for p, i, v in tqdm(
             zip_longest(prompts, images, videos),
             total=max(len(prompts), len(images), len(videos)),
@@ -201,6 +207,7 @@ class VisualTextEvaluator(TextEvaluator):
                     self._crop_question,
                     self.pruning_ratio,
                     self.relevance_weight,
+                    **extra_kwargs,
                 )
             )
 

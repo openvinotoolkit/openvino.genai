@@ -11,8 +11,8 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 5) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP]");
+    if (argc < 3 || argc > 6) {
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> [DEVICE] [PROMPT_LOOKUP] [DRAFT_MODEL_DIR]");
     }
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
@@ -20,16 +20,32 @@ int main(int argc, char* argv[]) try {
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
     std::string device = (argc >= 4) ? argv[3] : "CPU";
-    std::string lookup = (argc == 5) ? argv[4] : "false";
-    bool prompt_lookup = (lookup == "true");
+    std::string lookup = (argc >= 5) ? argv[4] : "false";
+    const bool lookup_is_true = (lookup == "true" || lookup == "True" || lookup == "TRUE");
+    const bool lookup_is_false = (lookup == "false" || lookup == "False" || lookup == "FALSE");
+    std::string draft_model_dir = (argc == 6) ? argv[5] : "";
+    if (!lookup_is_true && !lookup_is_false) {
+        if (argc == 5) {
+            draft_model_dir = std::move(lookup);
+            lookup = "false";
+        } else {
+            throw std::runtime_error("PROMPT_LOOKUP must be 'true' or 'false'");
+        }
+    }
+    if (device == "NPU" && !draft_model_dir.empty()) {
+        throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU");
+    }
+    const bool prompt_lookup = lookup_is_true;
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
     ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};
+    if (!draft_model_dir.empty()) {
+        properties.insert(ov::genai::draft_model(draft_model_dir, device));
+    }
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
         properties.insert({ov::cache_dir("vlm_cache")});
     }
-
     ov::genai::VLMPipeline pipe(argv[1], device, properties);
 
     ov::genai::GenerationConfig generation_config;

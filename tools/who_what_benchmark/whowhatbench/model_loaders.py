@@ -87,6 +87,37 @@ def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=Fa
     return adapter_config
 
 
+def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
+    draft_model_path = kwargs.get("draft_model", "")
+    if not draft_model_path:
+        return
+
+    main_device = device.upper()
+    draft_device = (kwargs.get("draft_device") or device).upper()
+
+    if (main_device == "NPU" or draft_device == "NPU") and model_type in (
+        "visual-text",
+        "visual-video-text",
+        "visual-text-chat",
+    ):
+        raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
+
+    if not Path(draft_model_path).exists():
+        raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
+
+    import openvino_genai
+
+    draft_cb_config = kwargs.get("draft_cb_config")
+    draft_model_load_kwargs = (
+        {"scheduler_config": get_scheduler_config_genai(draft_cb_config)} if draft_cb_config is not None else {}
+    )
+    ov_config["draft_model"] = openvino_genai.draft_model(
+        draft_model_path,
+        draft_device,
+        **draft_model_load_kwargs,
+    )
+
+
 class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
@@ -180,16 +211,8 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         alphas=kwargs.get("alphas", None),
     )
 
-    draft_model_path = kwargs.get("draft_model", '')
-    if draft_model_path:
-        if not Path(draft_model_path).exists():
-            raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
-        draft_device = kwargs.get("draft_device", None) or device
-        draft_model_load_kwargs = (
-            {"scheduler_config": get_scheduler_config_genai(kwargs["draft_cb_config"])}
-            if kwargs["draft_cb_config"] is not None else {}
-        )
-        ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+    ov_config = {} if ov_config is None else ov_config
+    _add_genai_draft_model_config(ov_config, device, "text", **kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
@@ -417,6 +440,12 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         alphas=kwargs.get("alphas", None),
         none_if_empty=True,
     )
+
+    ov_config = {} if ov_config is None else ov_config
+    model_type = kwargs.get("model_type", "visual-text")
+    draft_model_kwargs = dict(kwargs)
+    draft_model_kwargs.pop("model_type", None)
+    _add_genai_draft_model_config(ov_config, device, model_type, **draft_model_kwargs)
 
     pipeline_kwargs = {
         "device": device,
