@@ -723,9 +723,13 @@ public:
                                             image_latent_packed);
 
         const size_t video_sequence_length = latent.get_shape().at(1);
-        m_scheduler->set_timesteps(video_sequence_length,
-                                   merged_generation_config.num_inference_steps,
-                                   1.0f);
+        // mu must come from calculate_shift(), matching t2v and HF's reference,
+        // not the time_shift_type-branching set_timesteps() overload (which
+        // picks a different, unrelated formula for "exponential" configs).
+        const double mu = m_scheduler->calculate_shift(video_sequence_length);
+        m_scheduler->set_timesteps_with_mu(mu,
+                                           merged_generation_config.num_inference_steps,
+                                           1.0f);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         ov::Tensor rope_interpolation_scale(ov::element::f32, {3});
