@@ -472,6 +472,46 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     )
 
 
+def _is_causal_lm_vlm(config):
+    """Detect VLMs that expose an integrated vision tower on a plain
+    ``*ForCausalLM`` architecture (e.g. GLM-Edge-V).
+
+    Such models are only registered under ``AutoModelForCausalLM``: the
+    image-text-to-text auto classes do not recognize them, and ``AutoModel``
+    would load the headless base transformer. The check is capability-based
+    (a vision config plus a ``ForCausalLM`` architecture / auto_map entry)
+    rather than keyed on a specific model id or model_type.
+    """
+    has_vision = (
+        getattr(config, "vision_config", None) is not None
+        or getattr(config, "vision_tower_config", None) is not None
+    )
+    if not has_vision:
+        return False
+
+    architectures = getattr(config, "architectures", None) or []
+    if any(str(arch).endswith("ForCausalLM") for arch in architectures):
+        return True
+
+    auto_map = getattr(config, "auto_map", None) or {}
+    causal_entry = auto_map.get("AutoModelForCausalLM")
+    if causal_entry and str(causal_entry).endswith("ForCausalLM"):
+        return True
+
+    return False
+
+
+def _has_custom_causal_lm_code(config):
+    """True when the model bundles a custom (remote-code) ``*ForCausalLM``
+    implementation via ``config.auto_map``.
+
+    This is what distinguishes GLM-Edge-V (multimodal, remote code) from the
+    built-in text-only ``glm`` architecture that shares the same ``model_type``.
+    """
+    auto_map = getattr(config, "auto_map", None) or {}
+    return bool(auto_map.get("AutoModelForCausalLM"))
+
+
 def load_visual_text_model(
     model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
@@ -510,6 +550,21 @@ def load_visual_text_model(
             elif config.model_type == "gemma3n":
                 model_cls = AutoModelForCausalLM
                 model_kwargs.update({"torch_dtype": torch.float32})
+            elif _is_causal_lm_vlm(config):
+                # Some VLMs (e.g. GLM-Edge-V) ship an integrated vision tower on a
+                # plain *ForCausalLM architecture and are only registered under
+                # AutoModelForCausalLM. AutoModelFor{Vision2Seq,ImageTextToText}
+                # do not recognize them, and AutoModel would silently load the
+                # base transformer without the LM head (breaking generate()).
+                model_cls = AutoModelForCausalLM
+                # The multimodal implementation of these families lives in the
+                # bundled remote code (config.auto_map -> custom *ForCausalLM).
+                # If the model_type is also a built-in transformers text model
+                # (e.g. "glm"), a trust_remote_code=False load would silently
+                # pick the text-only class that ignores pixel_values. Force
+                # remote code so the vision-capable class is used.
+                if _has_custom_causal_lm_code(config):
+                    model_kwargs["trust_remote_code"] = True
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 

@@ -521,6 +521,17 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Allow --dataset to point at a local CSV file. This lets any task (in
+    # particular visual-text, whose remote default dataset can be slow or
+    # unavailable) supply deterministic local input data through the existing
+    # dataset interface. The CSV may contain a "prompts" column and, for
+    # multimodal tasks, "images" and/or "videos" columns holding file paths
+    # (resolved relative to the CSV location). This is generic and not keyed on
+    # any specific model.
+    if _is_local_csv(args.dataset):
+        return _load_prompts_from_csv(args.dataset, args)
+
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -536,6 +547,47 @@ def load_prompts(args):
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
     return res
+
+
+def _is_local_csv(dataset):
+    return (
+        isinstance(dataset, str)
+        and dataset.lower().endswith(".csv")
+        and os.path.isfile(dataset)
+    )
+
+
+def _load_prompts_from_csv(csv_path, args):
+    import pandas as pd
+    from PIL import Image
+
+    df = pd.read_csv(csv_path, keep_default_na=False)
+    base_dir = os.path.dirname(os.path.abspath(csv_path))
+
+    prompt_field = args.dataset_field if args.dataset_field in df.columns else "prompts"
+    if prompt_field not in df.columns:
+        raise ValueError(
+            f"Local dataset CSV '{csv_path}' must contain a '{prompt_field}' column."
+        )
+
+    def _resolve_image(value):
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            return None
+        path = value if os.path.isabs(value) else os.path.join(base_dir, value)
+        return Image.open(path).convert("RGB")
+
+    res = {"prompts": list(df[prompt_field])}
+
+    if "images" in df.columns:
+        res["images"] = [_resolve_image(v) for v in df["images"]]
+    if "videos" in df.columns:
+        res["videos"] = [
+            (v if isinstance(v, str) and v.strip() != "" else None)
+            for v in df["videos"]
+        ]
+
+    return res
+
 
 
 def load_tokenizer(args):
@@ -627,7 +679,58 @@ def load_processor(args):
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
         preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
+
+    _ensure_image_processor(preprocessor, preprocessor_id, config)
     return preprocessor, config
+
+
+def _ensure_image_processor(preprocessor, preprocessor_id, config):
+    """Attach an image processor for VLMs whose ``AutoProcessor`` resolves to a
+    bare text tokenizer.
+
+    Some remote-code VLMs (e.g. GLM-Edge-V) do not register a multimodal
+    processor class, so ``AutoProcessor`` returns a plain tokenizer that cannot
+    accept ``images=``. When the model config declares a vision component but
+    the resolved processor exposes no image-processing capability, load a
+    standalone image processor and attach it as ``preprocessor.image_processor``
+    so downstream input preprocessors can build ``pixel_values``. This is a
+    capability check, not a per-model-id special case.
+    """
+    if preprocessor is None or config is None:
+        return
+
+    has_vision = (
+        getattr(config, "vision_config", None) is not None
+        or getattr(config, "vision_tower_config", None) is not None
+    )
+    if not has_vision:
+        return
+
+    already_multimodal = (
+        hasattr(preprocessor, "image_processor")
+        or getattr(preprocessor, "tokenizer", None) is not None
+    )
+    if already_multimodal:
+        return
+
+    try:
+        from transformers import AutoImageProcessor
+
+        image_processor = AutoImageProcessor.from_pretrained(
+            preprocessor_id, trust_remote_code=True
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "Model config declares a vision component but no image processor "
+            "could be loaded for %s: %s", preprocessor_id, exc
+        )
+        return
+
+    try:
+        preprocessor.image_processor = image_processor
+    except Exception:
+        logger.warning("Could not attach image processor to the resolved processor.")
+
 
 
 def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:

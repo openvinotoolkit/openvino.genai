@@ -167,6 +167,10 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+# GLM-Edge-V (model_type "glm" with a SigLIP vision tower). Requires transformers < 5.0
+# and trust_remote_code (auto_map -> modeling_glm.py). Vision embeddings replace the
+# <|begin_of_image|> placeholder tokens emitted by the chat template.
+MODEL_GLM_EDGE_V = "optimum-intel-internal-testing/tiny-random-glm-edge-v"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -181,6 +185,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        MODEL_GLM_EDGE_V,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -207,6 +212,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
+    MODEL_GLM_EDGE_V: lambda idx: "<|begin_of_image|>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
@@ -237,6 +243,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
+    MODEL_GLM_EDGE_V: 56,
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
@@ -431,12 +438,18 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+                    MODEL_GLM_EDGE_V,
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
                 },
             )
         )
         if model.config.model_type == "llava-qwen2" or _is_videochat_flash_qwen_model(model_id):
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
+        # GLM-Edge-V's AutoProcessor resolves to a bare tokenizer; load the image
+        # processor separately (mirrors optimum-intel _OVGLMEdgeVForCausalLM handling).
+        elif model.config.model_type == "glm":
+            tokenizer = processor if isinstance(processor, transformers.PreTrainedTokenizerBase) else getattr(processor, "tokenizer", processor)
+            processor = transformers.AutoImageProcessor.from_pretrained(model_cached, trust_remote_code=True)
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
             tokenizer = processor
