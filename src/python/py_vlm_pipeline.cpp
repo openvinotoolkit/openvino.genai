@@ -29,14 +29,14 @@ auto vlm_generate_prompt_param = R"(
     :param prompt: Input prompt
     :type prompt: str
     For using image and video tags in prompt, see:
-    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
 )";
 
 auto vlm_generate_history_param = R"(
     :param history: Chat history
     :type history: ChatHistory
     For using image and video tags in prompt, see:
-    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt
 )";
 
 auto vlm_generate_common_params = R"(
@@ -256,11 +256,15 @@ void init_vlm_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_property_readonly("prepare_embeddings_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::prepare_embeddings_durations);
-        });
+        })
+        .def_readonly("per_image_slice_counts", &ov::genai::VLMRawPerfMetrics::per_image_slice_counts);
 
     py::class_<ov::genai::VLMPerfMetrics, ov::genai::PerfMetrics>(m, "VLMPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_prepare_embeddings_duration", &ov::genai::VLMPerfMetrics::get_prepare_embeddings_duration)
+        .def("get_total_image_slice_count", &ov::genai::VLMPerfMetrics::get_total_image_slice_count,
+             R"(Returns the total number of image slices processed for the request.
+An input image without explicit slicing metadata counts as one slice.)")
         .def_readonly("vlm_raw_metrics", &ov::genai::VLMPerfMetrics::vlm_raw_metrics);
 
     py::class_<ov::genai::VLMDecodedResults, ov::genai::DecodedResults>(m, "VLMDecodedResults", decoded_results_docstring)

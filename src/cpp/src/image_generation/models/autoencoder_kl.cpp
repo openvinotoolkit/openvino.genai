@@ -199,6 +199,23 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
     compile(device, *extract_adapters_from_properties(properties));
 }
 
+AutoencoderKL::AutoencoderKL(const Tensor& vae_decoder_blob_tensor,
+                             const Config& vae_decoder_config,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : m_config(vae_decoder_config) {
+    import_model(vae_decoder_blob_tensor, device, properties);
+}
+
+AutoencoderKL::AutoencoderKL(const Tensor& vae_encoder_blob_tensor,
+                             const Tensor& vae_decoder_blob_tensor,
+                             const Config& vae_decoder_config,
+                             const std::string& device,
+                             const ov::AnyMap& properties)
+    : m_config(vae_decoder_config) {
+    import_model(vae_encoder_blob_tensor, vae_decoder_blob_tensor, device, properties);
+}
+
 AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
 
 AutoencoderKL AutoencoderKL::clone() {
@@ -402,6 +419,23 @@ void AutoencoderKL::import_model(const std::filesystem::path& blob_path, const s
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
         m_encoder_request = encoder_compiled_model.create_infer_request();
     }
+}
+
+void AutoencoderKL::import_model(const ov::Tensor& vae_decoder_blob_tensor, const std::string& device, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_decoder_request, "Model has been already compiled. Cannot re-compile already compiled model");
+    auto decoder_compiled_model = utils::import_model(vae_decoder_blob_tensor, device, properties);
+    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
+    m_decoder_request = decoder_compiled_model.create_infer_request();
+}
+
+void AutoencoderKL::import_model(const ov::Tensor& vae_encoder_blob_tensor, const ov::Tensor& vae_decoder_blob_tensor, const std::string& device, const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_encoder_request && !m_decoder_request, "Model has been already compiled. Cannot re-compile already compiled model");
+
+    import_model(vae_decoder_blob_tensor, device, properties);
+
+    auto encoder_compiled_model = utils::import_model(vae_encoder_blob_tensor, device, properties);
+    ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
+    m_encoder_request = encoder_compiled_model.create_infer_request();
 }
 
 } // namespace genai

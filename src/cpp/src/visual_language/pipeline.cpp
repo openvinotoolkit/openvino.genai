@@ -23,6 +23,7 @@
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 using namespace ov::genai;
 
@@ -364,6 +365,7 @@ public:
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         m_inputs_embedder->encode_audios(audios);
         auto encoded_images = m_inputs_embedder->encode_images(images);
+        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
         auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
@@ -475,7 +477,7 @@ public:
         }
 
         auto generate_end_time = std::chrono::steady_clock::now();
-        decoded.perf_metrics = encoded_result.perf_metrics;
+        decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -491,6 +493,11 @@ public:
             decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
+        );
+        decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
+            decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.end()
         );
 
         // Evaluate statistics
@@ -584,6 +591,8 @@ public:
             ? processed_chat_data.vision_counts
             : std::vector<std::pair<std::size_t, std::size_t>>{ {video_seq.size(), image_seq.size()} };
 
+        vlm_utils::update_image_slice_counts(perf_metrics, images_embeds);
+
         generation_finish_info = prepare_inputs_and_generate(
             templated_history,
             images_embeds,
@@ -623,7 +632,7 @@ public:
         }
 
         auto generate_end_time = std::chrono::steady_clock::now();
-        decoded.perf_metrics = encoded_result.perf_metrics;
+        decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -639,6 +648,11 @@ public:
             decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
+        );
+        decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
+            decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.end()
         );
 
         // Evaluate statistics
