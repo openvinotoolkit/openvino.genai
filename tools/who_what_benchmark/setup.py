@@ -59,7 +59,7 @@ setup(
             "transformers[sentencepiece]==5.0.0",
             "sentence_transformers==5.3.0",
             "huggingface-hub==1.22.0",
-            "tqdm==4.69.0",
+            "tqdm==4.69.1",
             "optimum-intel[nncf,tests]==2.0.0",
         ],
         "kokoro": [
