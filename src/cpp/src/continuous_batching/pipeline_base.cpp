@@ -80,6 +80,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
+            result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
         }
         return results;
@@ -205,6 +206,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
             result.m_scores = std::move(vlm_result.scores);
             result.m_finish_reasons = std::move(vlm_result.finish_reasons);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
+            result.extended_perf_metrics = std::move(vlm_result.extended_perf_metrics);
             results.push_back(result);
         }
         return results;

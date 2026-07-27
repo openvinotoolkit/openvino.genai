@@ -46,6 +46,11 @@ def main():
     res = pipe.generate([args.prompt], config, streamer)
     print()
     if (res.extended_perf_metrics):
+        accepted_tokens = res.extended_perf_metrics.get_num_accepted_tokens()
+        draft_candidate_tokens = res.extended_perf_metrics.get_num_draft_tokens()
+        rejected_tokens = res.extended_perf_metrics.get_num_rejected_tokens()
+        acceptance_rate = res.extended_perf_metrics.get_draft_acceptance_rate()
+
         main_model_metrics = res.extended_perf_metrics.main_model_metrics
         print(f"MAIN MODEL")
         print(f"  Generate time: {main_model_metrics.get_generate_duration().mean:.2f} ms" )
@@ -55,7 +60,10 @@ def main():
         print(f"  AVG Latency: {main_model_metrics.get_latency().mean:.2f} ± {main_model_metrics.get_latency().std:.2f} ms/token")
         print(f"  Num generated token: {main_model_metrics.get_num_generated_tokens()} tokens")
         print(f"  Total iteration number: {len(main_model_metrics.raw_metrics.m_durations)}")
-        print(f"  Num accepted token: {res.extended_perf_metrics.get_num_accepted_tokens()} tokens")
+        print(f"  Num accepted draft token: {accepted_tokens} tokens")
+        print(f"  Num draft candidate token: {draft_candidate_tokens} tokens")
+        print(f"  Num rejected draft token: {rejected_tokens} tokens")
+        print(f"  Draft acceptance rate: {100 * acceptance_rate:.2f}%")
 
         draft_model_metrics = res.extended_perf_metrics.draft_model_metrics
         print(f"DRAFT MODEL" )
@@ -64,7 +72,7 @@ def main():
         print(f"  TTST: {draft_model_metrics.get_ttst().mean:.2f} ms/token")
         print(f"  TPOT: {draft_model_metrics.get_tpot().mean:.2f} ± {draft_model_metrics.get_tpot().std:.2f} ms/token")
         print(f"  AVG Latency: {draft_model_metrics.get_latency().mean:.2f} ± {draft_model_metrics.get_latency().std:.2f} ms/iteration")
-        print(f"  Num generated token: {draft_model_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Num processed token: {draft_model_metrics.get_num_generated_tokens()} tokens")
         print(f"  Total iteration number: {len(draft_model_metrics.raw_metrics.m_durations)}")
         print()
 

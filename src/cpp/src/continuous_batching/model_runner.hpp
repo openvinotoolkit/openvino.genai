@@ -45,11 +45,10 @@ inline std::string get_adaptive_rkv_diversity_score_output_for_decoder_layer(siz
  *
  * Enum values:
  *   - HS_NONE:    No hidden state operations are enabled (default).
- *   - HS_EXPORT:  Enables exporting hidden states from the model for draft model useage.
+ *   - HS_EXPORT:  Enables exporting hidden states from the model for draft model usage.
  *   - HS_IMPORT:  Enables importing hidden states into the model for a valid draft model forward.
  *   - HS_INTERNAL: Enables internal handling of hidden states for draft model forward.
  */
-
 enum HiddenStateFlags : uint8_t {
     HS_NONE      = 0,
     HS_EXPORT    = 1 << 0,
@@ -70,7 +69,6 @@ enum HiddenStateFlags : uint8_t {
  * Comparison:
  *   - operator< is defined to allow use as a key in std::map or std::set.
  */
-
 struct SequenceKey {
     size_t request_id{};
     size_t grouped_sequence_id{};
@@ -90,7 +88,6 @@ struct SequenceKey {
  *   - start_token_idx: The starting index of the token range.
  *   - length: The number of tokens in the range.
  */
-
 struct HiddenStateRange {
     size_t start_token_idx{};
     size_t length{};
@@ -317,6 +314,7 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
+    bool m_mtp_draft_positions = false;
     // a container which uses sequence group id and request id as key to store hidden states
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     std::unordered_map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
@@ -418,6 +416,9 @@ public:
     void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
     void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
 
+    // MTP draft uses rank-1 sequential positions instead of VLM M-RoPE positions.
+    void enable_mtp_draft_positions(bool on) { m_mtp_draft_positions = on; }
+
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
         m_embedding = inputs_embedder->get_embedding_model();
@@ -462,6 +463,13 @@ public:
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
         m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+
+        // Speculative decoding may inject generated tokens before their embeddings are computed.
+        if (m_embedding && !sequence_groups.empty() &&
+            sequence_groups[0]->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS &&
+            _has_missing_generated_embeddings(sequence_groups, scheduler_output)) {
+            append_embeddings(sequence_groups, scheduler_output);
+        }
 
         size_t batch_size_in_sequences = 0;
         size_t total_num_tokens = 0;
@@ -548,12 +556,17 @@ public:
             inputs_embeds_data = inputs_embeds.data<float>();
             token_type_ids_data = token_type_ids.data<int64_t>();
 
-            auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids_list();
-            ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
-            if (position_ids_shape.size() == 3) {
-                position_ids_shape[2] = total_num_tokens;
-            } else {
+            ov::Shape position_ids_shape;
+            if (m_mtp_draft_positions) {
                 position_ids_shape = {total_num_tokens};
+            } else {
+                auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids_list();
+                position_ids_shape = position_ids_elem[0].get_shape();
+                if (position_ids_shape.size() == 3) {
+                    position_ids_shape[2] = total_num_tokens;
+                } else {
+                    position_ids_shape = {total_num_tokens};
+                }
             }
             position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", position_ids_shape, ov::element::i64);
 
@@ -677,21 +690,21 @@ public:
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
                     OPENVINO_ASSERT(it != m_initial_hidden_states.end() && it->second.get_size() > 0,
-                                    "Missing initial hidden state for Eagle3 draft model inference.");
+                                    "Missing initial hidden state for draft model inference.");
                     const auto& stored_hidden_state = it->second;
                     auto stored_shape = stored_hidden_state.get_shape();
-                    OPENVINO_ASSERT(stored_shape.size() > 0, "Unexpected hidden state shape for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_shape.size() > 0, "Unexpected hidden state shape for draft model inference.");
                     size_t stored_seq_len = stored_shape[0];
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
                     OPENVINO_ASSERT(stored_hidden_size == hidden_size,
-                                    "Eagle3 hs import: hidden size mismatch. request_id=",
+                                    "Hidden-state import: hidden size mismatch. request_id=",
                                     sequence_group->get_request_id(),
                                     ", grouped_id=", sequence->get_grouped_id(),
                                     ", stored_hidden_size=", stored_hidden_size,
                                     ", expected_hidden_size=", hidden_size);
                     OPENVINO_ASSERT(stored_seq_len == num_scheduled_tokens,
-                                    "Eagle3 hs import: seq len mismatch. request_id=",
+                                    "Hidden-state import: seq len mismatch. request_id=",
                                     sequence_group->get_request_id(),
                                     ", grouped_id=", sequence->get_grouped_id(),
                                     ", stored_seq_len=", stored_seq_len,
@@ -702,7 +715,8 @@ public:
                 } else if (_is_hs_internal()) {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
-                        OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
+                        OPENVINO_ASSERT(num_scheduled_tokens == 1,
+                                        "Unexpected num_scheduled_tokens in speculative hidden-state drafting stage.");
                         std::memset(hidden_state_data + current_token_idx * hidden_size,
                                     0,
                                     num_scheduled_tokens * hidden_size * sizeof(float));
@@ -749,11 +763,15 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
-                        const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
+                        if (m_mtp_draft_positions) {
+                            position_ids_data[position_ids_idx] = position_id;
+                        } else {
+                            const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
+                            const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
 
-                        ov::Tensor dst_roi(position_ids, begin, end);
-                        position_ids_elem.copy_to(dst_roi);
+                            ov::Tensor dst_roi(position_ids, begin, end);
+                            position_ids_elem.copy_to(dst_roi);
+                        }
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
@@ -984,6 +1002,19 @@ public:
         }
         // return logits
         return m_request.get_tensor("logits");
+    }
+
+    bool _has_missing_generated_embeddings(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                           const Scheduler::Output& scheduler_output) const {
+        for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+            const SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            for (const auto& seq : sequence_group->get_running_sequences()) {
+                if (seq->get_generated_len() > seq->get_generated_ids_embeds().size()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     void append_embeddings(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
