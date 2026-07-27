@@ -26,6 +26,7 @@ class InputsEmbedderGemma4 : public InputsEmbedder::IInputsEmbedder {
 public:
     InputsEmbedderGemma4(const VLMConfig& vlm_config,
                          const std::filesystem::path& model_dir,
+                         const Tokenizer& tokenizer,
                          const std::string& device,
                          const ov::AnyMap device_config);
 
@@ -96,6 +97,8 @@ private:
     std::once_flag m_image_token_id_once_flag;
 
     void encode_image_token_id();
+
+    void patch_chat_template();
 };
 
 }  // namespace ov::genai
