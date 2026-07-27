@@ -81,5 +81,12 @@ class Qwen3ASROptimumPipeline:
     @staticmethod
     def init_model(model_type):
         if model_type == "qwen3-asr":
-            from qwen_asr import Qwen3ASRModel  # noqa: F401
-            from qwen_asr.core.transformers_backend import Qwen3ASRProcessor  # noqa: F401
+            try:
+                # qwen_asr must be imported to register the model with AutoConfig/AutoModel
+                from qwen_asr import Qwen3ASRModel  # noqa: F401
+                from qwen_asr.core.transformers_backend import Qwen3ASRProcessor  # noqa: F401
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'qwen-asr' package is required for Qwen3-ASR inference. "
+                    "Please install it using 'pip install qwen-asr'."
+                ) from exc
