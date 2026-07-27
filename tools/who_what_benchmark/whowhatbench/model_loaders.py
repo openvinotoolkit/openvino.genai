@@ -103,7 +103,7 @@ def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
         raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
 
     if not Path(draft_model_path).exists():
-        raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
+        raise RuntimeError(f"Draft model path does not exist: {draft_model_path}")
 
     import openvino_genai
 

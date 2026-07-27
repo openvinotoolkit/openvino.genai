@@ -867,6 +867,8 @@ VLMPipeline::VLMPipeline(
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
     if (device == "NPU") {
+        OPENVINO_ASSERT(properties.find(utils::DRAFT_MODEL_ARG_NAME) == properties.end(),
+                        "draft_model is not supported when device is NPU");
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_dir, device, properties);
@@ -920,6 +922,8 @@ VLMPipeline::VLMPipeline(
     utils::clear_false_prompt_lookup_from_config(properties);
     utils::validate_vlm_model_properties(properties);
     if (device == "NPU") {
+        OPENVINO_ASSERT(properties.find(utils::DRAFT_MODEL_ARG_NAME) == properties.end(),
+                        "draft_model is not supported when device is NPU");
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
         m_pimpl = std::make_unique<VLMPipelineImpl>(models_map, tokenizer, config_dir_path, device, properties, generation_config);
