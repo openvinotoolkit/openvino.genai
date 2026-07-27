@@ -851,6 +851,8 @@ def genai_gen_image2video(
         import openvino_genai
 
         kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if isinstance(image, Image.Image) and image.size != (width, height):
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
     image_data = ov.Tensor(np.array(image))
     result = model.generate(
         image_data,
