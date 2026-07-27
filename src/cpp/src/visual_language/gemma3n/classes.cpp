@@ -49,9 +49,10 @@ EncodedImage VisionEncoderGemma3n::encode(const ov::Tensor& image, const ov::Any
 
 InputsEmbedderGemma3n::InputsEmbedderGemma3n(const VLMConfig& vlm_config,
                                              const std::filesystem::path& model_dir,
+                                             const Tokenizer& tokenizer,
                                              const std::string& device,
                                              const ov::AnyMap device_config)
-    : IInputsEmbedder(vlm_config, model_dir, device, device_config) {
+    : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
     auto per_layer_model_path = model_dir / "openvino_text_embeddings_per_layer_model.xml";
     auto core = utils::singleton_core();
     auto model = core.read_model(per_layer_model_path);
