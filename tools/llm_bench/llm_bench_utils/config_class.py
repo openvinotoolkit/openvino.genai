@@ -173,6 +173,7 @@ USE_CASES = {
                 "qwen2-5-vl",
                 "smolvlm",
                 "qwen3-vl",
+                "qwen3-5",
                 "videochat-flash-qwen",
                 "gemma4",
             ]
