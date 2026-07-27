@@ -391,7 +391,10 @@ class LTXPipeline {
                         "Conditioning image must have 3 channels in the last dimension (NHWC), got ",
                         img_shape[3]);
 
-        ov::Tensor resized = m_image_resizer->execute(img, config.height, config.width);
+        ov::Tensor resized = (img_shape[1] == static_cast<size_t>(config.height) &&
+                              img_shape[2] == static_cast<size_t>(config.width))
+                                 ? img
+                                 : m_image_resizer->execute(img, config.height, config.width);
         ov::Tensor processed = m_image_processor->execute(resized);
 
         OPENVINO_ASSERT(processed.get_element_type() == ov::element::f32,
