@@ -443,3 +443,31 @@ class TestFlux2KleinImageGeneration:
 
         assert len(callback_calls) > 0, "Callback should be called at least once"
         assert image is not None
+
+
+class TestPNDMScheduler:
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_text2image_pndm_single_step(self, image_generation_model, tmp_path):
+        import os
+        import json
+
+        scheduler_config = os.path.join(image_generation_model, "scheduler", "scheduler_config.json")
+        with open(scheduler_config) as f:
+            config = json.load(f)
+        config["skip_prk_steps"] = True
+
+        patched_config = str(tmp_path / "scheduler_config.json")
+        with open(patched_config, "w") as f:
+            json.dump(config, f)
+
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+        pipe.set_scheduler(ov_genai.Scheduler.from_config(patched_config, ov_genai.Scheduler.Type.PNDM))
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=1,
+        )
+
+        assert image is not None

@@ -830,6 +830,7 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "vision_embeddings_pos",
         "vision_projection",
         "multi_modal_projector",
+        "audio_encoder",
         "language_model",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);
