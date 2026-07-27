@@ -645,6 +645,25 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         assert not extended_perf_metrics.draft_model_metrics is None
 
         assert extended_perf_metrics.get_num_accepted_tokens() > 0
+        num_draft_tokens = extended_perf_metrics.get_num_draft_tokens()
+        assert num_draft_tokens > 0
+        assert extended_perf_metrics.get_num_accepted_tokens() <= num_draft_tokens
+        assert (
+            extended_perf_metrics.get_num_rejected_tokens()
+            == num_draft_tokens - extended_perf_metrics.get_num_accepted_tokens()
+        )
+        assert 0 <= extended_perf_metrics.get_draft_acceptance_rate() <= 1
+
+        num_draft_processed_tokens = extended_perf_metrics.get_num_draft_processed_tokens()
+        assert num_draft_processed_tokens == extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+        assert num_draft_processed_tokens > 0
+        assert math.isclose(
+            extended_perf_metrics.get_draft_processed_to_candidate_ratio(),
+            num_draft_processed_tokens / num_draft_tokens,
+            rel_tol=1e-6,
+        )
+        duration_ratio = extended_perf_metrics.get_draft_to_main_inference_duration_ratio()
+        assert math.isfinite(duration_ratio) and duration_ratio >= 0
 
         num_generated_tokens_main = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
         assert num_generated_tokens_main > 0 and num_generated_tokens_main <= generation_config.max_new_tokens

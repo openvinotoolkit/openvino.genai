@@ -50,6 +50,11 @@ int main(int argc, char* argv[]) try {
     auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(result.extended_perf_metrics);
 
     if (sd_perf_metrics) {
+        const auto accepted_tokens = sd_perf_metrics->get_num_accepted_tokens();
+        const auto draft_candidate_tokens = sd_perf_metrics->get_num_draft_tokens();
+        const auto rejected_tokens = sd_perf_metrics->get_num_rejected_tokens();
+        const auto acceptance_rate = sd_perf_metrics->get_draft_acceptance_rate();
+
         auto main_model_metrics = sd_perf_metrics->main_model_metrics;
         std::cout << "\nMAIN MODEL " << std::endl;
         std::cout << "  Generate time: " << main_model_metrics.get_generate_duration().mean << " ms" << std::endl;
@@ -59,7 +64,10 @@ int main(int argc, char* argv[]) try {
         std::cout << "  AVG Latency: " << main_model_metrics.get_latency().mean  << " ± " << main_model_metrics.get_latency().std << " ms/token " << std::endl;
         std::cout << "  Num generated token: " << main_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
         std::cout << "  Total iteration number: " << main_model_metrics.raw_metrics.m_durations.size() << std::endl;
-        std::cout << "  Num accepted token: " << sd_perf_metrics->get_num_accepted_tokens() << " tokens" << std::endl;
+        std::cout << "  Num accepted draft token: " << accepted_tokens << " tokens" << std::endl;
+        std::cout << "  Num draft candidate token: " << draft_candidate_tokens << " tokens" << std::endl;
+        std::cout << "  Num rejected draft token: " << rejected_tokens << " tokens" << std::endl;
+        std::cout << "  Draft acceptance rate: " << 100.0 * acceptance_rate << "%" << std::endl;
 
         auto draft_model_metrics = sd_perf_metrics->draft_model_metrics;
         std::cout << "\nDRAFT MODEL " << std::endl;
@@ -68,7 +76,7 @@ int main(int argc, char* argv[]) try {
         std::cout << "  TTST: " << draft_model_metrics.get_ttst().mean  << " ms/token " << std::endl;
         std::cout << "  TPOT: " << draft_model_metrics.get_tpot().mean  << " ± " << draft_model_metrics.get_tpot().std << " ms/token " << std::endl;
         std::cout << "  AVG Latency: " << draft_model_metrics.get_latency().mean  << " ± " << draft_model_metrics.get_latency().std << " ms/iteration " << std::endl;
-        std::cout << "  Num generated token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
+        std::cout << "  Num processed token: " << draft_model_metrics.get_num_generated_tokens() << " tokens" << std::endl;
         std::cout << "  Total iteration number: " << draft_model_metrics.raw_metrics.m_durations.size() << std::endl;
     }
     std::cout << std::endl;
