@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) try {
     options.add_options()
     ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value(""))
     ("D,draft_model", "Path to draft model and tokenizers base directory", cxxopts::value<std::string>()->default_value(""))
-    ("A,num_assistant_tokens", "Number of assistant tokens", cxxopts::value<size_t>()->default_value(std::to_string(5)))
+    ("a,num_assistant_tokens", "Number of assistant tokens", cxxopts::value<size_t>()->default_value(std::to_string(5)))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
     ("F,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
     ("i,image", "Path to image. Can be a single image or a directory of images.", cxxopts::value<std::string>()->default_value("image.jpg"))
