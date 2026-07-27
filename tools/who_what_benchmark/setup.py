@@ -48,9 +48,9 @@ setup(
     package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json"]},
     extras_require={
         "minicpm-o-2_6": [
-            "torch==2.10.0",
-            "torchvision==0.25.0",
-            "torchaudio==2.10.0",
+            "torch==2.13.0",
+            "torchvision==0.28.0",
+            "torchaudio==2.11.0",
             "transformers>=4.50,<=4.51.3",
             "optimum-intel==1.27.0",
         ],
