@@ -64,9 +64,10 @@ EncodedImage VisionEncoderLLaVA::encode( const ov::Tensor& image, const ov::AnyM
 InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    IInputsEmbedder(vlm_config, model_dir, device, device_config) { }
+    IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) { }
 
 InputsEmbedderLLaVA::InputsEmbedderLLaVA(
     const VLMConfig& vlm_config,

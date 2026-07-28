@@ -15,7 +15,7 @@ Napi::Function VLMPerfMetricsWrapper::get_class(Napi::Env env) {
     auto properties = BasePerfMetricsWrapper<VLMPerfMetricsWrapper, ov::genai::VLMPerfMetrics>::get_class_properties();
     properties.push_back(
         InstanceMethod("getPrepareEmbeddingsDuration", &VLMPerfMetricsWrapper::get_prepare_embeddings_duration));
-    properties.push_back(InstanceAccessor<&VLMPerfMetricsWrapper::get_vlm_raw_metrics>("vlmRawMetrics"));
+    properties.push_back(InstanceAccessor("vlmRawMetrics", &VLMPerfMetricsWrapper::get_vlm_raw_metrics, nullptr));
     return DefineClass(env, "VLMPerfMetrics", properties);
 }
 

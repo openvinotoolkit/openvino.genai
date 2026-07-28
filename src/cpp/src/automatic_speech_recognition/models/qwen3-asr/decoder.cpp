@@ -48,7 +48,7 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         std::vector<int64_t> prompt_tokens(input_ids_data + batch * prompt_len,
                                            input_ids_data + (batch + 1) * prompt_len);
         auto seq_group = std::make_shared<SequenceGroup>(batch, prompt_tokens, config);
-        sequence_groups.push_back(seq_group);
+        sequence_groups.push_back(std::move(seq_group));
     }
 
     // Streaming handle (only for batch_size == 1)

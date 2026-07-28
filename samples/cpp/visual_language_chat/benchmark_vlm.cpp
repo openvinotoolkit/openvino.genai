@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cxxopts.hpp>
+#include <cstdint>
+#include <optional>
 #include <filesystem>
 
 #include "load_image.hpp"
@@ -12,16 +14,18 @@ int main(int argc, char* argv[]) try {
     cxxopts::Options options("benchmark_vlm", "Help command");
 
     options.add_options()
-    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value("."))
+    ("m,model", "Path to model and tokenizers base directory", cxxopts::value<std::string>()->default_value(""))
     ("p,prompt", "Prompt", cxxopts::value<std::string>()->default_value(""))
-    ("pf,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
-    ("i,image", "Image", cxxopts::value<std::string>()->default_value("image.jpg"))
-    ("nw,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
+    ("F,prompt_file", "Read prompt from file", cxxopts::value<std::string>())
+    ("i,image", "Path to image. Can be a single image or a directory of images.", cxxopts::value<std::string>()->default_value("image.jpg"))
+    ("H,image_height", "Target image height (if resizing is needed)", cxxopts::value<int32_t>())
+    ("W,image_width", "Target image width (if resizing is needed)", cxxopts::value<int32_t>())
+    ("N,num_warmup", "Number of warmup iterations", cxxopts::value<size_t>()->default_value(std::to_string(1)))
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
-    ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
-    ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
-    ("rw,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
+    ("M,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
+    ("d,device", "Device to run the model on", cxxopts::value<std::string>()->default_value("CPU"))
+    ("P,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
+    ("R,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -54,12 +58,29 @@ int main(int argc, char* argv[]) try {
         return EXIT_FAILURE;
     } 
 
-    const std::string models_path = result["model"].as<std::string>();
+    std::string models_path;
+    if (result.count("model")) {
+        models_path = result["model"].as<std::string>();
+    } else {
+        std::cout << "Model path is not provided!" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     const std::string image_path = result["image"].as<std::string>();
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-    std::vector<ov::Tensor> images = utils::load_images(image_path);
+
+    if (result.count("image_height") != result.count("image_width")) {
+        std::cout << "image_height and image_width must be provided together!" << std::endl;
+        return EXIT_FAILURE;
+    }
+    const std::optional<utils::ImageSize> image_size = 
+        (result.count("image_width") && result.count("image_height"))
+        ? std::optional<utils::ImageSize>{utils::ImageSize{result["image_width"].as<int32_t>(), result["image_height"].as<int32_t>()}}
+        : std::nullopt;
+    
+    std::vector<ov::Tensor> images = utils::load_images(image_path, image_size);
 
     ov::genai::GenerationConfig config;
     if (result.count("pruning_ratio")) {
@@ -86,7 +107,7 @@ int main(int argc, char* argv[]) try {
 
     auto input_data = pipe->get_tokenizer().encode(prompt);
     size_t prompt_token_size = input_data.input_ids.get_shape()[1];
-    std::cout << "Number of images:" << images.size() << ", prompt token size:" << prompt_token_size << std::endl;
+    std::cout << "Number of images: " << images.size() << ", Prompt token size: " << prompt_token_size << std::endl;
 
     for (size_t i = 0; i < num_warmup; i++)
         pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
@@ -99,7 +120,11 @@ int main(int argc, char* argv[]) try {
     }
 
     std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Output token size:" << res.perf_metrics.get_num_generated_tokens() << std::endl;
+    if (image_size.has_value()) {
+        std::cout << "Image is resized to: " << image_size->width << "x" << image_size->height << std::endl; 
+    }
+    std::cout << "Input token size: " << res.perf_metrics.get_num_input_tokens() << std::endl;
+    std::cout << "Output token size: " << res.perf_metrics.get_num_generated_tokens() << std::endl;
     std::cout << "Load time: " << metrics.get_load_time() << " ms" << std::endl;
     std::cout << "Generate time: " << metrics.get_generate_duration().mean << " ± " << metrics.get_generate_duration().std << " ms" << std::endl;
     std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± " << metrics.get_tokenization_duration().std << " ms" << std::endl;

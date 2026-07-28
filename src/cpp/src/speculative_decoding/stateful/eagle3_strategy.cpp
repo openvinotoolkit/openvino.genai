@@ -1129,7 +1129,7 @@ void StatefulEagle3LLMPipeline::validate_construction_params(const ModelDesc& ta
 
 void StatefulEagle3LLMPipeline::apply_graph_transforms(const ModelDesc& target_model_desc,
                                                        const ModelDesc& draft_model_desc) {
-    const auto hidden_layers_to_abstract =
+    const auto& hidden_layers_to_abstract =
         draft_model_desc.properties.at("hidden_layers_list").as<std::vector<int32_t>>();
     OPENVINO_ASSERT(hidden_layers_to_abstract.size() == 3,
                     "hidden_layers_list must contain exactly 3 layers, got ",

@@ -48,14 +48,14 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 15
         with:
           sparse-checkout: .github
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@46c59b29a3cbdaf30e9eaacf5c04686b196d9a0f
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@009fce994252679e838bfa14efc0c27f7e66daad
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -103,7 +103,7 @@ jobs:
         # event_name: pull_request
 
     - name: Clone docker tag from OpenVINO repo
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
@@ -146,13 +146,13 @@ jobs:
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -261,13 +261,13 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -321,13 +321,13 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -384,13 +384,13 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -449,7 +449,7 @@ jobs:
 
     steps:
       - name: Download genai package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
           path: ${{ env.CPACK_PATH }}
@@ -459,14 +459,14 @@ jobs:
         working-directory: ${{ env.CPACK_PATH }}
 
       - name: Download manifest and wheels
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: '{genai_wheels,genai_wheel_python_*,manifest_${{ matrix.build-type }}}'
           path: ${{ github.workspace }}
           merge-multiple: true
 
       - name: Download genai package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: genai_nodejs_bindings
           path: ${{ env.NODEJS_PATH }}
@@ -574,11 +574,22 @@ jobs:
             timeout: 60
 
           - name: 'Rag tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_rag.py'
+            # Pin optimum which supports qwen3-vl-embedding
+            cmd: |
+              python -m pip install "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
+              python -m pytest -v ./tests/python_tests/test_rag.py
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
-            timeout: 30
+            timeout: 35
           - name: 'WWB tests'
-            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava and not transformers_lower_v5" -k "not videochat"'
+            cmd: |
+              python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+              python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 120
+          - name: 'WWB tests (image, VLM, video)'
+            cmd: |
+              python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+              python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests with transformers under 5.0'
@@ -703,14 +714,14 @@ jobs:
 
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
         if: ${{ matrix.test.run_condition }}
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
@@ -737,10 +748,14 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}
 
   genai_nodejs_tests:
-    name: Node.js bindings tests
+    name: Node.js bindings tests (Node ${{ matrix.nodejs-version }})
     needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        nodejs-version: [22, 24, 26]
     defaults:
       run:
         shell: bash
@@ -755,7 +770,7 @@ jobs:
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
-      NODE_VERSION: 22
+      NODE_VERSION: ${{ matrix.nodejs-version }}
       PY_INSTALL_DIR: ${{ github.workspace }}/install
 
     steps:
@@ -764,32 +779,32 @@ jobs:
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO Artifacts
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
       - name: Download GenAI JS Bildings Artifacts
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: genai_nodejs_bindings
           path: ${{ env.SRC_DIR }}/src/js/bin
           merge-multiple: true
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Download Python wheels for JS tests
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.PY_INSTALL_DIR }}

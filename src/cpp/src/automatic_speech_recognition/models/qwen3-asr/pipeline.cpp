@@ -40,7 +40,7 @@ Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& 
 }
 
 ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
-                                     std::optional<ASRGenerationConfig> generation_config,
+                                     const std::optional<ASRGenerationConfig>& generation_config,
                                      const std::shared_ptr<StreamerBase> streamer) {
     auto start_time = std::chrono::steady_clock::now();
 
@@ -145,12 +145,12 @@ std::pair<std::vector<std::string>, std::vector<std::string>> Qwen3ASR::merge_ch
     std::vector<std::string> merged_languages(num_samples);
     for (size_t i = 0; i < chunks.size(); ++i) {
         const size_t orig = chunks[i].orig_batch;
-        const auto [language, text] = parse_asr_output(infer_results[i], config.language);
+        auto [language, text] = parse_asr_output(infer_results[i], config.language);
         if (!merged_texts[orig].empty()) {
             merged_texts[orig] += ' ';
         }
         merged_texts[orig] += text;
-        merged_languages[orig] = language;  // last wins
+        merged_languages[orig] = std::move(language);  // last wins
     }
 
     return {std::move(merged_texts), std::move(merged_languages)};
@@ -247,7 +247,7 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
     return results;
 }
 
-ASRGenerationConfig Qwen3ASR::resolve_generation_config(std::optional<ASRGenerationConfig> generation_config) const {
+ASRGenerationConfig Qwen3ASR::resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const {
     ASRGenerationConfig config = generation_config.value_or(m_generation_config);
     if (config.stop_token_ids.empty()) {
         config.stop_token_ids = m_generation_config.stop_token_ids;

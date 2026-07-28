@@ -5,12 +5,16 @@
 
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 
 namespace ov::genai {
+
+class ContinuousBatchingPipeline;
 
 enum class GenerationStatus {
     RUNNING = 0, // Default status for ongoing generation
@@ -50,6 +54,14 @@ struct EncodedGenerationResult {
     // To get metrics, it should be cast to corresponding class for extended perf metrics from pipeline
     // Cast to SDPerModelsPerfMetrics for SpeculativeDecoding
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
+
+    // Accumulated intermediate hidden states per sequence.
+    // Outer vector: per return sequence. Inner vector: one tensor per generation step.
+    std::vector<std::vector<ov::Tensor>> m_intermediate_hidden_states;
+
+    // Full prompt + generated token IDs (needed for talker input construction).
+    // Outer vector: per return sequence, aligned with m_intermediate_hidden_states.
+    std::vector<std::vector<int64_t>> m_full_token_ids;
 };
 
 struct GenerationResult {
@@ -82,6 +94,8 @@ struct GenerationOutput {
     std::vector<float> generated_log_probs;
     float score = 0;
     GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
+    // Per-token hidden states collected for Qwen3-Omni speech generation. Preview API: subject to change.
+    std::vector<ov::Tensor> intermediate_hidden_states;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
@@ -90,8 +104,11 @@ class GenerationStream;
 
 class OPENVINO_GENAI_EXPORTS 
 GenerationHandleImpl {
+    friend class ContinuousBatchingPipeline;
+
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params; 
+
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
     m_generation_stream(std::move(generation_stream)),
@@ -119,6 +136,9 @@ public:
     GenerationOutputs read();
     // Reads all generated tokens for all sequences
     std::vector<GenerationOutput> read_all();
+
+    PerfMetrics get_perf_metrics() const;
+    VLMPerfMetrics get_vlm_perf_metrics() const;
 };
 
 using GenerationHandle = std::shared_ptr<GenerationHandleImpl>;

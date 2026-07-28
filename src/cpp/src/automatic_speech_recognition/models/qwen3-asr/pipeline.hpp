@@ -21,7 +21,7 @@ public:
     Qwen3ASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs,
-                               std::optional<ASRGenerationConfig> generation_config,
+                               const std::optional<ASRGenerationConfig>& generation_config,
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 
 private:
@@ -47,7 +47,7 @@ private:
     std::vector<std::string> extend_audio_tokens(const std::vector<std::string>& prompts,
                                                  const std::vector<size_t>& audio_lengths);
 
-    ASRGenerationConfig resolve_generation_config(std::optional<ASRGenerationConfig> generation_config) const;
+    ASRGenerationConfig resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const;
 
     void validate_generation_config(const ASRGenerationConfig& config) const;
 };

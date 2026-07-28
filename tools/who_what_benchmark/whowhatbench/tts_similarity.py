@@ -17,6 +17,8 @@ import librosa
 import numpy as np
 import soundfile as sf
 
+from .utils import patch_speechbrain_lazy_import_guard_for_windows
+
 
 DEFAULT_WHISPER_MODEL = "base.en"
 WHISPER_SAMPLE_RATE = 16000
@@ -203,6 +205,8 @@ class TTSSimilarityEvaluator:
                 torchaudio.list_audio_backends = lambda: []
             if not hasattr(torchaudio, "set_audio_backend"):
                 torchaudio.set_audio_backend = lambda _backend: None
+
+            patch_speechbrain_lazy_import_guard_for_windows()
 
             from speechbrain.inference.speaker import SpeakerRecognition
 

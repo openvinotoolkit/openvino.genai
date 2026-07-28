@@ -60,7 +60,7 @@ namespace genai {
     if (m_device == "NPU") {
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
-        m_kvcache_total = kv_desc.max_prompt_len + kv_desc.min_response_len;
+        m_kvcache_total = ov::genai::utils::get_npu_kv_cache_capacity(compiled);
         m_request = compiled.create_infer_request();
     } else {
         // TODO: We might need it for manipulations with indices
@@ -205,7 +205,7 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
     } else {
         raw_perf_metrics.m_durations.back() +=
             ov::genai::MicroSeconds(infer_next_timer.get_duration_microsec());
-        raw_perf_metrics.m_inference_durations[0] += 
+        raw_perf_metrics.m_inference_durations[0] +=
             ov::genai::MicroSeconds(ov::genai::PerfMetrics::get_microsec(infer_end - infer_start));
     }
 
@@ -369,7 +369,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(const ov::genai::
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
     m_tokenizer = main_model_tokenizer;
-    
+
     // Draft model (which is smaller, less accurate but faster)
     auto draft_model_desc_copy = draft_model_desc;
     if (draft_model_desc_copy.device.empty()) {
@@ -533,7 +533,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
             // then we need to preserve this one spot in main kvcache for previous
             // output.
             m_main_request->get_kvcache_capacity() - 1);
-        int64_t generation_room_for_candidates = 
+        int64_t generation_room_for_candidates =
             // Take into the account output token, generated on candidates.
             // If we accept all candidates by the main model, then we will generate
             // output of length equal to number of candidates + one output token from
@@ -579,7 +579,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
         // Note: If `draft_prefix_exists == true`, then we append performance metrics of
         // newly generated candidate to the previously generated token on draft prefix prompt,
         // as we are only interested in one output from these two inference operations.
-        int64_t candidate = m_draft_request->infer_next(out_token, draft_prefix_exists); 
+        int64_t candidate = m_draft_request->infer_next(out_token, draft_prefix_exists);
         candidates.push_back(candidate);
 
         for (size_t i = 1; i < candidates_to_generate; i++) {
@@ -624,7 +624,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
         auto mismatched_candidates = candidates.size() - accepted_tokens_number;
         std::vector<int64_t> validated_tokens(ref_tokens.begin(), ref_tokens.end() - mismatched_candidates);
         out_token = validated_tokens.back();
-    
+
         // Phase 4: Update inference wrappers based on found matches and mismatches
         if (mismatched_candidates > 0) {
             m_draft_request->trim_kv_cache(mismatched_candidates - 1);
