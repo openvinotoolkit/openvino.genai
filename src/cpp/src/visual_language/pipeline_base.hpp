@@ -3,120 +3,57 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "visual_language/vision_properties.hpp"
-#include "utils.hpp"
+#include "openvino/runtime/tensor.hpp"
 
-using namespace ov::genai;
+namespace ov {
+namespace genai {
 
-namespace ov::genai {
-class ov::genai::VLMPipeline::VLMPipelineBase {
-    // Load pipeline time
-    float m_load_time_ms = 0;
-    std::string m_attention_backend = SDPA_BACKEND;
+/**
+ * @brief Internal Omni-aware base for `VLMPipeline` implementations.
+ */
+class VLMPipeline::VLMBackend : public ov::genai::VLMPipelineBase {
+    float m_load_time_ms = 0.0f;
+    std::string m_attention_backend;
 
-    GenerationConfig resolve_generation_config(const ov::AnyMap& config_map) {
-        ov::genai::OptionalGenerationConfig optional_config = utils::get_config_from_map(config_map);
-        GenerationConfig config = optional_config.value_or(get_generation_config());
-        config.update_generation_config(config_map);
-        return config;
-    }
+protected:
+    VLMBackend();
+
+    // Audio streamer extracted from AnyMap, forwarded to speech pipeline
+    OmniSpeechStreamerVariant m_pending_speech_streamer = std::monostate{};
+
+    // RAII guard to reset the audio streamer on scope exit (exception-safe)
+    struct AudioStreamerGuard {
+        OmniSpeechStreamerVariant& streamer_ref;
+        ~AudioStreamerGuard() {
+            streamer_ref = std::monostate{};
+        }
+    };
+
+    GenerationConfig resolve_generation_config(const ov::AnyMap& config_map);
 
 public:
+    ~VLMBackend() override;
 
-    virtual ~VLMPipelineBase() = default;
+    // Bring in the generate() overloads declared on the public abstract base so callers
+    // that hold `VLMPipeline::VLMBackend*` can reach all of them (otherwise the
+    // AnyMap overrides below would hide the inherited ones via name lookup rules).
+    // The videos_metadata-aware overloads and the Omni hooks are declared on VLMPipelineBase.
+    using ov::genai::VLMPipelineBase::generate;
 
-    virtual VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
+    /// @brief Public-base AnyMap entry — extracts audios/streamer/vision props then delegates.
+    VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) override;
+    VLMDecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map) override;
 
-    virtual VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
-
-    virtual VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<VideoMetadata>& videos_metadata,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
-
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const ov::AnyMap& config_map
-    ) {
-        const auto vision_properties = extract_vision_properties(config_map);
-        GenerationConfig config = resolve_generation_config(config_map);
-        return generate(
-            prompt,
-            vision_properties.images.value_or(std::vector<ov::Tensor>{}),
-            vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
-            vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
-            config,
-            utils::get_streamer_from_map(config_map)
-        );
-    }
-
-    virtual VLMDecodedResults generate(
-        const ChatHistory& history,
-        const std::vector<ov::Tensor>& images,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
-
-    virtual VLMDecodedResults generate(
-        const ChatHistory& history,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
-
-    virtual VLMDecodedResults generate(
-        const ChatHistory& history,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        const std::vector<VideoMetadata>& videos_metadata,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
-
-    VLMDecodedResults generate(
-        const ChatHistory& history,
-        const ov::AnyMap& config_map
-    ) {
-        const auto vision_properties = extract_vision_properties(config_map);
-        GenerationConfig config = resolve_generation_config(config_map);
-        return generate(
-            history,
-            vision_properties.images.value_or(std::vector<ov::Tensor>{}),
-            vision_properties.videos.value_or(std::vector<ov::Tensor>{}),
-            vision_properties.videos_metadata.value_or(std::vector<VideoMetadata>{}),
-            config,
-            utils::get_streamer_from_map(config_map)
-        );
-    }
-
+    /// @brief Activate chat mode (legacy stateful path; deprecated on `VLMPipeline` itself
+    /// but kept on the internal base because OmniPipeline / pipeline_base.cpp still calls
+    /// these to thread through impls).
     virtual void start_chat(const std::string& system_message) = 0;
-
     virtual void finish_chat() = 0;
-
-    virtual Tokenizer get_tokenizer() const = 0;
-
-    virtual void set_chat_template(const std::string& new_template) = 0;
-
-    virtual GenerationConfig get_generation_config() const = 0;
-
-    virtual void set_generation_config(const GenerationConfig& new_config) = 0;
 
     void set_attention_backend(const std::string& attention_backend) {
         m_attention_backend = attention_backend;
@@ -126,8 +63,10 @@ public:
         m_load_time_ms = load_time_ms;
     }
 
-    float get_load_time() {
+    float get_load_time() const {
         return m_load_time_ms;
     }
 };
-}  // namespace ov::genai
+
+}  // namespace genai
+}  // namespace ov

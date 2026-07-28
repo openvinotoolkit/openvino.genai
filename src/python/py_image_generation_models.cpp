@@ -114,6 +114,28 @@ void init_clip_text_model(py::module_& m) {
             device (str): Device on which inference will be done.
             kwargs: Device properties.
         )")
+        .def(py::init([](
+            const ov::Tensor& blob_tensor,
+            const ov::genai::CLIPTextModel::Config& config,
+            const ov::genai::Tokenizer& clip_tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModel>(blob_tensor, config, clip_tokenizer, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("blob_tensor"), "Pre-read compiled model blob tensor",
+        py::arg("config"), "CLIPTextModel config",
+        py::arg("clip_tokenizer"), "Tokenizer for text encoding",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            CLIPTextModel class constructor from blob tensor.
+            blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
+            config (CLIPTextModel.Config): CLIPTextModel configuration.
+            clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
         .def("get_config", &ov::genai::CLIPTextModel::get_config)
         .def("reshape", &ov::genai::CLIPTextModel::reshape, py::arg("batch_size"))
         .def("set_adapters", &ov::genai::CLIPTextModel::set_adapters, py::arg("adapters"))
@@ -229,6 +251,28 @@ void init_clip_text_model_with_projection(py::module_& m) {
             CLIPTextModelWithProjection class constructor.
             model (str): Pre-read model.
             weights (ov.Tensor): Pre-read model weights tensor.
+            config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
+            clip_tokenizer (Tokenizer): Tokenizer for text encoding.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](
+            const ov::Tensor& blob_tensor,
+            const ov::genai::CLIPTextModelWithProjection::Config& config,
+            const ov::genai::Tokenizer& clip_tokenizer,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            return std::make_unique<ov::genai::CLIPTextModelWithProjection>(blob_tensor, config, clip_tokenizer, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("blob_tensor"), "Pre-read compiled model blob tensor",
+        py::arg("config"), "CLIPTextModelWithProjection config",
+        py::arg("clip_tokenizer"), "Tokenizer for text encoding",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            CLIPTextModelWithProjection class constructor from blob tensor.
+            blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
             config (CLIPTextModelWithProjection.Config): CLIPTextModelWithProjection configuration.
             clip_tokenizer (Tokenizer): Tokenizer for text encoding.
             device (str): Device on which inference will be done.
@@ -436,6 +480,27 @@ void init_unet2d_condition_model(py::module_& m) {
             UNet2DConditionModel class constructor.
             model (str): Pre-read model.
             weights (ov.Tensor): Pre-read model weights tensor.
+            config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
+            vae_scale_factor (int): VAE scale factor.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](
+            const ov::Tensor& blob_tensor,
+            const ov::genai::UNet2DConditionModel::Config& config,
+            const size_t vae_scale_factor,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::UNet2DConditionModel>(blob_tensor, config, vae_scale_factor, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("blob_tensor"), "Pre-read compiled model blob tensor",
+        py::arg("config"), "UNet2DConditionModel config",
+        py::arg("vae_scale_factor"), "VAE scale factor",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            UNet2DConditionModel class constructor from blob tensor.
+            blob_tensor (ov.Tensor): Pre-read compiled model blob tensor.
             config (UNet2DConditionModel.Config): UNet2DConditionModel configuration.
             vae_scale_factor (int): VAE scale factor.
             device (str): Device on which inference will be done.
@@ -1059,6 +1124,45 @@ void init_autoencoder_kl(py::module_& m) {
             vae_encoder_weights (ov.Tensor): VAE encoder weights tensor.
             vae_decoder_model (str): Serialized VAE decoder model in OpenVINO IR format.
             vae_decoder_weights (ov.Tensor): VAE decoder weights tensor.
+            vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](
+            const ov::Tensor& vae_decoder_blob_tensor,
+            const ov::genai::AutoencoderKL::Config& vae_decoder_config,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_decoder_blob_tensor, vae_decoder_config, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("vae_decoder_blob_tensor"), "Pre-read compiled VAE decoder model blob tensor",
+        py::arg("vae_decoder_config"), "VAE decoder config",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            AutoencoderKL class initialized only with decoder model from blob tensor.
+            vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
+            vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
+            device (str): Device on which inference will be done.
+            kwargs: Device properties.
+        )")
+        .def(py::init([](
+            const ov::Tensor& vae_encoder_blob_tensor,
+            const ov::Tensor& vae_decoder_blob_tensor,
+            const ov::genai::AutoencoderKL::Config& vae_decoder_config,
+            const std::string& device,
+            const py::kwargs& kwargs
+        ) {
+            return std::make_unique<ov::genai::AutoencoderKL>(vae_encoder_blob_tensor, vae_decoder_blob_tensor, vae_decoder_config, device, pyutils::kwargs_to_any_map(kwargs));
+        }),
+        py::arg("vae_encoder_blob_tensor"), "Pre-read compiled VAE encoder model blob tensor",
+        py::arg("vae_decoder_blob_tensor"), "Pre-read compiled VAE decoder model blob tensor",
+        py::arg("vae_decoder_config"), "VAE decoder config",
+        py::arg("device"), "Device on which inference will be done",
+        R"(
+            AutoencoderKL class initialized with both encoder and decoder models from blob tensors.
+            vae_encoder_blob_tensor (ov.Tensor): Pre-read compiled VAE encoder model blob tensor.
+            vae_decoder_blob_tensor (ov.Tensor): Pre-read compiled VAE decoder model blob tensor.
             vae_decoder_config (AutoencoderKL.Config): VAE decoder configuration.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
