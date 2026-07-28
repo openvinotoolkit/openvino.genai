@@ -386,10 +386,10 @@ class TestTaylorSeer:
             "Last step latents are identical — TaylorSeer prediction should have changed the result"
         )
 
-    def test_taylorseer_default_on(self, video_generation_model):
-        """Test that TaylorSeer is enabled by default"""
+    def test_taylorseer_default_disabled(self, video_generation_model):
+        """Test that TaylorSeer is disabled by default"""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        assert pipe.get_generation_config().taylorseer_config is not None
+        assert pipe.get_generation_config().taylorseer_config is None
 
 class TestLoRAVideoGeneration:
     def test_lora_adapters_constructor(self, video_generation_model):

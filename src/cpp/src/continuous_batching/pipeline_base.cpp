@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching/pipeline_base.hpp"
+#include "generation_stream.hpp"
 
 #include "visual_language/chat_history_state.hpp"
 #include "visual_language/vlm_chat_context.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 namespace {
 
@@ -364,6 +366,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
         encoded_images = m_inputs_embedder->encode_images(images_vector[0]);
+        vlm_utils::update_image_slice_counts(vlm_perf_metrics[0], encoded_images);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
         encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
@@ -433,6 +436,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             auto images_to_encode = images_vector.size() > 0 ? images_vector[i] : std::vector<ov::Tensor>{};
             const auto encoded_images = m_inputs_embedder->encode_images(images_to_encode);
+            vlm_utils::update_image_slice_counts(vlm_perf_metrics[i], encoded_images);
 
             auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
             auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
@@ -496,7 +500,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
-        gen_result.perf_metrics = result.perf_metrics;
+        gen_result.perf_metrics = VLMPerfMetrics(result.perf_metrics);
         gen_result.extended_perf_metrics = result.extended_perf_metrics;
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
@@ -729,7 +733,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         utils::assert_request_was_scheduled(encoded_results.at(i).m_status, encoded_results.at(i).m_request_id);
         auto result = encoded_results.at(i);
         VLMDecodedResults gen_result;
-        gen_result.perf_metrics = result.perf_metrics;
+        gen_result.perf_metrics = VLMPerfMetrics(result.perf_metrics);
         gen_result.extended_perf_metrics = result.extended_perf_metrics;
 
         gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
@@ -774,10 +778,13 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
     std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
+    GenerationHandle handle;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+        const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        vlm_utils::update_image_slice_counts(metrics, encoded_images);
 
         const auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
@@ -791,8 +798,18 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
             inputs =
                 m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
         }
-        return add_request(request_id, inputs, sampling_params, token_type_ids, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
+        const auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
+            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        handle = add_request(request_id,
+                             inputs,
+                             sampling_params,
+                             token_type_ids,
+                             prompt_ids,
+                             m_inputs_embedder->get_lm_extra_inputs());
+        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }
+    return handle;
 }
 
 GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
@@ -821,16 +838,29 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
+    GenerationHandle handle;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+        const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(images);
+        vlm_utils::update_image_slice_counts(metrics, encoded_images);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
 
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
-        return add_request(request_id, inputs, std::move(sampling_params), token_type_ids, prompt_ids, m_inputs_embedder->get_lm_extra_inputs());
+        const auto end_get_inputs_embeds = std::chrono::steady_clock::now();
+        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
+            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        handle = add_request(request_id,
+                             inputs,
+                             sampling_params,
+                             token_type_ids,
+                             prompt_ids,
+                             m_inputs_embedder->get_lm_extra_inputs());
+        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }
+    return handle;
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(

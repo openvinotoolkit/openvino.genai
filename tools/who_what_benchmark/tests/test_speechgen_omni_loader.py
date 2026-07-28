@@ -25,6 +25,33 @@ class _FakeAutoProcessor:
         return _FakeProcessor()
 
 
+@pytest.mark.parametrize(
+    ("device", "expected_device_map"),
+    [("CPU", "cpu"), ("GPU", "cuda"), ("cuda", "cuda")],
+)
+def test_load_omni_hf_pipeline_uses_requested_device_and_native_dtype(monkeypatch, device, expected_device_map):
+    import transformers
+
+    load_kwargs = {}
+
+    class _FakeModelClass:
+        @staticmethod
+        def from_pretrained(model_id, **kwargs):
+            load_kwargs.update(kwargs)
+            return _FakeModelClass()
+
+        def eval(self):
+            return self
+
+    monkeypatch.setattr(transformers, "Qwen3OmniMoeForConditionalGeneration", _FakeModelClass)
+    monkeypatch.setattr(model_loaders.torch.cuda, "is_available", lambda: False)
+
+    model_loaders.load_omni_hf_pipeline("dummy-omni", device, _OmniConfig())
+
+    assert load_kwargs["device_map"] == expected_device_map
+    assert load_kwargs["dtype"] == "auto"
+
+
 @pytest.mark.parametrize("use_hf", [True, False], ids=["hf", "optimum"])
 def test_load_speech_generation_model_routes_omni(monkeypatch, use_hf):
     import transformers

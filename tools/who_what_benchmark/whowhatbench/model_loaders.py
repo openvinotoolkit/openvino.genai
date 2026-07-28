@@ -16,7 +16,7 @@ from transformers import (
     __version__,
 )
 
-from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
+from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH, Qwen3VLEmbeddingWrapper
 from .reranking_evaluator import (
     DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH,
     DEFAULT_MAX_LENGTH_QWEN as RERANK_DEFAULT_MAX_LENGTH_QWEN,
@@ -25,6 +25,7 @@ from .reranking_evaluator import (
     is_qwen3,
 )
 from .utils import (
+    OMNI_MODEL_TYPES,
     apply_peft_adapters,
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
@@ -83,7 +84,6 @@ def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=Fa
     for adapter, alpha in zip(adapters, alphas):
         ov_adapter = openvino_genai.Adapter(adapter)
         adapter_config.add(ov_adapter, alpha)
-
     return adapter_config
 
 
@@ -102,7 +102,7 @@ class GenAIModelWrapper:
             "text-chat",
             "visual-text",
             "visual-video-text",
-            "text-embedding",
+            "embedding",
             "text-reranking",
             "visual-text-chat",
         ):
@@ -219,14 +219,6 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     return model
 
 
-# Qwen3-Omni multimodal models don't have an AutoModel entry;
-# each model_type resolves to an explicit ForConditionalGeneration class.
-OMNI_MODEL_TYPES = {
-    "qwen3_omni_moe": "Qwen3OmniMoeForConditionalGeneration",
-    "qwen3_omni": "Qwen3OmniForConditionalGeneration",
-}
-
-
 def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **kwargs):
     import transformers
 
@@ -243,18 +235,12 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
             "Please upgrade transformers to a version that provides this class."
         )
 
-    if not torch.cuda.is_available() or device.lower() == "cpu":
-        device_map = "cpu"
-    else:
-        device_map = "cuda" if device.lower() == "gpu" else device.lower()
-
-    # Force float32 on load: the dense Qwen3-Omni checkpoint ships thinker and talker in
-    # different dtypes, which breaks mixed-precision matmul between them on CPU.
+    device_map = "cuda" if device.lower() == "gpu" else device.lower()
     model = model_cls.from_pretrained(
         model_id,
         trust_remote_code=trust_remote_code,
         device_map=device_map,
-        torch_dtype=torch.float32,
+        dtype="auto",
     )
 
     if kwargs.get("adapters") is not None:
@@ -267,6 +253,7 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
     trust_remote_code = False
+    config = None
     if kwargs.get('gguf_file'):
         model_kwargs['gguf_file'] = kwargs['gguf_file']
     else:
@@ -357,16 +344,48 @@ def load_text2image_genai_pipeline(model_dir, device="CPU", ov_config=None, **kw
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
-    adapter_config = _create_genai_adapter_config(
-        adapters=kwargs.get("adapters"),
-        alphas=kwargs.get("alphas", None),
-    )
+    ov_config = ov_config or {}
 
-    return GenAIModelWrapper(
-        openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
-        model_dir,
-        "text-to-image"
-    )
+    if device.upper().startswith("NPU"):
+        image_size = kwargs.get("image_size")
+        if image_size is None or image_size <= 0:
+            raise ValueError(
+                "A positive --image-size must be provided for text-to-image GenAI evaluation on NPU "
+                "because the pipeline must be reshaped to static dimensions before compilation"
+            )
+
+        pipe = openvino_genai.Text2ImagePipeline(model_dir)
+        guidance_scale = pipe.get_generation_config().guidance_scale
+        logger.info(
+            "Reshaping text-to-image pipeline to static shapes for NPU: "
+            f"num_images_per_prompt=1, height={image_size}, width={image_size}, guidance_scale={guidance_scale}"
+        )
+        pipe.reshape(
+            num_images_per_prompt=1,
+            height=image_size,
+            width=image_size,
+            guidance_scale=guidance_scale,
+        )
+        pipe.compile(device, **ov_config)
+
+        wrapper = GenAIModelWrapper(pipe, model_dir, "text-to-image")
+        if kwargs.get("adapters") is not None:
+            wrapper.adapter_config = _create_genai_adapter_config(
+                adapters=kwargs.get("adapters"),
+                alphas=kwargs.get("alphas", None),
+            )
+        return wrapper
+    else:
+        adapter_config = _create_genai_adapter_config(
+            adapters=kwargs.get("adapters"),
+            alphas=kwargs.get("alphas", None),
+        )
+
+        return GenAIModelWrapper(
+            openvino_genai.Text2ImagePipeline(model_dir, device=device, adapters=adapter_config, **ov_config),
+            model_dir,
+            "text-to-image",
+        )
 
 
 def load_text2image_model(
@@ -476,6 +495,9 @@ def load_visual_text_model(
 
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
+        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
+            return load_omni_hf_pipeline(model_id, device, config, trust_remote_code, **kwargs)
+
         model_kwargs = {"trust_remote_code": trust_remote_code}
         try:
             model_cls = None
@@ -489,6 +511,9 @@ def load_visual_text_model(
                 from transformers import AutoModelForMultimodalLM
 
                 model_cls = AutoModelForMultimodalLM
+            elif config.model_type == "gemma3n":
+                model_cls = AutoModelForCausalLM
+                model_kwargs.update({"torch_dtype": torch.float32})
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
@@ -506,7 +531,7 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3", "gemma3n"]:
+                elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
@@ -564,13 +589,26 @@ def load_visual_text_model(
 
         if "adapters" in kwargs and kwargs["adapters"] is not None:
             raise ValueError("Adapters are not supported for OVModelForVisualCausalLM.")
+
         try:
-            model = OVModelForVisualCausalLM.from_pretrained(
-                model_id, device=device, ov_config=ov_config
-            )
-        except ValueError:
+            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            model = OVModelForVisualCausalLM.from_pretrained(
+
+        model_cls = OVModelForVisualCausalLM
+        if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
+            try:
+                from optimum.intel.openvino import OVModelForMultimodalLM
+            except ImportError as exc:
+                raise ValueError(
+                    "This Optimum version does not provide OVModelForMultimodalLM required for Qwen3-Omni models. "
+                    "Please upgrade optimum-intel to a version that supports Qwen3-Omni export/loading."
+                ) from exc
+            model_cls = OVModelForMultimodalLM
+        try:
+            model = model_cls.from_pretrained(model_id, device=device, ov_config=ov_config)
+        except ValueError:
+            model = model_cls.from_pretrained(
                 model_id,
                 config=config,
                 trust_remote_code=True,
@@ -676,6 +714,13 @@ def load_inpainting_model(
     return model
 
 
+def apply_embedding_model_wrapper(model, use_genai):
+    if not use_genai and Qwen3VLEmbeddingWrapper.is_qwen3_vl_model(model):
+        return Qwen3VLEmbeddingWrapper(model)
+
+    return model
+
+
 def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
@@ -691,19 +736,23 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+    elif Qwen3VLEmbeddingWrapper.is_qwen3_vl_model(model_dir):
+        config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
+
     config.max_length = EMBED_DEFAULT_MAX_LENGTH
     config.normalize = kwargs.get("embeds_normalize", False)
     config.pad_to_max_length = True
     config.batch_size = kwargs.get("embeds_batch_size", config.batch_size)
 
     logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")
-    pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, device.upper(), config, **ov_config)
+    if hasattr(openvino_genai, "EmbeddingPipeline"):
+        pipeline = openvino_genai.EmbeddingPipeline(
+            model_dir, device.upper(), text_embedding_config=config, **ov_config
+        )
+    else:
+        pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, device.upper(), config, **ov_config)
 
-    return GenAIModelWrapper(
-        pipeline,
-        model_dir,
-        "text-embedding"
-    )
+    return GenAIModelWrapper(pipeline, model_dir, "embedding")
 
 
 def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
@@ -731,6 +780,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
                 ov_config=ov_config,
                 safety_checker=None
             )
+    model = apply_embedding_model_wrapper(model, use_genai)
     return model
 
 
@@ -1035,7 +1085,7 @@ def load_model(
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-inpainting":
         return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type == "text-embedding":
+    elif model_type in ("text-embedding", "image-embedding", "video-embedding"):
         return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "text-reranking":
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)

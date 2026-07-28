@@ -505,6 +505,21 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         report_tokens_timer.end();
     }
 
+    const auto step_end_time = std::chrono::steady_clock::now();
+    for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const auto& request = m_requests.at(request_index);
+        const auto generated_tokens_it =
+            sampler_output.num_generated_tokens_per_request.find(request->get_request_id());
+        const size_t num_generated_tokens =
+            generated_tokens_it == sampler_output.num_generated_tokens_per_request.end()
+                ? 0
+                : generated_tokens_it->second;
+        request->update_perf_metrics(MicroSeconds(m_pipeline_metrics.inference_duration),
+                                     MicroSeconds(m_pipeline_metrics.sampling_duration),
+                                     num_generated_tokens,
+                                     step_end_time);
+    }
+
     // free non running requests for current step
 
     {
@@ -736,6 +751,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
         if (request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
+            auto perf_metrics = request->get_perf_metrics();
+            perf_metrics.load_time = m_load_time_ms;
+            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
             for (const auto& sequence : request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());

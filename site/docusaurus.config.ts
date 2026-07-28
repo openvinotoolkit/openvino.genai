@@ -156,7 +156,24 @@ const config: Config = {
       },
     ],
   ],
-  plugins: [GenAISamplesDocsPlugin],
+  plugins: [
+    GenAISamplesDocsPlugin,
+    [
+      '@docusaurus/plugin-client-redirects',
+      {
+        redirects: [
+          {
+            from: ['/docs/use-cases/image-processing'],
+            to: '/docs/use-cases/visual-processing',
+          },
+          {
+            from: ['/docs/use-cases/text-embedding'],
+            to: '/docs/use-cases/multimodal-embedding',
+          },
+        ],
+      },
+    ],
+  ],
 };
 
 export default config;

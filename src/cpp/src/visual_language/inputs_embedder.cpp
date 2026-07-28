@@ -86,12 +86,13 @@ void InputsEmbedder::IInputsEmbedder::finish_chat() {
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
+        const Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap device_config) :
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
     m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
-    m_tokenizer{model_dir, device_config},
+    m_tokenizer{tokenizer},
     m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -338,45 +339,51 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedder::IInputsEmbedd
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
+                               const ov::AnyMap device_config) :
+    InputsEmbedder(model_dir, Tokenizer(model_dir, device_config), device, device_config) {}
+
+InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
+                               const Tokenizer& tokenizer,
+                               const std::string& device,
                                const ov::AnyMap device_config) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
-        m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
-        m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
-        m_impl = std::make_shared<InputsEmbedderNanoLLaVA>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderNanoLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
-        m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT_VIDEO) {
-        m_impl = std::make_shared<InputsEmbedderLLaVANextVideo>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderLLaVANextVideo>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
-        m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::PHI3_V) {
-        m_impl = std::make_shared<InputsEmbedderPhi3V>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderPhi3V>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::PHI4MM) {
-        m_impl = std::make_shared<InputsEmbedderPhi4MM>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderPhi4MM>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_VL) {
-        m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
-        m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_VL) {
-        m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderQwen3VL>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_5 || vlm_config.model_type == VLMModelType::QWEN3_5_MOE) {
-        m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderQwen3_5>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN3_OMNI) {
-        m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderQwen3Omni>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
-        m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3N) {
-        m_impl = std::make_shared<InputsEmbedderGemma3n>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderGemma3n>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4) {
-        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA4_UNIFIED) {
-        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
-        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, device, device_config);
+        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, tokenizer, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -424,7 +431,7 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     } else if (vlm_config.model_type == VLMModelType::GEMMA4_UNIFIED) {
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
-        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config); 
+        m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }

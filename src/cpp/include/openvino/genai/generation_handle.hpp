@@ -5,12 +5,16 @@
 
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/visual_language/perf_metrics.hpp"
 
 namespace ov::genai {
+
+class ContinuousBatchingPipeline;
 
 enum class GenerationStatus {
     RUNNING = 0, // Default status for ongoing generation
@@ -100,8 +104,11 @@ class GenerationStream;
 
 class OPENVINO_GENAI_EXPORTS 
 GenerationHandleImpl {
+    friend class ContinuousBatchingPipeline;
+
     std::shared_ptr<GenerationStream> m_generation_stream;
     ov::genai::GenerationConfig m_sampling_params; 
+
 public:
     GenerationHandleImpl(std::shared_ptr<GenerationStream> generation_stream, const ov::genai::GenerationConfig& sampling_params) :
     m_generation_stream(std::move(generation_stream)),
@@ -129,6 +136,9 @@ public:
     GenerationOutputs read();
     // Reads all generated tokens for all sequences
     std::vector<GenerationOutput> read_all();
+
+    PerfMetrics get_perf_metrics() const;
+    VLMPerfMetrics get_vlm_perf_metrics() const;
 };
 
 using GenerationHandle = std::shared_ptr<GenerationHandleImpl>;
