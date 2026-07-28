@@ -279,18 +279,13 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     strategy.prepare_request = [this](size_t,
                                   const ov::Tensor& in_ids,
                                   GenerationConfig& main_cfg,
-                                  GenerationConfig& draft_cfg,
-                                  ov::Tensor& main_in,
-                                  ov::Tensor& draft_in) {
+                                  ov::Tensor& main_in) {
         if (main_cfg.assistant_confidence_threshold == 0.f) {
             if (main_cfg.num_assistant_tokens == 0) {
                 main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             }
         }
-        draft_cfg.ignore_eos = true;
-        draft_cfg.stop_strings = {};
         main_in = in_ids;
-        draft_in = in_ids;
     };
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
                                   const std::vector<ov::Tensor>& input_ids,

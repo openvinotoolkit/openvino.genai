@@ -131,9 +131,6 @@ public:
     // finishes chat and clears a chat history
     void finish_chat();
 
-    virtual ov::Tensor get_draft_inputs_embeds() const {
-        return {};
-    }
     // set CDPruner setting
     virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight);
     virtual NormalizedPrompt normalize_prompt(
@@ -298,6 +295,10 @@ private:
             size_t base_video_id,
             const std::vector<EncodedImage>& images,
             const std::vector<EncodedVideo>& videos) const;
+
+        virtual ov::Tensor get_draft_inputs_embeds() const {
+            return {};
+        }
 
     protected:
         IInputsEmbedder(
