@@ -109,6 +109,8 @@ public:
     std::string boi_token = "<|image>";
     /// @brief A placeholder for image embeddings in text for Gemma4 model.
     std::string image_token = "<|image|>";
+    /// @brief A placeholder for video embeddings in text for Gemma4 model.
+    std::string video_token = "<|video|>";
     /// @brief A string token denoting end of image embeddings for Gemma4 model.
     std::string eoi_token = "<image|>";
 

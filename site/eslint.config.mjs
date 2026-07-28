@@ -18,7 +18,7 @@ const compat = new FlatCompat({
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   { files: ['**/*.{js,mjs,cjs,ts,jsx,tsx}'] },
-  { ignores: ['node_modules/', '.docusaurus/'] },
+  { ignores: ['node_modules/', '.docusaurus/', 'build'] },
   {
     languageOptions: {
       ...pluginReact.configs.flat.recommended.languageOptions,

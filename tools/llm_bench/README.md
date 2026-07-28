@@ -191,6 +191,12 @@ optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/Ti
 python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -p "What is openvino?" -n 2 --task text_gen --num_assistant_tokens 5
 ```
 
+```sh
+# chat iteration
+python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/llama-2-7b-chat/ -n 2 --task text_gen_chat -pf ./prompts/llm_chat.jsonl
+```
+
 **Some additional parameters:**
 - `--draft_device`: Inference device for Speculative decoding of draft model.
 - `--draft_cb_config`: Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model.
@@ -303,7 +309,7 @@ python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 
 > **Supported Text Rerank model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
 
-### Compare Text Embeddings models
+### Compare Text Embedding models
 ```sh
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5

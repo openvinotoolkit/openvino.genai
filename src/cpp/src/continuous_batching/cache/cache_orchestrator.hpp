@@ -650,6 +650,24 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_tables(seq_id)[0];
     }
 
+    std::vector<int> reserve_linear_attention_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        OPENVINO_ASSERT(num_blocks > 0, "Cannot reserve zero linear attention checkpoint blocks");
+        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->reserve_temporary_blocks(seq_id, num_blocks);
+    }
+
+    void promote_linear_attention_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->promote_temporary_block(seq_id, checkpoint_slot);
+    }
+
+    void release_linear_attention_temporary_blocks(uint64_t seq_id) {
+        if (!has_linear_attention_cache()) {
+            return;
+        }
+        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->release_temporary_blocks(seq_id);
+    }
+
     size_t get_linear_attention_block_table_logical_start(uint64_t seq_id) const {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_table_logical_start(seq_id);

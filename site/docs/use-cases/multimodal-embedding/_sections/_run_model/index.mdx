@@ -1,0 +1,51 @@
+import CodeExampleCPP from './_code_example_cpp.mdx';
+import CodeExamplePython from './_code_example_python.mdx';
+import CodeExampleJS from './_code_example_js.mdx';
+
+## Run Model Using OpenVINO GenAI
+
+`EmbeddingPipeline` generates vector representations for text, images, and videos using multimodal embedding models. Because text and visual inputs are mapped into a shared embedding space, you can measure the similarity between a text query and an image or video (e.g. for cross-modal retrieval).
+Each call to `embed()` computes embedding vectors, The input can be:
+
+- **Text** — a single string or a batch of strings.
+- **Images** — each image is a tensor of shape `[H, W, C]` (`uint8`), or a batch `[N, H, W, C]`.
+- **Videos** — each video is a tensor of shape `[F, H, W, C]` (`uint8`), where `F` is the number of frames. Accompanying video metadata (frame rate, sampled frame indices) can be provided via `videos_metadata`.
+
+Text, images, and videos are mapped into the same embedding space, so embeddings produced from different modalities can be compared directly (for example, with cosine similarity).
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExamplePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExamplePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+    <TabItemJS>
+    <Tabs groupId="device">
+        <TabItem label="CPU" value="cpu">
+            <CodeExampleJS device="CPU" />
+        </TabItem>
+        <TabItem label="GPU" value="gpu">
+            <CodeExampleJS device="GPU" />
+        </TabItem>
+    </Tabs>
+</TabItemJS>
+</LanguageTabs>
+
+:::tip
+Use CPU or GPU as devices without any other code change.
+:::

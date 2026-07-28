@@ -47,7 +47,8 @@ AudioEncoderQwen3Omni::AudioEncoderQwen3Omni(const std::filesystem::path& model_
                     "audio_config.n_window must be > 0");
 
     auto model = utils::singleton_core().read_model(model_path);
-    auto compiled = utils::singleton_core().compile_model(model, device, properties);
+    auto compiled = utils::singleton_core().compile_model(
+        model, device, utils::get_model_properties(properties, "audio_encoder", device));
     m_ireq_queue = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
         [&compiled] {

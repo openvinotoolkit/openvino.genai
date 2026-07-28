@@ -109,7 +109,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
     auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos);
     m_max_prompt_len = kv_desc.max_prompt_len;
-    m_kvcache_total = kv_desc.max_prompt_len + kv_desc.min_response_len;
+    m_kvcache_total = ov::genai::utils::get_npu_kv_cache_capacity(compiled);
     m_request = compiled.create_infer_request();
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
@@ -206,7 +206,7 @@ DecodedResults StatefulLLMPipeline::generate(
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-    
+
     constexpr bool add_generation_prompt = true;
     const auto template_start_time = std::chrono::steady_clock::now();
     auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
@@ -223,7 +223,7 @@ DecodedResults StatefulLLMPipeline::generate(
     decoded_results.scores = encoded_results.scores;
     decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
-    
+
     // Update perf metrics
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
@@ -235,7 +235,7 @@ DecodedResults StatefulLLMPipeline::generate(
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
-    
+
     return decoded_results;
 }
 

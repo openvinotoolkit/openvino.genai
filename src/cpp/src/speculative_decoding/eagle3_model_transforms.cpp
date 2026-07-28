@@ -4,6 +4,7 @@
 #include "eagle3_model_transforms.hpp"
 
 #include <fstream>
+#include <string>
 #include <nlohmann/json.hpp>
 
 #include "json_utils.hpp"
@@ -83,34 +84,65 @@ void apply_eagle3_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& propert
     }
 }
 
-void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
-    // extract embedding weight from main model
-    auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model) -> std::shared_ptr<ov::Node> {
-        constexpr size_t MIN_VOCAB_SIZE_THRESHOLD = 1000;
-        for (const auto& node : model->get_ordered_ops()) {
-            auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
-            if (!gather)
-                continue;
-            // [vocab, hidden_size] * [batch, seq_len] -> [batch, seq_len, hidden_size]
-            auto data_node = gather->input_value(0).get_node_shared_ptr();
-            auto indices_node = gather->input_value(1).get_node_shared_ptr();
-            if (!data_node || !indices_node)
-                continue;
-            // indices_node should be on parameter path, maybe this is better rule
-            ov::PartialShape ps = data_node->get_output_partial_shape(0);
-            if (ps.rank().is_static() && ps.rank().get_length() >= 2) {
-                if (ps[0].is_static() &&
-                    ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) {  // Heuristic: vocab size > 1000
-                    return gather;
-                }
-            }
-            std::string fname = data_node->get_friendly_name();
-            if (fname.find("embed_tokens") != std::string::npos || fname.find("embedding") != std::string::npos) {
+std::shared_ptr<ov::Node> find_embedding_gather(const std::shared_ptr<ov::Model>& model) {
+    constexpr size_t MIN_VOCAB_SIZE_THRESHOLD = 1000;
+    for (const auto& node : model->get_ordered_ops()) {
+        auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
+        if (!gather) 
+            continue;
+        // [vocab, hidden_size] * [batch, seq_len] -> [batch, seq_len, hidden_size]
+        auto data_node = gather->input_value(0).get_node_shared_ptr();
+        auto indices_node = gather->input_value(1).get_node_shared_ptr();
+        if (!data_node || !indices_node) 
+            continue;
+        // indices_node should be on parameter path, maybe this is better rule
+        ov::PartialShape ps = data_node->get_output_partial_shape(0);
+        if (ps.rank().is_static() && ps.rank().get_length() >= 2) {
+            if (ps[0].is_static() && 
+                ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) { // Heuristic: vocab size > 1000
                 return gather;
             }
         }
-        return nullptr;
-    };
+        std::string fname = data_node->get_friendly_name();
+        if (fname.find("embed_tokens") != std::string::npos || fname.find("embedding") != std::string::npos) {
+            return gather;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<ov::Node> clone_node_recursive(const std::shared_ptr<ov::Node>& node,
+                                               std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) {
+    auto it = cloned_nodes.find(node.get());
+    if (it != cloned_nodes.end()) {
+        return it->second;
+    }
+
+    std::shared_ptr<ov::Node> cloned;
+
+    if (auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node)) {
+        // For Constant nodes, create a deep copy with new data
+        cloned = std::make_shared<ov::op::v0::Constant>(constant->get_element_type(),
+                                                        constant->get_shape(),
+                                                        constant->get_data_ptr());
+    } else {
+        // For other nodes, clone recursively with cloned inputs
+        ov::OutputVector cloned_inputs;
+        for (size_t i = 0; i < node->get_input_size(); ++i) {
+            auto input_node = node->get_input_node_shared_ptr(i);
+            auto cloned_input = clone_node_recursive(input_node, cloned_nodes);
+            cloned_inputs.push_back(cloned_input->output(node->get_input_source_output(i).get_index()));
+        }
+        cloned = node->clone_with_new_inputs(cloned_inputs);
+    }
+
+    cloned->set_friendly_name(node->get_friendly_name() + "_cloned_for_draft");
+    cloned_nodes[node.get()] = cloned;
+    return cloned;
+}
+
+void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
+    // extract embedding weight from main model
     auto main_gather = find_embedding_gather(main_model);
     auto draft_gather = find_embedding_gather(draft_model);
     if (!main_gather || !draft_gather) {
@@ -124,41 +156,6 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
     }
 
     GENAI_INFO("Copying embedding weights from main to draft model for eagle3 speculative decoding.");
-
-    // Helper function to recursively clone a node and its inputs
-    // This handles cases where embedding has intermediate ops (Convert, FakeQuantize, etc.)
-    std::function<std::shared_ptr<ov::Node>(const std::shared_ptr<ov::Node>&,
-                                            std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>&)>
-        clone_node_recursive =
-            [&](const std::shared_ptr<ov::Node>& node,
-                std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) -> std::shared_ptr<ov::Node> {
-        auto it = cloned_nodes.find(node.get());
-        if (it != cloned_nodes.end()) {
-            return it->second;
-        }
-
-        std::shared_ptr<ov::Node> cloned;
-
-        if (auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node)) {
-            // For Constant nodes, create a deep copy with new data
-            cloned = std::make_shared<ov::op::v0::Constant>(constant->get_element_type(),
-                                                            constant->get_shape(),
-                                                            constant->get_data_ptr());
-        } else {
-            // For other nodes, clone recursively with cloned inputs
-            ov::OutputVector cloned_inputs;
-            for (size_t i = 0; i < node->get_input_size(); ++i) {
-                auto input_node = node->get_input_node_shared_ptr(i);
-                auto cloned_input = clone_node_recursive(input_node, cloned_nodes);
-                cloned_inputs.push_back(cloned_input->output(node->get_input_source_output(i).get_index()));
-            }
-            cloned = node->clone_with_new_inputs(cloned_inputs);
-        }
-
-        cloned->set_friendly_name(node->get_friendly_name() + "_cloned_for_draft");
-        cloned_nodes[node.get()] = cloned;
-        return cloned;
-    };
 
     // Clone the entire subgraph from main model
     std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
@@ -233,6 +230,61 @@ std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::share
     return nullptr;
 }
 
+namespace {
+
+bool is_hidden_state_residual_node(const std::shared_ptr<ov::Node>& node) {
+    if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
+        auto input1 = add->get_input_node_shared_ptr(1);
+        auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
+        if (!matmul) 
+            return false;
+        auto matmul_input = matmul->get_input_node_shared_ptr(0);
+        return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
+    }
+    return false;
+}
+
+std::vector<ov::Output<ov::Node>> find_hidden_state_outputs_by_patterns(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<std::string>& patterns) {
+    std::vector<ov::Output<ov::Node>> residual_outputs(patterns.size());
+    std::vector<bool> found_outputs(patterns.size(), false);
+    for (const auto& node : model->get_ordered_ops()) {
+        if (!is_hidden_state_residual_node(node)) 
+            continue;
+        const std::string& name = node->get_friendly_name();
+        for (size_t idx = 0; idx < patterns.size(); ++idx) {
+            if (!found_outputs[idx] && name.find(patterns[idx]) != std::string::npos) {
+                residual_outputs[idx] = node->output(0);
+                found_outputs[idx] = true;
+                break;
+            }
+        }
+    }
+
+    std::vector<ov::Output<ov::Node>> ordered_outputs;
+    ordered_outputs.reserve(patterns.size());
+    for (size_t idx = 0; idx < patterns.size(); ++idx) {
+        if (found_outputs[idx]) {
+            ordered_outputs.push_back(residual_outputs[idx]);
+        }
+    }
+    return ordered_outputs;
+}
+
+}  // namespace
+
+std::vector<ov::Output<ov::Node>> find_decoder_layer_hidden_state_outputs(
+    const std::shared_ptr<ov::Model>& model,
+    const std::vector<int32_t>& decoder_layer_ids) {
+    std::vector<std::string> patterns;
+    patterns.reserve(decoder_layer_ids.size());
+    for (int32_t idx : decoder_layer_ids) {
+        patterns.emplace_back("layers." + std::to_string(idx) + "/");
+    }
+    return find_hidden_state_outputs_by_patterns(model, patterns);
+}
+
 void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector<int32_t>& hidden_layers_to_abstract) {
     if (hidden_layers_to_abstract.empty()) {
         return;
@@ -251,30 +303,11 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         patterns.emplace_back("midlayer");  // draft description
     }
 
-    // Helper: check if node is a residual Add node with expected structure
-    auto is_residual_node = [](const std::shared_ptr<ov::Node>& node) -> bool {
-        if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
-            auto input1 = add->get_input_node_shared_ptr(1);
-            auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
-            if (!matmul)
-                return false;
-            auto matmul_input = matmul->get_input_node_shared_ptr(0);
-            return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
-        }
-        return false;
-    };
-
     std::vector<ov::Output<ov::Node>> residual_outputs;
-    for (const auto& node : model->get_ordered_ops()) {
-        if (!is_residual_node(node))
-            continue;
-        const std::string& name = node->get_friendly_name();
-        for (const auto& pattern : patterns) {
-            if (name.find(pattern) != std::string::npos) {
-                residual_outputs.push_back(node->output(0));
-                break;
-            }
-        }
+    if (hidden_layers_to_abstract.size() > 1) {
+        residual_outputs = find_decoder_layer_hidden_state_outputs(model, hidden_layers_to_abstract);
+    } else {
+        residual_outputs = find_hidden_state_outputs_by_patterns(model, patterns);
     }
 
     if (!residual_outputs.empty()) {
