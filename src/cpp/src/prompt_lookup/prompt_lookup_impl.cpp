@@ -20,7 +20,12 @@ ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           std::optional<ov::Tensor> prompt_ids,
                                                           std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
-    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    return m_pipeline->add_request(request_id,
+                                   input_ids,
+                                   sampling_params,
+                                   token_type_ids,
+                                   prompt_ids,
+                                   lm_extra_inputs);
 }
 
 GenerationHandle

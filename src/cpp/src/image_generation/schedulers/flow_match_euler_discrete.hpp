@@ -37,6 +37,8 @@ public:
 
     void set_timesteps_with_mu(const double mu, const size_t num_inference_steps, const float strength) override;
 
+    double calculate_shift(size_t image_seq_len) override;
+
     std::vector<float> get_float_timesteps() override;
 
     float get_init_noise_sigma() const override;
@@ -65,7 +67,6 @@ private:
     void init_step_index();
     double sigma_to_t(double sigma);
     size_t _index_for_timestep(float timestep);
-    double calculate_shift(size_t image_seq_len);
     double compute_empirical_mu(const size_t image_seq_len, const size_t num_inference_steps);
 };
 
