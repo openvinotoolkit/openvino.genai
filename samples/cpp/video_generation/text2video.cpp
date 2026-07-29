@@ -14,15 +14,11 @@
 
 
 int main(int32_t argc, char* argv[]) try {
-    int64_t num_frames = 161;
-    if (argc >= 4 && std::string(argv[argc - 2]) == "--num-frames") {
-        num_frames = std::stoll(argv[argc - 1]);
-        argc -= 2;
-    }
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [--num-frames N]");
+    OPENVINO_ASSERT(argc == 3 || argc == 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [NUM_FRAMES]");
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
+    int64_t num_frames = (argc == 4) ? std::stoll(argv[3]) : 161;
 
     const std::string device = "CPU";  // GPU can be used as well
     float frame_rate = 25.0f;

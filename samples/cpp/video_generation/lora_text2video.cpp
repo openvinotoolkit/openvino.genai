@@ -18,22 +18,21 @@ void print_perf_metrics(ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
 }
 
 int main(int32_t argc, char* argv[]) try {
-    int64_t num_frames = 161;
-    if (argc >= 4 && std::string(argv[argc - 2]) == "--num-frames") {
-        num_frames = std::stoll(argv[argc - 1]);
-        argc -= 2;
-    }
-    OPENVINO_ASSERT(argc >= 3 && (argc - 3) % 2 == 0,
-                    "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...] [--num-frames N]");
+    OPENVINO_ASSERT(argc >= 3,
+                    "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...] [NUM_FRAMES]");
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
+    // <LORA_SAFETENSORS> <ALPHA> go in pairs, so an odd number of the remaining arguments means the last one is NUM_FRAMES
+    const bool has_num_frames = (argc - 3) % 2 == 1;
+    const int64_t num_frames = has_num_frames ? std::stoll(argv[argc - 1]) : 161;
+    const int32_t num_adapters = (argc - 3 - static_cast<int32_t>(has_num_frames)) / 2;
 
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::AdapterConfig adapter_config;
     // Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
-    for (size_t i = 0; i < (argc - 3)/2; ++i) {
+    for (int32_t i = 0; i < num_adapters; ++i) {
         ov::genai::Adapter adapter(argv[3 + 2*i]);
         float alpha = std::atof(argv[3 + 2*i + 1]);
         adapter_config.add(adapter, alpha);

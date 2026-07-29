@@ -32,7 +32,7 @@ class TestText2Video:
         run_sample(py_command, cwd=str(py_dir))
 
         cpp_sample = SAMPLES_CPP_DIR / "text2video"
-        cpp_command = [cpp_sample, convert_model, sample_args, "--num-frames", "5"]
+        cpp_command = [cpp_sample, convert_model, sample_args, "5"]
         run_sample(cpp_command, cwd=str(cpp_dir))
 
         py_video = py_dir / "genai_video.avi"

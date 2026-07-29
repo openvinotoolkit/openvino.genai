@@ -12,15 +12,11 @@
 #include <openvino/genai/taylorseer_config.hpp>
 
 int main(int argc, char* argv[]) try {
-    int64_t num_frames = 161;
-    if (argc >= 4 && std::string(argv[argc - 2]) == "--num-frames") {
-        num_frames = std::stoll(argv[argc - 1]);
-        argc -= 2;
-    }
-    OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [--num-frames N]");
+    OPENVINO_ASSERT(argc == 3 || argc == 4, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [NUM_FRAMES]");
 
     const std::string models_path = argv[1];
     const std::string prompt = argv[2];
+    const int64_t num_frames = (argc == 4) ? std::stoll(argv[3]) : 161;
     const std::string device = "CPU";  // GPU can be used as well
     const std::string negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted";
     const size_t num_inference_steps = 25;
