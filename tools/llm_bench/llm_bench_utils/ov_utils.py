@@ -748,12 +748,8 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    if is_qwen3_vl:
-        try:
-            tokenizer = AutoProcessor.from_pretrained(model_path)
-        except Exception:
-            tokenizer = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-    else:
+    tokenizer = None
+    if not is_qwen3_vl:
         try:
             tokenizer = AutoTokenizer.from_pretrained(model_path)
         except Exception:
@@ -774,8 +770,17 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
     if not model_path_existed:
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
 
+    if kwargs.get("genai", True):
+        if not is_genai_available(log_msg=True):
+            raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
+        try:
+            return create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs)
+        except Exception as exp:
+            raise RuntimeError(
+                f"Model is not supported by OpenVINO GenAI. GenAI pipeline loading failed with following error: {exp}"
+            )
+
     trust_remote_code = False
-    tokenizer = None
     if is_qwen3_vl:
         try:
             tokenizer = AutoProcessor.from_pretrained(model_path)
@@ -788,16 +793,6 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         except Exception:
             tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
             trust_remote_code = True
-    if kwargs.get("genai", True):
-        if not is_genai_available(log_msg=True):
-            raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
-        try:
-            return create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs)
-        except Exception as exp:
-            raise RuntimeError(
-                f"Model is not supported by OpenVINO GenAI. "
-                f"GenAI pipeline loading failed with following error: {exp}"
-            )
 
     log.info("Selected Optimum Intel for benchmarking")
     model_class = kwargs['use_case'].ov_cls

@@ -124,19 +124,14 @@ def resolve_model_dir(model_path):
     p = Path(model_path)
     if p.is_dir():
         return p
-    if p.name.endswith("xml"):
-        candidate = p.parent
-        for _ in range(6):
-            if (candidate / "config.json").is_file():
-                return candidate
-            if candidate.parent == candidate:
-                break
-            candidate = candidate.parent
-        try:
-            return p.parents[2]
-        except IndexError:
-            return p.parent
-    return p
+    if not p.name.endswith("xml"):
+        return p
+    if (p.parent / "config.json").is_file():
+        return p.parent
+    try:
+        return p.parents[2]
+    except IndexError:
+        return p.parent
 
 
 def set_default_param_for_ov_config(ov_config):

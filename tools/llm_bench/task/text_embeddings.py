@@ -66,8 +66,13 @@ def run_text_embeddings_optimum(
 
         tokenizer_kwargs = {
             "padding": True,
+            "truncation": True,
             "padding_side": args.get("emb_padding_side") or "right",
         }
+        if args.get("emb_pad_to_max_length") is True:
+            tokenizer_kwargs["padding"] = "max_length"
+        if args.get("emb_max_length") is not None:
+            tokenizer_kwargs["max_length"] = args["emb_max_length"]
         input_kwargs = {}
         if batch_images:
             input_kwargs["images"] = batch_images
@@ -158,25 +163,25 @@ def run_text_embeddings_genai(
     prompts, images, videos = extract_prompt_data([entry], args.get("video_frames"), True)
     prompts = prompts * batch_size
 
-    tokenizer_kwargs = {"padding": True, "truncation": True}
-    if args.get("emb_pad_to_max_length") is True:
-        tokenizer_kwargs.update({"padding": "max_length"})
-    if args.get("emb_max_length") is not None:
-        tokenizer_kwargs.update({"max_length": args["emb_max_length"]})
-
-    tok_encode_start = time.perf_counter()
-    if is_qwen3_vl and hasattr(tokenizer, "tokenizer"):
-        text_tokenizer = tokenizer.tokenizer
+    if is_qwen3_vl:
+        # EmbeddingPipeline applies the chat template, visual placeholders, and media
+        # preprocessing internally, so an external tokenize step would not describe the
+        # measured inference. Report 0 for tokenization time and prompt tokens here;
+        # embed_time below covers the pipeline-internal path end-to-end.
+        tok_encode_time = 0.0
+        input_token_size = 0
     else:
-        text_tokenizer = tokenizer
-    try:
-        input_data = text_tokenizer(prompts, return_tensors="pt", **tokenizer_kwargs)
-    except TypeError:
-        input_data = text_tokenizer(text=prompts, return_tensors="pt", **tokenizer_kwargs)
-    tok_encode_end = time.perf_counter()
-    tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
-    input_token_size = input_tokens[0].numel()
+        tokenizer_kwargs = {"padding": True, "truncation": True}
+        if args.get("emb_pad_to_max_length") is True:
+            tokenizer_kwargs["padding"] = "max_length"
+        if args.get("emb_max_length") is not None:
+            tokenizer_kwargs["max_length"] = args["emb_max_length"]
+        tok_encode_start = time.perf_counter()
+        input_data = tokenizer(prompts, return_tensors="pt", **tokenizer_kwargs)
+        tok_encode_end = time.perf_counter()
+        tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+        input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
+        input_token_size = input_tokens[0].numel()
     if batch_size > 1:
         out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
         out_str += " Batch_size={}, ".format(batch_size)
@@ -189,7 +194,7 @@ def run_text_embeddings_genai(
     start = time.perf_counter()
     if is_qwen3_vl:
         media_kwargs = {}
-        if embedding_prompt:
+        if embedding_prompt is not None:
             media_kwargs["embedding_prompt"] = embedding_prompt
         if images:
             media_kwargs["images"] = images
@@ -232,10 +237,8 @@ def run_text_embeddings_genai(
 
 
 def run_text_embddings_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    mem_consumption.update_marker("model")
-    model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_embeddings_model(model_path, device, mem_consumption, **args)
-    iter_data_list = []
     input_entries = get_text_embed_prompt(args)
+
     if args['prompt_index'] is None:
         prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_entries)]
         entries_list = input_entries
@@ -246,8 +249,24 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
             if 0 <= i < len(input_entries):
                 entries_list.append(input_entries[i])
                 prompt_idx_list.append(i)
-    if len(input_entries) == 0:
+
+    if len(entries_list) == 0:
         raise RuntimeError('==Failure prompts is empty ==')
+
+    if not _is_qwen3_vl(args):
+        for entry in entries_list:
+            if entry.get("media") is not None or entry.get("video") is not None:
+                raise RuntimeError(
+                    "`--media`/`--images`/`--video` (and JSONL media/video fields) are only supported for "
+                    f"multimodal text_embed models (Qwen3-VL-Embedding). Model type '{args.get('model_type')}' "
+                    "does not accept media inputs."
+                )
+
+    mem_consumption.update_marker("model")
+    model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_embeddings_model(
+        model_path, device, mem_consumption, **args
+    )
+    iter_data_list = []
 
     if not use_genai:
         text_emb_fn = run_text_embeddings_optimum

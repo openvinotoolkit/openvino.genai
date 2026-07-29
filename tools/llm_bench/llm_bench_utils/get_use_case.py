@@ -67,12 +67,17 @@ def get_model_name(model_path: Path, task: Optional[str] = None) -> Tuple[Option
         else:
             possible_use_cases = USE_CASES.get(task, [])
 
-    # Search for matching model type in path parts
+    # Search for matching model type in path parts; prefer the longest matching prefix
+    # so that e.g. "qwen3-vl" wins over "qwen3" and "llava-next" wins over "llava".
     for part in reversed(model_parts):
+        best_match = None
         for use_case in possible_use_cases:
             for model_type in use_case.model_types:
                 if part.lower().startswith(model_type):
-                    return use_case, model_type, part
+                    if best_match is None or len(model_type) > len(best_match[1]):
+                        best_match = (use_case, model_type, part)
+        if best_match is not None:
+            return best_match
 
     # Fallback to extracting model name from path
     model_name = get_model_name_with_path_part(model_path)
