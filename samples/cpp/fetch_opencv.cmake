@@ -7,14 +7,18 @@ function(ov_genai_link_opencv target_name)
         set(required_components core imgproc videoio imgcodecs)
     endif()
 
+    # A static OpenCV is preferred. On Windows OpenCVConfig.cmake selects staticlib/ or
+    # lib/ depending on OpenCV_STATIC, so probe the static layout first and fall back to
+    # the shared one. On other platforms OpenCV_STATIC has no effect on the search.
     set(OpenCV_STATIC ON)
     find_package(OpenCV QUIET COMPONENTS ${required_components})
-
-    if(OpenCV_FOUND AND OpenCV_SHARED)
-        message(FATAL_ERROR "Found a shared OpenCV, but a static one is required. Set -DOpenCV_DIR to a static build or make it undiscoverable.")
+    if(NOT OpenCV_FOUND)
+        set(OpenCV_STATIC OFF)
+        find_package(OpenCV QUIET COMPONENTS ${required_components})
     endif()
 
     if(NOT OpenCV_FOUND)
+        # No OpenCV available: build a static one from source.
         include(FetchContent)
 
         if(POLICY CMP0135)
@@ -79,6 +83,23 @@ function(ov_genai_link_opencv target_name)
         set(opencv_targets ${OpenCV_LIBS})
         if(OpenCV_INCLUDE_DIRS)
             target_include_directories(${target_name} PRIVATE ${OpenCV_INCLUDE_DIRS})
+        endif()
+
+        if(OpenCV_SHARED)
+            message(STATUS "${target_name}: linking against a shared OpenCV from ${OpenCV_DIR}")
+            # The OpenCV shared libraries must be locatable at runtime. Samples are
+            # installed to samples_bin/ next to the lib/ folder of the package.
+            if(LINUX)
+                set_target_properties(${target_name} PROPERTIES
+                    INSTALL_RPATH "$ORIGIN/../lib"
+                    INSTALL_RPATH_USE_LINK_PATH ON)
+            elseif(APPLE)
+                set_target_properties(${target_name} PROPERTIES
+                    INSTALL_RPATH "@loader_path/../lib"
+                    INSTALL_RPATH_USE_LINK_PATH ON)
+            endif()
+        else()
+            message(STATUS "${target_name}: linking against a static OpenCV from ${OpenCV_DIR}")
         endif()
     endif()
 
