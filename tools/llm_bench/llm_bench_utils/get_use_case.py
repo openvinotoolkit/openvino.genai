@@ -139,10 +139,11 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
     4. Fallback: Uses an initial guess based on the model name.
     """
     # --- 3. Normalize input to a Path object once ---
-    cur_case, cur_model_type, cur_model_name = get_model_name(model_path)
+    cur_case, cur_model_type, cur_model_name = get_model_name(model_path, task)
+    model_dir = model_utils.resolve_model_dir(model_path)
 
     # Strategy 1: Check for a Diffusers model via 'model_index.json'
-    if (diffusers_config := safe_json_load(model_path / "model_index.json")):
+    if diffusers_config := safe_json_load(model_dir / "model_index.json"):
         if (pipe_type := diffusers_config.get("_class_name")) in DIFFUSERS_PIPELINE_TYPES:
             model_type = pipe_type.replace("Pipeline", "")
             return log_and_return(USE_CASES["image_gen"][0], model_type, cur_model_name)
@@ -152,7 +153,7 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
 
     # Strategy 2 & 3: Determine a 'model_id' from config or GGUF metadata
     model_id = None
-    if (config := safe_json_load(model_path / "config.json")):
+    if config := safe_json_load(model_dir / "config.json"):
         # Fallback to simple 'model_type' key
         if model_type_val := config.get("model_type"):
             model_id = str(model_type_val).lower().replace('_', '-')

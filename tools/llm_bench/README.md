@@ -224,7 +224,7 @@ python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task 
 # convert model to OpenVINO IRs format
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16
 # text to image
-python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "scat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task text-to-image
+python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task text-to-image
 # image to image
 python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task image-to-image --media ./image.png
 # inpainting
@@ -323,8 +323,28 @@ python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed
 - `--embedding_normalize`: Normalize embeddings
 - `--embedding_max_length`: Max length for text embeddings. Input text will be padded or truncated to specified value.
 - `--embedding_padding_side`: Side to use for padding 'left' or 'right'.
+- `--embedding_prompt`: Instruction/system prompt used to guide embedding generation. Distinct from `-p`, which supplies the content being embedded. For Qwen3-VL-Embedding this defaults to `"Represent the user's input."`.
 
-> **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
+> **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3, qwen3-vl
+
+### Compare Multimodal (Qwen3-VL) Embedding models
+Qwen3-VL-Embedding shares its architecture with Qwen3-VL text generation; the embedding behavior requires `--task text_embed` explicitly.
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino --model Qwen/Qwen3-VL-Embedding-8B --task feature-extraction --trust-remote-code models/Qwen3-VL-Embedding-8B
+# text-only embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -p "Describe OpenVINO"
+# image embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -p "Represent this image" --media cat.png
+# video embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -p "Represent this video" --video video.mp4 -vf 4
+# with Optimum Intel
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed --media cat.png --optimum
+# JSONL input (each entry may include prompt/media/video)
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -pf inputs.jsonl
+```
+
+For Qwen3-VL-Embedding, the pipeline is exposed via `openvino_genai.EmbeddingPipeline` (required — the run will fail if it is not present in the installed `openvino_genai`), with `LAST_TOKEN` pooling by default and chat-template preprocessing. `--batch_size N` repeats the prompt N times; media (images/videos) are decoded once and applied to every prompt in the batch by the GenAI pipeline.
 
 ### Code Generation models
 ```sh

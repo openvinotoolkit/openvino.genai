@@ -704,6 +704,7 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
     max_length = kwargs.get("emb_max_length")
     padding_side = kwargs.get("emb_padding_side")
     ov_config = kwargs["config"]
+    is_qwen3_vl = kwargs.get("model_type") == "qwen3-vl"
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
     config.normalize = kwargs.get("emb_normalize", False)
@@ -717,6 +718,8 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+    elif is_qwen3_vl:
+        config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
 
     if max_length is not None:
         config.max_length = max_length
@@ -728,7 +731,15 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
         memory_data_collector.start()
     start = time.perf_counter()
 
-    pipe = openvino_genai.TextEmbeddingPipeline(model_path, device.upper(), config, **ov_config)
+    if is_qwen3_vl:
+        if not hasattr(openvino_genai, "EmbeddingPipeline"):
+            raise RuntimeError(
+                "Qwen3-VL-Embedding requires openvino_genai.EmbeddingPipeline, which is unavailable "
+                "in the installed openvino_genai. Please upgrade openvino_genai."
+            )
+        pipe = openvino_genai.EmbeddingPipeline(model_path, device.upper(), text_embedding_config=config, **ov_config)
+    else:
+        pipe = openvino_genai.TextEmbeddingPipeline(model_path, device.upper(), config, **ov_config)
 
     end = time.perf_counter()
 
@@ -737,19 +748,26 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
     log.info(f'Pipeline initialization time: {end - start:.2f}s')
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-    except Exception:
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    if is_qwen3_vl:
+        try:
+            tokenizer = AutoProcessor.from_pretrained(model_path)
+        except Exception:
+            tokenizer = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    else:
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+        except Exception:
+            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     return pipe, tokenizer, end - start, None, True
 
 
 def create_text_embeddings_model(model_path, device, memory_data_collector, **kwargs):
-    model_path = Path(model_path)
-    if model_path.name.endswith('xml'):
-        model_path = model_path.parents[2]
+    from llm_bench_utils.model_utils import resolve_model_dir
+
+    model_path = resolve_model_dir(model_path)
 
     ov_config = kwargs['config']
+    is_qwen3_vl = kwargs.get("model_type") == "qwen3-vl"
 
     model_path_existed = Path(model_path).exists()
     # load model
@@ -757,11 +775,19 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
 
     trust_remote_code = False
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-    except Exception:
-        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        trust_remote_code = True
+    tokenizer = None
+    if is_qwen3_vl:
+        try:
+            tokenizer = AutoProcessor.from_pretrained(model_path)
+        except Exception:
+            tokenizer = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+            trust_remote_code = True
+    else:
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+        except Exception:
+            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            trust_remote_code = True
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
             raise RuntimeError("OpenVINO GenAI based benchmarking is required, but not available.")
@@ -785,14 +811,18 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         trust_remote_code=trust_remote_code
     )
     end = time.perf_counter()
-    pooling_type = kwargs.get("emb_pooling_type") or "cls"
+    pooling_type = kwargs.get("emb_pooling_type") or ("last_token" if is_qwen3_vl else "cls")
     normalize = kwargs.get("emb_normalize", False)
 
     ov_model._embed_forward = ov_model.forward
 
-    def forward_with_pooling(self, input_ids, attention_mask, token_type_ids=None, **kwargs):
+    def forward_with_pooling(self, *args, **kwargs):
         import torch
-        outputs = self._embed_forward(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, **kwargs)
+
+        attention_mask = kwargs.get("attention_mask")
+        if attention_mask is None and len(args) >= 2:
+            attention_mask = args[1]
+        outputs = self._embed_forward(*args, **kwargs)
         token_embeddings = outputs.last_hidden_state
         if pooling_type == "cls":
             out_embd = token_embeddings[:, 0]

@@ -142,6 +142,21 @@ def get_vlm_prompt(args):
     return vlm_file_list
 
 
+def get_text_embed_prompt(args):
+    output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
+    if not is_json_data:
+        return [output_data_list[0]]
+
+    result = []
+    for vlm_file in parse_vlm_json_data(output_data_list):
+        if args["prompt_file"] and "media" in vlm_file:
+            vlm_file["media"] = resolve_media_file_path(vlm_file.get("media"), args["prompt_file"][0])
+        if args["prompt_file"] and "video" in vlm_file:
+            vlm_file["video"] = resolve_media_file_path(vlm_file.get("video"), args["prompt_file"][0])
+        result.append(vlm_file)
+    return result
+
+
 def get_image_prompt(args):
     input_image_list = []
 

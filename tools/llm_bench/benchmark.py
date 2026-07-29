@@ -428,6 +428,14 @@ def get_argparser():
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
     )
     parser.add_argument(
+        "--embedding_prompt",
+        type=str,
+        default=None,
+        help="Instruction/system prompt used to guide embedding generation for Qwen3-VL-Embedding "
+        "(distinct from -p/--prompt, which is the content being embedded). Ignored by non-Qwen3-VL "
+        'embedding models. Defaults to "Represent the user\'s input."',
+    )
+    parser.add_argument(
         "--reranking_max_length",
         type=int,
         default=None,

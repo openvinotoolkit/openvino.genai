@@ -56,14 +56,18 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"].task not in ["visual_text_gen", "image_gen", "video_gen"]:
-                raise RuntimeError("Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models")
+            if args["use_case"].task not in ["visual_text_gen", "image_gen", "video_gen", "text_embed"]:
+                raise RuntimeError(
+                    "Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models / Multimodal Embeddings"
+                )
             data_dict = {}
             if "media" in input_key:
                 if args["media"] is None and args["images"] is None:
                     if args["use_case"].task == "visual_text_gen":
                         if args["video"] is None:
                             log.warn("Input image/video is not provided. Only text generation part will be evaluated")
+                    elif args["use_case"].task == "text_embed":
+                        pass
                     elif args["use_case"].task != "image_gen":
                         raise RuntimeError("No input image. ImageToImage/Inpainting Models cannot start generation without one. Please, provide an image.")
                 else:
@@ -78,6 +82,8 @@ def get_param_from_file(args, input_key):
                     data_dict["prompt"] = "sailing ship in storm by Leonardo da Vinci"
                 elif args["use_case"].task == "video_gen":
                     data_dict["prompt"] = "A cat plays with ball on the christmas tree"
+                elif args["use_case"].task == "text_embed":
+                    data_dict["prompt"] = "What is OpenVINO?"
             else:
                 data_dict["prompt"] = args["prompt"]
             if "negative_prompt" in input_key:
@@ -112,6 +118,25 @@ def get_param_from_file(args, input_key):
 def read_wav(filepath, sampling_rate):
     raw_speech = librosa.load(filepath, sr=sampling_rate)
     return raw_speech[0]
+
+
+def resolve_model_dir(model_path):
+    p = Path(model_path)
+    if p.is_dir():
+        return p
+    if p.name.endswith("xml"):
+        candidate = p.parent
+        for _ in range(6):
+            if (candidate / "config.json").is_file():
+                return candidate
+            if candidate.parent == candidate:
+                break
+            candidate = candidate.parent
+        try:
+            return p.parents[2]
+        except IndexError:
+            return p.parent
+    return p
 
 
 def set_default_param_for_ov_config(ov_config):
@@ -154,6 +179,7 @@ def analyze_args(args):
     model_args["emb_max_length"] = args.embedding_max_length
     model_args["emb_padding_side"] = args.embedding_padding_side
     model_args["emb_pad_to_max_length"] = args.embedding_pad_to_max_length
+    model_args["emb_prompt"] = args.embedding_prompt
     model_args['rerank_max_length'] = args.reranking_max_length
     model_args["rerank_top_n"] = args.reranking_top_n
     model_args["rerank_texts"] = args.texts
@@ -201,10 +227,12 @@ def analyze_args(args):
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
     use_case = None
     model_name = None
+    model_type = None
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
     model_args["use_case"] = use_case
+    model_args["model_type"] = model_type
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
         model_args["prompt"] = "def print_hello_world():"

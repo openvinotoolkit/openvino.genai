@@ -541,6 +541,78 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-vl-embedding"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "--task", "text_embed"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--optimum"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_vl_embedding_text(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-vl-embedding"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "--task", "text_embed"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-bs", "2"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_vl_embedding_image(
+        self, convert_model, download_test_content, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "Represent this image",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-vl-embedding"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["video0.mp4"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "2"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "2", "--optimum"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_vl_embedding_video(
+        self, convert_model, download_test_content, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--video",
+            download_test_content,
+            "--prompt",
+            "Represent this video",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["ms-marco-TinyBERT-L2-v2"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "2", "--task", "text_rerank"],
