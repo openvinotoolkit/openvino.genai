@@ -65,6 +65,7 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     read_json_param(parsed, "image_newline", image_newline);
     read_json_param(parsed, "vision_config.patch_size", vision_config_patch_size);
+    read_json_param(parsed, "vision_patch_temporal", vision_patch_temporal);
 
     // phi3_v and phi4mm
     if (parsed.contains("sub_GN") && parsed.at("sub_GN").is_array()) {

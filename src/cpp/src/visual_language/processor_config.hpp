@@ -56,6 +56,8 @@ public:
     // onyx specific config params
     size_t downsample_factor = 2;
     size_t max_image_tokens = 4096;
+    // present in config.json only. Set to processor_config by inputs embedder from vlm_config
+    size_t patch_temporal = 2;
 
     // gemma4 specific config params
     size_t pooling_kernel_size = 3;

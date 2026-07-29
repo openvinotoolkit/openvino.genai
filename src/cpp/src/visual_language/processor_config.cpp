@@ -53,6 +53,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     // Setting onyx config params
     read_json_param(parsed, "downsample_factor", downsample_factor);
     read_json_param(parsed, "max_image_tokens", max_image_tokens);
+    read_json_param(parsed, "patch_temporal", patch_temporal);
 
     // Setting gemma4 config params
     read_json_param(parsed, "pooling_kernel_size", pooling_kernel_size);
@@ -83,5 +84,6 @@ ov::genai::ProcessorConfig ov::genai::ProcessorConfig::from_any_map(
     read_anymap_param(config_map, "max_image_tokens", extracted_config.max_image_tokens);
     read_anymap_param(config_map, "pooling_kernel_size", extracted_config.pooling_kernel_size);
     read_anymap_param(config_map, "max_soft_tokens", extracted_config.max_soft_tokens);
+    read_anymap_param(config_map, "patch_temporal", extracted_config.patch_temporal);
     return extracted_config;
 }

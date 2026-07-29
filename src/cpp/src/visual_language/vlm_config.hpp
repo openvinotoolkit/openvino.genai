@@ -70,6 +70,9 @@ public:
     std::string im_id_end = "</image_id>";
     /// @brief A placeholder for image embeddings in text.
     std::string unk = "<unk>";
+    
+    // Onyx-specific vision architecture parameter.
+    size_t vision_patch_temporal = 2;
 
     // llava_next specific config params
     std::vector<float> image_newline;
