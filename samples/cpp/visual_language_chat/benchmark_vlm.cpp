@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
 
     if (device == "NPU" && !draft_model_path.empty()) {
-        std::cout << "--draft_model is not supported when --device is NPU" << std::endl;
+        std::cout << "--draft_model is not supported when --device is NPU for vlm" << std::endl;
         return EXIT_FAILURE;
     }
 
