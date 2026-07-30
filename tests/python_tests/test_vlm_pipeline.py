@@ -3001,14 +3001,14 @@ def test_vlm_eagle3(cat_tensor):
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
-    generation_config_with_tree = _setup_generation_config(
+    generation_config_with_draft_tree = _setup_generation_config(
         ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
     )
     result_with_draft = ov_pipe_with_draft.generate(
         PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
     )
     result_with_draft_tree = ov_pipe_with_draft.generate(
-        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_tree
+        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft_tree
     )
 
     assert result_without_draft.texts[0].strip() == result_with_draft.texts[0].strip(), (
@@ -3061,11 +3061,11 @@ def test_vlm_eagle3_chat_with_videos(
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
-    generation_config_with_tree = _setup_generation_config(
+    generation_config_with_draft_tree = _setup_generation_config(
         ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
     )
     results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
-    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_tree)
+    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft_tree)
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
