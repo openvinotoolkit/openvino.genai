@@ -114,7 +114,7 @@ ov::genai::SDPerfMetrics ov::genai::SDPerfMetrics::operator+(const SDPerfMetrics
         for (const auto& duration : raw_metrics.m_durations) {
             total_generate_duration += duration;
         }
-        result.raw_metrics.generate_durations.emplace_back(total_generate_duration);
+        result.raw_metrics.generate_durations.insert(result.raw_metrics.generate_durations.begin(), total_generate_duration);
     }
     if (right.raw_metrics.generate_durations.empty() && !right.raw_metrics.m_durations.empty()) {
         ov::genai::MicroSeconds total_generate_duration(0.0f);
