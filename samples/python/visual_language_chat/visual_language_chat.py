@@ -66,7 +66,7 @@ def main():
         parser.error("prompt_lookup must be 'true' or 'false'")
 
     if args.device == "NPU" and args.draft_model_dir:
-        parser.error("draft_model_dir is not supported when device is NPU")
+        parser.error("draft_model_dir is not supported when device is NPU for vlm")
 
     rgbs = read_images(args.image_dir)
 

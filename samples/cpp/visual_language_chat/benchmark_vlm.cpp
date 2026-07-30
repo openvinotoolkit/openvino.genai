@@ -134,9 +134,17 @@ int main(int argc, char* argv[]) try {
     
     auto res = pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
     auto metrics = res.perf_metrics;
+    auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(res.extended_perf_metrics);
     for (size_t i = 0; i < num_iter - 1; i++) {
         res = pipe->generate(prompt, ov::genai::images(images), ov::genai::generation_config(config));
         metrics = metrics + res.perf_metrics;
+
+        auto next_sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(res.extended_perf_metrics);
+        if (sd_perf_metrics && next_sd_perf_metrics) {
+            *sd_perf_metrics += *next_sd_perf_metrics;
+        } else if (!sd_perf_metrics) {
+            sd_perf_metrics = next_sd_perf_metrics;
+        }
     }
 
     std::cout << std::fixed << std::setprecision(2);
@@ -154,7 +162,6 @@ int main(int argc, char* argv[]) try {
     std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;
     std::cout << "Throughput: " << metrics.get_throughput().mean  << " ± " << metrics.get_throughput().std << " tokens/s" << std::endl;
 
-    auto sd_perf_metrics = std::dynamic_pointer_cast<ov::genai::SDPerModelsPerfMetrics>(res.extended_perf_metrics);
     if (sd_perf_metrics) {
         auto main_model_metrics = sd_perf_metrics->main_model_metrics;
         std::cout << "\nMAIN MODEL " << std::endl;

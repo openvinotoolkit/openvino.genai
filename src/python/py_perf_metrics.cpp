@@ -278,9 +278,13 @@ void init_perf_metrics(py::module_& m) {
 
     py::class_<SDPerfMetrics, ExtendedPerfMetrics, std::shared_ptr<SDPerfMetrics>>(m, "SDPerfMetrics", sd_perf_metrics_docstring)
         .def("get_ttst", &SDPerfMetrics::get_ttst)
-        .def("get_latency", &SDPerfMetrics::get_latency);
+        .def("get_latency", &SDPerfMetrics::get_latency)
+        .def("__add__", &SDPerfMetrics::operator+, py::arg("metrics"))
+        .def("__iadd__", &SDPerfMetrics::operator+=, py::arg("right"));
 
     py::class_<SDPerModelsPerfMetrics, SDPerfMetrics, std::shared_ptr<SDPerModelsPerfMetrics>>(m, "SDPerModelsPerfMetrics", sd_per_models_perf_metrics_docstring)
+        .def("__add__", &SDPerModelsPerfMetrics::operator+, py::arg("metrics"))
+        .def("__iadd__", &SDPerModelsPerfMetrics::operator+=, py::arg("right"))
         .def("get_num_accepted_tokens", &SDPerModelsPerfMetrics::get_num_accepted_tokens)
         .def_readonly("main_model_metrics", &SDPerModelsPerfMetrics::main_model_metrics)
         .def_readonly("draft_model_metrics", &SDPerModelsPerfMetrics::draft_model_metrics);

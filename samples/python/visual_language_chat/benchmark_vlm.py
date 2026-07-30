@@ -161,9 +161,15 @@ def main():
 
     res = pipe.generate(prompt, images=images, generation_config=config)
     perf_metrics = res.perf_metrics
+    sd_perf_metrics = res.extended_perf_metrics
     for _ in range(num_iter - 1):
         res = pipe.generate(prompt, images=images, generation_config=config)
         perf_metrics += res.perf_metrics
+        next_sd_perf_metrics = res.extended_perf_metrics
+        if sd_perf_metrics and next_sd_perf_metrics:
+            sd_perf_metrics += next_sd_perf_metrics
+        elif not sd_perf_metrics:
+            sd_perf_metrics = next_sd_perf_metrics
     if image_size:
         print(f"Image is resized to: {image_size[0]}x{image_size[1]}")
     print(f"Input token size: {res.perf_metrics.get_num_input_tokens()}")
@@ -181,7 +187,6 @@ def main():
     print(f"TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms/token")
     print(f"Throughput: {perf_metrics.get_throughput().mean:.2f} ± {perf_metrics.get_throughput().std:.2f} tokens/s")
 
-    sd_perf_metrics = res.extended_perf_metrics
     if sd_perf_metrics:
         main_model_metrics = sd_perf_metrics.main_model_metrics
         print("\nMAIN MODEL ")

@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) try {
         }
     }
     if (device == "NPU" && !draft_model_dir.empty()) {
-        throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU");
+        throw std::runtime_error("DRAFT_MODEL_DIR is not supported when DEVICE is NPU for vlm");
     }
     const bool prompt_lookup = lookup_is_true;
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
