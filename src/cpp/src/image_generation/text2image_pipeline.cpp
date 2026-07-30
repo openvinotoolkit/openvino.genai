@@ -12,6 +12,7 @@
 #include "image_generation/stable_diffusion_3_pipeline.hpp"
 #include "image_generation/flux_pipeline.hpp"
 #include "image_generation/flux2_klein_pipeline.hpp"
+#include "image_generation/zimage_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -33,6 +34,8 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
     } else if (class_name == "Flux2KleinPipeline") {
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
+    } else if (class_name == "ZImagePipeline") {
+        m_impl = std::make_shared<ZImagePipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -54,6 +57,8 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, co
         m_impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "Flux2KleinPipeline") {
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "ZImagePipeline") {
+        m_impl = std::make_shared<ZImagePipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
