@@ -212,14 +212,14 @@ def analyze_args(args):
     if args.load_config is not None:
         config = get_config(args.load_config)
         if type(config) is dict and len(config) > 0:
-            model_args['config'] = config
-    if model_framework == 'ov':
-        set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
-            if use_case.task in ['text_gen']:
-                model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
-            elif use_case.task in ['visual_text_gen']:
-                model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
+            model_args["config"] = config
+    if model_framework == "ov":
+        set_default_param_for_ov_config(model_args["config"])
+        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
+            if use_case.task in ["text_gen"] or (use_case.task in ["visual_text_gen"] and model_type == "qwen3-5-moe"):
+                model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
+            elif use_case.task in ["visual_text_gen"]:
+                model_args["config"]["ATTENTION_BACKEND"] = SDPA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
