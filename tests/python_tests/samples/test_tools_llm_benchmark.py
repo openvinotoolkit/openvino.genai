@@ -565,9 +565,12 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--prompt", "Represent this image"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--prompt", "Represent this image", "--optimum"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "--prompt", "Represent this image", "-bs", "2"],
+            # media-only: no --prompt, embedding is computed for the image alone
             ["-d", "cpu", "-n", "1", "--task", "text_embed"],
             ["-d", "cpu", "-n", "1", "--task", "text_embed", "--optimum"],
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-bs", "2"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_vl_embedding_image(
@@ -581,8 +584,6 @@ class TestBenchmarkLLM:
             convert_model,
             "--media",
             download_test_content,
-            "--prompt",
-            "Represent this image",
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -592,8 +593,22 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "2", "--prompt", "Represent this video"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "--task",
+                "text_embed",
+                "-vf",
+                "2",
+                "--prompt",
+                "Represent this video",
+                "--optimum",
+            ],
+            # media-only: no --prompt, embedding is computed for the video alone
             ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "2"],
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "2", "--optimum"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_vl_embedding_video(
@@ -607,8 +622,6 @@ class TestBenchmarkLLM:
             convert_model,
             "--video",
             download_test_content,
-            "--prompt",
-            "Represent this video",
         ] + sample_args
         run_sample(benchmark_py_command)
 

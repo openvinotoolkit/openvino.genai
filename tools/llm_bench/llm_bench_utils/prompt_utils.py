@@ -121,7 +121,7 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
             else:
                 img = func_load_image(input_data["media"])
                 images.append(img)
-        prompts.append(input_data["prompt"])
+        prompts.append(input_data.get("prompt", ""))
     return prompts, images, videos
 
 
@@ -148,7 +148,7 @@ def get_text_embed_prompt(args):
         return [output_data_list[0]]
 
     result = []
-    for vlm_file in parse_vlm_json_data(output_data_list):
+    for vlm_file in parse_vlm_json_data(output_data_list, optional_prompt=True):
         if args["prompt_file"] and "media" in vlm_file:
             vlm_file["media"] = resolve_media_file_path(vlm_file.get("media"), args["prompt_file"][0])
         if args["prompt_file"] and "video" in vlm_file:

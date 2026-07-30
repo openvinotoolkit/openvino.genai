@@ -37,7 +37,7 @@ def _summarize_entry(entry):
         parts.append(f"[image={entry['media']}]")
     if entry.get("video") is not None:
         parts.append(f"[video={entry['video']}]")
-    return " ".join(str(p) for p in parts if p is not None)
+    return " ".join(str(p) for p in parts if p)
 
 
 def run_text_embeddings_optimum(
@@ -51,7 +51,7 @@ def run_text_embeddings_optimum(
     if is_qwen3_vl:
         prompts, images, videos = extract_prompt_data([entry], args.get("video_frames"), False)
         prompt_text = prompts[0] if prompts else ""
-        content = [{"type": "text", "text": prompt_text}]
+        content = [{"type": "text", "text": prompt_text}] if prompt_text else []
         for image in images:
             content.append({"type": "image", "image": image})
         for video in videos:

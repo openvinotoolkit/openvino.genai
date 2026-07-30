@@ -318,7 +318,7 @@ python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed
 ```
 
 **Some additional parameters:**
-- `-p`: Text for creating embeddings
+- `-p`: Text for creating embeddings. Optional for Qwen3-VL-Embedding when `--media`/`--video` is given — the embedding is then computed for the media alone. Defaults to `"What is OpenVINO?"` for text-only runs.
 - `--embedding_pooling`: Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side.
 - `--embedding_normalize`: Normalize embeddings
 - `--embedding_max_length`: Max length for text embeddings. Input text will be padded or truncated to specified value.
@@ -338,9 +338,11 @@ python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -p "D
 python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -p "Represent this image" --media cat.png
 # video embedding
 python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -p "Represent this video" --video video.mp4 -vf 4
+# media-only embedding: -p is optional when media is provided
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed --media cat.png
 # with Optimum Intel
 python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed --media cat.png --optimum
-# JSONL input (each entry may include prompt/media/video)
+# JSONL input (each entry may include prompt/media/video; prompt may be omitted for media-only entries)
 python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -pf inputs.jsonl
 ```
 

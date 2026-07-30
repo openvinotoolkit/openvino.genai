@@ -83,7 +83,9 @@ def get_param_from_file(args, input_key):
                 elif args["use_case"].task == "video_gen":
                     data_dict["prompt"] = "A cat plays with ball on the christmas tree"
                 elif args["use_case"].task == "text_embed":
-                    data_dict["prompt"] = "What is OpenVINO?"
+                    # media-only embedding is valid, no text is added in that case
+                    has_media = data_dict.get("media") is not None or data_dict.get("video") is not None
+                    data_dict["prompt"] = "" if has_media else "What is OpenVINO?"
             else:
                 data_dict["prompt"] = args["prompt"]
             if "negative_prompt" in input_key:
