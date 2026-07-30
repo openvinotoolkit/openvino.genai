@@ -147,6 +147,21 @@ public:
         const AutoencoderKL& vae);
 
     /**
+     * Creates Flux2 Klein pipeline from individual models
+     * @param scheduler A scheduler used to denoise final image
+     * @param models_path Path to the model directory (used to load VAE batch-norm params and is_distilled flag)
+     * @param text_encoder A Qwen3 text encoder model
+     * @param transformer A Flux2 Transformer denoising model
+     * @param vae VAE auto encoder model
+     */
+    static Text2ImagePipeline flux2_klein(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const std::filesystem::path& models_path,
+        const Qwen3TextEncoder& text_encoder,
+        const Flux2Transformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
+    /**
      * Method to clone the pipeline to be used in parallel by another thread.
      * Reuses underlying models and recreates scheduler and generation config.
      * @returns A new pipeline for concurrent usage

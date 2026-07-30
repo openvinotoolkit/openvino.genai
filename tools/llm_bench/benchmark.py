@@ -130,9 +130,21 @@ def get_argparser():
         default=None,
         required=False,
         help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n
-        Example for OpenVINO: {"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}\n
+        Supports a flat config applied to all sub-models, or a hierarchical config with per-model sections\n
+        for multi-model pipelines (Stable Diffusion, SDXL, LCM, Flux2 Klein, …).\n
+        Flat config for OpenVINO: {"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}\n
         Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}\n
         Example for PyTorch: {"PREC_BF16":true}. PyTorch currently only supports bf16 settings.\n
+        Hierarchical config for multi-model pipelines — per-model keys override the "global" base:\n
+          {"global": {"INFERENCE_PRECISION_HINT": "f32"}, "text_encoder": {"DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}, "unet": {"ATTENTION_BACKEND": "SDPA"}, "vae_decoder": {"KV_CACHE_PRECISION": "f32"}}\n
+        Supported per-model keys: "global", "text_encoder", "text_encoder_2", "unet", "transformer", "vae_decoder", "vae_encoder".\n
+        Flux2 Klein NPUW example (save as config.json and pass with -lc config.json):\n
+          {"text_encoder": {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_FOLD": "YES", "NPUW_DQ": "NO", "NPUW_F16IC": "NO", "NPUW_DQ_FULL": "NO", "NPUW_DCOFF_TYPE": "", "NPUW_DCOFF_SCALE": "NO", "NPUW_UNFOLD_IREQS": "NO"},\n
+           "transformer":  {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_FOLD": "YES", "NPUW_DQ": "NO", "NPUW_F16IC": "NO", "NPUW_DQ_FULL": "NO", "NPUW_DCOFF_TYPE": "", "NPUW_DCOFF_SCALE": "NO", "NPUW_UNFOLD_IREQS": "NO"},\n
+           "vae_decoder":  {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_FOLD": "YES", "NPUW_ONLINE_PIPELINE": "NONE", "NPUW_F16IC": "NO", "NPUW_DQ_FULL": "NO", "NPUW_DCOFF_TYPE": "", "NPUW_DCOFF_SCALE": "NO", "NPUW_UNFOLD_IREQS": "NO"},\n
+           "vae_encoder":  {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_FOLD": "YES", "NPUW_ONLINE_PIPELINE": "NONE", "NPUW_DQ": "NO", "NPUW_F16IC": "NO", "NPUW_DQ_FULL": "NO", "NPUW_DCOFF_TYPE": "", "NPUW_DCOFF_SCALE": "NO", "NPUW_UNFOLD_IREQS": "NO"}}\n
+        Note: vae_encoder is only used for image-to-image pipelines; for text-to-image only vae_decoder is loaded.\n
+        Note: when vae_encoder and vae_decoder are both present (image-to-image), their configs are merged (vae_decoder overrides vae_encoder on conflict).\n
         Example of setting option via string in Linux/Windows cmd: "{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}" \n
         Example of setting option via string in PowerShell: '{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}' """,
     )

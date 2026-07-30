@@ -182,6 +182,18 @@ Text2ImagePipeline Text2ImagePipeline::flux(
     return Text2ImagePipeline(impl);
 }
 
+Text2ImagePipeline Text2ImagePipeline::flux2_klein(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const std::filesystem::path& models_path,
+    const Qwen3TextEncoder& text_encoder,
+    const Flux2Transformer2DModel& transformer,
+    const AutoencoderKL& vae) {
+    auto impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, models_path, text_encoder, transformer, vae);
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+    return Text2ImagePipeline(impl);
+}
+
 ImageGenerationConfig Text2ImagePipeline::get_generation_config() const {
     return m_impl->get_generation_config();
 }

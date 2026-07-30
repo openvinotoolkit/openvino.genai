@@ -394,6 +394,56 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     return ov_model, from_pretrained_time, False, None
 
 
+_SUBMODEL_KEYS = frozenset({
+    "text_encoder", "text_encoder_2", "unet", "transformer",
+    "vae_decoder", "vae_encoder", "global",
+})
+
+
+def _is_hierarchical_config(ov_config):
+    return any(k in ov_config for k in _SUBMODEL_KEYS)
+
+
+def extract_model_config(ov_config, model_name):
+    """Extract config for a specific sub-model from a potentially hierarchical config dict.
+
+    If the config uses sub-model keys (e.g. "text_encoder", "unet", "vae_decoder"), the
+    result is the merge of the optional "global" base and the model-specific overrides.
+    If no known sub-model keys are found the entire dict is returned as-is for backward
+    compatibility with flat configs.
+
+    Example hierarchical config::
+
+        {
+            "global":       {"INFERENCE_PRECISION_HINT": "f32"},
+            "text_encoder": {"DYNAMIC_QUANTIZATION_GROUP_SIZE": 0},
+            "unet":         {"ATTENTION_BACKEND": "SDPA"},
+            "vae_decoder":  {"KV_CACHE_PRECISION": "f32"}
+        }
+    """
+    if not _is_hierarchical_config(ov_config):
+        return ov_config
+    result = dict(ov_config.get("global", {}))
+    result.update(ov_config.get(model_name, {}))
+    return result
+
+
+def extract_pipeline_config(ov_config):
+    """Extract pipeline-level config from a potentially hierarchical config dict.
+
+    Like extract_model_config but also preserves any top-level keys that are not
+    sub-model names (e.g. ``adapters`` added by LoRA logic).  For flat configs the
+    entire dict is returned unchanged.
+    """
+    if not _is_hierarchical_config(ov_config):
+        return ov_config
+    result = dict(ov_config.get("global", {}))
+    for k, v in ov_config.items():
+        if k not in _SUBMODEL_KEYS:
+            result[k] = v
+    return result
+
+
 def get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config):
     import openvino_genai
     text_encoder_type = model_index_data.get("text_encoder", [])
@@ -425,6 +475,16 @@ def get_genai_unet_model(model_index_data, model_path, device, ov_config):
         raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported UNet type {unet_type}')
 
     return unet
+
+
+def get_genai_qwen3_text_encoder(model_path, device, ov_config):
+    import openvino_genai
+    return openvino_genai.Qwen3TextEncoder(model_path / "text_encoder", device.upper(), **ov_config)
+
+
+def get_genai_flux2_transformer(model_path, device, ov_config):
+    import openvino_genai
+    return openvino_genai.Flux2Transformer2DModel(model_path / "transformer", device.upper(), **ov_config)
 
 
 def create_genai_image_gen_model(model_path, device, ov_config, model_index_data, memory_data_collector, **kwargs):
@@ -519,27 +579,43 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
 
         vae_type = model_index_data.get("vae", [])
         if ("AutoencoderKL" in vae_type):
-            vae = openvino_genai.AutoencoderKL(model_path / "vae_decoder", device.upper(), **ov_config)
+            vae = openvino_genai.AutoencoderKL(model_path / "vae_decoder", device.upper(), **extract_model_config(ov_config, "vae_decoder"))
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported vae decoder type {vae_type}')
 
         if model_class_name == "StableDiffusionPipeline":
-            text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
-            unet = get_genai_unet_model(model_index_data, model_path, device, ov_config)
-            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
+            text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, extract_model_config(ov_config, "text_encoder"))
+            unet = get_genai_unet_model(model_index_data, model_path, device, extract_model_config(ov_config, "unet"))
+            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **extract_pipeline_config(ov_config))
         elif model_class_name == "LatentConsistencyModelPipeline":
-            text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
-            unet = get_genai_unet_model(model_index_data, model_path, device, ov_config)
+            text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, extract_model_config(ov_config, "text_encoder"))
+            unet = get_genai_unet_model(model_index_data, model_path, device, extract_model_config(ov_config, "unet"))
             image_gen_pipe = image_gen_pipeline_class.latent_consistency_model(scheduler, text_encoder, unet, vae)
         elif model_class_name == "StableDiffusionXLPipeline":
-            clip_text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, ov_config)
-            clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(model_index_data, model_path, "text_encoder_2", device, ov_config)
-            unet = get_genai_unet_model(model_index_data, model_path, device, ov_config)
+            clip_text_encoder = get_genai_clip_text_encoder(model_index_data, model_path, device, extract_model_config(ov_config, "text_encoder"))
+            clip_text_encoder_2 = get_genai_clip_text_encoder_with_projection(model_index_data, model_path, "text_encoder_2", device, extract_model_config(ov_config, "text_encoder_2"))
+            unet = get_genai_unet_model(model_index_data, model_path, device, extract_model_config(ov_config, "unet"))
             image_gen_pipe = image_gen_pipeline_class.stable_diffusion_xl(scheduler, clip_text_encoder, clip_text_encoder_2, unet, vae)
         else:
             raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported _class_name {model_class_name}')
     else:
-        if kwargs.get("static_reshape", False):
+        if model_class_name == "Flux2KleinPipeline":
+            scheduler = openvino_genai.Scheduler.from_config(model_path / "scheduler/scheduler_config.json")
+            text_encoder = get_genai_qwen3_text_encoder(model_path, device, extract_model_config(ov_config, "text_encoder"))
+            transformer = get_genai_flux2_transformer(model_path, device, extract_model_config(ov_config, "transformer"))
+            vae_type = model_index_data.get("vae", [])
+            if not any(t in str(vae_type) for t in ("AutoencoderKLFlux2", "AutoencoderKL")):
+                raise RuntimeError(f'==Failure ==: model by path:{model_path} has unsupported vae decoder type {vae_type}')
+            if image_gen_pipeline_class is openvino_genai.Image2ImagePipeline:
+                # Image-to-image needs both encoder and decoder.
+                # AutoencoderKL accepts a single config dict for both paths, so merge
+                # vae_encoder (base) and vae_decoder (override) configs.
+                vae_cfg = {**extract_model_config(ov_config, "vae_encoder"), **extract_model_config(ov_config, "vae_decoder")}
+                vae = openvino_genai.AutoencoderKL(model_path / "vae_encoder", model_path / "vae_decoder", device.upper(), **vae_cfg)
+            else:
+                vae = openvino_genai.AutoencoderKL(model_path / "vae_decoder", device.upper(), **extract_model_config(ov_config, "vae_decoder"))
+            image_gen_pipe = image_gen_pipeline_class.flux2_klein(scheduler, model_path, text_encoder, transformer, vae)
+        elif kwargs.get("static_reshape", False):
             image_gen_pipe = image_gen_pipeline_class(model_path)
             guidance_scale = kwargs.get("guidance_scale", image_gen_pipe.get_generation_config().guidance_scale)
             num_images_per_prompt = kwargs.get("batch_size", 1)
@@ -547,9 +623,9 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
             width = kwargs.get("width", 512)
             log.info(f"Image Pipeline reshape(num_images_per_prompt={num_images_per_prompt}, height={height}, width={width}, guidance_scale={guidance_scale})")
             image_gen_pipe.reshape(num_images_per_prompt=num_images_per_prompt, height=height, width=width, guidance_scale=guidance_scale)
-            image_gen_pipe.compile(device.upper(), **ov_config)
+            image_gen_pipe.compile(device.upper(), **extract_pipeline_config(ov_config))
         else:
-            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **ov_config)
+            image_gen_pipe = image_gen_pipeline_class(model_path, device.upper(), **extract_pipeline_config(ov_config))
 
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
