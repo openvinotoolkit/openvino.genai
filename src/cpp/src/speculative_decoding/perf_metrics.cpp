@@ -110,7 +110,6 @@ ov::genai::SDPerfMetrics ov::genai::SDPerfMetrics::operator+(const SDPerfMetrics
     // Some SD raw producers do not fill per-generate totals for sub-model metrics.
     // Synthesize one total per generate call to preserve boundaries after accumulation.
     if (raw_metrics.generate_durations.empty() && !raw_metrics.m_durations.empty()) {
-        std::cout << "operator+ raw_metrics generate_durations empty" << std::endl;
         ov::genai::MicroSeconds total_generate_duration(0.0f);
         for (const auto& duration : raw_metrics.m_durations) {
             total_generate_duration += duration;
@@ -118,7 +117,6 @@ ov::genai::SDPerfMetrics ov::genai::SDPerfMetrics::operator+(const SDPerfMetrics
         result.raw_metrics.generate_durations.emplace_back(total_generate_duration);
     }
     if (right.raw_metrics.generate_durations.empty() && !right.raw_metrics.m_durations.empty()) {
-        std::cout << "operator+ right raw_metrics generate_durations empty" << std::endl;
         ov::genai::MicroSeconds total_generate_duration(0.0f);
         for (const auto& duration : right.raw_metrics.m_durations) {
             total_generate_duration += duration;
