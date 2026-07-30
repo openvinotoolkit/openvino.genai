@@ -279,7 +279,7 @@ def parse_args():
         "--seed",
         type=int,
         default=42,
-        help="Text-to-image specific parameter that defines the seed value.",
+        help="Seed value for text-to-image/video generation and for pinning the RNG in text-to-speech generation.",
     )
     parser.add_argument(
         "--taylorseer-config",
@@ -1065,6 +1065,7 @@ def create_evaluator(base_model, args):
                 vocoder_path=args.vocoder_path,
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
+                seed=args.seed,
             )
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)

@@ -266,12 +266,14 @@ class SpeechGenerationEvaluator(BaseEvaluator):
         vocoder_path: str = None,
         speech_language: str = "",
         speech_voice: str = "",
+        seed: int = None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Speech generation pipeline for evaluation or ground truth data must be defined")
 
         self.test_data = test_data
         self.num_samples = num_samples
+        self.seed = seed
         self.generation_fn = gen_speech_fn
         self.whisper_model = whisper_model
         self.vocoder_path = vocoder_path
@@ -464,6 +466,11 @@ class SpeechGenerationEvaluator(BaseEvaluator):
                 speaker_embedding = self._load_speaker_embedding(speaker_embedding_file_path, expected_shape)
             else:
                 speaker_embedding = self.speaker_embedding
+
+            if self.seed is not None:
+                import torch
+
+                torch.manual_seed(self.seed)
 
             generated_audio, generated_sr = generation_fn(
                 model,
