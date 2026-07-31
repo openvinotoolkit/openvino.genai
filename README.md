@@ -63,7 +63,7 @@ Explore blogs to setup your first hands-on experience with OpenVINO GenAI:
 
 OpenVINO™ GenAI library provides very lightweight C++, Python, and Node.js APIs to run the following Generative AI Scenarios:
  - [Text generation using Large Language Models (LLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-generation/) - Chat with local Llama, Phi, Qwen and other models
- - [Image processing using Visual Language Model (VLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/) - Analyze images/videos with LLaVa, MiniCPM-V and other models
+ - [Visual processing using Vision Language Model (VLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/) - Analyze images/videos with LLaVa, MiniCPM-V and other models
  - [Image generation using Diffusers](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-generation/) - Generate images with Stable Diffusion & Flux models
  - [Speech recognition using Whisper](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-recognition/) - Convert speech to text using Whisper models
  - [Speech generation using SpeechT5](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-generation/) - Convert text to speech using SpeechT5 TTS models

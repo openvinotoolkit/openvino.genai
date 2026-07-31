@@ -296,6 +296,61 @@ TEST(TestBlockManager, FixedSizeFreeSequenceReleasesCapacityForNextSequence) {
     bm.free_sequence(second_seq->get_id());
 }
 
+TEST(TestBlockManager, TemporaryBlocksPromoteSelectedCheckpoint) {
+    ov::genai::BlockManager bm = ov::genai::BlockManager(
+        /*num_blocks=*/4,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        /*fixed_blocks_per_sequence=*/1);
+
+    auto sequence_group = create_sequence_group(17);
+    auto sequence = sequence_group->get_running_sequences().at(0);
+    bm.allocate_tokens(sequence, sequence_group, /*num_tokens=*/1, sequence_group->get_prompt_len());
+    const auto seq_id = sequence->get_id();
+    const int committed_block = bm.get_block_table(seq_id, 0).front()->get_index();
+
+    const auto checkpoint_blocks = bm.reserve_temporary_blocks(seq_id, /*num_blocks=*/3);
+    ASSERT_EQ(checkpoint_blocks.size(), 3);
+    EXPECT_EQ(bm.num_free_blocks(), 0);
+
+    bm.promote_temporary_block(seq_id, /*checkpoint_slot=*/2);
+
+    EXPECT_EQ(bm.get_block_table(seq_id, 0).front()->get_index(), checkpoint_blocks[1]);
+    EXPECT_NE(bm.get_block_table(seq_id, 0).front()->get_index(), committed_block);
+    EXPECT_EQ(bm.num_free_blocks(), 3);
+
+    bm.free_sequence(seq_id);
+    EXPECT_EQ(bm.num_free_blocks(), 4);
+}
+
+TEST(TestBlockManager, TemporaryBlocksReleaseWithoutPromotion) {
+    ov::genai::BlockManager bm = ov::genai::BlockManager(
+        /*num_blocks=*/3,
+        /*enable_prefix_caching=*/false,
+        /*block_size=*/1,
+        /*num_layers=*/1,
+        /*fixed_blocks_per_sequence=*/1);
+
+    auto sequence_group = create_sequence_group(18);
+    auto sequence = sequence_group->get_running_sequences().at(0);
+    bm.allocate_tokens(sequence, sequence_group, /*num_tokens=*/1, sequence_group->get_prompt_len());
+    const auto seq_id = sequence->get_id();
+    const int committed_block = bm.get_block_table(seq_id, 0).front()->get_index();
+
+    const auto checkpoint_blocks = bm.reserve_temporary_blocks(seq_id, /*num_blocks=*/2);
+    ASSERT_EQ(checkpoint_blocks.size(), 2);
+    EXPECT_EQ(bm.num_free_blocks(), 0);
+
+    bm.release_temporary_blocks(seq_id);
+
+    EXPECT_EQ(bm.get_block_table(seq_id, 0).front()->get_index(), committed_block);
+    EXPECT_EQ(bm.num_free_blocks(), 2);
+
+    bm.free_sequence(seq_id);
+    EXPECT_EQ(bm.num_free_blocks(), 3);
+}
+
 TEST(TestBlockManager, PrefixCachingCompleteCheckpointReuseAllocatesOwnedWriteBlocks) {
     constexpr size_t block_size = 4;
     ov::genai::BlockManager block_manager(

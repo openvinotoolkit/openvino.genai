@@ -60,3 +60,7 @@ If output is unrelated to the image:
 2. **Embedding merge** — verify image embeddings are inserted at correct positions
 3. **num_image_tokens** — must match vision encoder output size
 4. **Special tokens** — verify image boundary tokens match `config.json`
+5. **Precision** — compare effective `dtype`/`torch_dtype`, nested vision dtype,
+   input casts, and actual vision-encoder parameter/tensor dtypes
+6. **First divergence** — compare vision features, projector output, merged
+   embeddings, logits, and generated token IDs in that order
