@@ -235,7 +235,14 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
             "Please upgrade transformers to a version that provides this class."
         )
 
-    device_map = "cuda" if device.lower() == "gpu" else device.lower()
+    if device.lower() == "gpu":
+        import torch
+
+        if not torch.cuda.is_available():
+            raise ValueError("--device GPU requires a CUDA-capable GPU, but none is available. Use --device CPU.")
+        device_map = "cuda"
+    else:
+        device_map = device.lower()
     model = model_cls.from_pretrained(
         model_id,
         trust_remote_code=trust_remote_code,

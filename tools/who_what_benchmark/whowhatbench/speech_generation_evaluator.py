@@ -73,6 +73,7 @@ def _qwen3_omni_speakers(source: Any) -> list[str]:
             with config_path.open("r", encoding="utf-8") as config_file:
                 source = json.load(config_file)
         except Exception:
+            LOGGER.debug("Failed to read %s; speaker validation disabled.", config_path, exc_info=True)
             return []
 
     talker = source.get("talker_config") if isinstance(source, dict) else getattr(source, "talker_config", None)
@@ -416,7 +417,7 @@ class Qwen3OmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
             )
         except Exception:
             # Model internals differ between versions; leave the model unmodified on any mismatch.
-            pass
+            LOGGER.debug("Qwen3-Omni talker/thinker dtype patch skipped.", exc_info=True)
 
     def generate(self, prompt, speaker_embedding=None, language="", voice="", **_kwargs):
         self._reject_unsupported_inputs(speaker_embedding, language)
@@ -519,9 +520,7 @@ class GenAIOmniSpeechWrapper(_Qwen3OmniSpeakerMixin):
         )
 
         speech_outputs = getattr(result.speech_result, "waveforms", None)
-        if speech_outputs is None:
-            speech_outputs = getattr(result.speech_result, "speech_outputs", None)
-        if not speech_outputs:
+        if speech_outputs is None or len(speech_outputs) == 0:
             raise ValueError("OmniPipeline did not return audio. Ensure the talker module is enabled.")
 
         speech = np.asarray(speech_outputs[0].data, dtype=np.float32).reshape(-1)
@@ -674,8 +673,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
 
         ref = normalize_text(reference or "")
         tgt = normalize_text(target or "")
-        if not ref and not tgt:
-            return 0.0, 1.0
         if not ref:
             return None, None
         wer = safe_float(jiwer_wer(ref, tgt))
