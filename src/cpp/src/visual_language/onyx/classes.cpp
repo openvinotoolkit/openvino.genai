@@ -73,9 +73,9 @@ std::pair<int, int> compute_image_size(const int image_width,
     return {best->first * static_cast<int>(patch_hw), best->second * static_cast<int>(patch_hw)};
 }
 
-ov::Tensor get_pixel_values_onyx(const std::vector<ov::Tensor>& frames,
-                                 const ov::genai::ProcessorConfig& config,
-                                 const size_t max_tokens) {
+ov::Tensor get_pixel_values(const std::vector<ov::Tensor>& frames,
+                            const ov::genai::ProcessorConfig& config,
+                            const size_t max_tokens) {
     OPENVINO_ASSERT(!frames.empty(), "Onyx vision input must contain at least one frame");
     OPENVINO_ASSERT(frames.size() == 1 || frames.size() == config.patch_temporal,
                     "Onyx vision input must contain one image or exactly ",
@@ -109,9 +109,9 @@ ov::Tensor get_pixel_values_onyx(const std::vector<ov::Tensor>& frames,
     return pixel_values;
 }
 
-void fill_video_metadata_onyx(ov::genai::VideoMetadata& metadata,
-                              const size_t total_num_frames,
-                              const ov::genai::VideoProcessorConfig& config) {
+void fill_video_metadata(ov::genai::VideoMetadata& metadata,
+                         const size_t total_num_frames,
+                         const ov::genai::VideoProcessorConfig& config) {
     OPENVINO_ASSERT(total_num_frames >= config.patch_temporal,
                     "Onyx video must contain at least ",
                     config.patch_temporal,
@@ -168,7 +168,7 @@ EncodedImage VisionEncoderOnyx::encode_with_config(const std::vector<ov::Tensor>
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
 
-    ov::Tensor pixel_values = get_pixel_values_onyx(frames, config, max_tokens);
+    ov::Tensor pixel_values = get_pixel_values(frames, config, max_tokens);
 
     encoder.set_tensor("pixel_values", pixel_values);
     encoder.infer();
@@ -263,7 +263,7 @@ std::vector<EncodedVideo> InputsEmbedderOnyx::encode_videos(const std::vector<ov
         const ov::Tensor& video = videos.at(video_idx);
         OPENVINO_ASSERT(video.get_shape().size() == 4, "Onyx video tensor must have rank 4 [N, H, W, C]");
         VideoMetadata metadata = video_idx < videos_metadata.size() ? videos_metadata.at(video_idx) : VideoMetadata{};
-        fill_video_metadata_onyx(metadata, video.get_shape().at(0), m_vision_encoder->get_video_processor_config());
+        fill_video_metadata(metadata, video.get_shape().at(0), m_vision_encoder->get_video_processor_config());
         const ov::Tensor sampled_video = sample_video_if_needed(video, metadata);
         EncodedVideo encoded_video = m_vision_encoder->encode_frames(to_single_image_tensors({sampled_video}));
         encoded_video.metadata = std::move(metadata);
