@@ -2,11 +2,14 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
+import io
 import json
 import torch
 import numpy as np
+import urllib.request
 import logging as log
 from pathlib import Path
+from urllib.parse import urlparse
 from llm_bench_utils.config_class import (
     PA_ATTENTION_BACKEND,
     SDPA_ATTENTION_BACKEND,
@@ -35,9 +38,9 @@ def get_param_from_file(args, input_key):
     if args['prompt_file'] is None:
         if not isinstance(input_key, (list, tuple)):
             if args[input_key] is None:
-                if args['use_case'].task in ['text_gen', 'text_embed', 'text2speech']:
-                    data_list.append('What is OpenVINO?')
-                elif args['use_case'].task in ['text_rerank']:
+                if args["use_case"].task in ["text_gen", "text_gen_chat", "text_embed", "text2speech"]:
+                    data_list.append("What is OpenVINO?")
+                elif args["use_case"].task in ["text_rerank"]:
                     data_list.append("What are the main features of Intel Core Ultra processors?")
                 elif args["use_case"].task == "code_gen":
                     data_list.append("def print_hello_world():")
@@ -110,7 +113,15 @@ def get_param_from_file(args, input_key):
 
 
 def read_wav(filepath, sampling_rate):
-    raw_speech = librosa.load(filepath, sr=sampling_rate)
+    filepath_str = str(filepath)
+
+    parsed = urlparse(filepath_str)
+    if parsed.scheme in {"http", "https"}:
+        with urllib.request.urlopen(filepath_str) as response:  # nosec B310 check exists above
+            raw_speech = librosa.load(io.BytesIO(response.read()), sr=sampling_rate)
+            return raw_speech[0]
+
+    raw_speech = librosa.load(filepath_str, sr=sampling_rate)
     return raw_speech[0]
 
 
@@ -204,6 +215,7 @@ def analyze_args(args):
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
+        use_case.model_type = model_type
     model_args["use_case"] = use_case
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
@@ -258,6 +270,22 @@ def analyze_args(args):
     model_args["vocoder_path"] = args.vocoder_path
     if model_args["vocoder_path"] and not Path(model_args["vocoder_path"]).exists():
         raise RuntimeError(f"==Failure FOUND==: Incorrect vocoder path:{model_args['vocoder_path']}")
+
+    model_args["chat_iter"] = args.chat_iter
+    if model_args["use_case"].task == "text_gen_chat":
+        if args.chat_iter is not None and args.prompt_file is not None:
+            log.warning(
+                "`--chat_iter` can't be combined with `--prompt_file`, llm_bench will ignore `--chat_iter` and take prompts from prompt_file for generation"
+            )
+            model_args["chat_iter"] = None
+        elif args.chat_iter is None and args.prompt_file is None:
+            model_args["chat_iter"] = 1
+
+    model_args["full_chat"] = args.full_chat
+    if model_args["devices"] == "NPU" and not model_args["full_chat"]:
+        log.warning("NPU requires full chat history; enabling --full_chat.")
+        model_args["full_chat"] = True
+
     return model_path, model_framework, model_args
 
 

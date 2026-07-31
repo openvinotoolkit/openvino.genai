@@ -261,7 +261,12 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         m_inputs_embedder->set_position_ids(main_position_ids);
         m_inputs_embedder->set_rope_delta(main_rope_delta.value_or(compute_rope_delta(main_position_ids)));
     }
-    auto main_generation = m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    auto main_generation = m_main_pipeline->add_request(request_id,
+                                                        input_ids,
+                                                        sampling_params,
+                                                        token_type_ids,
+                                                        prompt_ids,
+                                                        lm_extra_inputs);
     align_request_pair_processed_prefix(request_id);
     return main_generation;
 }

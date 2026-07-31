@@ -12,6 +12,7 @@
 #include "visual_language/qwen2_5_vl/classes.hpp"
 #include "visual_language/qwen3_vl/classes.hpp"
 #include "visual_language/qwen3_5/classes.hpp"
+#include "visual_language/qwen3_omni/classes.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -45,8 +46,7 @@ VisionEncoder::VisionEncoder(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) {
-    const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_embeddings").first;
-    const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
+    const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
     auto compiled_model = utils::singleton_core().compile_model(
         vision_encoder_model, vision_encoder_weights, device,
         utils::get_model_properties(device_config, "vision_embeddings", device));
@@ -94,6 +94,13 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
     }
 }
 
+VisionEncoder::VisionEncoder(const std::filesystem::path& config_dir, ConfigOnlyTag) {
+    resolve_processor_configs(config_dir);
+}
+
+VisionEncoder::VisionEncoder(const ModelsMap&, const std::filesystem::path& config_dir, ConfigOnlyTag tag)
+    : VisionEncoder(config_dir, tag) {}
+
 ProcessorConfig VisionEncoder::get_processor_config() const {
     return m_processor_config;
 }
@@ -127,6 +134,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderQwen3VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN3_5 || model_type == VLMModelType::QWEN3_5_MOE) {
         return std::make_shared<VisionEncoderQwen3_5>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::QWEN3_OMNI) {
+        return std::make_shared<VisionEncoderQwen3Omni>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3N) {
@@ -172,6 +181,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderQwen3VL>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::QWEN3_5 || model_type == VLMModelType::QWEN3_5_MOE) {
         return std::make_shared<VisionEncoderQwen3_5>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::QWEN3_OMNI) {
+        return std::make_shared<VisionEncoderQwen3Omni>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA3N) {

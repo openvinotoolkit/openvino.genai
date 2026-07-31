@@ -84,7 +84,7 @@ private:
 class StatefulSpeculativeLLMPipeline : public StatefulSpeculativePipelineBase {
 public:
     StatefulSpeculativeLLMPipeline(
-    const ov::genai::ModelDesc& main_model_desc, 
+    const ov::genai::ModelDesc& main_model_desc,
     const ov::genai::ModelDesc& draft_model_desc
     );
 
