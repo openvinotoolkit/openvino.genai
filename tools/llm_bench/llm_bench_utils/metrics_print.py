@@ -26,6 +26,7 @@ def print_metrics(
     whisper_genai=None,
     chat_idx=None,
     prefill_time=None,
+    sd_metric=None,
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -112,6 +113,13 @@ def print_metrics(
         log.info(
             f'Running average of the KV cache usage {cb_metric["avg_cache_usage"]:.2f}%, '
             f'max KV cache usage: {cb_metric["max_cache_usage"]:.2f}%',
+        )
+    if sd_metric:
+        log.info(
+            f'{prefix} Speculative decoding: draft tokens generated: {sd_metric["num_draft_generated"]}, '
+            f'accepted by main model: {sd_metric["num_accepted"]}, '
+            f'acceptance rate: {sd_metric["acceptance_rate"]:.2f}%, '
+            f'miss rate: {sd_metric["miss_rate"]:.2f}%',
         )
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
