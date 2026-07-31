@@ -277,7 +277,8 @@ TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTable
     orchestrator->free_sequence(sequence->get_id());
 }
 
-TEST(TestCacheOrchestratorHybrid, SchedulerEmitsLinearAttentionCheckpointPaging) {
+TEST(TestCacheOrchestratorHybrid, SchedulerEmitsSpeculativeLinearAttentionCheckpointPaging) {
+    constexpr size_t num_candidates = 3;
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/4,
         /*num_la_blocks=*/5,
@@ -298,16 +299,22 @@ TEST(TestCacheOrchestratorHybrid, SchedulerEmitsLinearAttentionCheckpointPaging)
         utils::get_greedy_config());
     const auto seq_id = group->get_running_sequences().at(0)->get_id();
 
-    scheduler.reserve_linear_attention_checkpoints_for_next_schedule(seq_id, tokens.size());
     std::vector<SequenceGroup::Ptr> requests = {group};
+    std::ignore = scheduler.schedule(requests);
+    group->finish_iteration();
+    group->get_running_sequences().front()->append_token(42, 0.9f);
+    group->update_processed_tokens_num(tokens.size());
+    group->set_num_validated_tokens(num_candidates);
     const auto output = scheduler.schedule(requests);
 
     const auto paging_it = output.m_linear_attention_paging_data.find(seq_id);
     ASSERT_NE(paging_it, output.m_linear_attention_paging_data.end());
     const auto& paging = paging_it->second;
     ASSERT_EQ(paging.block_indices.size(), tokens.size() + 1);
-    EXPECT_EQ(paging.past_length, 0);
+    EXPECT_EQ(paging.past_length, tokens.size());
     EXPECT_EQ(paging.cache_interval, 1);
+    EXPECT_TRUE(paging.is_speculative);
+    EXPECT_EQ(paging.num_processed_tokens_before, tokens.size());
 
     const auto committed_block = orchestrator->get_linear_attention_block_table(seq_id).front()->get_index();
     EXPECT_EQ(paging.block_indices.front(), committed_block);
