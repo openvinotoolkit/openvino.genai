@@ -929,7 +929,7 @@ def create_genai_text_2_speech_model(model_path, device, ov_config, memory_data_
 
 
 def create_optimum_omni_text_2_speech_model(
-    model_path, device, ov_config, model_config, memory_data_collector, **kwargs
+    model_path, device, ov_config, model_config, remote_code, memory_data_collector, **kwargs
 ):
     log.info("Selected Optimum Intel for benchmarking")
     model_class = kwargs["use_case"].ov_cls
@@ -942,14 +942,14 @@ def create_optimum_omni_text_2_speech_model(
         memory_data_collector.start()
     start = time.perf_counter()
     ov_model = model_class.from_pretrained(
-        model_path, device=device, ov_config=ov_config, config=model_config, trust_remote_code=True
+        model_path, device=device, ov_config=ov_config, config=model_config, trust_remote_code=remote_code
     )
     end = time.perf_counter()
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation=True)
     log.info(f"From pretrained time: {end - start:.2f}s")
-    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=remote_code)
     return ov_model, processor, None, end - start, False
 
 
@@ -997,7 +997,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
 
         if is_omni_model:
             return create_optimum_omni_text_2_speech_model(
-                model_path, device, ov_config, model_config, memory_data_collector, **kwargs
+                model_path, device, ov_config, model_config, remote_code, memory_data_collector, **kwargs
             )
 
         log.info("Selected Optimum Intel for benchmarking")

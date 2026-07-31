@@ -110,8 +110,8 @@ def extract_audio_array(output):
     if hasattr(output, "data") and not isinstance(output, (list, tuple, np.ndarray)):
         try:
             return np.asarray(output.data, dtype=np.float32).reshape(-1)
-        except Exception:
-            pass
+        except (TypeError, ValueError) as exc:
+            log.debug("Could not convert output.data to array: %s", exc)
 
     if hasattr(output, "numpy"):
         return output.numpy().reshape(-1)

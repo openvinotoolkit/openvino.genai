@@ -241,6 +241,10 @@ class Qwen3OmniPTWrapper:
     def generation_config(self):
         return self._model.generation_config
 
+    @property
+    def thinker(self):
+        return self._model.thinker
+
     def to(self, device):
         self._model.to(device)
         return self
@@ -285,15 +289,6 @@ class Qwen3OmniPTWrapper:
             kwargs.setdefault("thinker_num_beams", int(num_beams))
         if "eos_token_id" in kwargs:
             kwargs["thinker_eos_token_id"] = kwargs.pop("eos_token_id")
-
-        # Speaker names vary by checkpoint (MoE vs. dense multilingual); fall back to the first
-        # speaker this checkpoint defines so the default speaker works across variants.
-        speaker = kwargs.get("speaker")
-        speaker_id_map = getattr(getattr(self._model.config, "talker_config", None), "speaker_id", None) or {}
-        if speaker is not None and speaker_id_map and speaker.lower() not in speaker_id_map:
-            fallback = next(iter(speaker_id_map))
-            log.warning("Speaker '%s' not available for this checkpoint; falling back to '%s'.", speaker, fallback)
-            kwargs["speaker"] = fallback
 
         # Visual-text path only consumes token ids; TTS caller sets return_audio=True explicitly.
         kwargs.setdefault("return_audio", False)
@@ -356,7 +351,7 @@ def create_image_text_gen_model(model_path, device, memory_data_collector, **kwa
     )
 
     # Hook the thinker submodule; the top-level generate() delegates sampling to it.
-    bench_hook = hook_common.get_bench_hook(kwargs["num_beams"], pipe._model.thinker)
+    bench_hook = hook_common.get_bench_hook(kwargs["num_beams"], pipe.thinker)
 
     # Mirror the Optimum VLM path's processor mapping expected by visual_language_generation.
     processor_config = {

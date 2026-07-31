@@ -155,6 +155,9 @@ def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_ite
     # Qwen3-Omni treats audio as another VLM modality; reuse the visual-language path.
     from task.visual_language_generation import run_visual_language_generation_benchmark
 
+    # Keep the speech default; the VLM path would otherwise cap output at 512 tokens.
+    args["infer_count"] = args.get("infer_count") or DEFAULT_OUTPUT_TOKEN_SIZE
+
     vlm_input_list = [
         {
             "prompt": speech_file.get("prompt") or args.get("prompt") or DEFAULT_SPEECH_PROMPT,
