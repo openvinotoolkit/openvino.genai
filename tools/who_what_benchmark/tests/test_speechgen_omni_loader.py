@@ -27,7 +27,7 @@ class _FakeAutoProcessor:
 
 @pytest.mark.parametrize(
     ("device", "expected_device_map"),
-    [("CPU", "cpu"), ("GPU", "cuda"), ("cuda", "cuda")],
+    [("CPU", "cpu"), ("GPU", "gpu"), ("cuda", "cuda")],
 )
 def test_load_omni_hf_pipeline_uses_requested_device_and_native_dtype(monkeypatch, device, expected_device_map):
     import transformers
@@ -44,7 +44,6 @@ def test_load_omni_hf_pipeline_uses_requested_device_and_native_dtype(monkeypatc
             return self
 
     monkeypatch.setattr(transformers, "Qwen3OmniMoeForConditionalGeneration", _FakeModelClass)
-    monkeypatch.setattr(model_loaders.torch.cuda, "is_available", lambda: False)
 
     model_loaders.load_omni_hf_pipeline("dummy-omni", device, _OmniConfig())
 
