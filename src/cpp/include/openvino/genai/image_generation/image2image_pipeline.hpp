@@ -145,6 +145,8 @@ public:
 
     ImageGenerationPerfMetrics get_performance_metrics();
 
+    void export_model(const std::filesystem::path& export_path);
+
 private:
     std::shared_ptr<DiffusionPipeline> m_impl;
 
