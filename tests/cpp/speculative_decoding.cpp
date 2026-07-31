@@ -6,6 +6,7 @@
 #include "gtest/gtest.h"
 
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "speculative_decoding/continuous_batching/mtp_strategy.hpp"
 #include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
 
@@ -53,7 +54,13 @@ protected:
 
     };
 
+    class MtpPipelineTestInstance : public ContinuousBatchingPipeline::MtpDecodingImpl {
+    public:
+        MtpPipelineTestInstance() = default;
+    };
+
     PipelineTestInstance m_pipeline = PipelineTestInstance();
+    MtpPipelineTestInstance m_mtp_pipeline;
 };
 
 TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnostics) {
@@ -132,6 +139,62 @@ TEST(MtpDraftUpdatePlan, FullAcceptanceProcessesOnlyUnforwardedTailAndBonus) {
     EXPECT_LT(plan.hidden_state_count, hidden_state_len);
     EXPECT_EQ(processed_tokens_before_update - plan.processed_tokens_to_rewind,
               processed_tokens_before_update);
+}
+
+namespace {
+template <typename Pipeline>
+void expect_mtp_request_rejected(Pipeline& pipeline,
+                                 const ov::genai::GenerationConfig& config,
+                                 const std::string& expected_message) {
+    try {
+        pipeline.add_request(0, ov::Tensor{}, config);
+        FAIL() << "Expected MTP request to be rejected at admission";
+    } catch (const ov::Exception& exception) {
+        EXPECT_NE(std::string(exception.what()).find(expected_message), std::string::npos)
+            << exception.what();
+    }
+}
+
+ov::genai::GenerationConfig valid_mtp_config() {
+    auto config = ov::genai::utils::get_greedy_config();
+    config.num_assistant_tokens = 1;
+    return config;
+}
+}  // namespace
+
+TEST_F(CBForSDTest, MtpAdmissionRejectsConfidenceThreshold) {
+    auto config = valid_mtp_config();
+    config.assistant_confidence_threshold = 0.5f;
+
+    expect_mtp_request_rejected(m_mtp_pipeline, config, "assistant_confidence_threshold must be 0.f");
+}
+
+TEST_F(CBForSDTest, MtpAdmissionRejectsTreeSearch) {
+    auto config = valid_mtp_config();
+    config.tree_depth = 2;
+
+    expect_mtp_request_rejected(m_mtp_pipeline, config, "does not support tree search");
+}
+
+TEST_F(CBForSDTest, MtpAdmissionRejectsNonGreedyDecoding) {
+    auto config = valid_mtp_config();
+    config.do_sample = true;
+
+    expect_mtp_request_rejected(m_mtp_pipeline, config, "supports greedy decoding only");
+}
+
+TEST_F(CBForSDTest, MtpAdmissionRejectsParallelSampling) {
+    auto config = valid_mtp_config();
+    config.num_return_sequences = 2;
+
+    expect_mtp_request_rejected(m_mtp_pipeline, config, "num_return_sequences must be 1");
+}
+
+TEST_F(CBForSDTest, MtpAdmissionRejectsZeroAssistantTokens) {
+    auto config = valid_mtp_config();
+    config.num_assistant_tokens = 0;
+
+    expect_mtp_request_rejected(m_mtp_pipeline, config, "num_assistant_tokens > 0");
 }
 
 TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {
