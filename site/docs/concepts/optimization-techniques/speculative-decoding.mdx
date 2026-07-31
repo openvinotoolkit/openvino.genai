@@ -54,7 +54,7 @@ Export both models with `optimum-cli`. The draft model must use the same tokeniz
 
 <OptimumCLI model='Qwen/Qwen3-0.6B' outputDir='Qwen3-0.6B-ov-int4' weightFormat='int4' task='text-generation-with-past' />
 
-### Configuration And Usage
+### Configuration and Usage
 
 In addition to `num_assistant_tokens`, Fast Draft supports:
 
@@ -119,7 +119,9 @@ The Stateful backend requires NPU to be the execution device for at least one of
 For NPU deployments, the recommended configuration places both the target and the draft model on the NPU.
 :::
 
-End-to-end samples: [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/speculative_decoding_lm.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/speculative_decoding_lm.cpp).
+:::tip
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/speculative_decoding_lm.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/speculative_decoding_lm.cpp) speculative decoding samples.
+:::
 
 ## Prompt Lookup Decoding
 
@@ -129,7 +131,7 @@ No second model is loaded.
 This is highly effective for *input-grounded* generation — RAG, document QA, summarization, code editing, multi-turn chat — where the output frequently copies entity names, phrases or code chunks verbatim from the input.
 On these workloads it delivers speculative-decoding-class speedups at near-zero drafter cost. On workloads with low prompt/output overlap it degrades gracefully back to plain decoding, since the proposals are simply rejected.
 
-### Configuration And Usage
+### Configuration and Usage
 
 Prompt Lookup is enabled at **pipeline construction time** with `prompt_lookup=True`; it cannot be switched on per request.
 In addition to `num_assistant_tokens` it supports:
@@ -179,7 +181,9 @@ Prompt Lookup is available on the Continuous Batching backend only.
 The `draft_model` and `prompt_lookup` constructor options are mutually exclusive — Prompt Lookup uses no draft model.
 :::
 
-End-to-end samples: [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/prompt_lookup_decoding_lm.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/prompt_lookup_decoding_lm.cpp).
+:::tip
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/prompt_lookup_decoding_lm.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/prompt_lookup_decoding_lm.cpp) prompt lookup decoding samples.
+:::
 
 ## EAGLE3
 
