@@ -817,6 +817,8 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         attention_mask = kwargs.get("attention_mask")
         if attention_mask is None and len(args) >= 2:
             attention_mask = args[1]
+        if pooling_type != "cls" and attention_mask is None:
+            raise ValueError(f"'{pooling_type}' pooling requires an attention_mask, but none was provided.")
         outputs = self._embed_forward(*args, **kwargs)
         token_embeddings = outputs.last_hidden_state
         if pooling_type == "cls":
