@@ -499,22 +499,12 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         GeneratedSequences candidate_sequences;
         candidate_sequences.emplace(0, GeneratedSequence(candidate_tokens, candidate_log_probs));
         m_main_pipeline->update_request(request_id, candidate_sequences, false);
-        state.target_la_checkpoint_sequence_id =
-            m_main_pipeline->reserve_linear_attention_checkpoints_for_next_step(request_id, candidates.size() + 1);
     }
     const auto draft_end = std::chrono::steady_clock::now();
     m_sd_metrics.draft_duration += PerfMetrics::get_microsec(draft_end - draft_start) / 1e6;
 
     const auto main_start = std::chrono::steady_clock::now();
-    try {
-        m_main_pipeline->step();
-    } catch (...) {
-        for (auto& [_, state] : m_request_states) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
-        }
-        throw;
-    }
+    m_main_pipeline->step();
     const auto main_end = std::chrono::steady_clock::now();
     const auto main_duration = PerfMetrics::get_microsec(main_end - main_start);
     m_sd_metrics.main_duration += main_duration / 1e6;
@@ -523,8 +513,6 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     update_draft_states_from_main(main_generated_requests);
     for (auto& [request_id, state] : m_request_states) {
         if (main_generated_requests.find(request_id) == main_generated_requests.end()) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
             state.finished = true;
         }
     }
@@ -536,24 +524,13 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         }
         auto& state = state_it->second;
         if (draft_generated == 0 || state.generated_tokens.size() <= state.generated_before_draft) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
             continue;
         }
         const auto accounting =
             dflash_cb::validation_accounting(draft_generated, state.generated_before_draft, state.generated_tokens.size());
         if (!accounting.target_extended) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
             continue;
         }
-        const size_t checkpoint_slot =
-            dflash_cb::linear_attention_checkpoint_slot_for_validation(
-                accounting,
-                /*validation_input_includes_seed_token=*/true);
-        m_main_pipeline->promote_linear_attention_checkpoint_for_sequence(state.target_la_checkpoint_sequence_id,
-                                                                         checkpoint_slot);
-        state.target_la_checkpoint_sequence_id.reset();
         const float acceptance_rate =
             draft_generated > 0 ? static_cast<float>(accounting.accepted) / draft_generated * 100.0f : 0.0f;
         m_sd_metrics.update_draft_generated_len(request_id, draft_generated);
@@ -606,12 +583,6 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::drop_requests() {
-    for (auto& [_, state] : m_request_states) {
-        if (m_main_pipeline) {
-            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
-            state.target_la_checkpoint_sequence_id.reset();
-        }
-    }
     if (m_main_pipeline) {
         m_main_pipeline->finish_request();
     }

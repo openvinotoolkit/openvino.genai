@@ -4,8 +4,6 @@
 #pragma once
 
 #include <algorithm>
-#include <optional>
-
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "update_request_structs.hpp"
@@ -60,9 +58,6 @@ public:
     bool is_requests_empty();
 
     size_t get_processed_tokens_per_iteration();
-    std::optional<uint64_t> reserve_linear_attention_checkpoints_for_next_step(uint64_t request_id, size_t checkpoint_count);
-    void promote_linear_attention_checkpoint_for_sequence(std::optional<uint64_t> seq_id, size_t checkpoint_slot);
-    void release_linear_attention_checkpoints_for_sequence(std::optional<uint64_t> seq_id);
 
     // Rewinds an awaiting request to an earlier processed-prefix position and synchronizes
     // physical block tables with the updated logical context.
