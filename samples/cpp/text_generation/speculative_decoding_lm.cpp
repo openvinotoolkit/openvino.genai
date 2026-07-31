@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) try {
     }
 
     ov::genai::GenerationConfig config;
-    config.max_new_tokens = 40;
+    config.max_new_tokens = 100;
     // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
     // Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
     // NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
