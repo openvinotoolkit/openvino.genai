@@ -374,9 +374,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         // Pause hidden-state-paired drafting when the main request was deferred.
         const bool requires_main_hidden_state =
             (eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled;
-        const bool main_published_hidden_state =
-            !candidates.empty() && candidates.begin()->second.hidden_states &&
-            candidates.begin()->second.hidden_states.get_size() > 0;
+        const auto published_hidden_state_it =
+            std::find_if(candidates.begin(), candidates.end(), [](const auto& candidate) {
+                return candidate.second.hidden_states && candidate.second.hidden_states.get_size() > 0;
+            });
+        const bool main_published_hidden_state = published_hidden_state_it != candidates.end();
         const bool should_pause_for_missing_main_hidden_state =
             requires_main_hidden_state && !main_published_hidden_state;
         if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
@@ -388,7 +390,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             min_candidate_len = result.inserted_tokens_cnt;
             if (requires_main_hidden_state && main_published_hidden_state) {
                 m_model_runner->set_initial_hidden_state(request_id,
-                                                     candidates.begin()->second.hidden_states);
+                                                         published_hidden_state_it->second.hidden_states);
             }
         } else {
             // update existing sequences by the candidates
@@ -456,13 +458,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // Safe cast: we know indices is not empty (asserted above)
                     num_tokens_needs_kv_update = static_cast<int>(indices.size()) - 1;
                 } else if (mtp_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
-                    OPENVINO_ASSERT(running_sequences.size() == 1,
-                                    "MTP hidden state update supports only single sequence generation. Found ",
-                                    running_sequences.size(),
-                                    " sequences.");
-                    OPENVINO_ASSERT(!request->get_sampling_parameters().is_tree_search(),
-                                    "MTP hidden state update does not support tree search.");
-
                     const auto& hidden_state = candidate_sequence.hidden_states;
                     OPENVINO_ASSERT(hidden_state && hidden_state.get_size() > 0,
                                     "Hidden states are required for MTP but the main model returned an empty tensor.");
@@ -558,7 +553,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;
             const bool should_pause_for_main_alignment =
-                eagle_mode_enabled && candidates.begin()->second.num_processed_tokens == 0;
+                eagle_mode_enabled &&
+                (candidates.empty() ||
+                 std::all_of(candidates.begin(), candidates.end(), [](const auto& candidate) {
+                     return candidate.second.num_processed_tokens == 0;
+                 }));
             if (generated_len >= max_new_tokens - 1 || (generated_len != 0 && result.inserted_tokens_cnt == 0) ||
                 should_pause_for_main_alignment || should_pause_for_missing_main_hidden_state) {
                 pause_gen_status = true;

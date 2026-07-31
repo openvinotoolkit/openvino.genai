@@ -48,6 +48,7 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 
 protected:
+    MtpDecodingImpl() = default;
     void enable_mtp_hidden_state_pairing();
 };
 }  // namespace ov::genai

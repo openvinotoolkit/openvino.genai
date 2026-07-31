@@ -14,6 +14,21 @@ namespace ov::genai {
 
 namespace {
 
+void validate_mtp_generation_config(const GenerationConfig& config) {
+    OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
+                    "MTP speculative decoding supports static candidate counts only; "
+                    "assistant_confidence_threshold must be 0.f.");
+    OPENVINO_ASSERT(!config.is_tree_search(),
+                    "MTP speculative decoding does not support tree search.");
+    OPENVINO_ASSERT(config.is_greedy_decoding(),
+                    "MTP speculative decoding supports greedy decoding only.");
+    OPENVINO_ASSERT(config.num_return_sequences == 1,
+                    "MTP speculative decoding does not support parallel sampling; "
+                    "num_return_sequences must be 1.");
+    OPENVINO_ASSERT(config.num_assistant_tokens > 0,
+                    "MTP speculative decoding requires num_assistant_tokens > 0.");
+}
+
 // Align hidden[t] with embed(token[t+1]).
 ov::Tensor create_draft_input_embeds(const ov::Tensor& input_embeds) {
     const auto shape = input_embeds.get_shape();
@@ -123,6 +138,8 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     std::optional<ov::Tensor> token_type_ids,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
+    validate_mtp_generation_config(sampling_params);
+
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -140,6 +157,8 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const std::string& prompt,
     const ov::genai::GenerationConfig& sampling_params) {
+    validate_mtp_generation_config(sampling_params);
+
     // Text-only serving path.
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs_embeds;
@@ -181,15 +200,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
                                       GenerationConfig& draft_cfg,
                                       ov::Tensor& main_in,
                                       ov::Tensor& draft_in) {
-        OPENVINO_ASSERT(main_cfg.assistant_confidence_threshold == 0.f,
-                        "MTP only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f).");
-        OPENVINO_ASSERT(main_cfg.is_greedy_decoding() && main_cfg.num_return_sequences == 1,
-                        "MTP speculative decoding currently supports only greedy, batch-1 generation.");
-        OPENVINO_ASSERT(main_cfg.num_assistant_tokens > 0,
-                        "MTP speculative decoding requires num_assistant_tokens > 0.");
-        draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
-        draft_cfg.ignore_eos = true;
-        draft_cfg.stop_strings = {};
+        (void)main_cfg;
+        (void)draft_cfg;
         main_in = in_embeds;
         draft_in = create_draft_input_embeds(in_embeds);
     };
