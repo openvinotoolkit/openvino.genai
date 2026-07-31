@@ -593,7 +593,7 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "2", "--prompt", "Represent this video"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "8", "--prompt", "Represent this video"],
             [
                 "-d",
                 "cpu",
@@ -602,13 +602,13 @@ class TestBenchmarkLLM:
                 "--task",
                 "text_embed",
                 "-vf",
-                "2",
+                "8",
                 "--prompt",
                 "Represent this video",
                 "--optimum",
             ],
             # media-only: no --prompt, embedding is computed for the video alone
-            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "2"],
+            ["-d", "cpu", "-n", "1", "--task", "text_embed", "-vf", "8"],
         ],
     )
     def test_python_tool_llm_benchmark_qwen3_vl_embedding_video(
