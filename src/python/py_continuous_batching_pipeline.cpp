@@ -116,7 +116,11 @@ auto scheduler_config_docstring = R"(
                                 Only applicable for models with linear attention cache inputs.
     cache_interval_multiplier:  optional multiplier used to derive the linear-attention checkpoint interval for prefix caching.
                                 The internal interval is KV cache block size * cache_interval_multiplier.
-                                When unset, the default value 8 is used for hybrid models with prefix caching.
+                                When unset, the multiplier is derived adaptively from the model's linear-attention
+                                state size so one checkpoint costs roughly one KV block (>= the default of 8); this
+                                prevents the recurrent-state cache of large hybrid SSM models from exhausting the
+                                cache budget on long prompts. Larger values reduce memory at the cost of coarser
+                                prefix-cache reuse.
                                 For models without linear attention cache inputs, this parameter is ignored.
                                 0 is valid only when prefix caching is disabled.
     dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
@@ -333,7 +337,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("stop", &GenerationHandleImpl::stop, py::arg_v("finish_reason", GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
-        .def("read_all", &GenerationHandleImpl::read_all);
+        .def("read_all", &GenerationHandleImpl::read_all)
+        .def("get_perf_metrics", &GenerationHandleImpl::get_perf_metrics)
+        .def("get_vlm_perf_metrics", &GenerationHandleImpl::get_vlm_perf_metrics);
 
     py::enum_<AggregationMode>(m, "AggregationMode",
                             R"(Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache

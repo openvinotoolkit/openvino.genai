@@ -34,6 +34,9 @@ TASK_MAPPING = {
 
 
 WWB_SIMILARITY_THRESHOLD = 0.95
+OV_RUNTIME_CONFIG_JSON = (
+    '{"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}'
+)
 HF_MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
 
 
@@ -169,6 +172,8 @@ class OptimumExportTool(ToolWrapper):
             str(model_dir),
             "--task",
             task,
+            "--weight-format",
+            "fp32",
         ]
         super().__init__(name="optimum_export", commands_list=cmd, work_dir=work_dir)
 
@@ -190,6 +195,8 @@ class GenAILlmBenchTool(ToolWrapper):
             "1",
             "--task",
             task,
+            "--load_config",
+            OV_RUNTIME_CONFIG_JSON,
         ]
         super().__init__(name="llm_bench_genai", commands_list=cmd, work_dir=work_dir)
 
@@ -219,6 +226,8 @@ class OptimumLlmBenchTool(ToolWrapper):
             "--task",
             task,
             "--optimum",
+            "--load_config",
+            OV_RUNTIME_CONFIG_JSON,
         ]
         super().__init__(name="llm_bench_optimum", commands_list=cmd, work_dir=work_dir)
 
@@ -301,6 +310,8 @@ class OptimumWWBTargetEvaluationTool(ToolWrapper):
             device,
             "--num-samples",
             str(num_samples),
+            "--ov-config",
+            OV_RUNTIME_CONFIG_JSON,
             "--output",
             str(work_dir / "optimum"),
         ]
@@ -349,6 +360,8 @@ class GenAIWWBTargetEvaluationTool(ToolWrapper):
             "--num-samples",
             str(num_samples),
             "--genai",  # Use GenAI backend for target evaluation
+            "--ov-config",
+            OV_RUNTIME_CONFIG_JSON,
             "--output",
             str(work_dir / "genai"),
         ]

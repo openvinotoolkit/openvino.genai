@@ -50,12 +50,14 @@ private:
     friend class CacheStateDumper;
 
     bool m_dynamic_memory_allocation = false;
+    std::map<uint64_t, size_t> m_linear_attention_checkpoint_counts;
 
     // Dynamic KV-cache allocation params
     size_t m_kv_blocks_initial_multiplier = 2;
     const float m_cache_growth_num_tokens = 256; // Number of tokens by which KV-cache is increased
 
     size_t m_snapkv_window_size = 1;
+    std::map<uint64_t, size_t> m_expected_num_scheduled_tokens;
 
 public:
     struct Output {
@@ -213,6 +215,11 @@ public:
 
         if (!m_cache_orchestrator->has_token_capacity()) {
             _initialize_cache(sequence_groups);
+        } else if (m_dynamic_memory_allocation) {
+            // Cache already initialized and growing dynamically: make sure a newly-arrived prompt
+            // has its capacity (on top of running sequences) reserved in one reallocation rather
+            // than growing in small chunks across the prefill.
+            _reserve_dynamic_capacity_for_active_sequences(sequence_groups);
         }
 
         if (m_config.dynamic_split_fuse) {
@@ -273,6 +280,7 @@ public:
     }
 
     void free_sequence(uint64_t seq_id) {
+        m_linear_attention_checkpoint_counts.erase(seq_id);
         m_cache_orchestrator->free_sequence(seq_id);
     }
 
@@ -288,6 +296,31 @@ public:
         return m_config;
     }
 
+    bool has_linear_attention_cache() const {
+        return m_cache_orchestrator->has_linear_attention_cache();
+    }
+
+    void reserve_linear_attention_checkpoints_for_next_schedule(uint64_t seq_id, size_t checkpoint_count) {
+        OPENVINO_ASSERT(checkpoint_count > 0, "Linear attention checkpoint count must be greater than zero");
+        if (!m_cache_orchestrator->has_linear_attention_cache()) {
+            return;
+        }
+        m_linear_attention_checkpoint_counts[seq_id] = checkpoint_count;
+    }
+
+    void promote_linear_attention_checkpoint(uint64_t seq_id, size_t checkpoint_slot) {
+        m_linear_attention_checkpoint_counts.erase(seq_id);
+        if (!m_cache_orchestrator->has_linear_attention_cache()) {
+            return;
+        }
+        m_cache_orchestrator->promote_linear_attention_temporary_block(seq_id, checkpoint_slot);
+    }
+
+    void release_linear_attention_checkpoints(uint64_t seq_id) {
+        m_linear_attention_checkpoint_counts.erase(seq_id);
+        m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
+    }
+
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free, CacheType cache_type) {
         m_cache_orchestrator->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices_to_free, cache_type);
     }
@@ -295,6 +328,22 @@ public:
     void clear_cache() {
         OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "Cache should not be cleared if prefix caching is enabled.");
         m_cache_orchestrator->clear();
+    }
+
+    void set_expected_num_scheduled_tokens(uint64_t request_id, size_t num_tokens) {
+        m_expected_num_scheduled_tokens[request_id] = num_tokens;
+    }
+
+    size_t get_expected_num_scheduled_tokens(uint64_t request_id) const {
+        auto it = m_expected_num_scheduled_tokens.find(request_id);
+        if (it != m_expected_num_scheduled_tokens.end()) {
+            return it->second;
+        }
+        return 0;
+    }
+
+    void clear_expected_num_scheduled_tokens(uint64_t request_id) {
+        m_expected_num_scheduled_tokens.erase(request_id);
     }
 
 private:
@@ -319,7 +368,7 @@ private:
             auto sequences = victim->get_not_finished_sequences();
             for (size_t s = 0; s < sequences.size(); ++s) {
                 auto seq_id = sequences[s]->get_id();
-                m_cache_orchestrator->free_sequence(seq_id);
+                free_sequence(seq_id);
             }
             victim->preempt_tokens(processed_tokens);
             if (was_evicted_from) {
@@ -345,7 +394,7 @@ private:
             for (auto sequence: victim->get_not_finished_sequences()) {
                 auto seq_id = sequence->get_id();
                 if (m_cache_orchestrator->has_block_table(seq_id)) {
-                    m_cache_orchestrator->free_sequence(seq_id);
+                    free_sequence(seq_id);
                 }
             }
         }
@@ -409,6 +458,16 @@ private:
 
                 // apply megabatch limitations
                 size_t num_scheduled_tokens = std::min(num_tokens_in_megabatch, num_available_tokens);
+
+                // use externally expected scheduling size when an external expectation is provided.
+                auto it_expected_scheduled_tokens =
+                    m_expected_num_scheduled_tokens.find(sequence_group->get_request_id());
+                if (it_expected_scheduled_tokens != m_expected_num_scheduled_tokens.end()) {
+                    const size_t expected_num_scheduled_tokens = it_expected_scheduled_tokens->second;
+                    if (expected_num_scheduled_tokens > 0 && expected_num_scheduled_tokens < num_scheduled_tokens) {
+                        num_scheduled_tokens = expected_num_scheduled_tokens;
+                    }
+                }
 
                 // apply KV cache limitations
                 while (m_cache_orchestrator->available_token_slots(sequence_group) < num_scheduled_tokens) {
@@ -616,10 +675,15 @@ private:
         }
     }
 
-    void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+    // Build (tokens-per-sequence, num-sequences) capacity targets for the given sequence groups,
+    // sized to each group's expected total length. Also accumulates the total concurrent sequence
+    // count (for fixed-size-per-sequence pools).
+    std::vector<std::pair<size_t, size_t>> _build_sequence_token_targets(
+            const std::vector<SequenceGroup::Ptr>& sequence_groups,
+            size_t& total_concurrent_seqs) {
         std::vector<std::pair<size_t, size_t>> sequence_token_targets;
         sequence_token_targets.reserve(sequence_groups.size());
-        size_t total_concurrent_seqs = 0;
+        total_concurrent_seqs = 0;
         for (size_t idx = 0; idx < sequence_groups.size(); idx++) {
             size_t seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
             const auto& gen_config = sequence_groups[idx]->get_sampling_parameters();
@@ -633,12 +697,58 @@ private:
             total_concurrent_seqs += concurrent_seqs;
             sequence_token_targets.emplace_back(seq_length, concurrent_seqs);
         }
+        return sequence_token_targets;
+    }
+
+    void _initialize_cache(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        size_t total_concurrent_seqs = 0;
+        auto sequence_token_targets = _build_sequence_token_targets(sequence_groups, total_concurrent_seqs);
         m_cache_orchestrator->ensure_sequence_token_capacity(sequence_token_targets);
         // Fixed-size-per-sequence managers (e.g. linear attention) are not covered by
         // ensure_sequence_token_capacity.  Pre-grow their pool to the number of arriving sequences
         // so the prompt phase can allocate without triggering _try_increase_cache.
         m_cache_orchestrator->grow_fixed_size_capacity(total_concurrent_seqs);
         m_dynamic_memory_allocation = true;
+    }
+
+    // In dynamic-allocation mode, pre-grow the variable-size caches so a newly-arriving prompt
+    // fits in a single reallocation. Without this, a long prompt that arrives after the cache was
+    // sized for a smaller one grows m_cache_growth_num_tokens (256) at a time across the whole
+    // prefill; every growth reallocates and copies the entire cache, which is O(n^2) copy work and
+    // produces the unstable memory spikes observed for hybrid models.
+    //
+    // The reservation targets ALL active sequences (both prompt- and generate-phase), not just the
+    // arriving prompt: ensure_sequence_token_capacity grows to the absolute sum of the supplied
+    // targets, so it must include the footprint already held by running sequences, otherwise a new
+    // prompt arriving alongside running ones would be under-reserved and fall back to chunked
+    // growth. It is idempotent (grows only when the required level exceeds the current one), so the
+    // work is skipped entirely on pure generation steps and is a no-op once capacity is sufficient.
+    void _reserve_dynamic_capacity_for_active_sequences(const std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        auto is_active = [](const SequenceGroup::Ptr& sg) {
+            return !sg->is_waiting() && !sg->has_finished() && !sg->handle_stopped() && !sg->handle_cancelled();
+        };
+
+        // Only (re)reserve when a prompt-phase sequence is entering this round; pure generation
+        // steps need no capacity change.
+        const bool has_pending_prompt = std::any_of(sequence_groups.begin(), sequence_groups.end(),
+            [&](const SequenceGroup::Ptr& sg) { return is_active(sg) && !sg->can_generate_tokens(); });
+        if (!has_pending_prompt) {
+            return;
+        }
+
+        std::vector<SequenceGroup::Ptr> active_sequences;
+        active_sequences.reserve(sequence_groups.size());
+        for (const auto& sequence_group : sequence_groups) {
+            if (is_active(sequence_group)) {
+                active_sequences.push_back(sequence_group);
+            }
+        }
+        if (active_sequences.empty()) {
+            return;
+        }
+        size_t total_concurrent_seqs = 0;
+        auto sequence_token_targets = _build_sequence_token_targets(active_sequences, total_concurrent_seqs);
+        m_cache_orchestrator->ensure_sequence_token_capacity(sequence_token_targets);
     }
 
     bool _try_increase_cache(SequenceGroup::CPtr sequence_group = nullptr) {
@@ -689,6 +799,33 @@ private:
         const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
 
         paging_data.past_length = checked_size_to_int32(num_processed_tokens, "past length", seq_id);
+        auto checkpoint_it = m_linear_attention_checkpoint_counts.find(seq_id);
+        if (checkpoint_it != m_linear_attention_checkpoint_counts.end()) {
+            OPENVINO_ASSERT(!m_config.enable_prefix_caching,
+                            "Linear attention checkpoint paging currently supports fixed one-block state only");
+            OPENVINO_ASSERT(num_scheduled_tokens <= checkpoint_it->second,
+                            "Linear attention checkpoint count must cover scheduled tokens for sequence ", seq_id,
+                            ": checkpoints ", checkpoint_it->second, ", scheduled tokens ", num_scheduled_tokens);
+            if (num_scheduled_tokens == 0) {
+                m_linear_attention_checkpoint_counts.erase(checkpoint_it);
+                m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
+            } else {
+                const int32_t committed_block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
+                const auto temporary_block_indices =
+                    m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, num_scheduled_tokens);
+
+                paging_data.block_indices.reserve(1 + temporary_block_indices.size());
+                paging_data.block_indices.push_back(committed_block_index);
+                for (int block_index : temporary_block_indices) {
+                    paging_data.block_indices.push_back(checked_block_index_to_int32(block_index, seq_id));
+                }
+                paging_data.cache_interval = 1;
+                scheduler_output.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+                m_linear_attention_checkpoint_counts.erase(checkpoint_it);
+                return;
+            }
+        }
+
         if (!m_config.enable_prefix_caching) {
             const int32_t block_index = checked_block_index_to_int32(la_blocks[0]->get_index(), seq_id);
             paging_data.block_indices.push_back(block_index);

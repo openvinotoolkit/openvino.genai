@@ -74,6 +74,18 @@ export class InpaintingPipeline {
   }
 
   /**
+   * Decode a latent image into an RGB image tensor using the VAE decoder.
+   *
+   * Useful inside a generation `callback` to obtain the intermediate image at a denoising step.
+   * Returned tensor shape is `[N, H, W, 3]` with `u8` pixels.
+   */
+  async decode(latent: Tensor): Promise<Tensor> {
+    if (!this.pipeline) throw new Error("InpaintingPipeline is not initialized");
+    const decodePromise = util.promisify(this.pipeline.decode.bind(this.pipeline));
+    return await decodePromise(latent);
+  }
+
+  /**
    * Get performance metrics from the latest generate() call.
    */
   getPerformanceMetrics(): ImageGenerationPerfMetrics {

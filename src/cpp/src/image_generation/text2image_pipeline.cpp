@@ -11,6 +11,7 @@
 #include "image_generation/stable_diffusion_xl_pipeline.hpp"
 #include "image_generation/stable_diffusion_3_pipeline.hpp"
 #include "image_generation/flux_pipeline.hpp"
+#include "image_generation/flux2_klein_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -30,6 +31,8 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir) {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
     } else if (class_name == "FluxPipeline") {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
+    } else if (class_name == "Flux2KleinPipeline") {
+        m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, root_dir);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -49,6 +52,8 @@ Text2ImagePipeline::Text2ImagePipeline(const std::filesystem::path& root_dir, co
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "FluxPipeline") {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "Flux2KleinPipeline") {
+        m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported text to image generation pipeline '", class_name, "'");
     }
@@ -65,8 +70,10 @@ Text2ImagePipeline::Text2ImagePipeline(const Image2ImagePipeline& pipe) {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::TEXT_2_IMAGE, *stable_diffusion_3);
     } else if (auto flux = std::dynamic_pointer_cast<FluxPipeline>(pipe.m_impl); flux != nullptr) {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, *flux);
+    } else if (auto flux2_klein = std::dynamic_pointer_cast<Flux2KleinPipeline>(pipe.m_impl); flux2_klein != nullptr) {
+        m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, *flux2_klein);
     } else {
-        OPENVINO_ASSERT("Cannot convert specified Image2ImagePipeline to Text2ImagePipeline");
+        OPENVINO_THROW("Cannot convert specified Image2ImagePipeline to Text2ImagePipeline");
     }
     m_impl->save_load_time(start_time);
 }
@@ -81,8 +88,10 @@ Text2ImagePipeline::Text2ImagePipeline(const InpaintingPipeline& pipe) {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::TEXT_2_IMAGE, *stable_diffusion_3);
     } else if (auto flux = std::dynamic_pointer_cast<FluxPipeline>(pipe.m_impl); flux != nullptr) {
         m_impl = std::make_shared<FluxPipeline>(PipelineType::TEXT_2_IMAGE, *flux);
+    } else if (auto flux2_klein = std::dynamic_pointer_cast<Flux2KleinPipeline>(pipe.m_impl); flux2_klein != nullptr) {
+        m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, *flux2_klein);
     } else {
-        OPENVINO_ASSERT("Cannot convert specified InpaintingPipeline to Text2ImagePipeline");
+        OPENVINO_THROW("Cannot convert specified InpaintingPipeline to Text2ImagePipeline");
     }
      m_impl->save_load_time(start_time);
 }

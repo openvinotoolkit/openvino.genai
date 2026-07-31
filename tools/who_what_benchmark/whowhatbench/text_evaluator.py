@@ -41,7 +41,8 @@ class TextEvaluator(BaseEvaluator):
         long_prompt=True,
         empty_adapters=False,
         num_assistant_tokens=0,
-        assistant_confidence_threshold=0.0
+        assistant_confidence_threshold=0.0,
+        generation_config_extra=None,
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -60,6 +61,7 @@ class TextEvaluator(BaseEvaluator):
         self.use_chat_template = use_chat_template
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
+        self.generation_config_extra = generation_config_extra or {}
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
         self.empty_adapters = empty_adapters
@@ -120,10 +122,11 @@ class TextEvaluator(BaseEvaluator):
             all_metrics.update(metric_dict)
             all_metrics_per_prompt.update(metric_per_question)
 
+        compared_rows = min(len(self.gt_data), len(predictions))
         self.last_cmp = all_metrics_per_prompt
-        self.last_cmp["prompts"] = predictions["prompts"].values
-        self.last_cmp["source_model"] = self.gt_data["answers"].values
-        self.last_cmp["optimized_model"] = predictions["answers"].values
+        self.last_cmp["prompts"] = predictions["prompts"].values[:compared_rows]
+        self.last_cmp["source_model"] = self.gt_data["answers"].values[:compared_rows]
+        self.last_cmp["optimized_model"] = predictions["answers"].values[:compared_rows]
         self.last_cmp = pd.DataFrame(self.last_cmp)
         self.last_cmp.rename(columns={"prompts": "prompt"}, inplace=True)
 
@@ -142,8 +145,18 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, empty_adapters=False,
-                               num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+        def default_gen_answer(
+            model,
+            tokenizer,
+            prompt,
+            max_new_tokens,
+            crop_question,
+            use_chat_template=False,
+            empty_adapters=False,
+            num_assistant_tokens=0,
+            assistant_confidence_threshold=0.0,
+            generation_config_extra=None,
+        ):
             is_awq = getattr(model, "is_awq", None) is not None
             device = "cpu"
             if hasattr(model, "device"):
@@ -195,6 +208,9 @@ class TextEvaluator(BaseEvaluator):
         )
 
         if generation_config is None:
+            extra_kwargs = (
+                {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
+            )
             for p in tqdm(prompts, desc="Evaluate pipeline"):
                 answers.append(
                     gen_answer_fn(
@@ -206,10 +222,15 @@ class TextEvaluator(BaseEvaluator):
                         self.use_chat_template,
                         self.empty_adapters,
                         self.num_assistant_tokens,
-                        self.assistant_confidence_threshold
+                        self.assistant_confidence_threshold,
+                        **extra_kwargs,
                     )
                 )
         else:
+            if self.generation_config_extra:
+                for k, v in self.generation_config_extra.items():
+                    if hasattr(generation_config, k):
+                        setattr(generation_config, k, v)
             with tqdm(total=len(prompt_data.values)) as progress_bar:
                 batch = []
                 for p_idx, p in enumerate(prompt_data.values):

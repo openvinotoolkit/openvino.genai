@@ -13,7 +13,17 @@ tm_infer_list = []
 tm_mm_embeddings = []
 new_prefill = None
 
-if version.parse(transformers.__version__) >= version.parse("5.3.0"):
+if version.parse(transformers.__version__) >= version.parse("5.13.0"):
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5_13 as hook_beam_search_v5_13
+
+    new_beam_search = hook_beam_search_v5_13.new_beam_search
+    new_prefill = hook_beam_search_v5_13.new_prefill
+elif version.parse(transformers.__version__) >= version.parse("5.4.0"):
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5_4 as hook_beam_search_v5_4
+
+    new_beam_search = hook_beam_search_v5_4.new_beam_search
+    new_prefill = hook_beam_search_v5_4.new_prefill
+elif version.parse(transformers.__version__) >= version.parse("5.3.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v5_3 as hook_beam_search_v5_3
 
     new_beam_search = hook_beam_search_v5_3.new_beam_search

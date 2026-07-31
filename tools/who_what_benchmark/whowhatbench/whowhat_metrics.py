@@ -265,6 +265,11 @@ class EmbedsSimilarity:
             with open(prediction, "rb") as f:
                 prediction_data = np.load(f)
 
+            if gold_data.shape != prediction_data.shape:
+                raise ValueError(
+                    f"Embeds shape mismatch: {gold} has shape {gold_data.shape}, but {prediction} has shape {prediction_data.shape}"
+                )
+
             cos_sim_all = cosine_similarity(gold_data, prediction_data)
             cos_sim = np.diag(cos_sim_all)
             metric_per_passages.append(cos_sim)

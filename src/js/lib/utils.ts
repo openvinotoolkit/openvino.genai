@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Parser } from "./parsers.js";
+import type { Tensor } from "openvino-node";
 
 export enum StreamingStatus {
   RUNNING,
@@ -545,11 +546,20 @@ export type InpaintingPipelineProperties = Record<string, unknown>;
 /**
  * Callback for image generation, called once per denoising step.
  *
+ * The callback may be synchronous or asynchronous. When it returns a Promise,
+ * generation waits for it to settle before the next step, so an in-callback
+ * `await pipeline.decode(latent)` completes without blocking the event loop.
+ *
  * @param step       Current step index (0-based).
  * @param numSteps   Total number of denoising steps.
- * @returns `true` to stop generation early, `false` to continue.
+ * @param latent     Current latent image. Pass it to `pipeline.decode(latent)` to obtain the intermediate image.
+ * @returns `true` to stop generation early, `false` to continue (optionally wrapped in a Promise).
  */
-export type ImageGenerationCallback = (step: number, numSteps: number) => boolean;
+export type ImageGenerationCallback = (
+  step: number,
+  numSteps: number,
+  latent: Tensor,
+) => boolean | Promise<boolean>;
 /**
  * Callback for text-to-image generation, called once per denoising step.
  *

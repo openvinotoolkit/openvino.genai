@@ -62,13 +62,13 @@ Multi-turn conversations with an interactive chat interface powered by OpenVINO.
 The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language.
 - **Run Command:**
 ```sh
-./benchmark_genai_c  [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+./benchmark_genai_c  [-m MODEL] [-p PROMPT] [-N NUM_WARMUP] [-n NUM_ITER] [-M MAX_NEW_TOKENS] [-d DEVICE]
 ```
 - **Options:**
 - `-m, --model`: Path to the model and tokenizers base directory.
 - `-p, --prompt` (default: `"The Sky is blue because"`): The prompt to generate text.
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `-N, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 

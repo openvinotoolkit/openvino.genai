@@ -135,6 +135,7 @@ protected:
     class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
     class Eagle3DecodingImpl;
+    class DFlashDecodingImpl;
     class PromptLookupImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
@@ -143,6 +144,7 @@ protected:
     friend class ContinuousBatchingForEagle3DecodingImpl;
     friend class SpeculativeDecodingImpl;
     friend class Eagle3DecodingImpl;
+    friend class DFlashDecodingImpl;
     friend class PromptLookupImpl;
     friend class VLMPipeline;
     friend class ContinuousBatchingAdapter;
@@ -382,6 +384,13 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_batches(
 
 OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> videos_metadata_batches(
     const std::vector<std::vector<VideoMetadata>>& videos_metadata_batches
+);
+
+/// @brief Factory for audios_batches AnyMap entry.
+/// Audios must be encoded before text tokenization for Qwen3-Omni's interleaved layout.
+/// @note This is a preview API and is subject to change.
+OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> audios_batches(
+    const std::vector<std::vector<ov::Tensor>>& audios_batches
 );
 
 }

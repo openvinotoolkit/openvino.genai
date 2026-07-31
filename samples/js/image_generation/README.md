@@ -6,6 +6,7 @@ Sample files:
  - [`text2image.js`](./text2image.js) demonstrates basic usage of the `Text2ImagePipeline` (text-to-image) with a step callback and saves the result as a BMP file using `bmp-js`.
  - [`image2image.js`](./image2image.js) demonstrates basic usage of the `Image2ImagePipeline` (image-to-image): reads an input image (JPEG, PNG or BMP), runs the pipeline with a `strength` parameter and step callback, and saves the result as a BMP file using `bmp-js`.
  - [`inpainting.js`](./inpainting.js) demonstrates basic usage of the `InpaintingPipeline` (inpainting): reads an input image and a mask (JPEG, PNG or BMP), runs the pipeline with a step callback, and saves the result as a BMP file using `bmp-js`.
+ - [`denoising_process.js`](./denoising_process.js) demonstrates `Text2ImagePipeline.decode()`: from an asynchronous step callback it `await`s the decode of the latent at every denoising step and saves each intermediate image as a BMP file using `bmp-js`.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -88,6 +89,16 @@ And run the sample:
 The resulting image is:
 
    ![](./../../cpp/image_generation/inpainting.bmp)
+
+### Run the denoising process sample
+
+The `denoising_process.js` sample shows how to decode the intermediate latent produced at every denoising step. The step callback is asynchronous and `await`s `Text2ImagePipeline.decode()` for the latent it receives; decoding runs on a worker thread so the event loop stays responsive. Each intermediate image is saved as a BMP file.
+
+```bash
+node image_generation/denoising_process.js dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+```
+
+The intermediate images are saved as `denoising_step_0.bmp`, `denoising_step_1.bmp`, ... in the current directory.
 
 ### Optional: change device
 

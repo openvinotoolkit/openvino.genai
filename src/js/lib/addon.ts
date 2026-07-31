@@ -233,6 +233,7 @@ export interface Text2ImagePipeline {
     streamer: ImageGenerationCallback | undefined,
     callback: (err: Error | null, result: Tensor) => void,
   ): void;
+  decode(latent: Tensor, callback: (err: Error | null, result: Tensor) => void): void;
   getPerformanceMetrics(): ImageGenerationPerfMetrics;
   getGenerationConfig(): ImageGenerationConfig;
   setGenerationConfig(config: ImageGenerationConfig): void;
@@ -253,6 +254,7 @@ export interface Image2ImagePipeline {
     streamer: ImageGenerationCallback | undefined,
     callback: (err: Error | null, result: Tensor) => void,
   ): void;
+  decode(latent: Tensor, callback: (err: Error | null, result: Tensor) => void): void;
   getPerformanceMetrics(): ImageGenerationPerfMetrics;
   getGenerationConfig(): ImageGenerationConfig;
   setGenerationConfig(config: ImageGenerationConfig): void;
@@ -274,6 +276,7 @@ export interface InpaintingPipeline {
     streamer: ImageGenerationCallback | undefined,
     callback: (err: Error | null, result: Tensor) => void,
   ): void;
+  decode(latent: Tensor, callback: (err: Error | null, result: Tensor) => void): void;
   getPerformanceMetrics(): ImageGenerationPerfMetrics;
   getGenerationConfig(): ImageGenerationConfig;
   setGenerationConfig(config: ImageGenerationConfig): void;

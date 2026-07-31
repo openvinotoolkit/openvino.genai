@@ -7,21 +7,21 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 
 ### Linux
 
-- [CMake](https://cmake.org/download/) 3.23 or higher
+- [CMake](https://cmake.org/download/) 3.26 or higher
 - GCC 7.5 or higher
 - Python 3.10 or higher
 - Git
 
 ### Windows
 
-- [CMake](https://cmake.org/download/) 3.23 or higher
+- [CMake](https://cmake.org/download/) 3.26 or higher
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later
 - Python 3.10 or higher
 - Git for Windows
 
 ### macOS
 
-- [CMake](https://cmake.org/download/) 3.23 or higher
+- [CMake](https://cmake.org/download/) 3.26 or higher
 - [brew](https://brew.sh/) package manager to install additional dependencies:
     ```sh
     brew install coreutils scons

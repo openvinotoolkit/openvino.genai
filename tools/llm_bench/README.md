@@ -94,10 +94,16 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 - `-rj`: Report in JSON format.
 - `-f`: Framework (default: ov).
 - `-p`: Interactive prompt text.
-- `-pf`: Path to a JSONL file containing prompts.
+- `-pf`: Path to a JSONL file containing prompts. Examples of prompt files can be found in the folder openvino.genai/tools/llm_bench/prompts.
 - `-n`: Number of iterations (default: 0, the first iteration is excluded).
 - `-ic`: Limit the output token size (default: 512) for text generation and code generation models.
-- `-lc`: Path to JSON file to load customized configurations.
+- `-lc`: Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.<br>
+      Example for OpenVINO: `{"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}` <br>
+      Additional option for OpenVINO GenAI: `{"ATTENTION_BACKEND": "SDPA"}` <br>
+      Example for PyTorch: `{"PREC_BF16":true}`. PyTorch currently only supports bf16 settings<br>
+      Example of setting option via string in Linux/Windows cmd: `"{\"ATTENTION_BACKEND\": \"SDPA\"}"` <br>
+      Example of setting option via string in PowerShell: `'{\"ATTENTION_BACKEND\": \"SDPA\"}'` <br>
+      More information about properties, please, find [OpenVINO documentation](https://docs.openvino.ai/2026/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
 - `--optimum`: Use Optimum Intel pipelines for benchmarking.
 - `--from_onnx`: Allow initialize Optimum OpenVINO model using ONNX.
 - `--pruning_ratio`: Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.
@@ -185,6 +191,12 @@ optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/Ti
 python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -p "What is openvino?" -n 2 --task text_gen --num_assistant_tokens 5
 ```
 
+```sh
+# chat iteration
+python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/llama-2-7b-chat/ -n 2 --task text_gen_chat -pf ./prompts/llm_chat.jsonl
+```
+
 **Some additional parameters:**
 - `--draft_device`: Inference device for Speculative decoding of draft model.
 - `--draft_cb_config`: Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model.
@@ -253,12 +265,20 @@ optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vo
 wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin
 # run benchmark.py
 python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
+
+# Kokoro export (Optimum)
+pip install kokoro
+optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code models/ov_Kokoro-82M
+# run benchmark.py with Kokoro (Optimum or GenAI)
+python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice af_heart --speech_language en-us
 ```
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
+- `--speech_voice`: Voice to use for Kokoro models. Default is `af_heart`
+- `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
 
-> **Supported Text to Speech model types:** speecht5
+> **Supported Text to Speech model types:** speecht5, kokoro
 
 ### Speech to Text models
 ```sh
@@ -270,7 +290,7 @@ wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeec
 python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
 ```
 
-> **Supported Text to Speech model types:** whisper
+> **Supported Speech to Text model types:** whisper, qwen3-asr
 
 ### Text Rerank models
 ```sh
@@ -289,7 +309,7 @@ python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 
 > **Supported Text Rerank model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
 
-### Compare Text Embeddings models
+### Compare Text Embedding models
 ```sh
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5
@@ -343,9 +363,9 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 ```
 
 **Parameters:**
-- `-mc, --memory_consumption`: Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2, output the maximum memory consumption in all iterations.
+- `-mc, --memory_consumption`: Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2, output the maximum memory consumption in all iterations. Then 3 means separated process, warm-up only, 4 - separated process with all iterations.
 - `--memory_consumption_interval`: Interval sampling for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
-- `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources.
+- `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources by portable heap-trimming helper.
 - `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart.
 
 ## 9. Additional Resources

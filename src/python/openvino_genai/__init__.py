@@ -16,6 +16,7 @@ from .py_openvino_genai import (
     RawPerfMetrics,
     PerfMetrics,
     StreamerBase,
+    OmniSpeechStreamerBase,
     get_version,
     StreamingStatus,
     TextStreamer,
@@ -42,7 +43,21 @@ __version__ = get_version()
 
 from .py_openvino_genai import (
     VLMPipeline,
+    VLMPipelineBase,
+    VLMDecodedResults,
     VideoMetadata,
+)
+
+# Omni pipeline (Qwen3-Omni text + speech)
+
+from .py_openvino_genai import (
+    OmniDecodedResults,
+    OmniPipeline,
+    OmniTalkerSpeechConfig,
+    Talker,
+    TalkerBase,
+    TalkerPerfMetrics,
+    TalkerResults,
 )
 
 # LLM pipeline
@@ -88,8 +103,10 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
+    Qwen3TextEncoder,
     T5EncoderModel,
     UNet2DConditionModel,
+    Flux2Transformer2DModel,
     FluxTransformer2DModel,
     SD3Transformer2DModel,
     AutoencoderKL,
@@ -132,7 +149,7 @@ from .py_openvino_genai import (
 )
 
 # RAG
-from .py_openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
+from .py_openvino_genai import EmbedResult, EmbeddingPipeline, TextEmbeddingPipeline, TextRerankPipeline
 
 # Speech generation
 from .py_openvino_genai import (
