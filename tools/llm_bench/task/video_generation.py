@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+
+import os
+import datetime
 import logging as log
 
 from typing import Any
@@ -12,10 +15,11 @@ from PIL import Image
 import llm_bench_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
+import llm_bench_utils.model_utils as model_utils
 
 from llm_bench_utils.hook_forward import StableDiffusionHook
-from llm_bench_utils.prompt_utils import get_video_gen_prompt
-from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step, iteration_step
+from llm_bench_utils.prompt_utils import BenchPrompter
+from task.pipeline_utils import CommonPipeline, execution_time_in_sec
 
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
@@ -167,6 +171,7 @@ class TextToVideoOptimum(CommonPipeline):
             max_sys_mem=max_sys_mem_consumption,
             max_sys_mem_increase=sys_mem_increase,
             prompt_idx=prompt_index,
+            output_repr=f"video:{self.width}x{self.height}@{self.num_frames}f",
         )
         metrics_print.print_metrics(
             iter_num,
@@ -320,6 +325,7 @@ class TextToVideoGenAI(CommonPipeline):
             max_sys_mem=max_sys_mem_consumption,
             max_sys_mem_increase=sys_mem_increase,
             prompt_idx=prompt_index,
+            output_repr=f"video:{self.width}x{self.height}@{self.num_frames}f",
         )
 
         metrics_print.print_metrics(
@@ -365,7 +371,29 @@ class TextToVideoGenAI(CommonPipeline):
 
 
 def run_video_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    text_list, prompt_idx_list = collect_prompts_step(args, get_video_gen_prompt)
+    # Build the prompt schedule via BenchPrompter, which:
+    #   - reads and parses the video-generation prompt file (JSON or plain text)
+    #   - honours args['prompt_index'] for selective benchmarking
+    #   - handles both subsequent=False (iter-major) and subsequent=True
+    #     (prompt-major) scheduling via a single unified iter_schedule() loop,
+    #     replacing the previous collect_prompts_step + iteration_step pair.
+    #
+    # BEHAVIOUR FIX vs. previous releases: video generation used to schedule
+    # through pipeline_utils.iteration_step, which interpreted --subsequent
+    # INVERTED relative to its documentation and to every other task
+    # (iteration_step ran subsequent=False as prompt-major). It was the only
+    # task using iteration_step. Routing through iter_schedule() aligns video
+    # generation with the documented flag semantics and all other tasks:
+    #   --subsequent absent (False, default) -> interleave / iter-major
+    #   --subsequent present (True)           -> subsequent / prompt-major
+    # Per-(iteration, prompt) results are unchanged; only the run ORDER (and
+    # thus report row order and any warm-up / cooldown / cache-state effects)
+    # differs from older releases. Pass --subsequent to restore the previous
+    # default video-generation ordering.
+    prompter = BenchPrompter(args)
+    prompt_idx_list = prompter.active_indices
+    text_list = prompter.active_items
+
     mem_consumption.update_marker("model")
 
     if args.get("static_reshape", False):
@@ -380,7 +408,8 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
     iter_data_list = []
 
     log.info(
-        f"Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}"
+        f"Benchmarking iter nums(exclude warm-up): {num_iters}, "
+        f"prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}"
     )
 
     if use_genai:
@@ -394,9 +423,19 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
         )
 
     mem_consumption.activate_cooldown("after model compilation")
-    iter_data_list, iter_timestamp = iteration_step(
-        video_gen_pipeline, num_iters, text_list, prompt_idx_list, bench_hook=None, subsequent=args["subsequent"]
-    )
+    proc_id = os.getpid()
+    iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
+    for num, p_idx, prompt in prompter.iter_schedule(num_iters):
+        mem_consumption.update_marker(f"step-{num}-{p_idx}")
+        prefix = prompter.get_prefix(num, p_idx)
+        prompt.introduce_in_stdout(num, prefix)
+        iter_timestamp[num][p_idx]["start"] = datetime.datetime.now().isoformat()
+        before = len(iter_data_list)
+        iter_data, _ = video_gen_pipeline.run(prompt, num, p_idx, proc_id, None)
+        iter_data_list.append(iter_data)
+        prompt.stamp_repr(iter_data_list, before, args["batch_size"])
+        iter_timestamp[num][p_idx]["end"] = datetime.datetime.now().isoformat()
+        log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False)
     return iter_data_list, pretrain_time, iter_timestamp

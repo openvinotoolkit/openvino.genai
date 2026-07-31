@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import os
 import time
 import datetime
 
@@ -206,24 +205,6 @@ class CommonPipeline(ABC):
         return {}, []
 
 
-def collect_prompts_step(args, get_prompt_fn):
-    input_items_list = get_prompt_fn(args)
-    if args["prompt_index"] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_items_list)]
-        text_list = input_items_list
-    else:
-        prompt_idx_list = []
-        text_list = []
-        for i in args["prompt_index"]:
-            if 0 <= i < len(input_items_list):
-                text_list.append(input_items_list[i])
-                prompt_idx_list.append(i)
-    if len(input_items_list) == 0:
-        raise RuntimeError("==Failure prompts is empty ==")
-
-    return text_list, prompt_idx_list
-
-
 def launch(
     pipeline: CommonPipeline,
     iter_num: int,
@@ -243,21 +224,3 @@ def launch(
     )
 
     return iter_data
-
-
-def iteration_step(pipeline, num_iters, text_list, prompt_idx_list, bench_hook, subsequent=False):
-    iter_data_list = []
-    proc_id = os.getpid()
-    iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
-    if subsequent is False:
-        for idx, input_item in enumerate(text_list):
-            p_idx = prompt_idx_list[idx]
-            for num in range(num_iters + 1):
-                iter_data_list.append(launch(pipeline, num, p_idx, iter_timestamp, input_item, proc_id, bench_hook))
-    else:
-        for num in range(num_iters + 1):
-            for idx, input_item in enumerate(text_list):
-                p_idx = prompt_idx_list[idx]
-                iter_data_list.append(launch(pipeline, num, p_idx, iter_timestamp, input_item, proc_id, bench_hook))
-
-    return iter_data_list, iter_timestamp
