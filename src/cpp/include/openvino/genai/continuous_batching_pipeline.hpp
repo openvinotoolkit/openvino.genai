@@ -79,6 +79,9 @@ struct PipelineMetrics {
      */
     size_t& kv_cache_size_in_bytes{cache_size_in_bytes};
 
+    /** High-water mark of the linear-attention pool size, including free blocks. */
+    size_t la_peak_pool_blocks = 0;
+
     PipelineMetrics() = default;
     ~PipelineMetrics() = default;
 
@@ -90,7 +93,8 @@ struct PipelineMetrics {
           avg_cache_usage{other.avg_cache_usage},
           inference_duration{other.inference_duration},
           cache_size_in_bytes{other.cache_size_in_bytes},
-          kv_cache_size_in_bytes{cache_size_in_bytes} {}
+          kv_cache_size_in_bytes{cache_size_in_bytes},
+          la_peak_pool_blocks{other.la_peak_pool_blocks} {}
 
     PipelineMetrics& operator=(const PipelineMetrics& other) {
         requests = other.requests;
@@ -100,6 +104,7 @@ struct PipelineMetrics {
         avg_cache_usage = other.avg_cache_usage;
         inference_duration = other.inference_duration;
         cache_size_in_bytes = other.cache_size_in_bytes;
+        la_peak_pool_blocks = other.la_peak_pool_blocks;
         return *this;
     }
 
@@ -111,7 +116,8 @@ struct PipelineMetrics {
           avg_cache_usage{std::move(other.avg_cache_usage)},
           inference_duration{std::move(other.inference_duration)},
           cache_size_in_bytes{std::move(other.cache_size_in_bytes)},
-          kv_cache_size_in_bytes{cache_size_in_bytes} {}
+          kv_cache_size_in_bytes{cache_size_in_bytes},
+          la_peak_pool_blocks{std::move(other.la_peak_pool_blocks)} {}
 
     PipelineMetrics& operator=(PipelineMetrics&& other) noexcept {
         requests = std::move(other.requests);
@@ -121,6 +127,7 @@ struct PipelineMetrics {
         avg_cache_usage = std::move(other.avg_cache_usage);
         inference_duration = std::move(other.inference_duration);
         cache_size_in_bytes = std::move(other.cache_size_in_bytes);
+        la_peak_pool_blocks = std::move(other.la_peak_pool_blocks);
         return *this;
     }
 };

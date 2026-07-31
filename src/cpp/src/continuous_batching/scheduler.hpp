@@ -246,6 +246,8 @@ public:
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_cache_orchestrator->get_used_percentage();
         scheduler_output.m_cache_size_in_bytes = m_cache_orchestrator->get_total_cache_size_in_bytes();
+        // Sample after all scheduling allocations are complete.
+        m_cache_orchestrator->sample_linear_attention_pool_blocks_high_water();
 
         m_cache_orchestrator->copy_blocks(typed_block_copy_map);
 
@@ -281,17 +283,44 @@ public:
         m_cache_orchestrator->set_linear_attention_live_block(seq_id, physical_block_index);
     }
 
-    void commit_linear_attention_checkpoint_transaction(uint64_t seq_id, size_t checkpoint_slot) {
-        m_cache_orchestrator->commit_linear_attention_checkpoint_transaction(seq_id, checkpoint_slot);
+    size_t get_linear_attention_pool_blocks_high_water() const {
+        return m_cache_orchestrator->get_linear_attention_pool_blocks_high_water();
     }
 
-    void abort_linear_attention_checkpoint_transaction(uint64_t seq_id) {
-        m_cache_orchestrator->abort_linear_attention_checkpoint_transaction(seq_id);
+    /// @brief Grows the fixed-size linear-attention pool so it holds at least @p num_blocks blocks.
+    /// @return Whether the pool was grown.
+    bool ensure_linear_attention_pool_blocks(size_t num_blocks) {
+        return m_cache_orchestrator->ensure_linear_attention_pool_blocks(num_blocks);
     }
 
-    /// @brief Raises non-prefix linear-attention rows per sequence.
-    bool ensure_linear_attention_fixed_blocks_per_sequence(size_t fixed_blocks_per_sequence) {
-        return m_cache_orchestrator->ensure_linear_attention_fixed_blocks_per_sequence(fixed_blocks_per_sequence);
+    /// @brief Validates that a stated pool ceiling can hold all committed rows and one scratch window.
+    /// @param num_live_sequences All live sequences, including non-verifying ones. Do not clamp this
+    ///        to max_num_seqs; dynamic_split_fuse does not enforce that limit.
+    /// @param window_rows Rows one verification window borrows, 1 + num_assistant_tokens.
+    void check_linear_attention_borrow_pool_floor(size_t num_live_sequences, size_t window_rows) {
+        if (!m_cache_orchestrator->has_linear_attention_cache()) {
+            return;
+        }
+        if (num_live_sequences == 0 || window_rows == 0) {
+            return;
+        }
+        const auto& la_block_manager = m_cache_orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+        const size_t ceiling_rows = la_block_manager.get_max_total_block_count();
+        if (ceiling_rows == 0) {
+            return;
+        }
+        const size_t required_rows = num_live_sequences + window_rows;
+        OPENVINO_ASSERT(ceiling_rows >= required_rows,
+                        "The borrowed speculative linear-attention window needs ", num_live_sequences,
+                        " committed recurrent-state rows (one per concurrently live sequence) plus ", window_rows,
+                        " borrowed scratch rows (1 + num_assistant_tokens) coexisting in the shared pool, i.e. ",
+                        required_rows, " rows, but num_linear_attention_blocks caps the whole pool at ",
+                        ceiling_rows, " rows, so admission alone would fill it and every verification window "
+                        "would be deferred forever and its request dropped out of memory; raise "
+                        "num_linear_attention_blocks to at least ", required_rows,
+                        ", or submit at most ", ceiling_rows > window_rows ? ceiling_rows - window_rows : 0,
+                        " concurrent requests, or lower num_assistant_tokens to at most ",
+                        ceiling_rows > num_live_sequences + 1 ? ceiling_rows - num_live_sequences - 1 : 0, ".");
     }
 
     size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
@@ -308,6 +337,10 @@ public:
 
     void free_sequence(uint64_t seq_id) {
         m_linear_attention_checkpoint_counts.erase(seq_id);
+        // Release explicitly so an outstanding window is counted as aborted.
+        if (m_cache_orchestrator->has_linear_attention_cache()) {
+            m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
+        }
         m_cache_orchestrator->free_sequence(seq_id);
     }
 
@@ -336,12 +369,20 @@ public:
         if (!m_cache_orchestrator->has_linear_attention_cache()) {
             return;
         }
-        m_cache_orchestrator->promote_linear_attention_temporary_block(seq_id, checkpoint_slot);
+        const size_t promoted_index =
+            m_cache_orchestrator->promote_linear_attention_temporary_block(seq_id, checkpoint_slot);
+        // Keep the live-row registry synchronized with the rewritten block table.
+        m_cache_orchestrator->set_linear_attention_live_block(seq_id, promoted_index);
     }
 
     void release_linear_attention_checkpoints(uint64_t seq_id) {
         m_linear_attention_checkpoint_counts.erase(seq_id);
         m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
+    }
+
+    /// @return Whether the LA pool can lend @p num_blocks scratch rows to @p seq_id.
+    bool can_reserve_linear_attention_checkpoints(uint64_t seq_id, size_t num_blocks) {
+        return m_cache_orchestrator->can_reserve_linear_attention_temporary_blocks(seq_id, num_blocks);
     }
 
     void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& per_layer_logical_block_indices_to_free, CacheType cache_type) {
@@ -574,6 +615,10 @@ private:
                                     "; increase max_num_batched_tokens to at least the validation window size");
                     if (available_tokens_per_seq_in_megabatch < num_available_tokens_per_seq) {
                         // Remaining megabatch budget cannot fit the full window: defer to a later step without scheduling
+                        continue;
+                    }
+                    // Check scratch capacity before adding the group to scheduler_output.
+                    if (!_can_borrow_linear_attention_window(sequence_group, num_available_tokens_per_seq)) {
                         continue;
                     }
                 }
@@ -835,6 +880,19 @@ private:
         return grew_capacity;
     }
 
+    /// @return Whether every running sequence can borrow its full scratch window.
+    bool _can_borrow_linear_attention_window(const SequenceGroup::CPtr& sequence_group, size_t window_rows) {
+        const auto running_sequences = sequence_group->get_running_sequences();
+        const size_t required_rows = window_rows * running_sequences.size();
+        for (const auto& sequence : running_sequences) {
+            if (!m_cache_orchestrator->can_reserve_linear_attention_temporary_blocks(sequence->get_id(),
+                                                                                    required_rows)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     void _set_linear_attention_paging_data(Output& scheduler_output,
                                            SequenceGroup::CPtr sequence_group,
                                            uint64_t seq_id,
@@ -877,7 +935,8 @@ private:
         if (!m_config.enable_prefix_caching) {
             const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
             if (num_tokens_to_validate == 0) {
-                // Non-speculative step: read and write the live row.
+                // Drop any uncommitted scratch before reusing the live row.
+                m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
                 const int32_t live_block = checked_size_to_int32(get_linear_attention_live_block(seq_id), "live block index", seq_id);
                 paging_data.block_indices.push_back(live_block);
                 paging_data.block_indices.push_back(live_block);
@@ -887,14 +946,25 @@ private:
                 return;
             }
 
-            // Speculative step: [live, live, scratch_1, ..., scratch_N].
+            // Window layout: [committed, tmp_1, ..., tmp_{N+1}].
             OPENVINO_ASSERT(num_scheduled_tokens == num_tokens_to_validate + 1,
                             "Speculative linear-attention validation window was not scheduled atomically for sequence ", seq_id,
                             ": scheduled ", num_scheduled_tokens, " tokens, expected ", num_tokens_to_validate + 1,
                             " (", num_tokens_to_validate, " candidates + 1 base token)");
-            const auto transaction =
-                m_cache_orchestrator->begin_linear_attention_checkpoint_transaction(seq_id, num_tokens_to_validate);
-            paging_data.block_indices = transaction.block_indices;
+            const int32_t committed_block_index =
+                checked_size_to_int32(get_linear_attention_live_block(seq_id), "committed block index", seq_id);
+            const auto temporary_block_indices =
+                m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, num_scheduled_tokens);
+            paging_data.block_indices.reserve(1 + temporary_block_indices.size());
+            paging_data.block_indices.push_back(committed_block_index);
+            for (int block_index : temporary_block_indices) {
+                paging_data.block_indices.push_back(checked_block_index_to_int32(block_index, seq_id));
+            }
+            // The kernel does not validate window arity.
+            OPENVINO_ASSERT(paging_data.block_indices.size() == num_scheduled_tokens + 1,
+                            "Borrowed speculative linear-attention window for sequence ", seq_id,
+                            " has ", paging_data.block_indices.size(), " entries, expected ",
+                            num_scheduled_tokens + 1);
             paging_data.cache_interval = 1;
             paging_data.is_speculative = true;
             paging_data.num_processed_tokens_before = num_processed_tokens;

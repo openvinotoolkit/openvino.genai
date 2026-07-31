@@ -450,6 +450,11 @@ public:
     }
 
     void set_initial_hidden_state(uint64_t request_id, const ov::Tensor& hidden_state) {
+        // get_size() throws on a default-constructed tensor; represent it as absent.
+        if (!hidden_state) {
+            m_initial_hidden_states.erase(request_id);
+            return;
+        }
         m_initial_hidden_states[request_id] = hidden_state;
     }
 
@@ -689,7 +694,8 @@ public:
                 }
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
-                    OPENVINO_ASSERT(it != m_initial_hidden_states.end() && it->second.get_size() > 0,
+                    OPENVINO_ASSERT(it != m_initial_hidden_states.end() && it->second &&
+                                        it->second.get_size() > 0,
                                     "Missing initial hidden state for draft model inference.");
                     const auto& stored_hidden_state = it->second;
                     auto stored_shape = stored_hidden_state.get_shape();
@@ -721,7 +727,7 @@ public:
                                     0,
                                     num_scheduled_tokens * hidden_size * sizeof(float));
                         auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
-                        if (hidden_state.get_size() > 0) {
+                        if (hidden_state && hidden_state.get_size() > 0) {
                             auto shape = hidden_state.get_shape();
                             if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
                                 size_t seq_len = shape[0];

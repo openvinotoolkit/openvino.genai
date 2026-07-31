@@ -107,6 +107,12 @@ protected:
     /// Commits speculative LA checkpoint transactions after sampling.
     virtual void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output);
 
+    /// Mirrors the scheduler's cumulative speculative LA counters into the pipeline metrics.
+    void _publish_linear_attention_pool_metric();
+
+    /// Returns borrowed LA rows of every scheduled sequence to the pool (used on the failure path).
+    void _release_linear_attention_borrowed_rows(const Scheduler::Output& scheduler_output);
+
     virtual void drop_requests();
 
 public:

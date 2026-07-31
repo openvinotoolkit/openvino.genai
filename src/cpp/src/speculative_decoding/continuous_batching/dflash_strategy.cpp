@@ -631,7 +631,6 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
     const auto main_end = std::chrono::steady_clock::now();
     const auto main_duration = PerfMetrics::get_microsec(main_end - main_start);
     m_sd_metrics.main_duration += main_duration / 1e6;
-    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     update_draft_states_from_main(main_generated_requests);
@@ -674,6 +673,8 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         m_sd_metrics.update_draft_accepted_tokens(request_id, accounting.accepted);
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate);
     }
+
+    m_pipeline_metrics = m_main_pipeline->get_metrics();
 
     const auto step_end = std::chrono::steady_clock::now();
     const auto step_microsec_duration = PerfMetrics::get_microsec(step_end - step_start);
