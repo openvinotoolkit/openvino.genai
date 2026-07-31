@@ -35,7 +35,6 @@ class TestLoraText2Video:
             sample_args,
             download_test_content,
             "0.7",
-            "--num-frames",
             "5",
         ]
         run_sample(py_command, cwd=str(py_dir))

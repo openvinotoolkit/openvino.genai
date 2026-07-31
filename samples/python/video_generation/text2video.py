@@ -11,7 +11,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate video from text prompt using OpenVINO GenAI")
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
-    parser.add_argument("--num-frames", type=int, default=161, help="Number of frames to generate")
+    parser.add_argument("num_frames", type=int, nargs="?", default=161, help="Number of frames to generate")
     args = parser.parse_args()
 
     pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU")  # GPU can be used as well

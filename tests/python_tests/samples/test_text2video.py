@@ -28,7 +28,7 @@ class TestText2Video:
         cpp_dir.mkdir()
 
         py_script = SAMPLES_PY_DIR / "video_generation/text2video.py"
-        py_command = [sys.executable, py_script, convert_model, sample_args, "--num-frames", "5"]
+        py_command = [sys.executable, py_script, convert_model, sample_args, "5"]
         run_sample(py_command, cwd=str(py_dir))
 
         cpp_sample = SAMPLES_CPP_DIR / "text2video"
