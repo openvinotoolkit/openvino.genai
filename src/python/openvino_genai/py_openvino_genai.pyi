@@ -4499,6 +4499,12 @@ class TalkerBase:
             is Talker. Subclasses must override generate(), list_speakers(), and
             get_speaker_embedding().
     """
+    def __init__(self) -> None:
+        ...
+    def generate(self, vlm_result: VLMDecodedResults, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], StreamingStatus] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
+        """
+        Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.
+        """
     def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
         ...
     def list_speakers(self) -> list[str]:
@@ -5762,7 +5768,30 @@ class VLMPipeline(VLMPipelineBase):
 class VLMPipelineBase:
     """
     Abstract base of VLM-style pipelines.
+    
+            Subclass to plug a custom thinker into OmniPipeline via its dependency-injection
+            constructor. A subclass must override generate(), get_tokenizer(), get_generation_config(),
+            set_generation_config(), set_chat_template(), and the Qwen3-Omni capability queries
+            supports_hidden_states_collection() and is_audio_output_enabled().
     """
+    def __init__(self) -> None:
+        ...
+    def generate(self, prompt: str | openvino_genai.py_openvino_genai.ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
+        """
+        Generate a VLM response. prompt may be a str or a ChatHistory. Override in a subclass.
+        """
+    def get_generation_config(self) -> GenerationConfig:
+        ...
+    def get_tokenizer(self) -> Tokenizer:
+        ...
+    def is_audio_output_enabled(self) -> bool:
+        ...
+    def set_chat_template(self, chat_template: str) -> None:
+        ...
+    def set_generation_config(self, config: GenerationConfig) -> None:
+        ...
+    def supports_hidden_states_collection(self) -> bool:
+        ...
 class VLMRawPerfMetrics:
     """
     
