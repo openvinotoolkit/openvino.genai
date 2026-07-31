@@ -7,10 +7,7 @@ import torch
 import numpy as np
 import logging as log
 from pathlib import Path
-from llm_bench_utils.config_class import (
-    PA_ATTENTION_BACKEND,
-    SDPA_ATTENTION_BACKEND,
-)
+from llm_bench_utils.config_class import PA_ATTENTION_BACKEND
 from llm_bench_utils.tts_utils import (
     SPEECHT5_SPEAKER_EMB_SHAPE,
     KOKORO_SPEAKER_EMB_SHAPE,
@@ -203,7 +200,8 @@ def analyze_args(args):
     model_name = None
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
-        use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
+
+        use_case, _, model_name = get_use_case(Path(args.model), args.task)
     model_args["use_case"] = use_case
     model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
     if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
@@ -216,10 +214,8 @@ def analyze_args(args):
     if model_framework == "ov":
         set_default_param_for_ov_config(model_args["config"])
         if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
-            if use_case.task in ["text_gen"] or (use_case.task in ["visual_text_gen"] and model_type == "qwen3-5-moe"):
+            if use_case.task in ["text_gen", "visual_text_gen"]:
                 model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
-            elif use_case.task in ["visual_text_gen"]:
-                model_args["config"]["ATTENTION_BACKEND"] = SDPA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
