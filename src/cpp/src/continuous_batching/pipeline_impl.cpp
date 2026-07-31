@@ -402,18 +402,43 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reserve_linear_attenti
     }
 
     size_t max_num_assistant_tokens = 0;
+    size_t num_verifying_sequences = 0;
+    // Non-verifying sequences also hold one committed row.
+    size_t num_live_sequences = 0;
     for (const auto& sequence_group : m_requests) {
         const auto& params = sequence_group->get_sampling_parameters();
+        num_live_sequences += sequence_group->num_running_seqs();
         if (params.is_prompt_lookup() || params.is_assisting_generation()) {
             max_num_assistant_tokens = std::max(max_num_assistant_tokens, params.num_assistant_tokens);
+            num_verifying_sequences += sequence_group->num_running_seqs();
         }
     }
     if (max_num_assistant_tokens == 0) {
         return;
     }
 
-    // Reserve 1 live row + num_assistant_tokens scratch rows
-    m_scheduler->ensure_linear_attention_fixed_blocks_per_sequence(1 + max_num_assistant_tokens);
+    // Pre-size for committed rows plus every verifier's full scratch window.
+    const size_t window_blocks = 1 + max_num_assistant_tokens;
+    m_scheduler->check_linear_attention_borrow_pool_floor(num_live_sequences, window_blocks);
+    const size_t required_pool_blocks = num_live_sequences + num_verifying_sequences * window_blocks;
+    m_scheduler->ensure_linear_attention_pool_blocks(required_pool_blocks);
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_linear_attention_pool_metric() {
+    m_pipeline_metrics.la_peak_pool_blocks = m_scheduler->get_linear_attention_pool_blocks_high_water();
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attention_borrowed_rows(
+    const Scheduler::Output& scheduler_output) {
+    if (!m_scheduler->has_linear_attention_cache()) {
+        return;
+    }
+
+    for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+        for (const auto& sequence : m_requests[seq_group_id]->get_running_sequences()) {
+            m_scheduler->release_linear_attention_checkpoints(sequence->get_id());
+        }
+    }
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
@@ -440,7 +465,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attentio
                             "Linear-attention checkpoint commit: processed tokens cannot decrease below the pre-forward count (processed_after=",
                             processed_after, ", processed_before=", paging_data.num_processed_tokens_before, ").");
             const size_t checkpoint_slot = processed_after - paging_data.num_processed_tokens_before;
-            m_scheduler->commit_linear_attention_checkpoint_transaction(seq_id, checkpoint_slot);
+            OPENVINO_ASSERT(checkpoint_slot > 0,
+                            "Linear-attention speculative verification must advance through at least the seed token "
+                            "for sequence ", seq_id);
+            m_scheduler->promote_linear_attention_checkpoint(seq_id, checkpoint_slot);
         }
     }
 }
@@ -468,6 +496,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
             std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
         _register_step_cache_usage(scheduler_output.m_cache_usage);
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
+        _publish_linear_attention_pool_metric();
 
         const auto& sched_config = m_scheduler->get_config();
         if (sched_config.use_cache_eviction) {
@@ -491,6 +520,23 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _free_non_running_requests();
         return;
     }
+
+    // Return borrowed rows if forward or sampling fails before commit.
+    struct BorrowedLinearAttentionRowsGuard {
+        ContinuousBatchingImpl& m_impl;
+        const Scheduler::Output& m_scheduler_output;
+        bool m_armed = true;
+
+        ~BorrowedLinearAttentionRowsGuard() {
+            if (m_armed) {
+                m_impl._release_linear_attention_borrowed_rows(m_scheduler_output);
+            }
+        }
+        BorrowedLinearAttentionRowsGuard(const BorrowedLinearAttentionRowsGuard&) = delete;
+        BorrowedLinearAttentionRowsGuard& operator=(const BorrowedLinearAttentionRowsGuard&) = delete;
+    };
+    BorrowedLinearAttentionRowsGuard borrowed_rows_guard{*this, scheduler_output};
+
     ov::Tensor logits;
 
     {
@@ -536,10 +582,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
 
     // Promote the committed linear-attention state to the correct physical row for any
-    // speculative sequence. Must run after sample() (which rewound get_num_processed_tokens()
-    // to the accepted prefix) and before the fork/free loop (which would free LA rows of
-    // sequences that accepted tokens and also hit EOS this step). No-op for pure-KV models.
+    // Commit after sampling rewinds the accepted prefix and before fork/free can release LA rows.
     _commit_linear_attention_checkpoint_transactions(scheduler_output);
+    borrowed_rows_guard.m_armed = false;
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
     {

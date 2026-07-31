@@ -3229,6 +3229,9 @@ class PipelineMetrics:
     def kv_cache_size_in_bytes(self) -> int:
         ...
     @property
+    def la_peak_pool_blocks(self) -> int:
+        ...
+    @property
     def max_cache_usage(self) -> float:
         ...
     @property

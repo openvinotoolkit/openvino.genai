@@ -98,11 +98,13 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
             if (!(eagle_mode_enabled && m_is_validation_mode_enabled)) {
                 num_processed_tokens = 0;
             }
+            // Publish an initialized empty tensor for unscheduled sequences.
+            const ov::Tensor hidden_state = sequence->get_hidden_state();
             generated_request.insert({{sequence_id,
                                        {sequence->get_generated_ids(),
                                         sequence->get_generated_log_probs(),
                                         num_processed_tokens,
-                                        sequence->get_hidden_state(),
+                                        hidden_state ? hidden_state : ov::Tensor(ov::element::f32, ov::Shape{0, 1, 0}),
                                         std::move(tree_metadata_snapshot)}}});
         }
     }
@@ -369,6 +371,14 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         int num_tokens_needs_kv_update = -1;
         detail::MtpDraftUpdatePlan mtp_update_plan;
         bool has_mtp_update_plan = false;
+        // Pause hidden-state-paired drafting when the main request was deferred.
+        const bool requires_main_hidden_state =
+            (eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled;
+        const bool main_published_hidden_state =
+            !candidates.empty() && candidates.begin()->second.hidden_states &&
+            candidates.begin()->second.hidden_states.get_size() > 0;
+        const bool should_pause_for_missing_main_hidden_state =
+            requires_main_hidden_state && !main_published_hidden_state;
         if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
             m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
@@ -376,7 +386,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             min_generated_tokens = result.inserted_tokens_cnt;
             running_sequences = request->get_running_sequences();
             min_candidate_len = result.inserted_tokens_cnt;
-            if ((eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled) {
+            if (requires_main_hidden_state && main_published_hidden_state) {
                 m_model_runner->set_initial_hidden_state(request_id,
                                                      candidates.begin()->second.hidden_states);
             }
@@ -410,7 +420,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // update hidden states for draft model
                     const auto& hidden_state = candidate_sequence.hidden_states;
                     OPENVINO_ASSERT(
-                        hidden_state.get_size() > 0,
+                        hidden_state && hidden_state.get_size() > 0,
                         "Hidden states are required for eagle mode but the main model returned an empty tensor.");
                     OPENVINO_ASSERT(
                         !hidden_state.get_shape().empty(),
@@ -454,7 +464,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                                     "MTP hidden state update does not support tree search.");
 
                     const auto& hidden_state = candidate_sequence.hidden_states;
-                    OPENVINO_ASSERT(hidden_state.get_size() > 0,
+                    OPENVINO_ASSERT(hidden_state && hidden_state.get_size() > 0,
                                     "Hidden states are required for MTP but the main model returned an empty tensor.");
                     OPENVINO_ASSERT(!hidden_state.get_shape().empty(),
                                     "Hidden states are required for MTP but the main model returned a scalar tensor.");
@@ -537,6 +547,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         //    `main_model` does not insert a new token in the current step.
         // 3. (Eagle3 only) `main_model` has not started processing this request yet
         //    (common with multiple requests); this prevents `draft_model` from running ahead of `main_model`.
+        // 4. Hidden-state-paired drafting is waiting for a deferred main-model request.
         // Start `draft_model` generation after the first `main_model` generation is finished. There are two scenarios:
         // 1. When `main_model` generates a new token, in which case `draft_model` naturally starts its generation.
         // 2. When `main_model` does not generate a new token, which usually happens when processing a portion of prompt (we can
@@ -549,7 +560,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             const bool should_pause_for_main_alignment =
                 eagle_mode_enabled && candidates.begin()->second.num_processed_tokens == 0;
             if (generated_len >= max_new_tokens - 1 || (generated_len != 0 && result.inserted_tokens_cnt == 0) ||
-                should_pause_for_main_alignment) {
+                should_pause_for_main_alignment || should_pause_for_missing_main_hidden_state) {
                 pause_gen_status = true;
             }
             request->pause_generation(pause_gen_status);
