@@ -346,7 +346,7 @@ ov::Tensor InputsEmbedderOnyx::get_inputs_embeds(const std::string& unified_prom
                                                  VLMPerfMetrics& metrics,
                                                  bool recalculate_merged_embeddings,
                                                  const std::vector<size_t>& images_sequence) {
-    return compute_inputs_embeds(unified_prompt, images, {}, metrics, images_sequence, {});
+    return get_inputs_embeds(unified_prompt, images, {}, metrics, recalculate_merged_embeddings, images_sequence, {});
 }
 
 ov::Tensor InputsEmbedderOnyx::get_inputs_embeds(
@@ -358,15 +358,6 @@ ov::Tensor InputsEmbedderOnyx::get_inputs_embeds(
     const std::vector<size_t>& images_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    return compute_inputs_embeds(unified_prompt, images, videos, metrics, images_sequence, videos_sequence);
-}
-
-ov::Tensor InputsEmbedderOnyx::compute_inputs_embeds(const std::string& unified_prompt,
-                                                     const std::vector<EncodedImage>& images,
-                                                     const std::vector<EncodedVideo>& videos,
-                                                     VLMPerfMetrics& metrics,
-                                                     const std::vector<size_t>& images_sequence,
-                                                     const std::vector<size_t>& videos_sequence) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     for (const size_t new_image_id : images_sequence) {

@@ -78,13 +78,6 @@ private:
     std::once_flag m_vision_token_ids_once_flag;
 
     void encode_vision_token_ids();
-
-    ov::Tensor compute_inputs_embeds(const std::string& prompt,
-                                     const std::vector<EncodedImage>& images,
-                                     const std::vector<EncodedVideo>& videos,
-                                     VLMPerfMetrics& metrics,
-                                     const std::vector<size_t>& images_sequence,
-                                     const std::vector<size_t>& videos_sequence);
 };
 
 }  // namespace ov::genai
