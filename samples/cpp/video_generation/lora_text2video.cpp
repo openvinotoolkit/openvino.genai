@@ -19,22 +19,23 @@ void print_perf_metrics(ov::genai::VideoGenerationPerfMetrics& perf_metrics) {
 
 int main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc >= 3,
-                    "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [<LORA_SAFETENSORS> <ALPHA> ...] [NUM_FRAMES]");
+                    "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>' [NUM_FRAMES] [<LORA_SAFETENSORS> <ALPHA> ...]");
 
     std::filesystem::path models_dir = argv[1];
     std::string prompt = argv[2];
-    // <LORA_SAFETENSORS> <ALPHA> go in pairs, so an odd number of the remaining arguments means the last one is NUM_FRAMES
+    // <LORA_SAFETENSORS> <ALPHA> go in pairs, so an odd number of the remaining arguments means the first one is NUM_FRAMES
     const bool has_num_frames = (argc - 3) % 2 == 1;
-    const int64_t num_frames = has_num_frames ? std::stoll(argv[argc - 1]) : 161;
-    const int32_t num_adapters = (argc - 3 - static_cast<int32_t>(has_num_frames)) / 2;
+    const int64_t num_frames = has_num_frames ? std::stoll(argv[3]) : 161;
+    const int32_t adapters_start = has_num_frames ? 4 : 3;
+    const int32_t num_adapters = (argc - adapters_start) / 2;
 
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::AdapterConfig adapter_config;
     // Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     for (int32_t i = 0; i < num_adapters; ++i) {
-        ov::genai::Adapter adapter(argv[3 + 2*i]);
-        float alpha = std::atof(argv[3 + 2*i + 1]);
+        ov::genai::Adapter adapter(argv[adapters_start + 2*i]);
+        float alpha = std::atof(argv[adapters_start + 2*i + 1]);
         adapter_config.add(adapter, alpha);
     }
 

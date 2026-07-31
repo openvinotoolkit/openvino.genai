@@ -33,14 +33,14 @@ class TestLoraText2Video:
             py_script,
             convert_model,
             sample_args,
+            "5",
             download_test_content,
             "0.7",
-            "5",
         ]
         run_sample(py_command, cwd=str(py_dir))
 
         cpp_sample = SAMPLES_CPP_DIR / "lora_text2video"
-        cpp_command = [cpp_sample, convert_model, sample_args, download_test_content, "0.7", "5"]
+        cpp_command = [cpp_sample, convert_model, sample_args, "5", download_test_content, "0.7"]
         run_sample(cpp_command, cwd=str(cpp_dir))
 
         for video_name in ("lora_video.avi", "baseline_video.avi"):

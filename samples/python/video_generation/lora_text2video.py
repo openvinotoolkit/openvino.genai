@@ -23,11 +23,11 @@ def main():
     parser.add_argument("prompt", help="Text prompt for video generation")
     args, adapters = parser.parse_known_args()
 
-    # <LORA_SAFETENSORS> <ALPHA> go in pairs, so an odd number of the remaining arguments means the last one is NUM_FRAMES
+    # <LORA_SAFETENSORS> <ALPHA> go in pairs, so an odd number of the remaining arguments means the first one is NUM_FRAMES
     num_frames = 161
     if len(adapters) % 2 == 1:
-        num_frames = int(adapters[-1])
-        adapters = adapters[:-1]
+        num_frames = int(adapters[0])
+        adapters = adapters[1:]
 
     # Multiple LoRA adapters applied simultaneously are supported, parse them all and corresponding alphas from cmd parameters:
     adapter_config = openvino_genai.AdapterConfig()
