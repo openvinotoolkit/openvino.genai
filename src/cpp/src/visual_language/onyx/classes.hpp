@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <mutex>
 
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/vision_encoder.hpp"
@@ -72,6 +73,12 @@ public:
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
 private:
+    int64_t m_image_token_id = -1;
+    int64_t m_video_token_id = -1;
+    std::once_flag m_vision_token_ids_once_flag;
+
+    void encode_vision_token_ids();
+
     ov::Tensor compute_inputs_embeds(const std::string& prompt,
                                      const std::vector<EncodedImage>& images,
                                      const std::vector<EncodedVideo>& videos,

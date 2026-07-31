@@ -384,21 +384,13 @@ ov::Tensor InputsEmbedderOnyx::compute_inputs_embeds(const std::string& unified_
         return inputs_embeds;
     }
 
-    const auto start_tokenizer_time = std::chrono::steady_clock::now();
-    ov::Tensor encoded_vision_tokens =
-        m_tokenizer.encode(std::string(PATCH_TOKEN) + VIDEO_SENTINEL, ov::genai::add_special_tokens(false)).input_ids;
-    const auto end_tokenizer_time = std::chrono::steady_clock::now();
-    OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
-    metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] +=
-        ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-    OPENVINO_ASSERT(encoded_vision_tokens.get_size() == 2, "Onyx patch and video markers must encode to two tokens");
-    const int64_t image_token_id = encoded_vision_tokens.data<int64_t>()[0];
-    const int64_t video_token_id = encoded_vision_tokens.data<int64_t>()[1];
+    // Keep initialization lazy so pipeline construction can overlap with the tokenizer's asynchronous warmup.
+    encode_vision_token_ids();
 
     ov::Tensor inputs_embeds =
         image_embeds.empty()
             ? std::move(text_embeds)
-            : utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+            : utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
 
     std::vector<ov::Tensor> video_group_embeds;
     for (const size_t video_id : videos_sequence) {
@@ -414,11 +406,25 @@ ov::Tensor InputsEmbedderOnyx::compute_inputs_embeds(const std::string& unified_
         }
     }
     if (!video_group_embeds.empty()) {
-        inputs_embeds =
-            utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, video_group_embeds, video_token_id);
+        inputs_embeds = utils::merge_text_and_image_embeddings_llava(input_ids,
+                                                                     inputs_embeds,
+                                                                     video_group_embeds,
+                                                                     m_video_token_id);
     }
 
     return inputs_embeds;
+}
+
+void InputsEmbedderOnyx::encode_vision_token_ids() {
+    std::call_once(m_vision_token_ids_once_flag, [this]() {
+        const ov::Tensor encoded_vision_tokens =
+            m_tokenizer.encode(std::string(PATCH_TOKEN) + VIDEO_SENTINEL, ov::genai::add_special_tokens(false))
+                .input_ids;
+        OPENVINO_ASSERT(encoded_vision_tokens.get_size() == 2,
+                        "Onyx patch and video markers must encode to two tokens");
+        m_image_token_id = encoded_vision_tokens.data<int64_t>()[0];
+        m_video_token_id = encoded_vision_tokens.data<int64_t>()[1];
+    });
 }
 
 }  // namespace ov::genai
