@@ -230,6 +230,21 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'FalconH1ForCausalLM',
+    models: [
+      {
+        name: 'Falcon-H1',
+        links: [
+          'https://huggingface.co/tiiuae/Falcon-H1-0.5B-Instruct',
+          'https://huggingface.co/tiiuae/Falcon-H1-0.5B-Base',
+          'https://huggingface.co/tiiuae/Falcon-H1-1.5B-Instruct',
+          'https://huggingface.co/tiiuae/Falcon-H1-3B-Instruct',
+          'https://huggingface.co/tiiuae/Falcon-H1-7B-Instruct',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'GemmaForCausalLM',
     models: [
       {

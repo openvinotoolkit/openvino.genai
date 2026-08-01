@@ -259,7 +259,20 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
+        try {
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
+        } catch (const ov::Exception& exception) {
+            // Hybrid Mamba/attention models (e.g. Falcon-H1) cannot be converted to PagedAttention: their recurrent
+            // state leaves a dangling beam_idx parameter. PagedAttention cannot be honored for such models, so fall
+            // back to the stateful backend instead of surfacing the low-level failure.
+            if (!utils::is_paged_attention_model_construction_failure(exception)) {
+                throw;
+            }
+            log_paged_attention_fallback(exception);
+            // Drop any scheduler_config so the stateful backend does not forward a PagedAttention-only property.
+            properties.erase(ov::genai::scheduler_config.name());
+            model = utils::read_model(models_path, properties);
+        }
     } else if (attention_backend == PA_BACKEND) {
         try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
@@ -304,7 +317,20 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
+        try {
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config, models_path);
+        } catch (const ov::Exception& exception) {
+            // Hybrid Mamba/attention models (e.g. Falcon-H1) cannot be converted to PagedAttention: their recurrent
+            // state leaves a dangling beam_idx parameter. PagedAttention cannot be honored for such models, so fall
+            // back to the stateful backend instead of surfacing the low-level failure.
+            if (!utils::is_paged_attention_model_construction_failure(exception)) {
+                throw;
+            }
+            log_paged_attention_fallback(exception);
+            // Drop any scheduler_config so the stateful backend does not forward a PagedAttention-only property.
+            properties.erase(ov::genai::scheduler_config.name());
+            model = utils::read_model(models_path, properties);
+        }
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
@@ -355,7 +381,20 @@ ov::genai::LLMPipeline::LLMPipeline(
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
         auto [device_properties, scheduler_config] = utils::extract_scheduler_config(properties, utils::get_latency_oriented_scheduler_config());
-        m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config);
+        try {
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, scheduler_config, device, device_properties, generation_config);
+        } catch (const ov::Exception& exception) {
+            // Hybrid Mamba/attention models (e.g. Falcon-H1) cannot be converted to PagedAttention: their recurrent
+            // state leaves a dangling beam_idx parameter. PagedAttention cannot be honored for such models, so fall
+            // back to the stateful backend instead of surfacing the low-level failure.
+            if (!utils::is_paged_attention_model_construction_failure(exception)) {
+                throw;
+            }
+            log_paged_attention_fallback(exception);
+            // Drop any scheduler_config so the stateful backend does not forward a PagedAttention-only property.
+            properties.erase(ov::genai::scheduler_config.name());
+            model = utils::singleton_core().read_model(model_str, weights_tensor);
+        }
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
         try {
