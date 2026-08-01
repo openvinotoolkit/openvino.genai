@@ -16,6 +16,7 @@
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
+#include "visual_language/minicpmv4_6/classes.hpp"
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/nanollava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
@@ -350,6 +351,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPM_V_4_6) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
@@ -398,6 +401,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
         m_impl = std::make_shared<InputsEmbedderMiniCPM>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MINICPM_V_4_6) {
+        m_impl = std::make_shared<InputsEmbedderMiniCPMV4_6>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA) {
         m_impl = std::make_shared<InputsEmbedderLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::NANOLLAVA) {
