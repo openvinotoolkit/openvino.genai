@@ -1117,8 +1117,8 @@ class MemorySamplerWinGPU(MemorySamplerBase):
                 log.warning(f"MemorySamplerWinGPU: WMI GPU detection failed ({exc}) — gpu_<index> metrics disabled.")
         else:
             # MemorySamplerWinGPU is only instantiated when the user explicitly
-            # asks for --memory_sampler W, so if the optional 'wmi' package is
-            # missing they should be told why GPU metrics are absent — the
+            # asks for --memory_sampler win-gpu, so if the optional 'wmi' package
+            # is missing they should be told why GPU metrics are absent — the
             # import-time notice is only DEBUG level and easily missed.
             log.warning(
                 "MemorySamplerWinGPU: optional 'wmi' package not installed "
