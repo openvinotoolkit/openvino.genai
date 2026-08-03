@@ -140,6 +140,9 @@
 'category: Video generation samples':
 - 'samples/cpp/video_generation/**/*'
 - 'samples/python/video_generation/**/*'
+- 'tests/python_tests/samples/test_text2video.py'
+- 'tests/python_tests/samples/test_lora_text2video.py'
+- 'tests/python_tests/samples/test_taylorseer.py'
 
 'category: speech generation':
 - 'src/include/openvino/genai/speech_generation/**/*'
