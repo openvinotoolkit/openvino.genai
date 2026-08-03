@@ -148,7 +148,10 @@ def test_static_whisper_autodetect(model_descr, sample_from_multilingual_dataset
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_multilingual_dataset", ["de"], indirect=True)
-def test_static_whisper_language_de(model_descr, sample_from_multilingual_dataset):
+# Both the plain code and the wrapped token must reach the static pipeline's
+# configured-language path in pipeline_static.cpp (not just config validation).
+@pytest.mark.parametrize("language", ["de", "<|de|>"])
+def test_static_whisper_language_de(model_descr, sample_from_multilingual_dataset, language):
     model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
     model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
@@ -157,7 +160,7 @@ def test_static_whisper_language_de(model_descr, sample_from_multilingual_datase
         stateless_model_path,
         sample_from_multilingual_dataset,
         max_new_tokens=30,
-        language="<|de|>",
+        language=language,
     )
 
     compare_results_with_assert(expected, actual_out)

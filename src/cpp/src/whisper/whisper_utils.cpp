@@ -110,6 +110,33 @@ std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang
     OPENVINO_THROW("Language token id ", token_id, " not found in lang_to_id map.");
 }
 
+int64_t find_token_id_by_language(const std::map<std::string, int64_t>& lang_to_id, const std::string& language) {
+    // Exact-key-first keeps custom lang_to_id maps (whose keys need not be
+    // wrapped) working: try the value exactly as provided.
+    if (auto it = lang_to_id.find(language); it != lang_to_id.end()) {
+        return it->second;
+    }
+
+    // Otherwise translate between the wrapped ("<|en|>") and plain ("en") forms
+    // so either input resolves regardless of the map's key style. Only the exact
+    // Whisper wrapper is stripped (leading "<|" and trailing "|>"); no other
+    // delimiter handling, to avoid accepting malformed values.
+    constexpr size_t delimiter_size = 2;
+    const bool is_wrapped = language.size() > 2 * delimiter_size &&
+                            language.compare(0, delimiter_size, "<|") == 0 &&
+                            language.compare(language.size() - delimiter_size, delimiter_size, "|>") == 0;
+
+    const std::string alternative = is_wrapped
+                                        ? language.substr(delimiter_size, language.size() - 2 * delimiter_size)
+                                        : "<|" + language + "|>";
+
+    if (auto it = lang_to_id.find(alternative); it != lang_to_id.end()) {
+        return it->second;
+    }
+
+    OPENVINO_THROW("'language' ", language, " must be provided in 'lang_to_id' map.");
+}
+
 std::string to_unescaped_language(const std::string& language) {
     // "<|en|>" -> "en"
     std::string result = language;

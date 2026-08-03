@@ -1,7 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig
+from openvino_genai import GenerationConfig, WhisperGenerationConfig
 import json
 import math
 import os
@@ -136,6 +136,44 @@ def test_invalid_fields_assinment_rises(fields):
     config = GenerationConfig()
     for key, val in fields.items():
         setattr(config, key, val)
+    with pytest.raises(RuntimeError):
+        config.validate()
+
+
+@pytest.mark.parametrize(
+    "lang_to_id",
+    [
+        {"<|en|>": 50259},  # wrapped-key map (converted-model style)
+        {"en": 50259},  # plain-key map (custom style)
+    ],
+    ids=["wrapped_key_map", "plain_key_map"],
+)
+@pytest.mark.parametrize("language", ["en", "<|en|>"], ids=["plain_input", "wrapped_input"])
+def test_whisper_language_validate_accepts_plain_and_wrapped(lang_to_id, language):
+    # Both accepted input forms must resolve against both map key styles, i.e. all
+    # four (map, input) combinations: wrapped/plain key x plain/wrapped input.
+    # max_new_tokens satisfies the base stop-condition requirement of validate().
+    config = WhisperGenerationConfig(
+        is_multilingual=True,
+        lang_to_id=lang_to_id,
+        max_new_tokens=10,
+    )
+
+    # Accepted; validate() must not mutate the user-visible field.
+    config.language = language
+    config.validate()
+    assert config.language == language
+
+
+def test_whisper_language_validate_rejects_unknown():
+    config = WhisperGenerationConfig(
+        is_multilingual=True,
+        lang_to_id={"<|en|>": 50259},
+        max_new_tokens=10,
+    )
+
+    # Unknown language is still rejected.
+    config.language = "unknown"
     with pytest.raises(RuntimeError):
         config.validate()
 
