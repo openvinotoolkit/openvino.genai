@@ -243,6 +243,10 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_p
                                                              const KVAxesPosition& kv_pos,
                                                              const bool is_whisper = false);
 
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_qwen3_asr(const std::shared_ptr<ov::Model>& model,
+                                                                       const ov::AnyMap& config,
+                                                                       const KVAxesPosition& kv_pos);
+
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(const std::shared_ptr<ov::Model>& model,
                                                                             const ov::AnyMap& config,
                                                                             const KVAxesPosition& kv_pos,

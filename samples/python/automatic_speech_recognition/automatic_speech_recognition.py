@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import json
 import openvino_genai
 import librosa
 
@@ -14,6 +15,7 @@ def read_wav(filepath):
 
 def get_config_for_cache():
     config_cache = dict()
+    return config_cache
     config_cache["CACHE_DIR"] = "asr_cache"
     return config_cache
 
@@ -23,6 +25,9 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("wav_file_path", help="Path to the WAV file")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
+    parser.add_argument("-lc", "--load_config", default=None,
+                        help='Path to JSON file or JSON string with OpenVINO Runtime properties. '
+                             'Example: \'{"NPU_TURBO": "YES", "PERFORMANCE_HINT": "LATENCY"}\'')
     args = parser.parse_args()
 
     ov_config = dict()
@@ -30,6 +35,14 @@ def main():
         # Cache compiled models on disk for GPU and NPU to save time on the
         # next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache()
+
+    if args.load_config:
+        try:
+            extra_config = json.loads(args.load_config)
+        except json.JSONDecodeError:
+            with open(args.load_config) as f:
+                extra_config = json.load(f)
+        ov_config.update(extra_config)
 
     # Word timestamps supported by Whisper models only
     # Must be passed to ASRPipeline constructor as a property
@@ -48,6 +61,7 @@ def main():
     config.task = "transcribe"
     config.return_timestamps = True
     config.word_timestamps = True
+    config.max_new_tokens = 5  # DEBUG: limit decode iterations
 
     # Pipeline expects normalized audio with Sample Rate of 16kHz
     raw_speech = read_wav(args.wav_file_path)

@@ -59,6 +59,7 @@ ASRPipeline::ASRPipeline(const std::filesystem::path& models_path,
         break;
     }
     case ASRModelType::qwen3_asr: {
+        std::cout << "[INFO] ASRPipeline: detected Qwen3-ASR model type" << std::endl;
         m_impl = std::make_unique<Qwen3ASR>(models_path, device, properties);
         break;
     }

@@ -15,10 +15,36 @@ Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
                                  const ov::AnyMap& properties)
     : m_model_config{models_path / "config.json"} {
     ov::Core core = utils::singleton_core();
-    ov::CompiledModel compiled_model =
+    if (device == "NPU") {
+        // ov::AnyMap npu_properties = properties;
+
+        // // MAX_ENCODER_HIDDEN_STATES_LEN controls the static sequence length of encoder_hidden_states.
+        // // It must be provided when running on NPU, as all model inputs must have static shapes.
+        // auto max_len_it = npu_properties.find("MAX_ENCODER_HIDDEN_STATES_LEN");
+        // OPENVINO_ASSERT(max_len_it != npu_properties.end(),
+        //                 "MAX_ENCODER_HIDDEN_STATES_LEN must be set in properties when running Qwen3-ASR decoder on NPU. "
+        //                 "Set it to the maximum encoder output sequence length for your audio.");
+        // const auto max_enc_len_any = max_len_it->second;
+        // uint32_t max_enc_len;
+        // if (max_enc_len_any.is<int64_t>()) {
+        //     max_enc_len = static_cast<uint32_t>(max_enc_len_any.as<int64_t>());
+        // } else if (max_enc_len_any.is<int>()) {
+        //     max_enc_len = static_cast<uint32_t>(max_enc_len_any.as<int>());
+        // } else {
+        //     max_enc_len = max_enc_len_any.as<uint32_t>();
+        // }
+        // npu_properties.erase(max_len_it);
+
+        ov::CompiledModel compiled_model =
+        core.compile_model(models_path / "openvino_encoder_model.xml", "CPU");
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
+        m_request = compiled_model.create_infer_request();
+    } else {
+        ov::CompiledModel compiled_model =
         core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
-    m_request = compiled_model.create_infer_request();
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
+        m_request = compiled_model.create_infer_request();
+    }
 }
 
 ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
@@ -27,7 +53,11 @@ ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
     ov::Tensor input_tensor = chunk_mel_features(features);
     m_request.set_tensor("input_features", input_tensor);
 
+    std::cout << "[INFO] Qwen3ASREncoder: input_features shape = " << input_tensor.get_shape() << std::endl;
+
     m_request.infer();
+
+    std::cout << "[INFO] Qwen3ASREncoder: last_hidden_state shape = " << m_request.get_tensor("last_hidden_state").get_shape() << std::endl;
 
     // whisper implementation has remote_tensor optimization when last_hidden_state set to decoder without copy
     // qwen3-asr encoder chunking inference requires merging after inference

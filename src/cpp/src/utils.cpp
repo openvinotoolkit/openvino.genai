@@ -121,6 +121,27 @@ void update_npu_config_whisper(ov::AnyMap& config,
     update_config(config, {"NPUW_LLM_PREFILL_HINT", "STATIC"});
 }
 
+void update_npu_config_qwen3_asr(ov::AnyMap& config,
+                                 const ov::genai::utils::KVAxesPosition& kv_pos,
+                                 const ov::genai::utils::KVDesc& kv_desc) {
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_ONLINE_PIPELINE", "NONE"});
+    update_config(config, {"NPUW_FUNCALL_FOR_ALL", "NO"});
+    update_config(config, {"NPUW_FOLD", "NO"});
+    update_config(config, {"NPUW_LLM", "YES"});
+    update_config(config, {"NPUW_QWEN3_ASR", "YES"});
+    rename_key(config, "QWEN3_ASR_MAX_ENCODER_LEN", "NPUW_QWEN3_ASR_MAX_ENCODER_LEN");
+
+    update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
+    update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
+
+    update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
+    update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
+
+    // Chunking disabled for Qwen3-ASR (audio token counter issues).
+    update_config(config, {"NPUW_LLM_PREFILL_HINT", "STATIC"});
+}
+
 void update_npu_config_text_embedding(ov::AnyMap& config,
                                       const ov::genai::utils::KVAxesPosition& kv_pos,
                                       const ov::genai::utils::KVDesc& kv_desc) {
@@ -150,7 +171,7 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-enum class ModelType { Default, Whisper, TextEmbedding };
+enum class ModelType { Default, Whisper, TextEmbedding, Qwen3ASR };
 
 Tensor init_attention_mask(const Tensor& input_ids) {
     auto shape = input_ids.get_shape();
@@ -743,6 +764,12 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::sha
         case ModelType::Whisper:
             get_npu_model_config(properties, kv_pos, kv_desc, true);
             break;
+        case ModelType::Qwen3ASR: {
+            kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+            kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+            update_npu_config_qwen3_asr(properties, kv_pos, kv_desc);
+            break;
+        }
         case ModelType::Default:
         default:
             get_npu_model_config(properties, kv_pos, kv_desc, false);
@@ -767,6 +794,12 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_p
                                                              const KVAxesPosition& kv_pos,
                                                              const bool is_whisper) {
     return compile_decoder_for_npu_impl(model, config, kv_pos, is_whisper ? ModelType::Whisper : ModelType::Default);
+}
+
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_qwen3_asr(const std::shared_ptr<ov::Model>& model,
+                                                                       const ov::AnyMap& config,
+                                                                       const KVAxesPosition& kv_pos) {
+    return compile_decoder_for_npu_impl(model, config, kv_pos, ModelType::Qwen3ASR);
 }
 
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(const std::shared_ptr<ov::Model>& model,
