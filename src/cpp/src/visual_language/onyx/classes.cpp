@@ -117,6 +117,13 @@ void fill_video_metadata(ov::genai::VideoMetadata& metadata,
                     config.patch_temporal,
                     " frames, got ",
                     total_num_frames);
+    OPENVINO_ASSERT(config.fps > 0.0f, "Onyx video_sampling_fps must be positive");
+    if (metadata.fps == 0.0f) {
+        GENAI_WARN("Onyx video metadata fps is not set. Assuming the input frames are pre-sampled at "
+                   "video_sampling_fps=" +
+                   std::to_string(config.fps) + ".");
+        metadata.fps = config.fps;
+    }
     OPENVINO_ASSERT(metadata.fps > 0.0f, "Onyx video metadata fps must be positive");
 
     if (!metadata.frames_indices.empty()) {
@@ -128,7 +135,6 @@ void fill_video_metadata(ov::genai::VideoMetadata& metadata,
         return;
     }
 
-    OPENVINO_ASSERT(config.fps > 0.0f, "Onyx video_sampling_fps must be positive");
     OPENVINO_ASSERT(config.max_frames > 0, "Onyx video_num_frames must be positive");
     // number of frames to sample, based on the original video fps and the target sampling fps
     size_t num_frames =
