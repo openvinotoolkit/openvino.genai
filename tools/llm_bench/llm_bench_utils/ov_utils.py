@@ -754,6 +754,11 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
     start = time.perf_counter()
 
     # Prefer EmbeddingPipeline (adds multimodal support); fall back on older openvino_genai.
+    if is_multimodal and not hasattr(openvino_genai, "EmbeddingPipeline"):
+        raise RuntimeError(
+            "Multimodal embedding models require openvino_genai.EmbeddingPipeline, but it is not available in the "
+            "installed openvino_genai package. Please upgrade openvino_genai."
+        )
     if hasattr(openvino_genai, "EmbeddingPipeline"):
         pipe = openvino_genai.EmbeddingPipeline(model_path, device.upper(), text_embedding_config=config, **ov_config)
     else:
