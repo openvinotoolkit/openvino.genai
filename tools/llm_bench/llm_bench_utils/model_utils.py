@@ -142,7 +142,11 @@ def set_default_param_for_ov_config(ov_config):
         ov_config['CACHE_DIR'] = ''
 
 
+TASK_ALIASES = {"embed": "text_embed"}
+
+
 def analyze_args(args):
+    args.task = TASK_ALIASES.get(args.task, args.task)
     model_args = {}
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file

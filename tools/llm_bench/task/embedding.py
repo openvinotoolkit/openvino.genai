@@ -15,19 +15,19 @@ import llm_bench_utils.output_file
 from llm_bench_utils.prompt_utils import get_text_embed_prompt, extract_prompt_data
 import llm_bench_utils.gen_output_data as gen_output_data
 
-FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
+FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
-QWEN3_VL_DEFAULT_EMBEDDING_PROMPT = "Represent the user's input."
+MULTIMODAL_DEFAULT_EMBEDDING_PROMPT = "Represent the user's input."
 
 
-def _is_qwen3_vl(args):
+def _is_multimodal(args):
     return args.get("model_type") == "qwen3-vl"
 
 
-def _resolve_embedding_prompt(args, is_qwen3_vl):
+def _resolve_embedding_prompt(args, is_multimodal):
     prompt = args.get("emb_prompt")
-    if prompt is None and is_qwen3_vl:
-        return QWEN3_VL_DEFAULT_EMBEDDING_PROMPT
+    if prompt is None and is_multimodal:
+        return MULTIMODAL_DEFAULT_EMBEDDING_PROMPT
     return prompt
 
 
@@ -43,12 +43,12 @@ def _summarize_entry(entry):
 def run_text_embeddings_optimum(
     entry, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, proc_id, mem_consumption
 ):
-    is_qwen3_vl = _is_qwen3_vl(args)
-    embedding_prompt = _resolve_embedding_prompt(args, is_qwen3_vl)
+    is_multimodal = _is_multimodal(args)
+    embedding_prompt = _resolve_embedding_prompt(args, is_multimodal)
     batch_size = args["batch_size"]
 
     tok_encode_start = time.perf_counter()
-    if is_qwen3_vl:
+    if is_multimodal:
         prompts, images, videos = extract_prompt_data([entry], args.get("video_frames"), False)
         prompt_text = prompts[0] if prompts else ""
         content = [{"type": "text", "text": prompt_text}] if prompt_text else []
@@ -98,10 +98,10 @@ def run_text_embeddings_optimum(
         input_data = tokenizer(input_text_list, return_tensors="pt", **tokenizer_kwargs)
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
-    input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
+    input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
     input_token_size = input_tokens[0].numel()
     if batch_size > 1:
-        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        out_str = "[warm-up]" if num == 0 else "[{}]".format(num)
         out_str += " Batch_size={}, ".format(batch_size)
         out_str += "all input token size after padding: {} * {}, ".format(input_token_size, batch_size)
         if args["infer_count"] is not None:
@@ -120,11 +120,11 @@ def run_text_embeddings_optimum(
     tm_infer_list = []
     if bench_hook is not None:
         tm_list = bench_hook.get_time_list()
-        log.debug('latency of all texts:')
-        [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
+        log.debug("latency of all texts:")
+        [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
         tm_infer_list = bench_hook.get_time_infer_list()
-        log.debug('latency of all infers:')
-        [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
+        log.debug("latency of all infers:")
+        [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_infer_list)]
     iter_data = gen_output_data.embed_iterate_data(
         iter_idx=num,
         in_size=input_token_size * batch_size,
@@ -142,11 +142,11 @@ def run_text_embeddings_optimum(
         tm_list,
         tm_infer_list,
         warm_up=(num == 0),
-        tokenization_time=(tok_encode_time, ),
+        tokenization_time=(tok_encode_time,),
         batch_size=batch_size,
         prompt_idx=prompt_index,
-        latency_unit='prompt',
-        text_emb=True
+        latency_unit="prompt",
+        text_emb=True,
     )
     if bench_hook is not None:
         bench_hook.clear_time_list()
@@ -156,14 +156,14 @@ def run_text_embeddings_optimum(
 def run_text_embeddings_genai(
     entry, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, proc_id, mem_consumption
 ):
-    is_qwen3_vl = _is_qwen3_vl(args)
-    embedding_prompt = _resolve_embedding_prompt(args, is_qwen3_vl)
+    is_multimodal = _is_multimodal(args)
+    embedding_prompt = _resolve_embedding_prompt(args, is_multimodal)
     batch_size = args["batch_size"]
 
     prompts, images, videos = extract_prompt_data([entry], args.get("video_frames"), True)
     prompts = prompts * batch_size
 
-    if is_qwen3_vl:
+    if is_multimodal:
         # EmbeddingPipeline applies the chat template, visual placeholders, and media
         # preprocessing internally, so an external tokenize step would not describe the
         # measured inference. Report 0 for tokenization time and prompt tokens here;
@@ -183,7 +183,7 @@ def run_text_embeddings_genai(
         input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
         input_token_size = input_tokens[0].numel()
     if batch_size > 1:
-        out_str = '[warm-up]' if num == 0 else '[{}]'.format(num)
+        out_str = "[warm-up]" if num == 0 else "[{}]".format(num)
         out_str += " Batch_size={}, ".format(batch_size)
         out_str += "all input token size after padding: {} * {}, ".format(input_token_size, batch_size)
         if args["infer_count"] is not None:
@@ -192,7 +192,10 @@ def run_text_embeddings_genai(
 
     mem_consumption.start(num)
     start = time.perf_counter()
-    if is_qwen3_vl:
+    if hasattr(model, "embed_documents"):
+        # Older openvino_genai without EmbeddingPipeline: text-only TextEmbeddingPipeline.
+        model.embed_documents(prompts)
+    else:
         media_kwargs = {}
         if embedding_prompt is not None:
             media_kwargs["embedding_prompt"] = embedding_prompt
@@ -201,8 +204,6 @@ def run_text_embeddings_genai(
         if videos:
             media_kwargs["videos"] = videos
         model.embed(prompts, **media_kwargs)
-    else:
-        model.embed_documents(prompts)
     end = time.perf_counter()
     embed_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
@@ -228,37 +229,37 @@ def run_text_embeddings_genai(
         tm_list,
         tm_infer_list,
         warm_up=(num == 0),
-        tokenization_time=(tok_encode_time, ),
+        tokenization_time=(tok_encode_time,),
         batch_size=batch_size,
         prompt_idx=prompt_index,
         latency_unit="prompt",
-        text_emb=True
+        text_emb=True,
     )
 
 
 def run_text_embddings_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     input_entries = get_text_embed_prompt(args)
 
-    if args['prompt_index'] is None:
+    if args["prompt_index"] is None:
         prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_entries)]
         entries_list = input_entries
     else:
         prompt_idx_list = []
         entries_list = []
-        for i in args['prompt_index']:
+        for i in args["prompt_index"]:
             if 0 <= i < len(input_entries):
                 entries_list.append(input_entries[i])
                 prompt_idx_list.append(i)
 
     if len(entries_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
+        raise RuntimeError("==Failure prompts is empty ==")
 
-    if not _is_qwen3_vl(args):
+    if not _is_multimodal(args):
         for entry in entries_list:
             if entry.get("media") is not None or entry.get("video") is not None:
                 raise RuntimeError(
                     "`--media`/`--images`/`--video` (and JSONL media/video fields) are only supported for "
-                    f"multimodal text_embed models (Qwen3-VL-Embedding). Model type '{args.get('model_type')}' "
+                    f"multimodal embedding models (Qwen3-VL-Embedding). Model type '{args.get('model_type')}' "
                     "does not accept media inputs."
                 )
 
@@ -277,7 +278,7 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
     mem_consumption.activate_cooldown("after model compilation")
     text_descriptions = [_summarize_entry(e) for e in entries_list]
     iter_timestamp = model_utils.init_timestamp(num_iters, text_descriptions, prompt_idx_list)
-    if args['subsequent'] is False:
+    if args["subsequent"] is False:
         for num in range(num_iters + 1):
             for idx, input_entry in enumerate(entries_list):
                 p_idx = prompt_idx_list[idx]
@@ -336,5 +337,5 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
                     f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}"
                 )
 
-    metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False, True, latency_unit="prompt")
+    metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False, True, latency_unit="prompt")
     return iter_data_list, pretrain_time, iter_timestamp

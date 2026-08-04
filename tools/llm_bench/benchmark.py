@@ -17,7 +17,7 @@ import task.image_generation as bench_image
 import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
-import task.text_embeddings as bench_text_embed
+import task.embedding as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
@@ -379,6 +379,7 @@ def get_argparser():
             "image_cls",
             "code_gen",
             "ldm_super_resolution",
+            "embed",
             "text_embed",
             "text_rerank",
             "text_to_speech",
