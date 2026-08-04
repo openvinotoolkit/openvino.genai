@@ -56,9 +56,20 @@ if(CPACK_GENERATOR STREQUAL "NPM")
         list(APPEND rpaths "@loader_path/../node_modules/openvino-node/bin")
     endif()
 else()
-    set(LIBRARY_DESTINATION runtime/lib/${ARCH_DIR})
-    set(ARCHIVE_DESTINATION runtime/lib/${ARCH_DIR})
-    set(RUNTIME_DESTINATION runtime/bin/${ARCH_DIR})
+    set(OPENVINO_GENAI_INSTALL_LIBDIR "runtime/lib/${ARCH_DIR}" CACHE PATH
+        "Directory used to install OpenVINO GenAI libraries")
+    set(OPENVINO_GENAI_INSTALL_BINDIR "runtime/bin/${ARCH_DIR}" CACHE PATH
+        "Directory used to install OpenVINO GenAI executables")
+    set(OPENVINO_GENAI_INSTALL_INCLUDEDIR "runtime/include" CACHE PATH
+        "Directory used to install OpenVINO GenAI headers")
+    set(OPENVINO_GENAI_INSTALL_CMAKEDIR "runtime/cmake" CACHE PATH
+        "Directory used to install OpenVINO GenAI CMake files")
+    set(OPENVINO_GENAI_INSTALL_PYTHONDIR "python" CACHE PATH
+        "Directory used to install the OpenVINO GenAI Python package")
+
+    set(LIBRARY_DESTINATION ${OPENVINO_GENAI_INSTALL_LIBDIR})
+    set(ARCHIVE_DESTINATION ${OPENVINO_GENAI_INSTALL_LIBDIR})
+    set(RUNTIME_DESTINATION ${OPENVINO_GENAI_INSTALL_BINDIR})
 endif()
 
 #

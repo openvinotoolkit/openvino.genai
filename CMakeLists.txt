@@ -102,8 +102,12 @@ if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tests/cpp" AND ENABLE_TESTS)
     add_subdirectory(tests/cpp)
 endif()
 
-install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
-install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
+set(OPENVINO_GENAI_INSTALL_LICENSEDIR "docs/licensing" CACHE PATH
+    "Directory used to install OpenVINO GenAI license files")
+install(FILES LICENSE DESTINATION ${OPENVINO_GENAI_INSTALL_LICENSEDIR}
+        COMPONENT licensing_genai RENAME LICENSE-GENAI)
+install(FILES third-party-programs.txt DESTINATION ${OPENVINO_GENAI_INSTALL_LICENSEDIR}
+        COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
 if(NOT DEFINED CPACK_ARCHIVE_COMPONENT_INSTALL)
     set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 endif()

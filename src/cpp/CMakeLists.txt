@@ -271,7 +271,7 @@ if(WIN32)
   add_vs_version_resource(${TARGET_NAME})
 endif()
 
-target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime/include>"
+target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:${OPENVINO_GENAI_INSTALL_INCLUDEDIR}>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
@@ -350,7 +350,7 @@ install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
             NAMELINK_COMPONENT core_genai_dev
         ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_genai_dev
         RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_genai
-        INCLUDES DESTINATION runtime/include)
+        INCLUDES DESTINATION ${OPENVINO_GENAI_INSTALL_INCLUDEDIR})
 if(OpenVINODeveloperPackage_FOUND AND COMMAND ov_install_pdb)
     ov_install_pdb(${TARGET_NAME})
 endif()
@@ -362,19 +362,20 @@ endif()
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
                   ${OpenVINOGenAI_SOURCE_DIR}/src/c/include/
-        DESTINATION runtime/include COMPONENT core_genai_dev)
+        DESTINATION ${OPENVINO_GENAI_INSTALL_INCLUDEDIR} COMPONENT core_genai_dev)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/openvino/genai/version.hpp
-        DESTINATION runtime/include/openvino/genai COMPONENT core_genai_dev)
+        DESTINATION ${OPENVINO_GENAI_INSTALL_INCLUDEDIR}/openvino/genai COMPONENT core_genai_dev)
 
 install(EXPORT OpenVINOGenAITargets FILE OpenVINOGenAITargets.cmake
-        NAMESPACE openvino:: DESTINATION runtime/cmake
+        NAMESPACE openvino:: DESTINATION ${OPENVINO_GENAI_INSTALL_CMAKEDIR}
         COMPONENT core_genai_dev)
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file("${OpenVINOGenAI_SOURCE_DIR}/cmake/templates/OpenVINOGenAIConfig.cmake.in"
-                              "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" INSTALL_DESTINATION runtime/cmake)
+                              "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake"
+                              INSTALL_DESTINATION ${OPENVINO_GENAI_INSTALL_CMAKEDIR})
 write_basic_package_version_file("${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion.cmake"
                                  VERSION ${OpenVINOGenAI_VERSION} COMPATIBILITY AnyNewerVersion)
 install(FILES "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfig.cmake" "${CMAKE_BINARY_DIR}/OpenVINOGenAIConfigVersion.cmake"
-        DESTINATION runtime/cmake COMPONENT core_genai_dev)
+        DESTINATION ${OPENVINO_GENAI_INSTALL_CMAKEDIR} COMPONENT core_genai_dev)
 export(EXPORT OpenVINOGenAITargets FILE "${CMAKE_BINARY_DIR}/OpenVINOGenAITargets.cmake" NAMESPACE openvino::)
