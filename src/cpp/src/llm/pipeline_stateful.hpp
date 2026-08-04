@@ -35,8 +35,8 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
     // Chat turns then negotiate a keep through the npuw_stored_tokens_state variable
     // state and send only the delta instead of resending the full history.
     bool m_npu_continuous_prefill = false;
-    // Past KV capacity of the largest generate variant, used to validate the response
-    // budget before proposing.
+    // Past KV capacity of the largest generate variant, used to validate an explicitly
+    // bounded response budget before proposing.
     size_t m_kv_cache_capacity = std::numeric_limits<size_t>::max();
     // Set after a failed turn. The next attempt skips the proposal and sends the full
     // history, which satisfies the plugin's pending reset.
@@ -49,7 +49,7 @@ class StatefulLLMPipeline final : public LLMPipelineImplBase {
 
     // Reads the continuous prefill capability from the compiled model and flips
     // m_use_full_chat_history accordingly. Called from every construction path.
-    void init_npu_continuous_prefill(ov::CompiledModel& compiled_model);
+    void init_npu_continuous_prefill(const ov::CompiledModel& compiled_model);
     // Proposes the post-alignment common prefix to the plugin, reads the grant back
     // and resizes the cache state to it, so slicing happens at the granted value.
     void negotiate_npu_history_reuse(size_t full_history_len, const GenerationConfig& config);
