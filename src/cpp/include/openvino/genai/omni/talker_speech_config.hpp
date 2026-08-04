@@ -55,7 +55,12 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     std::variant<std::string, ov::Tensor> speaker;
 
     /// @brief Number of codec frames accumulated before streaming each audio chunk.
-    /// Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
+    /// Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at 24 kHz),
+    /// but the code2wav vocoder trims its convolutional warmup from the first frame of every
+    /// decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This is a
+    /// property of the vocoder graph, not a miscount. Larger chunks amortize the fixed warmup
+    /// cost; very small chunks (e.g. 1) also risk audible seams between independently decoded
+    /// chunks in streaming mode.
     std::size_t audio_chunk_frames = 1;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`

@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "openvino/genai/common_types.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
@@ -68,6 +69,21 @@ public:
     Qwen3OmniSpeechPipeline(const std::filesystem::path& model_dir,
                             const VLMConfig& config,
                             const std::string& device,
+                            const ov::AnyMap& properties);
+
+    /// @brief Construct from in-memory model IRs (blob deployment / per-submodel device placement).
+    /// @param models_map Model name -> (IR string, weights tensor). Keys: "text_embeddings",
+    ///                    "talker", "talker_text_embeddings", "talker_projections",
+    ///                    "code_predictor", "code2wav".
+    /// @param config Parsed VLM config (codec/token IDs, speaker_ids) from config.json.
+    /// @param config_dir_path Directory holding generation_config.json (optional sampling defaults).
+    /// @param device_mapping Submodel name -> device. Missing entries fall back to `default_device`.
+    /// @param default_device Device used for submodels absent from `device_mapping`.
+    Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
+                            const VLMConfig& config,
+                            const std::filesystem::path& config_dir_path,
+                            const std::map<std::string, std::string>& device_mapping,
+                            const std::string& default_device,
                             const ov::AnyMap& properties);
 
     /// @brief Check if all speech models were loaded successfully.
@@ -150,6 +166,12 @@ private:
     std::vector<size_t> m_sample_indices;
     std::vector<size_t> m_sample_topk_indices;
     std::vector<float> m_sample_topk_probs;
+
+    /// @brief Post-load initialization shared by both constructors. Validates submodel IO,
+    /// detects hidden/vocab sizes, loads generation params from generation_config.json (if
+    /// present under `config_dir`), and precomputes constant embeddings. Requires the six
+    /// InferRequest members to already be populated.
+    void initialize(const std::filesystem::path& config_dir);
 
     /// @brief Resolve speaker name to codec token ID.
     int64_t resolve_speaker_id(const std::string& speaker) const;
