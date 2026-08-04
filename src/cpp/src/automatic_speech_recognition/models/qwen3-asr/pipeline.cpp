@@ -32,17 +32,18 @@ Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& 
     erase_allowed_asr_ctor_properties(properties_copy);
     m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
 
-    const size_t npu_boundary_seconds =
-        (device == "NPU") ? NPU_MAX_ASR_INPUT_SECONDS_FOR_BOUNDARY : MAX_ASR_INPUT_SECONDS;
-    const size_t npuw_qwen3_asr_max_encoder_len =
-        m_encoder->get_npuw_qwen3_asr_max_encoder_len(npu_boundary_seconds,
-                                                      m_feature_extractor.sampling_rate,
-                                                      m_feature_extractor.hop_length);
+    size_t npuw_qwen3_asr_max_encoder_len = 0;
+    if (device == "NPU") {
+        const size_t npu_boundary_seconds = NPU_MAX_ASR_INPUT_SECONDS_FOR_BOUNDARY;
+        npuw_qwen3_asr_max_encoder_len = m_encoder->get_npuw_qwen3_asr_max_encoder_len(npu_boundary_seconds,
+                                                                                         m_feature_extractor.sampling_rate,
+                                                                                         m_feature_extractor.hop_length);
 
-    std::cout << "[INFO] Qwen3ASR: NPUW_QWEN3_ASR_MAX_ENCODER_LEN boundary=" << npuw_qwen3_asr_max_encoder_len
-              << " (reused from encoder metadata, sampling_rate=" << m_feature_extractor.sampling_rate
-              << ", hop_length=" << m_feature_extractor.hop_length << ", boundary_seconds=" << npu_boundary_seconds
-              << ")" << std::endl;
+        std::cout << "[INFO] Qwen3ASR: NPUW_QWEN3_ASR_MAX_ENCODER_LEN boundary=" << npuw_qwen3_asr_max_encoder_len
+                  << " (reused from encoder metadata, sampling_rate=" << m_feature_extractor.sampling_rate
+                  << ", hop_length=" << m_feature_extractor.hop_length
+                  << ", boundary_seconds=" << npu_boundary_seconds << ")" << std::endl;
+    }
 
     m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy, npuw_qwen3_asr_max_encoder_len);
 
