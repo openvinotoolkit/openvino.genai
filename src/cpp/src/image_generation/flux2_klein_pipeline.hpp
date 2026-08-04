@@ -101,7 +101,16 @@ inline void flux2_npu_set_default(ov::AnyMap& config, const std::string& key, ov
 
 inline bool flux2_npu_use_npuw_disabled(const ov::AnyMap& config) {
     auto it = config.find("NPU_USE_NPUW");
-    return it != config.end() && it->second.as<std::string>() == "NO";
+    if (it == config.end()) {
+        return false;
+    }
+    if (it->second.is<std::string>()) {
+        return it->second.as<std::string>() == "NO";
+    }
+    if (it->second.is<bool>()) {
+        return it->second.as<bool>() == false;
+    }
+    return false;
 }
 
 inline void flux2_apply_npu_defaults_text_encoder(ov::AnyMap& config) {
