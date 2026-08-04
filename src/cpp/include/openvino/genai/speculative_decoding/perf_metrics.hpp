@@ -48,6 +48,9 @@ struct OPENVINO_GENAI_EXPORTS SDPerfMetrics : public ov::genai::ExtendedPerfMetr
     * @param start_time optional start_time in case if duration needs to be updated.
     */
     void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt) override;
+
+    SDPerfMetrics operator+(const SDPerfMetrics& metrics) const;
+    SDPerfMetrics& operator+=(const SDPerfMetrics& right);
 };
 
 /**
@@ -79,6 +82,9 @@ struct OPENVINO_GENAI_EXPORTS SDPerModelsPerfMetrics : public ov::genai::SDPerfM
     * @param start_time optional start_time in case if duration needs to be updated.
     */
     void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt) override;
+
+    SDPerModelsPerfMetrics operator+(const SDPerModelsPerfMetrics& metrics) const;
+    SDPerModelsPerfMetrics& operator+=(const SDPerModelsPerfMetrics& right);
 };
 
 }
