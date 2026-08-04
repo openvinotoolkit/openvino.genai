@@ -589,7 +589,9 @@ jobs:
         id: build_matrices
         env:
           AFFECTED_COMPONENTS: ${{ needs.smart_ci.outputs.affected_components }}
-        run: python3 .github/scripts/build_test_matrices.py
+        run: |
+          python3 -m pip install PyYAML==6.0.3
+          python3 .github/scripts/build_test_matrices.py --platform linux
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
