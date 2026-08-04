@@ -13,7 +13,14 @@ namespace genai {
 /// Recognized keys: return_audio, speaker, speaker_embedding (legacy alias),
 /// audio_chunk_frames, max_new_tokens, rng_seed, talker_temperature, talker_top_k,
 /// talker_repetition_penalty, cp_temperature, cp_top_k, cp_repetition_penalty.
+/// Unrecognized keys are ignored — callers that share the property bag with other
+/// consumers (e.g. OmniPipeline mixes in GenerationConfig keys) rely on this.
 void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::AnyMap& properties);
+
+/// @brief True if `key` is a field recognized by update_omni_talker_speech_config().
+/// Talker-only property-bag entry points use this to reject typos up front, since they do
+/// not share the bag with any other consumer.
+bool is_omni_talker_speech_config_key(const std::string& key);
 
 /// @brief Validate talker-only invariants on `config`.
 /// Cross-config rules (e.g. return_audio vs beam search on text_config) are NOT
