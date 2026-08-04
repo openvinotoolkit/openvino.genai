@@ -25,12 +25,26 @@ namespace ov::genai {
 
 Qwen3ASR::Qwen3ASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
     : ASRPipelineImplBase(models_path),
+      m_device{device},
       m_feature_extractor{models_path / "preprocessor_config.json"},
       m_asr_text_token_id{get_required_token_id(m_tokenizer, "<asr_text>")} {
     ov::AnyMap properties_copy = properties;
     erase_allowed_asr_ctor_properties(properties_copy);
     m_encoder = std::make_unique<Qwen3ASREncoder>(models_path, device, properties_copy);
-    m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy);
+
+    const size_t npu_boundary_seconds =
+        (device == "NPU") ? NPU_MAX_ASR_INPUT_SECONDS_FOR_BOUNDARY : MAX_ASR_INPUT_SECONDS;
+    const size_t npuw_qwen3_asr_max_encoder_len =
+        m_encoder->get_npuw_qwen3_asr_max_encoder_len(npu_boundary_seconds,
+                                                      m_feature_extractor.sampling_rate,
+                                                      m_feature_extractor.hop_length);
+
+    std::cout << "[INFO] Qwen3ASR: NPUW_QWEN3_ASR_MAX_ENCODER_LEN boundary=" << npuw_qwen3_asr_max_encoder_len
+              << " (reused from encoder metadata, sampling_rate=" << m_feature_extractor.sampling_rate
+              << ", hop_length=" << m_feature_extractor.hop_length << ", boundary_seconds=" << npu_boundary_seconds
+              << ")" << std::endl;
+
+    m_decoder = std::make_unique<Qwen3ASRDecoder>(models_path, device, properties_copy, npuw_qwen3_asr_max_encoder_len);
 
     // Qwen3-ASR EOS tokens: <|endoftext|>=151643, <|im_end|>=151645
     // The exported model has no generation_config.json. Qwen3-ASR original implementation hardcodes them as well.
@@ -59,8 +73,10 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
         },
         audio_inputs);
 
+    const size_t max_chunk_seconds =
+        (m_device == "NPU") ? NPU_MAX_ASR_INPUT_SECONDS_FOR_BOUNDARY : MAX_ASR_INPUT_SECONDS;
     const std::vector<AudioChunk> chunks =
-        split_audio_into_chunks({audio}, m_feature_extractor.sampling_rate, MAX_ASR_INPUT_SECONDS);
+        split_audio_into_chunks({audio}, m_feature_extractor.sampling_rate, max_chunk_seconds);
 
     const auto infer_results = infer(chunks, config, results.perf_metrics, streamer);
     if (streamer) {

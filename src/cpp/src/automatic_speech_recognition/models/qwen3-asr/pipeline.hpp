@@ -25,12 +25,14 @@ public:
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 
 private:
+    const std::string m_device;
     WhisperFeatureExtractor m_feature_extractor;
     const int64_t m_asr_text_token_id;
     std::unique_ptr<Qwen3ASREncoder> m_encoder;
     std::unique_ptr<Qwen3ASRDecoder> m_decoder;
 
     static constexpr size_t MAX_ASR_INPUT_SECONDS = 1200;
+    static constexpr size_t NPU_MAX_ASR_INPUT_SECONDS_FOR_BOUNDARY = 60;
 
     std::vector<std::string> infer(std::vector<AudioChunk> chunks,
                                    const ASRGenerationConfig& config,

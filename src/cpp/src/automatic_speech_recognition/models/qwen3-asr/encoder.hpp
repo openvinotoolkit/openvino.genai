@@ -16,8 +16,13 @@ public:
 
     ov::Tensor encode(const WhisperFeatures& features);
 
+    size_t get_npuw_qwen3_asr_max_encoder_len(const size_t max_asr_input_seconds,
+                                              const size_t sampling_rate,
+                                              const size_t hop_length) const;
+
 private:
     InferRequest m_request;
+    ov::PartialShape m_last_hidden_state_shape;
     Qwen3ASRConfig m_model_config;
 
     // The original Qwen3-ASR encoder processes mel spectrograms in chunks of N_WINDOW*2=200 frames,

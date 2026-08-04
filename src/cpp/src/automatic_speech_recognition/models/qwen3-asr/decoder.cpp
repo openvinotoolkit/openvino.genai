@@ -4,8 +4,6 @@
 #include "decoder.hpp"
 
 #include <algorithm>
-#include <cstring>
-#include <iostream>
 #include <map>
 
 #include "openvino/genai/generation_handle.hpp"
@@ -14,17 +12,28 @@
 
 namespace {
 
-// Reshape the encoder_hidden_states batch dimension to 1 for NPU compilation.
-// ASR decoder always processes a single audio chunk at a time, so batch is always 1.
-// The sequence length (dim 1) is left dynamic and handled by NPUW.
-void reshape_encoder_hidden_states_batch_to_static(std::shared_ptr<ov::Model> model) {
+constexpr size_t QWEN3_ASR_TEXT_TOKEN_BUDGET = 128;
+constexpr size_t QWEN3_ASR_PROMPT_LEN_ALIGNMENT = 64;
+
+size_t align_up(const size_t value, const size_t alignment) {
+    OPENVINO_ASSERT(alignment > 0, "alignment must be > 0");
+    return ((value + alignment - 1) / alignment) * alignment;
+}
+
+// Reshape encoder_hidden_states for NPU compilation.
+// Keep dim0 fixed to 1 and leave dim1 dynamic.
+void set_encoder_hidden_states_batch_dim_to_one(std::shared_ptr<ov::Model> model) {
     if (!ov::genai::utils::has_input(model, "encoder_hidden_states")) {
         return;
     }
     ov::PartialShape new_shape = model->input("encoder_hidden_states").get_partial_shape();
-    OPENVINO_ASSERT(new_shape.rank().is_static() && new_shape.rank().get_length() >= 1,
+    OPENVINO_ASSERT(new_shape.rank().is_static() && new_shape.rank().get_length() >= 2,
                     "Unexpected rank for 'encoder_hidden_states' input.");
+
     new_shape[0] = 1;
+    new_shape[1] = ov::Dimension::dynamic();
+    std::cout << "[INFO] Qwen3ASRDecoder: reshape encoder_hidden_states to [" << new_shape[0] << "," << new_shape[1]
+              << ",...]" << std::endl;
     model->reshape({{"encoder_hidden_states", new_shape}});
 }
 
@@ -34,20 +43,32 @@ namespace ov::genai {
 
 Qwen3ASRDecoder::Qwen3ASRDecoder(const std::filesystem::path& models_path,
                                  const std::string& device,
-                                 const ov::AnyMap& properties) {
+                                 const ov::AnyMap& properties,
+                                 const size_t npuw_qwen3_asr_max_encoder_len) {
     ov::Core core = utils::singleton_core();
 
     if (device == "NPU") {
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties));
+        ov::AnyMap npu_properties = properties;
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(npu_properties));
 
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
-        // Set batch dim to 1; seq_len (dim 1) remains dynamic and is handled by NPUW.
-        reshape_encoder_hidden_states_batch_to_static(model);
+        // Set batch dim from encoder compiled output; seq_len (dim 1) remains dynamic and is handled by NPUW.
+        set_encoder_hidden_states_batch_dim_to_one(model);
+
+        OPENVINO_ASSERT(npuw_qwen3_asr_max_encoder_len > 0,
+                        "NPUW_QWEN3_ASR_MAX_ENCODER_LEN must be > 0, got ",
+                        npuw_qwen3_asr_max_encoder_len);
+        npu_properties["NPUW_QWEN3_ASR_MAX_ENCODER_LEN"] = static_cast<int64_t>(npuw_qwen3_asr_max_encoder_len);
+        if (npu_properties.count("MAX_PROMPT_LEN") == 0) {
+            const size_t max_prompt_len =
+                align_up(npuw_qwen3_asr_max_encoder_len + QWEN3_ASR_TEXT_TOKEN_BUDGET, QWEN3_ASR_PROMPT_LEN_ALIGNMENT);
+            npu_properties["MAX_PROMPT_LEN"] = static_cast<int64_t>(max_prompt_len);
+        }
 
         utils::KVDesc kv_desc;
         ov::CompiledModel compiled_model;
-        std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu_qwen3_asr(model, properties, kv_pos);
+        std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu_qwen3_asr(model, npu_properties, kv_pos);
         ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr decoder model");
         m_request = compiled_model.create_infer_request();
     } else {
@@ -116,9 +137,7 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
     // Prefill: run decoder with full prompt
     m_request.set_tensor("input_ids", input_ids);
     const auto infer_start = std::chrono::steady_clock::now();
-    std::cout << "[INFO] Qwen3ASRDecoder: running prefill inference with prompt length " << prompt_len << std::endl;
     m_request.infer();
-    std::cout << "[INFO] Qwen3ASRDecoder: prefill inference completed" << std::endl;
     const auto infer_end = std::chrono::steady_clock::now();
     const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
@@ -127,20 +146,14 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
     raw_metrics.m_batch_sizes.emplace_back(batch_size);
     asr_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
-    std::cout << "[INFO] Qwen3ASRDecoder: fetching prefill logits tensor" << std::endl;
     ov::Tensor logits = m_request.get_tensor("logits");
-    std::cout << "[INFO] Qwen3ASRDecoder: fetched prefill logits tensor" << std::endl;
     const int64_t output_sequence_len = logits.get_shape().at(1);
-    std::cout << "[INFO] Qwen3ASRDecoder: output_sequence_len=" << output_sequence_len << std::endl;
 
     // Schedule prompt tokens and sample
-    std::cout << "[INFO] Qwen3ASRDecoder: scheduling prompt tokens for " << sequence_groups.size() << " sequence groups"
-              << std::endl;
     for (auto& seq_group : sequence_groups) {
         seq_group->schedule_tokens(seq_group->get_prompt_len());
         seq_group->set_output_seq_len(output_sequence_len);
     }
-    std::cout << "[INFO] Qwen3ASRDecoder: prompt scheduling completed" << std::endl;
 
     // Beam offsets: maps request_id -> starting position in flattened batch
     std::map<size_t, size_t> beam_offsets;
@@ -149,44 +162,7 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
     }
 
     const auto sample_start = std::chrono::steady_clock::now();
-    std::cout << "[INFO] Qwen3ASRDecoder: sampling after prefill started" << std::endl;
-    for (const auto& seq_group : sequence_groups) {
-        std::cout << "[INFO] Qwen3ASRDecoder: stop_token_ids={";
-        bool first = true;
-        for (const auto token_id : seq_group->get_sampling_parameters().stop_token_ids) {
-            if (!first) {
-                std::cout << ",";
-            }
-            std::cout << token_id;
-            first = false;
-        }
-        std::cout << "}, ignore_eos="
-                  << (seq_group->get_sampling_parameters().ignore_eos ? "true" : "false")
-                  << std::endl;
-    }
     m_sampler.sample(sequence_groups, logits);
-    std::cout << "[INFO] Qwen3ASRDecoder: sampling after prefill completed" << std::endl;
-    for (const auto& seq_group : sequence_groups) {
-        const auto running_sequences = seq_group->get_running_sequences();
-        for (const auto& seq : running_sequences) {
-            const auto& generated = seq->get_generated_ids();
-            if (!generated.empty()) {
-                const int64_t last_token = generated.back();
-                const bool is_stop_token =
-                    seq_group->get_sampling_parameters().stop_token_ids.count(last_token) > 0;
-                std::cout << "[INFO] Qwen3ASRDecoder: post-prefill seq_id=" << seq->get_id()
-                          << " generated_len=" << generated.size()
-                          << " last_token=" << last_token
-                          << " is_stop_token=" << (is_stop_token ? "true" : "false")
-                          << " ignore_eos="
-                          << (seq_group->get_sampling_parameters().ignore_eos ? "true" : "false")
-                          << std::endl;
-            } else {
-                std::cout << "[INFO] Qwen3ASRDecoder: post-prefill seq_id=" << seq->get_id()
-                          << " generated_len=0" << std::endl;
-            }
-        }
-    }
     raw_metrics.m_sampling_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     stream_generated_tokens();
@@ -205,38 +181,14 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
     };
 
     free_finished_requests();
-    for (const auto& seq_group : sequence_groups) {
-        for (const auto& seq : seq_group->get_sequences()) {
-            int64_t last_token = -1;
-            bool is_stop_token = false;
-            if (!seq->get_generated_ids().empty()) {
-                last_token = seq->get_generated_ids().back();
-                is_stop_token = seq_group->get_sampling_parameters().stop_token_ids.count(last_token) > 0;
-            }
-            std::cout << "[INFO] Qwen3ASRDecoder: seq_id=" << seq->get_id()
-                      << " is_running=" << (seq->is_running() ? "true" : "false")
-                      << " has_finished=" << (seq->has_finished() ? "true" : "false")
-                      << " finish_reason=" << static_cast<int>(seq->get_finish_reason())
-                      << " generated_len=" << seq->get_generated_len()
-                      << " last_token=" << last_token
-                      << " is_stop_token=" << (is_stop_token ? "true" : "false")
-                      << std::endl;
-        }
-    }
-    std::cout << "[INFO] Qwen3ASRDecoder: active sequence groups after prefill=" << active_sequence_groups.size()
-              << std::endl;
 
     // Generation loop
-    size_t decode_iter = 0;
     while (!active_sequence_groups.empty()) {
-        std::cout << "[INFO] Qwen3ASRDecoder: decode iteration " << decode_iter
-                  << " active_groups=" << active_sequence_groups.size() << std::endl;
         size_t total_num_tokens = 0;
         for (auto& seq_group : active_sequence_groups) {
             seq_group->schedule_tokens(1);
             total_num_tokens += seq_group->get_num_scheduled_tokens() * seq_group->num_running_seqs();
         }
-        std::cout << "[INFO] Qwen3ASRDecoder: total_num_tokens=" << total_num_tokens << std::endl;
 
         ov::Tensor new_input_ids(ov::element::i64, {total_num_tokens, 1});
         int64_t* input_ids_data = new_input_ids.data<int64_t>();
@@ -277,9 +229,7 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         m_request.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
         // for beam search investigate encoder batches reordering based on next_beams
         const auto infer_start = std::chrono::steady_clock::now();
-        std::cout << "[INFO] Qwen3ASRDecoder: running inference for " << total_num_tokens << " tokens" << std::endl;
         m_request.infer();
-        std::cout << "[INFO] Qwen3ASRDecoder: inference completed" << std::endl;
         const auto infer_end = std::chrono::steady_clock::now();
         const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
         raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
@@ -289,19 +239,12 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         asr_raw_metrics.decode_inference_durations.emplace_back(infer_ms);
 
         logits = m_request.get_tensor("logits");
-        std::cout << "[INFO] Qwen3ASRDecoder: fetched decode logits tensor" << std::endl;
-
         const auto sample_start = std::chrono::steady_clock::now();
-        std::cout << "[INFO] Qwen3ASRDecoder: decode sampling started" << std::endl;
         m_sampler.sample(active_sequence_groups, logits);
-        std::cout << "[INFO] Qwen3ASRDecoder: decode sampling completed" << std::endl;
         raw_metrics.m_sampling_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         stream_generated_tokens();
         free_finished_requests();
-        std::cout << "[INFO] Qwen3ASRDecoder: decode iteration " << decode_iter
-                  << " completed, active_groups=" << active_sequence_groups.size() << std::endl;
-        ++decode_iter;
     }
 
     // Flush streamer cache

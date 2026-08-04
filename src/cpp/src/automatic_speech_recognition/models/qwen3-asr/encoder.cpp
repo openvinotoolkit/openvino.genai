@@ -58,14 +58,34 @@ Qwen3ASREncoder::Qwen3ASREncoder(const std::filesystem::path& models_path,
                   << std::endl;
 
         ov::CompiledModel compiled_model = core.compile_model(encoder_model, "NPU", npu_properties);
+        m_last_hidden_state_shape = compiled_model.output("last_hidden_state").get_partial_shape();
         ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
         m_request = compiled_model.create_infer_request();
     } else {
         ov::CompiledModel compiled_model =
             core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
+        m_last_hidden_state_shape = compiled_model.output("last_hidden_state").get_partial_shape();
         ov::genai::utils::print_compiled_model_properties(compiled_model, "qwen3-asr encoder model");
         m_request = compiled_model.create_infer_request();
     }
+}
+
+size_t Qwen3ASREncoder::get_npuw_qwen3_asr_max_encoder_len(const size_t max_asr_input_seconds,
+                                                           const size_t sampling_rate,
+                                                           const size_t hop_length) const {
+    OPENVINO_ASSERT(hop_length > 0, "hop_length must be > 0");
+    OPENVINO_ASSERT(m_encoder_chunk_frames > 0, "encoder_chunk_frames must be > 0");
+    OPENVINO_ASSERT(m_last_hidden_state_shape.rank().is_static() &&
+                        m_last_hidden_state_shape.rank().get_length() >= 2 && m_last_hidden_state_shape[1].is_static(),
+                    "Unexpected encoder last_hidden_state shape: ",
+                    m_last_hidden_state_shape);
+
+    const size_t tokens_per_encoder_chunk = m_last_hidden_state_shape[1].get_length();
+    OPENVINO_ASSERT(tokens_per_encoder_chunk > 0, "tokens_per_encoder_chunk must be > 0");
+
+    const size_t max_frames_per_asr_chunk = (max_asr_input_seconds * sampling_rate) / hop_length;
+    const size_t max_encoder_chunks = (max_frames_per_asr_chunk + m_encoder_chunk_frames - 1) / m_encoder_chunk_frames;
+    return max_encoder_chunks * tokens_per_encoder_chunk;
 }
 
 ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
@@ -133,8 +153,8 @@ ov::Tensor Qwen3ASREncoder::encode(const WhisperFeatures& features) {
     // consider pre-post processing for chunked inference to avoid data copy and remote_tensor optimization
     ov::Tensor output = merge_chunked_encoder_output(chunked_output, remainder_frames);
 
-    const ov::Shape reset_shape = is_npu ? ov::Shape{1, input_tensor.get_shape()[1], input_tensor.get_shape()[2]}
-                                         : ov::Shape{0, 0, 0};
+    const ov::Shape reset_shape =
+        is_npu ? ov::Shape{1, input_tensor.get_shape()[1], input_tensor.get_shape()[2]} : ov::Shape{0, 0, 0};
     std::cout << "[INFO] Qwen3ASREncoder: resetting input_features with shape = " << reset_shape << std::endl;
     m_request.set_tensor("input_features", ov::Tensor(ov::element::f32, reset_shape));
 
