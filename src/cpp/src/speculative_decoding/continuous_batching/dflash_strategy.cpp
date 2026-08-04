@@ -636,9 +636,6 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
             continue;
         }
         auto& state = state_it->second;
-        if (draft_generated == 0 || state.generated_tokens.size() <= state.generated_before_draft) {
-            continue;
-        }
         const auto accounting =
             dflash_cb::validation_accounting(draft_generated, state.generated_before_draft, state.generated_tokens.size());
         if (!accounting.target_extended) {

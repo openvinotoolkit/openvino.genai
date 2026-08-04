@@ -434,9 +434,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attenti
         return;
     }
 
-    for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
-        for (const auto& sequence : m_requests[seq_group_id]->get_running_sequences()) {
-            m_scheduler->release_linear_attention_checkpoints(sequence->get_id());
+    // Sampling may finish a sequence before throwing. Release from the immutable
+    // schedule instead of consulting mutable post-sampling sequence status.
+    for (const auto& [seq_id, paging_data] : scheduler_output.m_linear_attention_paging_data) {
+        if (paging_data.is_speculative) {
+            m_scheduler->release_linear_attention_checkpoints(seq_id);
         }
     }
 }

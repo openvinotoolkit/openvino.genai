@@ -3,6 +3,7 @@
 
 #include "pipeline_impl.hpp"
 #include <numeric>
+#include <optional>
 
 #include "sequence_group.hpp"
 
@@ -374,6 +375,23 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         // Pause hidden-state-paired drafting when the main request was deferred.
         const bool requires_main_hidden_state =
             (eagle_mode_enabled || mtp_mode_enabled) && !m_is_validation_mode_enabled;
+        // get_generated_requests() duplicates this request-level value into every candidate.
+        // Keep one copy here and verify that producer invariant before using it for group-wide alignment.
+        // Only the Eagle paths below read it, so the check stays off other strategies' hot path.
+        std::optional<size_t> main_num_processed_tokens;
+        if (eagle_mode_enabled) {
+            for (const auto& candidate : candidates) {
+                if (!main_num_processed_tokens.has_value()) {
+                    main_num_processed_tokens = candidate.second.num_processed_tokens;
+                } else {
+                    OPENVINO_ASSERT(*main_num_processed_tokens == candidate.second.num_processed_tokens,
+                                    "Candidates from one request must report the same num_processed_tokens. "
+                                    "get_generated_requests() copies one request-level value into every "
+                                    "candidate; a producer that publishes per-sequence progress instead must "
+                                    "also rework the group-wide Eagle alignment and pause decisions here.");
+                }
+            }
+        }
         const auto published_hidden_state_it =
             std::find_if(candidates.begin(), candidates.end(), [](const auto& candidate) {
                 return candidate.second.hidden_states && candidate.second.hidden_states.get_size() > 0;
@@ -526,9 +544,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         const bool is_prompt_phase = current_num_processed_tokens < prompt_len;
         if (eagle_mode_enabled && !m_is_validation_mode_enabled && m_scheduler &&
             m_scheduler->get_config().dynamic_split_fuse && is_prompt_phase) {
-            const size_t main_num_processed_tokens = candidates.begin()->second.num_processed_tokens;
-            const size_t scheduled_delta = main_num_processed_tokens > current_num_processed_tokens
-                                               ? main_num_processed_tokens - current_num_processed_tokens
+            const size_t main_processed_tokens = main_num_processed_tokens.value_or(0);
+            const size_t scheduled_delta = main_processed_tokens > current_num_processed_tokens
+                                               ? main_processed_tokens - current_num_processed_tokens
                                                : 0;
             const size_t expected_num_scheduled_tokens = scheduled_delta + request->get_num_tokens_to_validate();
             if (expected_num_scheduled_tokens > 0) {
@@ -553,11 +571,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;
             const bool should_pause_for_main_alignment =
-                eagle_mode_enabled &&
-                (candidates.empty() ||
-                 std::all_of(candidates.begin(), candidates.end(), [](const auto& candidate) {
-                     return candidate.second.num_processed_tokens == 0;
-                 }));
+                eagle_mode_enabled && main_num_processed_tokens.value_or(0) == 0;
             if (generated_len >= max_new_tokens - 1 || (generated_len != 0 && result.inserted_tokens_cnt == 0) ||
                 should_pause_for_main_alignment || should_pause_for_missing_main_hidden_state) {
                 pause_gen_status = true;

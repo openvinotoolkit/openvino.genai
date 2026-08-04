@@ -310,7 +310,7 @@ TEST(TestCacheOrchestratorHybrid, SchedulerEmitsSpeculativeLinearAttentionCheckp
     const auto paging_it = output.m_linear_attention_paging_data.find(seq_id);
     ASSERT_NE(paging_it, output.m_linear_attention_paging_data.end());
     const auto& paging = paging_it->second;
-    ASSERT_EQ(paging.block_indices.size(), tokens.size() + 1);
+    ASSERT_EQ(paging.block_indices.size(), num_candidates + 2);
     EXPECT_EQ(paging.past_length, tokens.size());
     EXPECT_EQ(paging.cache_interval, 1);
     EXPECT_TRUE(paging.is_speculative);
