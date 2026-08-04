@@ -6,6 +6,7 @@ JSON array per matrix definition file found under
 named after its file stem (e.g. ``wheel_tests``, ``samples_tests``) and contains only the
 entries whose components are affected. ``<platform>`` is passed via ``--platform``.
 """
+
 import argparse
 import json
 import os
@@ -40,7 +41,9 @@ def print_matrix(name: str, entries: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build filtered CI test matrices from smart-ci affected components.")
-    parser.add_argument("--platform", required=True, help="Matrix subfolder to load definitions from (e.g. linux or windows).")
+    parser.add_argument(
+        "--platform", required=True, help="Matrix subfolder to load definitions from (e.g. linux or windows)."
+    )
     platform = parser.parse_args().platform
 
     affected: dict[str, Any] = json.loads(os.environ.get("AFFECTED_COMPONENTS") or "{}")
