@@ -331,7 +331,7 @@ python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed
 Qwen3-VL-Embedding shares its architecture with Qwen3-VL text generation; the embedding behavior requires `--task text_embed` explicitly.
 ```sh
 # convert model to OpenVINO IR format
-optimum-cli export openvino --model Qwen/Qwen3-VL-Embedding-8B --task feature-extraction --trust-remote-code models/Qwen3-VL-Embedding-8B
+optimum-cli export openvino --model Qwen/Qwen3-VL-Embedding-8B --task feature-extraction models/Qwen3-VL-Embedding-8B
 # text-only embedding
 python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task text_embed -p "Describe OpenVINO"
 # image embedding
