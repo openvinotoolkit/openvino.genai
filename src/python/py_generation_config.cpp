@@ -456,7 +456,8 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)
-        .def_readwrite("parsers", &GenerationConfig::parsers, py::keep_alive<1, 2>())
+        // The vector owns shared_ptr instances, so assigning it already retains every parser.
+        .def_readwrite("parsers", &GenerationConfig::parsers)
         .def_readwrite("adapters", &GenerationConfig::adapters)
         .def_readwrite("apply_chat_template", &GenerationConfig::apply_chat_template)
         .def_readwrite("return_omni_outputs", &GenerationConfig::return_omni_outputs)
