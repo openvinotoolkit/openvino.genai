@@ -137,19 +137,16 @@ class TestOmniPipelineAccessors:
         for method in ("list_speakers", "get_speaker_embedding"):
             assert hasattr(ov_genai.TalkerBase, method), f"TalkerBase.{method}() missing from public surface"
 
-    def test_speech_config_accessors_are_talker_only(self) -> None:
-        """get/set_speech_config live on the concrete Talker, not on TalkerBase.
+    def test_speech_config_accessors_live_on_base(self) -> None:
+        """get/set_speech_config live on TalkerBase; every backend shares the stored config.
 
-        Per the Talker class spec (slide 10 of the design deck), these accessors are
-        non-virtual and belong to the default Qwen3-Omni Talker only — custom TalkerBase
-        backends are not forced to store a speech config. Guard against them leaking onto
-        the abstract base.
+        TalkerBase owns the stored default OmniTalkerSpeechConfig, so the accessors and the
+        property-bag generate() overload that seeds from it are available to every backend,
+        not just the default Qwen3-Omni Talker. Talker inherits them unchanged.
         """
         for method in ("get_speech_config", "set_speech_config"):
-            assert hasattr(ov_genai.Talker, method), f"Talker.{method}() missing from public surface"
-            assert not hasattr(ov_genai.TalkerBase, method), (
-                f"TalkerBase.{method}() must not exist — the accessors are Talker-only per the spec."
-            )
+            assert hasattr(ov_genai.TalkerBase, method), f"TalkerBase.{method}() missing from public surface"
+            assert hasattr(ov_genai.Talker, method), f"Talker.{method}() missing (should inherit from TalkerBase)"
 
     def test_talker_blob_ctor_signature(self) -> None:
         """Talker exposes the ModelsMap/device_mapping blob constructor (slide 10 spec).

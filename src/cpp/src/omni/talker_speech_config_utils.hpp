@@ -3,11 +3,19 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "openvino/core/any.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
 
 namespace ov {
 namespace genai {
+
+/// @brief Ordered list of keys recognized by update_omni_talker_speech_config().
+/// Single source of truth: is_omni_talker_speech_config_key() and callers that build
+/// "recognized keys" error messages both read from this instead of hand-maintaining a copy.
+const std::vector<std::string>& omni_talker_speech_config_keys();
 
 /// @brief Populate fields of `config` from an AnyMap (kwargs-style properties).
 /// Recognized keys: return_audio, speaker, speaker_embedding (legacy alias),
