@@ -6,10 +6,8 @@ import pytest
 import sys
 
 from optimum.intel.utils.import_utils import is_transformers_version
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, convert_model
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
-
-convert_draft_model = convert_model
 
 
 def _run_spec_case(convert_model, convert_draft_model, sample_args, env):

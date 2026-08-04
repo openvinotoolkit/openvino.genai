@@ -290,7 +290,7 @@ wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeec
 python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
 ```
 
-> **Supported Text to Speech model types:** whisper
+> **Supported Speech to Text model types:** whisper, qwen3-asr
 
 ### Text Rerank models
 ```sh

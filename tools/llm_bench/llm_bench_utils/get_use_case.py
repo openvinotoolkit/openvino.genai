@@ -72,7 +72,7 @@ def get_model_name(model_path: Path, task: Optional[str] = None) -> Tuple[Option
     for part in reversed(model_parts):
         best_match = None
         for use_case in possible_use_cases:
-            for model_type in use_case.model_types:
+            for model_type in use_case.supported_model_types:
                 if part.lower().startswith(model_type):
                     if best_match is None or len(model_type) > len(best_match[1]):
                         best_match = (use_case, model_type, part)
@@ -108,7 +108,7 @@ def get_use_case_by_model_id(model_id, task=None):
             possible_use_cases = USE_CASES[task]
     model_use_case, model_type = None, None
     for use_case in possible_use_cases:
-        for m_type in normalize_model_ids(use_case.model_types):
+        for m_type in normalize_model_ids(use_case.supported_model_types):
             # TODO go to equality and raise error if use_cases is already found, as it will mean that
             # model with that task can be applicable to execute with different pipelines and user doesn't specify one
             if not model_id.startswith(m_type):

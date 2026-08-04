@@ -12,6 +12,10 @@ Analyzes the results of failed WWB runs for models executed with the transformer
 
 - WWB fails during execution pipeline with the model
 
+Do not classify a traceback inside model code as a backend limitation until a
+minimal, correct direct backend `generate()` call reproduces the same failure
+outside WWB. A successful forward pass is not sufficient.
+
 ## Inputs
 
 The user must provide:
@@ -62,6 +66,11 @@ When analyzing failures and implementing fixes, refer to the following key locat
   - Read the corresponding log for the full traceback and context.
   - Analyze the failure root cause based on the log and Code Structure Reference.
   - Determine whether the error is related to the WWB or to environment/backend limitations.
+  - For a Hugging Face baseline failure, create the smallest direct generation
+    reproducer for the same task and input. Compare the model class, processor
+    and chat template, image representation, input names/shapes/dtypes,
+    multimodal token placement, cache/position inputs, and generation arguments
+    with WWB. Fix the earliest reusable integration difference.
   - If this is a WWB issue/limitation, implement necessary fixes to WWB. Use the Code Structure Reference to locate the exact functions to modify. Follow OpenVINO GenAI coding guidelines from `.github/copilot-instructions.md`. Ensure changes don't break existing functionality. Add appropriate error messages and logging. Test changes by re-running WWB tool with corresponding cmd parameters.
   - If this is a model issue or backend limitation, provide description in the report.
 
@@ -69,6 +78,16 @@ When analyzing failures and implementing fixes, refer to the following key locat
 - Model is not supported with current transformers version. If transformers version necessary for the model is higher than version in requirements.txt, update requirements.txt. Otherwise, reflect the recommendation to install an earlier version in the report. Do not install any packages.
 - Some modules are not installed in the environment. Add missing modules to `requirements.txt` or the appropriate dependency/constraints file, and describe the required dependency update in the report; do not install packages in the analysis environment.
 - WWB uses the wrong model class or arguments for model loading/generation. Analyze and find appropriate class or arguments for the model and add them to `model_loaders.py` or corresponding evaluator. Don't remove existing functionality, only add new conditions for the new model architecture or features.
+- Prefer configuration, architecture metadata, and processor capabilities over
+  hard-coded Hub repository IDs. Never swallow generation exceptions, insert
+  placeholder answers, or weaken validation to make the benchmark complete.
+- After loading a processor, verify that its callable interface actually
+  accepts the task's modalities. `AutoProcessor` may resolve to a bare text
+  tokenizer for remote-code VLMs; passing `images=` to it then fails even
+  though model loading succeeded. For visual-text tasks, detect this by
+  capability/configuration, load the correct image processor when needed, and
+  add a focused regression test. Do not special-case a single Hub ID when the
+  same capability check can support the architecture generally.
 - If `--model-type` is `visual-text` or `visual-text-chat`, check if the input preprocessing in `inputs_preprocessors` folder exists for corresponding model_id. If not, add necessary preprocessing steps. Investigate the file https://github.com/huggingface/optimum-intel/blob/main/optimum/intel/openvino/modeling_visual_language.py to find out how function `preprocess_inputs` are established for other models in the optimum-intel; perhaps you will find a function there for the current model. Based on the function example and examples of other classes from the `inputs_preprocessors` folder, create a new class for the current model_id. `preprocess_inputs` function should contain functionality for question answering and chat cases.
 
 **Some common failure points for GenAI backend**:
@@ -80,6 +99,8 @@ When analyzing failures and implementing fixes, refer to the following key locat
 ### Step 2: Report Results
 
 Add the results for each WWB run to the logs. If there are several runs for one model, then print `Model Information` once, and show `Backend Analysis Summary` for each run.
+For ground-truth generation, report success only when the CSV is readable,
+non-empty, and contains the requested number of generated result rows.
 Results format:
 
 ## Model Information
