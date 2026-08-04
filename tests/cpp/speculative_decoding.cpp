@@ -60,7 +60,6 @@ protected:
     };
 
     PipelineTestInstance m_pipeline = PipelineTestInstance();
-    MtpPipelineTestInstance m_mtp_pipeline;
 };
 
 TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnostics) {
@@ -146,6 +145,8 @@ template <typename Pipeline>
 void expect_mtp_request_rejected(Pipeline& pipeline,
                                  const ov::genai::GenerationConfig& config,
                                  const std::string& expected_message) {
+    // The default-constructed pipeline and empty tensor are deliberate: unsupported configurations
+    // must be rejected before add_request touches model state or validates its input tensor.
     try {
         pipeline.add_request(0, ov::Tensor{}, config);
         FAIL() << "Expected MTP request to be rejected at admission";
@@ -163,38 +164,56 @@ ov::genai::GenerationConfig valid_mtp_config() {
 }  // namespace
 
 TEST_F(CBForSDTest, MtpAdmissionRejectsConfidenceThreshold) {
+    MtpPipelineTestInstance pipeline;
     auto config = valid_mtp_config();
     config.assistant_confidence_threshold = 0.5f;
 
-    expect_mtp_request_rejected(m_mtp_pipeline, config, "assistant_confidence_threshold must be 0.f");
+    expect_mtp_request_rejected(pipeline, config, "assistant_confidence_threshold must be 0.f");
 }
 
 TEST_F(CBForSDTest, MtpAdmissionRejectsTreeSearch) {
+    MtpPipelineTestInstance pipeline;
     auto config = valid_mtp_config();
     config.tree_depth = 2;
 
-    expect_mtp_request_rejected(m_mtp_pipeline, config, "does not support tree search");
+    expect_mtp_request_rejected(pipeline, config, "does not support tree search");
 }
 
 TEST_F(CBForSDTest, MtpAdmissionRejectsNonGreedyDecoding) {
+    MtpPipelineTestInstance pipeline;
     auto config = valid_mtp_config();
     config.do_sample = true;
 
-    expect_mtp_request_rejected(m_mtp_pipeline, config, "supports greedy decoding only");
+    expect_mtp_request_rejected(pipeline, config, "supports greedy decoding only");
 }
 
 TEST_F(CBForSDTest, MtpAdmissionRejectsParallelSampling) {
+    MtpPipelineTestInstance pipeline;
     auto config = valid_mtp_config();
     config.num_return_sequences = 2;
 
-    expect_mtp_request_rejected(m_mtp_pipeline, config, "num_return_sequences must be 1");
+    expect_mtp_request_rejected(pipeline, config, "num_return_sequences must be 1");
 }
 
 TEST_F(CBForSDTest, MtpAdmissionRejectsZeroAssistantTokens) {
+    MtpPipelineTestInstance pipeline;
     auto config = valid_mtp_config();
     config.num_assistant_tokens = 0;
 
-    expect_mtp_request_rejected(m_mtp_pipeline, config, "num_assistant_tokens > 0");
+    expect_mtp_request_rejected(pipeline, config, "num_assistant_tokens > 0");
+}
+
+TEST_F(CBForSDTest, MtpSupportedConfigPassesAdmissionValidation) {
+    MtpPipelineTestInstance pipeline;
+    ov::Tensor invalid_input(ov::element::f32, ov::Shape{});
+
+    try {
+        pipeline.add_request(0, invalid_input, valid_mtp_config());
+        FAIL() << "Expected the scalar test tensor to be rejected after admission validation";
+    } catch (const ov::Exception& exception) {
+        EXPECT_NE(std::string(exception.what()).find("MTP draft input embeds expect shape"), std::string::npos)
+            << exception.what();
+    }
 }
 
 TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {
