@@ -1016,37 +1016,6 @@ class MemorySamplerFull(MemorySamplerBase):
         return self.aggregate_and_format(marker, vals)
 
 
-# ---------------------------------------------------------------------------
-# Optional WMI setup for MemorySamplerWinGPU (GPU memory metrics).
-#
-# GPU memory is read from the WMI performance-counter class
-#   Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory
-# (Windows 10 1709+), which exposes per-adapter dedicated AND shared GPU
-# memory currently in use.  Shared coverage is what makes integrated GPUs
-# report non-zero usage.  psutil has no GPU-memory API, so WMI is used here;
-# there is deliberately NO ctypes / native-Win32 memory code — every RAM /
-# system counter comes from MemorySamplerBase (psutil).
-#
-# The wmi module is optional; the sentinels below are always defined so
-# non-Windows imports never raise NameError.
-# ---------------------------------------------------------------------------
-_wmi_available = False
-_wmi_module = None
-
-if sys.platform == "win32":
-    try:
-        import wmi as _wmi_module  # type: ignore[import]
-
-        _wmi_available = True
-        log.debug("MemorySamplerWinGPU: wmi module loaded — GPU memory metrics (gpu_<index>) enabled.")
-    except ImportError:
-        log.debug(
-            "MemorySamplerWinGPU: wmi module not found "
-            "— GPU memory metrics (gpu_<index>) will be disabled. "
-            "Install it with:  pip install wmi"
-        )
-
-
 class MemorySamplerWinGPU(MemorySamplerBase):
     """
     Windows GPU-aware memory sampler.
@@ -1090,6 +1059,36 @@ class MemorySamplerWinGPU(MemorySamplerBase):
     # reports the shared pool, so integrated GPUs report real usage.
     _GPU_ADAPTER_CLS = "Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory"
 
+    @staticmethod
+    def _import_wmi():
+        """
+        Import and return the optional ``wmi`` module, or ``None`` when it is
+        unavailable (non-Windows platform or package not installed).
+
+        GPU memory is read from the WMI performance-counter class
+        ``Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory``
+        (Windows 10 1709+), which exposes per-adapter dedicated AND shared GPU
+        memory currently in use.  Shared coverage is what makes integrated GPUs
+        report non-zero usage.  psutil has no GPU-memory API, so WMI is used
+        here; there is deliberately NO ctypes / native-Win32 memory code —
+        every RAM / system counter comes from :class:`MemorySamplerBase`
+        (psutil).
+        """
+        if sys.platform != "win32":
+            return None
+        try:
+            import wmi  # type: ignore[import]
+
+            log.debug("MemorySamplerWinGPU: wmi module loaded — GPU memory metrics (gpu_<index>) enabled.")
+            return wmi
+        except ImportError:
+            log.debug(
+                "MemorySamplerWinGPU: wmi module not found "
+                "— GPU memory metrics (gpu_<index>) will be disabled. "
+                "Install it with:  pip install wmi"
+            )
+            return None
+
     def __init__(self, process_id):
         self.process_id = process_id
 
@@ -1109,22 +1108,19 @@ class MemorySamplerWinGPU(MemorySamplerBase):
         self._gpu_poll_min_interval = 1.0
         self._gpu_cache = ()  # last flat (ded_0, shr_0, …) tuple
         self._gpu_last_ts = None  # perf_counter() of last WMI query
-        if _wmi_available:
-            try:
-                self._wmi_conn = _wmi_module.WMI()
-                self._discover_gpu_adapters()
-            except Exception as exc:
-                log.warning(f"MemorySamplerWinGPU: WMI GPU detection failed ({exc}) — gpu_<index> metrics disabled.")
-        else:
-            # MemorySamplerWinGPU is only instantiated when the user explicitly
-            # asks for --memory_sampler win-gpu, so if the optional 'wmi' package
-            # is missing they should be told why GPU metrics are absent — the
-            # import-time notice is only DEBUG level and easily missed.
-            log.warning(
-                "MemorySamplerWinGPU: optional 'wmi' package not installed "
-                "— per-GPU memory metrics (gpu_<index>_ded/shr) are disabled. "
-                "Install it with:  pip install wmi"
+        # MemorySamplerWinGPU is only instantiated when the user explicitly
+        # asks for it (e.g. --memory_sampler win-gpu), so a missing 'wmi'
+        # package means the requested GPU metrics cannot be produced. Fail
+        # loudly rather than silently degrading to a RAM-only sampler.
+        wmi_module = self._import_wmi()
+        if wmi_module is None:
+            raise RuntimeError(
+                "MemorySamplerWinGPU requires the 'wmi' package for per-GPU memory metrics "
+                "(gpu_<index>_ded/shr), but it is not available "
+                f"(platform={sys.platform!r}). Install it with:  pip install wmi"
             )
+        self._wmi_conn = wmi_module.WMI()
+        self._discover_gpu_adapters()
 
         for i in range(len(self._gpu_instances)):
             for pool in ("ded", "shr"):
@@ -1431,6 +1427,18 @@ class MemoryMarkerHandler:
         interval = args.memory_consumption_interval
         report_path = args.memory_consumption_dir
         sampler_type = getattr(args, "memory_sampler", "base")
+
+        # Fail fast, in the main process, when win-gpu is explicitly requested
+        # on Windows but the required 'wmi' package is missing. The sampler
+        # itself runs in a background daemon whose exceptions are caught and
+        # logged there (background_worker), so without this check the benchmark
+        # would silently continue with no GPU metrics. Terminate here instead
+        # so the missing dependency is impossible to miss.
+        if sampler_type == "win-gpu" and sys.platform == "win32" and MemorySamplerWinGPU._import_wmi() is None:
+            raise RuntimeError(
+                "--memory_sampler win-gpu requires the 'wmi' package for per-GPU memory metrics "
+                "(gpu_<index>_ded/shr), but it is not installed. Install it with:  pip install wmi"
+            )
 
         parent_pid = os.getpid()
         self.marker_queue = multiprocessing.Queue(maxsize=1000)
