@@ -48,6 +48,9 @@ struct OPENVINO_GENAI_EXPORTS TalkerResults {
  * The default implementation `Talker` (declared in this header) wraps the
  * existing Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
  *
+ * Pure interface: no data members and no default implementations, so a backend is free to
+ * store (or not store) a default speech config however it likes.
+ *
  * @note This is a preview API and is subject to change.
  */
 class OPENVINO_GENAI_EXPORTS TalkerBase {
@@ -75,32 +78,24 @@ public:
                                    const OmniTalkerSpeechConfig& talker_speech_config,
                                    const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) = 0;
 
-    /// @brief Property-bag convenience wrapper over the typed generate(). `properties` recognizes
-    /// `speech_streamer`, a whole `talker_speech_config`, and the individual `OmniTalkerSpeechConfig`
-    /// fields (`return_audio`, `speaker`, `audio_chunk_frames`, ...). Unrecognized keys throw.
+    /// @brief Property-bag form of generate(). `properties` recognizes `speech_streamer`, a whole
+    /// `talker_speech_config`, and the individual `OmniTalkerSpeechConfig` fields (`return_audio`,
+    /// `speaker`, `audio_chunk_frames`, ...). Unrecognized keys throw.
     ///
-    /// Fields absent from `properties` fall back to the stored default config (`get_speech_config()`);
-    /// recognized entries overlay it. Not virtual — parsing lives here so custom backends get the
-    /// property-bag entry point for free without reimplementing it.
+    /// Fields absent from `properties` fall back to the backend's stored default config
+    /// (`get_speech_config()`); recognized entries overlay it. A backend that recognizes a
+    /// different property set is free to parse `properties` its own way.
     ///
     /// @note `generate(vlm, {})` is ambiguous against the typed overload; pass `ov::AnyMap{}` explicitly.
-    TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties = {});
+    virtual TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) = 0;
 
-    /// @brief Generate against a VLM result and an arbitrary number of ov::Property instances.
-    /// Sugar over the property-bag overload: `generate(vlm, ov::genai::speech_streamer(s))`.
-    template <typename... Properties>
-    ov::util::EnableIfAllStringAny<TalkerResults, Properties...> generate(const VLMDecodedResults& vlm_result,
-                                                                          Properties&&... properties) {
-        return generate(vlm_result, ov::AnyMap{std::forward<Properties>(properties)...});
-    }
-
-    /// @brief Return the talker's stored default speech config. Seeds the property-bag generate()
+    /// @brief Return the backend's stored default speech config. Seeds the property-bag generate()
     /// overload: fields absent from its `properties` fall back to this config.
-    OmniTalkerSpeechConfig get_speech_config() const;
+    virtual OmniTalkerSpeechConfig get_speech_config() const = 0;
 
-    /// @brief Set the talker's stored default speech config (validated).
+    /// @brief Set the backend's stored default speech config.
     /// @throws when `config` fails OmniTalkerSpeechConfig validation.
-    void set_speech_config(const OmniTalkerSpeechConfig& config);
+    virtual void set_speech_config(const OmniTalkerSpeechConfig& config) = 0;
 
     /// @brief List names of speakers exposed by this talker.
     /// Returns an empty vector when the backend does not enumerate named speakers.
@@ -112,11 +107,6 @@ public:
     /// `OmniTalkerSpeechConfig::speaker` (the Tensor alternative of the variant).
     /// @throws when the backend has no named speakers, or `name` doesn't match.
     virtual ov::Tensor get_speaker_embedding(const std::string& name) const = 0;
-
-protected:
-    /// Stored default speech config shared by every backend. The property-bag generate() overlays
-    /// `properties` on top of it; get/set_speech_config() read and write it.
-    OmniTalkerSpeechConfig m_speech_config;
 };
 
 /**
@@ -165,7 +155,18 @@ public:
                            const OmniTalkerSpeechConfig& talker_speech_config,
                            const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
 
-    using TalkerBase::generate;
+    TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties = {}) override;
+
+    /// @brief Generate against a VLM result and an arbitrary number of ov::Property instances.
+    /// Sugar over the property-bag overload: `generate(vlm, ov::genai::speech_streamer(s))`.
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<TalkerResults, Properties...> generate(const VLMDecodedResults& vlm_result,
+                                                                         Properties&&... properties) {
+        return generate(vlm_result, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    OmniTalkerSpeechConfig get_speech_config() const override;
+    void set_speech_config(const OmniTalkerSpeechConfig& config) override;
 
     std::vector<std::string> list_speakers() const override;
     ov::Tensor get_speaker_embedding(const std::string& name) const override;
@@ -173,6 +174,7 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
+    OmniTalkerSpeechConfig m_speech_config;
 };
 
 }  // namespace ov::genai

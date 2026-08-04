@@ -20,7 +20,7 @@ const std::vector<std::string>& omni_talker_speech_config_keys();
 /// @brief Populate fields of `config` from an AnyMap (kwargs-style properties).
 /// Recognized keys: return_audio, speaker, speaker_embedding (legacy alias),
 /// audio_chunk_frames, max_new_tokens, rng_seed, talker_temperature, talker_top_k,
-/// talker_repetition_penalty, cp_temperature, cp_top_k, cp_repetition_penalty.
+/// talker_repetition_penalty, cp_temperature, cp_top_k.
 /// Unrecognized keys are ignored — callers that share the property bag with other
 /// consumers (e.g. OmniPipeline mixes in GenerationConfig keys) rely on this.
 void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::AnyMap& properties);

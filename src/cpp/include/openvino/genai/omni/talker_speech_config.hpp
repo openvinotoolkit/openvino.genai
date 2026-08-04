@@ -101,10 +101,6 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// @brief CodePredictor top-k override (must be >= 1 when set).
     /// Checkpoint default from `generation_config.json -> cp_top_k` if present.
     std::optional<std::size_t> cp_top_k;
-
-    /// @brief CodePredictor repetition penalty override (must be > 0 when set; 1.0 = no penalty).
-    /// Checkpoint default from `generation_config.json -> cp_repetition_penalty` if present.
-    std::optional<float> cp_repetition_penalty;
 };
 
 }  // namespace genai

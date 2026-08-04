@@ -2982,11 +2982,10 @@ class OmniTalkerSpeechConfig:
         :type talker_top_k: int | None
         :type talker_repetition_penalty: float | None
     
-        :param cp_temperature, cp_top_k, cp_repetition_penalty: CodePredictor sampling
+        :param cp_temperature, cp_top_k: CodePredictor sampling
             overrides. Same semantics as talker_*.
         :type cp_temperature: float | None
         :type cp_top_k: int | None
-        :type cp_repetition_penalty: float | None
     """
     return_audio: bool
     @typing.overload
@@ -3002,12 +3001,6 @@ class OmniTalkerSpeechConfig:
         ...
     @audio_chunk_frames.setter
     def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def cp_repetition_penalty(self) -> float | None:
-        ...
-    @cp_repetition_penalty.setter
-    def cp_repetition_penalty(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def cp_temperature(self) -> float | None:
@@ -4521,21 +4514,22 @@ class TalkerBase:
     """
     Abstract speech-output backend for OmniPipeline.
     
-            Subclass to plug a custom talker into OmniPipeline. The default implementation
-            is Talker. Subclasses must override generate(), list_speakers(), and
+            Pure interface with no storage of its own. Subclass to plug a custom talker into
+            OmniPipeline; the default implementation is Talker. Subclasses must override
+            generate(), get_speech_config(), set_speech_config(), list_speakers(), and
             get_speaker_embedding().
     """
     def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
         ...
     def get_speech_config(self) -> OmniTalkerSpeechConfig:
         """
-        Return the talker's stored default OmniTalkerSpeechConfig.
+        Return the backend's stored default OmniTalkerSpeechConfig.
         """
     def list_speakers(self) -> list[str]:
         ...
     def set_speech_config(self, config: OmniTalkerSpeechConfig) -> None:
         """
-        Set the talker's stored default OmniTalkerSpeechConfig (validated).
+        Set the backend's stored default OmniTalkerSpeechConfig (validated).
         """
 class TalkerPerfMetrics:
     """

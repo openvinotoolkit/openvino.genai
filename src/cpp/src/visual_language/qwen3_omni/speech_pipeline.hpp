@@ -53,10 +53,9 @@ struct Qwen3OmniSpeechConfig {
     std::vector<int64_t> talker_suppress_tokens;
 
     // CodePredictor sampling parameters (defaults match reference Qwen3-Omni;
-    // overridable via generation_config.json keys: cp_temperature, cp_top_k, cp_repetition_penalty)
+    // overridable via generation_config.json keys: cp_temperature, cp_top_k)
     float cp_temperature = 1.0f;
     size_t cp_top_k = 50;
-    float cp_repetition_penalty = 1.0f;
 
     /// @brief Initialize from VLMConfig.
     static Qwen3OmniSpeechConfig from_vlm_config(const VLMConfig& config);
