@@ -123,10 +123,8 @@ void update_npu_config_qwen3_asr(ov::AnyMap& config,
                                  const ov::genai::utils::KVAxesPosition& kv_pos,
                                  const ov::genai::utils::KVDesc& kv_desc) {
     update_config(config, {"NPU_USE_NPUW", "YES"});
-    update_config(config, {"NPUW_FUNCALL_FOR_ALL", "NO"});
-    update_config(config, {"NPUW_ONLINE_PIPELINE", "NONE"});
-    update_config(config, {"NPUW_FOLD", "NO"});
     update_config(config, {"NPUW_LLM", "YES"});
+    update_config(config, {"NPUW_DUMP_SUBS", "MIN"});
     update_config(config, {"NPUW_QWEN3_ASR", "YES"});
 
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
@@ -627,6 +625,7 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 }
 
 bool env_setup_for_print_debug_info() {
+    return true;
     // Specify the name of the environment variable
     const char* env_var_name = "OPENVINO_LOG_LEVEL";
     const char* env_var_value = std::getenv(env_var_name);
