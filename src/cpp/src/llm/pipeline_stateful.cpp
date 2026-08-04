@@ -387,8 +387,8 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    // Resolved before the alignment block so the negotiation can validate the
-    // response budget, and the turn guard snapshots history before it grows.
+    // The turn guard must arm before the alignment block so it snapshots the
+    // history before this turn grows it.
     GenerationConfig config = resolve_generation_config(generation_config);
     NPUTurnGuard npu_turn_guard(*this);
 
@@ -561,7 +561,7 @@ void StatefulLLMPipeline::start_chat(const std::string& system_message) {
     m_history.push_back({{"role", "system"}, {"content", system_message}});
 }
 
-void StatefulLLMPipeline::init_npu_continuous_prefill(ov::CompiledModel& compiled_model) {
+void StatefulLLMPipeline::init_npu_continuous_prefill(const ov::CompiledModel& compiled_model) {
     // The capability must come from the read-only property. It must not be probed by
     // looking for npuw_stored_tokens_state in query_state(), because every existing
     // plugin build publishes that state and would give a false positive. A plugin
@@ -597,13 +597,20 @@ void StatefulLLMPipeline::negotiate_npu_history_reuse(size_t full_history_len, c
         "Stateful LLM pipeline on NPU may only process prompts or hold chat history up to ",
         m_max_prompt_len, " tokens. ", full_history_len,
         " is passed.\n Set the \"MAX_PROMPT_LEN\" config option to increase the limit.");
-    // The final sampled token is returned without being fed through the model and has
-    // no KV entry, hence the minus one on the response budget.
-    const size_t response_budget = std::max<size_t>(config.get_max_new_tokens(full_history_len), 1u);
-    OPENVINO_ASSERT(full_history_len + response_budget - 1 <= m_kv_cache_capacity,
-        "The requested history of ", full_history_len, " tokens plus the response budget of ",
-        response_budget, " tokens does not fit into the NPU KV cache capacity of ",
-        m_kv_cache_capacity, " tokens.");
+    // The response budget is validated only when the caller bounded it explicitly.
+    // The default config leaves both max_new_tokens and max_length unbounded, which
+    // means "generate until EOS": there is no requested budget to validate, and the
+    // decoding loop caps generation against the KV capacity exactly as it does
+    // without continuation.
+    if (config.max_new_tokens != SIZE_MAX || config.max_length != SIZE_MAX) {
+        // The final sampled token is returned without being fed through the model and
+        // has no KV entry, hence the minus one on the response budget.
+        const size_t response_budget = std::max<size_t>(config.get_max_new_tokens(full_history_len), 1u);
+        OPENVINO_ASSERT(full_history_len + response_budget - 1 <= m_kv_cache_capacity,
+            "The requested history of ", full_history_len, " tokens plus the response budget of ",
+            response_budget, " tokens does not fit into the NPU KV cache capacity of ",
+            m_kv_cache_capacity, " tokens.");
+    }
 
     auto& state = m_cache_state.get_state();
     const size_t k_common = state.size();
