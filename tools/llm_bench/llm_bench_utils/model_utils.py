@@ -134,18 +134,11 @@ def read_wav(filepath, sampling_rate):
 
 
 def resolve_model_dir(model_path: str | Path) -> Path:
-    # Accepts a model directory or a path to an OpenVINO .xml; returns the dir holding the model.
+    # Accepts a model dir or a path to an OpenVINO .xml; returns the dir holding the model.
     p = Path(model_path)
-    if p.is_dir():
-        return p
-    if not p.name.endswith("xml"):
-        return p
-    if (p.parent / "config.json").is_file():
-        return p.parent
-    try:
+    if p.name.endswith("xml"):
         return p.parents[2]
-    except IndexError:
-        return p.parent
+    return p
 
 
 def set_default_param_for_ov_config(ov_config):
