@@ -62,9 +62,6 @@ ContinuousBatchingPipeline::MtpDecodingImpl::MtpDecodingImpl(const ov::genai::Mo
     m_inputs_embedder = inputs_embedder;
     m_model_input_type = ModelInputType::EMBEDDINGS;
 
-    // Strip exporter f32->bf16->f32 KV-cache round trips before PA conversion.
-    utils::mtp::remove_roundtrip_converts(draft_model);
-
     // PA conversion must precede the MTP lm_head graft.
     bool allow_score_aggregation = true;
     bool allow_xattention = false;

@@ -29,9 +29,6 @@ ov::Output<ov::Node> extract_tied_lm_head_weight(const std::shared_ptr<ov::Model
 // Newer optimum-intel exports no longer emit this output, so MTP must graft it back.
 void expose_last_hidden_state(const std::shared_ptr<ov::Model>& model);
 
-// Remove no-op Convert<T>(Convert<U>(x)) pairs that block PA conversion in current MTP exports.
-void remove_roundtrip_converts(const std::shared_ptr<ov::Model>& model);
-
 // Add logits = MatMul(last_hidden_state, cloned main lm_head weight).
 void graft_lm_head_on_mtp(std::shared_ptr<ov::Model>& mtp_model, const std::shared_ptr<ov::Model>& main_model);
 
