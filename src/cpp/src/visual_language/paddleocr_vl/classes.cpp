@@ -103,11 +103,12 @@ std::pair<ov::Tensor, ov::Tensor> vision_rope(size_t h, size_t w, size_t vision_
     ov::Tensor sin_t(ov::element::f32, ov::Shape{num, vision_head_dim});
     float* cos_data = cos_t.data<float>();
     float* sin_data = sin_t.data<float>();
+    // First `dim` entries: [hpos freqs (half) | wpos freqs (half)], then repeated to fill vision_head_dim.
+    // Allocate once and overwrite per grid position to avoid a heap allocation on every iteration.
+    std::vector<float> base(dim);
     for (size_t idx = 0; idx < num; ++idx) {
         size_t hpos = idx / w;
         size_t wpos = idx % w;
-        // First `dim` entries: [hpos freqs (half) | wpos freqs (half)], then repeated to fill vision_head_dim.
-        std::vector<float> base(dim);
         for (size_t k = 0; k < half; ++k) {
             base[k] = static_cast<float>(hpos) * inv_freq[k];
             base[half + k] = static_cast<float>(wpos) * inv_freq[k];
