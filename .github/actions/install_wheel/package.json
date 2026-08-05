@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "author": "OpenVINO Developers",
   "private": true,
+  "type": "module",
   "keywords": [
     "GitHub",
     "Actions",
@@ -26,8 +27,8 @@
     "glob": "^13.0.6"
   },
   "devDependencies": {
-    "@vercel/ncc": "^0.38.3",
-    "prettier": "^3.5.0"
+    "@vercel/ncc": "^0.44.1",
+    "prettier": "^3.9.6"
   },
   "license": "Apache-2.0"
 }

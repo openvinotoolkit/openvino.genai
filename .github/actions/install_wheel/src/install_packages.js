@@ -1,10 +1,10 @@
-const core = require('@actions/core');
-const glob = require('glob');
-const path = require('path');
-const { exec } = require('child_process');
-const util = require('util');
+import * as core from '@actions/core';
+import { glob } from 'glob';
+import path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-const execAsync = util.promisify(exec);
+const execAsync = promisify(exec);
 
 async function getPythonVersion() {
   const { stdout } = await execAsync('python --version');
@@ -31,7 +31,7 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
   // Resolve local wheels
   const localWheels = {};
   if (localWheelDir) {
-    const wheels = glob.sync(path.posix.join(localWheelDir, '*.whl'));
+    const wheels = await glob(path.posix.join(localWheelDir, '*.whl'));
     core.debug(`Found wheels: ${wheels}`);
     for (const whl of wheels) {
       const packageName = path.basename(whl).split('-')[0];
