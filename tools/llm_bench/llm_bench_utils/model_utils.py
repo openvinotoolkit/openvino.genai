@@ -133,7 +133,8 @@ def read_wav(filepath, sampling_rate):
     return raw_speech[0]
 
 
-def resolve_model_dir(model_path):
+def resolve_model_dir(model_path: str | Path) -> Path:
+    # Accepts a model directory or a path to an OpenVINO .xml; returns the dir holding the model.
     p = Path(model_path)
     if p.is_dir():
         return p
