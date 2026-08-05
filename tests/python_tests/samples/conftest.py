@@ -197,6 +197,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
+    "tiny-random-qwen3-vl-layer10": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-layer10",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-qwen3-vl-eagle3": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
 }
 
 TEST_FILES = {
@@ -339,13 +347,11 @@ def optimum_cli_convert(model, model_path):
         logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
 
-@pytest.fixture(scope="session")
-def convert_model(request):
-    """Fixture to convert the model once for the session."""
-    model_id = request.param
+
+def _prepare_model_for_tests(model_id: str):
     model = MODELS[model_id]
     model_name = model["name"]
-    
+
     if "gguf_filename" in model:
         downloaded_models_dir = get_ov_cache_downloaded_models_dir()
         model_cache = downloaded_models_dir / model_id
@@ -353,14 +359,15 @@ def convert_model(request):
         gguf_file_path = model_path / model["gguf_filename"]
         logger.info(f"Preparing GGUF model: {model_name}")
         download_gguf_model(model, str(model_path))
-        yield str(gguf_file_path)
-    elif not model["convert_args"]:
+        return str(gguf_file_path), model_cache
+
+    if not model["convert_args"]:
         downloaded_models_dir = get_ov_cache_downloaded_models_dir()
         model_cache = downloaded_models_dir / model_id
         model_path = model_cache / model_name
         logger.info(f"Downloading pre-converted model: {model_name}")
         manager = AtomicDownloadManager(model_path)
-        
+
         def download_to_temp(temp_path: Path) -> None:
             sub_env = os.environ.copy()
             command = [get_hf_cli_command(), "download", model_name, "--local-dir", str(temp_path)]
@@ -372,14 +379,33 @@ def convert_model(request):
             )
 
         manager.execute(download_to_temp)
-        yield str(model_path)
-    else:
-        converted_models_dir = get_ov_cache_converted_models_dir()
-        model_cache = converted_models_dir / model_id
-        model_path = model_cache / model_name
-        logger.info(f"Preparing model: {model_name}")
-        optimum_cli_convert(model, str(model_path))
-        yield str(model_path)
+        return str(model_path), model_cache
+
+    converted_models_dir = get_ov_cache_converted_models_dir()
+    model_cache = converted_models_dir / model_id
+    model_path = model_cache / model_name
+    logger.info(f"Preparing model: {model_name}")
+    optimum_cli_convert(model, str(model_path))
+    return str(model_path), model_cache
+
+
+@pytest.fixture(scope="session")
+def convert_model(request):
+    """Fixture to convert the model once for the session."""
+    model_path, model_cache = _prepare_model_for_tests(request.param)
+    yield model_path
+
+    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
+        if model_cache.exists():
+            logger.info(f"Removing cached model: {model_cache}")
+            shutil.rmtree(model_cache)
+
+
+@pytest.fixture(scope="session")
+def convert_draft_model(request):
+    """Fixture to convert a draft model once for the session."""
+    model_path, model_cache = _prepare_model_for_tests(request.param)
+    yield model_path
 
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if model_cache.exists():

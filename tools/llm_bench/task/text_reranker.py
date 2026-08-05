@@ -23,6 +23,34 @@ from typing import Any
 
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
+# according to transformers Qwen3-Reranker-0.6B model card:
+# https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
+QWEN3_RERANKER_PREFIX = (
+    "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the "
+    'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+)
+QWEN3_RERANKER_SUFFIX = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+QWEN3_RERANKER_TASK = "Given a web search query, retrieve relevant passages that answer the query"
+
+
+def build_qwen3_query(input_text: str) -> str:
+    return f"{QWEN3_RERANKER_PREFIX}<Instruct>: {QWEN3_RERANKER_TASK}\n<Query>: {input_text}\n<Document>: "
+
+
+def build_qwen3_documents(texts: list) -> list:
+    return [f"{doc}{QWEN3_RERANKER_SUFFIX}" for doc in texts]
+
+
+def build_qwen3_pairs(input_text: str, texts: list) -> list:
+    query = build_qwen3_query(input_text)
+    return [f"{query}{doc}" for doc in build_qwen3_documents(texts)]
+
+
+def tokenize_qwen3(tokenizer, pairs: list, max_length: int):
+    return tokenizer(
+        pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side="left"
+    )
+
 
 class TextRerankerOptimum(CommonPipeline):
     def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path, mem_consumption_meter):
@@ -38,21 +66,10 @@ class TextRerankerOptimum(CommonPipeline):
         if self.max_length is None:
             self.max_length = UseCaseTextReranker.get_default_max_length(self.model.config)
 
-    # according to transformers Qwen3-Embedding-0.6B model card:
-    # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
     @execution_time_in_sec
     def tokenize_qwen(self, input_text):
-        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
-                 + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
-        suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-        task = "Given a web search query, retrieve relevant passages that answer the query"
-        pairs = []
-        for doc in self.texts:
-            pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
-        inputs = self.tokenizer(
-            pairs, padding=True, truncation=True, max_length=self.max_length, return_tensors="pt", padding_side="left"
-        )
-        return inputs
+        pairs = build_qwen3_pairs(input_text, self.texts)
+        return tokenize_qwen3(self.tokenizer, pairs, self.max_length)
 
     @execution_time_in_sec
     def tokenize(self, input_text: str, **kwargs):
@@ -228,24 +245,37 @@ class TextRerankerGenAI(CommonPipeline):
         self.top_n = args.get("rerank_top_n")
 
         self.max_length = args.get("rerank_max_length")
-        if self.max_length is None:
-            try:
-                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
-            except Exception:
-                model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+        try:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+        except Exception:
+            model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
 
+        if self.max_length is None:
             self.max_length = UseCaseTextReranker.get_default_max_length(model_config)
+
+        self._is_qwen3 = UseCaseTextReranker.is_qwen3(model_config)
+
+        if self._is_qwen3:
+            self.text_processed = build_qwen3_documents(self.texts)
+        else:
+            self.text_processed = self.texts
+
+    def tokenize_qwen(self, input_text: str):
+        pairs = build_qwen3_pairs(input_text, self.texts)
+        inputs = tokenize_qwen3(self.tokenizer, pairs, self.max_length)
+        input_tokens = inputs["input_ids"] if "input_ids" in inputs else inputs
+        return input_tokens
 
     def tokenize(self, input_text: str, **kwargs):
         tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": self.max_length}
         inputs = [input_text] * len(self.texts)
-        input_data = self.tokenizer(inputs, return_tensors="pt", **tokenizer_kwargs)
+        input_data = self.tokenizer(inputs, self.texts, return_tensors="pt", **tokenizer_kwargs)
         input_tokens = input_data["input_ids"] if "input_ids" in input_data else input_data
         return input_tokens
 
     @execution_time_in_sec
-    def generate(self, input_data: Any, **kwargs):
-        return self.model.rerank(input_data, self.texts)
+    def generate(self, query: str, **kwargs):
+        return self.model.rerank(query, self.text_processed)
 
     def print_generated(self, iter_num: int, generation_result: Any, prompt_idx: int):
         iter_str = "warm-up" if iter_num == 0 else f"{iter_num}"
@@ -331,12 +361,17 @@ class TextRerankerGenAI(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
-        tokenized_input = self.tokenize(input_text)
+        if self._is_qwen3:
+            tokenized_input = self.tokenize_qwen(input_text)
+            query = build_qwen3_query(input_text)
+        else:
+            tokenized_input = self.tokenize(input_text)
+            query = input_text
         input_token_size = tokenized_input[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
 
         self.mem_consumption_meter.start(iter_num)
-        generation_result, generation_time = self.generate(input_text)
+        generation_result, generation_time = self.generate(query)
         memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
