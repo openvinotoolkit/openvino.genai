@@ -831,14 +831,15 @@ def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_data
     "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_beam_search(model_descr, sample_from_dataset, pipeline_type):
-    # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
-    # ticket: 167239
+@pytest.mark.parametrize("return_timestamps", [False, True])
+def test_beam_search(model_descr, sample_from_dataset, pipeline_type, return_timestamps):
+    # Cut to 30 seconds to keep this regression focused and limit CI cost.
     sample_from_dataset = sample_from_dataset[: 30 * 16000]
     _, _, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
     config_cls = get_config_cls(pipeline_type)
     generation_config = config_cls(
         num_beams=2,
+        return_timestamps=return_timestamps,
     )
 
     genai_result = run_genai(genai_pipe, sample_from_dataset, generation_config)
