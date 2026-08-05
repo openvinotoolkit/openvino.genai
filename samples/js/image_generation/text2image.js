@@ -1,31 +1,11 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
-import bmp from "bmp-js";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
 import { Text2ImagePipeline } from "openvino-genai-node";
-
-function toABGR(tensor) {
-  const [_, height, width, channels] = tensor.getShape();
-  if (channels !== 3) {
-    throw new Error(`Expected RGB image tensor, got ${channels} channels.`);
-  }
-
-  const rgb = tensor.data instanceof Uint8Array ? tensor.data : Uint8Array.from(tensor.data);
-  const rgba = Buffer.allocUnsafe(width * height * 4);
-
-  for (let src = 0, dst = 0; src < rgb.length; src += 3, dst += 4) {
-    rgba[dst] = 255;              // A
-    rgba[dst + 1] = rgb[src + 2]; // B
-    rgba[dst + 2] = rgb[src + 1]; // G
-    rgba[dst + 3] = rgb[src];     // R
-  }
-
-  return { height, width, rgba };
-}
+import { saveAsBMP } from "../image_utils.js";
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
@@ -69,9 +49,7 @@ async function main() {
     },
   );
 
-  const { height, width, rgba } = toABGR(imageTensor);
-  const bmpData = bmp.encode({ width, height, data: rgba });
-  await writeFile("image.bmp", bmpData.data);
+  await saveAsBMP("image.bmp", imageTensor);
 }
 
 main().catch((error) => {

@@ -1,15 +1,12 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import fs from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename } from "node:path";
 import readline from "node:readline/promises";
-import { addon as ov } from "openvino-node";
-import jpegJs from "jpeg-js";
-import { PNG } from "pngjs";
 import { ChatHistory, VLMPipeline } from "openvino-genai-node";
 import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
+import { readImages } from "../image_utils.js";
 
 /**
  * Streams text chunks to stdout as they are generated.
@@ -18,65 +15,6 @@ import yargs from "yargs/yargs";
  */
 function streamer(chunk) {
     process.stdout.write(chunk);
-}
-
-/**
- * Reads one image file and converts it to an OpenVINO tensor in HWC RGB layout.
- * Uses jpeg-js (JPEG) and pngjs (PNG) to produce pixel values equivalent to PIL Image.open().convert("RGB").
- * @param {string} filePath - Path to a .jpg/.jpeg or .png file.
- * @returns {Promise<ov.Tensor>} Tensor with shape [height, width, 3] and type u8.
- */
-async function readImage(filePath) {
-    const buffer = await fs.readFile(filePath);
-    const ext = extname(filePath).toLowerCase();
-
-    let width, height, rgbaData;
-    if (ext === ".jpg" || ext === ".jpeg") {
-        ({ width, height, data: rgbaData } = jpegJs.decode(buffer, { useTArray: true }));
-    } else if (ext === ".png") {
-        ({ width, height, data: rgbaData } = PNG.sync.read(buffer));
-    } else {
-        throw new Error(`Unsupported image format: ${ext}`);
-    }
-
-    const pixelCount = width * height;
-    const rgb = new Uint8Array(pixelCount * 3);
-    for (let i = 0; i < pixelCount; i++) {
-        rgb[i * 3] = rgbaData[i * 4];
-        rgb[i * 3 + 1] = rgbaData[i * 4 + 1];
-        rgb[i * 3 + 2] = rgbaData[i * 4 + 2];
-    }
-
-    const tensor = new ov.Tensor("u8", [height, width, 3], rgb);
-    tensor._buffer = rgb; // prevent GC from collecting the backing buffer
-    return tensor;
-}
-
-/**
- * Reads one image or all images from a directory and converts them to tensors.
- * @param {string} path - File path or directory path containing images.
- * @returns {Promise<ov.Tensor[]>} List of image tensors sorted by filename.
- */
-async function readImages(path) {
-    const stat = await fs.stat(path);
-    if (!stat.isDirectory()) {
-        return [await readImage(path)];
-    }
-
-    const supportedExtensions = new Set([".jpg", ".jpeg", ".png"]);
-    const entries = await fs.readdir(path, { withFileTypes: true });
-    const files = entries
-        .filter((entry) => entry.isFile() && supportedExtensions.has(extname(entry.name).toLowerCase()))
-        .map((entry) => join(path, entry.name));
-
-    files.sort((a, b) => a.localeCompare(b));
-
-    const tensors = [];
-    for (const file of files) {
-        tensors.push(await readImage(file));
-    }
-
-    return tensors;
 }
 
 /**

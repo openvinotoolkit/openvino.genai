@@ -284,7 +284,12 @@ def generate_tiny_g2p_model(output_dir: Path) -> Path:
 
     model = BartForConditionalGeneration(config)
     model.eval()
-    model.save_pretrained(str(output_dir))
+
+    # Use PyTorch .bin instead of safetensors here. For some reason,
+    # safetensors serialization can fail in CI trying to write to the
+    # mounted cache path.
+    config.save_pretrained(str(output_dir))
+    torch.save(model.state_dict(), output_dir / "pytorch_model.bin")
 
     generation_config = {
         "_from_model_config": True,

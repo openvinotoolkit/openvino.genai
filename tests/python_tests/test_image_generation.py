@@ -10,6 +10,7 @@ from utils.constants import NPUW_CPU_PROPERTIES
 from utils.ov_genai_pipelines import should_skip_npuw_tests
 
 FLUX_MODEL_ID = "tiny-random-flux"
+FLUX2_KLEIN_MODEL_ID = "tiny-random-flux.2-klein"
 SD3_MODEL_ID = "tiny-random-sd3"
 SDXL_MODEL_ID = "tiny-random-sdxl"
 
@@ -165,6 +166,22 @@ class TestImageGenerationCallback:
         assert image is not None
 
 
+    def test_callback_exception_does_not_crash(self, image_generation_model):
+        # Regression test for: crash when generate() throws while a callback thread is running.
+        # Destroying a joinable std::thread calls std::terminate(); the fix adds a destructor
+        # to ThreadedCallbackWrapper that calls end() to join the thread before destruction.
+        def callback(step, num_steps, latent):
+            return False
+
+        # Pass a tensor with wrong element type (f16 instead of u8) to trigger an exception
+        # inside generate() while the callback thread is alive.
+        wrong_type_image = ov.Tensor(np.zeros((1, 64, 64, 3), dtype=np.float16))
+
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+        with pytest.raises(Exception):
+            pipe.generate("test prompt", wrong_type_image, callback=callback, num_inference_steps=2)
+
+
 class TestTaylorSeerImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
     def test_flux_text2image_taylorseer_with_callback(self, image_generation_model):
@@ -246,3 +263,211 @@ class TestImageGenerationOnNpuByNpuwCpu:
 
         assert cpu_image.data.shape == imported_npuw_image.data.shape
         assert (cpu_image.data == imported_npuw_image.data).all()
+
+
+class TestImageGenerationWithBlobTensorModels:
+    def _construct_reshaped(self, model_dir):
+        pipe = ov_genai.Text2ImagePipeline(model_dir)
+        pipe.reshape(
+            num_images_per_prompt=1, height=64, width=64, guidance_scale=pipe.get_generation_config().guidance_scale
+        )
+        pipe.compile("CPU")
+        return pipe
+
+    def _get_generation_args(self):
+        return {
+            "prompt": "Will Smith eating spaghetti",
+            "num_inference_steps": 5,
+            "rng_seed": 69,
+            "width": 64,
+            "height": 64,
+            "num_images_per_prompt": 1,
+        }
+
+    def _read_blob_tensor(self, blob_dir, model_folder):
+        from pathlib import Path
+
+        blob_path = Path(blob_dir) / model_folder / "openvino_model.blob"
+        try:
+            with open(blob_path, "rb") as file:
+                binary_data = file.read()
+            return ov.Tensor(np.frombuffer(binary_data, dtype=np.uint8))
+        except Exception as e:
+            raise RuntimeError(f"Failed to read blob tensor from {blob_path}: {e}")
+
+    def _read_tokenizer(self, model_dir, tokenizer_name="tokenizer"):
+        tokenizer_path = model_dir / tokenizer_name
+        try:
+            return ov_genai.Tokenizer(str(tokenizer_path))
+        except Exception as e:
+            raise RuntimeError(f"Failed to read tokenizer from {tokenizer_path}: {e}")
+
+    def _load_blob_pipeline(self, model_dir, blob_dir):
+        from pathlib import Path
+
+        model_dir = Path(model_dir)
+        # This test case only supports text2image pipelines.
+        tokenizer = self._read_tokenizer(model_dir)
+        tokenizer_2 = self._read_tokenizer(model_dir, tokenizer_name="tokenizer_2")
+        text_encoder_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder")
+        text_encoder_2_blob_tensor = self._read_blob_tensor(blob_dir, "text_encoder_2")
+        unet_blob_tensor = self._read_blob_tensor(blob_dir, "unet")
+        vae_decoder_blob_tensor = self._read_blob_tensor(blob_dir, "vae_decoder")
+
+        text_encoder = ov_genai.CLIPTextModel(
+            text_encoder_blob_tensor,
+            ov_genai.CLIPTextModel.Config(model_dir / "text_encoder" / "config.json"),
+            tokenizer,
+            "CPU",
+        )
+
+        text_encoder_2 = ov_genai.CLIPTextModelWithProjection(
+            text_encoder_2_blob_tensor,
+            ov_genai.CLIPTextModelWithProjection.Config(model_dir / "text_encoder_2" / "config.json"),
+            tokenizer_2,
+            "CPU",
+        )
+
+        vae = ov_genai.AutoencoderKL(
+            vae_decoder_blob_tensor,
+            ov_genai.AutoencoderKL.Config(model_dir / "vae_decoder" / "config.json"),
+            "CPU",
+        )
+
+        unet = ov_genai.UNet2DConditionModel(
+            unet_blob_tensor,
+            ov_genai.UNet2DConditionModel.Config(model_dir / "unet" / "config.json"),
+            vae.get_vae_scale_factor(),
+            "CPU",
+        )
+
+        blob_pipe = ov_genai.Text2ImagePipeline.stable_diffusion_xl(
+            scheduler=ov_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
+            clip_text_model=text_encoder,
+            clip_text_model_with_projection=text_encoder_2,
+            unet=unet,
+            vae=vae,
+        )
+
+        return blob_pipe
+
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_text2image_pipeline_with_blob_tensor_models(self, image_generation_model, tmp_path):
+        blob_dir = tmp_path / "blob_model"
+        generation_args = self._get_generation_args()
+
+        general_pipe = self._construct_reshaped(image_generation_model)
+        general_image = general_pipe.generate(**generation_args)
+        general_pipe.export_model(blob_dir)
+
+        blob_pipe = self._load_blob_pipeline(image_generation_model, blob_dir)
+        blob_image = blob_pipe.generate(**generation_args)
+
+        assert general_image.data.shape == blob_image.data.shape
+        assert (general_image.data == blob_image.data).all()
+
+
+class TestFlux2KleinImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_text2image(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_text2image_with_callback(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            callback=callback,
+        )
+
+        assert len(callback_calls) > 0, "Callback should be called at least once"
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_image2image(self, image_generation_model):
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        input_image = get_random_image()
+
+        image = pipe.generate(
+            "test prompt",
+            input_image,
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_image2image_with_callback(self, image_generation_model):
+        pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        input_image = get_random_image()
+
+        image = pipe.generate(
+            "test prompt",
+            input_image,
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            callback=callback,
+        )
+
+        assert len(callback_calls) > 0, "Callback should be called at least once"
+        assert image is not None
+
+
+class TestPNDMScheduler:
+    @pytest.mark.parametrize("image_generation_model", [SDXL_MODEL_ID], indirect=True)
+    def test_text2image_pndm_single_step(self, image_generation_model, tmp_path):
+        import os
+        import json
+
+        scheduler_config = os.path.join(image_generation_model, "scheduler", "scheduler_config.json")
+        with open(scheduler_config) as f:
+            config = json.load(f)
+        config["skip_prk_steps"] = True
+
+        patched_config = str(tmp_path / "scheduler_config.json")
+        with open(patched_config, "w") as f:
+            json.dump(config, f)
+
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+        pipe.set_scheduler(ov_genai.Scheduler.from_config(patched_config, ov_genai.Scheduler.Type.PNDM))
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=1,
+        )
+
+        assert image is not None

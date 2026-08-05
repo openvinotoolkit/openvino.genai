@@ -94,9 +94,10 @@ ov::Tensor get_cu_window_seqlens(const std::vector<int32_t>& cu_window_seqlens) 
 InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config) :
-    InputsEmbedderQwen2VL(vlm_config, model_dir, device, device_config) {}
+    InputsEmbedderQwen2VL(vlm_config, model_dir, tokenizer, device, device_config) {}
 
 InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
     const VLMConfig& vlm_config,

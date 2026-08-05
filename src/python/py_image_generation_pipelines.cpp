@@ -283,6 +283,8 @@ void init_t5_encoder_model(py::module_& m);
 void init_unet2d_condition_model(py::module_& m);
 void init_sd3_transformer_2d_model(py::module_& m);
 void init_flux_transformer_2d_model(py::module_& m);
+void init_flux2_transformer_2d_model(py::module_& m);
+void init_qwen3_text_encoder(py::module_& m);
 void init_autoencoder_kl(py::module_& m);
 
 void init_image_generation_pipelines(py::module_& m) {
@@ -312,6 +314,8 @@ void init_image_generation_pipelines(py::module_& m) {
     init_unet2d_condition_model(m);
     init_sd3_transformer_2d_model(m);
     init_flux_transformer_2d_model(m);
+    init_flux2_transformer_2d_model(m);
+    init_qwen3_text_encoder(m);
     init_autoencoder_kl(m);
 
     auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");

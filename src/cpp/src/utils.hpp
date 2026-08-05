@@ -6,8 +6,10 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <tuple>
 #include <cstdint>
 
+#include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -26,29 +28,6 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
-struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
-
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
-              const std::string& device = {},
-              const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
-        device(device),
-        properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-    
-    ModelDesc() = default;
-};
 }  // namespace genai
 }  // namespace ov
 
@@ -78,6 +57,19 @@ struct GenerationFinishInfo
     GenerationStatus streaming_finish_status;
 };
 
+// A request finishes with GenerationStatus::IGNORED when the scheduler could not fit it within
+// the available cache budget (out of memory) - this can happen for the prompt or later during
+// generation under overall cache pressure. Call sites that discard GenerationStatus (and would
+// otherwise return an empty result) should use this to surface an actionable error instead.
+// request_id identifies which request was dropped when several are generated together.
+inline void assert_request_was_scheduled(GenerationStatus status, uint64_t request_id) {
+    OPENVINO_ASSERT(status != GenerationStatus::IGNORED,
+                    "Request ", request_id, " was dropped by the scheduler because it did not fit in the "
+                    "available cache budget (out of memory). Increase cache_size / num_kv_blocks, reduce the "
+                    "prompt or generation length, or for hybrid (linear-attention) models raise "
+                    "cache_interval_multiplier to lower per-token cache usage.");
+}
+
 Tensor init_attention_mask(const Tensor& position_ids);
 
 void initialize_position_ids(ov::Tensor& position_ids, const ov::Tensor& attention_mask, int64_t start_pos = 0);
@@ -106,12 +98,14 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 }
 
 const std::string STREAMER_ARG_NAME = "streamer";
+const std::string AUDIO_STREAMER_ARG_NAME = "audio_streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
 const std::string EXTENSIONS_ARG_NAME = "extensions";
 const std::string IMAGES_BATCHES_ARG_NAME = "images_batches";
 const std::string VIDEOS_BATCHES_ARG_NAME = "videos_batches";
 const std::string VIDEOS_METADATA_BATCHES_ARG_NAME = "videos_metadata_batches";
+const std::string AUDIOS_BATCHES_ARG_NAME = "audios_batches";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -120,12 +114,9 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
 }
 
 ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
+ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map);
 
 ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
-
-ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
-
-ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
@@ -134,6 +125,8 @@ ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::Token
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
 void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
+
+std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<ov::Model>& model);
 
 ov::Core& singleton_core();
 
@@ -261,6 +254,8 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const ov::AnyMap& config,
                                                                             const KVAxesPosition& kv_pos,
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
+
+size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
@@ -398,6 +393,13 @@ std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_prope
  * @brief Imports a compiled model from a blob file previously exported using export_model.
  */
 ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties);
+
+/**
+ * @brief Imports a compiled model from a blob tensor previously exported using export_model and read into an ov::Tensor.
+ */
+ov::CompiledModel import_model(const ov::Tensor& blob_tensor,
                                const std::string& device,
                                const ov::AnyMap& properties);
 

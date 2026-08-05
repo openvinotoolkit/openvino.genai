@@ -18,7 +18,8 @@ Napi::Function WhisperPerfMetricsWrapper::get_class(Napi::Env env) {
         InstanceMethod("getFeaturesExtractionDuration", &WhisperPerfMetricsWrapper::get_features_extraction_duration));
     properties.push_back(InstanceMethod("getWordLevelTimestampsProcessingDuration",
                                         &WhisperPerfMetricsWrapper::get_word_level_timestamps_processing_duration));
-    properties.push_back(InstanceAccessor<&WhisperPerfMetricsWrapper::get_whisper_raw_metrics>("whisperRawMetrics"));
+    properties.push_back(
+        InstanceAccessor("whisperRawMetrics", &WhisperPerfMetricsWrapper::get_whisper_raw_metrics, nullptr));
     return DefineClass(env, "WhisperPerfMetrics", properties);
 }
 

@@ -5,6 +5,7 @@
 
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
@@ -83,7 +84,7 @@ private:
 class StatefulSpeculativeLLMPipeline : public StatefulSpeculativePipelineBase {
 public:
     StatefulSpeculativeLLMPipeline(
-    const ov::genai::ModelDesc& main_model_desc, 
+    const ov::genai::ModelDesc& main_model_desc,
     const ov::genai::ModelDesc& draft_model_desc
     );
 

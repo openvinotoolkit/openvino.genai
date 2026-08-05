@@ -240,3 +240,111 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
     )
 
     remove_artifacts(outputs_path)
+
+
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding", "image-embedding"),
+        ("optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding", "video-embedding"),
+    ],
+)
+@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
+def test_visual_embeddings(model_id, model_type, tmp_path):
+    GT_FILE = tmp_path / f"gt_batch_{model_type}.csv"
+    MODEL_PATH = convert_model(model_id)
+    SIMILARITY_THRESHOLD = 0.9
+
+    # Collect reference with HF model
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--hf",
+        ]
+    )
+
+    # test Optimum
+    outputs_path = tmp_path / "optimum"
+    outputs = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--output",
+            outputs_path,
+        ]
+    )
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
+
+    remove_artifacts(outputs_path)
+
+    # test GenAI
+    outputs_path = tmp_path / "genai"
+    outputs = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+            "--output",
+            outputs_path,
+        ]
+    )
+
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
+
+    # test w/o models
+    run_wwb(
+        [
+            "--target-data",
+            outputs_path / "target.csv",
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--genai",
+        ]
+    )
+
+    remove_artifacts(outputs_path)

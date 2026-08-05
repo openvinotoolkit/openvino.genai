@@ -8,6 +8,8 @@
 #include <thread>
 
 #include "include/chat_history.hpp"
+#include "include/image2image_pipeline/pipeline_wrapper.hpp"
+#include "include/inpainting_pipeline/pipeline_wrapper.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
@@ -67,6 +69,16 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
                "Text2ImagePipeline",
                &Text2ImagePipelineWrapper::get_class,
                addon_data->text2image_pipeline);
+    init_class(env,
+               exports,
+               "Image2ImagePipeline",
+               &Image2ImagePipelineWrapper::get_class,
+               addon_data->image2image_pipeline);
+    init_class(env,
+               exports,
+               "InpaintingPipeline",
+               &InpaintingPipelineWrapper::get_class,
+               addon_data->inpainting_pipeline);
     init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
     init_class(env,
                exports,

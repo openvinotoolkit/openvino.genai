@@ -34,7 +34,6 @@ protected:
     std::deque<float> m_previous_step_cache_usages;
 
     // for perf metrics
-    float m_load_time_ms = 0.0f;
     size_t m_batch_size = 0; // stored number of processed tokens on last step
 
     // flag to enable validation mode for sampler
@@ -136,6 +135,10 @@ public:
     bool has_non_finished_requests() override;
 
     virtual void generate_candidates_for_prompt_lookup();
+
+    virtual bool sync_embeddings_after_candidates() const {
+        return !m_is_validation_mode_enabled;
+    }
 
     void step() override;
 

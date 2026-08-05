@@ -42,7 +42,7 @@ TEST(TestCacheManager, test_cache_size_param) {
     const size_t num_kv_blocks = get_num_kv_blocks(scheduler_config.cache_size, cache_manager->get_block_size_in_bytes());
 
     auto block_manager = BlockManager(num_kv_blocks, false, cache_manager->get_block_size(), cache_manager->get_num_layers());
-    cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
+    cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
 
     const size_t kv_cache_total_size = scheduler_config.cache_size * 1024 * 1024 * 1024;
     const size_t cpu_block_size_total = cache_manager->get_block_size_in_bytes();
@@ -63,7 +63,7 @@ TEST(TestCacheManager, test_kv_blocks_param) {
     const size_t num_decoder_layers = 12;
 
     auto block_manager = BlockManager(scheduler_config.num_kv_blocks, false, cpu_block_size, num_decoder_layers);
-    ASSERT_EQ(block_manager.get_total_number_of_kv_blocks(), scheduler_config.num_kv_blocks);
+    ASSERT_EQ(block_manager.get_total_block_count(), scheduler_config.num_kv_blocks);
 }
 
 
@@ -87,22 +87,22 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     ASSERT_EQ(num_decoder_layers, cache_manager->get_num_layers());
 
     // check initial cache allocation
-    block_manager.increase_kv_blocks_number(100);
-    ASSERT_EQ(block_manager.get_total_number_of_kv_blocks(), 100);
+    block_manager.increase_block_count(100);
+    ASSERT_EQ(block_manager.get_total_block_count(), 100);
 
-    cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
+    cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 100 * block_size_in_bytes);
 
 
     // check cache increase
-    block_manager.increase_kv_blocks_number(200);
-    ASSERT_EQ(block_manager.get_total_number_of_kv_blocks(), 200);
+    block_manager.increase_block_count(200);
+    ASSERT_EQ(block_manager.get_total_block_count(), 200);
 
-    cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
+    cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
 
 
     // check that cache does not increase if new blocks were not allocated
-    cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
+    cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
 }

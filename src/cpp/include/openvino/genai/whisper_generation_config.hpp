@@ -7,6 +7,8 @@
 #include <optional>
 
 #include "generation_config.hpp"
+// include properties from asr config
+#include "openvino/genai/automatic_speech_recognition/generation_config.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/runtime/compiled_model.hpp"
 
@@ -108,7 +110,7 @@ public:
     // A list containing the non-speech tokens that will be suppressed during generation.
     std::vector<int64_t> suppress_tokens;
 
-    void update_generation_config(const ov::AnyMap& config_map = {});
+    void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
     util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
@@ -117,30 +119,8 @@ public:
 
     /// @brief checks that are no conflicting parameters.
     /// @throws Exception if config is invalid.
-    void validate() const;
+    void validate() const override;
 };
-
-/*
- * utils that allow to use generate and operator() in the following way:
- * pipe.generate(input_ids, ov::genai::max_new_tokens(200),...)
- */
-
-static constexpr ov::Property<std::vector<int64_t>> begin_suppress_tokens{"begin_suppress_tokens"};
-static constexpr ov::Property<std::vector<int64_t>> suppress_tokens{"suppress_tokens"};
-static constexpr ov::Property<int64_t> decoder_start_token_id{"decoder_start_token_id"};
-static constexpr ov::Property<int64_t> pad_token_id{"pad_token_id"};
-static constexpr ov::Property<int64_t> transcribe_token_id{"transcribe_token_id"};
-static constexpr ov::Property<int64_t> translate_token_id{"translate_token_id"};
-static constexpr ov::Property<int64_t> no_timestamps_token_id{"no_timestamps_token_id"};
-static constexpr ov::Property<int64_t> prev_sot_token_id{"prev_sot_token_id"};
-static constexpr ov::Property<std::string> language{"language"};
-static constexpr ov::Property<std::string> task{"task"};
-static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};
-static constexpr ov::Property<bool> word_timestamps{"word_timestamps"};
-static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
-static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
-static constexpr ov::Property<std::string> hotwords{"hotwords"};
-static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};
 
 }  // namespace genai
 }  // namespace ov

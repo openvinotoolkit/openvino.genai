@@ -54,7 +54,7 @@ Relevant settings:
 When `enable_prefix_caching=true`, linear-attention cache switches to paged checkpointing mode.
 Instead of allocating one fixed state block per sequence, the runtime stores checkpoints every derived cache interval.
 The interval is calculated as `kv_block_size * cache_interval_multiplier` tokens.
-If `cache_interval_multiplier` is unset, the default multiplier is `8` for hybrid models with prefix caching.
+If `cache_interval_multiplier` is unset, the multiplier is derived adaptively from the model's linear-attention state size so that one checkpoint costs roughly one KV block (and is never smaller than the baseline of `8`). This keeps the recurrent-state cache of large hybrid SSM models from exhausting the cache budget on long prompts. Larger values reduce linear-attention memory at the cost of coarser prefix-cache reuse.
 
 Relevant settings:
 

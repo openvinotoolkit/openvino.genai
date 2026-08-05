@@ -302,6 +302,321 @@ def test_text_genai_json_string_config():
     assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
 
 
+sd_main_model_id = "xf2022/tiny-random-qwen3-layer10"
+sd_draft_model_id = "xf2022/tiny-random-qwen3-eagle3"
+
+
+def _convert_draft(model_id, temp_path):
+    from optimum.exporters.openvino.convert import export_tokenizer
+    from huggingface_hub import snapshot_download
+
+    model_local = snapshot_download(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_local, trust_remote_code=True)
+    base_model = OVModelForCausalLM.from_pretrained(model_local, trust_remote_code=True, ignore_mismatched_sizes=True)
+    base_model.save_pretrained(temp_path)
+    tokenizer.save_pretrained(temp_path)
+    export_tokenizer(tokenizer, temp_path)
+
+
+@pytest.fixture(scope="module")
+def sd_main_model_path():
+    return convert_text_model(sd_main_model_id, "tiny-random-qwen3-layer10", _convert_base)
+
+
+@pytest.fixture(scope="module")
+def sd_draft_model_path():
+    return convert_text_model(sd_draft_model_id, "tiny-random-qwen3-eagle3", _convert_draft)
+
+
+SD_SIMILARITY_THRESHOLD = 0.9
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
+def test_text_genai_sd_generation_config_json_string(tmp_path, sd_main_model_path, sd_draft_model_path):
+    """Test --sd-generation-config with JSON string for speculative decoding."""
+    temp_file_name = tmp_path / "gt.csv"
+    sd_config_string = '{"num_assistant_tokens": 5}'
+
+    run_wwb(
+        [
+            "--base-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+            "--draft-model",
+            sd_draft_model_path,
+            "--sd-generation-config",
+            sd_config_string,
+        ]
+    )
+    assert "sd_generation_config:" in output
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= SD_SIMILARITY_THRESHOLD
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
+def test_text_genai_sd_generation_config_json_file(tmp_path, sd_main_model_path, sd_draft_model_path):
+    """Test --sd-generation-config with JSON file for speculative decoding."""
+    temp_file_name = tmp_path / "gt.csv"
+    config_path = tmp_path / "sd_config.json"
+    with open(config_path, "w") as f:
+        json.dump({"num_assistant_tokens": 5}, f)
+
+    run_wwb(
+        [
+            "--base-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+            "--draft-model",
+            sd_draft_model_path,
+            "--sd-generation-config",
+            str(config_path),
+        ]
+    )
+    assert "sd_generation_config:" in output
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= SD_SIMILARITY_THRESHOLD
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
+def test_text_genai_sd_generation_config_unsupported_key(tmp_path, sd_main_model_path, sd_draft_model_path):
+    """Test --sd-generation-config warns on unsupported keys."""
+    temp_file_name = tmp_path / "gt.csv"
+    sd_config_string = '{"num_assistant_tokens": 5, "unsupported_key": 99}'
+
+    run_wwb(
+        [
+            "--base-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+            "--draft-model",
+            sd_draft_model_path,
+            "--sd-generation-config",
+            sd_config_string,
+        ]
+    )
+    assert "not supported" in output
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
+def test_text_genai_sd_generation_config_override(tmp_path, sd_main_model_path, sd_draft_model_path):
+    """Test --sd-generation-config overrides --num-assistant-tokens from cmdline."""
+    temp_file_name = tmp_path / "gt.csv"
+    sd_config_string = '{"num_assistant_tokens": 7}'
+
+    run_wwb(
+        [
+            "--base-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+            "--draft-model",
+            sd_draft_model_path,
+            "--num-assistant-tokens",
+            "3",
+            "--sd-generation-config",
+            sd_config_string,
+        ]
+    )
+    # JSON should override cmdline: num_assistant_tokens=7 takes precedence over --num-assistant-tokens=3
+    assert "num_assistant_tokens (final): 7" in output
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= SD_SIMILARITY_THRESHOLD
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
+def test_text_genai_sd_generation_config_topk(tmp_path, sd_main_model_path, sd_draft_model_path):
+    """Test --sd-generation-config with EAGLE3 Top-K parameters."""
+    temp_file_name = tmp_path / "gt.csv"
+    sd_config_string = '{"num_assistant_tokens": 6, "branching_factor": 3, "tree_depth": 2}'
+
+    run_wwb(
+        [
+            "--base-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+            "--draft-model",
+            sd_draft_model_path,
+            "--sd-generation-config",
+            sd_config_string,
+        ]
+    )
+    assert "sd_generation_config:" in output
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= SD_SIMILARITY_THRESHOLD
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="Speculative decoding requires PagedAttention, not supported on macOS"
+)
+def test_text_genai_sd_generation_config_topk_file(tmp_path, sd_main_model_path, sd_draft_model_path):
+    """Test --sd-generation-config Top-K via JSON file."""
+    temp_file_name = tmp_path / "gt.csv"
+    config_path = tmp_path / "sd_topk_config.json"
+    with open(config_path, "w") as f:
+        json.dump({"num_assistant_tokens": 6, "branching_factor": 3, "tree_depth": 2}, f)
+
+    run_wwb(
+        [
+            "--base-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+        ]
+    )
+
+    output = run_wwb(
+        [
+            "--target-model",
+            sd_main_model_path,
+            "--gt-data",
+            str(temp_file_name),
+            "--num-samples",
+            "2",
+            "--device",
+            "CPU",
+            "--genai",
+            "--short-prompt",
+            "--draft-model",
+            sd_draft_model_path,
+            "--sd-generation-config",
+            str(config_path),
+        ]
+    )
+    assert "sd_generation_config:" in output
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= SD_SIMILARITY_THRESHOLD
+
+
 @pytest.mark.parametrize(
     ("model_id"),
     [("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM")],

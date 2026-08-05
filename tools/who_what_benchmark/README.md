@@ -40,6 +40,19 @@ For example:
 pip install .[minicpm-o-2_6]
 ```
 
+### OpenVINO Runtime configuration
+
+OpenVINO Runtime configuration can be customized using `--ov-config` option.<br>
+
+Example for OpenVINO: `{"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}`<br>
+Additional option for OpenVINO GenAI: `{"ATTENTION_BACKEND": "SDPA"}`<br>
+
+Example of setting option via string in Linux/Windows cmd: `"{\"ATTENTION_BACKEND\": \"SDPA\"}"`<br>
+Example of setting option via string in PowerShell: `'{\"ATTENTION_BACKEND\": \"SDPA\"}'`<br>
+
+More information about properties, please, find [OpenVINO documentation](https://docs.openvino.ai/2026/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).<br>
+
+
 ## Usage
 ### Compare Text-generation Models (LLMs)
 ```sh
@@ -56,9 +69,10 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text
 wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 ```
 
-> **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
-> **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode
-> **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.
+> **NOTE**: use --verbose option for debug to see the outputs with the largest difference.<br>
+> **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode<br>
+> **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.<br>
+> **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.<br>
 > **NOTE**: use `--strip-think-blocks` to remove `<think>...</think>` and common reasoning preambles before metric scoring.
 
 ### Compare Visual Language Models with image inputs (VLMs)
@@ -125,17 +139,42 @@ wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-ty
 wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --genai
 ```
 
-### Compare Text Embeddings models
+### Compare Text Embedding models
+
+**Supported options:**
+- `--embeds_pooling_type` - Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side. CLS by default.
+- `--embeds_normalize` - Normalize embeddings. False by default.
+- `--embeds_padding_side` - Side to use for padding 'left' or 'right'. 'right' by default.
+- `--embeds_batch_size` - Batch size value.
+
 ```sh
-# Export FP16 model to OpenVINO
+# Export model to OpenVINO
 optimum-cli export openvino -m BAAI/bge-small-en-v1.5 bge-small-en-v1.5 --task feature-extraction
 
 # Collect the references and save the mapping in the .csv file.
 # Reference data will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --hf
+wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --hf
 # Compute the metric
 # Target data will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --genai
+wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --genai
+```
+
+### Compare Visual Embedding models
+
+**Supported scenarios:**
+- `image-embedding` - for creation of embedding for a list of texts and images.
+- `video-embedding` - for creation of embedding for a list of texts and videos.
+
+```sh
+# Export model to OpenVINO
+optimum-cli export openvino -m Qwen/Qwen3-VL-Embedding-2B qwen3-vl-embedding-2B --task feature-extraction
+
+# Collect the references and save the mapping in the .csv file.
+# Reference data will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Qwen/Qwen3-VL-Embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --hf
+# Compute the metric
+# Target data will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model ./qwen3-vl-embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --genai
 ```
 
 ### Compare Text-to-video models

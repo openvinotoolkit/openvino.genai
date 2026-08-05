@@ -154,6 +154,24 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   ```bash
   python speculative_decoding_lm.py model_dir draft_model_dir prompt
   ```
+- **Speculative decoding configuration:** the following `GenerationConfig` fields control how the draft model proposes candidate tokens. They are passed to `pipe.generate(..., config)` after constructing `LLMPipeline` with `draft_model=...`.
+
+  | Field | Default | Backends | Meaning |
+  |---|---|---|---|
+  | `num_assistant_tokens` | `5` | ContinuousBatching, Stateful | Number of candidate tokens drafted per iteration. ContinuousBatching uses the value as-is; the Stateful backend uses it as an initial value and adapts it based on the recent acceptance rate. |
+  | `assistant_confidence_threshold` | unset | ContinuousBatching only (non-EAGLE) | When set, the draft model keeps proposing tokens while the candidate probability is above this threshold instead of using a fixed `num_assistant_tokens`. Mutually exclusive with `num_assistant_tokens`. **Not supported in EAGLE mode** — EAGLE always drafts a fixed `num_assistant_tokens` candidates per iteration. |
+  | `branching_factor` | `1` | ContinuousBatching (EAGLE only) | Number of candidate tokens to consider at each tree level when running tree-based speculative decoding. |
+  | `tree_depth` | `0` | ContinuousBatching (EAGLE only) | Depth of the candidate token tree. Tree drafting requires `num_assistant_tokens >= tree_depth`. |
+
+  Example:
+  ```python
+  config = openvino_genai.GenerationConfig()
+  config.max_new_tokens = 100
+  config.num_assistant_tokens = 4
+  # config.assistant_confidence_threshold = 0.4  # alternative to num_assistant_tokens (FastDraft CB only, not supported in EAGLE)
+  # config.branching_factor = 8                  # EAGLE tree drafting
+  # config.tree_depth = 3
+  ```
 
 ### 7. LoRA Greedy Causal LM (`lora_greedy_causal_lm`)
 - **Description:**
@@ -191,14 +209,14 @@ For more information on how performance metrics are calculated, please follow th
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
-  python benchmark_genai.py [-m MODEL] [-p PROMPT] [-nw NUM_WARMUP] [-n NUM_ITER] [-mt MAX_NEW_TOKENS] [-d DEVICE]
+  python benchmark_genai.py [-m MODEL] [-p PROMPT] [-N NUM_WARMUP] [-n NUM_ITER] [-M MAX_NEW_TOKENS] [-d DEVICE]
   ```
   #### Options
 - `-m, --model`: Path to the model and tokenizers base directory.
-- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-pf`, the default prompt is `"The Sky is blue because"`
-- `-pf, --prompt_file` Read prompt from file.
-- `-nw, --num_warmup` (default: `1`): Number of warmup iterations.
-- `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
+- `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p` and `-F`, the default prompt is `"The Sky is blue because"`
+- `-F, --prompt_file` Read prompt from file.
+- `-N, --num_warmup` (default: `1`): Number of warmup iterations.
+- `-M, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 

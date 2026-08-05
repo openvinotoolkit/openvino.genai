@@ -54,12 +54,12 @@ Scheduler::Output make_output_for_single_sequence(uint64_t seq_id,
     out.m_total_num_scheduled_tokens = num_scheduled_tokens;
 
     // ModelRunner expects one KV block table per decoder layer. Use a single layer for tests.
-    out.m_block_tables[seq_id] = {BlocksPerLayer{std::make_shared<CacheBlock>(0)}};
+    out.set_kv_block_tables(seq_id, {BlocksPerLayer{std::make_shared<CacheBlock>(0)}});
     Scheduler::Output::LinearAttentionPagingData paging_data;
     for (const auto& block : la_blocks) {
         paging_data.block_indices.push_back(static_cast<int32_t>(block->get_index()));
     }
-    out.m_linear_attention_paging_data[seq_id] = std::move(paging_data);
+    out.set_linear_attention_paging_data(seq_id, std::move(paging_data));
     return out;
 }
 
@@ -72,8 +72,9 @@ Scheduler::Output make_output_for_sequences(
     for (size_t group_idx = 0; group_idx < sequence_blocks.size(); ++group_idx) {
         const auto& [seq_id, paging_data] = sequence_blocks[group_idx];
         out.m_scheduled_sequence_groups_ids.push_back(group_idx);
-        out.m_block_tables[seq_id] = {BlocksPerLayer{std::make_shared<CacheBlock>(0)}};
-        out.m_linear_attention_paging_data[seq_id] = paging_data;
+        out.set_kv_block_tables(seq_id, {BlocksPerLayer{std::make_shared<CacheBlock>(0)}});
+        Scheduler::Output::LinearAttentionPagingData paging_data_copy = paging_data;
+        out.set_linear_attention_paging_data(seq_id, std::move(paging_data_copy));
     }
 
     return out;
@@ -112,7 +113,9 @@ TEST(TestModelRunnerLinearAttentionPaging, prefill_uses_read_plus_interval_write
             std::make_shared<CacheBlock>(10),
             std::make_shared<CacheBlock>(11),
             std::make_shared<CacheBlock>(12)});
-    out.m_linear_attention_paging_data[seq_id].cache_interval = 128;
+    Scheduler::Output::LinearAttentionPagingData paging_data = out.get_linear_attention_paging_data(seq_id);
+    paging_data.cache_interval = 128;
+    out.set_linear_attention_paging_data(seq_id, std::move(paging_data));
 
     std::ignore = runner.forward({sequence_group}, out);
 
@@ -153,9 +156,11 @@ TEST(TestModelRunnerLinearAttentionPaging, generation_within_interval_reuses_wri
         BlocksPerLayer{
             std::make_shared<CacheBlock>(20),
             std::make_shared<CacheBlock>(21)});
-    out.m_linear_attention_paging_data[seq_id].block_indices = {20, 20};
-    out.m_linear_attention_paging_data[seq_id].past_length = 4;
-    out.m_linear_attention_paging_data[seq_id].cache_interval = 128;
+    Scheduler::Output::LinearAttentionPagingData paging_data;
+    paging_data.block_indices = {20, 20};
+    paging_data.past_length = 4;
+    paging_data.cache_interval = 128;
+    out.set_linear_attention_paging_data(seq_id, std::move(paging_data));
 
     std::ignore = runner.forward({sequence_group}, out);
 

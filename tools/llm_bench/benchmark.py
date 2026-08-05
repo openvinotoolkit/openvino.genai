@@ -12,6 +12,7 @@ import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
 import task.text_generation as bench_text
+import task.text_generation_chat as bench_text_chat
 import task.image_generation as bench_image
 import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
@@ -26,14 +27,14 @@ from llm_bench_utils.memory_monitor import MemoryMonitorHandler
 DEFAULT_TORCH_THREAD_NUMS = 16
 
 
-def num_iters_type(x):
+def positive_integer(x):
     x = int(x)
     if x < 0:
         raise argparse.ArgumentTypeError("Minimum input value is 0")
     return x
 
 
-def num_infer_count_type(x):
+def greater_than_zero(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError("Minimum input value is 1")
@@ -54,10 +55,16 @@ def relevance_weight_type(value: str) -> float:
     return fvalue
 
 
+class NewlineHelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
+    def _split_lines(self, text, width):
+        lines = []
+        for line in text.splitlines():
+            lines.extend(super()._split_lines(line, width))
+        return lines
+
+
 def get_argparser():
-    parser = argparse.ArgumentParser(
-        "LLM benchmarking tool", add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
+    parser = argparse.ArgumentParser("LLM benchmarking tool", add_help=True, formatter_class=NewlineHelpFormatter)
     parser.add_argument(
         "-m",
         "--model",
@@ -83,7 +90,7 @@ def get_argparser():
         "-pi",
         "--prompt_index",
         nargs="+",
-        type=num_iters_type,
+        type=positive_integer,
         default=None,
         help="Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.",
     )
@@ -92,14 +99,14 @@ def get_argparser():
         "-ic",
         "--infer_count",
         default=None,
-        type=num_infer_count_type,
+        type=greater_than_zero,
         help="set the output token size, the value must be greater than 0.",
     )
     parser.add_argument(
         "-n",
         "--num_iters",
         default=0,
-        type=num_iters_type,
+        type=positive_integer,
         help="number of benchmarking iterations, "
         "if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n"
         "if the value equals 0 (default), execute the warm-up iteration(0th iteration).",
@@ -123,9 +130,12 @@ def get_argparser():
         "--load_config",
         default=None,
         required=False,
-        help="path to JSON file to load customized configurations.\n"
-        'Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}.\n'
-        'Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings.\n',
+        help="""Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.\n
+        Example for OpenVINO: {"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}\n
+        Additional option for OpenVINO GenAI: {"ATTENTION_BACKEND": "SDPA"}\n
+        Example for PyTorch: {"PREC_BF16":true}. PyTorch currently only supports bf16 settings.\n
+        Example of setting option via string in Linux/Windows cmd: "{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}" \n
+        Example of setting option via string in PowerShell: '{\\"ATTENTION_BACKEND\\": \\"SDPA\\"}' """,
     )
     parser.add_argument(
         "-mc",
@@ -133,13 +143,15 @@ def get_argparser():
         default=0,
         required=False,
         type=int,
-        help="Enables memory usage monitoring mode. For 0 monitoring is off. Use 1 to track memory consumption"
-        " during model compilation and warm-up iteration, 2 to track across all iterations, or 3 to track in"
-        " separate process over model compilation and warm-up, and respectively 4 for the whole benchmarking,"
-        "as well as 5 for monitor memory in cooldown phases only."
-        " Warning: Concurrent memory consumption and performance benchmarking is not recommended. Performance"
-        " impact can be reduced by using longer --memory_consumption_cooldown and --memory_consumption_interval"
-        " values, though a degradation is unavoidable.",
+        help="Enables memory usage monitoring mode. \n"
+        "0 = off (default). \n"
+        "1 = thread, compilation and warm-up(creats on compilation and on warm-up separately); \n"
+        "2 = thread, compilation and all iterations(creats on compilation and on each iteration separately); \n"
+        "3 = separate process, compilation and warm-up; \n"
+        "4 = separate process, compilation and all iterations. \n"
+        "Warning: concurrent memory and performance benchmarking is not recommended. \n"
+        "Performance impact can be reduced with longer --memory_consumption_cooldown "
+        "and --memory_consumption_interval values, though some degradation is unavoidable.",
     )
     parser.add_argument(
         "--memory_consumption_cooldown",
@@ -274,15 +286,23 @@ def get_argparser():
         "--num_assistant_tokens",
         required=False,
         default=None,
-        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding",
+        help="[DEPRECATED, will be removed soon. Please use --sd_generation_config instead.] "
+        "Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding",
         type=int,
     )
     parser.add_argument(
         "--assistant_confidence_threshold",
         required=False,
         default=None,
-        help="Config option assistant_confidence_threshold for Speculative decoding",
+        help="[DEPRECATED, will be removed soon. Please use --sd_generation_config instead.] "
+        "Config option assistant_confidence_threshold for Speculative decoding",
         type=float,
+    )
+    parser.add_argument(
+        "--sd_generation_config",
+        required=False,
+        default=None,
+        help="Path to JSON file or JSON string with speculative decoding generation config parameters (e.g. branching_factor, tree_depth for EAGLE3 Top-K).",
     )
     parser.add_argument(
         "--max_ngram_size",
@@ -297,7 +317,7 @@ def get_argparser():
         help="Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).",
     )
     parser.add_argument(
-        "--set_torch_thread", default=0, type=num_infer_count_type, help="Set the number of Torch thread. "
+        "--set_torch_thread", default=0, type=greater_than_zero, help="Set the number of Torch thread. "
     )
     parser.add_argument(
         "-tl",
@@ -352,6 +372,7 @@ def get_argparser():
         default=None,
         choices=[
             "text_gen",
+            "text_gen_chat",
             "image_gen",
             "visual_text_gen",
             "speech_to_text",
@@ -442,17 +463,45 @@ def get_argparser():
     )
     parser.add_argument("--vocoder_path", type=str, default=None, help="Path to vocoder  for text to speech scenarios")
     parser.add_argument(
+        "--speech_language",
+        type=str,
+        default="",
+        help="Speech language for text-to-speech models. For Kokoro this can be one of en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, zh",
+    )
+    parser.add_argument(
+        "--speech_voice",
+        type=str,
+        default="",
+        help="Speech voice for text-to-speech models. For Kokoro defaults to af_heart",
+    )
+    parser.add_argument(
         "-vf",
         "--video_frames",
         type=int,
         default=None,
         help="controller of video frames to process (required frame number if positive or decimation factor if negative)",
     )
+    parser.add_argument(
+        "--chat_iter",
+        type=greater_than_zero,
+        default=None,
+        help="Use with --task text_gen_chat. The chat will run chat-iter iterations with the one prompt."
+        " Alternative option is setup prompts list in JSONL via -pf option."
+        " The parameter specifies the amount of the chat iterations.",
+    )
+    parser.add_argument(
+        "--full_chat",
+        action="store_true",
+        help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
+        "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
+    )
+
     return parser.parse_args()
 
 
 CASE_TO_BENCH = {
     "text_gen": bench_text.run_text_generation_benchmark,
+    "text_gen_chat": bench_text_chat.run_text_generation_benchmark,
     "image_gen": bench_image.run_image_generation_benchmark,
     "video_gen": bench_video.run_video_generation_benchmark,
     "code_gen": bench_text.run_text_generation_benchmark,
@@ -475,6 +524,17 @@ def main():
     )
     args = get_argparser()
     memory_data_collector = MemoryMonitorHandler(args)
+
+    if args.num_assistant_tokens is not None:
+        log.warning(
+            "--num_assistant_tokens is DEPRECATED and will be removed soon. "
+            "Please use --sd_generation_config '{\"num_assistant_tokens\": N}' instead."
+        )
+    if args.assistant_confidence_threshold is not None:
+        log.warning(
+            "--assistant_confidence_threshold is DEPRECATED and will be removed soon. "
+            "Please use --sd_generation_config '{\"assistant_confidence_threshold\": X}' instead."
+        )
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")
@@ -527,7 +587,7 @@ def main():
     log.info(out_str)
 
     try:
-        if model_args["use_case"].task in ["text_gen", "code_gen"]:
+        if model_args["use_case"].task in ["text_gen", "text_gen_chat", "code_gen"]:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
                 model_path,
                 framework,

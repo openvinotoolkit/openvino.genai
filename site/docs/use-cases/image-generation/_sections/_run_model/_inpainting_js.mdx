@@ -1,0 +1,43 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { readFile, writeFile } from 'node:fs/promises';
+import bmp from 'bmp-js';
+import { addon as ov } from 'openvino-node';
+import { InpaintingPipeline } from 'openvino-genai-node';
+
+async function readImage(path) {
+  const { width, height, data: abgr } = bmp.decode(await readFile(path));
+  const rgb = new Uint8Array(width * height * 3);
+  for (let src = 0, dst = 0; src < abgr.length; src += 4, dst += 3) {
+    rgb[dst]     = abgr[src + 3]; // R
+    rgb[dst + 1] = abgr[src + 2]; // G
+    rgb[dst + 2] = abgr[src + 1]; // B
+  }
+  const tensor = new ov.Tensor('u8', [1, height, width, 3], rgb);
+  tensor._buffer = rgb; // prevent GC from collecting the backing buffer
+  return tensor;
+}
+
+const inputImage = await readImage('input_image.bmp');
+const maskImage = await readImage('mask_image.bmp');
+
+const pipeline = await InpaintingPipeline(modelPath, '${props.device || 'CPU'}');
+const image = await pipeline.generate(prompt, inputImage, maskImage);
+
+// Save the generated image as BMP
+const [height, width] = [image.getShape()[1], image.getShape()[2]];
+const rgb = Uint8Array.from(image.data);
+const abgr = Buffer.allocUnsafe(width * height * 4);
+
+for (let src = 0, dst = 0; src < rgb.length; src += 3, dst += 4) {
+  abgr[dst]     = 255;          // A
+  abgr[dst + 1] = rgb[src + 2]; // B
+  abgr[dst + 2] = rgb[src + 1]; // G
+  abgr[dst + 3] = rgb[src];     // R
+}
+
+const bmpData = bmp.encode({ width, height, data: abgr });
+await writeFile('image.bmp', bmpData.data);
+`}
+</CodeBlock>

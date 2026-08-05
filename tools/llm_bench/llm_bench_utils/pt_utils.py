@@ -5,10 +5,12 @@ import os
 import time
 import torch
 import json
+import numpy as np
 import logging as log
 from pathlib import Path
 from transformers import AutoConfig
 import llm_bench_utils.hook_common as hook_common
+from llm_bench_utils.tts_utils import is_kokoro_model_id, normalize_kokoro_lang_code, DEFAULT_KOKORO_VOICE
 
 
 def set_bf16(model, device, **kwargs):
@@ -182,22 +184,115 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
     if model_path.exists():
         if model_path.is_dir() and len(os.listdir(model_path)) != 0:
             log.info(f'Load text to speech model from model path:{model_path}')
-            model_class = kwargs['use_case'].pt_cls
-            token_class = kwargs['use_case'].tokenizer_cls
             if kwargs.get("mem_consumption"):
                 memory_data_collector.start()
             start = time.perf_counter()
-            pipe = model_class.from_pretrained(model_path)
-            vocoder = None
-            if kwargs.get('vocoder_path'):
-                vocoder = kwargs['use_case'].vocoder_cls
-            pipe = set_bf16(pipe, device, **kwargs)
+            if is_kokoro_model_id(model_path):
+                from kokoro import KPipeline
+                from kokoro.model import KModel
+
+                class KokoroPTModelWrapper:
+                    def __init__(self, model_dir):
+                        self._lang_code = normalize_kokoro_lang_code(kwargs.get("speech_language", ""))
+                        config_path = model_dir / "config.json"
+                        if config_path.exists():
+                            self._kmodel = KModel(config=str(config_path))
+                        else:
+                            self._kmodel = KModel(repo_id=str(model_dir))
+                        self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
+
+                    def _update_language(self, language):
+                        requested_lang_code = normalize_kokoro_lang_code(language)
+                        if requested_lang_code != self._lang_code:
+                            self._lang_code = requested_lang_code
+                            self._pipeline = KPipeline(lang_code=self._lang_code, model=self._kmodel)
+
+                    def preprocess_input(self, prompt, speaker_embeddings=None, language="", voice=""):
+                        self._update_language(language)
+                        quiet_pipeline = KPipeline(lang_code=self._lang_code, model=False)
+
+                        selected_voice = voice.strip() if isinstance(voice, str) else ""
+                        if not selected_voice:
+                            selected_voice = DEFAULT_KOKORO_VOICE
+
+                        # Resolve voice pack during preprocessing to keep timed generation focused on synthesis.
+                        voice_or_embedding = (
+                            speaker_embeddings
+                            if speaker_embeddings is not None
+                            else quiet_pipeline.load_voice(selected_voice)
+                        )
+
+                        preprocessed_segments = []
+                        for result in quiet_pipeline(prompt):
+                            phonemes = getattr(result, "phonemes", "")
+                            if not phonemes:
+                                continue
+                            preprocessed_segments.append(
+                                {
+                                    "phonemes": phonemes,
+                                }
+                            )
+
+                        if not preprocessed_segments:
+                            raise RuntimeError("Kokoro preprocessing produced no valid phoneme segments")
+
+                        return {
+                            "segments": preprocessed_segments,
+                            "voice_or_embedding": voice_or_embedding,
+                        }
+
+                    def generate_from_preprocessed(self, preprocessed_inputs):
+                        segments = preprocessed_inputs.get("segments", [])
+                        voice_or_embedding = preprocessed_inputs.get("voice_or_embedding")
+                        generated_chunks = []
+
+                        for segment in segments:
+                            phonemes = segment.get("phonemes")
+                            if not phonemes:
+                                continue
+                            for result in self._pipeline.generate_from_tokens(
+                                phonemes,
+                                voice=voice_or_embedding,
+                                model=self._kmodel,
+                            ):
+                                if result.audio is not None:
+                                    generated_chunks.append(np.asarray(result.audio, dtype=np.float32).reshape(-1))
+
+                        if not generated_chunks:
+                            raise RuntimeError("Kokoro generation produced no audio output")
+
+                        return np.concatenate(generated_chunks, axis=0)
+
+                    def generate(self, prompt, speaker_embeddings=None, language="", voice=""):
+                        preprocessed = self.preprocess_input(
+                            prompt,
+                            speaker_embeddings=speaker_embeddings,
+                            language=language,
+                            voice=voice,
+                        )
+                        return self.generate_from_preprocessed(preprocessed)
+
+                    def to(self, _device):
+                        # Kokoro KPipeline keeps CPU execution internally.
+                        return self
+
+                pipe = KokoroPTModelWrapper(model_path)
+                processor = None
+                vocoder = None
+            else:
+                model_class = kwargs["use_case"].pt_cls
+                token_class = kwargs["use_case"].tokenizer_cls
+                pipe = model_class.from_pretrained(model_path)
+                vocoder = None
+                if kwargs.get("vocoder_path"):
+                    vocoder = kwargs["use_case"].vocoder_cls
+                pipe = set_bf16(pipe, device, **kwargs)
+                processor = token_class.from_pretrained(model_path)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
                 memory_data_collector.stop_and_collect_data("pretrained")
                 memory_data_collector.log_data(compilation=True)
             from_pretrain_time = end - start
-            processor = token_class.from_pretrained(model_path)
         else:
             raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
     else:

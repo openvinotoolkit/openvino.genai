@@ -5,7 +5,7 @@ from transformers import (
     PreTrainedTokenizer,
 )
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Any
 import inspect
 
 if TYPE_CHECKING:
@@ -14,8 +14,12 @@ if TYPE_CHECKING:
 
 
 class Phi4MMInputsPreprocessor(VLMInputsPreprocessor):
-    def __init__(self, chat_mode: bool = False):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
         super().__init__(chat_mode)
+        if model is not None:
+            self.def_image_token_id = getattr(model.config, "image_token_id", 200010)
+        else:
+            self.def_image_token_id = 200010
 
     def update_chat_history_with_answer(self, answer):
         self.chat_history.append({"role": "assistant", "content": answer})

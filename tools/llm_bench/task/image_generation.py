@@ -100,7 +100,7 @@ def run_image_generation(image_param, num, image_id, pipe, args, iter_data_list,
         for bs_idx, in_text in enumerate(input_text_list):
             llm_bench_utils.output_file.output_image_input_text(in_text, args, image_id, bs_idx, proc_id)
     start = time.perf_counter()
-    res = pipe(input_text_list, **input_args, num_images_per_prompt=args['batch_size']).images
+    res = pipe(prompt=input_text_list, **input_args, num_images_per_prompt=args["batch_size"]).images
     end = time.perf_counter()
     generation_time = end - start
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)

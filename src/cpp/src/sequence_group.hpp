@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <cassert>
+#include <chrono>
 #include <set>
 #include <cstdlib>
 #include <string_view>
@@ -14,6 +15,7 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 enum class SequenceStatus {
@@ -53,6 +55,12 @@ class Sequence {
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
     ov::Tensor m_hidden_state = ov::Tensor();
+    // When enabled, one intermediate hidden state is accumulated per generated token
+    // (prefill batches are sliced into per-token tensors before accumulation)
+    static constexpr size_t kMaxAccumulatedHiddenStates = 512;
+    bool m_accumulate_hidden_states = false;
+    bool m_hidden_state_cap_warned = false;
+    std::vector<ov::Tensor> m_all_intermediate_hidden_states;
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
@@ -81,6 +89,9 @@ class Sequence {
         m_generated_log_probs(seq.m_generated_log_probs),
         m_grouped_id(id),
         m_hidden_state(seq.m_hidden_state),
+        m_accumulate_hidden_states(seq.m_accumulate_hidden_states),
+        m_hidden_state_cap_warned(seq.m_hidden_state_cap_warned),
+        m_all_intermediate_hidden_states(seq.m_all_intermediate_hidden_states),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_sequence_group(seq.m_sequence_group),
@@ -147,7 +158,6 @@ public:
         m_finish_reason = finish_reason;
     }
 
-    // appends new tokens to a generated part
     void append_token(int64_t token_id, float log_prob) {
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
@@ -170,18 +180,53 @@ public:
         return m_tree_metadata;
     }
 
+    void update_intermediate_hidden_state(const ov::Tensor& tensor) {
+        if (m_accumulate_hidden_states && tensor.get_size() > 0) {
+            if (m_all_intermediate_hidden_states.size() >= kMaxAccumulatedHiddenStates) {
+                if (!m_hidden_state_cap_warned) {
+                    GENAI_WARN("Hidden state accumulation cap reached (%zu tokens); stopping accumulation",
+                               kMaxAccumulatedHiddenStates);
+                    m_hidden_state_cap_warned = true;
+                }
+                return;
+            }
+            ov::Tensor copy(tensor.get_element_type(), tensor.get_shape());
+            tensor.copy_to(copy);
+            m_all_intermediate_hidden_states.push_back(std::move(copy));
+        }
+    }
+
+    void set_accumulate_hidden_states(bool enable) {
+        m_accumulate_hidden_states = enable;
+        m_hidden_state_cap_warned = false;
+        if (enable) {
+            m_all_intermediate_hidden_states.reserve(256);
+        }
+    }
+
+    const std::vector<ov::Tensor>& get_all_intermediate_hidden_states() const {
+        return m_all_intermediate_hidden_states;
+    }
+
     // removes n last tokens and updates cumulative log prob
     // used to remove stop_string from the output
     void remove_last_tokens(int n) {
+        OPENVINO_ASSERT(n >= 0, "Number of tokens to remove must be greater than or equal to 0");
         OPENVINO_ASSERT(m_generated_ids.size() >= n, "Cannot remove more tokens than has been generated");
         for (int i = 0; i < n; i++) {
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
-            if (m_type == SequenceGroupType::EMBEDDINGS) {
-                m_generated_ids_embeds.pop_back();
-                m_position_ids_list.pop_back();
-            }
+        }
+        if (m_type == SequenceGroupType::EMBEDDINGS) {
+            const size_t tokens_to_remove = static_cast<size_t>(n);
+            const size_t embeds_to_remove = tokens_to_remove;
+            const size_t position_ids_to_remove = tokens_to_remove;
+            OPENVINO_ASSERT(embeds_to_remove <= m_generated_ids_embeds.size(), "Cannot remove more embeds than has been generated in embeddings");
+            OPENVINO_ASSERT(position_ids_to_remove <= m_position_ids_list.size(), "Cannot remove more position ids than has been generated in position_ids");
+
+            truncate_generated_ids_embeds(embeds_to_remove);
+            truncate_position_ids(position_ids_to_remove);
         }
     }
 
@@ -260,6 +305,21 @@ public:
             std::copy_n(generated_ids_embeds.data<float>() + idx * m_hidden_size, m_hidden_size, m_generated_ids_embeds[i].begin());
 
         }
+    }
+    void truncate_generated_ids_embeds(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
+        // remove the last num_tokens embeddings
+        if (num_tokens > 0)
+            m_generated_ids_embeds.resize(m_generated_ids_embeds.size() - num_tokens);
+    }
+
+    void truncate_position_ids(size_t num_tokens) {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        OPENVINO_ASSERT(num_tokens <= m_position_ids_list.size());
+        // remove the last num_tokens position ids
+        if (num_tokens > 0)
+            m_position_ids_list.resize(m_position_ids_list.size() - num_tokens);
     }
 
     void append_position_ids(const ov::Tensor& position_ids) {
@@ -344,6 +404,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
 
     ov::Tensor m_deepstack_visual_embeds;
     std::optional<std::vector<bool>> m_visual_pos_masks;
+    
+    ov::Tensor m_per_layer_inputs;
 
     std::vector<float> m_prompt_log_probs;
     GenerationStream::Ptr m_generation_stream;
@@ -368,6 +430,8 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_output_seq_len = 0;
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
+    TimePoint m_start_time = std::chrono::steady_clock::now();
+    PerfMetrics m_perf_metrics;
 
     SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params)
         : m_request_id(request_id),
@@ -441,6 +505,15 @@ public:
                         tensor.copy_to(m_deepstack_visual_embeds);
                     } else if (input_name == "visual_pos_masks") {
                         m_visual_pos_masks = std::vector<bool>(tensor.data<const bool>(), tensor.data<const bool>() + tensor.get_size());
+                    } else if (input_name == "per_layer_inputs") {
+                        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::f32, "per_layer_inputs must have element type f32");
+                        const auto& shape = tensor.get_shape();
+                        OPENVINO_ASSERT(shape.size() == 4 && shape[0] == 1,
+                            "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
+                        m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
+                        tensor.copy_to(m_per_layer_inputs);
+                    } else {
+                        OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }
                 }
             }
@@ -661,7 +734,6 @@ public:
         m_num_processed_tokens -= num_preempt_tokens;
     }
 
-    // returns context length taking into account scheduled tokens
     size_t get_context_len() const {
         return get_num_processed_tokens() + get_num_scheduled_tokens();
     }
@@ -708,7 +780,6 @@ public:
         return std::max<size_t>(num_available_tokens - m_num_processed_tokens, 1u) + m_num_validation_tokens;
     }
 
-    // mark current schedule phase as finished and updates internal counters
     void finish_iteration() {
         m_num_processed_tokens += m_num_scheduled_tokens;
         // if some processed tokens were evicted, max content len is greater than number of processed tokens
@@ -753,6 +824,11 @@ public:
     const std::optional<std::vector<bool>>& get_visual_pos_masks() const {
         OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_visual_pos_masks;
+    }
+
+    const ov::Tensor& get_per_layer_inputs() const {
+        OPENVINO_ASSERT(m_sequence_group_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_per_layer_inputs;
     }
 
     size_t get_hidden_size() const {
@@ -820,6 +896,43 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
+    void update_perf_metrics(MicroSeconds inference_duration,
+                             MicroSeconds sampling_duration,
+                             size_t batch_size,
+                             TimePoint step_end_time) {
+        auto& raw_metrics = m_perf_metrics.raw_metrics;
+        if (raw_metrics.m_inference_durations.empty()) {
+            raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+        }
+        raw_metrics.m_inference_durations[0] += inference_duration;
+        if (batch_size > 0) {
+            const auto per_token_inference_duration = inference_duration / batch_size;
+            raw_metrics.m_token_infer_durations.insert(raw_metrics.m_token_infer_durations.end(),
+                                                       batch_size,
+                                                       per_token_inference_duration);
+            raw_metrics.m_new_token_times.emplace_back(step_end_time);
+            raw_metrics.m_batch_sizes.emplace_back(batch_size);
+            raw_metrics.m_sampling_durations.emplace_back(sampling_duration);
+        }
+    }
+
+    PerfMetrics get_perf_metrics() {
+        auto& raw_metrics = m_perf_metrics.raw_metrics;
+        if (raw_metrics.m_inference_durations.empty()) {
+            raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+        }
+        // Record total generate duration from request start to now
+        if (raw_metrics.generate_durations.empty()) {
+            auto now = std::chrono::steady_clock::now();
+            auto total_duration = std::chrono::duration_cast<MicroSeconds>(now - m_start_time);
+            raw_metrics.generate_durations.push_back(total_duration);
+        }
+        m_perf_metrics.num_input_tokens = get_prompt_len();
+        m_perf_metrics.m_evaluated = false;
+        m_perf_metrics.evaluate_statistics(m_start_time);
+        return m_perf_metrics;
+    }
+
     bool handle_stopped() const {
         return m_generation_stream->get_status() == GenerationStatus::STOP;
     }
@@ -830,6 +943,25 @@ public:
 
     void push_empty_outputs() {
         m_generation_stream->push({});
+    }
+
+    void push_finished_hidden_states() {
+        GenerationOutputs outputs;
+        for (auto& sequence : m_sequences) {
+            if (!sequence->has_finished()) {
+                continue;
+            }
+            const auto& hidden_states = sequence->get_all_intermediate_hidden_states();
+            if (hidden_states.empty()) {
+                continue;
+            }
+            GenerationOutput output;
+            output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_prob();
+            output.finish_reason = sequence->get_finish_reason();
+            output.intermediate_hidden_states = hidden_states;
+            outputs.emplace(sequence->get_grouped_id(), output);
+        }
+        m_generation_stream->push(std::move(outputs));
     }
 
     void push_outputs() {
@@ -844,6 +976,7 @@ public:
             }
             output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_prob();
             output.finish_reason = sequence->get_finish_reason();
+            output.intermediate_hidden_states = sequence->get_all_intermediate_hidden_states();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
         m_generation_stream->push(std::move(outputs));
@@ -859,6 +992,10 @@ public:
                 output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
                 output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
             }
+            // Hidden states are complete only once the sequence finishes; ride them out on the
+            // terminal streaming push so the add_request() handle receives them too.
+            if (sequence->has_finished())
+                output.intermediate_hidden_states = sequence->get_all_intermediate_hidden_states();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
         m_has_echoed = true;
@@ -876,7 +1013,7 @@ public:
             if (has_finished()) {
                 push_outputs();
             }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial()) {
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
@@ -887,7 +1024,9 @@ public:
                 // push empty output in case we won't stream generation res
                 if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
                     if (has_finished()) {
-                        push_empty_outputs();
+                        // All tokens already streamed; still deliver accumulated hidden states
+                        // (falls back to an empty terminator push when there are none).
+                        push_finished_hidden_states();
                     }
                     return;
                 }

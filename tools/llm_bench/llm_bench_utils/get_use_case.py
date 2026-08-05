@@ -29,6 +29,7 @@ DIFFUSERS_PIPELINE_TYPES = {
     "StableDiffusionInpaintPipeline",
     "StableDiffusionXLInpaintPipeline",
     "FluxPipeline",
+    "Flux2KleinPipeline",
     "LatentConsistencyModelPipeline",
 }
 
@@ -50,19 +51,6 @@ def safe_json_load(file_path: Path) -> Optional[dict]:
     return None
 
 
-def resolve_complex_model_types(config):
-    model_type = config.get("model_type").lower().replace('_', '-')
-    if model_type == "gemma3":
-        return USE_CASES["visual_text_gen"][0], model_type
-    if model_type == "gemma3-text":
-        return USE_CASES["text_gen"][0], model_type
-    if model_type in ["phi4mm", "phi4-multimodal"]:
-        return USE_CASES["visual_text_gen"][0], model_type
-    if model_type == "llama4":
-        return USE_CASES["visual_text_gen"][0], model_type
-    return None, None
-
-
 def get_model_name(model_path: Path, task: Optional[str] = None) -> Tuple[Optional[object], Optional[str], Optional[str]]:
     """
     Attempts to extract the model name and its use case/type from the given path.
@@ -82,7 +70,7 @@ def get_model_name(model_path: Path, task: Optional[str] = None) -> Tuple[Option
     # Search for matching model type in path parts
     for part in reversed(model_parts):
         for use_case in possible_use_cases:
-            for model_type in use_case.model_types:
+            for model_type in use_case.supported_model_types:
                 if part.lower().startswith(model_type):
                     return use_case, model_type, part
 
@@ -115,7 +103,7 @@ def get_use_case_by_model_id(model_id, task=None):
             possible_use_cases = USE_CASES[task]
     model_use_case, model_type = None, None
     for use_case in possible_use_cases:
-        for m_type in normalize_model_ids(use_case.model_types):
+        for m_type in normalize_model_ids(use_case.supported_model_types):
             # TODO go to equality and raise error if use_cases is already found, as it will mean that
             # model with that task can be applicable to execute with different pipelines and user doesn't specify one
             if not model_id.startswith(m_type):
@@ -165,10 +153,6 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
     # Strategy 2 & 3: Determine a 'model_id' from config or GGUF metadata
     model_id = None
     if (config := safe_json_load(model_path / "config.json")):
-        # First, attempt resolution with more complex logic
-        case, model_type = resolve_complex_model_types(config)
-        if case and model_type:
-            return log_and_return(case, model_type, cur_model_name)
         # Fallback to simple 'model_type' key
         if model_type_val := config.get("model_type"):
             model_id = str(model_type_val).lower().replace('_', '-')

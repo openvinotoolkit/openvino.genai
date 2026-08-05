@@ -276,17 +276,56 @@ TEST(TestCacheOrchestratorHybrid, SharedLinearAttentionRegistersSingleBlockTable
     Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
     orchestrator->allocate_tokens(sequence, sequence_group, 1, sequence_group->get_prompt_len());
 
-    const auto block_tables = orchestrator->get_block_tables(sequence->get_id());
-    ASSERT_EQ(block_tables.size(), 2);
-    EXPECT_EQ(orchestrator->get_cache_type_for_layer(0), CacheType::KV_CACHE);
-    EXPECT_EQ(orchestrator->get_cache_type_for_layer(1), CacheType::LINEAR_ATTENTION_CACHE);
+    const auto& kv_block_tables = orchestrator->get_kv_block_tables(sequence->get_id());
+    ASSERT_EQ(kv_block_tables.size(), 1);
+    ASSERT_EQ(kv_block_tables[0].size(), 1);
 
-    const auto la_block_table = orchestrator->get_linear_attention_block_table(sequence->get_id());
+    const auto& la_block_table = orchestrator->get_linear_attention_block_table(sequence->get_id());
     ASSERT_EQ(la_block_table.size(), 1);
-    ASSERT_EQ(block_tables[1].size(), 1);
-    EXPECT_EQ(block_tables[1][0]->get_index(), la_block_table[0]->get_index());
 
     orchestrator->free_sequence(sequence->get_id());
+}
+
+TEST(TestCacheOrchestratorHybrid, SchedulerEmitsLinearAttentionCheckpointPaging) {
+    auto orchestrator = create_hybrid_orchestrator(
+        /*num_kv_blocks=*/4,
+        /*num_la_blocks=*/5,
+        TEST_BLOCK_SIZE,
+        /*num_layers=*/1,
+        /*la_fixed_blocks_per_seq=*/1);
+
+    SchedulerConfig config;
+    config.max_num_batched_tokens = 4;
+    config.dynamic_split_fuse = false;
+    config.max_num_seqs = 1;
+    Scheduler scheduler(orchestrator, config);
+
+    std::vector<int64_t> tokens = {1, 2, 3, 4};
+    auto group = std::make_shared<SequenceGroup>(
+        400,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        utils::get_greedy_config());
+    const auto seq_id = group->get_running_sequences().at(0)->get_id();
+
+    scheduler.reserve_linear_attention_checkpoints_for_next_schedule(seq_id, tokens.size());
+    std::vector<SequenceGroup::Ptr> requests = {group};
+    const auto output = scheduler.schedule(requests);
+
+    const auto paging_it = output.m_linear_attention_paging_data.find(seq_id);
+    ASSERT_NE(paging_it, output.m_linear_attention_paging_data.end());
+    const auto& paging = paging_it->second;
+    ASSERT_EQ(paging.block_indices.size(), tokens.size() + 1);
+    EXPECT_EQ(paging.past_length, 0);
+    EXPECT_EQ(paging.cache_interval, 1);
+
+    const auto committed_block = orchestrator->get_linear_attention_block_table(seq_id).front()->get_index();
+    EXPECT_EQ(paging.block_indices.front(), committed_block);
+    for (size_t idx = 1; idx < paging.block_indices.size(); ++idx) {
+        EXPECT_NE(paging.block_indices[idx], committed_block);
+    }
+
+    scheduler.release_linear_attention_checkpoints(seq_id);
+    scheduler.free_sequence(seq_id);
 }
 
 TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalMultiplierForHybridModel) {
@@ -307,6 +346,51 @@ TEST(TestCacheOrchestratorHybrid, CreateAcceptsCacheIntervalMultiplierForHybridM
                                               [](const std::string&, size_t) {
                                                   return std::numeric_limits<size_t>::max();
                                               }));
+}
+
+TEST(TestCacheOrchestratorHybrid, AdaptiveCacheIntervalMultiplierScalesWithStateSize) {
+    using ov::genai::CacheOrchestrator;
+    // Small LA state relative to a KV block keeps the default multiplier (fine-grained reuse).
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/1024, /*kv=*/4096),
+              DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/4096, /*kv=*/4096),
+              DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+
+    // Large recurrent state (e.g. hybrid SSM): multiplier grows ~ la/kv so one LA
+    // checkpoint costs about one KV block, instead of exhausting the cache budget.
+    // 51 MiB LA state vs 512 KiB KV block -> ratio ~102.
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/size_t(51) * 1024 * 1024,
+                                                                    /*kv=*/size_t(512) * 1024),
+              102u);
+
+    // Clamped to the upper bound for very large states.
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/size_t(4096) * 1024 * 1024,
+                                                                    /*kv=*/size_t(64) * 1024),
+              CacheOrchestrator::MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER);
+
+    // Degenerate kv block size falls back to the default multiplier (no divide-by-zero).
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(/*la=*/1024, /*kv=*/0),
+              DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
+
+    // A near-max LA block size must not overflow the ceil-division and still clamps to MAX.
+    EXPECT_EQ(CacheOrchestrator::adaptive_cache_interval_multiplier(
+                  /*la=*/std::numeric_limits<size_t>::max(), /*kv=*/4096),
+              CacheOrchestrator::MAX_ADAPTIVE_CACHE_INTERVAL_MULTIPLIER);
+}
+
+// The OOM-drop (GenerationStatus::IGNORED) surfaces an actionable error at the call sites that
+// would otherwise discard the status (CB adapter overloads and the VLM result conversion).
+TEST(TestCacheOrchestratorHybrid, AssertRequestWasScheduledThrowsOnIgnored) {
+    constexpr uint64_t request_id = 7;
+    // IGNORED == request dropped by the scheduler (out of cache budget) -> must throw.
+    EXPECT_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::IGNORED, request_id),
+                 ov::Exception);
+
+    // All terminal/active states that represent real results must pass through untouched.
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::FINISHED, request_id));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::STOP, request_id));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::CANCEL, request_id));
+    EXPECT_NO_THROW(ov::genai::utils::assert_request_was_scheduled(GenerationStatus::RUNNING, request_id));
 }
 
 TEST(TestCacheOrchestratorHybrid, CreateIgnoresCacheIntervalMultiplierWithoutLinearAttentionCache) {
@@ -443,14 +527,14 @@ TEST(TestCacheOrchestratorHybrid, GrowFixedSize_OnlyAffectsFixed) {
     const auto& kv_bm = orchestrator->get_block_manager(CacheType::KV_CACHE);
     const auto& la_bm = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
 
-    size_t initial_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t initial_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t initial_kv_blocks = kv_bm.get_total_block_count();
+    size_t initial_la_blocks = la_bm.get_total_block_count();
 
     // Grow fixed-size capacity by 3 sequences.
     orchestrator->grow_fixed_size_capacity(3);
 
-    size_t final_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t final_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t final_kv_blocks = kv_bm.get_total_block_count();
+    size_t final_la_blocks = la_bm.get_total_block_count();
 
     // KV should be unchanged.
     EXPECT_EQ(final_kv_blocks, initial_kv_blocks);
@@ -487,14 +571,14 @@ TEST(TestCacheOrchestratorHybrid, EnsureSequenceTokenCapacity_SkipsFixed) {
     const auto& kv_bm = orchestrator->get_block_manager(CacheType::KV_CACHE);
     const auto& la_bm = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
 
-    size_t initial_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t initial_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t initial_kv_blocks = kv_bm.get_total_block_count();
+    size_t initial_la_blocks = la_bm.get_total_block_count();
 
     // Ensure sequence-aware token capacity for one sequence with 100 tokens.
     orchestrator->ensure_sequence_token_capacity({{100, 1}});
 
-    size_t final_kv_blocks = kv_bm.get_total_number_of_kv_blocks();
-    size_t final_la_blocks = la_bm.get_total_number_of_kv_blocks();
+    size_t final_kv_blocks = kv_bm.get_total_block_count();
+    size_t final_la_blocks = la_bm.get_total_block_count();
 
     // KV blocks should increase (at least 100 / TEST_BLOCK_SIZE = 25 blocks).
     EXPECT_GE(final_kv_blocks, (100 + TEST_BLOCK_SIZE - 1) / TEST_BLOCK_SIZE);
@@ -532,8 +616,8 @@ TEST(TestCacheOrchestratorHybrid, TotalCacheBytes_IncludesAll) {
     const auto& la_bm = orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
     const auto& la_cm = orchestrator->get_cache_manager(CacheType::LINEAR_ATTENTION_CACHE);
 
-    size_t expected_kv_bytes = kv_bm.get_total_number_of_kv_blocks() * kv_cm.get_block_size_in_bytes();
-    size_t expected_la_bytes = la_bm.get_total_number_of_kv_blocks() * la_cm.get_block_size_in_bytes();
+    size_t expected_kv_bytes = kv_bm.get_total_block_count() * kv_cm.get_block_size_in_bytes();
+    size_t expected_la_bytes = la_bm.get_total_block_count() * la_cm.get_block_size_in_bytes();
     size_t expected_total = expected_kv_bytes + expected_la_bytes;
 
     size_t actual_total = orchestrator->get_total_cache_size_in_bytes();

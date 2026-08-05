@@ -5,6 +5,7 @@ import os
 import pytest
 import math
 import sys
+import numpy as np
 
 from pathlib import Path
 from shutil import rmtree
@@ -714,7 +715,7 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
     compare_generation_results([prompt], ref_gen_results, ov_gen_results, ov_generation_config)
 
 
-def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id):
+def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id, prompts, max_num_batched_tokens=5):
     main_model_path = download_and_convert_model(main_model_id).models_path
     draft_model_path = download_and_convert_model(draft_model_id).models_path
 
@@ -728,7 +729,9 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id)
         scheduler_config=scheduler_config_ref,
     )
 
-    scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
+    scheduler_config_target = dict_to_scheduler_config(
+        {"dynamic_split_fuse": True, "max_num_batched_tokens": max_num_batched_tokens}
+    )
     ov_pipe_target = create_ov_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
@@ -737,13 +740,12 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id)
     )
 
     generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4)
-    prompt = "Why is the Sun yellow?"
-    result_ref = ov_pipe_ref.generate([prompt], generation_config)
-    result_gen = ov_pipe_target.generate([prompt], generation_config)
+    result_ref = ov_pipe_ref.generate(prompts, generation_config)
+    result_gen = ov_pipe_target.generate(prompts, generation_config)
 
-    reference = result_ref.texts[0]
-    generated = result_gen.texts[0]
-    assert generated == reference
+    assert len(result_gen.texts) == len(result_ref.texts)
+    for ref_text, gen_text in zip(result_ref.texts, result_gen.texts):
+        assert gen_text == ref_text
 
     extended_perf_metrics_gen = result_gen.extended_perf_metrics
     total_iteration_number_main = len(extended_perf_metrics_gen.main_model_metrics.raw_metrics.m_durations)
@@ -751,12 +753,227 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id)
     assert total_iteration_number_main > 0 and total_iteration_number_main < num_generated_tokens_main
 
 
-def test_dynamic_split_fuse_for_speculative_decoding():
-    compare_results_for_dynamic_split_fuse_config("HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-135M")
+dynamic_split_fuse_prompt_cases = [
+    (["Why is the Sun yellow?"], 5),
+    (["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada.", "Why is the grass green?"], 20),
+]
 
 
-def test_dynamic_split_fuse_for_eagle3():
-    compare_results_for_dynamic_split_fuse_config("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3")
+@pytest.mark.parametrize(
+    "prompts,max_num_batched_tokens",
+    dynamic_split_fuse_prompt_cases,
+    ids=["single_prompt", "multi_prompts"],
+)
+def test_dynamic_split_fuse_for_speculative_decoding(prompts, max_num_batched_tokens):
+    compare_results_for_dynamic_split_fuse_config(
+        "HuggingFaceTB/SmolLM2-360M",
+        "HuggingFaceTB/SmolLM2-135M",
+        prompts,
+        max_num_batched_tokens,
+    )
+
+
+@pytest.mark.parametrize(
+    "prompts,max_num_batched_tokens",
+    dynamic_split_fuse_prompt_cases,
+    ids=["single_prompt", "multi_prompts"],
+)
+def test_dynamic_split_fuse_for_eagle3(prompts, max_num_batched_tokens):
+    compare_results_for_dynamic_split_fuse_config(
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        prompts,
+        max_num_batched_tokens,
+    )
+
+
+EAGLE3_FIXED_PROMPT_BASE = (
+    "During speculative decoding, the draft path proposes several tokens and the main path validates them in order. "
+    "Prefix caching reduces recomputation by reusing KV blocks that correspond to the unchanged prompt prefix. "
+    "A robust scheduler tracks block ownership, eviction pressure, and per-request progress across decoding steps. "
+    "When accepted-token streaks are long, throughput improves because fewer full-model validations are required. "
+    "If a mismatch appears, the pipeline rolls back to the last verified state and resumes from the main model output. "
+    "Stable request alignment is important so that hidden-state transitions and cache indices remain consistent. "
+    "Latency can vary with block size, batching policy, and how aggressively the system reuses"
+)
+
+
+@pytest.fixture(scope="module")
+def eagle3_model_paths() -> tuple[Path, Path]:
+    main_model_path = download_and_convert_model("Qwen/Qwen3-1.7B").models_path
+    draft_model_path = download_and_convert_model("AngelSlim/Qwen3-1.7B_eagle3").models_path
+    return main_model_path, draft_model_path
+
+
+def _build_input_ids_with_exact_token_count(ov_tokenizer, target_tokens: int) -> ov.Tensor:
+    if target_tokens not in (127, 128, 129):
+        raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
+
+    fixed_prompt = EAGLE3_FIXED_PROMPT_BASE
+    encoded = ov_tokenizer.encode(fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist()
+
+    while len(encoded) < target_tokens:
+        encoded.extend(ov_tokenizer.encode(" " + fixed_prompt, add_special_tokens=False).input_ids.data[0].tolist())
+
+    return ov.Tensor(np.array([encoded[:target_tokens]], dtype=np.int64))
+
+
+@pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
+def test_eagle3_prefix_caching_no_crash(target_prompt_tokens: int, eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config(
+        {"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
+    ov_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+
+    ov_tokenizer = ov_pipe.get_tokenizer()
+    input_ids = _build_input_ids_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+
+    pipeline_generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
+    first_results = ov_pipe.generate(input_ids, pipeline_generation_config)
+    try:
+        second_results = ov_pipe.generate(input_ids, pipeline_generation_config)
+    except RuntimeError as exc:
+        pytest.fail(
+            "Second Eagle3 generate with prefix cache reuse must not raise RuntimeError. "
+            f"prompt_tokens={target_prompt_tokens}, error={exc}"
+        )
+
+    assert len(first_results.tokens) == 1
+    assert len(second_results.tokens) == 1
+    assert len(first_results.tokens[0]) > 0
+    assert len(second_results.tokens[0]) > 0
+
+
+@pytest.mark.parametrize("target_prompt_tokens", [127, 128, 129])
+def test_eagle3_prefix_caching_add_request_no_crash(target_prompt_tokens: int, eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config(
+        {"enable_prefix_caching": True, "dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
+    cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+
+    ov_tokenizer = cb_pipe.get_tokenizer()
+    input_ids = _build_input_ids_with_exact_token_count(ov_tokenizer, target_prompt_tokens)
+
+    generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4, apply_chat_template=False)
+
+    first_handle = cb_pipe.add_request(0, input_ids, generation_config=generation_config)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    first_outputs = first_handle.read_all()
+
+    try:
+        second_handle = cb_pipe.add_request(1, input_ids, generation_config=generation_config)
+        while cb_pipe.has_non_finished_requests():
+            cb_pipe.step()
+        second_outputs = second_handle.read_all()
+    except RuntimeError as exc:
+        pytest.fail(
+            "Second Eagle3 add_request with prefix cache reuse must not raise RuntimeError. "
+            f"prompt_tokens={target_prompt_tokens}, error={exc}"
+        )
+
+    assert len(first_outputs) == 1
+    assert len(second_outputs) == 1
+    assert len(first_outputs[0].generated_ids) > 0
+    assert len(second_outputs[0].generated_ids) > 0
+
+
+@pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
+@pytest.mark.parametrize("main_device,draft_device", devices)
+@pytest.mark.parametrize("branching_factor,tree_depth", [(4, 2), (8, 4), (6, 3), (1, 0), (1, 4)])
+def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, prompt, branching_factor, tree_depth):
+    """Test EAGLE3 with tree-based speculative decoding using different tree configurations."""
+    # Download and convert model
+    main_model_schema = download_and_convert_model(main_model)
+    main_opt_model = main_model_schema.opt_model
+    main_hf_tokenizer = main_model_schema.hf_tokenizer
+    main_model_path = main_model_schema.models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    # Create pipeline
+    ov_pipe = create_ov_pipeline(
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+    )
+
+    # Test with tree-based configuration
+    num_assistant_tokens = max(tree_depth, 10)  # Ensure num_assistant_tokens >= tree_depth
+    tree_gen_config = GenerationConfig(
+        max_new_tokens=10,
+        num_assistant_tokens=num_assistant_tokens,
+        branching_factor=branching_factor,
+        tree_depth=tree_depth,
+    )
+
+    # Run with tree configuration
+    tree_result = ov_pipe.generate([prompt], tree_gen_config)
+    tree_perf_metrics = tree_result.extended_perf_metrics
+
+    # Verify tree mode is working
+    assert tree_perf_metrics is not None
+    assert tree_perf_metrics.main_model_metrics is not None
+    assert tree_perf_metrics.draft_model_metrics is not None
+    assert tree_perf_metrics.get_num_accepted_tokens() > 0
+
+    # Run reference HF model for correctness check
+    ref_gen_config = GenerationConfig(max_new_tokens=10)
+    ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ref_gen_config)
+    tree_gen_results = convert_decoded_results_to_generation_result(tree_result, 1, 1, False)
+
+    # Compare with reference (should produce same output with greedy decoding)
+    compare_generation_results([prompt], ref_gen_results, tree_gen_results, ref_gen_config)
+
+    del ov_pipe
+
+
+@pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
+@pytest.mark.parametrize("main_device,draft_device", devices)
+def test_eagle3_tree_vs_sequential(main_model, main_device, draft_model, draft_device, prompt):
+    """Compare EAGLE3 tree decode vs sequential decode performance and correctness."""
+    main_model_path = download_and_convert_model(main_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    # Create pipeline
+    ov_pipe = create_ov_pipeline(
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+    )
+
+    # Sequential configuration (tree_depth=0 or branching_factor=1)
+    seq_config = GenerationConfig(
+        max_new_tokens=10, num_assistant_tokens=4, branching_factor=1, tree_depth=0, do_sample=False
+    )
+    seq_result = ov_pipe.generate([prompt], seq_config)
+
+    # Tree configuration
+    tree_config = GenerationConfig(
+        max_new_tokens=10, num_assistant_tokens=8, branching_factor=4, tree_depth=2, do_sample=False
+    )
+    tree_result = ov_pipe.generate([prompt], tree_config)
+    # Both should produce the same output with greedy decoding
+    assert seq_result.texts[0] == tree_result.texts[0], "Tree and sequential decode should produce same output"
+
+    # Tree mode should generally have higher acceptance rate
+    seq_accepted = seq_result.extended_perf_metrics.get_num_accepted_tokens()
+    tree_accepted = tree_result.extended_perf_metrics.get_num_accepted_tokens()
+
+    # Both should have accepted at least some tokens
+    assert seq_accepted > 0
+    assert tree_accepted > 0
+
+    del ov_pipe
 
 
 @pytest.fixture(scope="module")
