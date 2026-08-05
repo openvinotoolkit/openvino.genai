@@ -29,6 +29,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+OMNI_MODEL_TYPES = {
+    "qwen3_omni_moe": "Qwen3OmniMoeForConditionalGeneration",
+    "qwen3_omni": "Qwen3OmniForConditionalGeneration",
+}
+
+
 def fix_phi3_v_eos_token_id(model_type: str, tokenizer: PreTrainedTokenizer) -> dict:
     """
     phi3_v configs aren't consistent. Override the default
