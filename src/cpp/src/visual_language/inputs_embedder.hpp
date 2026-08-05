@@ -185,6 +185,8 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
+        // Cached text-only embeddings for speculative (eagle3) draft path.
+        ov::Tensor m_draft_inputs_embeds;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -302,7 +304,13 @@ private:
             const std::vector<EncodedVideo>& videos) const;
 
         virtual ov::Tensor get_draft_inputs_embeds() const {
-            return {};
+            return m_draft_inputs_embeds;
+        }
+
+        void cache_draft_inputs_embeds(const ov::Tensor& text_embeds) {
+            OPENVINO_ASSERT(static_cast<bool>(text_embeds), "Cannot cache an empty draft embeddings tensor");
+            m_draft_inputs_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
+            text_embeds.copy_to(m_draft_inputs_embeds);
         }
 
     protected:

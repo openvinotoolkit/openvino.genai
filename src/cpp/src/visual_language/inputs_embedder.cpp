@@ -54,6 +54,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
+    m_draft_inputs_embeds = ov::Tensor();
     if (!m_cache_state.get_state().empty()) {
         m_cache_state.reset_state();
     }
@@ -80,6 +81,7 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
+    m_draft_inputs_embeds = ov::Tensor();
     m_cache_state.reset_state();
 }
 
