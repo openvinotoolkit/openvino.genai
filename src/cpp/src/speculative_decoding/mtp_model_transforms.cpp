@@ -7,7 +7,6 @@
 #include <unordered_map>
 
 #include "openvino/op/constant.hpp"
-#include "openvino/op/convert.hpp"
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/result.hpp"
 
@@ -88,27 +87,6 @@ ov::Output<ov::Node> extract_tied_lm_head_weight(const std::shared_ptr<ov::Model
 
     transpose_weight = matmul->get_transpose_b();
     return matmul->input_value(1);
-}
-
-void remove_roundtrip_converts(const std::shared_ptr<ov::Model>& model) {
-    for (const auto& node : model->get_ordered_ops()) {
-        auto outer = ov::as_type_ptr<ov::op::v0::Convert>(node);
-        if (!outer) {
-            continue;
-        }
-        auto inner = ov::as_type_ptr<ov::op::v0::Convert>(outer->get_input_node_shared_ptr(0));
-        if (!inner) {
-            continue;
-        }
-        const auto source = inner->input_value(0);
-        if (source.get_element_type() != outer->get_output_element_type(0)) {
-            continue;
-        }
-        for (auto& target : outer->output(0).get_target_inputs()) {
-            target.replace_source_output(source);
-        }
-    }
-    model->validate_nodes_and_infer_types();
 }
 
 void expose_last_hidden_state(const std::shared_ptr<ov::Model>& main_model) {
