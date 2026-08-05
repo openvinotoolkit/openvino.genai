@@ -30,6 +30,12 @@ enum class SequenceGroupType {
     EMBEDDINGS
 };
 
+// Representation of scores consumed by beam search.
+enum class BeamScoreInput {
+    LOGITS,
+    LOG_PROBABILITIES
+};
+
 using TokenIds = std::vector<int64_t>;
 using LogProbs = std::vector<float>;
 
@@ -426,6 +432,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_num_validation_tokens = 0;
     // flag to enable/disable token generation, e.g. in speculative decoding scenario
     bool m_is_gen_paused = false;
+    BeamScoreInput m_beam_score_input = BeamScoreInput::LOGITS;
     // output seq len at current iteration
     size_t m_output_seq_len = 0;
 
@@ -433,11 +440,13 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     TimePoint m_start_time = std::chrono::steady_clock::now();
     PerfMetrics m_perf_metrics;
 
-    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params)
+    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params,
+                  BeamScoreInput beam_score_input = BeamScoreInput::LOGITS)
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
           m_sequence_group_type(SequenceGroupType::TOKENS),
-          m_generation_stream(GenerationStream::create()) { }
+          m_generation_stream(GenerationStream::create()),
+          m_beam_score_input(beam_score_input) { }
 
     bool out_of_memory() const {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
@@ -453,8 +462,9 @@ public:
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
-    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt, std::nullopt) {
+    SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params,
+                  BeamScoreInput beam_score_input = BeamScoreInput::LOGITS)
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, beam_score_input) {
     }
 
     SequenceGroup(uint64_t request_id,
@@ -464,8 +474,9 @@ public:
                   const std::optional<std::unordered_map<std::string, ov::Tensor>>& lm_extra_inputs = std::nullopt,
                   const std::optional<ov::Tensor>& position_ids = std::nullopt,
                   const std::optional<int64_t>& rope_delta = std::nullopt,
-                  const std::optional<ov::Tensor>& prompt_ids = std::nullopt)
-        : SequenceGroup(request_id, sampling_params) {
+                  const std::optional<ov::Tensor>& prompt_ids = std::nullopt,
+                  BeamScoreInput beam_score_input = BeamScoreInput::LOGITS)
+        : SequenceGroup(request_id, sampling_params, beam_score_input) {
         size_t prompt_len;
         size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
@@ -861,6 +872,10 @@ public:
 
     const ov::genai::GenerationConfig& get_sampling_parameters() const {
         return m_sampling_params;
+    }
+
+    BeamScoreInput get_beam_score_input() const {
+        return m_beam_score_input;
     }
 
     void set_out_of_memory() {
