@@ -489,6 +489,8 @@ jobs:
           storage_root: ${{ env.ARTIFACTS_SHARE }}
           product_name: ${{ github.event.repository.name }}
 
+  # The genai_tests_wheel matrix is defined in .github/workflows/test_matrices/manylinux/wheel_tests.yml.
+  # Add/remove entries there; each entry runs only when one of its `components` is affected (see .github/scripts/build_test_matrices.py).
   prepare_test_matrices:
     name: Prepare test matrices
     needs: [ smart_ci ]

@@ -566,6 +566,8 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
+  # genai_tests_wheel and genai_samples_tests matrices are defined in .github/workflows/test_matrices/linux/*.yml.
+  # Add/remove entries there; each entry runs only when one of its `components` is affected (see .github/scripts/build_test_matrices.py).
   prepare_test_matrices:
     name: Prepare test matrices
     needs: [ smart_ci ]
