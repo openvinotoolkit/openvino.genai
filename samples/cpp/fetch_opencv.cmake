@@ -12,10 +12,6 @@ function(ov_genai_link_opencv target_name)
     # the shared one. On other platforms OpenCV_STATIC has no effect on the search.
     set(OpenCV_STATIC ON)
     find_package(OpenCV QUIET COMPONENTS ${required_components})
-    if(NOT OpenCV_FOUND)
-        set(OpenCV_STATIC OFF)
-        find_package(OpenCV QUIET COMPONENTS ${required_components})
-    endif()
 
     if(NOT OpenCV_FOUND)
         # No OpenCV available: build a static one from source.
