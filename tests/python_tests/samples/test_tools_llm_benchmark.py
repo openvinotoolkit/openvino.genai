@@ -721,6 +721,133 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.transformers_higher_v5_1
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "visual_text_gen", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "visual_text_gen", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_omni_visual_text_gen(
+        self, download_test_content, convert_model, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "What animal is in this image?",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.transformers_higher_v5_1
+    @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--optimum"],
+            pytest.param(
+                ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "speech_to_text", "--genai"],
+                marks=pytest.mark.xfail(
+                    reason=(
+                        "tiny-random-qwen3-omni + GenAI: OmniPipeline aborts with "
+                        "'Audio token count mismatch: placed 0 embeddings but encoder "
+                        "produced N tokens' because the prompt has no <|AUDIO|> "
+                        "placeholders after the fixture's chat_template."
+                    ),
+                ),
+            ),
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_omni_speech_to_text(
+        self, download_test_content, convert_model, sample_args
+    ):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "Transcribe this audio.",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.transformers_higher_v5_1
+    @pytest.mark.xfail(
+        reason=(
+            "tiny-random-qwen3-omni text_to_speech: the fixture's talker/code2wav "
+            "stack returns no waveform on this checkpoint, so both benchmark paths "
+            "abort with 'Qwen3-Omni text_to_speech: ... did not produce a waveform'."
+        ),
+    )
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "text_to_speech", "--optimum"],
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--task", "text_to_speech", "--genai"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_omni_text_to_speech(self, convert_model, sample_args):
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "--prompt",
+            "Hello OpenVINO GenAI",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.transformers_higher_v5_1
+    @pytest.mark.xfail(
+        reason=(
+            "tiny-random-qwen3-omni: chat_template emits <|image_pad|>, but "
+            "tokenizer_config.image_token and thinker_config.image_token_id are "
+            "<|IMAGE|>, so the processor never expands the image placeholder."
+        ),
+    )
+    @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
+    @pytest.mark.parametrize("download_model", ["tiny-random-qwen3-omni"], indirect=True)
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "4", "-f", "pt", "--task", "visual_text_gen"],
+        ],
+    )
+    def test_python_tool_llm_benchmark_qwen3_omni_moe_pt_visual_text_gen(
+        self, download_test_content, download_model, sample_args
+    ):
+        # PyTorch path loads raw HF weights (not the OpenVINO IR produced by convert_model).
+        # Qwen3OmniMoeForConditionalGeneration is exported by public transformers>=5.1.
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            download_model,
+            "--media",
+            download_test_content,
+            "--prompt",
+            "What animal is in this image?",
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
     @pytest.mark.parametrize(
         "sample_args",
         [

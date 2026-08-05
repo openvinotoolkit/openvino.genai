@@ -75,5 +75,7 @@ def parse_speech_json_data(json_data_list):
             speech_param["language"] = json_data["language"]
         if "timestamp" in json_data:
             speech_param["timestamp"] = json_data["timestamp"]
+        if "prompt" in json_data:
+            speech_param["prompt"] = json_data["prompt"]
         speech_param_list.append(speech_param)
     return speech_param_list
