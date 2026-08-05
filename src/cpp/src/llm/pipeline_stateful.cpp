@@ -4,6 +4,8 @@
 
 #include "llm/pipeline_stateful.hpp"
 
+#include <algorithm>
+
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -412,11 +414,15 @@ EncodedResults StatefulLLMPipeline::generate(
         (config.is_greedy_decoding() || config.is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
 
-    auto num_inputs = m_model_runner.get_compiled_model().inputs().size();
-    OPENVINO_ASSERT(num_inputs == 4 || num_inputs == 3, "Model should have 3 or 4 inputs: "
-                    "either (input_ids, attention_mask, beam_idx) or "
-                    "(input_ids, attention_mask, position_ids, beam_idx) "
-                    "but you have '" + std::to_string(num_inputs) + "' inputs");
+    const auto compiled_inputs = m_model_runner.get_compiled_model().inputs();
+    // NPUW block-based KV-cache models expose additional KV block parameters. Those
+    // parameters are bound and maintained by the NPUW infer request; the GenAI
+    // pipeline only owns the standard language-model inputs below.
+    const auto has_named_input = [&](const std::string& name) {
+        return std::any_of(compiled_inputs.begin(), compiled_inputs.end(), [&](const auto& input) {
+            return input.get_any_name() == name || input.get_names().count(name) != 0;
+        });
+    };
 
     if (is_chat_conversation) {
         if (m_use_full_chat_history)
@@ -450,7 +456,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     size_t prev_attn_mask_size = concatenated_attention_mask.get_shape()[1];
 
-    bool position_ids_available = (num_inputs == 4);
+    const bool position_ids_available = has_named_input("position_ids");
     std::optional<ov::Tensor> position_ids = std::nullopt;
     if (position_ids_available) {
         position_ids = ov::Tensor{ov::element::i64, input_ids.get_shape()};
