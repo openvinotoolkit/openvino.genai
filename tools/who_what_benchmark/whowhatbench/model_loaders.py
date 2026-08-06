@@ -570,7 +570,12 @@ def load_visual_text_model(
                     config._attn_implementation = "sdpa"
                     from_pretrained_kwargs = {"config": config}
                 else:
-                    from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
+                    # `_attn_implementation="eager"` already disables flash attention.
+                    # The legacy `use_flash_attention_2` flag is not accepted by every
+                    # model __init__ (e.g. custom remote-code architectures like
+                    # youtu_vl, whose signature is (self, config)) and forwarding it raises
+                    # TypeError. Keep only the portable attention selector here.
+                    from_pretrained_kwargs = {"_attn_implementation": "eager"}
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
