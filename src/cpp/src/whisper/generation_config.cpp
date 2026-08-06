@@ -84,8 +84,7 @@ void WhisperGenerationConfig::validate() const {
     }
 
     if (is_multilingual && language.has_value()) {
-        // Throws if the language is not present in lang_to_id in either the plain or wrapped form.
-        utils::find_token_id_by_language(lang_to_id, *language);
+        utils::get_or_throw_token_id_by_language(lang_to_id, *language);
     }
 
     if (is_multilingual && task.has_value()) {

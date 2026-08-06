@@ -140,22 +140,22 @@ def test_invalid_fields_assinment_rises(fields):
         config.validate()
 
 
-@pytest.mark.parametrize(
-    "lang_to_id",
-    [
-        {"<|en|>": 50259},  # wrapped-key map (converted-model style)
-        {"en": 50259},  # plain-key map (custom style)
-    ],
-    ids=["wrapped_key_map", "plain_key_map"],
-)
-@pytest.mark.parametrize("language", ["en", "<|en|>"], ids=["plain_input", "wrapped_input"])
-def test_whisper_language_validate_accepts_plain_and_wrapped(lang_to_id, language):
-    # Both accepted input forms must resolve against both map key styles, i.e. all
-    # four (map, input) combinations: wrapped/plain key x plain/wrapped input.
+# Whisper lang_to_id uses the wrapped key format from converted-model
+# generation_config.json files.
+WHISPER_LANG_TO_ID = {"<|en|>": 50259, "<|fr|>": 50265, "<|de|>": 50261}
+
+
+@pytest.mark.parametrize("code", ["en", "fr", "de"])
+@pytest.mark.parametrize("language_format", ["plain", "wrapped"])
+def test_whisper_language_validate_accepts_plain_and_wrapped(code, language_format):
+    # Both accepted input forms ("en" and "<|en|>") must resolve against the
+    # wrapped keys stored in lang_to_id.
     # max_new_tokens satisfies the base stop-condition requirement of validate().
+    language = code if language_format == "plain" else f"<|{code}|>"
+
     config = WhisperGenerationConfig(
         is_multilingual=True,
-        lang_to_id=lang_to_id,
+        lang_to_id=WHISPER_LANG_TO_ID,
         max_new_tokens=10,
     )
 
@@ -168,7 +168,7 @@ def test_whisper_language_validate_accepts_plain_and_wrapped(lang_to_id, languag
 def test_whisper_language_validate_rejects_unknown():
     config = WhisperGenerationConfig(
         is_multilingual=True,
-        lang_to_id={"<|en|>": 50259},
+        lang_to_id=WHISPER_LANG_TO_ID,
         max_new_tokens=10,
     )
 

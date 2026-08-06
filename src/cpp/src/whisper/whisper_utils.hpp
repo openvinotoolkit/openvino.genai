@@ -36,10 +36,11 @@ ov::genai::WhisperGenerationConfig prepare_per_generate_config(
 
 std::string find_language_by_token_id(const std::map<std::string, int64_t>& lang_to_id, int64_t token_id);
 
-// Resolve a Whisper language token id, accepting either the wrapped form
-// ("<|en|>") or the plain code ("en"). Throws if neither form exists in
-// lang_to_id.
-int64_t find_token_id_by_language(const std::map<std::string, int64_t>& lang_to_id, const std::string& language);
+// Resolve a Whisper language token id from a plain code ("en") or a wrapped
+// token ("<|en|>"). Plain codes are normalized to the wrapped form used by
+// lang_to_id. Throws if the normalized key is not present.
+int64_t get_or_throw_token_id_by_language(const std::map<std::string, int64_t>& lang_to_id,
+                                          const std::string& language);
 
 // "<|en|>" -> "en"
 std::string to_unescaped_language(const std::string& language);

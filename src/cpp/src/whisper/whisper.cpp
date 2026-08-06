@@ -260,7 +260,7 @@ ov::genai::SotTokensResult prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
     std::string language;
     if (config.language.has_value()) {
         language = *config.language;
-        language_token_id = ov::genai::utils::find_token_id_by_language(config.lang_to_id, language);
+        language_token_id = ov::genai::utils::get_or_throw_token_id_by_language(config.lang_to_id, language);
     } else {
         auto [language_token, infer_ms] = decoder->detect_language(encoder_hidden_state, config);
         language_token_id = language_token;
