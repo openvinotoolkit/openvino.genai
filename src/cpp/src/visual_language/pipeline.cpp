@@ -23,6 +23,7 @@
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 #include "visual_language/vlm_config.hpp"
+#include "visual_language/vlm_utils.hpp"
 
 using namespace ov::genai;
 
@@ -82,7 +83,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMBackend{
     // Component for applying sampling to lm outputs
     Sampler m_sampler;
     size_t m_max_prompt_len = std::numeric_limits<size_t>::max();
-    size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
@@ -170,7 +170,6 @@ private:
                 lm_properties,
                 kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
-            m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
             npu_auto_default_properties(device_properties);
         } else {
             // Slice-before-matmul rewrites LM logits to be produced only for the last token.
@@ -366,6 +365,7 @@ public:
         const auto embeddings_start_time = std::chrono::steady_clock::now();
         m_inputs_embedder->encode_audios(audios);
         auto encoded_images = m_inputs_embedder->encode_images(images);
+        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
         auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
@@ -477,7 +477,7 @@ public:
         }
 
         auto generate_end_time = std::chrono::steady_clock::now();
-        decoded.perf_metrics = encoded_result.perf_metrics;
+        decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -493,6 +493,11 @@ public:
             decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
+        );
+        decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
+            decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.end()
         );
 
         // Evaluate statistics
@@ -586,6 +591,8 @@ public:
             ? processed_chat_data.vision_counts
             : std::vector<std::pair<std::size_t, std::size_t>>{ {video_seq.size(), image_seq.size()} };
 
+        vlm_utils::update_image_slice_counts(perf_metrics, images_embeds);
+
         generation_finish_info = prepare_inputs_and_generate(
             templated_history,
             images_embeds,
@@ -601,7 +608,7 @@ public:
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
-        
+
         // Update pruned content after generation (CDPruner has run during prepare_inputs_and_generate)
         if (generation_config.pruning_ratio > 0) {
             chat_context.apply_pruning_to_last_message();
@@ -625,7 +632,7 @@ public:
         }
 
         auto generate_end_time = std::chrono::steady_clock::now();
-        decoded.perf_metrics = encoded_result.perf_metrics;
+        decoded.perf_metrics = VLMPerfMetrics(encoded_result.perf_metrics);
 
         // Common perf metrics
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
@@ -641,6 +648,11 @@ public:
             decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
+        );
+        decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
+            decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
+            perf_metrics.vlm_raw_metrics.per_image_slice_counts.end()
         );
 
         // Evaluate statistics
@@ -782,7 +794,7 @@ private:
         } else {
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(
                 unified_prompt,
-                encoded_images, 
+                encoded_images,
                 encoded_videos,
                 perf_metrics,
                 recalculate_merged_embeddings,
@@ -861,6 +873,10 @@ private:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
+        size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
+        if (m_is_npu) {
+            max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_language.get_compiled_model());
+        }
         return ov::genai::get_lm_encoded_results(m_language,
                                                  inputs_embeds,
                                                  new_atten_mask,
@@ -872,7 +888,7 @@ private:
                                                  cache_state,
                                                  m_embedding,
                                                  rope_delta,
-                                                 m_max_kv_cache_size,
+                                                 max_kv_cache_size,
                                                  use_intermediate_remote_tensor,
                                                  lm_extra_inputs,
                                                  std::move(per_layer_callback));
