@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <unordered_set>
 
 #include "eagle3_strategy.hpp"
 #include "openvino/pass/pa_kv_reorder_fusion.hpp"
@@ -198,6 +199,40 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
     }
 }
 
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_awaiting_requests(
+    const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
+    std::unordered_set<uint64_t> main_request_ids;
+    size_t expected_draft_requests = 0;
+
+    for (const auto& request : main_awaiting_requests) {
+        OPENVINO_ASSERT(request, "Eagle3 main awaiting request pointer is null.");
+        main_request_ids.insert(request->get_request_id());
+
+        const auto& sampling_params = request->get_sampling_parameters();
+        const bool is_main_only =
+            sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0;
+        if (!is_main_only) {
+            ++expected_draft_requests;
+        }
+    }
+
+    OPENVINO_ASSERT(draft_awaiting_requests.size() == expected_draft_requests,
+                    "Eagle3 awaiting request mismatch: draft queue size is ",
+                    draft_awaiting_requests.size(),
+                    ", but expected ",
+                    expected_draft_requests,
+                    " (number of main requests with speculative decoding enabled).");
+
+    for (const auto& request : draft_awaiting_requests) {
+        OPENVINO_ASSERT(request, "Eagle3 draft awaiting request pointer is null.");
+        OPENVINO_ASSERT(main_request_ids.count(request->get_request_id()) == 1,
+                        "Eagle3 draft awaiting request_id=",
+                        request->get_request_id(),
+                        " has no corresponding main awaiting request.");
+    }
+}
+
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
     auto shape = original_input_embeddings.get_shape();
 
@@ -230,6 +265,16 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        // No speculative draft for this request: run only the main model.
+        return m_main_pipeline->add_request(request_id,
+                                            input_ids,
+                                            sampling_params,
+                                            token_type_ids,
+                                            prompt_ids,
+                                            lm_extra_inputs);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -280,6 +325,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -311,7 +361,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                       ov::Tensor& draft_in) {
         OPENVINO_ASSERT(main_cfg.assistant_confidence_threshold == 0.f,
                         "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
-        if (main_cfg.num_assistant_tokens == 0) {
+        if (!main_cfg.num_assistant_tokens.has_value()) {
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         }

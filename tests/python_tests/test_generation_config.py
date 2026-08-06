@@ -140,6 +140,24 @@ def test_invalid_fields_assinment_rises(fields):
         config.validate()
 
 
+def test_num_assistant_tokens_zero_and_tree_search_validation():
+    # Explicitly disabling assistant tokens should still be a valid non-assisting setup.
+    disabled_assistant_cfg = GenerationConfig(max_new_tokens=1, num_assistant_tokens=0)
+    disabled_assistant_cfg.validate()
+
+    # Tree search now requires explicit, positive num_assistant_tokens.
+    missing_assistant_cfg = GenerationConfig(max_new_tokens=10, branching_factor=2, tree_depth=1)
+    with pytest.raises(RuntimeError):
+        missing_assistant_cfg.validate()
+
+    zero_assistant_tree_cfg = GenerationConfig(max_new_tokens=10, branching_factor=2, tree_depth=1, num_assistant_tokens=0)
+    with pytest.raises(RuntimeError):
+        zero_assistant_tree_cfg.validate()
+
+    valid_tree_cfg = GenerationConfig(max_new_tokens=10, branching_factor=2, tree_depth=1, num_assistant_tokens=2)
+    valid_tree_cfg.validate()
+
+
 def load_genai_generation_config_from_file(configs: list[tuple], temp_path):
     for json_file in temp_path.glob("*.json"):
         json_file.unlink()

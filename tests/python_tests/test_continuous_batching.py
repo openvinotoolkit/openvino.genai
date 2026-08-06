@@ -805,6 +805,82 @@ def eagle3_model_paths() -> tuple[Path, Path]:
     return main_model_path, draft_model_path
 
 
+def test_eagle3_num_assistant_tokens_zero_matches_main_only(eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config(
+        {"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
+    sd_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+    main_only_pipe = create_ov_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.PAGED_ATTENTION,
+        scheduler_config=scheduler_config,
+    )
+
+    prompt = "Explain why sunsets often appear orange."
+    sd_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=0)
+    main_only_config = GenerationConfig(do_sample=False, max_new_tokens=20)
+
+    sd_result = sd_pipe.generate([prompt], sd_config)
+    main_only_result = main_only_pipe.generate([prompt], main_only_config)
+
+    assert len(sd_result.texts) == 1
+    assert len(sd_result.texts[0]) > 0
+    assert sd_result.texts[0] == main_only_result.texts[0]
+
+
+def test_eagle3_mixed_batch_with_zero_assistant_tokens_no_crash_and_main_only_match(
+    eagle3_model_paths: tuple[Path, Path]
+):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config(
+        {"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
+    )
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+    main_only_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+        scheduler_config=scheduler_config,
+    )
+
+    main_only_prompt = "Write one sentence about OpenVINO."
+    speculative_prompt = "Write one sentence about the Moon."
+    zero_assistant_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=0)
+    speculative_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=4)
+
+    handle_main_only = sd_cb_pipe.add_request(0, main_only_prompt, generation_config=zero_assistant_config)
+    handle_speculative = sd_cb_pipe.add_request(1, speculative_prompt, generation_config=speculative_config)
+    while sd_cb_pipe.has_non_finished_requests():
+        sd_cb_pipe.step()
+
+    sd_main_only_outputs = handle_main_only.read_all()
+    sd_speculative_outputs = handle_speculative.read_all()
+
+    baseline_handle = main_only_cb_pipe.add_request(2, main_only_prompt, generation_config=GenerationConfig(do_sample=False, max_new_tokens=20))
+    while main_only_cb_pipe.has_non_finished_requests():
+        main_only_cb_pipe.step()
+    baseline_outputs = baseline_handle.read_all()
+
+    assert len(sd_main_only_outputs) == 1
+    assert len(sd_speculative_outputs) == 1
+    assert len(baseline_outputs) == 1
+    assert len(sd_main_only_outputs[0].generated_ids) > 0
+    assert len(sd_speculative_outputs[0].generated_ids) > 0
+    assert sd_main_only_outputs[0].generated_ids == baseline_outputs[0].generated_ids
+
+
 def _build_input_ids_with_exact_token_count(ov_tokenizer, target_tokens: int) -> ov.Tensor:
     if target_tokens not in (127, 128, 129):
         raise ValueError(f"Unsupported target_tokens={target_tokens}. Supported values are 129, 128, 127.")
