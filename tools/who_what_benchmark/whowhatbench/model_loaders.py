@@ -353,40 +353,41 @@ def load_text_model(
     elif use_llamacpp:
         logger.info("Using llama.cpp API (n_ctx=%s)", kwargs.get("llamacpp_n_ctx"))
         model = load_text_llamacpp_pipeline(model_id, **kwargs)
-    elif _is_vlm_export(model_id):
-        logger.info("Detected VLM model structure, using Optimum Visual Causal LM API for text generation")
-        model = load_visual_text_model(model_id, device, ov_config, **kwargs)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel.openvino import OVModelForCausalLM
+        if _is_vlm_export(model_id):
+            logger.info("Detected VLM model structure, using Optimum Visual Causal LM API for text generation")
+            model = load_visual_text_model(model_id, device, ov_config, **kwargs)
+        else:
+            from optimum.intel.openvino import OVModelForCausalLM
 
-        try:
-            model = OVModelForCausalLM.from_pretrained(
-                model_id, device=device, ov_config=ov_config, **kwargs
-            )
-        except Exception:
             try:
-                config = AutoConfig.from_pretrained(
-                    model_id, trust_remote_code=True)
                 model = OVModelForCausalLM.from_pretrained(
-                    model_id,
-                    config=config,
-                    trust_remote_code=True,
-                    use_cache=True,
-                    device=device,
-                    ov_config=ov_config,
-                    **kwargs
+                    model_id, device=device, ov_config=ov_config, **kwargs
                 )
             except Exception:
-                config = AutoConfig.from_pretrained(model_id)
-                model = OVModelForCausalLM.from_pretrained(
-                    model_id,
-                    config=config,
-                    use_cache=True,
-                    device=device,
-                    ov_config=ov_config,
-                    **kwargs
-                )
+                try:
+                    config = AutoConfig.from_pretrained(
+                        model_id, trust_remote_code=True)
+                    model = OVModelForCausalLM.from_pretrained(
+                        model_id,
+                        config=config,
+                        trust_remote_code=True,
+                        use_cache=True,
+                        device=device,
+                        ov_config=ov_config,
+                        **kwargs
+                    )
+                except Exception:
+                    config = AutoConfig.from_pretrained(model_id)
+                    model = OVModelForCausalLM.from_pretrained(
+                        model_id,
+                        config=config,
+                        use_cache=True,
+                        device=device,
+                        ov_config=ov_config,
+                        **kwargs
+                    )
 
     return model
 
