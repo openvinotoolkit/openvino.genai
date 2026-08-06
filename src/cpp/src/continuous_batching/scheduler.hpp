@@ -277,10 +277,6 @@ public:
         return m_cache_orchestrator->get_linear_attention_live_block(seq_id);
     }
 
-    void set_linear_attention_live_block(uint64_t seq_id, size_t physical_block_index) {
-        m_cache_orchestrator->set_linear_attention_live_block(seq_id, physical_block_index);
-    }
-
     size_t get_linear_attention_pool_blocks_high_water() const {
         return m_cache_orchestrator->get_linear_attention_pool_blocks_high_water();
     }
@@ -357,10 +353,7 @@ public:
         if (!m_cache_orchestrator->has_linear_attention_cache()) {
             return;
         }
-        const size_t promoted_index =
-            m_cache_orchestrator->promote_linear_attention_temporary_block(seq_id, checkpoint_slot);
-        // Keep the live-row registry synchronized with the rewritten block table.
-        m_cache_orchestrator->set_linear_attention_live_block(seq_id, promoted_index);
+        m_cache_orchestrator->promote_linear_attention_temporary_block(seq_id, checkpoint_slot);
     }
 
     void release_linear_attention_checkpoints(uint64_t seq_id) {
