@@ -321,8 +321,10 @@ def test_linear_attention_batch_string_inputs(
         and prompts == BATCHED_PROMPTS[1]
     ):
         # This tiny-random model has almost-equal logits, so PA and the reference sometimes pick different greedy tokens.
+        # Tracking issue: CVS-192310
         pytest.xfail(
-            "qwen3-next PAGED_ATTENTION and reference pick different greedy tokens because this tiny-random model has almost-equal logits"
+            "qwen3-next PAGED_ATTENTION and reference pick different greedy tokens because this tiny-random model has almost-equal logits "
+            "Tracking issue: CVS-192310"
         )
     generate_and_compare(
         model_schema=llm_model,
