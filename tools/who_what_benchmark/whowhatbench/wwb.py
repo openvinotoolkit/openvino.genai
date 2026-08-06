@@ -459,11 +459,6 @@ def parse_args():
         help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
     parser.add_argument(
-        "--strip-think-blocks",
-        action="store_true",
-        help="Strip think/reasoning blocks from generated text before scoring.",
-    )
-    parser.add_argument(
         "--sd-generation-config",
         type=str,
         default=None,
@@ -1043,7 +1038,6 @@ def create_evaluator(base_model, args):
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
-                strip_think_blocks=args.strip_think_blocks,
                 long_prompt=(not args.short_prompt),
                 num_assistant_tokens=(
                     int(args.num_assistant_tokens)
