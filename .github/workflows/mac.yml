@@ -24,7 +24,7 @@ env:
   HF_HOME: ~/.cache/hf
   OV_CACHE: ~/.cache/ov_cache/
   CLEANUP_CACHE: 1
-  OPENVINO_LOG_LEVEL: 4
+  OPENVINO_LOG_LEVEL: 1
 
 jobs:
   smart_ci:
