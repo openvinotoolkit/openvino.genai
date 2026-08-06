@@ -189,7 +189,7 @@ Text2ImagePipeline Text2ImagePipeline::flux2_klein(
     const Flux2Transformer2DModel& transformer,
     const AutoencoderKL& vae) {
     auto impl = std::make_shared<Flux2KleinPipeline>(PipelineType::TEXT_2_IMAGE, models_path, text_encoder, transformer, vae);
-    assert(scheduler != nullptr);
+    OPENVINO_ASSERT(scheduler != nullptr, "Scheduler must not be nullptr");
     impl->set_scheduler(scheduler);
     return Text2ImagePipeline(impl);
 }

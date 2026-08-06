@@ -18,6 +18,17 @@
 
 namespace {
 
+inline nlohmann::json parse_flux2_model_index(const std::filesystem::path& root_dir) {
+    const std::filesystem::path model_index_path = root_dir / "model_index.json";
+    std::ifstream file(model_index_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
+    try {
+        return nlohmann::json::parse(file);
+    } catch (const nlohmann::json::exception& ex) {
+        OPENVINO_THROW("Failed to parse '", model_index_path, "': ", ex.what());
+    }
+}
+
 // Prepare text IDs for Flux2: (batch_size, text_seq_len, 4) with format (T=0, H=0, W=0, L=0..seq_len-1)
 inline ov::Tensor flux2_prepare_text_ids(const size_t batch_size, const size_t text_seq_len) {
     ov::Tensor text_ids(ov::element::f32, {batch_size, text_seq_len, 4});
@@ -100,11 +111,7 @@ class Flux2KleinPipeline : public DiffusionPipeline {
 public:
     Flux2KleinPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : Flux2KleinPipeline(pipeline_type) {
         m_root_dir = root_dir;
-        const std::filesystem::path model_index_path = root_dir / "model_index.json";
-        std::ifstream file(model_index_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
-
-        nlohmann::json data = nlohmann::json::parse(file);
+        nlohmann::json data = parse_flux2_model_index(root_dir);
         using utils::read_json_param;
 
         if (data.contains("is_distilled")) {
@@ -153,11 +160,7 @@ public:
                        const ov::AnyMap& properties)
         : Flux2KleinPipeline(pipeline_type) {
         m_root_dir = root_dir;
-        const std::filesystem::path model_index_path = root_dir / "model_index.json";
-        std::ifstream file(model_index_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
-
-        nlohmann::json data = nlohmann::json::parse(file);
+        nlohmann::json data = parse_flux2_model_index(root_dir);
         using utils::read_json_param;
 
         if (data.contains("is_distilled")) {
@@ -210,12 +213,7 @@ public:
                        const AutoencoderKL& vae)
         : Flux2KleinPipeline(pipeline_type) {
         m_root_dir = root_dir;
-
-        const std::filesystem::path model_index_path = root_dir / "model_index.json";
-        std::ifstream file(model_index_path);
-        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
-
-        nlohmann::json data = nlohmann::json::parse(file);
+        nlohmann::json data = parse_flux2_model_index(root_dir);
         using utils::read_json_param;
 
         if (data.contains("is_distilled")) {
@@ -707,7 +705,12 @@ private:
         std::ifstream file(vae_config_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open VAE config for batch norm parameters: ", vae_config_path);
 
-        nlohmann::json data = nlohmann::json::parse(file);
+        nlohmann::json data;
+        try {
+            data = nlohmann::json::parse(file);
+        } catch (const nlohmann::json::exception& ex) {
+            OPENVINO_THROW("Failed to parse '", vae_config_path, "': ", ex.what());
+        }
         using utils::read_json_param;
 
         size_t latent_channels = 32;
