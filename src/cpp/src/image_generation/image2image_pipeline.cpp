@@ -135,6 +135,20 @@ Image2ImagePipeline Image2ImagePipeline::flux(
     return Image2ImagePipeline(impl);
 }
 
+Image2ImagePipeline Image2ImagePipeline::flux2_klein(
+    const std::shared_ptr<Scheduler>& scheduler,
+    const std::filesystem::path& models_path,
+    const Qwen3TextEncoder& text_encoder,
+    const Flux2Transformer2DModel& transformer,
+    const AutoencoderKL& vae) {
+    auto impl = std::make_shared<Flux2KleinPipeline>(PipelineType::IMAGE_2_IMAGE, models_path, text_encoder, transformer, vae);
+
+    assert(scheduler != nullptr);
+    impl->set_scheduler(scheduler);
+
+    return Image2ImagePipeline(impl);
+}
+
 Image2ImagePipeline Image2ImagePipeline::stable_diffusion_3(
     const std::shared_ptr<Scheduler>& scheduler,
     const CLIPTextModelWithProjection& clip_text_model_1,

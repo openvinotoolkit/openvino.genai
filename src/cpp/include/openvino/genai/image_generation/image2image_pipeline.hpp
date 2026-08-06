@@ -57,6 +57,14 @@ public:
         const FluxTransformer2DModel& transformer,
         const AutoencoderKL& vae);
 
+    // creates Flux2 Klein pipeline from individual models
+    static Image2ImagePipeline flux2_klein(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const std::filesystem::path& models_path,
+        const Qwen3TextEncoder& text_encoder,
+        const Flux2Transformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
     // creates SD3 pipeline from building blocks
     static Image2ImagePipeline stable_diffusion_3(
         const std::shared_ptr<Scheduler>& scheduler,
