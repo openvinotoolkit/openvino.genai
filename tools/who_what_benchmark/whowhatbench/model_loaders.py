@@ -355,7 +355,7 @@ def load_text_model(
         model = load_text_llamacpp_pipeline(model_id, **kwargs)
     elif _is_vlm_export(model_id):
         logger.info("Detected VLM model structure, using Optimum Visual Causal LM API for text generation")
-        model = load_visual_text_model(model_id, device, ov_config, use_hf=False, use_genai=False, **kwargs)
+        model = load_visual_text_model(model_id, device, ov_config, **kwargs)
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVModelForCausalLM
