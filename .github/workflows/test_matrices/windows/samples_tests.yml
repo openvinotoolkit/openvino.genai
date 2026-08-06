@@ -1,0 +1,65 @@
+# Test matrix for the Windows genai_samples_tests job.
+# Each entry runs when any of its `components` is affected (has `.test`).
+- name: LLM
+  marker: llm and not transformers_lower_v5
+  cmd: tests/python_tests/samples
+  runner: aks-win-16-cores-32gb-test
+  components:
+    - LLM_samples
+
+- name: Automatic Speech Recognition
+  marker: automatic_speech_recognition
+  cmd: tests/python_tests/samples
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - automatic_speech_recognition_samples
+
+- name: dreamlike_anime_1_0
+  marker: dreamlike_anime_1_0
+  cmd: tests/python_tests/samples
+  runner: aks-win-8-cores-32gb-test
+  components:
+    - Image_generation_samples
+
+- name: LCM_Dreamshaper_v7_int8_ov
+  marker: LCM_Dreamshaper_v7_int8_ov
+  cmd: tests/python_tests/samples
+  runner: aks-win-8-cores-16gb-test
+  components:
+    - Image_generation_samples
+
+- name: tiny_random_latent_consistency
+  marker: tiny_random_latent_consistency
+  cmd: tests/python_tests/samples
+  runner: aks-win-8-cores-16gb-test
+  components:
+    - Image_generation_samples
+
+- name: Rag
+  marker: rag
+  cmd: tests/python_tests/samples
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - RAG_samples
+
+- name: Speech generation
+  marker: speech_generation
+  cmd: tests/python_tests/samples
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - Speech_generation_samples
+
+- name: Video generation
+  marker: video_generation
+  cmd: tests/python_tests/samples
+  runner: aks-win-4-cores-8gb-test
+  components:
+    - Video_generation_samples
+
+- name: LLM with transformers under 5.0
+  extra_cmd: python -m pip install transformers==4.55.4 diffusers==0.37.1
+  marker: llm and (transformers_dependent or transformers_lower_v5)
+  cmd: tests/python_tests/samples
+  runner: aks-win-16-cores-32gb-test
+  components:
+    - LLM_samples
