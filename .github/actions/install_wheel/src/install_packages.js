@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import { glob } from 'glob';
+import { readdir } from 'fs/promises';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -31,7 +31,10 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
   // Resolve local wheels
   const localWheels = {};
   if (localWheelDir) {
-    const wheels = await glob(path.posix.join(localWheelDir, '*.whl'));
+    const entries = await readdir(localWheelDir);
+    const wheels = entries
+      .filter(entry => entry.endsWith('.whl'))
+      .map(entry => path.join(localWheelDir, entry));
     core.debug(`Found wheels: ${wheels}`);
     for (const whl of wheels) {
       const packageName = path.basename(whl).split('-')[0];
