@@ -2819,7 +2819,6 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_emit
     const auto seq_id = seq_group->get_running_sequences()[0]->get_id();
 
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), 1u);
-    ASSERT_TRUE(linear_attention_scratch_blocks(orchestrator, seq_id).empty());
 
     const size_t committed = orchestrator->get_linear_attention_live_block(seq_id);
     seq_group->set_num_validated_tokens(N);
@@ -2947,7 +2946,7 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_steady_state_ret
 
         prev_committed = static_cast<size_t>(chosen);
         EXPECT_EQ(orchestrator->get_linear_attention_live_block(seq_id), prev_committed)
-            << "committed row and live-block registry diverged at step " << step;
+            << "committed row and block table diverged at step " << step;
     }
 
     EXPECT_EQ(orchestrator->get_linear_attention_block_table(seq_id).size(), 1u);

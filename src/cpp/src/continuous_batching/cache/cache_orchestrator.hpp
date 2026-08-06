@@ -147,7 +147,6 @@ public:
         for (auto& [type, block_mgr] : m_block_managers) {
             block_mgr->clear();
         }
-        m_linear_attention_live_block.clear();
     }
 
     // -----------------------------------------------------------------------
@@ -230,24 +229,14 @@ public:
                 block_mgr->free_sequence(seq_id);
             }
         }
-        m_linear_attention_live_block.erase(seq_id);
     }
 
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
-        // LA rows are mutated in place; fork only while live row remains the prefill row.
         if (has_linear_attention_cache()) {
             // Promotion cannot safely replace a row shared by a mid-verification fork.
             OPENVINO_ASSERT(!m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->has_temporary_blocks(parent_id),
                             "Forking a sequence that holds borrowed speculative linear-attention rows is not "
                             "supported; parent sequence ", parent_id);
-            const auto live_it = m_linear_attention_live_block.find(parent_id);
-            if (live_it != m_linear_attention_live_block.end()) {
-                const BlocksPerLayer& owned = get_linear_attention_block_table(parent_id);
-                OPENVINO_ASSERT(!owned.empty() && static_cast<size_t>(owned.front()->get_index()) == live_it->second,
-                                "Forking a sequence whose linear-attention live row has moved off the prefill "
-                                "row is not supported (speculative linear-attention rows cannot be shared); "
-                                "parent sequence ", parent_id);
-            }
         }
         for (auto& [type, block_mgr] : m_block_managers) {
             block_mgr->fork_sequence(parent_id, child_id);
@@ -728,34 +717,12 @@ public:
         return m_linear_attention_pool_blocks_high_water;
     }
 
-    // Linear-attention live-row registry.
-
-    /// @return Physical block index of the sequence's live linear-attention state row,
-    ///         defaulting to the prefill row (block_table[0]) when no promotion was recorded.
+    /// @return Physical block index of the sequence's committed linear-attention state row.
     size_t get_linear_attention_live_block(uint64_t seq_id) const {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        const auto it = m_linear_attention_live_block.find(seq_id);
-        if (it != m_linear_attention_live_block.end()) {
-            return it->second;
-        }
         const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
         OPENVINO_ASSERT(!owned.empty(), "Linear attention block table empty for sequence ", seq_id);
         return owned.front()->get_index();
-    }
-
-    /// @brief Records which owned physical block is now the sequence's live state row.
-    void set_linear_attention_live_block(uint64_t seq_id, size_t physical_block_index) {
-        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        // A non-owned index would poison the next paging step (scratch = owned minus live).
-        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
-        const bool is_owned = std::any_of(owned.begin(), owned.end(),
-            [physical_block_index](const auto& block) {
-                return static_cast<size_t>(block->get_index()) == physical_block_index;
-            });
-        OPENVINO_ASSERT(is_owned,
-                        "Linear attention live block ", physical_block_index,
-                        " is not in the owned block table for sequence ", seq_id);
-        m_linear_attention_live_block[seq_id] = physical_block_index;
     }
 
     /// @return Number of KV attention layers only (excluding other cache types).
@@ -1013,9 +980,6 @@ private:
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
-    // seq_id -> physical block index of the live linear-attention state row.
-    // Holds only explicit promotions (speculative steps); absent => sequence lives on the prefill row.
-    std::map<uint64_t, size_t> m_linear_attention_live_block;
 
     // Linear-attention pool footprint high-water mark.
     size_t m_linear_attention_pool_blocks_high_water = 0;
