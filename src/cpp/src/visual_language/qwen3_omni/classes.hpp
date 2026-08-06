@@ -41,6 +41,7 @@ class InputsEmbedderQwen3Omni : public InputsEmbedderQwen3VL {
 public:
     InputsEmbedderQwen3Omni(const VLMConfig& vlm_config,
                             const std::filesystem::path& model_dir,
+                            const Tokenizer& tokenizer,
                             const std::string& device,
                             const ov::AnyMap device_config);
 
