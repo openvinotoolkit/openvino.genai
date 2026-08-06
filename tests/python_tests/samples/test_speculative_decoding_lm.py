@@ -68,20 +68,13 @@ class TestSpeculativeDecodingLM:
         env["OPENVINO_LOG_LEVEL"] = "0"
         _run_spec_case(convert_model, convert_draft_model, sample_args, env)
 
-test_prompt = """Code:
-def add(a, b):
-    return a + b
-
-Question: Can you please add 2 and 3
-A:"""
-
 
 class TestEagle3SpeculativeDecodingLM:
     @pytest.mark.eagle3_decoding
     @pytest.mark.parametrize(
         "convert_model, convert_draft_model, sample_args",
         [
-            pytest.param("Qwen3-1.7B", "qwen3_1.7b_eagle3", test_prompt),
+            pytest.param("Qwen3-1.7B", "qwen3_1.7b_eagle3", "1+1="),
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
