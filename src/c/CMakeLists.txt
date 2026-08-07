@@ -14,7 +14,7 @@ if(WIN32)
   add_vs_version_resource(${TARGET_NAME})
 endif()
 
-target_include_directories(${TARGET_NAME} PUBLIC "$<INSTALL_INTERFACE:runtime/include>"
+target_include_directories(${TARGET_NAME} PUBLIC "$<INSTALL_INTERFACE:${OPENVINO_GENAI_INSTALL_INCLUDEDIR}>"
                                                  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                  $<BUILD_INTERFACE:$<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>>)
 
@@ -41,7 +41,7 @@ install(TARGETS ${TARGET_NAME} EXPORT OpenVINOGenAITargets
             NAMELINK_COMPONENT core_c_genai_dev
         ARCHIVE DESTINATION ${ARCHIVE_DESTINATION} COMPONENT core_c_genai_dev
         RUNTIME DESTINATION ${RUNTIME_DESTINATION} COMPONENT core_c_genai
-        INCLUDES DESTINATION runtime/include)
+        INCLUDES DESTINATION ${OPENVINO_GENAI_INSTALL_INCLUDEDIR})
 if(OpenVINODeveloperPackage_FOUND AND COMMAND ov_install_pdb)
     ov_install_pdb(${TARGET_NAME})
 endif()
