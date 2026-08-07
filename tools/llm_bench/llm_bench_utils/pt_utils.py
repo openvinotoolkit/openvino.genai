@@ -413,7 +413,11 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
     if model_path.exists():
         if model_path.is_dir() and len(os.listdir(model_path)) != 0:
             log.info(f"Load image model from model path:{model_path}")
-            model_class = kwargs["use_case"].pt_cls
+            use_case = kwargs["use_case"]
+            if kwargs.get("task") == use_case.TASK["image2video"]["name"]:
+                model_class = use_case.TASK["image2video"]["pt_cls"]
+            else:
+                model_class = use_case.TASK["text2video"]["pt_cls"]
             if kwargs.get("mem_consumption"):
                 memory_data_collector.start()
             start = time.perf_counter()

@@ -385,6 +385,7 @@ def get_argparser():
             "text-to-image",
             "image-to-image",
             "text-to-video",
+            "image-to-video",
             "inpainting",
         ],
         help="The task to setup the pipeline type",

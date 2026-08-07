@@ -341,6 +341,11 @@ python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --
 python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
 ```
 
+Image-to-video requires an input image (`-i`/`--media`) and a model directory containing a `vae_encoder`. The prompt should describe how the input image animates:
+```sh
+python benchmark.py -m models/LTX-Video/FP16 -i input.png -p "The camera slowly pushes in as the scene comes to life with gentle, natural motion." --num_frames 5 -n 2 --num_steps 25 --task image-to-video
+```
+
 **Some additional parameters:**
 - `--height`: Generated video height.
 - `--width`: Generated video width.
