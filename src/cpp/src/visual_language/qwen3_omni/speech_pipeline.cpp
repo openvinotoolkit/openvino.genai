@@ -20,6 +20,19 @@
 
 namespace {
 
+/// @brief Compilation properties for one speech submodel.
+ov::AnyMap speech_compilation_props(const ov::AnyMap& properties,
+                                    const std::string& device,
+                                    bool force_fp32,
+                                    const std::string& model_name) {
+    ov::AnyMap props = properties;
+    if (force_fp32 && device.find("GPU") != std::string::npos) {
+        props[ov::hint::inference_precision.name()] = ov::element::f32;
+        GENAI_DEBUG("Speech: forcing f32 precision for %s on %s", model_name.c_str(), device.c_str());
+    }
+    return props;
+}
+
 ov::genai::StreamingStatus invoke_speech_streamer(const ov::genai::OmniSpeechStreamerVariant& streamer,
                                                   const ov::Tensor& chunk) {
     return std::visit(
@@ -93,13 +106,8 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
                                                  const std::string& device,
                                                  const ov::AnyMap& properties)
     : m_config(Qwen3OmniSpeechConfig::from_vlm_config(config)) {
-    // Load all 6 speech sub-models (all optional)
-    //
-    // Per-submodel GPU inference precision (verified empirically 2026-07):
-    //   - code_predictor MUST be f32: its argmax discretization collapses in f16 (15/15 code
-    //     flips → degenerate attractor). This is the ONLY speech submodel that requires f32.
-    //   - all other models keep the caller/plugin defaults (FP16 on GPU). In particular, forcing
-    //     code2wav to f32 produces an attenuated, incorrect waveform.
+    // Load all 6 speech sub-models (all optional). See speech_compilation_props() for the
+    // per-submodel GPU precision rules.
     auto load_model = [&](const std::string& filename, bool force_fp32 = false) -> ov::InferRequest {
         auto path = model_dir / (filename + ".xml");
         if (!std::filesystem::exists(path)) {
@@ -107,12 +115,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
         }
         auto model = utils::singleton_core().read_model(path);
 
-        ov::AnyMap compilation_props = properties;
-        if (force_fp32 && device.find("GPU") != std::string::npos) {
-            compilation_props[ov::hint::inference_precision.name()] = ov::element::f32;
-            GENAI_DEBUG("Speech: forcing f32 precision for %s on GPU", filename.c_str());
-        }
-
+        auto compilation_props = speech_compilation_props(properties, device, force_fp32, filename);
         auto compiled = utils::singleton_core().compile_model(model, device, compilation_props);
         return compiled.create_infer_request();
     };
@@ -139,7 +142,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
     // Compile each submodel from its in-memory IR + weights, placing it on the device named in
     // device_mapping (falling back to default_device). Submodels absent from models_map stay empty
     // and trip the availability check in initialize().
-    auto load_model = [&](const std::string& name) -> ov::InferRequest {
+    auto load_model = [&](const std::string& name, bool force_fp32 = false) -> ov::InferRequest {
         auto it = models_map.find(name);
         if (it == models_map.end()) {
             return {};
@@ -150,14 +153,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
         auto dev_it = device_mapping.find(name);
         const std::string& device = dev_it != device_mapping.end() ? dev_it->second : default_device;
 
-        // Force FP32 inference precision on GPU (see disk ctor): GPU FP16 shifts talker logits,
-        // changing sampled tokens and corrupting speech length.
-        ov::AnyMap compilation_props = properties;
-        if (device == "GPU" || device.find("GPU") == 0) {
-            compilation_props[ov::hint::inference_precision.name()] = ov::element::f32;
-            GENAI_DEBUG("Speech: forcing FP32 precision for %s on GPU", name.c_str());
-        }
-
+        auto compilation_props = speech_compilation_props(properties, device, force_fp32, name);
         auto compiled = utils::singleton_core().compile_model(model, device, compilation_props);
         return compiled.create_infer_request();
     };
@@ -166,7 +162,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
     m_talker = load_model("talker");
     m_talker_text_embeddings = load_model("talker_text_embeddings");
     m_talker_projections = load_model("talker_projections");
-    m_code_predictor = load_model("code_predictor");
+    m_code_predictor = load_model("code_predictor", true);
     m_code2wav = load_model("code2wav");
 
     initialize(config_dir_path);
