@@ -152,6 +152,34 @@ auto omni_generate_history_docstring = R"(
     :type videos_metadata: list[VideoMetadata]
 )";
 
+// Trampoline enabling Python subclasses of TalkerBase (injected via the OmniPipeline DI ctor).
+class PyTalkerBase : public TalkerBase {
+public:
+    using TalkerBase::TalkerBase;
+
+    ov::genai::TalkerResults generate(const VLMDecodedResults& vlm_result,
+                                      const OmniTalkerSpeechConfig& talker_speech_config,
+                                      const ov::genai::OmniSpeechStreamerVariant& speech_streamer) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::TalkerResults,
+                               TalkerBase,
+                               generate,
+                               vlm_result,
+                               talker_speech_config,
+                               speech_streamer);
+    }
+
+    std::vector<std::string> list_speakers() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(std::vector<std::string>, TalkerBase, list_speakers);
+    }
+
+    ov::Tensor get_speaker_embedding(const std::string& name) const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::Tensor, TalkerBase, get_speaker_embedding, name);
+    }
+};
+
 py::object call_omni_generate(OmniPipeline& pipe,
                               const std::string& prompt,
                               const std::vector<ov::Tensor>& images,
@@ -211,12 +239,16 @@ py::object call_omni_generate_history(OmniPipeline& pipe,
 }  // namespace
 
 void init_omni_pipeline(py::module_& m) {
-    py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
+    // Register the base and the Talker subclass first (Talker needs its base registered), but defer
+    // the generate() binding until OmniTalkerSpeechConfig and TalkerResults are registered below —
+    // pybind resolves argument/return types at .def() time and would otherwise emit raw C++ names.
+    auto talker_base = py::class_<TalkerBase, PyTalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
         R"(Abstract speech-output backend for OmniPipeline.
 
         Subclass to plug a custom talker into OmniPipeline. The default implementation
         is Talker. Subclasses must override generate(), list_speakers(), and
         get_speaker_embedding().)")
+        .def(py::init<>())
         .def("list_speakers", &TalkerBase::list_speakers)
         .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"));
 
@@ -320,6 +352,14 @@ void init_omni_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readonly("waveforms", &ov::genai::TalkerResults::waveforms)
         .def_readonly("perf_metrics", &ov::genai::TalkerResults::perf_metrics);
+
+    // Deferred from the TalkerBase registration so OmniTalkerSpeechConfig and TalkerResults render
+    // as Python types in the signature rather than raw C++ names.
+    talker_base.def("generate", &TalkerBase::generate,
+                    py::arg("vlm_result"),
+                    py::arg("talker_speech_config"),
+                    py::arg("speech_streamer") = std::monostate{},
+                    "Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.");
 
     py::class_<OmniDecodedResults, VLMDecodedResults>(m, "OmniDecodedResults",
         R"(Omni-specific decoded results including speech outputs.
