@@ -25,9 +25,9 @@
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
+#include "visual_language/jvlm/classes.hpp"
 
 namespace ov::genai {
-
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
     auto compiled_model = utils::singleton_core().compile_model(
         model_dir / "openvino_vision_embeddings_model.xml", device,
@@ -146,6 +146,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderGemma4>(model_dir, device, properties);
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::JVLM) {
+        return std::make_shared<VisionEncoderJVLM>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -193,6 +195,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderGemma4>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::JVLM) {
+        return std::make_shared<VisionEncoderJVLM>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }

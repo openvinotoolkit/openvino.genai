@@ -518,9 +518,68 @@ def check_args(args):
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
 
+def _load_local_csv_prompts(csv_path, model_type):
+    """Load prompts from a local CSV file.
+
+    For visual-text / visual-video-text tasks the CSV may carry the
+    multimodal columns ``prompts``, ``images`` and ``videos``. Image (and
+    video) paths are resolved deterministically relative to the CSV location
+    when they are not absolute, so a self-contained dataset directory works
+    regardless of the current working directory. Any other task falls back to
+    the single ``prompts`` column.
+    """
+    import pandas as pd
+    from transformers.image_utils import load_image
+
+    df = pd.read_csv(csv_path, keep_default_na=False)
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"Local dataset CSV '{csv_path}' must contain a 'prompts' column, "
+            f"got columns {list(df.columns)}."
+        )
+
+    prompts = [p for p in df["prompts"].tolist()]
+
+    is_visual = model_type in ("visual-text", "visual-video-text", "visual-text-chat")
+    if not is_visual:
+        return {"prompts": prompts}
+
+    base_dir = os.path.dirname(os.path.abspath(csv_path))
+
+    def _resolve(entry):
+        entry = "" if entry is None else str(entry).strip()
+        if entry == "":
+            return None
+        path = entry if os.path.isabs(entry) else os.path.join(base_dir, entry)
+        return path
+
+    images = None
+    if "images" in df.columns:
+        images = [
+            load_image(resolved) if (resolved := _resolve(v)) is not None else None
+            for v in df["images"].tolist()
+        ]
+
+    videos = None
+    if "videos" in df.columns:
+        videos = [_resolve(v) for v in df["videos"].tolist()]
+
+    res = {"prompts": prompts}
+    res["images"] = images if images is not None else [None] * len(prompts)
+    res["videos"] = videos if videos is not None else [None] * len(prompts)
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # A local CSV file is a valid dataset source. This keeps a single
+    # generic --dataset interface while allowing offline/deterministic input
+    # data (e.g. when the default remote dataset is unavailable or too slow).
+    if os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        return _load_local_csv_prompts(args.dataset, args.model_type)
+
     split = "validation"
     if args.split is not None:
         split = args.split

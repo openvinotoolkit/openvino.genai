@@ -542,6 +542,12 @@ def load_visual_text_model(
             elif config.model_type == "gemma3n":
                 model_cls = AutoModelForCausalLM
                 model_kwargs.update({"torch_dtype": torch.float32})
+            elif config.model_type == "jvlm":
+                # JinaVLM (JinaVLMForConditionalGeneration) exposes generation via
+                # its AutoModelForCausalLM auto_map entry. The AutoModelForImageTextToText/
+                # AutoModelForVision2Seq resolution returns the base JinaVLM class,
+                # which has no `generate`, so select the causal-LM class explicitly.
+                model_cls = AutoModelForCausalLM
             elif transformers_version < Version("5.0.0"):
                 from transformers import AutoModelForVision2Seq
 
