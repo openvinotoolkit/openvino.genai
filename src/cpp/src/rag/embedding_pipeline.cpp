@@ -200,13 +200,15 @@ private:
                          const ov::AnyMap& properties) {
         ov::AnyMap properties_copy = properties;
         utils::extract_extensions_to_core(properties_copy);
+        const ov::AnyMap language_model_properties =
+            utils::get_model_properties(properties_copy, "language_model", device);
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_copy);
         m_inputs_embedder->set_apply_chat_template_status(false);
         std::shared_ptr<ov::Model> language_model =
             utils::singleton_core().read_model(models_path / "openvino_language_model.xml");
         language_model = utils::apply_postprocessing(language_model, m_config);
-        m_compiled_language_model = utils::singleton_core().compile_model(language_model, device, properties_copy);
+        m_compiled_language_model = utils::singleton_core().compile_model(language_model, device, language_model_properties);
         m_language_model_request = m_compiled_language_model.create_infer_request();
 
         for (const auto& input : m_compiled_language_model.inputs()) {
