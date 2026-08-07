@@ -12,17 +12,22 @@ namespace ov::genai {
 
 class Qwen3ASREncoder {
 public:
-    Qwen3ASREncoder(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties);
+    Qwen3ASREncoder(const std::filesystem::path& models_path,
+                    const std::string& device,
+                    const ov::AnyMap& properties,
+                    size_t feature_size);
 
     ov::Tensor encode(const WhisperFeatures& features);
 
 private:
     InferRequest m_request;
     Qwen3ASRConfig m_model_config;
+    const size_t m_feature_size;
 
     // The original Qwen3-ASR encoder processes mel spectrograms in chunks of N_WINDOW*2=200 frames,
     // applies positional embeddings per-chunk (positions 0..24), and uses windowed attention.
     const size_t m_encoder_chunk_frames = m_model_config.n_window * 2;
+    bool m_is_npu = false;
 
     ov::Tensor chunk_mel_features(const WhisperFeatures& features);
 
