@@ -686,8 +686,9 @@ def genai_gen_text(
         assistant_confidence_threshold=assistant_confidence_threshold,
         **kwargs,
     )
-    if hasattr(answer, "texts") and len(answer.texts) == 1:
-        return answer.texts[0]
+    texts = getattr(answer, "texts", None)
+    if isinstance(texts, (list, tuple)) and len(texts) == 1:
+        return texts[0]
     if isinstance(answer, list) and len(answer) == 1 and isinstance(answer[0], str):
         return answer[0]
     return answer

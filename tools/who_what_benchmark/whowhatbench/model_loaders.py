@@ -5,6 +5,7 @@ from pathlib import Path
 import logging
 import torch
 import os
+from typing import Union
 
 from packaging.version import Version
 
@@ -44,12 +45,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _is_vlm_export(model_dir):
+# optimum-intel's OVModelForVisualCausalLM export always writes these two files
+# (see optimum.intel.openvino.utils.OV_TEXT_EMBEDDINGS_MODEL_NAME / OV_VISION_EMBEDDINGS_MODEL_NAME),
+# regardless of the specific VLM architecture, while plain text-only exports never have them.
+OV_VLM_TEXT_EMBEDDINGS_FILENAME = "openvino_text_embeddings_model.xml"
+OV_VLM_VISION_EMBEDDINGS_GLOB = "openvino_vision_embeddings*_model.xml"
+
+
+def _is_vlm_export(model_dir: Union[str, os.PathLike]) -> bool:
+    """Detect whether model_dir is an optimum-intel VLM export used as a 'text' model-type.
+
+    Some models declared with --model-type text are actually exported as a Visual Causal LM
+    (e.g. Gemma3n/Gemma4-unified), so they must be loaded with VLMPipeline/OVModelForVisualCausalLM
+    instead of the plain text LLMPipeline/OVModelForCausalLM API.
+    """
     model_path = Path(model_dir)
     return (
         model_path.is_dir()
-        and (model_path / "openvino_text_embeddings_model.xml").exists()
-        and any(model_path.glob("openvino_vision_embeddings*_model.xml"))
+        and (model_path / OV_VLM_TEXT_EMBEDDINGS_FILENAME).exists()
+        and any(model_path.glob(OV_VLM_VISION_EMBEDDINGS_GLOB))
     )
 
 
