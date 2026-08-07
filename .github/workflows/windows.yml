@@ -89,7 +89,9 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        revision: latest_available_commit
+        # Workaround for ScatterNDUpdate exception.
+        # The ticket for tracking: CVS-192302
+        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -985,6 +987,12 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
             runner: 'aks-win-16-cores-32gb-test'
+          - name: 'Eagle3 decoding'
+            extra_cmd: 'python -m pip install transformers==4.57.6'
+            marker: 'eagle3_decoding'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-16-cores-32gb-test'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs ]
     timeout-minutes: 120
