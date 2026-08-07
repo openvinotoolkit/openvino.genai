@@ -9,8 +9,10 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "openvino/runtime/intel_gpu/properties.hpp"
@@ -56,6 +58,92 @@ private:
 
     size_t m_snapkv_window_size = 1;
     std::map<uint64_t, size_t> m_expected_num_scheduled_tokens;
+
+    class LinearAttentionReservationTransaction {
+    public:
+        struct GroupReservation {
+            std::vector<uint64_t> sequence_ids;
+        };
+
+        explicit LinearAttentionReservationTransaction(CacheOrchestrator& cache_orchestrator)
+            : m_cache_orchestrator(cache_orchestrator) {}
+
+        LinearAttentionReservationTransaction(const LinearAttentionReservationTransaction&) = delete;
+        LinearAttentionReservationTransaction& operator=(const LinearAttentionReservationTransaction&) = delete;
+
+        ~LinearAttentionReservationTransaction() {
+            if (m_armed) {
+                release_all();
+            }
+        }
+
+        std::optional<GroupReservation> try_reserve_group(SequenceGroup::CPtr sequence_group,
+                                                          size_t num_blocks) {
+            GroupReservation group_reservation;
+            try {
+                for (const auto& sequence : sequence_group->get_running_sequences()) {
+                    const uint64_t seq_id = sequence->get_id();
+                    if (!m_cache_orchestrator.can_reserve_linear_attention_temporary_blocks(seq_id, num_blocks)) {
+                        release_group(group_reservation);
+                        return std::nullopt;
+                    }
+
+                    OPENVINO_ASSERT(m_reservations.count(seq_id) == 0,
+                                    "Linear-attention temporary rows are already owned by this scheduling pass for "
+                                    "sequence ",
+                                    seq_id);
+                    group_reservation.sequence_ids.push_back(seq_id);
+                    auto [reservation_it, inserted] =
+                        m_reservations.emplace(seq_id, std::vector<int>{});
+                    OPENVINO_ASSERT(inserted);
+                    reservation_it->second =
+                        m_cache_orchestrator.reserve_linear_attention_temporary_blocks(seq_id, num_blocks);
+                }
+            } catch (...) {
+                release_group(group_reservation);
+                throw;
+            }
+            return group_reservation;
+        }
+
+        void release_group(const GroupReservation& group_reservation) {
+            for (uint64_t seq_id : group_reservation.sequence_ids) {
+                release(seq_id);
+            }
+        }
+
+        const std::vector<int>& get(uint64_t seq_id) const {
+            const auto reservation_it = m_reservations.find(seq_id);
+            OPENVINO_ASSERT(reservation_it != m_reservations.end(),
+                            "No linear-attention temporary-row reservation for speculative sequence ",
+                            seq_id);
+            return reservation_it->second;
+        }
+
+        void disarm() {
+            m_armed = false;
+        }
+
+    private:
+        void release(uint64_t seq_id) {
+            const auto reservation_it = m_reservations.find(seq_id);
+            if (reservation_it == m_reservations.end()) {
+                return;
+            }
+            m_cache_orchestrator.release_linear_attention_temporary_blocks(seq_id);
+            m_reservations.erase(reservation_it);
+        }
+
+        void release_all() {
+            while (!m_reservations.empty()) {
+                release(m_reservations.begin()->first);
+            }
+        }
+
+        CacheOrchestrator& m_cache_orchestrator;
+        std::map<uint64_t, std::vector<int>> m_reservations;
+        bool m_armed = true;
+    };
 
 public:
     struct Output {
@@ -205,6 +293,9 @@ public:
     }
 
     Output schedule(std::vector<SequenceGroup::Ptr>& sequence_groups) {
+        _validate_linear_attention_paging_modes(sequence_groups);
+
+        LinearAttentionReservationTransaction linear_attention_reservations(*m_cache_orchestrator);
         Output scheduler_output;
         scheduler_output.set_kv_paged_attention_global_data(m_kv_paged_attention_global_data);
         // map of src -> dst blocks copies per cache type
@@ -225,18 +316,22 @@ public:
         if (m_config.dynamic_split_fuse) {
             // deepspeed-mii case
             // generation phase is always scheduled first
-            _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, typed_block_copy_map);
+            _schedule_generate_phase_dynamic_split_fuse(
+                sequence_groups, scheduler_output, typed_block_copy_map, linear_attention_reservations);
             // some tokens from generation prompt are also scheduled
-            _schedule_prompt_phase_dynamic_split_fuse(sequence_groups, scheduler_output);
+            _schedule_prompt_phase_dynamic_split_fuse(
+                sequence_groups, scheduler_output, linear_attention_reservations);
         } else {
             // vLLM case
             // schedule prompt phase using whole prompt's input_ids
 
-            _schedule_prompt_phase_vllm(sequence_groups, scheduler_output);
+            _schedule_prompt_phase_vllm(
+                sequence_groups, scheduler_output, linear_attention_reservations);
 
             if (!scheduler_output.is_prompt) {
                 // prompt sequences are not scheduler => scheduler generation phase by dynamic_split_fuse implementation
-                _schedule_generate_phase_dynamic_split_fuse(sequence_groups, scheduler_output, typed_block_copy_map);
+                _schedule_generate_phase_dynamic_split_fuse(
+                    sequence_groups, scheduler_output, typed_block_copy_map, linear_attention_reservations);
             }
         }
 
@@ -248,7 +343,7 @@ public:
         m_cache_orchestrator->sample_linear_attention_pool_blocks_high_water();
 
         m_cache_orchestrator->copy_blocks(typed_block_copy_map);
-
+        linear_attention_reservations.disarm();
         return scheduler_output;
     }
 
@@ -479,7 +574,10 @@ private:
         }
     }
 
-    void _schedule_prompt_phase_dynamic_split_fuse(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
+    void _schedule_prompt_phase_dynamic_split_fuse(
+        std::vector<SequenceGroup::Ptr>& sequence_groups,
+        Output& scheduler_output,
+        LinearAttentionReservationTransaction& linear_attention_reservations) {
         // in the current method we need to balance multiple prompts (or parts of prompts) between
         // available amount of tokens in megabatch
         // Considerations:
@@ -535,9 +633,17 @@ private:
 
                         // fill linear attention block tables if registered
                         if (m_cache_orchestrator->has_linear_attention_cache()) {
+                            const auto linear_attention_mode =
+                                _classify_linear_attention_paging(sequence_group);
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
                             const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(seq_id);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks, la_block_logical_start);
+                            _publish_linear_attention_paging_data(scheduler_output,
+                                                                 sequence_group,
+                                                                 seq_id,
+                                                                 linear_attention_mode,
+                                                                 la_blocks,
+                                                                 la_block_logical_start,
+                                                                 linear_attention_reservations);
                         }
                     }
                 }
@@ -551,7 +657,8 @@ private:
 
     void _schedule_generate_phase_dynamic_split_fuse(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                                      Output& scheduler_output,
-                                                     std::map<CacheType, std::map<size_t, std::list<size_t>>>& typed_block_copy_map) {
+                                                     std::map<CacheType, std::map<size_t, std::list<size_t>>>& typed_block_copy_map,
+                                                     LinearAttentionReservationTransaction& linear_attention_reservations) {
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
             // Note, that can_generate_tokens will mix preempted sequence groups
@@ -574,11 +681,16 @@ private:
                 // of current sequence group were evicted before
                 size_t num_available_tokens_per_seq = sequence_group->get_num_available_tokens_for_batching();
 
+                const std::optional<LinearAttentionPagingMode> linear_attention_mode =
+                    m_cache_orchestrator->has_linear_attention_cache()
+                        ? std::make_optional(_classify_linear_attention_paging(sequence_group))
+                        : std::nullopt;
+                std::optional<LinearAttentionReservationTransaction::GroupReservation>
+                    linear_attention_group_reservation;
+
                 // Speculative LA paging requires the whole validation window in one step.
                 const bool is_speculative_linear_attention_window =
-                    m_cache_orchestrator->has_linear_attention_cache() &&
-                    !m_config.enable_prefix_caching &&
-                    sequence_group->get_num_tokens_to_validate() > 0;
+                    linear_attention_mode == LinearAttentionPagingMode::SPECULATIVE;
                 if (is_speculative_linear_attention_window) {
                     // LA validation must fit one base token plus all candidates.
                     const size_t validation_window = sequence_group->get_num_tokens_to_validate() + 1;
@@ -597,8 +709,9 @@ private:
                         // Remaining megabatch budget cannot fit the full window: defer to a later step without scheduling
                         continue;
                     }
-                    // Check scratch capacity before adding the group to scheduler_output.
-                    if (!_can_borrow_linear_attention_window(sequence_group, num_available_tokens_per_seq)) {
+                    linear_attention_group_reservation = linear_attention_reservations.try_reserve_group(
+                        sequence_group, num_available_tokens_per_seq);
+                    if (!linear_attention_group_reservation) {
                         continue;
                     }
                 }
@@ -617,6 +730,9 @@ private:
                 // if we can't preemt any more sequences, clear scheduled tokens and move to next sequence
                 if (!m_cache_orchestrator->can_append_slots(sequence_group)) {
                     sequence_group->clear_scheduled_tokens();
+                    if (linear_attention_group_reservation) {
+                        linear_attention_reservations.release_group(*linear_attention_group_reservation);
+                    }
                     continue;
                 }
 
@@ -650,7 +766,13 @@ private:
                             size_t sid = seq->get_id();
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(sid);
                             const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(sid);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, sid, la_blocks, la_block_logical_start);
+                            _publish_linear_attention_paging_data(scheduler_output,
+                                                                 sequence_group,
+                                                                 sid,
+                                                                 *linear_attention_mode,
+                                                                 la_blocks,
+                                                                 la_block_logical_start,
+                                                                 linear_attention_reservations);
                         }
                     }
                 }
@@ -662,7 +784,10 @@ private:
         }
     }
 
-    void _schedule_prompt_phase_vllm(std::vector<SequenceGroup::Ptr>& sequence_groups, Output& scheduler_output) {
+    void _schedule_prompt_phase_vllm(
+        std::vector<SequenceGroup::Ptr>& sequence_groups,
+        Output& scheduler_output,
+        LinearAttentionReservationTransaction& linear_attention_reservations) {
         // Current scheduling method schedules prompts only in a manner similar to vLLM:
         // - Limits max batch size by:
         //   - max_num_seqs (256 in vLLM's defaults)
@@ -727,9 +852,17 @@ private:
 
                         // fill linear attention block tables if registered
                         if (m_cache_orchestrator->has_linear_attention_cache()) {
+                            const auto linear_attention_mode =
+                                _classify_linear_attention_paging(sequence_group);
                             const auto& la_blocks = m_cache_orchestrator->get_linear_attention_block_table(seq_id);
                             const size_t la_block_logical_start = m_cache_orchestrator->get_linear_attention_block_table_logical_start(seq_id);
-                            _set_linear_attention_paging_data(scheduler_output, sequence_group, seq_id, la_blocks, la_block_logical_start);
+                            _publish_linear_attention_paging_data(scheduler_output,
+                                                                 sequence_group,
+                                                                 seq_id,
+                                                                 linear_attention_mode,
+                                                                 la_blocks,
+                                                                 la_block_logical_start,
+                                                                 linear_attention_reservations);
                         }
                     }
 
@@ -860,103 +993,242 @@ private:
         return grew_capacity;
     }
 
-    /// @return Whether every running sequence can borrow its full scratch window.
-    bool _can_borrow_linear_attention_window(const SequenceGroup::CPtr& sequence_group, size_t window_rows) {
-        const auto running_sequences = sequence_group->get_running_sequences();
-        const size_t required_rows = window_rows * running_sequences.size();
-        for (const auto& sequence : running_sequences) {
-            if (!m_cache_orchestrator->can_reserve_linear_attention_temporary_blocks(sequence->get_id(),
-                                                                                    required_rows)) {
-                return false;
-            }
+    enum class LinearAttentionPagingMode {
+        NON_SPECULATIVE,
+        SPECULATIVE,
+        PREFIX,
+    };
+
+    struct NonSpeculativeLinearAttentionPlan {
+        uint64_t seq_id;
+        size_t num_processed_tokens;
+        size_t live_block_index;
+    };
+
+    struct SpeculativeLinearAttentionPlan {
+        SpeculativeLinearAttentionPlan(uint64_t id,
+                                       size_t processed_tokens,
+                                       size_t scheduled_tokens,
+                                       size_t committed_block,
+                                       std::vector<int> reserved_blocks)
+            : seq_id(id),
+              num_processed_tokens(processed_tokens),
+              num_scheduled_tokens(scheduled_tokens),
+              committed_block_index(committed_block),
+              reserved_block_indices(std::move(reserved_blocks)) {
+            OPENVINO_ASSERT(!reserved_block_indices.empty(),
+                            "Speculative linear-attention plan requires reserved rows for sequence ", seq_id);
         }
-        return true;
-    }
 
-    void _set_linear_attention_paging_data(Output& scheduler_output,
-                                           SequenceGroup::CPtr sequence_group,
-                                           uint64_t seq_id,
-                                           const BlocksPerLayer& la_blocks,
-                                           size_t block_table_logical_start) {
-        OPENVINO_ASSERT(!la_blocks.empty(), "Linear attention block table empty for sequence ", seq_id);
+        uint64_t seq_id;
+        size_t num_processed_tokens;
+        size_t num_scheduled_tokens;
+        size_t committed_block_index;
+        std::vector<int> reserved_block_indices;
+    };
 
-        Output::LinearAttentionPagingData paging_data;
-        const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
-        const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+    struct PrefixLinearAttentionPlan {
+        uint64_t seq_id;
+        size_t num_processed_tokens;
+        size_t num_scheduled_tokens;
+        size_t cache_interval;
+        size_t block_table_logical_start;
+        BlocksPerLayer blocks;
+    };
 
-        paging_data.past_length = checked_size_to_int32(num_processed_tokens, "past length", seq_id);
+    using LinearAttentionPagingPlan = std::variant<NonSpeculativeLinearAttentionPlan,
+                                                   SpeculativeLinearAttentionPlan,
+                                                   PrefixLinearAttentionPlan>;
 
-        if (!m_config.enable_prefix_caching) {
-            const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
-            if (num_tokens_to_validate == 0) {
-                // Drop any uncommitted scratch before reusing the live row.
-                m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
-                const int32_t live_block = checked_size_to_int32(get_linear_attention_live_block(seq_id), "live block index", seq_id);
-                paging_data.block_indices.push_back(live_block);
-                paging_data.block_indices.push_back(live_block);
-                paging_data.cache_interval = 0;
-                paging_data.is_speculative = false;
-                scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
-                return;
-            }
-
-            // Window layout: [committed, tmp_1, ..., tmp_{N+1}].
-            OPENVINO_ASSERT(num_scheduled_tokens == num_tokens_to_validate + 1,
-                            "Speculative linear-attention validation window was not scheduled atomically for sequence ", seq_id,
-                            ": scheduled ", num_scheduled_tokens, " tokens, expected ", num_tokens_to_validate + 1,
-                            " (", num_tokens_to_validate, " candidates + 1 base token)");
-            const int32_t committed_block_index =
-                checked_size_to_int32(get_linear_attention_live_block(seq_id), "committed block index", seq_id);
-            const auto temporary_block_indices =
-                m_cache_orchestrator->reserve_linear_attention_temporary_blocks(seq_id, num_scheduled_tokens);
-            paging_data.block_indices.reserve(1 + temporary_block_indices.size());
-            paging_data.block_indices.push_back(committed_block_index);
-            for (int block_index : temporary_block_indices) {
-                paging_data.block_indices.push_back(checked_block_index_to_int32(block_index, seq_id));
-            }
-            // The kernel does not validate window arity.
-            OPENVINO_ASSERT(paging_data.block_indices.size() == num_scheduled_tokens + 1,
-                            "Borrowed speculative linear-attention window for sequence ", seq_id,
-                            " has ", paging_data.block_indices.size(), " entries, expected ",
-                            num_scheduled_tokens + 1);
-            paging_data.cache_interval = 1;
-            paging_data.is_speculative = true;
-            paging_data.num_processed_tokens_before = num_processed_tokens;
-            scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
+    void _validate_linear_attention_paging_modes(
+        const std::vector<SequenceGroup::Ptr>& sequence_groups) const {
+        if (!m_cache_orchestrator->has_linear_attention_cache()) {
             return;
         }
+        for (const auto& sequence_group : sequence_groups) {
+            std::ignore = _classify_linear_attention_paging(sequence_group);
+        }
+    }
 
-        OPENVINO_ASSERT(num_scheduled_tokens > 0, "Linear attention paging requires scheduled tokens for sequence ", seq_id);
+    LinearAttentionPagingMode _classify_linear_attention_paging(
+        SequenceGroup::CPtr sequence_group) const {
+        const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
+        OPENVINO_ASSERT(!(m_config.enable_prefix_caching && num_tokens_to_validate > 0),
+                        "Linear-attention prefix caching and speculative validation cannot be combined for sequence "
+                        "group ",
+                        sequence_group->get_request_id(), ": received ", num_tokens_to_validate,
+                        " tokens to validate");
+        if (m_config.enable_prefix_caching) {
+            return LinearAttentionPagingMode::PREFIX;
+        }
+        return num_tokens_to_validate > 0 ? LinearAttentionPagingMode::SPECULATIVE
+                                          : LinearAttentionPagingMode::NON_SPECULATIVE;
+    }
 
-        const size_t cache_interval = m_cache_orchestrator->get_block_size(CacheType::LINEAR_ATTENTION_CACHE);
-        OPENVINO_ASSERT(cache_interval > 0,
-            "Internal error: linear attention cache interval must be greater than 0 when prefix caching is enabled");
-        paging_data.cache_interval = checked_size_to_int32(cache_interval, "cache interval", seq_id);
-        const size_t read_block_position = num_processed_tokens == 0 ? 0 : (num_processed_tokens - 1) / cache_interval;
-        const size_t write_block_begin = num_processed_tokens / cache_interval;
-        const size_t write_blocks_count = (num_processed_tokens % cache_interval + num_scheduled_tokens + cache_interval - 1) / cache_interval;
+    LinearAttentionPagingPlan _make_linear_attention_paging_plan(LinearAttentionPagingMode mode,
+                                                                 SequenceGroup::CPtr sequence_group,
+                                                                 uint64_t seq_id,
+                                                                 const BlocksPerLayer& la_blocks,
+                                                                 size_t block_table_logical_start,
+                                                                 const LinearAttentionReservationTransaction&
+                                                                     linear_attention_reservations) {
+        const size_t num_processed_tokens = sequence_group->get_num_processed_tokens();
+        const size_t num_scheduled_tokens = sequence_group->get_num_scheduled_tokens();
+        switch (mode) {
+        case LinearAttentionPagingMode::NON_SPECULATIVE: {
+            auto& block_manager =
+                m_cache_orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE);
+            OPENVINO_ASSERT(!block_manager.has_temporary_blocks(seq_id),
+                            "Non-speculative linear-attention sequence ", seq_id,
+                            " still owns temporary rows");
+            return NonSpeculativeLinearAttentionPlan{
+                seq_id,
+                num_processed_tokens,
+                get_linear_attention_live_block(seq_id),
+            };
+        }
+        case LinearAttentionPagingMode::SPECULATIVE: {
+            const size_t num_tokens_to_validate = sequence_group->get_num_tokens_to_validate();
+            OPENVINO_ASSERT(num_scheduled_tokens == num_tokens_to_validate + 1,
+                            "Speculative linear-attention validation window was not scheduled atomically for sequence ",
+                            seq_id, ": scheduled ", num_scheduled_tokens, " tokens, expected ",
+                            num_tokens_to_validate + 1, " (", num_tokens_to_validate,
+                            " candidates + 1 base token)");
+            return SpeculativeLinearAttentionPlan{
+                seq_id,
+                num_processed_tokens,
+                num_scheduled_tokens,
+                get_linear_attention_live_block(seq_id),
+                linear_attention_reservations.get(seq_id),
+            };
+        }
+        case LinearAttentionPagingMode::PREFIX: {
+            OPENVINO_ASSERT(num_scheduled_tokens > 0,
+                            "Linear attention paging requires scheduled tokens for sequence ", seq_id);
+            const size_t cache_interval =
+                m_cache_orchestrator->get_block_size(CacheType::LINEAR_ATTENTION_CACHE);
+            OPENVINO_ASSERT(cache_interval > 0,
+                            "Internal error: linear attention cache interval must be greater than 0 when prefix "
+                            "caching is enabled");
+            return PrefixLinearAttentionPlan{
+                seq_id,
+                num_processed_tokens,
+                num_scheduled_tokens,
+                cache_interval,
+                block_table_logical_start,
+                la_blocks,
+            };
+        }
+        }
+        OPENVINO_THROW("Unknown linear-attention paging mode");
+    }
+
+    static Output::LinearAttentionPagingData _build_linear_attention_paging_data(
+        const NonSpeculativeLinearAttentionPlan& plan) {
+        Output::LinearAttentionPagingData paging_data;
+        paging_data.past_length =
+            checked_size_to_int32(plan.num_processed_tokens, "past length", plan.seq_id);
+        const int32_t live_block =
+            checked_size_to_int32(plan.live_block_index, "live block index", plan.seq_id);
+        paging_data.block_indices = {live_block, live_block};
+        return paging_data;
+    }
+
+    static Output::LinearAttentionPagingData _build_linear_attention_paging_data(
+        const SpeculativeLinearAttentionPlan& plan) {
+        Output::LinearAttentionPagingData paging_data;
+        paging_data.past_length =
+            checked_size_to_int32(plan.num_processed_tokens, "past length", plan.seq_id);
+        paging_data.block_indices.reserve(1 + plan.reserved_block_indices.size());
+        paging_data.block_indices.push_back(
+            checked_size_to_int32(plan.committed_block_index, "committed block index", plan.seq_id));
+        for (int block_index : plan.reserved_block_indices) {
+            paging_data.block_indices.push_back(checked_block_index_to_int32(block_index, plan.seq_id));
+        }
+        OPENVINO_ASSERT(paging_data.block_indices.size() == plan.num_scheduled_tokens + 1,
+                        "Borrowed speculative linear-attention window for sequence ", plan.seq_id,
+                        " has ", paging_data.block_indices.size(), " entries, expected ",
+                        plan.num_scheduled_tokens + 1);
+        paging_data.cache_interval = 1;
+        paging_data.is_speculative = true;
+        paging_data.num_processed_tokens_before = plan.num_processed_tokens;
+        return paging_data;
+    }
+
+    static Output::LinearAttentionPagingData _build_linear_attention_paging_data(
+        const PrefixLinearAttentionPlan& plan) {
+        Output::LinearAttentionPagingData paging_data;
+        paging_data.past_length =
+            checked_size_to_int32(plan.num_processed_tokens, "past length", plan.seq_id);
+        paging_data.cache_interval =
+            checked_size_to_int32(plan.cache_interval, "cache interval", plan.seq_id);
+        const size_t read_block_position =
+            plan.num_processed_tokens == 0 ? 0 : (plan.num_processed_tokens - 1) / plan.cache_interval;
+        const size_t write_block_begin = plan.num_processed_tokens / plan.cache_interval;
+        const size_t write_blocks_count =
+            (plan.num_processed_tokens % plan.cache_interval + plan.num_scheduled_tokens +
+             plan.cache_interval - 1) /
+            plan.cache_interval;
         const size_t write_block_end = write_block_begin + write_blocks_count;
 
-        OPENVINO_ASSERT(read_block_position >= block_table_logical_start,
-                        "Linear attention read block precedes restored block table for sequence ", seq_id,
-                        ": read position ", read_block_position, ", table starts at ", block_table_logical_start);
-        OPENVINO_ASSERT(write_block_begin >= block_table_logical_start,
-                        "Linear attention write blocks precede restored block table for sequence ", seq_id,
-                        ": write position ", write_block_begin, ", table starts at ", block_table_logical_start);
-        const size_t read_block_table_position = read_block_position - block_table_logical_start;
-        const size_t write_block_table_begin = write_block_begin - block_table_logical_start;
-        const size_t write_block_table_end = write_block_end - block_table_logical_start;
+        OPENVINO_ASSERT(read_block_position >= plan.block_table_logical_start,
+                        "Linear attention read block precedes restored block table for sequence ", plan.seq_id,
+                        ": read position ", read_block_position, ", table starts at ",
+                        plan.block_table_logical_start);
+        OPENVINO_ASSERT(write_block_begin >= plan.block_table_logical_start,
+                        "Linear attention write blocks precede restored block table for sequence ", plan.seq_id,
+                        ": write position ", write_block_begin, ", table starts at ",
+                        plan.block_table_logical_start);
+        const size_t read_block_table_position = read_block_position - plan.block_table_logical_start;
+        const size_t write_block_table_begin = write_block_begin - plan.block_table_logical_start;
+        const size_t write_block_table_end = write_block_end - plan.block_table_logical_start;
 
-        OPENVINO_ASSERT(write_block_table_end <= la_blocks.size(),
-                        "Linear attention block table has insufficient blocks for sequence ", seq_id,
+        OPENVINO_ASSERT(write_block_table_end <= plan.blocks.size(),
+                        "Linear attention block table has insufficient blocks for sequence ", plan.seq_id,
                         ": expected at least ", write_block_table_end, " blocks from logical start ",
-                        block_table_logical_start, ", got ", la_blocks.size());
+                        plan.block_table_logical_start, ", got ", plan.blocks.size());
 
         paging_data.block_indices.reserve(1 + write_blocks_count);
-        paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[read_block_table_position]->get_index(), seq_id));
-        for (size_t block_position = write_block_table_begin; block_position < write_block_table_end; ++block_position) {
-            paging_data.block_indices.push_back(checked_block_index_to_int32(la_blocks[block_position]->get_index(), seq_id));
+        paging_data.block_indices.push_back(
+            checked_block_index_to_int32(plan.blocks[read_block_table_position]->get_index(), plan.seq_id));
+        for (size_t block_position = write_block_table_begin;
+             block_position < write_block_table_end;
+             ++block_position) {
+            paging_data.block_indices.push_back(
+                checked_block_index_to_int32(plan.blocks[block_position]->get_index(), plan.seq_id));
         }
+        return paging_data;
+    }
+
+    void _publish_linear_attention_paging_data(Output& scheduler_output,
+                                               SequenceGroup::CPtr sequence_group,
+                                               uint64_t seq_id,
+                                               LinearAttentionPagingMode mode,
+                                               const BlocksPerLayer& la_blocks,
+                                               size_t block_table_logical_start,
+                                               const LinearAttentionReservationTransaction&
+                                                   linear_attention_reservations) {
+        OPENVINO_ASSERT(!la_blocks.empty(), "Linear attention block table empty for sequence ", seq_id);
+        auto plan = _make_linear_attention_paging_plan(
+            mode,
+            sequence_group,
+            seq_id,
+            la_blocks,
+            block_table_logical_start,
+            linear_attention_reservations);
+        auto paging_data = std::visit(
+            utils::overloaded{
+                [](const NonSpeculativeLinearAttentionPlan& non_speculative_plan) {
+                    return _build_linear_attention_paging_data(non_speculative_plan);
+                },
+                [](const SpeculativeLinearAttentionPlan& speculative_plan) {
+                    return _build_linear_attention_paging_data(speculative_plan);
+                },
+                [](const PrefixLinearAttentionPlan& prefix_plan) {
+                    return _build_linear_attention_paging_data(prefix_plan);
+                },
+            },
+            plan);
         scheduler_output.set_linear_attention_paging_data(seq_id, std::move(paging_data));
     }
 

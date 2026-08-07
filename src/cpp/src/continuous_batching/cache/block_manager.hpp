@@ -992,21 +992,36 @@ public:
                         "Cannot reserve temporary cache blocks for unknown sequence ", seq_id);
         OPENVINO_ASSERT(m_num_layers == 1,
                         "Temporary cache checkpoint reservation expects a shared one-layer block table");
-        OPENVINO_ASSERT(m_temporary_block_table[seq_id].empty(),
+        const auto existing_temporary_it = m_temporary_block_table.find(seq_id);
+        OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
+                            existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
         OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
                         "Not enough cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
-        auto& temporary_blocks = m_temporary_block_table[seq_id];
+        std::vector<BlocksPerLayer> temporary_blocks;
         temporary_blocks.reserve(num_blocks);
         std::vector<int> block_indices;
         block_indices.reserve(num_blocks);
-        for (size_t idx = 0; idx < num_blocks; ++idx) {
-            BlocksPerLayer blocks = m_allocator.allocate_uncached_block();
-            OPENVINO_ASSERT(!blocks.empty(), "Temporary cache block allocation returned no blocks");
-            block_indices.push_back(blocks.front()->get_index());
-            temporary_blocks.push_back(std::move(blocks));
+        try {
+            for (size_t idx = 0; idx < num_blocks; ++idx) {
+                BlocksPerLayer blocks = m_allocator.allocate_uncached_block();
+                OPENVINO_ASSERT(!blocks.empty(), "Temporary cache block allocation returned no blocks");
+                const int block_index = blocks.front()->get_index();
+                temporary_blocks.push_back(std::move(blocks));
+                block_indices.push_back(block_index);
+            }
+            if (existing_temporary_it == m_temporary_block_table.end()) {
+                m_temporary_block_table.emplace(seq_id, std::move(temporary_blocks));
+            } else {
+                existing_temporary_it->second = std::move(temporary_blocks);
+            }
+        } catch (...) {
+            for (const auto& blocks : temporary_blocks) {
+                m_allocator.free_uncached(blocks);
+            }
+            throw;
         }
         return block_indices;
     }
