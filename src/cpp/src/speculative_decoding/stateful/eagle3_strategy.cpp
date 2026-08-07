@@ -1109,7 +1109,8 @@ Eagle3CompileConfig StatefulEagle3LLMPipeline::build_compile_config(const ModelD
     Eagle3CompileConfig cfg;
     cfg.max_tree_depth = get_or("MAX_TREE_DEPTH", m_generation_config.tree_depth);
     cfg.max_branching_factor = get_or("MAX_BRANCHING_FACTOR", m_generation_config.branching_factor);
-    cfg.max_assistant_tokens = get_or("MAX_ASSISTANT_TOKENS", m_generation_config.num_assistant_tokens);
+    cfg.max_assistant_tokens =
+        get_or("MAX_ASSISTANT_TOKENS", m_generation_config.num_assistant_tokens.value_or(DEFAULT_EAGLE_NUM_ASSISTANT_TOKENS));
     return cfg;
 }
 
@@ -1192,7 +1193,8 @@ StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
 void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& config) {
     if (config.is_tree_search()) {
         OPENVINO_ASSERT(config.branching_factor > 0, "branching_factor must be > 0 for Eagle3 tree search");
-        OPENVINO_ASSERT(config.num_assistant_tokens > 0, "num_assistant_tokens must be > 0 for Eagle3 tree search");
+        OPENVINO_ASSERT(config.num_assistant_tokens.has_value() && config.num_assistant_tokens.value() > 0,
+                        "num_assistant_tokens must be > 0 for Eagle3 tree search");
         return;
     }
 
@@ -1219,9 +1221,9 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
                     ") exceeds compile-time limit (",
                     m_compile_config.max_branching_factor,
                     "). Set MAX_BRANCHING_FACTOR in draft_model properties to increase.");
-    OPENVINO_ASSERT(config.num_assistant_tokens <= m_compile_config.max_assistant_tokens,
+    OPENVINO_ASSERT(config.num_assistant_tokens.value() <= m_compile_config.max_assistant_tokens,
                     "num_assistant_tokens (",
-                    config.num_assistant_tokens,
+                    config.num_assistant_tokens.value(),
                     ") exceeds compile-time limit (",
                     m_compile_config.max_assistant_tokens,
                     "). Set MAX_ASSISTANT_TOKENS in draft_model properties to increase.");
