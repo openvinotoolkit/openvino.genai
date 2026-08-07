@@ -174,7 +174,6 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
-    OmniTalkerSpeechConfig m_speech_config;
 };
 
 }  // namespace ov::genai
