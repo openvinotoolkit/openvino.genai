@@ -91,6 +91,75 @@ inline ov::Tensor flux2_prepare_image_ids(const size_t batch_size, const std::ve
     return image_ids;
 }
 
+// Sets a key/value pair in config only if the key is not already present,
+// preserving any user-supplied override.
+inline void flux2_npu_set_default(ov::AnyMap& config, const std::string& key, ov::Any value) {
+    if (config.count(key) == 0) {
+        config.emplace(key, std::move(value));
+    }
+}
+
+inline bool flux2_npu_use_npuw_disabled(const ov::AnyMap& config) {
+    auto it = config.find("NPU_USE_NPUW");
+    if (it == config.end()) {
+        return false;
+    }
+    if (it->second.is<std::string>()) {
+        return it->second.as<std::string>() == "NO";
+    }
+    if (it->second.is<bool>()) {
+        return it->second.as<bool>() == false;
+    }
+    return false;
+}
+
+inline void flux2_apply_npu_defaults_text_encoder(ov::AnyMap& config) {
+    flux2_npu_set_default(config, "NPU_USE_NPUW", std::string("YES"));
+    if (flux2_npu_use_npuw_disabled(config)) {
+        return;
+    }
+    flux2_npu_set_default(config, "NPUW_DEVICES",    std::string("NPU"));
+    flux2_npu_set_default(config, "NPUW_DCOFF_TYPE",  std::string(""));
+    flux2_npu_set_default(config, "NPUW_DCOFF_SCALE", std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_DQ",          std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_F16IC",       std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_DQ_FULL",     std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_FOLD",        std::string("YES"));
+    flux2_npu_set_default(config, "NPUW_UNFOLD_IREQS", std::string("NO"));
+}
+
+inline void flux2_apply_npu_defaults_transformer(ov::AnyMap& config) {
+    flux2_npu_set_default(config, "NPU_COMPILATION_MODE_PARAMS",
+                         std::string("compute-layers-with-higher-precision=MVN"));
+    flux2_npu_set_default(config, "NPU_USE_NPUW", std::string("YES"));
+    if (flux2_npu_use_npuw_disabled(config)) {
+        return;
+    }
+    flux2_npu_set_default(config, "NPUW_DEVICES",    std::string("NPU"));
+    flux2_npu_set_default(config, "NPUW_DCOFF_TYPE",  std::string(""));
+    flux2_npu_set_default(config, "NPUW_DCOFF_SCALE", std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_DQ",          std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_F16IC",       std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_DQ_FULL",     std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_FOLD",        std::string("YES"));
+    flux2_npu_set_default(config, "NPUW_UNFOLD_IREQS", std::string("NO"));
+}
+
+inline void flux2_apply_npu_defaults_vae(ov::AnyMap& config) {
+    flux2_npu_set_default(config, "NPU_USE_NPUW", std::string("YES"));
+    if (flux2_npu_use_npuw_disabled(config)) {
+        return;
+    }
+    flux2_npu_set_default(config, "NPUW_DEVICES",       std::string("NPU"));
+    flux2_npu_set_default(config, "NPUW_DCOFF_TYPE",     std::string(""));
+    flux2_npu_set_default(config, "NPUW_DCOFF_SCALE",    std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_ONLINE_PIPELINE", std::string("NONE"));
+    flux2_npu_set_default(config, "NPUW_F16IC",          std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_DQ_FULL",        std::string("NO"));
+    flux2_npu_set_default(config, "NPUW_FOLD",           std::string("YES"));
+    flux2_npu_set_default(config, "NPUW_UNFOLD_IREQS",   std::string("NO"));
+}
+
 }  // anonymous namespace
 
 namespace ov {
@@ -251,9 +320,24 @@ public:
                  const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &Flux2KleinPipeline::derived_adapters);
-        m_text_encoder->compile(text_encode_device, *updated_properties);
-        m_vae->compile(vae_device, *updated_properties);
-        m_transformer->compile(denoise_device, *updated_properties);
+
+        ov::AnyMap text_encoder_props = *updated_properties;
+        if (text_encode_device == "NPU") {
+            flux2_apply_npu_defaults_text_encoder(text_encoder_props);
+        }
+        m_text_encoder->compile(text_encode_device, text_encoder_props);
+
+        ov::AnyMap vae_props = *updated_properties;
+        if (vae_device == "NPU") {
+            flux2_apply_npu_defaults_vae(vae_props);
+        }
+        m_vae->compile(vae_device, vae_props);
+
+        ov::AnyMap transformer_props = *updated_properties;
+        if (denoise_device == "NPU") {
+            flux2_apply_npu_defaults_transformer(transformer_props);
+        }
+        m_transformer->compile(denoise_device, transformer_props);
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
