@@ -1060,10 +1060,14 @@ class MemorySamplerWinGPU(MemorySamplerBase):
     _GPU_ADAPTER_CLS = "Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory"
 
     @staticmethod
-    def _import_wmi():
+    def import_wmi():
         """
-        Import and return the optional ``wmi`` module, or ``None`` when it is
-        unavailable (non-Windows platform or package not installed).
+        Import and return the ``wmi`` module, or raise ``RuntimeError`` when
+        win-gpu cannot be honored -- a non-Windows platform, or the optional
+        ``wmi`` package not installed. Raising here (rather than returning
+        ``None``) means callers don't each have to re-check the result: an
+        explicit ``--memory_sampler win-gpu`` request fails loudly instead of
+        silently degrading to a RAM-only sampler.
 
         GPU memory is read from the WMI performance-counter class
         ``Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory``
@@ -1075,19 +1079,19 @@ class MemorySamplerWinGPU(MemorySamplerBase):
         (psutil).
         """
         if sys.platform != "win32":
-            return None
+            raise RuntimeError(
+                f"--memory_sampler win-gpu is only available on Windows (current platform: {sys.platform!r})."
+            )
         try:
             import wmi  # type: ignore[import]
-
-            log.debug("MemorySamplerWinGPU: wmi module loaded — GPU memory metrics (gpu_<index>) enabled.")
-            return wmi
         except ImportError:
-            log.debug(
-                "MemorySamplerWinGPU: wmi module not found "
-                "— GPU memory metrics (gpu_<index>) will be disabled. "
+            raise RuntimeError(
+                "--memory_sampler win-gpu requires the 'wmi' package for per-GPU memory "
+                "metrics (gpu_<index>_ded/shr), but it is not installed. "
                 "Install it with:  pip install wmi"
             )
-            return None
+        log.debug("MemorySamplerWinGPU: wmi module loaded — GPU memory metrics (gpu_<index>) enabled.")
+        return wmi
 
     def __init__(self, process_id):
         self.process_id = process_id
@@ -1108,17 +1112,11 @@ class MemorySamplerWinGPU(MemorySamplerBase):
         self._gpu_poll_min_interval = 1.0
         self._gpu_cache = ()  # last flat (ded_0, shr_0, …) tuple
         self._gpu_last_ts = None  # perf_counter() of last WMI query
-        # MemorySamplerWinGPU is only instantiated when the user explicitly
-        # asks for it (e.g. --memory_sampler win-gpu), so a missing 'wmi'
-        # package means the requested GPU metrics cannot be produced. Fail
-        # loudly rather than silently degrading to a RAM-only sampler.
-        wmi_module = self._import_wmi()
-        if wmi_module is None:
-            raise RuntimeError(
-                "MemorySamplerWinGPU requires the 'wmi' package for per-GPU memory metrics "
-                "(gpu_<index>_ded/shr), but it is not available "
-                f"(platform={sys.platform!r}). Install it with:  pip install wmi"
-            )
+        # MemorySamplerWinGPU is only instantiated when the user explicitly asks
+        # for it (e.g. --memory_sampler win-gpu); import_wmi() raises with a
+        # clear message when the request can't be honored (wrong platform or the
+        # 'wmi' package missing) rather than silently degrading to RAM-only.
+        wmi_module = self.import_wmi()
         self._wmi_conn = wmi_module.WMI()
         self._discover_gpu_adapters()
 
@@ -1263,8 +1261,9 @@ class MemoryMarkerMonitor(list):
         #                                    per-GPU dedicated/shared memory
         #                                    (gpu_<index>_ded / gpu_<index>_shr) via
         #                                    the WMI GPUAdapterMemory perf counters.
-        #                                    Windows only; falls back to
-        #                                    MemorySamplerBase elsewhere with a warning.
+        #                                    Windows + 'wmi' only; a request on any
+        #                                    other platform / without wmi is rejected
+        #                                    up front by MemoryMarkerHandler.
         #   "full"    → MemorySamplerFull:   MemorySamplerBase (same RAM metrics) PLUS
         #                                    uss/pss/swap from psutil.memory_full_info().
         #                                    Linux only; falls back to MemorySamplerBase
@@ -1429,16 +1428,13 @@ class MemoryMarkerHandler:
         sampler_type = getattr(args, "memory_sampler", "base")
 
         # Fail fast, in the main process, when win-gpu is explicitly requested
-        # on Windows but the required 'wmi' package is missing. The sampler
-        # itself runs in a background daemon whose exceptions are caught and
-        # logged there (background_worker), so without this check the benchmark
-        # would silently continue with no GPU metrics. Terminate here instead
-        # so the missing dependency is impossible to miss.
-        if sampler_type == "win-gpu" and sys.platform == "win32" and MemorySamplerWinGPU._import_wmi() is None:
-            raise RuntimeError(
-                "--memory_sampler win-gpu requires the 'wmi' package for per-GPU memory metrics "
-                "(gpu_<index>_ded/shr), but it is not installed. Install it with:  pip install wmi"
-            )
+        # but cannot be honored (wrong platform or the 'wmi' package missing).
+        # The sampler itself runs in a background daemon whose exceptions are
+        # caught and logged there (background_worker), so without this check the
+        # benchmark would silently continue with no GPU metrics. import_wmi()
+        # raises the user-facing error; we only need to trigger it here.
+        if sampler_type == "win-gpu":
+            MemorySamplerWinGPU.import_wmi()
 
         parent_pid = os.getpid()
         self.marker_queue = multiprocessing.Queue(maxsize=1000)
