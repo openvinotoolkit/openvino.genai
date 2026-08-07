@@ -294,6 +294,8 @@ class Sampler::GroupBeamSearcher : public Sampler::Searcher {
 
     std::vector<Group> m_groups;
 
+    BeamScoreInput m_beam_score_input = BeamScoreInput::LOGITS;
+
 public:
     explicit GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer);
 

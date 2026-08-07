@@ -70,6 +70,24 @@ std::vector<Token> log_softmax(const ov::Tensor& logits, size_t batch_idx) {
     return tokens;
 }
 
+// Read a row of precomputed log-probabilities without modifying the scores.
+std::vector<Token> read_row_as_logprobs(const ov::Tensor& logits, size_t batch_idx) {
+    ov::Shape shape = logits.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3);
+    size_t batch = shape[0], seq_len = shape[1], vocab_size = shape[2];
+    OPENVINO_ASSERT(batch_idx < batch, "Logits batch size doesn't match the number of beams");
+
+    size_t batch_offset = batch_idx * seq_len * vocab_size, sequence_offset = (seq_len - 1) * vocab_size;
+    const float* beam_logits = logits.data<const float>() + batch_offset + sequence_offset;
+
+    std::vector<Token> tokens;
+    tokens.reserve(vocab_size);
+    for (size_t idx = 0; idx < vocab_size; ++idx)
+        tokens.push_back({beam_logits[idx], int64_t(idx)});
+
+    return tokens;
+}
+
 std::vector<int64_t> wrap_tokens(const std::vector<int64_t>& tokens, const std::vector<int64_t>& prefix_tokens, const std::vector<int64_t>& suffix_tokens) {
     std::vector<int64_t> all_tokens = prefix_tokens;
     all_tokens.insert(all_tokens.end(), tokens.begin(), tokens.end());
@@ -208,7 +226,8 @@ void Sampler::GroupBeamSearcher::finalize(SamplerOutput& sampler_output) {
 
 Sampler::GroupBeamSearcher::GroupBeamSearcher(SequenceGroup::Ptr sequence_group, Tokenizer tokenizer)
     : Sampler::Searcher(sequence_group, tokenizer),
-      m_groups{m_parameters.num_beam_groups} {
+      m_groups{m_parameters.num_beam_groups},
+      m_beam_score_input{sequence_group->get_beam_score_input()} {
     OPENVINO_ASSERT(m_sequence_group->num_running_seqs() == 1);
     assert(m_parameters.num_beams % m_parameters.num_beam_groups == 0 &&
         "number of beams should be divisible by number of groups");
@@ -338,7 +357,9 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
         std::vector<Beam> candidates;
         candidates.reserve(group_size * 2 * group_size);
         for (const Beam& beam : group.ongoing) {
-            std::vector<Token> tokens = log_softmax(logits, beam.m_global_beam_idx);
+            std::vector<Token> tokens = m_beam_score_input == BeamScoreInput::LOG_PROBABILITIES
+                                            ? read_row_as_logprobs(logits, beam.m_global_beam_idx)
+                                            : log_softmax(logits, beam.m_global_beam_idx);
 
             // apply diversity penalty
             for (auto prev_group_id = 0; prev_group_id < group_id; ++prev_group_id) {
