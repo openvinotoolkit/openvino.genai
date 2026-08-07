@@ -352,6 +352,21 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
 /**
+ * @brief Detects whether an exception raised while constructing a PagedAttention/ContinuousBatching pipeline
+ *        indicates that the model cannot be converted to PagedAttention at all.
+ *
+ * Hybrid architectures such as Falcon-H1 (Mamba/SSM mixed with attention) carry recurrent convolution/SSM state
+ * that the SDPAToPagedAttention transformation cannot rewrite. The recurrent state keeps referencing the model's
+ * beam_idx parameter, which the transformation removes, producing an "undeclared parameter beam_idx" model
+ * validation failure. Such models can only run with the stateful backend, so the pipeline should fall back to it
+ * instead of surfacing the low-level failure.
+ *
+ * @param exception The exception thrown during PagedAttention pipeline construction.
+ * @return true if the failure is a PagedAttention model-construction incompatibility that warrants a stateful fallback.
+ */
+bool is_paged_attention_model_construction_failure(const ov::Exception& exception);
+
+/**
  * @brief Extracts the "extensions" key from the provided properties map and returns the corresponding
  * list of extensions.
  *

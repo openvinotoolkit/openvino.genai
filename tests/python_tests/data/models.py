@@ -27,7 +27,17 @@ if is_transformers_version(">=", "5.0"):
     )
 elif is_transformers_version(">=", "4.57"):
     # Restore after fix https://github.com/huggingface/optimum-intel/pull/1589
-    LINEAR_ATTENTION_MODELS_LIST = ("optimum-intel-internal-testing/tiny-random-qwen3-next",)
+    LINEAR_ATTENTION_MODELS_LIST = (
+        "optimum-intel-internal-testing/tiny-random-qwen3-next",
+        # Falcon-H1 (hybrid Mamba + attention) is enabled for GenAI: an explicit PagedAttention request now falls
+        # back to the stateful backend when the SDPAToPagedAttention transformation cannot rewrite the recurrent
+        # conv/ssm state (which otherwise fails with a dangling beam_idx parameter). Enable this entry once a
+        # non-degenerate tiny-random FalconH1 fixture is published under the optimum-intel-internal-testing
+        # namespace. The currently available public tiny-random FalconH1 checkpoints (e.g. tiny-random/falcon-h1,
+        # yujiepan/falcon-h1-tiny-random) use degenerate proportions (hidden_size=8, mamba_expand=32) that crash
+        # the Mamba naive kernel during generation and cannot serve as a reliable regression fixture.
+        # "optimum-intel-internal-testing/tiny-random-falcon-h1",
+    )
 
 
 GGUF_MODEL_LIST = (
