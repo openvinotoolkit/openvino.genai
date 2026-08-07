@@ -13,6 +13,7 @@
 #include <tuple>
 #include <vector>
 
+#include "continuous_batching/timer.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
@@ -410,6 +411,21 @@ ov::Tensor InputsEmbedderOnyx::get_inputs_embeds(
     }
 
     return inputs_embeds;
+}
+
+ov::Tensor InputsEmbedderOnyx::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+    const std::string bos_token = m_tokenizer.get_bos_token();
+    // ticket to addess globally: 192386
+    if (!m_is_chat_conversation && !m_apply_chat_template && !bos_token.empty() &&
+        prompt.compare(0, bos_token.size(), bos_token) == 0) {
+        ManualTimer encode_timer("Encode");
+        encode_timer.start();
+        ov::Tensor input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
+        encode_timer.end();
+        metrics.raw_metrics.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
+        return input_ids;
+    }
+    return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
 }
 
 void InputsEmbedderOnyx::encode_vision_token_ids() {

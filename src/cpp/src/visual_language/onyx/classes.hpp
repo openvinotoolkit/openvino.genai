@@ -77,6 +77,7 @@ private:
     int64_t m_video_token_id = -1;
     std::once_flag m_vision_token_ids_once_flag;
 
+    ov::Tensor apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) override;
     void encode_vision_token_ids();
 };
 
