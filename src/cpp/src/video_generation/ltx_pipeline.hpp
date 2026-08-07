@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -609,14 +610,17 @@ public:
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
-        // // Prepare timesteps
-        // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
-        ov::Tensor timestep(ov::element::f32, {1});
-        float* timestep_data = timestep.data<float>();
-
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
+
+        // Rank-1 [B] (legacy export) or rank-2 [B, S] (current export, per-token conditioning).
+        // T2V has no per-token conditioning, so every token gets the same timestep value either way.
+        const bool timestep_is_rank2 = m_transformer->get_timestep_partial_shape().size() == 2;
+        ov::Tensor timestep(ov::element::f32,
+                           timestep_is_rank2 ? ov::Shape{latent_shape_cfg[0], video_sequence_length}
+                                             : ov::Shape{1});
+        float* timestep_data = timestep.data<float>();
 
         // Initialize TaylorSeer if configured
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
@@ -646,7 +650,7 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            timestep_data[0] = timesteps[inference_step];
+            std::fill_n(timestep_data, timestep.get_size(), timesteps[inference_step]);
 
             ov::Tensor noise_pred_tensor;
             // Use TaylorSeer if enabled and caching is appropriate
