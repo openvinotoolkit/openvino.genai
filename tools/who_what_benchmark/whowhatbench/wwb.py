@@ -676,9 +676,6 @@ def genai_gen_text(
     answers. `model.generate()` normally returns exactly one result for a single prompt (either a
     plain str from LLMPipeline, or a DecodedResults-like object with a one-item `.texts` list from
     VLMPipeline for auto-detected VLM exports), and that single item is unwrapped to a plain str.
-    If `model.generate()` unexpectedly returns more than one result (e.g. num_return_sequences > 1),
-    the raw, non-str result is returned instead of raising, as a defensive fallback; callers should
-    not rely on that shape and it should not occur in WWB's single-answer-per-prompt usage.
     """
     kwargs = {}
     if empty_adapters:
