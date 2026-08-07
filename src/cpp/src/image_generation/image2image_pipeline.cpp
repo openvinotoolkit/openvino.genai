@@ -210,6 +210,13 @@ ImageGenerationPerfMetrics Image2ImagePipeline::get_performance_metrics() {
     return m_impl->get_performance_metrics();
 }
 
+void Image2ImagePipeline::export_model(const std::filesystem::path& export_path) {
+    if (std::dynamic_pointer_cast<StableDiffusionXLPipeline>(m_impl) == nullptr) {
+        OPENVINO_THROW("Blob export is supported only for Stable Diffusion XL pipelines");
+    }
+    m_impl->export_model(export_path);
+}
+
 Image2ImagePipeline Image2ImagePipeline::clone() {
     Image2ImagePipeline pipe(m_impl->clone());
     return pipe;
