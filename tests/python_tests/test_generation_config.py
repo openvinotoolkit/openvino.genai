@@ -150,7 +150,9 @@ def test_num_assistant_tokens_zero_and_tree_search_validation():
     with pytest.raises(RuntimeError):
         missing_assistant_cfg.validate()
 
-    zero_assistant_tree_cfg = GenerationConfig(max_new_tokens=10, branching_factor=2, tree_depth=1, num_assistant_tokens=0)
+    zero_assistant_tree_cfg = GenerationConfig(
+        max_new_tokens=10, branching_factor=2, tree_depth=1, num_assistant_tokens=0
+    )
     with pytest.raises(RuntimeError):
         zero_assistant_tree_cfg.validate()
 

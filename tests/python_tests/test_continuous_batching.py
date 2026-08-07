@@ -808,9 +808,7 @@ def eagle3_model_paths() -> tuple[Path, Path]:
 def test_eagle3_num_assistant_tokens_zero_matches_main_only(eagle3_model_paths: tuple[Path, Path]):
     main_model_path, draft_model_path = eagle3_model_paths
 
-    scheduler_config = dict_to_scheduler_config(
-        {"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
-    )
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
     sd_pipe = create_ov_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
@@ -836,13 +834,11 @@ def test_eagle3_num_assistant_tokens_zero_matches_main_only(eagle3_model_paths: 
 
 
 def test_eagle3_mixed_batch_with_zero_assistant_tokens_no_crash_and_main_only_match(
-    eagle3_model_paths: tuple[Path, Path]
+    eagle3_model_paths: tuple[Path, Path],
 ):
     main_model_path, draft_model_path = eagle3_model_paths
 
-    scheduler_config = dict_to_scheduler_config(
-        {"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}
-    )
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
     sd_cb_pipe = create_ov_cb_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
@@ -868,7 +864,9 @@ def test_eagle3_mixed_batch_with_zero_assistant_tokens_no_crash_and_main_only_ma
     sd_main_only_outputs = handle_main_only.read_all()
     sd_speculative_outputs = handle_speculative.read_all()
 
-    baseline_handle = main_only_cb_pipe.add_request(2, main_only_prompt, generation_config=GenerationConfig(do_sample=False, max_new_tokens=20))
+    baseline_handle = main_only_cb_pipe.add_request(
+        2, main_only_prompt, generation_config=GenerationConfig(do_sample=False, max_new_tokens=20)
+    )
     while main_only_cb_pipe.has_non_finished_requests():
         main_only_cb_pipe.step()
     baseline_outputs = baseline_handle.read_all()
