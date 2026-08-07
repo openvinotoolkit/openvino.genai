@@ -675,7 +675,10 @@ def genai_gen_text(
     TextEvaluator._generate_data(), which appends the result directly to a list of per-prompt
     answers. `model.generate()` normally returns exactly one result for a single prompt (either a
     plain str from LLMPipeline, or a DecodedResults-like object with a one-item `.texts` list from
-    VLMPipeline for auto-detected VLM exports), and that single item is unwrapped to a plain str.
+    VLMPipeline for auto-detected VLM exports). If it unexpectedly returns more than one sequence
+    (e.g. num_return_sequences > 1 via generation_config_extra), the first sequence is returned
+    deterministically; WWB scores a single answer per prompt, so extra sequences are discarded.
+    Raises TypeError if the result can't be normalized to a single str.
     """
     kwargs = {}
     if empty_adapters:
@@ -694,12 +697,19 @@ def genai_gen_text(
         assistant_confidence_threshold=assistant_confidence_threshold,
         **kwargs,
     )
+    if isinstance(answer, str):
+        return answer
+
     texts = getattr(answer, "texts", None)
-    if isinstance(texts, (list, tuple)) and len(texts) == 1:
+    if isinstance(texts, (list, tuple)) and len(texts) >= 1:
         return texts[0]
-    if isinstance(answer, list) and len(answer) == 1 and isinstance(answer[0], str):
+    if isinstance(answer, list) and len(answer) >= 1 and isinstance(answer[0], str):
         return answer[0]
-    return answer
+
+    raise TypeError(
+        f"genai_gen_text() could not normalize model.generate() result of type "
+        f"{type(answer).__name__} to a single str answer."
+    )
 
 
 def genai_gen_chat_text(
