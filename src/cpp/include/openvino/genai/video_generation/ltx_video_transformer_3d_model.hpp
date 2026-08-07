@@ -35,6 +35,8 @@ public:
 
     LTXVideoTransformer3DModel(const LTXVideoTransformer3DModel&);
 
+    LTXVideoTransformer3DModel clone();
+
     const Config& get_config() const;
 
     LTXVideoTransformer3DModel& compile(const std::string& device, const ov::AnyMap& properties = {});
@@ -54,7 +56,7 @@ public:
     LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
 
     size_t get_expected_batch_size() const;
-    size_t get_request_input_batch();
+    ov::PartialShape get_timestep_partial_shape();
 
 private:
     class Inference;

@@ -63,6 +63,21 @@ LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::pa
 
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const LTXVideoTransformer3DModel&) = default;
 
+LTXVideoTransformer3DModel LTXVideoTransformer3DModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request),
+                    "LTXVideoTransformer3DModel must have exactly one of m_model or m_request initialized");
+
+    LTXVideoTransformer3DModel cloned = *this;
+
+    if (m_model) {
+        cloned.m_model = m_model->clone();
+    } else {
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
+    return cloned;
+}
+
 const LTXVideoTransformer3DModel::Config& LTXVideoTransformer3DModel::get_config() const {
     return m_config;
 }
@@ -119,15 +134,25 @@ size_t LTXVideoTransformer3DModel::get_expected_batch_size() const {
     return m_expected_batch_size;
 }
 
-size_t LTXVideoTransformer3DModel::get_request_input_batch() {
-    if (!m_request) {
-        return 0;
+ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
+    if (m_model) {
+        for (auto&& input : m_model->inputs()) {
+            if (input.get_any_name() == "timestep") {
+                return input.get_partial_shape();
+            }
+        }
     }
-    const ov::Shape shape = m_request.get_input_tensor(0).get_shape();
-    if (shape.empty()) {
-        return 0;
+    if (m_request) {
+        ov::CompiledModel compiled = m_request.get_compiled_model();
+        for (const auto& input : compiled.inputs()) {
+            if (input.get_any_name() == "timestep") {
+                return input.get_partial_shape();
+            }
+        }
     }
-    return shape[0];
+    OPENVINO_ASSERT(false,
+                    "LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
+                    "The model may be corrupted or exported incorrectly.");
 }
 
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
@@ -151,11 +176,17 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
 
     std::map<std::string, ov::PartialShape> name_to_shape;
 
+    const int64_t video_sequence_length = num_frames * height * width;
+
     for (auto&& input : m_model->inputs()) {
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            name_to_shape[input_name][0] = 1;
+            // Rank-1 [B] (legacy export) or rank-2 [B, S] (current export, per-token conditioning).
+            name_to_shape[input_name][0] = batch_size;
+            if (name_to_shape[input_name].size() >= 2) {
+                name_to_shape[input_name][1] = video_sequence_length;
+            }
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
         } else if (input_name == "hidden_states") {
