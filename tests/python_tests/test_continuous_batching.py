@@ -805,19 +805,52 @@ def eagle3_model_paths() -> tuple[Path, Path]:
     return main_model_path, draft_model_path
 
 
-def test_eagle3_num_assistant_tokens_zero_matches_main_only(eagle3_model_paths: tuple[Path, Path]):
+def test_eagle3_cb_generate_zero_assistant_tokens_matches_main_only(eagle3_model_paths: tuple[Path, Path]):
+    main_model_path, draft_model_path = eagle3_model_paths
+
+    scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
+    sd_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        scheduler_config=scheduler_config,
+    )
+    main_only_cb_pipe = create_ov_cb_pipeline(
+        main_model_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+        scheduler_config=scheduler_config,
+    )
+
+    prompt = "Explain why sunsets often appear orange."
+    sd_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=0)
+    main_only_config = GenerationConfig(do_sample=False, max_new_tokens=20)
+
+    sd_result = sd_cb_pipe.generate([prompt], [sd_config])
+    main_only_result = main_only_cb_pipe.generate([prompt], [main_only_config])
+
+    assert len(sd_result) == 1
+    assert len(main_only_result) == 1
+    assert len(sd_result[0].m_generation_ids) == 1
+    assert len(main_only_result[0].m_generation_ids) == 1
+    assert len(sd_result[0].m_generation_ids[0]) > 0
+    assert sd_result[0].m_generation_ids[0] == main_only_result[0].m_generation_ids[0]
+
+
+def test_eagle3_llm_generate_zero_assistant_tokens_matches_main_only(eagle3_model_paths: tuple[Path, Path]):
     main_model_path, draft_model_path = eagle3_model_paths
 
     scheduler_config = dict_to_scheduler_config({"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize})
     sd_pipe = create_ov_pipeline(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        device="CPU",
         draft_model_path=draft_model_path,
         scheduler_config=scheduler_config,
     )
     main_only_pipe = create_ov_pipeline(
         main_model_path,
         pipeline_type=PipelineType.PAGED_ATTENTION,
+        device="CPU",
         scheduler_config=scheduler_config,
     )
 
@@ -829,11 +862,12 @@ def test_eagle3_num_assistant_tokens_zero_matches_main_only(eagle3_model_paths: 
     main_only_result = main_only_pipe.generate([prompt], main_only_config)
 
     assert len(sd_result.texts) == 1
+    assert len(main_only_result.texts) == 1
     assert len(sd_result.texts[0]) > 0
     assert sd_result.texts[0] == main_only_result.texts[0]
 
 
-def test_eagle3_mixed_batch_with_zero_assistant_tokens_no_crash_and_main_only_match(
+def test_eagle3_cb_add_request_mixed_batch_zero_assistant_tokens_matches_main_only(
     eagle3_model_paths: tuple[Path, Path],
 ):
     main_model_path, draft_model_path = eagle3_model_paths
