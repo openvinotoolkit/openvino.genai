@@ -32,6 +32,7 @@ import utils.patch_pyav_for_servercore as patch_pyav_for_servercore
 patch_pyav_for_servercore.install_av_stub_module_for_windows()
 
 import inspect
+import functools
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,30 @@ def _is_videochat_flash_qwen_model(model_id: str) -> bool:
     return "videochat-flash-qwen" in model_id.lower()
 
 
+@functools.lru_cache(maxsize=None)
+def _hub_model_available(model_id: str) -> bool:
+    """Return True when the given model id is resolvable on the HuggingFace Hub."""
+    from huggingface_hub import HfApi
+    from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
+
+    try:
+        HfApi().model_info(model_id)
+        return True
+    except (RepositoryNotFoundError, HfHubHTTPError):
+        return False
+    except Exception:
+        return False
+
+
+def _youtu_vl_fixture_available() -> bool:
+    """The tiny-random youtu_vl fixture is usable if it is either published on the
+    Hub or already present as a converted OpenVINO IR in the local OV_CACHE."""
+    converted_dir = get_ov_cache_converted_models_dir() / str(MODEL_YOUTU_VL).replace(os.sep, "_")
+    if (converted_dir / "openvino_language_model.xml").exists():
+        return True
+    return _hub_model_available(MODEL_YOUTU_VL)
+
+
 VIDEOCHAT_FLASH_QWEN_MODEL_ID = "optimum-intel-internal-testing/tiny-videochat-flash-qwen"
 
 
@@ -167,6 +192,9 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+# tencent/Youtu-VL-4B-Instruct: SigLIP2 windowed vision tower + DeepSeek-V3-style MLA/MoE
+# text backbone. Uses Qwen-style vision tags but plain 1-D LM position ids.
+MODEL_YOUTU_VL = "optimum-intel-internal-testing/tiny-random-youtu-vl"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -181,6 +209,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        MODEL_YOUTU_VL,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -188,6 +217,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
+        MODEL_YOUTU_VL,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -218,6 +248,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
+    MODEL_YOUTU_VL: lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
 }
 
 
@@ -244,6 +275,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    MODEL_YOUTU_VL: 64,
 }
 
 
@@ -345,6 +377,17 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
 
+    if model_id == MODEL_YOUTU_VL and not _youtu_vl_fixture_available():
+        # The tiny-random youtu_vl fixture is not published on the Hub yet.
+        # youtu_vl support is validated in GenAI against the real
+        # tencent/Youtu-VL-4B-Instruct export; this repository test activates once
+        # the tiny-random fixture is hosted (or provided via the local OV_CACHE
+        # converted-models cache). See CVS ticket for fixture publication.
+        pytest.skip(
+            f"Tiny-random youtu_vl fixture '{MODEL_YOUTU_VL}' is not published on the "
+            "HuggingFace Hub yet."
+        )
+
 
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
     _maybe_skip_unsupported_model_export(VLM_EAGLE3_MAIN_MODEL_ID)
@@ -432,6 +475,7 @@ def _get_ov_model(model_id: str) -> str:
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
+                    MODEL_YOUTU_VL,
                 },
             )
         )

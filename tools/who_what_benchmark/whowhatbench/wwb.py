@@ -518,9 +518,64 @@ def check_args(args):
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
 
+def _load_local_csv_prompts(csv_path, model_type):
+    """Load prompts from a local CSV file through the --dataset interface.
+
+    The CSV must contain a "prompts" column. For visual-text style tasks it may
+    also contain "images" and "videos" columns holding file paths (or empty
+    cells). Media paths are resolved deterministically relative to the CSV's
+    directory and images are eagerly loaded into RGB PIL objects so the
+    downstream evaluator receives ready-to-use inputs. This keeps the remote
+    dataset loader optional (e.g. when it is unavailable or too slow) without
+    any model-name special casing.
+    """
+    df = pd.read_csv(csv_path, keep_default_na=False)
+    if "prompts" not in df.columns:
+        raise ValueError(f"Local dataset CSV '{csv_path}' must contain a 'prompts' column.")
+
+    base_dir = os.path.dirname(os.path.abspath(csv_path))
+
+    def _resolve(path):
+        path = str(path).strip()
+        if not path:
+            return None
+        return path if os.path.isabs(path) else os.path.join(base_dir, path)
+
+    res = {"prompts": [str(p) for p in df["prompts"].tolist()]}
+
+    is_visual = model_type in ("visual-text", "visual-text-chat", "visual-video-text")
+    if is_visual or "images" in df.columns or "videos" in df.columns:
+        images = []
+        if "images" in df.columns:
+            for cell in df["images"].tolist():
+                resolved = _resolve(cell)
+                images.append(Image.open(resolved).convert("RGB") if resolved else None)
+        else:
+            images = [None] * len(res["prompts"])
+
+        videos = []
+        if "videos" in df.columns:
+            for cell in df["videos"].tolist():
+                videos.append(_resolve(cell))
+        else:
+            videos = [None] * len(res["prompts"])
+
+        res["images"] = images
+        res["videos"] = videos
+
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Allow a local CSV to be supplied through the same --dataset interface.
+    # This is the generic escape hatch when the default remote dataset loader
+    # is unavailable or too slow (notably for visual-text ground-truth runs).
+    if os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        return _load_local_csv_prompts(args.dataset, args.model_type)
+
     split = "validation"
     if args.split is not None:
         split = args.split
