@@ -74,6 +74,11 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
+    // returns the draft-specific input embeddings prepared for speculative (eagle3) decoding,
+    // or an empty tensor when the embedder does not provide a dedicated draft embedding.
+    // aligned with VLLM implementation
+    ov::Tensor get_draft_inputs_embeds() const;
+
     bool has_token_type_ids() const;
 
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
@@ -180,6 +185,8 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
+        // Cached text-only embeddings for speculative (eagle3) draft path.
+        ov::Tensor m_draft_inputs_embeds;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -295,6 +302,16 @@ private:
             size_t base_video_id,
             const std::vector<EncodedImage>& images,
             const std::vector<EncodedVideo>& videos) const;
+
+        virtual ov::Tensor get_draft_inputs_embeds() const {
+            return m_draft_inputs_embeds;
+        }
+
+        void cache_draft_inputs_embeds(const ov::Tensor& text_embeds) {
+            OPENVINO_ASSERT(static_cast<bool>(text_embeds), "Cannot cache an empty draft embeddings tensor");
+            m_draft_inputs_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
+            text_embeds.copy_to(m_draft_inputs_embeds);
+        }
 
     protected:
         IInputsEmbedder(
