@@ -85,7 +85,9 @@ jobs:
         platform: macos_14_7
         arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: latest_available_commit
+        # Workaround for ScatterNDUpdate exception.
+        # The ticket for tracking: CVS-192302
+        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
