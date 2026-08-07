@@ -284,6 +284,7 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
                                    allow_qq_bias)
         .run_on_model(main_model);
     utils::apply_gather_before_matmul_transformation(main_model);
+    utils::fix_deepstack_visual_pos_masks_layout_for_paged_attention(main_model);
     validate_target_has_no_unmanaged_state(main_model);
     utils::dflash::expose_target_hidden_states(
         main_model,
