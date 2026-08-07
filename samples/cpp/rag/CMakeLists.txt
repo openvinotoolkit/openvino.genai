@@ -8,8 +8,13 @@ find_package(OpenVINOGenAI REQUIRED
     NO_CMAKE_FIND_ROOT_PATH
 )
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
+
 function(add_sample_executable target_name)
     add_executable(${target_name} ${target_name}.cpp)
+    if(target_name STREQUAL image_video_embedding)
+        ov_genai_link_opencv(${target_name} core imgproc videoio imgcodecs)
+    endif()
     target_link_libraries(${target_name} PRIVATE openvino::genai)
     set_target_properties(${target_name} PROPERTIES
         COMPILE_PDB_NAME ${target_name}
@@ -21,7 +26,7 @@ function(add_sample_executable target_name)
             EXCLUDE_FROM_ALL)
 endfunction()
 
-set(SAMPLE_LIST text_embeddings text_rerank)
+set(SAMPLE_LIST text_embeddings text_rerank image_video_embedding)
 
 foreach(sample ${SAMPLE_LIST})
     add_sample_executable(${sample})
