@@ -668,7 +668,18 @@ def genai_gen_text(
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
-):
+) -> str:
+    """Generate a single answer for `question` using an OpenVINO GenAI pipeline.
+
+    Contract: this always returns a single ``str`` answer, as expected by callers such as
+    TextEvaluator._generate_data(), which appends the result directly to a list of per-prompt
+    answers. `model.generate()` normally returns exactly one result for a single prompt (either a
+    plain str from LLMPipeline, or a DecodedResults-like object with a one-item `.texts` list from
+    VLMPipeline for auto-detected VLM exports). If it unexpectedly returns more than one sequence
+    (e.g. num_return_sequences > 1 via generation_config_extra), the first sequence is returned
+    deterministically; WWB scores a single answer per prompt, so extra sequences are discarded.
+    Raises TypeError if the result can't be normalized to a single str.
+    """
     kwargs = {}
     if empty_adapters:
         import openvino_genai
@@ -677,7 +688,7 @@ def genai_gen_text(
     if generation_config_extra:
         kwargs.update(generation_config_extra)
 
-    return model.generate(
+    answer = model.generate(
         question,
         do_sample=False,
         max_new_tokens=max_new_tokens,
@@ -685,6 +696,19 @@ def genai_gen_text(
         num_assistant_tokens=num_assistant_tokens,
         assistant_confidence_threshold=assistant_confidence_threshold,
         **kwargs,
+    )
+    if isinstance(answer, str):
+        return answer
+
+    texts = getattr(answer, "texts", None)
+    if isinstance(texts, (list, tuple)) and len(texts) >= 1:
+        return texts[0]
+    if isinstance(answer, list) and len(answer) >= 1 and isinstance(answer[0], str):
+        return answer[0]
+
+    raise TypeError(
+        f"genai_gen_text() could not normalize model.generate() result of type "
+        f"{type(answer).__name__} to a single str answer."
     )
 
 

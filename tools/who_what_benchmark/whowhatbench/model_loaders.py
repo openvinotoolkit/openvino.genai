@@ -5,6 +5,7 @@ from pathlib import Path
 import logging
 import torch
 import os
+from typing import Union
 
 from packaging.version import Version
 
@@ -42,6 +43,28 @@ disable_progress_bar()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# optimum-intel's OVModelForVisualCausalLM export always writes these two files
+# (see optimum.intel.openvino.utils.OV_TEXT_EMBEDDINGS_MODEL_NAME / OV_VISION_EMBEDDINGS_MODEL_NAME),
+# regardless of the specific VLM architecture, while plain text-only exports never have them.
+OV_VLM_TEXT_EMBEDDINGS_FILENAME = "openvino_text_embeddings_model.xml"
+OV_VLM_VISION_EMBEDDINGS_GLOB = "openvino_vision_embeddings*_model.xml"
+
+
+def _is_vlm_export(model_dir: Union[str, os.PathLike]) -> bool:
+    """Detect whether model_dir is an optimum-intel VLM export used as a 'text' model-type.
+
+    Some models declared with --model-type text are actually exported as a Visual Causal LM
+    (e.g. Gemma3n/Gemma4-unified), so they must be loaded with VLMPipeline/OVModelForVisualCausalLM
+    instead of the plain text LLMPipeline/OVModelForCausalLM API.
+    """
+    model_path = Path(model_dir)
+    return (
+        model_path.is_dir()
+        and (model_path / OV_VLM_TEXT_EMBEDDINGS_FILENAME).exists()
+        and any(model_path.glob(OV_VLM_VISION_EMBEDDINGS_GLOB))
+    )
 
 
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
@@ -206,15 +229,35 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if kwargs.get('gguf_file'):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
 
+    is_vlm_export = _is_vlm_export(model_dir)
+
     adapter_config = _create_genai_adapter_config(
         adapters=kwargs.get("adapters"),
         alphas=kwargs.get("alphas", None),
+        none_if_empty=is_vlm_export,
     )
 
     ov_config = {} if ov_config is None else ov_config
-    _add_genai_draft_model_config(ov_config, device, "text", **kwargs)
+    # VLM exports end up on VLMPipeline, so the NPU draft-model restriction for
+    # visual pipelines must see the matching model_type, not the generic "text".
+    _add_genai_draft_model_config(ov_config, device, "visual-text" if is_vlm_export else "text", **kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
+
+    if is_vlm_export:
+        pipeline_kwargs = {
+            "device": device,
+            **ov_config,
+        }
+        if adapter_config is not None:
+            pipeline_kwargs["adapters"] = adapter_config
+        if is_continuous_batching:
+            logger.info("Using OpenVINO GenAI Continuous Batching API")
+            pipeline_kwargs["scheduler_config"] = get_scheduler_config_genai(kwargs["cb_config"])
+            pipeline_kwargs["ATTENTION_BACKEND"] = "PA"
+        logger.info("Using OpenVINO GenAI VLMPipeline API for text generation")
+        pipeline = openvino_genai.VLMPipeline(model_dir, **pipeline_kwargs)
+        return GenAIModelWrapper(pipeline, model_dir, "text")
 
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
@@ -238,7 +281,10 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     model_kwargs = {}
     if n_ctx is not None:
         model_kwargs["n_ctx"] = int(n_ctx)
-    model = Llama(model_dir, **model_kwargs)
+    model_path = model_dir
+    if kwargs.get("gguf_file"):
+        model_path = os.path.join(model_dir, kwargs["gguf_file"])
+    model = Llama(model_path, **model_kwargs)
     return model
 
 
@@ -325,35 +371,39 @@ def load_text_model(
         model = load_text_llamacpp_pipeline(model_id, **kwargs)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel.openvino import OVModelForCausalLM
+        if _is_vlm_export(model_id):
+            logger.info("Detected VLM model structure, using Optimum Visual Causal LM API for text generation")
+            model = load_visual_text_model(model_id, device, ov_config, **kwargs)
+        else:
+            from optimum.intel.openvino import OVModelForCausalLM
 
-        try:
-            model = OVModelForCausalLM.from_pretrained(
-                model_id, device=device, ov_config=ov_config, **kwargs
-            )
-        except Exception:
             try:
-                config = AutoConfig.from_pretrained(
-                    model_id, trust_remote_code=True)
                 model = OVModelForCausalLM.from_pretrained(
-                    model_id,
-                    config=config,
-                    trust_remote_code=True,
-                    use_cache=True,
-                    device=device,
-                    ov_config=ov_config,
-                    **kwargs
+                    model_id, device=device, ov_config=ov_config, **kwargs
                 )
             except Exception:
-                config = AutoConfig.from_pretrained(model_id)
-                model = OVModelForCausalLM.from_pretrained(
-                    model_id,
-                    config=config,
-                    use_cache=True,
-                    device=device,
-                    ov_config=ov_config,
-                    **kwargs
-                )
+                try:
+                    config = AutoConfig.from_pretrained(
+                        model_id, trust_remote_code=True)
+                    model = OVModelForCausalLM.from_pretrained(
+                        model_id,
+                        config=config,
+                        trust_remote_code=True,
+                        use_cache=True,
+                        device=device,
+                        ov_config=ov_config,
+                        **kwargs
+                    )
+                except Exception:
+                    config = AutoConfig.from_pretrained(model_id)
+                    model = OVModelForCausalLM.from_pretrained(
+                        model_id,
+                        config=config,
+                        use_cache=True,
+                        device=device,
+                        ov_config=ov_config,
+                        **kwargs
+                    )
 
     return model
 
