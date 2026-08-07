@@ -260,7 +260,7 @@ USE_CASES = {
         UseCaseTextGenChat(["chatglm"], ov_cls=OVChatGLMModel, pt_cls=AutoModel),
     ],
     "ldm_super_resolution": [UseCaseLDMSuperResolution(["ldm-super-resolution"])],
-    "text_embed": [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
+    "text_embed": [UseCaseTextEmbeddings(["qwen3", "qwen3-vl", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     "text_rerank": [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     "text_to_speech": [UseCaseTextToSpeech(["speecht5", "kokoro"])],
 }

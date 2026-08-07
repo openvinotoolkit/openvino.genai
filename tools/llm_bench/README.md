@@ -224,7 +224,7 @@ python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task 
 # convert model to OpenVINO IRs format
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16
 # text to image
-python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "scat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task text-to-image
+python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task text-to-image
 # image to image
 python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task image-to-image --media ./image.png
 # inpainting
@@ -314,17 +314,40 @@ python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5
 # run benchmark.py
-python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed
+python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task embed
 ```
+> `--task embed` is the recommended value; `text_embed` is kept as an alias for backward compatibility.
 
 **Some additional parameters:**
-- `-p`: Text for creating embeddings
+- `-p`: Text for creating embeddings. Optional for Qwen3-VL-Embedding when `--media`/`--video` is given — the embedding is then computed for the media alone. Defaults to `"What is OpenVINO?"` for text-only runs.
 - `--embedding_pooling`: Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side.
 - `--embedding_normalize`: Normalize embeddings
 - `--embedding_max_length`: Max length for text embeddings. Input text will be padded or truncated to specified value.
 - `--embedding_padding_side`: Side to use for padding 'left' or 'right'.
+- `--embedding_prompt`: Instruction/system prompt used to guide embedding generation. Distinct from `-p`, which supplies the content being embedded. For Qwen3-VL-Embedding this defaults to `"Represent the user's input."`.
 
-> **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
+> **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3, qwen3-vl
+
+### Compare Multimodal (Qwen3-VL) Embedding models
+Qwen3-VL-Embedding shares its architecture with Qwen3-VL text generation; the embedding behavior requires `--task embed` explicitly.
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino --model Qwen/Qwen3-VL-Embedding-8B --task feature-extraction models/Qwen3-VL-Embedding-8B
+# text-only embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Describe OpenVINO"
+# image embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Represent this image" --media cat.png
+# video embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Represent this video" --video video.mp4 -vf 4
+# media-only embedding: -p is optional when media is provided
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed --media cat.png
+# with Optimum Intel
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed --media cat.png --optimum
+# JSONL input (each entry may include prompt/media/video; prompt may be omitted for media-only entries)
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -pf inputs.jsonl
+```
+
+The GenAI backend uses `openvino_genai.EmbeddingPipeline` when available (falling back to `TextEmbeddingPipeline` on older `openvino_genai`); multimodal inputs require `EmbeddingPipeline`. For Qwen3-VL-Embedding it applies `LAST_TOKEN` pooling by default and chat-template preprocessing. `--batch_size N` repeats the prompt N times; media (images/videos) are decoded once and applied to every prompt in the batch by the GenAI pipeline.
 
 ### Code Generation models
 ```sh
