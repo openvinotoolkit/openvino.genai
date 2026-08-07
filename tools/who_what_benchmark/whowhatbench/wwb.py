@@ -668,7 +668,18 @@ def genai_gen_text(
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
-):
+) -> str:
+    """Generate a single answer for `question` using an OpenVINO GenAI pipeline.
+
+    Contract: this always returns a single ``str`` answer, as expected by callers such as
+    TextEvaluator._generate_data(), which appends the result directly to a list of per-prompt
+    answers. `model.generate()` normally returns exactly one result for a single prompt (either a
+    plain str from LLMPipeline, or a DecodedResults-like object with a one-item `.texts` list from
+    VLMPipeline for auto-detected VLM exports), and that single item is unwrapped to a plain str.
+    If `model.generate()` unexpectedly returns more than one result (e.g. num_return_sequences > 1),
+    the raw, non-str result is returned instead of raising, as a defensive fallback; callers should
+    not rely on that shape and it should not occur in WWB's single-answer-per-prompt usage.
+    """
     kwargs = {}
     if empty_adapters:
         import openvino_genai

@@ -4,6 +4,8 @@
 import sys
 import types
 
+import pytest
+
 
 class FakeAdapterConfig:
     """Records .add() calls so tests can assert which adapters were attached."""
@@ -38,6 +40,7 @@ def _install_fake_openvino_genai(monkeypatch):
     fake_module.AdapterConfig = FakeAdapterConfig
     fake_module.Adapter = FakeAdapter
     fake_module.SchedulerConfig = lambda: types.SimpleNamespace()
+    fake_module.draft_model = lambda path, device, **kw: {"path": path, "device": device, **kw}
     fake_module.VLMPipeline = lambda *args, **kwargs: FakePipeline(fake_module.vlm_calls, *args, **kwargs)
     fake_module.LLMPipeline = lambda *args, **kwargs: FakePipeline(fake_module.llm_calls, *args, **kwargs)
 
@@ -54,14 +57,14 @@ class FakeGenAIModelWrapper:
         self.model_type = model_type
 
 
-def _load_text_genai_pipeline(monkeypatch, *, is_vlm_export, **kwargs):
+def _load_text_genai_pipeline(monkeypatch, *, is_vlm_export, device="CPU", **kwargs):
     from whowhatbench import model_loaders
 
     monkeypatch.setattr(model_loaders, "_is_vlm_export", lambda model_dir: is_vlm_export)
     monkeypatch.setattr(model_loaders, "GenAIModelWrapper", FakeGenAIModelWrapper)
     fake_openvino_genai = _install_fake_openvino_genai(monkeypatch)
 
-    result = model_loaders.load_text_genai_pipeline("model_dir", device="CPU", **kwargs)
+    result = model_loaders.load_text_genai_pipeline("model_dir", device=device, **kwargs)
     return result, fake_openvino_genai
 
 
@@ -130,3 +133,31 @@ def test_non_vlm_export_with_cb_config_uses_continuous_batching(monkeypatch):
     assert "scheduler_config" in llm_call.kwargs
     assert llm_call.kwargs["scheduler_config"].cache_size == 4
     assert "ATTENTION_BACKEND" not in llm_call.kwargs
+
+
+def test_vlm_export_with_draft_model_on_npu_raises(monkeypatch):
+    """A VLM export loaded via VLMPipeline must be blocked from NPU draft-model use,
+    same as an explicit --model-type visual-text run."""
+    with pytest.raises(RuntimeError, match="visual-text"):
+        _load_text_genai_pipeline(
+            monkeypatch,
+            is_vlm_export=True,
+            device="NPU",
+            draft_model="nonexistent_draft_model_dir",
+        )
+
+
+def test_non_vlm_export_with_draft_model_on_npu_is_allowed(monkeypatch, tmp_path):
+    """A plain text export on NPU with a draft model is not subject to the VLM restriction."""
+    draft_model_dir = tmp_path / "draft_model"
+    draft_model_dir.mkdir()
+
+    _, fake_openvino_genai = _load_text_genai_pipeline(
+        monkeypatch,
+        is_vlm_export=False,
+        device="NPU",
+        draft_model=str(draft_model_dir),
+    )
+
+    llm_call = fake_openvino_genai.llm_calls[0]
+    assert "draft_model" in llm_call.kwargs

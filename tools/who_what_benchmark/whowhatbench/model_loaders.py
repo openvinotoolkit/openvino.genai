@@ -238,7 +238,9 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     )
 
     ov_config = {} if ov_config is None else ov_config
-    _add_genai_draft_model_config(ov_config, device, "text", **kwargs)
+    # VLM exports end up on VLMPipeline, so the NPU draft-model restriction for
+    # visual pipelines must see the matching model_type, not the generic "text".
+    _add_genai_draft_model_config(ov_config, device, "visual-text" if is_vlm_export else "text", **kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
