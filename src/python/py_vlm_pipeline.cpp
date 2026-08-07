@@ -177,6 +177,30 @@ py::object call_vlm_generate(
     }
 
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
+
+    // ── Auto-detect thinking token IDs (VLM path 1) ──
+    // Triggered when thinking_start_token_id is not set and either:
+    //   1. enable_thinking is false, or
+    //   2. reasoning_budget_tokens is >= 0
+    // Encodes <think> and </think> via the tokenizer to get the correct IDs.
+    // Conditions:
+    //   1. thinking_start_token_id is unset (still at default -1)
+    //   2. Both <think> and </think> encode as single tokens
+    // Silently skips on failure (e.g. tokenizer doesn't support these special tokens).
+    if (updated_config.thinking_start_token_id < 0 &&
+        (!updated_config.enable_thinking || updated_config.reasoning_budget_tokens >= 0)) {
+        try {
+            auto tok = pipe.get_tokenizer();
+            auto start = tok.encode("<think>");
+            auto end = tok.encode("</think>");
+            // Only trust single-token encodings; skip multi-token results
+            if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
+                updated_config.thinking_start_token_id = *start.input_ids.data<int64_t>();
+                updated_config.thinking_end_token_id = *end.input_ids.data<int64_t>();
+            }
+        } catch (...) { /* skip auto-detect on failure */ }
+    }
+
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
     
@@ -435,6 +459,29 @@ An input image without explicit slicing metadata counts as one slice.)")
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
+                ov::genai::GenerationConfig gen_cfg;
+                auto it = map.find("generation_config");
+                if (it != map.end()) {
+                    gen_cfg = it->second.as<ov::genai::GenerationConfig>();
+                    map.erase(it);
+                }
+                // ── Auto-detect thinking token IDs (VLM path 2: kwargs) ──
+                // Used when generation_config is passed via kwargs.
+                // Triggers when enable_thinking=false or reasoning_budget_tokens>=0.
+                if (gen_cfg.thinking_start_token_id < 0 &&
+                    (!gen_cfg.enable_thinking || gen_cfg.reasoning_budget_tokens >= 0)) {
+                    try {
+                        auto tok = pipe.get_tokenizer();
+                        auto start = tok.encode("<think>");
+                        auto end = tok.encode("</think>");
+                        // Only trust single-token encodings; skip multi-token results
+                        if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
+                            gen_cfg.thinking_start_token_id = *start.input_ids.data<int64_t>();
+                            gen_cfg.thinking_end_token_id = *end.input_ids.data<int64_t>();
+                        }
+                    } catch (...) { /* skip auto-detect on failure */ }
+                }
+                map["generation_config"] = gen_cfg;
                 ov::genai::VLMDecodedResults res;
                 {
                     py::gil_scoped_release rel;

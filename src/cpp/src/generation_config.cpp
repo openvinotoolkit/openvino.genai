@@ -97,6 +97,12 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "branching_factor", branching_factor);
     read_json_param(data, "tree_depth", tree_depth);
 
+    // thinking / reasoning
+    read_json_param(data, "enable_thinking", enable_thinking);
+    read_json_param(data, "reasoning_budget_tokens", reasoning_budget_tokens);
+    read_json_param(data, "thinking_start_token_id", thinking_start_token_id);
+    read_json_param(data, "thinking_end_token_id", thinking_end_token_id);
+
     // append EOS to stop_token_ids
     if (eos_token_id != -1)
         set_eos_token_id(eos_token_id);
@@ -169,6 +175,12 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // tree search
     read_anymap_param(properties, "branching_factor", branching_factor);
     read_anymap_param(properties, "tree_depth", tree_depth);
+
+    // thinking / reasoning
+    read_anymap_param(properties, "enable_thinking", enable_thinking);
+    read_anymap_param(properties, "reasoning_budget_tokens", reasoning_budget_tokens);
+    read_anymap_param(properties, "thinking_start_token_id", thinking_start_token_id);
+    read_anymap_param(properties, "thinking_end_token_id", thinking_end_token_id);
 }
 
 
@@ -291,6 +303,24 @@ bool GenerationConfig::is_prompt_lookup() const {
 
 void GenerationConfig::validate() const {
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
+
+    // Thinking / reasoning
+    OPENVINO_ASSERT(reasoning_budget_tokens >= -1,
+        "reasoning_budget_tokens must be -1 (disabled) or a non-negative value, but got ",
+        reasoning_budget_tokens);
+    if (!enable_thinking && (thinking_start_token_id >= 0 || thinking_end_token_id >= 0)) {
+        OPENVINO_ASSERT(thinking_end_token_id >= 0,
+            "thinking_end_token_id must be set when enable_thinking is false "
+            "and thinking_start_token_id is set.");
+        OPENVINO_ASSERT(thinking_start_token_id >= 0,
+            "thinking_start_token_id must be set when enable_thinking is false "
+            "and thinking_end_token_id is set.");
+    }
+    if (reasoning_budget_tokens >= 0) {
+        OPENVINO_ASSERT(thinking_start_token_id >= 0 && thinking_end_token_id >= 0,
+            "thinking_start_token_id and thinking_end_token_id must both be set "
+            "when reasoning_budget_tokens is enabled (>= 0).");
+    }
 
     // Stop conditions
 
