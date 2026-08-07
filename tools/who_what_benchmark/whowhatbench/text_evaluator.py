@@ -17,6 +17,27 @@ PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
 
 
+# the draft model raw metrics are accumulated over generate() calls of the same pipeline,
+# while num_accepted_tokens is reported per call, so track the previous total to get per-prompt values
+sd_prev_draft_generated = {}
+
+
+def get_sd_token_numbers(answer, model):
+    # SDPerModelsPerfMetrics is set as extended_perf_metrics only for speculative decoding pipelines
+    extended_perf_metrics = getattr(answer, "extended_perf_metrics", None)
+    if not hasattr(extended_perf_metrics, "get_num_accepted_tokens"):
+        return None
+    total_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+    num_draft_generated = total_draft_generated - sd_prev_draft_generated.get(id(model), 0)
+    sd_prev_draft_generated[id(model)] = total_draft_generated
+    if num_draft_generated <= 0:
+        return None
+    return {
+        "num_draft_generated": num_draft_generated,
+        "num_accepted": extended_perf_metrics.get_num_accepted_tokens(),
+    }
+
+
 @register_evaluator(
     "text"
 )
@@ -201,6 +222,7 @@ class TextEvaluator(BaseEvaluator):
         prompt_data = data["prompts"]
 
         answers = []
+        sd_token_numbers = []
         prompts = (
             prompt_data.values
             if self.num_samples is None
@@ -212,20 +234,20 @@ class TextEvaluator(BaseEvaluator):
                 {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
             )
             for p in tqdm(prompts, desc="Evaluate pipeline"):
-                answers.append(
-                    gen_answer_fn(
-                        model,
-                        self.tokenizer,
-                        p,
-                        self.max_new_tokens,
-                        self._crop_question,
-                        self.use_chat_template,
-                        self.empty_adapters,
-                        self.num_assistant_tokens,
-                        self.assistant_confidence_threshold,
-                        **extra_kwargs,
-                    )
+                answer = gen_answer_fn(
+                    model,
+                    self.tokenizer,
+                    p,
+                    self.max_new_tokens,
+                    self._crop_question,
+                    self.use_chat_template,
+                    self.empty_adapters,
+                    self.num_assistant_tokens,
+                    self.assistant_confidence_threshold,
+                    **extra_kwargs,
                 )
+                sd_token_numbers.append(get_sd_token_numbers(answer, model))
+                answers.append(answer.texts[0] if hasattr(answer, "texts") else answer)
         else:
             if self.generation_config_extra:
                 for k, v in self.generation_config_extra.items():
@@ -245,6 +267,7 @@ class TextEvaluator(BaseEvaluator):
                         )
                         for ans in ans_batch:
                             answers.append(ans.m_generation_ids[0])
+                            sd_token_numbers.append(get_sd_token_numbers(ans, model))
 
                         batch.clear()
 
@@ -252,5 +275,8 @@ class TextEvaluator(BaseEvaluator):
         df = pd.DataFrame(res_data)
         df["language"] = self.language
         df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
+        if any(sd_token_numbers):
+            df["num_draft_generated"] = [sd["num_draft_generated"] if sd else None for sd in sd_token_numbers]
+            df["num_accepted"] = [sd["num_accepted"] if sd else None for sd in sd_token_numbers]
 
         return df
