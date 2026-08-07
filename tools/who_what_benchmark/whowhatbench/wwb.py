@@ -518,9 +518,68 @@ def check_args(args):
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
 
+def _load_local_visual_dataset_csv(csv_path):
+    """Load a local CSV dataset for visual-text/visual-video-text tasks.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and/or
+    ``videos`` columns holding file paths. Paths are resolved deterministically:
+    absolute paths are used as-is, relative paths are resolved against the CSV
+    directory. Image paths are loaded into RGB PIL images so downstream
+    processors receive image objects (matching the default dataset interface).
+    This is generic and not tied to any specific model.
+    """
+    import pandas as pd
+    from PIL import Image
+
+    df = pd.read_csv(csv_path, keep_default_na=False)
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"Local dataset CSV '{csv_path}' must contain a 'prompts' column. "
+            f"Found columns: {list(df.columns)}"
+        )
+
+    base_dir = os.path.dirname(os.path.abspath(csv_path))
+
+    def _resolve(path):
+        if path is None or path == "":
+            return None
+        return path if os.path.isabs(path) else os.path.join(base_dir, path)
+
+    def _load_image(path):
+        resolved = _resolve(path)
+        if resolved is None:
+            return None
+        return Image.open(resolved).convert("RGB")
+
+    res = {"prompts": list(df["prompts"])}
+
+    if "images" in df.columns:
+        res["images"] = [_load_image(p) for p in df["images"]]
+    else:
+        res["images"] = [None] * len(df)
+
+    if "videos" in df.columns:
+        res["videos"] = [_resolve(p) for p in df["videos"]]
+    else:
+        res["videos"] = [None] * len(df)
+
+    return res
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Accept a local CSV dataset generically. For visual tasks this CSV can
+    # carry 'prompts', 'images' and 'videos' columns; for text tasks only the
+    # requested field is used.
+    if os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        import pandas as pd
+
+        df = pd.read_csv(args.dataset, keep_default_na=False)
+        if "images" in df.columns or "videos" in df.columns:
+            return _load_local_visual_dataset_csv(args.dataset)
+        field = args.dataset_field if args.dataset_field in df.columns else "prompts"
+        return {"prompts": list(df[field])}
     split = "validation"
     if args.split is not None:
         split = args.split
