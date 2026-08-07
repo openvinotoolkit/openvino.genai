@@ -89,7 +89,9 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        revision: latest_available_commit
+        # Workaround for ScatterNDUpdate exception.
+        # The ticket for tracking: CVS-192302
+        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -974,6 +976,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-win-4-cores-8gb-test'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
+          - name: 'Video generation'
+            marker: 'video_generation'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-win-4-cores-8gb-test'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Video_generation_samples.test }}
           - name: 'LLM with transformers under 5.0'
             extra_cmd: 'python -m pip install transformers==4.55.4 diffusers==0.37.1'
             marker: 'llm and (transformers_dependent or transformers_lower_v5)'

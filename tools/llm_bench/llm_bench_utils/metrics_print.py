@@ -115,7 +115,7 @@ def print_metrics(
     if whisper is not None:
         print_whisper_infer_latency(iter_str, whisper, prompt_idx)
     if whisper_genai is not None:
-        print_whisper_genai_latency(iter_str, whisper_genai, prompt_idx)
+        print_asr_genai_latency(iter_str, whisper_genai, prompt_idx)
     if tts is not None:
         print_tts_latency(iter_str, tts, prompt_idx)
     print_memory_info(iter_num, iter_data, chat_idx, prompt_idx)
@@ -396,14 +396,14 @@ def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
     log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')
 
 
-def print_whisper_genai_latency(iter_str, metrics, prompt_idx=-1):
+def print_asr_genai_latency(iter_str, metrics, prompt_idx=-1):
     prefix = f"[{iter_str}][P{prompt_idx}]"
 
     def _fmt(val):
         return f"{val:.2f} ms" if val >= 0 else "N/A"
 
     log.info(
-        f"{prefix} Whisper stage latencies | "
+        f"{prefix} ASR stage latencies | "
         f"Tokenization={_fmt(metrics['tokenization_ms'])}, "
         f"First token: "
         f"features_extraction={_fmt(metrics['features_extraction_ms'])}, "
