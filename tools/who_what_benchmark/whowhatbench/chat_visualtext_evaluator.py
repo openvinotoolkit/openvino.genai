@@ -35,6 +35,7 @@ full_chat_types = [
     "llava",
     "phi4mm",
     "qwen3_vl",
+    "cosmos3_omni",
     "qwen3_5",
     "qwen3_5_moe",
     "llava_next",
