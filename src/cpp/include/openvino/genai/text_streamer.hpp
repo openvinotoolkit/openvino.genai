@@ -19,6 +19,10 @@ using CallbackTypeVariant = std::variant<bool, StreamingStatus>;
  * @param callback User-defined callback function to process the decoded text, callback should return
  * either boolean flag or StreamingStatus.
  * @param detokenization_params AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
+ *
+ * @note The number of tokens whose decoded text is held back before being passed to the callback defaults to 3
+ * and can be overridden with the OPENVINO_GENAI_STREAMER_DELAY_N_TOKENS environment variable. Lowering it reduces
+ * streaming latency but increases the risk of emitting text that tokenizer cleanup rules later change.
  */
 class OPENVINO_GENAI_EXPORTS TextStreamer : public StreamerBase {
 public:
