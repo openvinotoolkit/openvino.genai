@@ -56,6 +56,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
+    utils::fix_deepstack_visual_pos_masks_layout_for_paged_attention(main_model);
+    utils::fix_deepstack_visual_pos_masks_layout_for_paged_attention(draft_model);
 
     bool is_draft_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
