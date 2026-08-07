@@ -657,6 +657,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (sampling_params.assistant_confidence_threshold == 0.f &&
                        sampling_params.num_assistant_tokens.has_value() &&
+                       sampling_params.num_assistant_tokens.value() > 0 &&
                        sampling_params.num_assistant_tokens.value() <= generated_tokens_cnt) {
                 request->pause_generation(true);
             } else if (request->get_max_new_tokens() == 0) {

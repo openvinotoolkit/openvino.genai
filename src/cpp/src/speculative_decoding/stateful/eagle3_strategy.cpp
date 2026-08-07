@@ -1221,7 +1221,6 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
                     ") exceeds compile-time limit (",
                     m_compile_config.max_branching_factor,
                     "). Set MAX_BRANCHING_FACTOR in draft_model properties to increase.");
-    OPENVINO_ASSERT(config.num_assistant_tokens.has_value(), "num_assistant_tokens must be set for Eagle3.");
     OPENVINO_ASSERT(config.num_assistant_tokens.value() <= m_compile_config.max_assistant_tokens,
                     "num_assistant_tokens (",
                     config.num_assistant_tokens.value(),

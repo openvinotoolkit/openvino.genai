@@ -91,9 +91,17 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // assistant generation
     read_json_param(data, "assistant_confidence_threshold", assistant_confidence_threshold);
     if (data.contains("num_assistant_tokens")) {
-        size_t num_assistant_tokens_value = 0;
-        read_json_param(data, "num_assistant_tokens", num_assistant_tokens_value);
-        num_assistant_tokens = num_assistant_tokens_value;
+        const auto& num_assistant_tokens_json = data["num_assistant_tokens"];
+        if (num_assistant_tokens_json.is_null()) {
+            num_assistant_tokens = std::nullopt;
+        } else {
+            OPENVINO_ASSERT(num_assistant_tokens_json.is_number_integer(),
+                            "Invalid generation_config.json: num_assistant_tokens must be an integer or null, got ",
+                            num_assistant_tokens_json.type_name());
+            size_t num_assistant_tokens_value = 0;
+            read_json_param(data, "num_assistant_tokens", num_assistant_tokens_value);
+            num_assistant_tokens = num_assistant_tokens_value;
+        }
     }
     read_json_param(data, "max_ngram_size", max_ngram_size);
 
@@ -159,11 +167,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
 
     // assistant generation
     read_anymap_param(properties, "assistant_confidence_threshold", assistant_confidence_threshold);
-    if (properties.count("num_assistant_tokens") > 0) {
-        size_t num_assistant_tokens_value = 0;
-        read_anymap_param(properties, "num_assistant_tokens", num_assistant_tokens_value);
-        num_assistant_tokens = num_assistant_tokens_value;
-    }
+    read_anymap_param(properties, "num_assistant_tokens", num_assistant_tokens);
     read_anymap_param(properties, "max_ngram_size", max_ngram_size);
 
     // Structured output
