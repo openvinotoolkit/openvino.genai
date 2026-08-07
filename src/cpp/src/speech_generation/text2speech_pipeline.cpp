@@ -11,6 +11,7 @@
 #include "json_utils.hpp"
 #include "kokoro_tts_model.hpp"
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
+#include "piper_tts_model.hpp"
 #include "speecht5_tts_model.hpp"
 #include "utils.hpp"
 
@@ -36,12 +37,30 @@ const std::string get_class_name(const std::filesystem::path& root_dir) {
 enum class SpeechBackend {
     SpeechT5,
     Kokoro,
+    Piper,
 };
+
+bool has_phoneme_id_map(const std::filesystem::path& root_dir) {
+    const std::filesystem::path config_json_path = root_dir / "config.json";
+    if (!std::filesystem::exists(config_json_path)) {
+        return false;
+    }
+    std::ifstream config_file(config_json_path);
+    if (!config_file.is_open()) {
+        return false;
+    }
+    const nlohmann::json config = nlohmann::json::parse(config_file, nullptr, false);
+    return !config.is_discarded() && config.contains("phoneme_id_map") && config["phoneme_id_map"].is_object();
+}
 
 SpeechBackend resolve_backend(const std::filesystem::path& root_dir,
                              const std::string& class_name) {
     if (class_name == "SpeechT5ForTextToSpeech") {
         return SpeechBackend::SpeechT5;
+    }
+
+    if (class_name.find("Piper") != std::string::npos || has_phoneme_id_map(root_dir)) {
+        return SpeechBackend::Piper;
     }
 
     const bool has_openvino_model = std::filesystem::exists(root_dir / "openvino_model.xml");
@@ -81,6 +100,8 @@ Text2SpeechPipeline::Text2SpeechPipeline(const std::filesystem::path& root_dir,
     if (backend == SpeechBackend::SpeechT5) {
         auto tokenizer = ov::genai::Tokenizer(root_dir);
         m_impl = std::make_shared<SpeechT5TTSImpl>(root_dir, device, properties, tokenizer);
+    } else if (backend == SpeechBackend::Piper) {
+        m_impl = std::make_shared<PiperTTSImpl>(root_dir, device, properties);
     } else {
         m_impl = std::make_shared<KokoroTTSImpl>(root_dir, device, properties);
     }
