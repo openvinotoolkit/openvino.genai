@@ -2068,6 +2068,9 @@ class Image2ImagePipeline:
     def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
         ...
     @staticmethod
+    def flux2_klein(scheduler: Scheduler, models_path: os.PathLike | str | bytes, text_encoder: Qwen3TextEncoder, transformer: Flux2Transformer2DModel, vae: AutoencoderKL) -> Image2ImagePipeline:
+        ...
+    @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Image2ImagePipeline:
         ...
     @staticmethod
@@ -4592,6 +4595,9 @@ class Text2ImagePipeline:
     """
     @staticmethod
     def flux(scheduler: Scheduler, clip_text_model: CLIPTextModel, t5_encoder_model: T5EncoderModel, transformer: FluxTransformer2DModel, vae: AutoencoderKL) -> Text2ImagePipeline:
+        ...
+    @staticmethod
+    def flux2_klein(scheduler: Scheduler, models_path: os.PathLike | str | bytes, text_encoder: Qwen3TextEncoder, transformer: Flux2Transformer2DModel, vae: AutoencoderKL) -> Text2ImagePipeline:
         ...
     @staticmethod
     def latent_consistency_model(scheduler: Scheduler, clip_text_model: CLIPTextModel, unet: UNet2DConditionModel, vae: AutoencoderKL) -> Text2ImagePipeline:

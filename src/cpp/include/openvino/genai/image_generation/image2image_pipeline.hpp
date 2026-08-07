@@ -57,6 +57,21 @@ public:
         const FluxTransformer2DModel& transformer,
         const AutoencoderKL& vae);
 
+    /**
+     * Creates Flux2 Klein pipeline from individual models
+     * @param scheduler A scheduler used to denoise final image
+     * @param models_path Path to the model directory
+     * @param text_encoder A Qwen3 text encoder model
+     * @param transformer A Flux2 Transformer denoising model
+     * @param vae VAE auto encoder model
+     */
+    static Image2ImagePipeline flux2_klein(
+        const std::shared_ptr<Scheduler>& scheduler,
+        const std::filesystem::path& models_path,
+        const Qwen3TextEncoder& text_encoder,
+        const Flux2Transformer2DModel& transformer,
+        const AutoencoderKL& vae);
+
     // creates SD3 pipeline from building blocks
     static Image2ImagePipeline stable_diffusion_3(
         const std::shared_ptr<Scheduler>& scheduler,
