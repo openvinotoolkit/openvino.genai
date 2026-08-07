@@ -803,6 +803,31 @@ size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
     return max_prompt_len + min_response_len - max_generation_token_len;
 }
 
+ov::element::Type get_compiled_kv_cache_precision(const ov::CompiledModel& compiled_model) {
+    std::optional<ov::element::Type> kv_cache_precision;
+    for (const auto& input : compiled_model.inputs()) {
+        for (const auto& name : input.get_names()) {
+            if (name.find("key_cache.") == 0 || name.find("value_cache.") == 0) {
+                const ov::element::Type precision = input.get_element_type();
+                OPENVINO_ASSERT(!kv_cache_precision || *kv_cache_precision == precision,
+                                "Non-uniform KV cache precision across cache inputs is not supported: got ",
+                                *kv_cache_precision,
+                                " and ",
+                                precision,
+                                " for input '",
+                                name,
+                                "'");
+                kv_cache_precision = precision;
+                break;
+            }
+        }
+    }
+    OPENVINO_ASSERT(
+        kv_cache_precision,
+        "Compiled model does not expose key_cache/value_cache inputs required to determine KV cache precision");
+    return *kv_cache_precision;
+}
+
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
         std::optional<ov::Any> found = std::make_optional(it->second);
