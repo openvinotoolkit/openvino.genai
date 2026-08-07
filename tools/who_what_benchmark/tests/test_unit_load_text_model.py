@@ -5,6 +5,16 @@ import sys
 import types
 
 
+def _stub_module(monkeypatch, name, **attrs):
+    """Register a bare package/module stub in sys.modules, marking it as a package via __path__."""
+    module = types.ModuleType(name)
+    module.__path__ = []
+    for attr_name, attr_value in attrs.items():
+        setattr(module, attr_name, attr_value)
+    monkeypatch.setitem(sys.modules, name, module)
+    return module
+
+
 def test_load_text_model_vlm_export_uses_visual_text_model(monkeypatch):
     """A 'text' model-type whose directory looks like a VLM export must be routed to load_visual_text_model."""
     from whowhatbench import model_loaders
@@ -56,9 +66,13 @@ def test_load_text_model_non_vlm_uses_causal_lm(monkeypatch):
             calls.append((model_id, device, ov_config, kwargs))
             return sentinel
 
-    fake_module = types.ModuleType("optimum.intel.openvino")
-    fake_module.OVModelForCausalLM = FakeOVModelForCausalLM
-    monkeypatch.setitem(sys.modules, "optimum.intel.openvino", fake_module)
+    # Stub the full optimum -> optimum.intel -> optimum.intel.openvino package chain,
+    # so the test doesn't depend on optimum/optimum-intel being installed at all.
+    optimum_pkg = _stub_module(monkeypatch, "optimum")
+    intel_pkg = _stub_module(monkeypatch, "optimum.intel")
+    openvino_pkg = _stub_module(monkeypatch, "optimum.intel.openvino", OVModelForCausalLM=FakeOVModelForCausalLM)
+    optimum_pkg.intel = intel_pkg
+    intel_pkg.openvino = openvino_pkg
 
     result = model_loaders.load_text_model(
         "plain_text_dir",
