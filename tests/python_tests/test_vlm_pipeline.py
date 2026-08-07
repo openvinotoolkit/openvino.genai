@@ -167,6 +167,11 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+# MiniCPM-V-4.6 (minicpmv4_6): qwen3_5_text backbone + minicpmv4_6_vision NaViT
+# encoder. Requires transformers >= 5.7.0. The tiny-random fixture is not yet
+# published on the Hub; the export skip below documents this so the test
+# collects deterministically instead of failing on a missing repository.
+MODEL_MINICPM_V_4_6 = "optimum-intel-internal-testing/tiny-random-minicpmv4_6"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -190,6 +195,8 @@ else:
         "qnguyen3/nanoLLaVA",
         *VIDEO_MODEL_IDS,
     ]
+    if is_transformers_version(">=", "5.7.0"):
+        MODEL_IDS.append(MODEL_MINICPM_V_4_6)
 
 
 ADD_REQUEST_MODEL_IDS = [
@@ -210,6 +217,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
+    MODEL_MINICPM_V_4_6: lambda idx: "<|image_pad|>",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|image|>",
@@ -244,6 +252,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    MODEL_MINICPM_V_4_6: 448,
 }
 
 
@@ -344,7 +353,21 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
+    if model_id == MODEL_MINICPM_V_4_6:
+        if is_transformers_version("<", "5.7.0"):
+            pytest.skip(
+                "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.7.0."
+            )
+        try:
+            from huggingface_hub import HfApi
 
+            HfApi().model_info(model_id)
+        except Exception:
+            pytest.skip(
+                f"Tiny-random fixture '{model_id}' is not published on the Hub yet. "
+                "MiniCPM-V-4.6 GenAI support is validated end-to-end with the real "
+                "openbmb/MiniCPM-V-4.6 export; enable this case once the fixture is uploaded."
+            )
 
 def _get_vlm_eagle3_model_paths() -> tuple[Path, Path]:
     _maybe_skip_unsupported_model_export(VLM_EAGLE3_MAIN_MODEL_ID)

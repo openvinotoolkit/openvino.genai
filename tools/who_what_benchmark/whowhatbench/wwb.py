@@ -518,9 +518,76 @@ def check_args(args):
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
 
+def _load_local_visual_text_csv(csv_path, args):
+    """Load a local CSV describing a visual-text/visual-video-text dataset.
+
+    The CSV must provide a ``prompts`` column and may provide ``images`` and/or
+    ``videos`` columns. Image/video references are resolved deterministically
+    relative to the CSV location (absolute paths are used as-is), so the same
+    input always maps to the same media regardless of the working directory.
+    This mirrors the dict interface consumed by the visual-text evaluator
+    (``prompts``/``images``/``videos``) and is generic across VLM architectures.
+    """
+    from transformers.image_utils import load_image
+
+    df = pd.read_csv(csv_path, keep_default_na=False)
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"Local visual-text dataset '{csv_path}' must contain a 'prompts' column, "
+            f"found columns: {list(df.columns)}"
+        )
+
+    base_dir = os.path.dirname(os.path.abspath(csv_path))
+
+    def _resolve(ref):
+        ref = (ref or "").strip() if isinstance(ref, str) else ref
+        if ref is None or ref == "":
+            return None
+        # Keep remote references (URLs) untouched; resolve local relative paths
+        # deterministically against the CSV directory.
+        if isinstance(ref, str) and not (ref.startswith("http://") or ref.startswith("https://")):
+            if not os.path.isabs(ref):
+                ref = os.path.join(base_dir, ref)
+        return ref
+
+    prompts = list(df["prompts"])
+
+    images = None
+    if "images" in df.columns:
+        images = []
+        for v in df["images"]:
+            resolved = _resolve(v)
+            images.append(load_image(resolved) if resolved else None)
+
+    videos = None
+    if "videos" in df.columns:
+        videos = [_resolve(v) for v in df["videos"]]
+
+    n = len(prompts)
+    if images is None:
+        images = [None] * n
+    if videos is None:
+        videos = [None] * n
+
+    return {"prompts": prompts, "images": images, "videos": videos}
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Local CSV datasets: for visual-text tasks the evaluator needs a dict with
+    # prompts/images/videos, which the remote datasets loader cannot express.
+    # Detect a local CSV file and load it directly, resolving media paths
+    # deterministically. This also serves as a robust fallback when the default
+    # remote dataset loader is unavailable or too slow.
+    if isinstance(args.dataset, str) and args.dataset.lower().endswith(".csv") and os.path.isfile(args.dataset):
+        if args.model_type in ("visual-text", "visual-video-text", "visual-text-chat"):
+            return _load_local_visual_text_csv(args.dataset, args)
+        df = pd.read_csv(args.dataset, keep_default_na=False)
+        field = args.dataset_field if args.dataset_field in df.columns else "prompts"
+        return {"prompts": list(df[field])}
+
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -988,12 +1055,26 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 
 
 def is_model_with_automatic_crop(config):
-    return (
-        "internvl" in config.model_type
-        or "minicpmv" in config.model_type
-        or "minicpmo" in config.model_type
-        or "videochat_flash_qwen" in config.model_type
-    )
+    # Some remote-code VLMs override generate() to return ONLY the newly
+    # generated tokens (the prompt is already stripped). For those the HF
+    # baseline must NOT crop input_ids_len again, otherwise the beginning of
+    # the answer is lost.
+    #
+    # This must be matched precisely by model_type. A loose substring check
+    # (e.g. "minicpmv" in model_type) wrongly matches native transformers
+    # architectures such as "minicpmv4_6", whose generate() returns the FULL
+    # sequence (prompt + generation) and therefore DOES need cropping. Treating
+    # it as auto-crop leaves the whole chat template + <think> block in the
+    # ground-truth answer and makes an unfair HF-vs-Optimum comparison.
+    model_type = getattr(config, "model_type", "") or ""
+    automatic_crop_model_types = {
+        "internvl",
+        "internvl_chat",
+        "minicpmv",
+        "minicpmo",
+        "videochat_flash_qwen",
+    }
+    return model_type in automatic_crop_model_types
 
 
 def create_evaluator(base_model, args):
