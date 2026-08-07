@@ -5,6 +5,7 @@ The applications don't have many configuration options to encourage the reader t
 
  - [`text2video.py`](./text2video.py) demonstrates basic text to video generation.
  - [`taylorseer_text2video.py`](./taylorseer_text2video.py) demonstrates text to video generation with TaylorSeer caching optimization for improved performance. LTX-Video model is supported only.
+ - [`heterogeneous_text2video.py`](./heterogeneous_text2video.py) demonstrates running each stage of the text to video pipeline (text encoder, denoiser, VAE decoder) on a different device.
 
 ## Table of Contents
 1. [Download and Convert the Model](#download-and-convert-the-model)
@@ -152,6 +153,20 @@ The TaylorSeer configuration parameters can be adjusted in the source code:
 - `disable_cache_after_step`: Disable caching after this step (default: -2, meaning 2 steps before the end)
 
 For more details about TaylorSeer, see the [diffusion caching documentation](../../../site/docs/concepts/optimization-techniques/diffusion-caching.md).
+
+## Run text to video with multiple devices
+
+The `heterogeneous_text2video.py` sample demonstrates how a Text2VideoPipeline can be compiled with a dedicated device for each of its stages - text encoder, denoiser (transformer), & vae decoder. This approach gives fine-grained control over the devices used to execute each stage of the text to video pipeline.
+
+The usage of this sample is:
+
+`heterogeneous_text2video.py [-h] model_dir prompt [text_encoder_device] [denoiser_device] [vae_decoder_device]`
+
+For example:
+
+`python heterogeneous_text2video.py ./ltx_video_ov/FP32 "A woman with long brown hair and light skin smiles at another woman with long blonde hair" CPU GPU CPU`
+
+The sample will create a text to video pipeline such that the text encoder and VAE decoder are executed on the CPU, and the denoiser transformer on the GPU.
 
 ## Troubleshooting
 
