@@ -176,7 +176,9 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            name_to_shape[input_name][0] = 1;
+            // Rank-1 legacy export: runtime always sends a single-element {1} tensor regardless of batch.
+            // Rank-2 export: runtime sends {batch_size, S}, so batch must match hidden_states' batch dim.
+            name_to_shape[input_name][0] = name_to_shape[input_name].size() >= 2 ? batch_size : 1;
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
         } else if (input_name == "hidden_states") {
