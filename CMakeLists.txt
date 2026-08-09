@@ -80,6 +80,51 @@ if(ENABLE_PYTHON)
     endif()
 endif()
 
+# OpenVINO selects archive or system install destinations from CPACK_GENERATOR.
+# Keep GenAI's historical archive layout unless a non-archive generator is
+# explicitly selected, then consume the same OpenVINODeveloperPackage mapping.
+set(OPENVINO_GENAI_USE_SYSTEM_INSTALL_LAYOUT OFF)
+if(DEFINED CPACK_GENERATOR
+   AND NOT CPACK_GENERATOR STREQUAL "NPM"
+   AND NOT CPACK_GENERATOR MATCHES "^(7Z|TBZ2|TGZ|TXZ|TZ|TZST|ZIP)$")
+    set(OPENVINO_GENAI_USE_SYSTEM_INSTALL_LAYOUT ON)
+endif()
+
+if(OPENVINO_GENAI_USE_SYSTEM_INSTALL_LAYOUT)
+    include(GNUInstallDirs)
+
+    if(DEFINED OV_CPACK_LIBRARYDIR)
+        set(OPENVINO_GENAI_INSTALL_LIBDIR "${OV_CPACK_LIBRARYDIR}")
+        set(OPENVINO_GENAI_INSTALL_ARCHIVEDIR "${OV_CPACK_ARCHIVEDIR}")
+        set(OPENVINO_GENAI_INSTALL_BINDIR "${OV_CPACK_RUNTIMEDIR}")
+        set(OPENVINO_GENAI_INSTALL_INCLUDEDIR "${OV_CPACK_INCLUDEDIR}")
+        set(OPENVINO_GENAI_INSTALL_LICENSEDIR "${OV_CPACK_LICENSESDIR}")
+    else()
+        set(OPENVINO_GENAI_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
+        set(OPENVINO_GENAI_INSTALL_ARCHIVEDIR "${CMAKE_INSTALL_LIBDIR}")
+        set(OPENVINO_GENAI_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}")
+        set(OPENVINO_GENAI_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}")
+        set(OPENVINO_GENAI_INSTALL_LICENSEDIR
+            "${CMAKE_INSTALL_DATADIR}/doc/openvino-genai-${OpenVINOGenAI_VERSION}/licenses")
+    endif()
+
+    set(OPENVINO_GENAI_INSTALL_CMAKEDIR
+        "${OPENVINO_GENAI_INSTALL_LIBDIR}/cmake/OpenVINOGenAI")
+    if(ENABLE_PYTHON)
+        if(DEFINED OV_CPACK_PYTHONDIR)
+            set(OPENVINO_GENAI_INSTALL_PYTHONDIR "${OV_CPACK_PYTHONDIR}")
+        else()
+            set(OPENVINO_GENAI_INSTALL_PYTHONDIR
+                "${CMAKE_INSTALL_LIBDIR}/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages")
+        endif()
+    endif()
+else()
+    set(OPENVINO_GENAI_INSTALL_INCLUDEDIR "runtime/include")
+    set(OPENVINO_GENAI_INSTALL_CMAKEDIR "runtime/cmake")
+    set(OPENVINO_GENAI_INSTALL_PYTHONDIR "python")
+    set(OPENVINO_GENAI_INSTALL_LICENSEDIR "docs/licensing")
+endif()
+
 if(WIN32 OR APPLE)
   set(CMAKE_DEBUG_POSTFIX "d")
 endif()
@@ -102,8 +147,10 @@ if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tests/cpp" AND ENABLE_TESTS)
     add_subdirectory(tests/cpp)
 endif()
 
-install(FILES LICENSE DESTINATION docs/licensing COMPONENT licensing_genai RENAME LICENSE-GENAI)
-install(FILES third-party-programs.txt DESTINATION docs/licensing COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
+install(FILES LICENSE DESTINATION ${OPENVINO_GENAI_INSTALL_LICENSEDIR}
+        COMPONENT licensing_genai RENAME LICENSE-GENAI)
+install(FILES third-party-programs.txt DESTINATION ${OPENVINO_GENAI_INSTALL_LICENSEDIR}
+        COMPONENT licensing_genai RENAME third-party-programs-genai.txt)
 if(NOT DEFINED CPACK_ARCHIVE_COMPONENT_INSTALL)
     set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 endif()

@@ -69,10 +69,10 @@ endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.py"
               "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/__init__.pyi"
               "${CMAKE_CURRENT_SOURCE_DIR}/openvino_genai/py_openvino_genai.pyi"
-        DESTINATION python/openvino_genai
+        DESTINATION ${OPENVINO_GENAI_INSTALL_PYTHONDIR}/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 install(TARGETS ${TARGET_NAME}
-        LIBRARY DESTINATION python/openvino_genai
+        LIBRARY DESTINATION ${OPENVINO_GENAI_INSTALL_PYTHONDIR}/openvino_genai
         COMPONENT pygenai_${Python3_VERSION_MAJOR}_${Python3_VERSION_MINOR})
 
 install(FILES "${OpenVINOGenAI_SOURCE_DIR}/LICENSE"
