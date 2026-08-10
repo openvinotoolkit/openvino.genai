@@ -46,7 +46,7 @@ ov::Tensor load_image(const fs::path& image_path) {
     OPENVINO_ASSERT(rgb.isContinuous(), "Loaded image must be continuous in memory: ", image_path.string());
     ov::Tensor tensor(ov::element::u8, {static_cast<size_t>(rgb.rows), static_cast<size_t>(rgb.cols), 3});
     std::memcpy(tensor.data(), rgb.data, rgb.total() * rgb.elemSize());
-}
+    return tensor;
 
 std::vector<size_t> sample_frame_indices(size_t total_frames, size_t num_frames) {
     std::vector<size_t> indices(num_frames);
