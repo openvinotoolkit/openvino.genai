@@ -571,15 +571,14 @@ class TestImage2VideoPipeline:
         result = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS)
         assert result is not None
         assert result.video is not None
-        video = np.array(result.video)
-        assert video.shape == (1, 9, 32, 32, 3)
+        assert result.video.data.shape == (1, 9, 32, 32, 3)
 
     def test_determinism(self, video_generation_model):
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")
         image = self._make_image()
         result1 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
         result2 = pipe.generate(image, "test prompt", **self.GENERATE_KWARGS, generator=ov_genai.CppStdGenerator(42))
-        np.testing.assert_array_equal(np.array(result1.video), np.array(result2.video))
+        np.testing.assert_array_equal(result1.video.data, result2.video.data)
 
     def test_lora_passthrough(self, video_generation_model):
         adapter_config = ov_genai.AdapterConfig()
