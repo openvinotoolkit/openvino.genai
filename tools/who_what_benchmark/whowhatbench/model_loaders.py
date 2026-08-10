@@ -559,7 +559,7 @@ def load_visual_text_model(
                     from transformers import AutoModelForImageTextToText
 
                     model_cls = AutoModelForImageTextToText
-                elif config.model_type in ["gemma3", "muse_glimmer"]:
+                elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
 
                 model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
