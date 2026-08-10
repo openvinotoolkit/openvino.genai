@@ -67,16 +67,24 @@ public:
     ///                        audio chunks. `monostate` = batch mode (single waveform).
     /// @return TalkerResults with `waveforms` populated when `return_audio` is true and
     ///         `perf_metrics` populated regardless.
+    ///
+    /// @note When calling with an empty config, spell the type — `generate(vlm, OmniTalkerSpeechConfig{})`
+    ///       — rather than `generate(vlm, {})`, which is ambiguous against the AnyMap overload below.
     virtual TalkerResults generate(const VLMDecodedResults& vlm_result,
                                   const OmniTalkerSpeechConfig& talker_speech_config,
                                   const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) = 0;
 
-    /// @brief Property-bag speech generation. `properties` recognizes `speech_streamer` plus any
-    /// `OmniTalkerSpeechConfig` field. How unspecified fields are resolved is backend-defined; the
-    /// default `Talker` falls back to its stored config (see `Talker::get_speech_config` /
-    /// `set_speech_config`). Convenience wrapper over the typed overload for callers that build
-    /// config from an ov::AnyMap.
-    virtual TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties = {}) = 0;
+    /// @brief Property-bag convenience wrapper over the typed generate(). `properties` recognizes
+    /// `speech_streamer`, a whole `talker_speech_config`, and the individual `OmniTalkerSpeechConfig`
+    /// fields (`return_audio`, `speaker`, `audio_chunk_frames`, ...). Unrecognized keys throw.
+    ///
+    /// The default implementation seeds a freshly default-constructed `OmniTalkerSpeechConfig` from
+    /// `properties` and forwards to the typed overload — custom backends get this for free and need
+    /// not reimplement property parsing. `Talker` overrides it to seed from its stored config instead
+    /// (see `Talker::get_speech_config` / `set_speech_config`).
+    ///
+    /// @note `generate(vlm, {})` is ambiguous against the typed overload; pass `ov::AnyMap{}` explicitly.
+    virtual TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties = {});
 
     /// @brief List names of speakers exposed by this talker.
     /// Returns an empty vector when the backend does not enumerate named speakers.

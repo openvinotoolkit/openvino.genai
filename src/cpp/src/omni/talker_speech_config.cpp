@@ -4,6 +4,7 @@
 #include "openvino/genai/omni/talker_speech_config.hpp"
 
 #include <fstream>
+#include <unordered_set>
 #include <variant>
 
 #include <nlohmann/json.hpp>
@@ -34,6 +35,23 @@ OmniTalkerSpeechConfig::OmniTalkerSpeechConfig(const std::filesystem::path& mode
     if (talker.contains("speaker_id") && talker.at("speaker_id").is_string()) {
         speaker = talker.at("speaker_id").get<std::string>();
     }
+}
+
+bool is_omni_talker_speech_config_key(const std::string& key) {
+    // Keep in sync with update_omni_talker_speech_config below.
+    static const std::unordered_set<std::string> recognized{"return_audio",
+                                                             "speaker",
+                                                             "speaker_embedding",
+                                                             "audio_chunk_frames",
+                                                             "max_new_tokens",
+                                                             "rng_seed",
+                                                             "talker_temperature",
+                                                             "talker_top_k",
+                                                             "talker_repetition_penalty",
+                                                             "cp_temperature",
+                                                             "cp_top_k",
+                                                             "cp_repetition_penalty"};
+    return recognized.count(key) != 0;
 }
 
 void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::AnyMap& properties) {

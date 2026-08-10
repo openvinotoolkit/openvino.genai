@@ -36,7 +36,50 @@ std::vector<ov::Tensor> split_hidden_states(const std::vector<ov::Tensor>& per_s
     return per_token;
 }
 
+/// @brief Resolve a talker property-bag into a typed config plus optional streamer.
+/// Starts from `base` (the caller's default), overlays recognized `properties`, and rejects
+/// unknown keys so typos surface immediately instead of being silently dropped.
+struct ResolvedTalkerProperties {
+    OmniTalkerSpeechConfig config;
+    OmniSpeechStreamerVariant speech_streamer{std::monostate{}};
+};
+
+ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig& base, const ov::AnyMap& properties) {
+    ResolvedTalkerProperties out{base, std::monostate{}};
+    ov::AnyMap leftover;
+    for (const auto& [key, value] : properties) {
+        if (key == ov::genai::speech_streamer.name()) {
+            out.speech_streamer = value.as<OmniSpeechStreamerVariant>();
+        } else if (key == ov::genai::talker_speech_config.name()) {
+            out.config = value.as<OmniTalkerSpeechConfig>();
+        } else {
+            OPENVINO_ASSERT(is_omni_talker_speech_config_key(key),
+                            "Talker::generate: unrecognized property '",
+                            key,
+                            "'. Recognized keys: speech_streamer, talker_speech_config, plus "
+                            "OmniTalkerSpeechConfig fields (return_audio, speaker, audio_chunk_frames, "
+                            "max_new_tokens, rng_seed, talker_temperature, talker_top_k, "
+                            "talker_repetition_penalty, cp_temperature, cp_top_k, cp_repetition_penalty).");
+            leftover.emplace(key, value);
+        }
+    }
+    if (!leftover.empty()) {
+        update_omni_talker_speech_config(out.config, leftover);
+    }
+    // Values supplied via properties bypass set_speech_config(), so this is the only guard
+    // on the AnyMap path.
+    validate_omni_talker_speech_config(out.config);
+    return out;
+}
+
 }  // namespace
+
+TalkerResults TalkerBase::generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {
+    // Default backends have no stored config: seed from a fresh default so they get the
+    // property-bag overload for free without reimplementing parsing.
+    auto resolved = resolve_talker_properties(OmniTalkerSpeechConfig{}, properties);
+    return generate(vlm_result, resolved.config, resolved.speech_streamer);
+}
 
 class Talker::Impl {
 public:
@@ -101,25 +144,8 @@ public:
     // Property-bag form: resolve `properties` against the stored default config, pulling out
     // an optional speech_streamer, then delegate to the typed overload.
     TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {
-        OmniTalkerSpeechConfig config = m_speech_config;
-        OmniSpeechStreamerVariant speech_streamer = std::monostate{};
-        ov::AnyMap leftover;
-        for (const auto& [key, value] : properties) {
-            if (key == ov::genai::speech_streamer.name()) {
-                speech_streamer = value.as<OmniSpeechStreamerVariant>();
-            } else if (key == ov::genai::talker_speech_config.name()) {
-                config = value.as<OmniTalkerSpeechConfig>();
-            } else {
-                leftover.emplace(key, value);
-            }
-        }
-        if (!leftover.empty()) {
-            update_omni_talker_speech_config(config, leftover);
-        }
-        // Validate the resolved config here: values supplied via properties bypass
-        // set_speech_config(), so this is the only guard on the AnyMap path.
-        validate_omni_talker_speech_config(config);
-        return generate(vlm_result, config, speech_streamer);
+        auto resolved = resolve_talker_properties(m_speech_config, properties);
+        return generate(vlm_result, resolved.config, resolved.speech_streamer);
     }
 
     std::vector<std::string> list_speakers() const {
