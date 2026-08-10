@@ -35,9 +35,7 @@ const std::string SDPA_BACKEND = "SDPA";
 namespace {
 
 void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
-    if (config.count(pair.first) == 0) {
-        config.insert(pair);
-    }
+    ov::genai::utils::set_config_default(config, pair.first, pair.second);
 }
 
 void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
@@ -253,6 +251,42 @@ bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
     }
 
     return false;
+}
+
+void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any value) {
+    if (config.count(key) == 0) {
+        config.emplace(key, std::move(value));
+    }
+}
+
+bool is_npuw_enabled(const ov::AnyMap& config) {
+    constexpr const char* npu_use_npuw = "NPU_USE_NPUW";
+    constexpr const char* yes = "YES";
+    constexpr const char* no = "NO";
+
+    auto it = config.find(npu_use_npuw);
+    if (it == config.end()) {
+        return false;
+    }
+
+    const ov::Any& value = it->second;
+    if (value.is<bool>()) {
+        return value.as<bool>();
+    }
+
+    if (value.is<std::string>()) {
+        const std::string str_value = value.as<std::string>();
+        if (str_value == yes) {
+            return true;
+        }
+        if (str_value == no) {
+            return false;
+        }
+
+        OPENVINO_THROW("'", npu_use_npuw, "' must be '", yes, "' or '", no, "', got '", str_value, "'");
+    }
+
+    OPENVINO_THROW("'", npu_use_npuw, "' must be bool or string, got type: ", value.type_info().name());
 }
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
