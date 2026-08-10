@@ -74,81 +74,122 @@ std::pair<int, int> compute_image_size(const int image_width,
     return {best->first * static_cast<int>(patch_hw), best->second * static_cast<int>(patch_hw)};
 }
 
-ov::Tensor get_pixel_values(const std::vector<ov::Tensor>& frames,
-                            const ov::genai::ProcessorConfig& config,
-                            const size_t max_tokens) {
-    OPENVINO_ASSERT(!frames.empty(), "Onyx vision input must contain at least one frame");
-    OPENVINO_ASSERT(frames.size() == 1 || frames.size() == config.patch_temporal,
-                    "Onyx vision input must contain one image or exactly ",
-                    config.patch_temporal,
+struct MuseGlimmerVisionInputs {
+    ov::Tensor pixel_values;
+    ov::Tensor image_grid_thw;
+};
+
+ov::Tensor flatten_temporal_patches(const std::vector<clip_image_f32>& frames,
+                                    const size_t grid_height,
+                                    const size_t grid_width,
+                                    const size_t patch_size) {
+    OPENVINO_ASSERT(!frames.empty(), "Muse Glimmer temporal patches must contain at least one frame");
+
+    const size_t target_height = grid_height * patch_size;
+    const size_t target_width = grid_width * patch_size;
+    const size_t patch_dimension = frames.size() * 3 * patch_size * patch_size;
+    ov::Tensor pixel_values(ov::element::f32, {grid_height * grid_width, patch_dimension});
+    float* output_data = pixel_values.data<float>();
+    const size_t plane_size = target_height * target_width;
+
+    size_t output_idx = 0;
+    for (size_t grid_y = 0; grid_y < grid_height; ++grid_y) {
+        for (size_t grid_x = 0; grid_x < grid_width; ++grid_x) {
+            for (const clip_image_f32& frame : frames) {
+                OPENVINO_ASSERT(static_cast<size_t>(frame.ny) == target_height &&
+                                    static_cast<size_t>(frame.nx) == target_width,
+                                "Muse Glimmer temporal frames must have equal target dimensions");
+                for (size_t channel = 0; channel < 3; ++channel) {
+                    for (size_t patch_y = 0; patch_y < patch_size; ++patch_y) {
+                        const size_t source_y = grid_y * patch_size + patch_y;
+                        for (size_t patch_x = 0; patch_x < patch_size; ++patch_x) {
+                            const size_t source_x = grid_x * patch_size + patch_x;
+                            output_data[output_idx++] =
+                                frame.buf[channel * plane_size + source_y * target_width + source_x];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return pixel_values;
+}
+
+MuseGlimmerVisionInputs get_vision_inputs(const std::vector<ov::Tensor>& frames,
+                                          const ov::genai::ProcessorConfig& config,
+                                          const size_t max_tokens) {
+    OPENVINO_ASSERT(!frames.empty(), "Muse Glimmer vision input must contain at least one frame");
+    OPENVINO_ASSERT(frames.size() == 1 || frames.size() == config.temporal_patch_size,
+                    "Muse Glimmer vision input must contain one image or exactly ",
+                    config.temporal_patch_size,
                     " video frames, got ",
                     frames.size());
 
     clip_image_u8 input_image = tensor_to_clip_image_u8(frames.front());
-    const size_t patch_hw = config.patch_size * config.downsample_factor;
+    const size_t patch_hw = config.patch_size * config.merge_size;
     const auto [target_height, target_width] = compute_image_size(input_image.nx, input_image.ny, patch_hw, max_tokens);
-
-    ov::Tensor pixel_values(
-        ov::element::f32,
-        {config.patch_temporal * 3, static_cast<size_t>(target_height), static_cast<size_t>(target_width)});
-    float* output_data = pixel_values.data<float>();
-    const size_t plane_size = static_cast<size_t>(target_height) * static_cast<size_t>(target_width);
-    const size_t image_size = 3 * plane_size;
+    const size_t grid_height = static_cast<size_t>(target_height) / config.patch_size;
+    const size_t grid_width = static_cast<size_t>(target_width) / config.patch_size;
 
     clip_ctx ctx;
     std::copy(config.image_mean.begin(), config.image_mean.end(), ctx.image_mean);
     std::copy(config.image_std.begin(), config.image_std.end(), ctx.image_std);
-    for (size_t frame_idx = 0; frame_idx < config.patch_temporal; ++frame_idx) {
-        // onyx encoder expects [patch_temporal * 3, H, W] pixel_values as input,
-        // so we need to duplicate in case of single frame
+    std::vector<clip_image_f32> normalized_frames;
+    normalized_frames.reserve(config.temporal_patch_size);
+    for (size_t frame_idx = 0; frame_idx < config.temporal_patch_size; ++frame_idx) {
         const ov::Tensor& frame = frames.size() == 1 ? frames.front() : frames.at(frame_idx);
         clip_image_u8 resized_image;
         lanczos_resize(tensor_to_clip_image_u8(frame), resized_image, target_width, target_height);
-        const clip_image_f32 normalized_image = clip_image_preprocess(ctx, resized_image);
-        std::copy_n(normalized_image.buf.data(), image_size, output_data + frame_idx * image_size);
+        normalized_frames.emplace_back(clip_image_preprocess(ctx, resized_image));
     }
-    return pixel_values;
+
+    ov::Tensor pixel_values =
+        flatten_temporal_patches(normalized_frames, grid_height, grid_width, config.patch_size);
+
+    ov::Tensor image_grid_thw(ov::element::i64, {1, 3});
+    int64_t* grid_data = image_grid_thw.data<int64_t>();
+    grid_data[0] = 1;
+    grid_data[1] = static_cast<int64_t>(grid_height);
+    grid_data[2] = static_cast<int64_t>(grid_width);
+
+    return {std::move(pixel_values), std::move(image_grid_thw)};
 }
 
 void fill_video_metadata(ov::genai::VideoMetadata& metadata,
                          const size_t total_num_frames,
                          const ov::genai::VideoProcessorConfig& config) {
-    OPENVINO_ASSERT(total_num_frames >= config.patch_temporal,
-                    "Onyx video must contain at least ",
-                    config.patch_temporal,
+    OPENVINO_ASSERT(total_num_frames >= config.temporal_patch_size,
+                    "Muse Glimmer video must contain at least ",
+                    config.temporal_patch_size,
                     " frames, got ",
                     total_num_frames);
-    OPENVINO_ASSERT(config.fps > 0.0f, "Onyx video_sampling_fps must be positive");
+    OPENVINO_ASSERT(config.fps > 0.0f, "Muse Glimmer video processor fps must be positive");
     if (metadata.fps == 0.0f) {
-        GENAI_WARN("Onyx video metadata fps is not set. Assuming the input frames are pre-sampled at "
-                   "video_sampling_fps=" +
+        GENAI_WARN("Muse Glimmer video metadata fps is not set. Assuming the input frames are pre-sampled at fps=" +
                    std::to_string(config.fps) + ".");
         metadata.fps = config.fps;
     }
-    OPENVINO_ASSERT(metadata.fps > 0.0f, "Onyx video metadata fps must be positive");
+    OPENVINO_ASSERT(metadata.fps > 0.0f, "Muse Glimmer video metadata fps must be positive");
 
     if (!metadata.frames_indices.empty()) {
-        OPENVINO_ASSERT(metadata.frames_indices.size() % config.patch_temporal == 0,
-                        "Onyx sampled frame count must be a multiple of patch_temporal=",
-                        config.patch_temporal,
+        OPENVINO_ASSERT(metadata.frames_indices.size() % config.temporal_patch_size == 0,
+                        "Muse Glimmer sampled frame count must be a multiple of temporal_patch_size=",
+                        config.temporal_patch_size,
                         ", got ",
                         metadata.frames_indices.size());
         return;
     }
 
-    OPENVINO_ASSERT(config.max_frames > 0, "Onyx video_num_frames must be positive");
-    // number of frames to sample, based on the original video fps and the target sampling fps
+    OPENVINO_ASSERT(config.num_frames > 0, "Muse Glimmer video processor num_frames must be positive");
     size_t num_frames =
         static_cast<size_t>(static_cast<double>(total_num_frames) * static_cast<double>(config.fps) / metadata.fps);
-    // should be no more than model config video_num_frames, and no more than the original video frame count
-    num_frames = std::min({num_frames, config.max_frames, total_num_frames});
-    // round it down to a multiple of config.patch_temporal
-    num_frames -= num_frames % config.patch_temporal;
-    // ensure that the number of frames is at least config.patch_temporal
-    num_frames = std::max(num_frames, config.patch_temporal);
-    OPENVINO_ASSERT(num_frames % config.patch_temporal == 0,
-                    "Onyx sampled frame count must be a multiple of patch_temporal=",
-                    config.patch_temporal,
+    num_frames = std::min({num_frames, config.num_frames, total_num_frames});
+    num_frames -= num_frames % config.temporal_patch_size;
+    num_frames = std::max(num_frames, config.temporal_patch_size);
+    OPENVINO_ASSERT(num_frames % config.temporal_patch_size == 0,
+                    "Muse Glimmer sampled frame count must be a multiple of temporal_patch_size=",
+                    config.temporal_patch_size,
                     ", got ",
                     num_frames);
 
@@ -164,26 +205,27 @@ void fill_video_metadata(ov::genai::VideoMetadata& metadata,
 
 namespace ov::genai {
 
-EncodedImage VisionEncoderOnyx::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderMuseGlimmer::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     const ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
     return encode_with_config({image}, config, config.max_image_tokens);
 }
 
-EncodedImage VisionEncoderOnyx::encode_with_config(const std::vector<ov::Tensor>& frames,
-                                                   const ProcessorConfig& config,
-                                                   const size_t max_tokens) {
+EncodedImage VisionEncoderMuseGlimmer::encode_with_config(const std::vector<ov::Tensor>& frames,
+                                                          const ProcessorConfig& config,
+                                                          const size_t max_tokens) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
 
-    ov::Tensor pixel_values = get_pixel_values(frames, config, max_tokens);
+    MuseGlimmerVisionInputs inputs = get_vision_inputs(frames, config, max_tokens);
 
-    encoder.set_tensor("pixel_values", pixel_values);
+    encoder.set_tensor("pixel_values", inputs.pixel_values);
+    encoder.set_tensor("image_grid_thw", inputs.image_grid_thw);
     encoder.infer();
 
     const ov::Tensor& infer_output = encoder.get_output_tensor();
     const ov::Shape& infer_output_shape = infer_output.get_shape();
     OPENVINO_ASSERT(infer_output_shape.size() == 2,
-                    "Onyx vision embeddings output must have rank 2 [num_patches, hidden_size], got ",
+                    "Muse Glimmer vision embeddings output must have rank 2 [num_patches, hidden_size], got ",
                     infer_output_shape);
     const size_t num_image_tokens = infer_output_shape.at(0);
     const size_t hidden_size = infer_output_shape.at(1);
@@ -196,18 +238,18 @@ EncodedImage VisionEncoderOnyx::encode_with_config(const std::vector<ov::Tensor>
     return encoded_image;
 }
 
-EncodedVideo VisionEncoderOnyx::encode_frames(const std::vector<ov::Tensor>& frames) {
-    const size_t patch_temporal = m_video_processor_config.patch_temporal;
-    OPENVINO_ASSERT(!frames.empty() && frames.size() % patch_temporal == 0,
-                    "Onyx video frame count must be a positive multiple of patch_temporal=",
-                    patch_temporal,
+EncodedVideo VisionEncoderMuseGlimmer::encode_frames(const std::vector<ov::Tensor>& frames) {
+    const size_t temporal_patch_size = m_video_processor_config.temporal_patch_size;
+    OPENVINO_ASSERT(!frames.empty() && frames.size() % temporal_patch_size == 0,
+                    "Muse Glimmer video frame count must be a positive multiple of temporal_patch_size=",
+                    temporal_patch_size,
                     ", got ",
                     frames.size());
 
     std::vector<EncodedImage> encoded_groups;
-    encoded_groups.reserve(frames.size() / patch_temporal);
-    for (size_t begin = 0; begin < frames.size(); begin += patch_temporal) {
-        const std::vector<ov::Tensor> group(frames.cbegin() + begin, frames.cbegin() + begin + patch_temporal);
+    encoded_groups.reserve(frames.size() / temporal_patch_size);
+    for (size_t begin = 0; begin < frames.size(); begin += temporal_patch_size) {
+        const std::vector<ov::Tensor> group(frames.cbegin() + begin, frames.cbegin() + begin + temporal_patch_size);
         encoded_groups.emplace_back(
             encode_with_config(group, m_video_processor_config, m_video_processor_config.max_video_frame_tokens));
     }
@@ -220,7 +262,7 @@ EncodedVideo VisionEncoderOnyx::encode_frames(const std::vector<ov::Tensor>& fra
     uint8_t* destination = static_cast<uint8_t*>(video_features.data());
     for (const EncodedImage& group : encoded_groups) {
         OPENVINO_ASSERT(group.resized_source.get_shape() == group_shape,
-                        "Onyx video temporal groups must produce equal embedding shapes");
+                        "Muse Glimmer video temporal groups must produce equal embedding shapes");
         std::memcpy(destination, group.resized_source.data(), group.resized_source.get_byte_size());
         destination += group.resized_source.get_byte_size();
     }
@@ -232,35 +274,34 @@ EncodedVideo VisionEncoderOnyx::encode_frames(const std::vector<ov::Tensor>& fra
     return encoded_video;
 }
 
-InputsEmbedderOnyx::InputsEmbedderOnyx(const VLMConfig& vlm_config,
-                                       const std::filesystem::path& model_dir,
-                                       const Tokenizer& tokenizer,
-                                       const std::string& device,
-                                       const ov::AnyMap device_config)
+InputsEmbedderMuseGlimmer::InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
+                                                     const std::filesystem::path& model_dir,
+                                                     const Tokenizer& tokenizer,
+                                                     const std::string& device,
+                                                     const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {}
 
-InputsEmbedderOnyx::InputsEmbedderOnyx(const VLMConfig& vlm_config,
-                                       const ModelsMap& models_map,
-                                       const Tokenizer& tokenizer,
-                                       const std::filesystem::path& config_dir_path,
-                                       const std::string& device,
-                                       const ov::AnyMap device_config)
+InputsEmbedderMuseGlimmer::InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
+                                                     const ModelsMap& models_map,
+                                                     const Tokenizer& tokenizer,
+                                                     const std::filesystem::path& config_dir_path,
+                                                     const std::string& device,
+                                                     const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-std::vector<EncodedImage> InputsEmbedderOnyx::encode_images(const std::vector<ov::Tensor>& images) {
-    const ov::AnyMap patch_temporal_config = {{"patch_temporal", m_vlm_config.vision_patch_temporal}};
-
+std::vector<EncodedImage> InputsEmbedderMuseGlimmer::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     embeds.reserve(single_images.size());
     for (const ov::Tensor& image : single_images) {
-        embeds.emplace_back(m_vision_encoder->encode(image, patch_temporal_config));
+        embeds.emplace_back(m_vision_encoder->encode(image));
     }
     return embeds;
 }
 
-std::vector<EncodedVideo> InputsEmbedderOnyx::encode_videos(const std::vector<ov::Tensor>& videos,
-                                                            const std::vector<VideoMetadata>& videos_metadata) {
+std::vector<EncodedVideo> InputsEmbedderMuseGlimmer::encode_videos(
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<VideoMetadata>& videos_metadata) {
     OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
                     "Number of videos and video metadata entries must match if metadata is provided");
 
@@ -268,7 +309,8 @@ std::vector<EncodedVideo> InputsEmbedderOnyx::encode_videos(const std::vector<ov
     encoded_videos.reserve(videos.size());
     for (size_t video_idx = 0; video_idx < videos.size(); ++video_idx) {
         const ov::Tensor& video = videos.at(video_idx);
-        OPENVINO_ASSERT(video.get_shape().size() == 4, "Onyx video tensor must have rank 4 [N, H, W, C]");
+        OPENVINO_ASSERT(video.get_shape().size() == 4,
+                "Muse Glimmer video tensor must have rank 4 [N, H, W, C]");
         VideoMetadata metadata = video_idx < videos_metadata.size() ? videos_metadata.at(video_idx) : VideoMetadata{};
         fill_video_metadata(metadata, video.get_shape().at(0), m_vision_encoder->get_video_processor_config());
         const ov::Tensor sampled_video = sample_video_if_needed(video, metadata);
@@ -279,17 +321,17 @@ std::vector<EncodedVideo> InputsEmbedderOnyx::encode_videos(const std::vector<ov
     return encoded_videos;
 }
 
-NormalizedPrompt InputsEmbedderOnyx::normalize_prompt(const std::string& prompt,
-                                                      size_t base_id,
-                                                      const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderMuseGlimmer::normalize_prompt(const std::string& prompt,
+                                                             size_t base_id,
+                                                             const std::vector<EncodedImage>& images) const {
     return normalize_prompt(prompt, base_id, 0, images, {});
 }
 
-NormalizedPrompt InputsEmbedderOnyx::normalize_prompt(const std::string& prompt,
-                                                      const size_t base_image_id,
-                                                      const size_t base_video_id,
-                                                      const std::vector<EncodedImage>& images,
-                                                      const std::vector<EncodedVideo>& videos) const {
+NormalizedPrompt InputsEmbedderMuseGlimmer::normalize_prompt(const std::string& prompt,
+                                                             const size_t base_image_id,
+                                                             const size_t base_video_id,
+                                                             const std::vector<EncodedImage>& images,
+                                                             const std::vector<EncodedVideo>& videos) const {
     auto [unified_prompt, images_sequence] =
         normalize(prompt, IMAGE_SENTINEL, IMAGE_SENTINEL, base_image_id, images.size());
 
@@ -298,7 +340,7 @@ NormalizedPrompt InputsEmbedderOnyx::normalize_prompt(const std::string& prompt,
         const EncodedImage& image = images.at(new_image_id - base_image_id);
         const ov::Shape& image_features_shape = image.resized_source.get_shape();
         OPENVINO_ASSERT(image_features_shape.size() == 3,
-                        "Onyx image features must have rank 3 [1, num_patches, hidden_size], got ",
+                        "Muse Glimmer image features must have rank 3 [1, num_patches, hidden_size], got ",
                         image_features_shape);
         const size_t num_image_tokens = image_features_shape.at(1);
 
@@ -309,7 +351,8 @@ NormalizedPrompt InputsEmbedderOnyx::normalize_prompt(const std::string& prompt,
         expanded_tag += IMAGE_END;
 
         searched_pos = unified_prompt.find(IMAGE_SENTINEL, searched_pos);
-        OPENVINO_ASSERT(searched_pos != std::string::npos, "Onyx image sentinel is missing from normalized prompt");
+        OPENVINO_ASSERT(searched_pos != std::string::npos,
+                "Muse Glimmer image sentinel is missing from normalized prompt");
         unified_prompt.replace(searched_pos, std::char_traits<char>::length(IMAGE_SENTINEL), expanded_tag);
         searched_pos += expanded_tag.length();
     }
@@ -318,19 +361,20 @@ NormalizedPrompt InputsEmbedderOnyx::normalize_prompt(const std::string& prompt,
     std::tie(unified_prompt, videos_sequence) =
         normalize(unified_prompt, VIDEO_SENTINEL, VIDEO_SENTINEL, base_video_id, videos.size(), VisionType::VIDEO);
     searched_pos = 0;
-    const size_t patch_temporal = m_vision_encoder->get_video_processor_config().patch_temporal;
+    const size_t temporal_patch_size = m_vision_encoder->get_video_processor_config().temporal_patch_size;
     for (const size_t new_video_id : videos_sequence) {
         const EncodedVideo& video = videos.at(new_video_id - base_video_id);
         OPENVINO_ASSERT(video.frame_num > 0 && video.num_video_tokens % video.frame_num == 0,
-                        "Onyx video embeddings must contain an equal positive token count per temporal group");
-        OPENVINO_ASSERT(video.metadata.frames_indices.size() == video.frame_num * patch_temporal,
-                        "Onyx video metadata frame indices do not match the encoded temporal groups");
+                        "Muse Glimmer video embeddings must contain an equal positive token count per temporal group");
+        OPENVINO_ASSERT(video.metadata.frames_indices.size() == video.frame_num * temporal_patch_size,
+                        "Muse Glimmer video metadata frame indices do not match the encoded temporal groups");
         const size_t tokens_per_group = video.num_video_tokens / video.frame_num;
 
         std::string expanded_tag = VIDEO_START;
         for (size_t group_idx = 0; group_idx < video.frame_num; ++group_idx) {
             const float timestamp =
-                static_cast<float>(video.metadata.frames_indices.at(group_idx * patch_temporal)) / video.metadata.fps;
+                static_cast<float>(video.metadata.frames_indices.at(group_idx * temporal_patch_size)) /
+                video.metadata.fps;
             std::ostringstream timestamp_stream;
             timestamp_stream << std::fixed << std::setprecision(1) << timestamp;
             expanded_tag += "Time: " + timestamp_stream.str() + "s";
@@ -341,22 +385,23 @@ NormalizedPrompt InputsEmbedderOnyx::normalize_prompt(const std::string& prompt,
         }
 
         searched_pos = unified_prompt.find(VIDEO_SENTINEL, searched_pos);
-        OPENVINO_ASSERT(searched_pos != std::string::npos, "Onyx video sentinel is missing from normalized prompt");
+        OPENVINO_ASSERT(searched_pos != std::string::npos,
+                "Muse Glimmer video sentinel is missing from normalized prompt");
         unified_prompt.replace(searched_pos, std::char_traits<char>::length(VIDEO_SENTINEL), expanded_tag);
         searched_pos += expanded_tag.length();
     }
     return {std::move(unified_prompt), std::move(images_sequence), std::move(videos_sequence)};
 }
 
-ov::Tensor InputsEmbedderOnyx::get_inputs_embeds(const std::string& unified_prompt,
-                                                 const std::vector<EncodedImage>& images,
-                                                 VLMPerfMetrics& metrics,
-                                                 bool recalculate_merged_embeddings,
-                                                 const std::vector<size_t>& images_sequence) {
+ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(const std::string& unified_prompt,
+                                                        const std::vector<EncodedImage>& images,
+                                                        VLMPerfMetrics& metrics,
+                                                        bool recalculate_merged_embeddings,
+                                                        const std::vector<size_t>& images_sequence) {
     return get_inputs_embeds(unified_prompt, images, {}, metrics, recalculate_merged_embeddings, images_sequence, {});
 }
 
-ov::Tensor InputsEmbedderOnyx::get_inputs_embeds(
+ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(
     const std::string& unified_prompt,
     const std::vector<EncodedImage>& images,
     const std::vector<EncodedVideo>& videos,
@@ -413,7 +458,8 @@ ov::Tensor InputsEmbedderOnyx::get_inputs_embeds(
     return inputs_embeds;
 }
 
-ov::Tensor InputsEmbedderOnyx::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderMuseGlimmer::apply_chat_template_tokenize(const std::string& prompt,
+                                                                  VLMPerfMetrics& metrics) {
     const std::string bos_token = m_tokenizer.get_bos_token();
     // ticket to addess globally: 192386
     if (!m_is_chat_conversation && !m_apply_chat_template && !bos_token.empty() &&
@@ -428,13 +474,13 @@ ov::Tensor InputsEmbedderOnyx::apply_chat_template_tokenize(const std::string& p
     return IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
 }
 
-void InputsEmbedderOnyx::encode_vision_token_ids() {
+void InputsEmbedderMuseGlimmer::encode_vision_token_ids() {
     std::call_once(m_vision_token_ids_once_flag, [this]() {
         const ov::Tensor encoded_vision_tokens =
             m_tokenizer.encode(std::string(PATCH_TOKEN) + VIDEO_SENTINEL, ov::genai::add_special_tokens(false))
                 .input_ids;
         OPENVINO_ASSERT(encoded_vision_tokens.get_size() == 2,
-                        "Onyx patch and video markers must encode to two tokens");
+                        "Muse Glimmer patch and video markers must encode to two tokens");
         m_image_token_id = encoded_vision_tokens.data<int64_t>()[0];
         m_video_token_id = encoded_vision_tokens.data<int64_t>()[1];
     });

@@ -12,7 +12,7 @@
 
 namespace ov::genai {
 
-class VisionEncoderOnyx : public VisionEncoder {
+class VisionEncoderMuseGlimmer : public VisionEncoder {
 public:
     using VisionEncoder::VisionEncoder;
 
@@ -26,15 +26,15 @@ private:
                                     size_t max_tokens);
 };
 
-class InputsEmbedderOnyx : public InputsEmbedder::IInputsEmbedder {
+class InputsEmbedderMuseGlimmer : public InputsEmbedder::IInputsEmbedder {
 public:
-    InputsEmbedderOnyx(const VLMConfig& vlm_config,
+    InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
                        const std::filesystem::path& model_dir,
                        const Tokenizer& tokenizer,
                        const std::string& device,
                        const ov::AnyMap device_config);
 
-    InputsEmbedderOnyx(const VLMConfig& vlm_config,
+    InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
                        const ModelsMap& models_map,
                        const Tokenizer& tokenizer,
                        const std::filesystem::path& config_dir_path,

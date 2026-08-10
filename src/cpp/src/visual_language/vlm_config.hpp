@@ -32,7 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
-    ONYX,
+    MUSE_GLIMMER,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -71,9 +71,6 @@ public:
     /// @brief A placeholder for image embeddings in text.
     std::string unk = "<unk>";
     
-    // Onyx-specific vision architecture parameter.
-    size_t vision_patch_temporal = 2;
-
     // llava_next specific config params
     std::vector<float> image_newline;
     size_t vision_config_patch_size = 14;

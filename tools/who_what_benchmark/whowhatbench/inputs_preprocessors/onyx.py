@@ -4,7 +4,7 @@ from PIL import Image
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 
-class OnyxInputsPreprocessor(VLMInputsPreprocessor):
+class MuseGlimmerInputsPreprocessor(VLMInputsPreprocessor):
     def update_chat_history_with_answer(self, answer):
         self.chat_history.append({"role": "assistant", "content": [{"type": "text", "text": answer}]})
 

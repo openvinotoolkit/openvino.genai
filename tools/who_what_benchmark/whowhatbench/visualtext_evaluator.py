@@ -133,7 +133,7 @@ class VisualTextEvaluator(TextEvaluator):
             # this path is a native torch/HF model, possibly wrapped (e.g. by peft.PeftModel).
             is_optimum_ov = "openvino" in str(type(model)).lower()
             if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and (
-                not is_optimum_ov or model.config.model_type == "onyx"
+                not is_optimum_ov or model.config.model_type == "muse_glimmer"
             ):
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
                 preprocess_inputs = inputs_processor.preprocess_inputs

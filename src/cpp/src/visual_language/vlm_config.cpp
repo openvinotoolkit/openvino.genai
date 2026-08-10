@@ -34,7 +34,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
-        {"onyx", VLMModelType::ONYX},
+        {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
     };
 
     auto it = model_types_map.find(value);
@@ -65,7 +65,6 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     read_json_param(parsed, "image_newline", image_newline);
     read_json_param(parsed, "vision_config.patch_size", vision_config_patch_size);
-    read_json_param(parsed, "vision_patch_temporal", vision_patch_temporal);
 
     // phi3_v and phi4mm
     if (parsed.contains("sub_GN") && parsed.at("sub_GN").is_array()) {
