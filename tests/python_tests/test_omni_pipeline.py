@@ -79,7 +79,7 @@ class TestOmniTalkerSpeechConfig:
 
         assert cfg.return_audio is True, "return_audio default must be True"
         assert cfg.speaker == "", "speaker default must be empty (model default)"
-        assert cfg.audio_chunk_frames == 1, "audio_chunk_frames default must be 1"
+        assert cfg.audio_chunk_frames == 4, "audio_chunk_frames default must be 4"
         assert cfg.rng_seed == 0, "rng_seed default must be 0"
         # talker_*/cp_* sampling overrides are std::optional<T> — exposed as None when unset.
         assert cfg.talker_temperature is None

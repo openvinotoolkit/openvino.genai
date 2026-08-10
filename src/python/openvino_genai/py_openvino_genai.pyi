@@ -5487,7 +5487,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5526,7 +5527,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5565,7 +5567,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5604,7 +5607,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5635,7 +5639,7 @@ class VLMPipeline(VLMPipelineBase):
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Ignored when audio_streamer is not provided.
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -5669,7 +5673,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5708,7 +5713,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5747,7 +5753,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5778,7 +5785,7 @@ class VLMPipeline(VLMPipelineBase):
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Ignored when audio_streamer is not provided.
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults

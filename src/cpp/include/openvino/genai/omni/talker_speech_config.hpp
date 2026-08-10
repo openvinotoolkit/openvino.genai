@@ -61,7 +61,13 @@ struct OPENVINO_GENAI_EXPORTS OmniTalkerSpeechConfig {
     /// property of the vocoder graph, not a miscount. Larger chunks amortize the fixed warmup
     /// cost; very small chunks (e.g. 1) also risk audible seams between independently decoded
     /// chunks in streaming mode.
-    std::size_t audio_chunk_frames = 1;
+    ///
+    /// Default is 4: the per-frame talker+code_predictor decode cost is fixed (~77ms on GPU),
+    /// so a chunk must yield at least that much audio to keep up in real time. A single frame
+    /// yields only ~57ms of audio (warmup trim dominates), so `audio_chunk_frames = 1` runs at
+    /// ~1.36x real time (falls behind); 4 frames yield ~74ms/frame and reach ~1.04x (keeps up).
+    /// Smaller values lower time-to-first-audio at the cost of falling behind real time.
+    std::size_t audio_chunk_frames = 4;
 
     /// @brief Cap on talker AR steps. Independent of `text_config.max_new_tokens`
     /// (which caps the thinker text decode).
