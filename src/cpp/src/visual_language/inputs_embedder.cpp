@@ -17,6 +17,7 @@
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
 #include "visual_language/llava/classes.hpp"
+#include "visual_language/glm_edge_v/classes.hpp"
 #include "visual_language/nanollava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
 #include "visual_language/llava_next_video/classes.hpp"
@@ -384,6 +385,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, model_dir, tokenizer, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, model_dir, tokenizer, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GLM_EDGE_V) {
+        m_impl = std::make_shared<InputsEmbedderGLMEdgeV>(vlm_config, model_dir, tokenizer, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -432,6 +435,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderGemma4>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         m_impl = std::make_shared<InputsEmbedderVideoChatFlashQwen>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::GLM_EDGE_V) {
+        m_impl = std::make_shared<InputsEmbedderGLMEdgeV>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }

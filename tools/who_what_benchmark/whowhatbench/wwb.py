@@ -521,6 +521,52 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Local CSV dataset support (used for visual-text and other tasks when the
+    # default remote dataset is unavailable or too slow). The CSV may contain
+    # a prompts column plus optional "images" and "videos" columns holding file
+    # paths that are resolved deterministically relative to the CSV location.
+    dataset_path = args.dataset.split(",")[0]
+    if os.path.isfile(dataset_path) and dataset_path.lower().endswith(".csv"):
+        df = pd.read_csv(dataset_path, keep_default_na=False)
+        base_dir = os.path.dirname(os.path.abspath(dataset_path))
+
+        prompt_field = args.dataset_field if args.dataset_field in df.columns else None
+        if prompt_field is None:
+            for candidate in ("prompts", "prompt", "text", "question"):
+                if candidate in df.columns:
+                    prompt_field = candidate
+                    break
+        if prompt_field is None:
+            raise ValueError(
+                f"Could not find a prompts column in '{dataset_path}'. "
+                f"Available columns: {list(df.columns)}."
+            )
+
+        def _resolve_path(value):
+            value = str(value).strip()
+            if value == "":
+                return None
+            return value if os.path.isabs(value) else os.path.join(base_dir, value)
+
+        def _load_image(value):
+            path = _resolve_path(value)
+            if path is None:
+                return None
+            from PIL import Image
+
+            return Image.open(path).convert("RGB")
+
+        res = {"prompts": list(df[prompt_field])}
+        if "images" in df.columns:
+            res["images"] = [_load_image(v) for v in df["images"]]
+        if "videos" in df.columns:
+            res["videos"] = [_resolve_path(v) for v in df["videos"]]
+        # Visual-text evaluators expect prompts, images and videos keys together.
+        if "images" in res and "videos" not in res:
+            res["videos"] = [None] * len(res["prompts"])
+        return res
+
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -627,6 +673,25 @@ def load_processor(args):
             preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
         preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
+
+    # Some remote-code VLMs (e.g. GLM-Edge-V) do not ship a combined AutoProcessor:
+    # AutoProcessor resolves to a plain text tokenizer that cannot process images.
+    # For visual tasks, detect this by capability and load the real image processor
+    # so the evaluator/preprocessor receives an image-capable object.
+    visual_tasks = ("visual-text", "visual-text-chat", "visual-video-text")
+    if getattr(args, "model_type", None) in visual_tasks and preprocessor is not None:
+        is_image_capable = (
+            hasattr(preprocessor, "image_processor")
+            or hasattr(preprocessor, "image_mean")
+            or "ImageProcessor" in type(preprocessor).__name__
+        )
+        if not is_image_capable:
+            from transformers import AutoImageProcessor
+
+            try:
+                preprocessor = AutoImageProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+            except Exception:
+                preprocessor = AutoImageProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
 
 

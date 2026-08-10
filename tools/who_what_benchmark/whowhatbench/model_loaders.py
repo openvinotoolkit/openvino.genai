@@ -517,6 +517,18 @@ def load_visual_text_model(
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+        # Some models reuse a model_type that also exists as a built-in transformers
+        # architecture but ship their own custom modeling code via `auto_map`
+        # (e.g. GLM-Edge-V uses model_type "glm" but provides a multimodal
+        # implementation, while transformers has a text-only built-in "glm").
+        # When the config declares custom modeling code, honor it so the real
+        # multimodal model is loaded instead of the shadowing built-in one.
+        auto_map = getattr(config, "auto_map", None)
+        if isinstance(auto_map, dict) and any(
+            key.startswith("AutoModel") for key in auto_map
+        ):
+            trust_remote_code = True
+
         # force downloading to .cache image_processing file, as it is not happened by default
         if config.model_type.lower() in ["minicpmo"]:
             from transformers import AutoImageProcessor
@@ -540,6 +552,13 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForMultimodalLM
             elif config.model_type == "gemma3n":
+                model_cls = AutoModelForCausalLM
+                model_kwargs.update({"torch_dtype": torch.float32})
+            elif config.model_type == "glm":
+                # GLM-Edge-V (model_type == "glm") is a remote-code VLM that is not
+                # registered under AutoModelForVision2Seq / AutoModelForImageTextToText.
+                # AutoModel would resolve to the base GlmModel (no generate()); the
+                # generation-capable class is GlmForCausalLM via AutoModelForCausalLM.
                 model_cls = AutoModelForCausalLM
                 model_kwargs.update({"torch_dtype": torch.float32})
             elif transformers_version < Version("5.0.0"):
