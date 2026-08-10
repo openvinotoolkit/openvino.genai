@@ -32,7 +32,7 @@ def save_video(filename: str, video_tensor, fps: int = 25):
         print(f"Wrote {output_path} ({num_frames} frames, {width}x{height} @ {fps} fps)")
 
 
-model_path = "path/to/model"   # Path to the model directory (must contain vae_encoder/)
+model_path = "path/to/model"   # Path to the model directory
 image_path = "path/to/image.png"  # Path to the conditioning image
 prompt = "your video generation prompt"
 

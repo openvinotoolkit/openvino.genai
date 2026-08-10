@@ -32,7 +32,7 @@ optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --
 
 ### For Image-to-Video
 
-The image-to-video pipeline requires a VAE encoder in addition to the standard model files. This export currently requires optimum-intel from the `main` branch:
+The image-to-video pipeline requires a model exported with optimum-intel from the `main` branch:
 
 ```sh
 pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
