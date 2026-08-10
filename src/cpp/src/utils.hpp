@@ -257,6 +257,14 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
 
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
 
+/// @brief Reads the runtime KV cache element type from a compiled model's key_cache.* / value_cache.* inputs.
+/// Plugins may resolve the actual cache precision (e.g. CPU promoting to bf16 based on the resolved inference
+/// precision) independently of the ov::hint::kv_cache_precision property, so the precision must be read from the
+/// compiled model's cache input ports to match the tensors actually allocated and bound by the cache manager.
+/// Throws if no cache inputs are present or if the cache inputs use non-uniform precision, since downstream
+/// consumers (e.g. the Eagle3 KV cache reorder model) assume a single precision shared by all key/value inputs.
+ov::element::Type get_compiled_kv_cache_precision(const ov::CompiledModel& compiled_model);
+
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
 /// Another difference is that the alternative value is shared between all instances of SharedOptional like std::shared_ptr.
