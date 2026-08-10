@@ -136,3 +136,31 @@ class TestOmniPipelineAccessors:
         # Speaker APIs live on the Talker, accessed via get_talker()
         for method in ("list_speakers", "get_speaker_embedding"):
             assert hasattr(ov_genai.TalkerBase, method), f"TalkerBase.{method}() missing from public surface"
+
+    def test_speech_config_accessors_are_talker_only(self) -> None:
+        """get/set_speech_config live on the concrete Talker, not on TalkerBase.
+
+        Per the Talker class spec (slide 10 of the design deck), these accessors are
+        non-virtual and belong to the default Qwen3-Omni Talker only — custom TalkerBase
+        backends are not forced to store a speech config. Guard against them leaking onto
+        the abstract base.
+        """
+        for method in ("get_speech_config", "set_speech_config"):
+            assert hasattr(ov_genai.Talker, method), f"Talker.{method}() missing from public surface"
+            assert not hasattr(ov_genai.TalkerBase, method), (
+                f"TalkerBase.{method}() must not exist — the accessors are Talker-only per the spec."
+            )
+
+    def test_talker_blob_ctor_signature(self) -> None:
+        """Talker exposes the ModelsMap/device_mapping blob constructor (slide 10 spec).
+
+        Calling with a bogus models_map must raise (missing submodels), not TypeError — that
+        proves the overload resolves and reaches C++ construction rather than being absent.
+        The disk-path constructor stays available alongside it.
+        """
+        empty_models_map: dict[str, object] = {}
+        empty_device_mapping: dict[str, str] = {}
+        with pytest.raises(Exception) as exc_info:
+            ov_genai.Talker(empty_models_map, ov_genai.OmniTalkerSpeechConfig(), ".", empty_device_mapping)
+        # Must not be a signature-resolution failure — the overload has to exist.
+        assert not isinstance(exc_info.value, TypeError), f"blob ctor overload did not resolve: {exc_info.value}"
