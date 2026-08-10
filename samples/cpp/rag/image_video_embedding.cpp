@@ -43,9 +43,9 @@ ov::Tensor load_image(const fs::path& image_path) {
     }
     cv::Mat rgb;
     cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
-    ov::Tensor tensor(ov::element::u8, {size_t(rgb.rows), size_t(rgb.cols), 3});
-    std::memcpy(tensor.data(), rgb.data, rgb.total() * 3);
-    return tensor;
+    OPENVINO_ASSERT(rgb.isContinuous(), "Loaded image must be continuous in memory: ", image_path.string());
+    ov::Tensor tensor(ov::element::u8, {static_cast<size_t>(rgb.rows), static_cast<size_t>(rgb.cols), 3});
+    std::memcpy(tensor.data(), rgb.data, rgb.total() * rgb.elemSize());
 }
 
 std::vector<size_t> sample_frame_indices(size_t total_frames, size_t num_frames) {
@@ -81,19 +81,26 @@ std::string shell_quote(const std::string& value) {
 std::string run_command(const std::string& command) {
     std::array<char, 4096> buffer{};
     std::string output;
+#if defined(_WIN32)
+    FILE* pipe = _popen(command.c_str(), "r");
+#else
     FILE* pipe = popen(command.c_str(), "r");
+#endif
     if (!pipe) {
         OPENVINO_THROW("Failed to run command: " + command);
     }
     while (const size_t bytes_read = std::fread(buffer.data(), 1, buffer.size(), pipe)) {
         output.append(buffer.data(), bytes_read);
     }
+#if defined(_WIN32)
+    const int status = _pclose(pipe);
+#else
     const int status = pclose(pipe);
+#endif
     if (status != 0) {
         OPENVINO_THROW("Command failed: " + command);
     }
     return output;
-}
 
 double parse_fps(const std::string& fps_text) {
     const size_t slash_pos = fps_text.find('/');
@@ -193,7 +200,7 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> load_video_with_opencv(cv::Video
     }
 
     if (frames.empty()) {
-        OPENVINO_THROW("No sampled frames collected from video: " + video_path.string());
+        OPENVINO_THROW("No frames collected from video: " + video_path.string());
     }
 
     ov::Tensor video_tensor(ov::element::u8,
@@ -214,7 +221,11 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> load_video(const fs::path& video
     if (cap.isOpened()) {
         return load_video_with_opencv(cap, video_path, num_frames);
     }
+#ifdef _WIN32
+    OPENVINO_THROW("Failed to open video with OpenCV: " + video_path.string());
+#else
     return load_video_with_ffmpeg(video_path, num_frames);
+#endif
 }
 
 int main(int argc, char* argv[]) try {
