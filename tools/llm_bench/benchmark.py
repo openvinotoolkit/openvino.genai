@@ -175,6 +175,31 @@ def get_argparser():
         type=str,
         help="Path to store memory consumption logs and chart.",
     )
+    parser.add_argument(
+        "--memory_sampler",
+        default="base",
+        choices=["base", "win-gpu", "full"],
+        type=str.lower,  # normalise e.g. 'WIN-GPU'/'Full' -> 'win-gpu'/'full' before choices validation
+        required=False,
+        help="Memory sampler implementation to use when process-based monitoring is active\n"
+        "(--memory_consumption 3 or 4).\n"
+        "Possible values:\n"
+        "  base (default) — MemorySamplerBase: cross-platform sampler built on\n"
+        "                   psutil.memory_info(). Collects RSS, VMS, Private and\n"
+        "                   system-wide RAM. Works on Linux, macOS and Windows.\n"
+        "  win-gpu        — MemorySamplerWinGPU: same RAM metrics as base plus, when\n"
+        "                   the optional *wmi* package is installed (pip install wmi),\n"
+        "                   two per-GPU-adapter metrics: gpu_<index>_ded (dedicated\n"
+        "                   VRAM) and gpu_<index>_shr (shared system RAM). Sourced\n"
+        "                   from GPUAdapterMemory perf counters (Windows 10 1709+),\n"
+        "                   so integrated GPUs report real usage via the shared pool\n"
+        "                   instead of a constant 0. Windows only; falls back to\n"
+        "                   MemorySamplerBase on other platforms.\n"
+        "  full           — MemorySamplerFull: same RAM metrics as base plus uss, pss\n"
+        "                   and swap from psutil.memory_full_info() (reads /proc smaps).\n"
+        "                   More accurate 'real' footprint but slower. Linux only;\n"
+        "                   falls back to MemorySamplerBase on other platforms.",
+    )
     parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
     parser.add_argument(
         "--num_beams",
