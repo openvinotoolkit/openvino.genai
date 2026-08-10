@@ -22,16 +22,33 @@ class FakeAdapter:
         self.path = path
 
 
+class FakeTokenizer:
+    """Records get_chat_template()/set_chat_template() calls made by _patch_minja_incompatible_chat_template."""
+
+    def __init__(self, chat_template=""):
+        self.chat_template = chat_template
+
+    def get_chat_template(self):
+        return self.chat_template
+
+    def set_chat_template(self, chat_template):
+        self.chat_template = chat_template
+
+
 class FakePipeline:
     """Generic stand-in returned by VLMPipeline/LLMPipeline, recording constructor args."""
 
-    def __init__(self, calls_list, *args, **kwargs):
+    def __init__(self, calls_list, *args, chat_template="", **kwargs):
         self.args = args
         self.kwargs = kwargs
+        self.tokenizer = FakeTokenizer(chat_template)
         calls_list.append(self)
 
+    def get_tokenizer(self):
+        return self.tokenizer
 
-def _install_fake_openvino_genai(monkeypatch):
+
+def _install_fake_openvino_genai(monkeypatch, *, initial_chat_template=""):
     """Stub the openvino_genai module with recorder classes for VLMPipeline/LLMPipeline/etc."""
     fake_module = types.ModuleType("openvino_genai")
     fake_module.vlm_calls = []
@@ -41,8 +58,12 @@ def _install_fake_openvino_genai(monkeypatch):
     fake_module.Adapter = FakeAdapter
     fake_module.SchedulerConfig = lambda: types.SimpleNamespace()
     fake_module.draft_model = lambda path, device, **kw: {"path": path, "device": device, **kw}
-    fake_module.VLMPipeline = lambda *args, **kwargs: FakePipeline(fake_module.vlm_calls, *args, **kwargs)
-    fake_module.LLMPipeline = lambda *args, **kwargs: FakePipeline(fake_module.llm_calls, *args, **kwargs)
+    fake_module.VLMPipeline = lambda *args, **kwargs: FakePipeline(
+        fake_module.vlm_calls, *args, chat_template=initial_chat_template, **kwargs
+    )
+    fake_module.LLMPipeline = lambda *args, **kwargs: FakePipeline(
+        fake_module.llm_calls, *args, chat_template=initial_chat_template, **kwargs
+    )
 
     monkeypatch.setitem(sys.modules, "openvino_genai", fake_module)
     return fake_module
@@ -57,12 +78,12 @@ class FakeGenAIModelWrapper:
         self.model_type = model_type
 
 
-def _load_text_genai_pipeline(monkeypatch, *, is_vlm_export, device="CPU", **kwargs):
+def _load_text_genai_pipeline(monkeypatch, *, is_vlm_export, device="CPU", initial_chat_template="", **kwargs):
     from whowhatbench import model_loaders
 
     monkeypatch.setattr(model_loaders, "_is_vlm_export", lambda model_dir: is_vlm_export)
     monkeypatch.setattr(model_loaders, "GenAIModelWrapper", FakeGenAIModelWrapper)
-    fake_openvino_genai = _install_fake_openvino_genai(monkeypatch)
+    fake_openvino_genai = _install_fake_openvino_genai(monkeypatch, initial_chat_template=initial_chat_template)
 
     result = model_loaders.load_text_genai_pipeline("model_dir", device=device, **kwargs)
     return result, fake_openvino_genai
@@ -161,3 +182,45 @@ def test_non_vlm_export_with_draft_model_on_npu_is_allowed(monkeypatch, tmp_path
 
     llm_call = fake_openvino_genai.llm_calls[0]
     assert "draft_model" in llm_call.kwargs
+
+
+def test_vlm_export_patches_minja_incompatible_chat_template(monkeypatch):
+    """A chat template with adjacent multiline string literals must be joined into one literal."""
+    broken_template = '{{ raise_exception("first "\n                    "second") }}'
+    result, fake_openvino_genai = _load_text_genai_pipeline(
+        monkeypatch, is_vlm_export=True, initial_chat_template=broken_template,
+    )
+
+    patched_template = fake_openvino_genai.vlm_calls[0].tokenizer.get_chat_template()
+    assert patched_template == '{{ raise_exception("first second") }}'
+    assert result.model.tokenizer.get_chat_template() == patched_template
+
+
+def test_non_vlm_export_patches_minja_incompatible_chat_template(monkeypatch):
+    """The same chat template normalization must apply to the plain LLMPipeline path."""
+    broken_template = '{{ raise_exception("first "\n"second") }}'
+    _, fake_openvino_genai = _load_text_genai_pipeline(
+        monkeypatch, is_vlm_export=False, initial_chat_template=broken_template,
+    )
+
+    patched_template = fake_openvino_genai.llm_calls[0].tokenizer.get_chat_template()
+    assert patched_template == '{{ raise_exception("first second") }}'
+
+
+def test_chat_template_without_multiline_concatenation_is_left_untouched(monkeypatch):
+    """A chat template that doesn't use the problematic syntax must not be modified/re-set."""
+    normal_template = '{{ raise_exception("a single line message") }}'
+    _, fake_openvino_genai = _load_text_genai_pipeline(
+        monkeypatch, is_vlm_export=False, initial_chat_template=normal_template,
+    )
+
+    assert fake_openvino_genai.llm_calls[0].tokenizer.get_chat_template() == normal_template
+
+
+def test_empty_chat_template_is_left_untouched(monkeypatch):
+    """An empty chat template (no chat support) must not raise or be replaced."""
+    _, fake_openvino_genai = _load_text_genai_pipeline(
+        monkeypatch, is_vlm_export=False, initial_chat_template="",
+    )
+
+    assert fake_openvino_genai.llm_calls[0].tokenizer.get_chat_template() == ""
