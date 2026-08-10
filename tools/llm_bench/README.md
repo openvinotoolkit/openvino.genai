@@ -290,7 +290,7 @@ wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeec
 python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
 ```
 
-> **Supported Text to Speech model types:** whisper
+> **Supported Speech to Text model types:** whisper, qwen3-asr
 
 ### Text Rerank models
 ```sh
@@ -367,6 +367,7 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 - `--memory_consumption_interval`: Interval sampling for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
 - `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources by portable heap-trimming helper.
 - `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart.
+- `--memory_sampler`: set of metrics to collect: base, full, or win-gpu.
 
 ## 9. Additional Resources
 
