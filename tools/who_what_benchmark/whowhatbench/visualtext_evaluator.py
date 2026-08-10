@@ -172,6 +172,22 @@ class VisualTextEvaluator(TextEvaluator):
                 return tokens[0][0]
             if crop_question:
                 tokens = tokens[:, input_ids_len:]
+            elif tokens.shape[-1] > input_ids_len:
+                # crop_question is False for models whose generate() is expected
+                # to return only the newly generated tokens (already cropped).
+                # If the model instead echoed the full prompt (native transformers
+                # VLMs return prompt + generation), the output would still contain
+                # the whole chat template. Detect that echo generically by checking
+                # whether the leading tokens match the input prompt and strip it so
+                # the ground truth holds only the assistant answer, matching the
+                # Optimum/OpenVINO backend output.
+                input_ids = inputs["input_ids"]
+                if (
+                    input_ids is not None
+                    and tokens.shape[-1] >= input_ids_len
+                    and bool((tokens[:, :input_ids_len] == input_ids).all())
+                ):
+                    tokens = tokens[:, input_ids_len:]
 
             answer = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return answer
