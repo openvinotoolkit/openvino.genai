@@ -34,6 +34,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
+        {"glm", VLMModelType::GLM_EDGE_V},
     };
 
     auto it = model_types_map.find(value);
@@ -57,6 +58,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     nlohmann::json parsed = nlohmann::json::parse(stream);
     using ov::genai::utils::read_json_param;
     model_type = to_vlm_model_type(parsed.at("model_type"));
+    // GLM-Edge-V uses the boi token as the image placeholder in the prompt.
+    if (model_type == VLMModelType::GLM_EDGE_V) {
+        im_start = "<|begin_of_image|>";
+    }
     read_json_param(parsed, "hidden_size", hidden_size);
     read_json_param(parsed, "scale_emb", scale_emb);
     read_json_param(parsed, "query_num", query_num);
