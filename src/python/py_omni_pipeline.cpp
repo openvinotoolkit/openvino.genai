@@ -216,6 +216,62 @@ py::object call_omni_generate_history(OmniPipeline& pipe,
 }  // namespace
 
 void init_omni_pipeline(py::module_& m) {
+    // Register OmniTalkerSpeechConfig before Talker: Talker's constructor and config
+    // accessors reference it, and pybind emits the raw C++ type name in their signatures
+    // (which pybind11_stubgen cannot parse) unless the Python type is already registered.
+    py::class_<OmniTalkerSpeechConfig>(m, "OmniTalkerSpeechConfig", omni_talker_speech_config_docstring)
+        .def(py::init<>())
+        .def(py::init<std::filesystem::path>(),
+             py::arg("models_path"),
+             "folder with config.json (talker_config) for default speaker resolution")
+        .def_readwrite("return_audio", &OmniTalkerSpeechConfig::return_audio)
+        .def_property(
+            "speaker",
+            [](const OmniTalkerSpeechConfig& self) -> py::object {
+                if (std::holds_alternative<ov::Tensor>(self.speaker)) {
+                    return py::cast(std::get<ov::Tensor>(self.speaker));
+                }
+                return py::cast(std::get<std::string>(self.speaker));
+            },
+            [](OmniTalkerSpeechConfig& self, py::object value) {
+                if (py::isinstance<py::str>(value)) {
+                    self.speaker = value.cast<std::string>();
+                } else {
+                    self.speaker = value.cast<ov::Tensor>();
+                }
+            },
+            "Speaker identity: a name (str) looked up in talker_config.speaker_id, "
+            "or an explicit embedding tensor ([1, 1, talker_hidden_size], f32).")
+        .def_property(
+            "speaker_embedding",
+            [](const OmniTalkerSpeechConfig& self) -> py::object {
+                if (std::holds_alternative<ov::Tensor>(self.speaker)) {
+                    return py::cast(std::get<ov::Tensor>(self.speaker));
+                }
+                return py::none();
+            },
+            [](OmniTalkerSpeechConfig& self, py::object value) {
+                if (value.is_none()) {
+                    // Setting speaker_embedding to None reverts to the string default
+                    if (!std::holds_alternative<std::string>(self.speaker)) {
+                        self.speaker = std::string{};
+                    }
+                } else {
+                    self.speaker = value.cast<ov::Tensor>();
+                }
+            },
+            "Legacy alias. Reading returns the Tensor if speaker holds one, else None. "
+            "Writing sets the Tensor alternative of the speaker variant.")
+        .def_readwrite("audio_chunk_frames", &OmniTalkerSpeechConfig::audio_chunk_frames)
+        .def_readwrite("max_new_tokens", &OmniTalkerSpeechConfig::max_new_tokens)
+        .def_readwrite("rng_seed", &OmniTalkerSpeechConfig::rng_seed)
+        .def_readwrite("talker_temperature", &OmniTalkerSpeechConfig::talker_temperature)
+        .def_readwrite("talker_top_k", &OmniTalkerSpeechConfig::talker_top_k)
+        .def_readwrite("talker_repetition_penalty", &OmniTalkerSpeechConfig::talker_repetition_penalty)
+        .def_readwrite("cp_temperature", &OmniTalkerSpeechConfig::cp_temperature)
+        .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k)
+        .def_readwrite("cp_repetition_penalty", &OmniTalkerSpeechConfig::cp_repetition_penalty);
+
     py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
         R"(Abstract speech-output backend for OmniPipeline.
 
@@ -285,59 +341,6 @@ void init_omni_pipeline(py::module_& m) {
              &Talker::set_speech_config,
              py::arg("config"),
              "Set the talker's stored default OmniTalkerSpeechConfig (validated).");
-
-    py::class_<OmniTalkerSpeechConfig>(m, "OmniTalkerSpeechConfig", omni_talker_speech_config_docstring)
-        .def(py::init<>())
-        .def(py::init<std::filesystem::path>(),
-             py::arg("models_path"),
-             "folder with config.json (talker_config) for default speaker resolution")
-        .def_readwrite("return_audio", &OmniTalkerSpeechConfig::return_audio)
-        .def_property(
-            "speaker",
-            [](const OmniTalkerSpeechConfig& self) -> py::object {
-                if (std::holds_alternative<ov::Tensor>(self.speaker)) {
-                    return py::cast(std::get<ov::Tensor>(self.speaker));
-                }
-                return py::cast(std::get<std::string>(self.speaker));
-            },
-            [](OmniTalkerSpeechConfig& self, py::object value) {
-                if (py::isinstance<py::str>(value)) {
-                    self.speaker = value.cast<std::string>();
-                } else {
-                    self.speaker = value.cast<ov::Tensor>();
-                }
-            },
-            "Speaker identity: a name (str) looked up in talker_config.speaker_id, "
-            "or an explicit embedding tensor ([1, 1, talker_hidden_size], f32).")
-        .def_property(
-            "speaker_embedding",
-            [](const OmniTalkerSpeechConfig& self) -> py::object {
-                if (std::holds_alternative<ov::Tensor>(self.speaker)) {
-                    return py::cast(std::get<ov::Tensor>(self.speaker));
-                }
-                return py::none();
-            },
-            [](OmniTalkerSpeechConfig& self, py::object value) {
-                if (value.is_none()) {
-                    // Setting speaker_embedding to None reverts to the string default
-                    if (!std::holds_alternative<std::string>(self.speaker)) {
-                        self.speaker = std::string{};
-                    }
-                } else {
-                    self.speaker = value.cast<ov::Tensor>();
-                }
-            },
-            "Legacy alias. Reading returns the Tensor if speaker holds one, else None. "
-            "Writing sets the Tensor alternative of the speaker variant.")
-        .def_readwrite("audio_chunk_frames", &OmniTalkerSpeechConfig::audio_chunk_frames)
-        .def_readwrite("max_new_tokens", &OmniTalkerSpeechConfig::max_new_tokens)
-        .def_readwrite("rng_seed", &OmniTalkerSpeechConfig::rng_seed)
-        .def_readwrite("talker_temperature", &OmniTalkerSpeechConfig::talker_temperature)
-        .def_readwrite("talker_top_k", &OmniTalkerSpeechConfig::talker_top_k)
-        .def_readwrite("talker_repetition_penalty", &OmniTalkerSpeechConfig::talker_repetition_penalty)
-        .def_readwrite("cp_temperature", &OmniTalkerSpeechConfig::cp_temperature)
-        .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k)
-        .def_readwrite("cp_repetition_penalty", &OmniTalkerSpeechConfig::cp_repetition_penalty);
 
     py::class_<ov::genai::TalkerPerfMetrics>(m, "TalkerPerfMetrics",
         R"(Performance metrics for Talker speech generation.
