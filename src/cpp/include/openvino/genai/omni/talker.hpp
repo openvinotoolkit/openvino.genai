@@ -72,9 +72,10 @@ public:
                                   const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) = 0;
 
     /// @brief Property-bag speech generation. `properties` recognizes `speech_streamer` plus any
-    /// `OmniTalkerSpeechConfig` field; unspecified fields fall back to the talker's stored config
-    /// (see the concrete backend's get/set_speech_config). Convenience wrapper over the typed
-    /// overload for callers that build config from an ov::AnyMap.
+    /// `OmniTalkerSpeechConfig` field. How unspecified fields are resolved is backend-defined; the
+    /// default `Talker` falls back to its stored config (see `Talker::get_speech_config` /
+    /// `set_speech_config`). Convenience wrapper over the typed overload for callers that build
+    /// config from an ov::AnyMap.
     virtual TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties = {}) = 0;
 
     /// @brief List names of speakers exposed by this talker.
@@ -122,7 +123,8 @@ public:
     /// @param config Stored default speech config (see get/set_speech_config).
     /// @param config_dir_path Directory with `config.json` (codec/token IDs, speakers) and optional
     ///        `generation_config.json` (sampling defaults).
-    /// @param device_mapping Submodel name -> device. Submodels absent from the map load on "CPU".
+    /// @param device_mapping Submodel name -> device. Entries absent from this map fall back to
+    ///        "CPU"; submodels absent from `models_map` remain unavailable and fail the availability check.
     /// @param properties Passed to ov::Core::compile_model() for every submodel.
     Talker(const ModelsMap& models_map,
                     const OmniTalkerSpeechConfig& config,

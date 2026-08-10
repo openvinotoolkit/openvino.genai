@@ -55,6 +55,9 @@ public:
          const std::map<std::string, std::string>& device_mapping,
          const ov::AnyMap& properties)
         : m_speech_config(config) {
+        // Validate the stored default up front so an invalid config fails at construction
+        // rather than surfacing a confusing error deep in the first generate() call.
+        validate_omni_talker_speech_config(m_speech_config);
         VLMConfig vlm_config(config_dir_path / "config.json");
         m_speech = std::make_unique<Qwen3OmniSpeechPipeline>(models_map,
                                                              vlm_config,
@@ -113,6 +116,9 @@ public:
         if (!leftover.empty()) {
             update_omni_talker_speech_config(config, leftover);
         }
+        // Validate the resolved config here: values supplied via properties bypass
+        // set_speech_config(), so this is the only guard on the AnyMap path.
+        validate_omni_talker_speech_config(config);
         return generate(vlm_result, config, speech_streamer);
     }
 

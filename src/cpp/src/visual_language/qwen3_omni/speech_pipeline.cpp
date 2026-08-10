@@ -109,7 +109,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
 
         ov::AnyMap compilation_props = properties;
         if (force_fp32 && device.find("GPU") != std::string::npos) {
-            compilation_props["INFERENCE_PRECISION_HINT"] = ov::element::f32;
+            compilation_props[ov::hint::inference_precision.name()] = ov::element::f32;
             GENAI_DEBUG("Speech: forcing f32 precision for %s on GPU", filename.c_str());
         }
 
@@ -154,7 +154,7 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
         // changing sampled tokens and corrupting speech length.
         ov::AnyMap compilation_props = properties;
         if (device == "GPU" || device.find("GPU") == 0) {
-            compilation_props["INFERENCE_PRECISION_HINT"] = "f32";
+            compilation_props[ov::hint::inference_precision.name()] = ov::element::f32;
             GENAI_DEBUG("Speech: forcing FP32 precision for %s on GPU", name.c_str());
         }
 
