@@ -17,7 +17,7 @@ import task.image_generation as bench_image
 import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
-import task.text_embeddings as bench_text_embed
+import task.embedding as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
@@ -404,6 +404,7 @@ def get_argparser():
             "image_cls",
             "code_gen",
             "ldm_super_resolution",
+            "embed",
             "text_embed",
             "text_rerank",
             "text_to_speech",
@@ -451,6 +452,14 @@ def get_argparser():
         choices=["left", "right"],
         default=None,
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
+    )
+    parser.add_argument(
+        "--embedding_prompt",
+        type=str,
+        default=None,
+        help="Instruction/system prompt used to guide embedding generation for Qwen3-VL-Embedding "
+        "(distinct from -p/--prompt, which is the content being embedded). Ignored by non-Qwen3-VL "
+        'embedding models. Defaults to "Represent the user\'s input."',
     )
     parser.add_argument(
         "--reranking_max_length",
