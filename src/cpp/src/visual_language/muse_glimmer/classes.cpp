@@ -440,9 +440,10 @@ ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(
         const size_t bytes_per_group = tokens_per_group * shape.at(2) * video.video_features.get_element_type().size();
         const uint8_t* source = static_cast<const uint8_t*>(video.video_features.data());
         for (size_t group_idx = 0; group_idx < video.frame_num; ++group_idx) {
+            uint8_t* group_data = const_cast<uint8_t*>(source + group_idx * bytes_per_group);
             video_group_embeds.emplace_back(video.video_features.get_element_type(),
                                             ov::Shape{1, tokens_per_group, shape.at(2)},
-                                            source + group_idx * bytes_per_group);
+                                            group_data);
         }
     }
     if (!video_group_embeds.empty()) {
