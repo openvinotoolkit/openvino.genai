@@ -3,8 +3,8 @@
 
 #include "openvino/genai/omni/talker_speech_config.hpp"
 
+#include <algorithm>
 #include <fstream>
-#include <unordered_set>
 #include <variant>
 
 #include <nlohmann/json.hpp>
@@ -37,21 +37,26 @@ OmniTalkerSpeechConfig::OmniTalkerSpeechConfig(const std::filesystem::path& mode
     }
 }
 
+const std::vector<std::string>& omni_talker_speech_config_keys() {
+    // Single source of truth. Keep in sync with update_omni_talker_speech_config below.
+    static const std::vector<std::string> keys{"return_audio",
+                                               "speaker",
+                                               "speaker_embedding",
+                                               "audio_chunk_frames",
+                                               "max_new_tokens",
+                                               "rng_seed",
+                                               "talker_temperature",
+                                               "talker_top_k",
+                                               "talker_repetition_penalty",
+                                               "cp_temperature",
+                                               "cp_top_k",
+                                               "cp_repetition_penalty"};
+    return keys;
+}
+
 bool is_omni_talker_speech_config_key(const std::string& key) {
-    // Keep in sync with update_omni_talker_speech_config below.
-    static const std::unordered_set<std::string> recognized{"return_audio",
-                                                             "speaker",
-                                                             "speaker_embedding",
-                                                             "audio_chunk_frames",
-                                                             "max_new_tokens",
-                                                             "rng_seed",
-                                                             "talker_temperature",
-                                                             "talker_top_k",
-                                                             "talker_repetition_penalty",
-                                                             "cp_temperature",
-                                                             "cp_top_k",
-                                                             "cp_repetition_penalty"};
-    return recognized.count(key) != 0;
+    const auto& keys = omni_talker_speech_config_keys();
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
 }
 
 void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::AnyMap& properties) {

@@ -279,7 +279,15 @@ void init_omni_pipeline(py::module_& m) {
         is Talker. Subclasses must override generate(), list_speakers(), and
         get_speaker_embedding().)")
         .def("list_speakers", &TalkerBase::list_speakers)
-        .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"));
+        .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"))
+        .def("get_speech_config",
+             &TalkerBase::get_speech_config,
+             py::return_value_policy::copy,
+             "Return the talker's stored default OmniTalkerSpeechConfig.")
+        .def("set_speech_config",
+             &TalkerBase::set_speech_config,
+             py::arg("config"),
+             "Set the talker's stored default OmniTalkerSpeechConfig (validated).");
 
     py::class_<Talker, TalkerBase, std::shared_ptr<Talker>>(m, "Talker",
         R"(Default OmniPipeline talker for the Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
@@ -334,15 +342,7 @@ void init_omni_pipeline(py::module_& m) {
                 device_mapping (dict[str, str]): Submodel name -> device; entries absent from this map
                     fall back to CPU, while submodels absent from models_map stay unavailable.
                 kwargs: Device properties.
-             )")
-        .def("get_speech_config",
-             &Talker::get_speech_config,
-             py::return_value_policy::copy,
-             "Return the talker's stored default OmniTalkerSpeechConfig.")
-        .def("set_speech_config",
-             &Talker::set_speech_config,
-             py::arg("config"),
-             "Set the talker's stored default OmniTalkerSpeechConfig (validated).");
+             )");
 
     py::class_<ov::genai::TalkerPerfMetrics>(m, "TalkerPerfMetrics",
         R"(Performance metrics for Talker speech generation.

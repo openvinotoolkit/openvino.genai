@@ -4517,14 +4517,6 @@ class Talker(TalkerBase):
                             fall back to CPU, while submodels absent from models_map stay unavailable.
                         kwargs: Device properties.
         """
-    def get_speech_config(self) -> OmniTalkerSpeechConfig:
-        """
-        Return the talker's stored default OmniTalkerSpeechConfig.
-        """
-    def set_speech_config(self, config: OmniTalkerSpeechConfig) -> None:
-        """
-        Set the talker's stored default OmniTalkerSpeechConfig (validated).
-        """
 class TalkerBase:
     """
     Abstract speech-output backend for OmniPipeline.
@@ -4535,8 +4527,16 @@ class TalkerBase:
     """
     def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
         ...
+    def get_speech_config(self) -> OmniTalkerSpeechConfig:
+        """
+        Return the talker's stored default OmniTalkerSpeechConfig.
+        """
     def list_speakers(self) -> list[str]:
         ...
+    def set_speech_config(self, config: OmniTalkerSpeechConfig) -> None:
+        """
+        Set the talker's stored default OmniTalkerSpeechConfig (validated).
+        """
 class TalkerPerfMetrics:
     """
     Performance metrics for Talker speech generation.
