@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "visual_language/onyx/classes.hpp"
+#include "visual_language/muse_glimmer/classes.hpp"
 
 #include <algorithm>
 #include <array>
@@ -96,9 +96,9 @@ ov::Tensor flatten_temporal_patches(const std::vector<clip_image_f32>& frames,
     for (size_t grid_y = 0; grid_y < grid_height; ++grid_y) {
         for (size_t grid_x = 0; grid_x < grid_width; ++grid_x) {
             for (const clip_image_f32& frame : frames) {
-                OPENVINO_ASSERT(static_cast<size_t>(frame.ny) == target_height &&
-                                    static_cast<size_t>(frame.nx) == target_width,
-                                "Muse Glimmer temporal frames must have equal target dimensions");
+                OPENVINO_ASSERT(
+                    static_cast<size_t>(frame.ny) == target_height && static_cast<size_t>(frame.nx) == target_width,
+                    "Muse Glimmer temporal frames must have equal target dimensions");
                 for (size_t channel = 0; channel < 3; ++channel) {
                     for (size_t patch_y = 0; patch_y < patch_size; ++patch_y) {
                         const size_t source_y = grid_y * patch_size + patch_y;
@@ -144,8 +144,7 @@ MuseGlimmerVisionInputs get_vision_inputs(const std::vector<ov::Tensor>& frames,
         normalized_frames.emplace_back(clip_image_preprocess(ctx, resized_image));
     }
 
-    ov::Tensor pixel_values =
-        flatten_temporal_patches(normalized_frames, grid_height, grid_width, config.patch_size);
+    ov::Tensor pixel_values = flatten_temporal_patches(normalized_frames, grid_height, grid_width, config.patch_size);
 
     ov::Tensor image_grid_thw(ov::element::i64, {1, 3});
     int64_t* grid_data = image_grid_thw.data<int64_t>();
@@ -299,9 +298,8 @@ std::vector<EncodedImage> InputsEmbedderMuseGlimmer::encode_images(const std::ve
     return embeds;
 }
 
-std::vector<EncodedVideo> InputsEmbedderMuseGlimmer::encode_videos(
-    const std::vector<ov::Tensor>& videos,
-    const std::vector<VideoMetadata>& videos_metadata) {
+std::vector<EncodedVideo> InputsEmbedderMuseGlimmer::encode_videos(const std::vector<ov::Tensor>& videos,
+                                                                   const std::vector<VideoMetadata>& videos_metadata) {
     OPENVINO_ASSERT(videos.size() == videos_metadata.size() || videos_metadata.empty(),
                     "Number of videos and video metadata entries must match if metadata is provided");
 
@@ -309,8 +307,7 @@ std::vector<EncodedVideo> InputsEmbedderMuseGlimmer::encode_videos(
     encoded_videos.reserve(videos.size());
     for (size_t video_idx = 0; video_idx < videos.size(); ++video_idx) {
         const ov::Tensor& video = videos.at(video_idx);
-        OPENVINO_ASSERT(video.get_shape().size() == 4,
-                "Muse Glimmer video tensor must have rank 4 [N, H, W, C]");
+        OPENVINO_ASSERT(video.get_shape().size() == 4, "Muse Glimmer video tensor must have rank 4 [N, H, W, C]");
         VideoMetadata metadata = video_idx < videos_metadata.size() ? videos_metadata.at(video_idx) : VideoMetadata{};
         fill_video_metadata(metadata, video.get_shape().at(0), m_vision_encoder->get_video_processor_config());
         const ov::Tensor sampled_video = sample_video_if_needed(video, metadata);
@@ -352,7 +349,7 @@ NormalizedPrompt InputsEmbedderMuseGlimmer::normalize_prompt(const std::string& 
 
         searched_pos = unified_prompt.find(IMAGE_SENTINEL, searched_pos);
         OPENVINO_ASSERT(searched_pos != std::string::npos,
-                "Muse Glimmer image sentinel is missing from normalized prompt");
+                        "Muse Glimmer image sentinel is missing from normalized prompt");
         unified_prompt.replace(searched_pos, std::char_traits<char>::length(IMAGE_SENTINEL), expanded_tag);
         searched_pos += expanded_tag.length();
     }
@@ -386,7 +383,7 @@ NormalizedPrompt InputsEmbedderMuseGlimmer::normalize_prompt(const std::string& 
 
         searched_pos = unified_prompt.find(VIDEO_SENTINEL, searched_pos);
         OPENVINO_ASSERT(searched_pos != std::string::npos,
-                "Muse Glimmer video sentinel is missing from normalized prompt");
+                        "Muse Glimmer video sentinel is missing from normalized prompt");
         unified_prompt.replace(searched_pos, std::char_traits<char>::length(VIDEO_SENTINEL), expanded_tag);
         searched_pos += expanded_tag.length();
     }
@@ -458,8 +455,7 @@ ov::Tensor InputsEmbedderMuseGlimmer::get_inputs_embeds(
     return inputs_embeds;
 }
 
-ov::Tensor InputsEmbedderMuseGlimmer::apply_chat_template_tokenize(const std::string& prompt,
-                                                                  VLMPerfMetrics& metrics) {
+ov::Tensor InputsEmbedderMuseGlimmer::apply_chat_template_tokenize(const std::string& prompt, VLMPerfMetrics& metrics) {
     const std::string bos_token = m_tokenizer.get_bos_token();
     // ticket to addess globally: 192386
     if (!m_is_chat_conversation && !m_apply_chat_template && !bos_token.empty() &&

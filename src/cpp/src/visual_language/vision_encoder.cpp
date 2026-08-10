@@ -25,7 +25,7 @@
 #include "visual_language/gemma3n/classes.hpp"
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
-#include "visual_language/onyx/classes.hpp"
+#include "visual_language/muse_glimmer/classes.hpp"
 
 namespace ov::genai {
 

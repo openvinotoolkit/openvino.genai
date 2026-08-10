@@ -29,17 +29,17 @@ private:
 class InputsEmbedderMuseGlimmer : public InputsEmbedder::IInputsEmbedder {
 public:
     InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
-                       const std::filesystem::path& model_dir,
-                       const Tokenizer& tokenizer,
-                       const std::string& device,
-                       const ov::AnyMap device_config);
+                              const std::filesystem::path& model_dir,
+                              const Tokenizer& tokenizer,
+                              const std::string& device,
+                              const ov::AnyMap device_config);
 
     InputsEmbedderMuseGlimmer(const VLMConfig& vlm_config,
-                       const ModelsMap& models_map,
-                       const Tokenizer& tokenizer,
-                       const std::filesystem::path& config_dir_path,
-                       const std::string& device,
-                       const ov::AnyMap device_config);
+                              const ModelsMap& models_map,
+                              const Tokenizer& tokenizer,
+                              const std::filesystem::path& config_dir_path,
+                              const std::string& device,
+                              const ov::AnyMap device_config);
 
     std::vector<EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 

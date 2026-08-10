@@ -8,7 +8,7 @@ from .qwen2 import Qwen2VLInputsPreprocessor
 from .qwen3 import Qwen3VLInputsPreprocessor, Qwen3_5VLInputsPreprocessor, Qwen3OmniInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
 from .gemma4 import Gemma4InputsPreprocessor, Gemma4UnifiedInputsPreprocessor, Gemma3nInputsPreprocessor
-from .onyx import MuseGlimmerInputsPreprocessor
+from .muse_glimmer import MuseGlimmerInputsPreprocessor
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
