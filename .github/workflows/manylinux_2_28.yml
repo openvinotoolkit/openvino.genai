@@ -28,7 +28,7 @@ env:
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
-  OPENVINO_LOG_LEVEL: 4
+  OPENVINO_LOG_LEVEL: 1
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -98,7 +98,7 @@ jobs:
         platform: almalinux8
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         # Workaround for ScatterNDUpdate exception.
-        # Introduced by https://github.com/openvinotoolkit/openvino/pull/37125
+        # The ticket for tracking: CVS-192302
         revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
@@ -109,7 +109,9 @@ jobs:
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
-        ref: ${{ env.OV_BRANCH }}
+        # ref: ${{ env.OV_BRANCH }}
+        # Must match the pinned revision above so the docker image matches the OV artifacts. Ticket: 192302
+        ref: aa154b5f870b9b1c118dabc970989f9c7de163d3
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
