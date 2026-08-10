@@ -226,8 +226,10 @@ def test_beam_search(model_facebook_opt_125m: OVConvertedModelSchema, generation
     reason="Group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
 )
 @pytest.mark.xfail(
-    raises=AssertionError,
-    reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
+    raises=(AssertionError, ValueError),
+    reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. "
+    "Since transformers 4.57 HF raises ValueError instead of returning a mismatching result. "
+    "If it changes, these cases shall be merged to the test above.",
     strict=True,
 )
 @pytest.mark.parametrize(
