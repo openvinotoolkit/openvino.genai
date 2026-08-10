@@ -417,13 +417,10 @@ def load_text_model(
             from optimum.intel.openvino import OVModelForCausalLM
 
             try:
-                model = OVModelForCausalLM.from_pretrained(
-                    model_id, device=device, ov_config=ov_config, **kwargs
-                )
+                model = OVModelForCausalLM.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
             except Exception:
                 try:
-                    config = AutoConfig.from_pretrained(
-                        model_id, trust_remote_code=True)
+                    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
                     model = OVModelForCausalLM.from_pretrained(
                         model_id,
                         config=config,
@@ -431,17 +428,12 @@ def load_text_model(
                         use_cache=True,
                         device=device,
                         ov_config=ov_config,
-                        **kwargs
+                        **kwargs,
                     )
                 except Exception:
                     config = AutoConfig.from_pretrained(model_id)
                     model = OVModelForCausalLM.from_pretrained(
-                        model_id,
-                        config=config,
-                        use_cache=True,
-                        device=device,
-                        ov_config=ov_config,
-                        **kwargs
+                        model_id, config=config, use_cache=True, device=device, ov_config=ov_config, **kwargs
                     )
 
     return model

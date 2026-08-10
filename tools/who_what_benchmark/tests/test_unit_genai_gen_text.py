@@ -68,6 +68,7 @@ def test_genai_gen_text_returns_plain_string_unchanged():
 
 def test_genai_gen_text_handles_none_texts_attribute():
     """An object whose .texts attribute is None can't be normalized to a str and must raise TypeError."""
+
     class AnswerWithNoneTexts:
         texts = None
 
@@ -79,6 +80,7 @@ def test_genai_gen_text_handles_none_texts_attribute():
 def test_genai_gen_text_handles_string_texts_attribute():
     """An object whose .texts attribute is itself a string (not a list/tuple) must raise TypeError,
     not be indexed char-by-char."""
+
     class AnswerWithStringTexts:
         texts = "abc"
 
@@ -89,6 +91,7 @@ def test_genai_gen_text_handles_string_texts_attribute():
 
 def test_genai_gen_text_unwraps_texts_tuple():
     """A .texts tuple with exactly one item is unwrapped, matching list handling."""
+
     class AnswerWithTupleTexts:
         texts = ("only answer",)
 

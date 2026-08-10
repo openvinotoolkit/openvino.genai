@@ -105,7 +105,10 @@ def test_vlm_export_uses_vlm_pipeline_with_no_adapters_or_cb_config(monkeypatch)
 
 def test_vlm_export_with_adapters_sets_adapters_kwarg(monkeypatch):
     _, fake_openvino_genai = _load_text_genai_pipeline(
-        monkeypatch, is_vlm_export=True, adapters=["adapter_path"], alphas=[0.5],
+        monkeypatch,
+        is_vlm_export=True,
+        adapters=["adapter_path"],
+        alphas=[0.5],
     )
 
     vlm_call = fake_openvino_genai.vlm_calls[0]
@@ -121,7 +124,9 @@ def test_vlm_export_with_adapters_sets_adapters_kwarg(monkeypatch):
 
 def test_vlm_export_with_cb_config_sets_scheduler_and_attention_backend(monkeypatch):
     _, fake_openvino_genai = _load_text_genai_pipeline(
-        monkeypatch, is_vlm_export=True, cb_config={"cache_size": 2},
+        monkeypatch,
+        is_vlm_export=True,
+        cb_config={"cache_size": 2},
     )
 
     vlm_call = fake_openvino_genai.vlm_calls[0]
@@ -147,7 +152,9 @@ def test_non_vlm_export_uses_llm_pipeline(monkeypatch):
 
 def test_non_vlm_export_with_cb_config_uses_continuous_batching(monkeypatch):
     _, fake_openvino_genai = _load_text_genai_pipeline(
-        monkeypatch, is_vlm_export=False, cb_config={"cache_size": 4},
+        monkeypatch,
+        is_vlm_export=False,
+        cb_config={"cache_size": 4},
     )
 
     llm_call = fake_openvino_genai.llm_calls[0]
@@ -188,7 +195,9 @@ def test_vlm_export_patches_minja_incompatible_chat_template(monkeypatch):
     """A chat template with adjacent multiline string literals must be joined into one literal."""
     broken_template = '{{ raise_exception("first "\n                    "second") }}'
     result, fake_openvino_genai = _load_text_genai_pipeline(
-        monkeypatch, is_vlm_export=True, initial_chat_template=broken_template,
+        monkeypatch,
+        is_vlm_export=True,
+        initial_chat_template=broken_template,
     )
 
     patched_template = fake_openvino_genai.vlm_calls[0].tokenizer.get_chat_template()
@@ -200,7 +209,9 @@ def test_non_vlm_export_patches_minja_incompatible_chat_template(monkeypatch):
     """The same chat template normalization must apply to the plain LLMPipeline path."""
     broken_template = '{{ raise_exception("first "\n"second") }}'
     _, fake_openvino_genai = _load_text_genai_pipeline(
-        monkeypatch, is_vlm_export=False, initial_chat_template=broken_template,
+        monkeypatch,
+        is_vlm_export=False,
+        initial_chat_template=broken_template,
     )
 
     patched_template = fake_openvino_genai.llm_calls[0].tokenizer.get_chat_template()
@@ -211,7 +222,9 @@ def test_chat_template_without_multiline_concatenation_is_left_untouched(monkeyp
     """A chat template that doesn't use the problematic syntax must not be modified/re-set."""
     normal_template = '{{ raise_exception("a single line message") }}'
     _, fake_openvino_genai = _load_text_genai_pipeline(
-        monkeypatch, is_vlm_export=False, initial_chat_template=normal_template,
+        monkeypatch,
+        is_vlm_export=False,
+        initial_chat_template=normal_template,
     )
 
     assert fake_openvino_genai.llm_calls[0].tokenizer.get_chat_template() == normal_template
@@ -220,7 +233,9 @@ def test_chat_template_without_multiline_concatenation_is_left_untouched(monkeyp
 def test_empty_chat_template_is_left_untouched(monkeypatch):
     """An empty chat template (no chat support) must not raise or be replaced."""
     _, fake_openvino_genai = _load_text_genai_pipeline(
-        monkeypatch, is_vlm_export=False, initial_chat_template="",
+        monkeypatch,
+        is_vlm_export=False,
+        initial_chat_template="",
     )
 
     assert fake_openvino_genai.llm_calls[0].tokenizer.get_chat_template() == ""
