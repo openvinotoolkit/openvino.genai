@@ -615,12 +615,9 @@ public:
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
         // Rank-1 [B] (legacy export) or rank-2 [B, S] (current export, per-token conditioning).
-        // T2V has no per-token conditioning, so every token gets the same timestep value either way.
+        // Sized from latent_cfg inside the denoising loop so the two always agree.
         const bool timestep_is_rank2 = m_transformer->get_timestep_partial_shape().size() == 2;
-        ov::Tensor timestep(ov::element::f32,
-                           timestep_is_rank2 ? ov::Shape{latent_shape_cfg[0], video_sequence_length}
-                                             : ov::Shape{1});
-        float* timestep_data = timestep.data<float>();
+        ov::Tensor timestep(ov::element::f32, ov::Shape{1});
 
         // Initialize TaylorSeer if configured
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
@@ -650,7 +647,13 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            std::fill_n(timestep_data, timestep.get_size(), timesteps[inference_step]);
+            // Derive the timestep shape from the final latent_cfg (after the repeat above) so
+            // batch and token count always match. T2V conditions every token identically.
+            if (timestep_is_rank2) {
+                const ov::Shape& latent_cfg_shape = latent_cfg.get_shape();
+                timestep.set_shape({latent_cfg_shape[0], latent_cfg_shape[1]});
+            }
+            std::fill_n(timestep.data<float>(), timestep.get_size(), timesteps[inference_step]);
 
             ov::Tensor noise_pred_tensor;
             // Use TaylorSeer if enabled and caching is appropriate

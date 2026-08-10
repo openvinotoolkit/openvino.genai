@@ -81,6 +81,19 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input(0).get_partial_shape();
     m_expected_batch_size = input_shape.is_static() ? input_shape[0].get_length() : 0;
+
+    bool timestep_found = false;
+    for (const auto& input : compiled_model.inputs()) {
+        if (input.get_any_name() == "timestep") {
+            m_timestep_partial_shape = input.get_partial_shape();
+            timestep_found = true;
+            break;
+        }
+    }
+    OPENVINO_ASSERT(timestep_found,
+                    "LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
+                    "The model may be corrupted or exported incorrectly.");
+
     // release the original model
     m_model.reset();
 
@@ -130,25 +143,8 @@ size_t LTXVideoTransformer3DModel::get_request_input_batch() {
     return shape[0];
 }
 
-ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
-    if (m_model) {
-        for (auto&& input : m_model->inputs()) {
-            if (input.get_any_name() == "timestep") {
-                return input.get_partial_shape();
-            }
-        }
-    }
-    if (m_request) {
-        ov::CompiledModel compiled = m_request.get_compiled_model();
-        for (const auto& input : compiled.inputs()) {
-            if (input.get_any_name() == "timestep") {
-                return input.get_partial_shape();
-            }
-        }
-    }
-    OPENVINO_ASSERT(false,
-                    "LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
-                    "The model may be corrupted or exported incorrectly.");
+const ov::PartialShape& LTXVideoTransformer3DModel::get_timestep_partial_shape() const {
+    return m_timestep_partial_shape;
 }
 
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
@@ -172,17 +168,24 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
 
     std::map<std::string, ov::PartialShape> name_to_shape;
 
+    // Packed token count shared by hidden_states and a rank-2 timestep.
+    const int64_t video_sequence_length = num_frames * height * width;
+
     for (auto&& input : m_model->inputs()) {
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            // Rank-1 legacy export: runtime always sends a single-element {1} tensor regardless of batch.
-            // Rank-2 export: runtime sends {batch_size, S}, so batch must match hidden_states' batch dim.
-            name_to_shape[input_name][0] = name_to_shape[input_name].size() >= 2 ? batch_size : 1;
+            // Rank-1 legacy export takes a single scalar regardless of batch. Rank-2 export
+            // conditions per token, so it must match hidden_states' batch and token count.
+            if (name_to_shape[input_name].size() >= 2) {
+                name_to_shape[input_name] = {batch_size, video_sequence_length};
+            } else {
+                name_to_shape[input_name][0] = 1;
+            }
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
         } else if (input_name == "hidden_states") {
-            name_to_shape[input_name] = {batch_size, num_frames * height * width, name_to_shape[input_name][2]};
+            name_to_shape[input_name] = {batch_size, video_sequence_length, name_to_shape[input_name][2]};
         } else if (input_name == "encoder_attention_mask") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length};
         }
