@@ -38,8 +38,6 @@ public:
         read_json_param(parsed_json, "min_frames", min_frames);
         read_json_param(parsed_json, "num_frames", num_frames);
         read_json_param(parsed_json, "fps", fps);
-        read_json_param(parsed_json, "video_num_frames", max_frames);
-        read_json_param(parsed_json, "video_sampling_fps", fps);
         read_json_param(parsed_json, "max_video_frame_tokens", max_video_frame_tokens);
     }
 
