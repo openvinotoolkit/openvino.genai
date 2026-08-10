@@ -912,6 +912,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
 
     // Streaming cursor: index into all_codes for next chunk start
     size_t chunk_cursor = 0;
+    std::vector<ov::Tensor> streamed_chunks;
 
     auto trailing_len = trailing_text_hidden.get_shape()[1];
     size_t trailing_idx = 0;
@@ -1001,6 +1002,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
             auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
             auto chunk_wav = codes_to_wav(chunk_tensor);
             chunk_cursor = all_codes.size();
+            streamed_chunks.push_back(chunk_wav);
 
             auto status = invoke_speech_streamer(audio_streamer, chunk_wav);
             if (status == StreamingStatus::STOP || status == StreamingStatus::CANCEL) {
@@ -1048,6 +1050,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     if (streaming && chunk_cursor < all_codes.size() && !early_stop) {
         auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
         auto chunk_wav = codes_to_wav(chunk_tensor);
+        streamed_chunks.push_back(chunk_wav);
         invoke_speech_streamer(audio_streamer, chunk_wav);
     }
 
@@ -1063,6 +1066,25 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     if (all_codes.empty()) {
         GENAI_WARN("Speech: no codes generated");
         return build_result(ov::Tensor{});
+    }
+
+    if (streaming) {
+        size_t total_samples = 0;
+        for (const auto& chunk : streamed_chunks) {
+            total_samples += chunk.get_size();
+        }
+        if (total_samples == 0) {
+            return build_result(ov::Tensor{});
+        }
+        ov::Tensor full_wav(ov::element::f32, {1, 1, total_samples});
+        auto* dst = full_wav.data<float>();
+        for (const auto& chunk : streamed_chunks) {
+            std::memcpy(dst, chunk.data<float>(), chunk.get_size() * sizeof(float));
+            dst += chunk.get_size();
+        }
+        GENAI_INFO("Speech: %zu codec steps generated, %zu streamed chunks -> %zu samples",
+                   all_codes.size(), streamed_chunks.size(), total_samples);
+        return build_result(std::move(full_wav));
     }
 
     GENAI_INFO("Speech: %zu codec steps generated, converting to waveform...", all_codes.size());
