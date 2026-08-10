@@ -476,6 +476,9 @@ def _get_ov_model(model_id: str) -> str:
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
+QWEN3_VL_SDPA_XFAIL_REASON = (
+    "qwen3-vl vision embeddings count does not match image pad tokens in prompt with SDPA backend"
+)
 
 
 @pytest.fixture(scope="module")
@@ -494,6 +497,9 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
+
+    if "qwen3-vl" in ov_model and ov_backend == "SDPA":
+        pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
 
     models_path = _get_ov_model(ov_model)
 
