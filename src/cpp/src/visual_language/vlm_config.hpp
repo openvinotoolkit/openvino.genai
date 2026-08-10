@@ -32,6 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    JVLM,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -162,6 +163,18 @@ public:
     int64_t video_token_id = -1;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
+
+    /// @brief JinaVLM (jvlm) image special tokens.
+    /// Placeholder for a whole image in the prompt (replaced during normalization).
+    std::string jvlm_image_prompt_token = "<|image|>";
+    /// @brief Per-patch placeholder token where vision embeddings are inserted.
+    std::string jvlm_image_patch_token = "<im_patch>";
+    /// @brief Column separator token appended after each row of patches.
+    std::string jvlm_image_column_token = "<im_col>";
+    /// @brief Image region start token.
+    std::string jvlm_image_start_token = "<im_start>";
+    /// @brief Image region end token.
+    std::string jvlm_image_end_token = "<im_end>";
 
     /// @brief Default constructor.
     VLMConfig() = default;

@@ -167,6 +167,7 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_JVLM = "optimum-intel-internal-testing/tiny-random-jvlm"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -181,6 +182,9 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        # JinaVLM (model_type='jvlm', Molmo-style overlap-and-resize preprocessing).
+        # Requires transformers>=4.57 and trust_remote_code (remote modeling/processing code).
+        MODEL_JVLM,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -217,6 +221,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
+    MODEL_JVLM: lambda idx: "<|image|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -244,6 +249,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    MODEL_JVLM: 64,
 }
 
 

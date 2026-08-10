@@ -33,6 +33,15 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'JinaVLMForConditionalGeneration',
+    models: [
+      {
+        name: 'Jina-VLM',
+        links: ['https://huggingface.co/jinaai/jina-vlm'],
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA',
     models: [
       {
