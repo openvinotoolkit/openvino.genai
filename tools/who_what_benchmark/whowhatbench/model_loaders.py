@@ -44,6 +44,54 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _apply_create_causal_mask_kwarg_compat(model):
+    """Reconcile a remote-code ``create_causal_mask`` call with the installed transformers signature.
+
+    Some remote-code modeling files (e.g. PaddleOCR-VL) call
+    ``create_causal_mask(inputs_embeds=...)``, but transformers>=4.56 renamed that
+    keyword-only parameter to ``input_embeds``. When the loaded model's module imports
+    ``create_causal_mask`` from transformers and the installed signature no longer accepts
+    ``inputs_embeds``, wrap the module-level symbol so the legacy keyword keeps working.
+
+    The shim is keyed on the signature mismatch, not on any model name, so it stays generic
+    across architectures that share the same incompatibility.
+    """
+    import inspect
+    import sys
+
+    module_name = getattr(type(model), "__module__", None)
+    module = sys.modules.get(module_name) if module_name else None
+    if module is None or not hasattr(module, "create_causal_mask"):
+        return
+
+    ccm = getattr(module, "create_causal_mask")
+    if getattr(ccm, "_wwb_inputs_embeds_compat", False):
+        return
+
+    try:
+        params = inspect.signature(ccm).parameters
+    except (TypeError, ValueError):
+        return
+
+    # Only patch when the installed signature dropped 'inputs_embeds' but still accepts
+    # 'input_embeds' and does not already accept arbitrary **kwargs.
+    accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    if "inputs_embeds" in params or accepts_var_kw or "input_embeds" not in params:
+        return
+
+    def _wrapped(*args, **kwargs):
+        if "inputs_embeds" in kwargs and "input_embeds" not in kwargs:
+            kwargs["input_embeds"] = kwargs.pop("inputs_embeds")
+        return ccm(*args, **kwargs)
+
+    _wrapped._wwb_inputs_embeds_compat = True
+    module.create_causal_mask = _wrapped
+    logger.info(
+        "Applied create_causal_mask 'inputs_embeds'->'input_embeds' compatibility shim for %s",
+        module_name,
+    )
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -599,6 +647,11 @@ def load_visual_text_model(
             model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
 
         model.eval()
+
+        # Remote-code VLMs may call create_causal_mask with the pre-4.56 'inputs_embeds'
+        # keyword; reconcile it with the installed transformers signature when needed.
+        _apply_create_causal_mask_kwarg_compat(model)
+
         try:
             model.get_vision_tower().load_model()
         except Exception:
