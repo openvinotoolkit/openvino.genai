@@ -87,7 +87,6 @@ class TestOmniTalkerSpeechConfig:
         assert cfg.talker_repetition_penalty is None
         assert cfg.cp_temperature is None
         assert cfg.cp_top_k is None
-        assert cfg.cp_repetition_penalty is None
 
     def test_direct_field_assignment(self) -> None:
         """Direct field assignment sets the speech-side fields."""
@@ -138,15 +137,15 @@ class TestOmniPipelineAccessors:
             assert hasattr(ov_genai.TalkerBase, method), f"TalkerBase.{method}() missing from public surface"
 
     def test_speech_config_accessors_live_on_base(self) -> None:
-        """get/set_speech_config live on TalkerBase; every backend shares the stored config.
+        """get/set_speech_config are part of the TalkerBase interface every backend implements.
 
-        TalkerBase owns the stored default OmniTalkerSpeechConfig, so the accessors and the
-        property-bag generate() overload that seeds from it are available to every backend,
-        not just the default Qwen3-Omni Talker. Talker inherits them unchanged.
+        TalkerBase declares them pure virtual, so the accessors and the property-bag generate()
+        overload that seeds from them are part of the contract for every backend, not just the
+        default Qwen3-Omni Talker, which stores the config itself.
         """
         for method in ("get_speech_config", "set_speech_config"):
             assert hasattr(ov_genai.TalkerBase, method), f"TalkerBase.{method}() missing from public surface"
-            assert hasattr(ov_genai.Talker, method), f"Talker.{method}() missing (should inherit from TalkerBase)"
+            assert hasattr(ov_genai.Talker, method), f"Talker.{method}() missing from public surface"
 
     def test_talker_blob_ctor_signature(self) -> None:
         """Talker exposes the ModelsMap/device_mapping blob constructor (slide 10 spec).

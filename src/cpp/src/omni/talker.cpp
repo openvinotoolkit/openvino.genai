@@ -82,21 +82,6 @@ ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig&
 
 }  // namespace
 
-TalkerResults TalkerBase::generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {
-    // Overlay properties on the stored default config, then dispatch to the typed generate().
-    auto resolved = resolve_talker_properties(m_speech_config, properties);
-    return generate(vlm_result, resolved.config, resolved.speech_streamer);
-}
-
-OmniTalkerSpeechConfig TalkerBase::get_speech_config() const {
-    return m_speech_config;
-}
-
-void TalkerBase::set_speech_config(const OmniTalkerSpeechConfig& config) {
-    validate_omni_talker_speech_config(config);
-    m_speech_config = config;
-}
-
 class Talker::Impl {
 public:
     Impl(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap& properties) {
@@ -173,7 +158,7 @@ Talker::Talker(const ModelsMap& models_map,
                const std::map<std::string, std::string>& device_mapping,
                const ov::AnyMap& properties)
     : m_impl(std::make_unique<Impl>(models_map, config_dir_path, device_mapping, properties)) {
-    set_speech_config(config);
+    Talker::set_speech_config(config);
 }
 
 Talker::~Talker() = default;
@@ -182,6 +167,21 @@ TalkerResults Talker::generate(const VLMDecodedResults& vlm_result,
                                const OmniTalkerSpeechConfig& talker_speech_config,
                                const OmniSpeechStreamerVariant& speech_streamer) {
     return m_impl->generate(vlm_result, talker_speech_config, speech_streamer);
+}
+
+TalkerResults Talker::generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {
+    // Overlay properties on the stored default config, then dispatch to the typed generate().
+    auto resolved = resolve_talker_properties(m_speech_config, properties);
+    return m_impl->generate(vlm_result, resolved.config, resolved.speech_streamer);
+}
+
+OmniTalkerSpeechConfig Talker::get_speech_config() const {
+    return m_speech_config;
+}
+
+void Talker::set_speech_config(const OmniTalkerSpeechConfig& config) {
+    validate_omni_talker_speech_config(config);
+    m_speech_config = config;
 }
 
 std::vector<std::string> Talker::list_speakers() const {

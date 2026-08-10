@@ -79,11 +79,10 @@ auto omni_talker_speech_config_docstring = R"(
     :type talker_top_k: int | None
     :type talker_repetition_penalty: float | None
 
-    :param cp_temperature, cp_top_k, cp_repetition_penalty: CodePredictor sampling
+    :param cp_temperature, cp_top_k: CodePredictor sampling
         overrides. Same semantics as talker_*.
     :type cp_temperature: float | None
     :type cp_top_k: int | None
-    :type cp_repetition_penalty: float | None
 )";
 
 auto omni_pipeline_docstring = R"(
@@ -269,25 +268,25 @@ void init_omni_pipeline(py::module_& m) {
         .def_readwrite("talker_top_k", &OmniTalkerSpeechConfig::talker_top_k)
         .def_readwrite("talker_repetition_penalty", &OmniTalkerSpeechConfig::talker_repetition_penalty)
         .def_readwrite("cp_temperature", &OmniTalkerSpeechConfig::cp_temperature)
-        .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k)
-        .def_readwrite("cp_repetition_penalty", &OmniTalkerSpeechConfig::cp_repetition_penalty);
+        .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k);
 
     py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
         R"(Abstract speech-output backend for OmniPipeline.
 
-        Subclass to plug a custom talker into OmniPipeline. The default implementation
-        is Talker. Subclasses must override generate(), list_speakers(), and
+        Pure interface with no storage of its own. Subclass to plug a custom talker into
+        OmniPipeline; the default implementation is Talker. Subclasses must override
+        generate(), get_speech_config(), set_speech_config(), list_speakers(), and
         get_speaker_embedding().)")
         .def("list_speakers", &TalkerBase::list_speakers)
         .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"))
         .def("get_speech_config",
              &TalkerBase::get_speech_config,
              py::return_value_policy::copy,
-             "Return the talker's stored default OmniTalkerSpeechConfig.")
+             "Return the backend's stored default OmniTalkerSpeechConfig.")
         .def("set_speech_config",
              &TalkerBase::set_speech_config,
              py::arg("config"),
-             "Set the talker's stored default OmniTalkerSpeechConfig (validated).");
+             "Set the backend's stored default OmniTalkerSpeechConfig (validated).");
 
     py::class_<Talker, TalkerBase, std::shared_ptr<Talker>>(m, "Talker",
         R"(Default OmniPipeline talker for the Qwen3-Omni Talker + CodePredictor + Code2Wav stack.

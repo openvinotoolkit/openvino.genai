@@ -226,8 +226,8 @@ void Qwen3OmniSpeechPipeline::initialize(const std::filesystem::path& config_dir
     }
 
     // Load talker and CodePredictor generation parameters from generation_config.json.
-    // CP defaults (1.0 / 50 / 1.0) match the reference Qwen3-Omni implementation; json keys
-    // cp_temperature / cp_top_k / cp_repetition_penalty may override them if present.
+    // CP defaults (1.0 / 50) match the reference Qwen3-Omni implementation; json keys
+    // cp_temperature / cp_top_k may override them if present.
     auto gen_config_path = config_dir / "generation_config.json";
     if (std::filesystem::exists(gen_config_path)) {
         std::ifstream f(gen_config_path);
@@ -238,16 +238,12 @@ void Qwen3OmniSpeechPipeline::initialize(const std::filesystem::path& config_dir
         utils::read_json_param(gen_data, "talker_max_new_tokens", m_config.talker_max_new_tokens);
         utils::read_json_param(gen_data, "cp_temperature", m_config.cp_temperature);
         utils::read_json_param(gen_data, "cp_top_k", m_config.cp_top_k);
-        utils::read_json_param(gen_data, "cp_repetition_penalty", m_config.cp_repetition_penalty);
         GENAI_INFO("Speech: talker params: temp=%.2f, top_k=%zu, rep_penalty=%.2f, max_tokens=%zu",
                     m_config.talker_temperature,
                     m_config.talker_top_k,
                     m_config.talker_repetition_penalty,
                     m_config.talker_max_new_tokens);
-        GENAI_INFO("Speech: code_predictor params: temp=%.2f, top_k=%zu, rep_penalty=%.2f",
-                    m_config.cp_temperature,
-                    m_config.cp_top_k,
-                    m_config.cp_repetition_penalty);
+        GENAI_INFO("Speech: code_predictor params: temp=%.2f, top_k=%zu", m_config.cp_temperature, m_config.cp_top_k);
     }
 
     // Detect vocab_size from talker logits output and build suppress_tokens list
@@ -804,13 +800,6 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
         talker_speech_config.talker_repetition_penalty.value_or(m_config.talker_repetition_penalty);
     const float cp_temp = talker_speech_config.cp_temperature.value_or(m_config.cp_temperature);
     const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
-    if (talker_speech_config.cp_repetition_penalty) {
-        // The single-step CodePredictor graph samples in-graph (Gumbel-max) and exposes only
-        // step / seed / temperature / top_k, so a per-call repetition-penalty override has no
-        // effect. Warn once so users don't silently assume it took.
-        GENAI_WARN("Speech: cp_repetition_penalty override is ignored — the CodePredictor model "
-                   "samples in-graph and has no repetition-penalty input.");
-    }
 
     const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
