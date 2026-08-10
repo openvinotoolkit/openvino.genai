@@ -126,7 +126,6 @@ private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
     explicit Image2VideoPipeline(std::unique_ptr<Impl> impl);
-    friend class Text2VideoPipeline;
 };
 
 }  // namespace ov::genai

@@ -374,10 +374,12 @@ class LTXPipeline {
                         "Image2VideoPipeline requires a VAE encoder. "
                         "Ensure 'vae_encoder' exists in the model directory.");
 
+        // ov::Tensor copies share the underlying memory, so set_shape() here would promote the
+        // caller's rank-3 tensor in place. Wrap the same memory in a rank-4 view instead.
         ov::Tensor img = image;
-        if (img.get_shape().size() == 3) {
-            const auto s = img.get_shape();
-            img.set_shape({1, s[0], s[1], s[2]});
+        if (image.get_shape().size() == 3) {
+            const auto s = image.get_shape();
+            img = ov::Tensor(image.get_element_type(), ov::Shape{1, s[0], s[1], s[2]}, image.data());
         }
 
         const auto& img_shape = img.get_shape();

@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
     ov::genai::Image2VideoPipeline pipe(models_path, "${props.device || 'CPU'}");
     ov::Tensor video = pipe.generate(image, prompt).video;
 
-    imwrite_video("genai_video.avi", video);
+    save_video("genai_video.avi", video);
 }
 `}
 </CodeBlock>

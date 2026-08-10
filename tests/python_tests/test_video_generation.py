@@ -48,8 +48,6 @@ def video_generation_model() -> str:
             "openvino",
             "--model",
             MODEL_NAME,
-            "--task",
-            "image-to-video",
             "--trust-remote-code",
             str(temp_path),
         ]
@@ -99,13 +97,9 @@ class TestVideoGenerationConfig:
         assert config.height == 32
         assert config.width == 64
 
-    def test_config_validate_guidance_scale_with_negative_prompt(self):
+    def test_config_validate_guidance_scale_with_negative_prompt(self, video_generation_model):
         """guidance_scale <= 1 with negative_prompt is accepted (warning only)."""
-        pipe_path = get_ov_cache_converted_models_dir() / MODEL_ID / MODEL_NAME
-        if not pipe_path.exists():
-            pytest.skip("Model not available for validation test")
-
-        pipe = ov_genai.Text2VideoPipeline(str(pipe_path), "CPU")
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         config = ov_genai.VideoGenerationConfig()
         config.guidance_scale = 0.5
         config.negative_prompt = "bad quality"
@@ -552,7 +546,9 @@ class TestImage2VideoPipeline:
             pytest.skip("vae_encoder not present in test model")
 
     def _make_image(self, height=32, width=32):
-        return ov.Tensor(np.zeros([1, height, width, 3], dtype=np.uint8))
+        # Structured content: a uniform image makes conditioning-related assertions vacuous.
+        image_data = np.random.randint(0, 255, (1, height, width, 3), dtype=np.uint8)
+        return ov.Tensor(image_data)
 
     def test_constructor_without_encoder_raises(self, video_generation_model, tmp_path):
         no_encoder_dir = tmp_path / "no_encoder_model"

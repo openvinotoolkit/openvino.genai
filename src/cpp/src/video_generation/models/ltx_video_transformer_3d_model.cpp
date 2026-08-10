@@ -96,6 +96,19 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input(0).get_partial_shape();
     m_expected_batch_size = input_shape.is_static() ? input_shape[0].get_length() : 0;
+
+    bool timestep_found = false;
+    for (const auto& input : compiled_model.inputs()) {
+        if (input.get_any_name() == "timestep") {
+            m_timestep_partial_shape = input.get_partial_shape();
+            timestep_found = true;
+            break;
+        }
+    }
+    OPENVINO_ASSERT(timestep_found,
+                    "LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
+                    "The model may be corrupted or exported incorrectly.");
+
     // release the original model
     m_model.reset();
 
@@ -134,25 +147,8 @@ size_t LTXVideoTransformer3DModel::get_expected_batch_size() const {
     return m_expected_batch_size;
 }
 
-ov::PartialShape LTXVideoTransformer3DModel::get_timestep_partial_shape() {
-    if (m_model) {
-        for (auto&& input : m_model->inputs()) {
-            if (input.get_any_name() == "timestep") {
-                return input.get_partial_shape();
-            }
-        }
-    }
-    if (m_request) {
-        ov::CompiledModel compiled = m_request.get_compiled_model();
-        for (const auto& input : compiled.inputs()) {
-            if (input.get_any_name() == "timestep") {
-                return input.get_partial_shape();
-            }
-        }
-    }
-    OPENVINO_ASSERT(false,
-                    "LTXVideoTransformer3DModel: 'timestep' input not found in the model. "
-                    "The model may be corrupted or exported incorrectly.");
+const ov::PartialShape& LTXVideoTransformer3DModel::get_timestep_partial_shape() const {
+    return m_timestep_partial_shape;
 }
 
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,

@@ -32,10 +32,11 @@ optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --
 
 ### For Image-to-Video
 
-The image-to-video pipeline requires a VAE encoder in addition to the standard model files. Export with `--task image-to-video`:
+The image-to-video pipeline requires a VAE encoder in addition to the standard model files. This export currently requires optimum-intel from the `main` branch:
 
 ```sh
-optimum-cli export openvino --model Lightricks/LTX-Video --task image-to-video --weight-format fp32 ltx_video_ov_i2v/FP32
+pip install "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+optimum-cli export openvino --model Lightricks/LTX-Video --weight-format fp32 ltx_video_ov_i2v/FP32
 ```
 
 Alternatively, do it in Python code:
@@ -78,9 +79,9 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 ### Image to Video Sample (`image2video.cpp`)
 
 - **Description:**
-  Image-conditioned video generation using an image-to-video model. This sample demonstrates how to generate videos from a conditioning image and a text prompt using the OpenVINO GenAI Image2VideoPipeline. The generated video's first frame is anchored to the input image. The LTX-Video model exported with `--task image-to-video` is required.
+  Image-conditioned video generation using an image-to-video model. This sample demonstrates how to generate videos from a conditioning image and a text prompt using the OpenVINO GenAI Image2VideoPipeline. The generated video's first frame is anchored to the input image. Requires an LTX-Video model exported with optimum-intel from the `main` branch.
 
-  Recommended models: Lightricks/LTX-Video (exported with `--task image-to-video`)
+  Recommended models: Lightricks/LTX-Video (exported with optimum-intel from the `main` branch)
 
 - **Main Feature:** Generate videos that continue naturally from an input image, guided by a text prompt.
 

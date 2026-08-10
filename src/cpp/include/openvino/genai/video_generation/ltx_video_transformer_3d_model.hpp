@@ -56,7 +56,10 @@ public:
     LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
 
     size_t get_expected_batch_size() const;
-    ov::PartialShape get_timestep_partial_shape();
+
+    /// @brief Shape of the model's 'timestep' input, cached at compile time.
+    /// Rank-1 [B] for legacy exports, rank-2 [B, S] for per-token conditioning.
+    const ov::PartialShape& get_timestep_partial_shape() const;
 
 private:
     class Inference;
@@ -67,6 +70,7 @@ private:
     std::string m_lora_prefix;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
+    ov::PartialShape m_timestep_partial_shape;
     size_t m_expected_batch_size = 0;
     int64_t m_spatial_compression_ratio, m_temporal_compression_ratio; // calculated based on vae config, needed for reshape
 
