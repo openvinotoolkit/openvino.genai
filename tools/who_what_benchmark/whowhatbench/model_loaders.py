@@ -228,15 +228,30 @@ _MINJA_MULTILINE_STRING_CONCAT_RE = re.compile(r'"[ \t]*\r?\n[ \t]*"')
 
 
 def _patch_minja_incompatible_chat_template(pipeline):
-    """Normalize a pipeline's chat template in place if it uses minja-incompatible syntax."""
-    tokenizer = pipeline.get_tokenizer()
-    chat_template = tokenizer.get_chat_template()
+    """Normalize a pipeline's chat template in place if it uses minja-incompatible syntax.
+
+    Best-effort: some pipeline/backend/device combinations may not expose a usable tokenizer or
+    chat template (e.g. get_tokenizer()/get_chat_template()/set_chat_template() unavailable or
+    failing for a given pipeline configuration), so any failure here is logged and ignored rather
+    than aborting model loading.
+    """
+    try:
+        tokenizer = pipeline.get_tokenizer()
+        chat_template = tokenizer.get_chat_template()
+    except Exception as exc:
+        logger.warning(f"Could not read chat template to check for minja-incompatible syntax: {exc}")
+        return
     if not chat_template:
         return
     patched_chat_template = _MINJA_MULTILINE_STRING_CONCAT_RE.sub("", chat_template)
-    if patched_chat_template != chat_template:
-        logger.info("Patched chat template to remove minja-incompatible multiline string concatenation")
+    if patched_chat_template == chat_template:
+        return
+    try:
         tokenizer.set_chat_template(patched_chat_template)
+    except Exception as exc:
+        logger.warning(f"Could not patch minja-incompatible chat template: {exc}")
+        return
+    logger.info("Patched chat template to remove minja-incompatible multiline string concatenation")
 
 
 def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):

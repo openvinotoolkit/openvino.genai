@@ -224,3 +224,49 @@ def test_empty_chat_template_is_left_untouched(monkeypatch):
     )
 
     assert fake_openvino_genai.llm_calls[0].tokenizer.get_chat_template() == ""
+
+
+def test_patch_minja_chat_template_swallows_get_tokenizer_errors():
+    """If pipeline.get_tokenizer() itself fails (e.g. unsupported for a backend/device), the
+    patch must be skipped silently instead of aborting model loading."""
+    from whowhatbench import model_loaders
+
+    class PipelineWithoutTokenizer:
+        def get_tokenizer(self):
+            raise RuntimeError("get_tokenizer() not supported for this pipeline")
+
+    model_loaders._patch_minja_incompatible_chat_template(PipelineWithoutTokenizer())
+
+
+def test_patch_minja_chat_template_swallows_get_chat_template_errors():
+    """If tokenizer.get_chat_template() fails, the patch must be skipped silently."""
+    from whowhatbench import model_loaders
+
+    class RaisingTokenizer:
+        def get_chat_template(self):
+            raise RuntimeError("no chat template available")
+
+    class PipelineWithTokenizer:
+        def get_tokenizer(self):
+            return RaisingTokenizer()
+
+    model_loaders._patch_minja_incompatible_chat_template(PipelineWithTokenizer())
+
+
+def test_patch_minja_chat_template_swallows_set_chat_template_errors():
+    """If tokenizer.set_chat_template() fails after a successful patch, the error must be
+    swallowed rather than propagated."""
+    from whowhatbench import model_loaders
+
+    class TokenizerRaisingOnSet:
+        def get_chat_template(self):
+            return '{{ raise_exception("first "\n"second") }}'
+
+        def set_chat_template(self, chat_template):
+            raise RuntimeError("cannot set chat template")
+
+    class PipelineWithTokenizer:
+        def get_tokenizer(self):
+            return TokenizerRaisingOnSet()
+
+    model_loaders._patch_minja_incompatible_chat_template(PipelineWithTokenizer())
