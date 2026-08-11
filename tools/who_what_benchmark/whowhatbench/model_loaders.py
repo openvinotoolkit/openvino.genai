@@ -88,6 +88,37 @@ def _create_genai_adapter_config(adapters=None, alphas=None, *, none_if_empty=Fa
     return adapter_config
 
 
+def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
+    draft_model_path = kwargs.get("draft_model", "")
+    if not draft_model_path:
+        return
+
+    main_device = device.upper()
+    draft_device = (kwargs.get("draft_device") or device).upper()
+
+    if (main_device == "NPU" or draft_device == "NPU") and model_type in (
+        "visual-text",
+        "visual-video-text",
+        "visual-text-chat",
+    ):
+        raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
+
+    if not Path(draft_model_path).exists():
+        raise RuntimeError(f"Draft model path does not exist: {draft_model_path}")
+
+    import openvino_genai
+
+    draft_cb_config = kwargs.get("draft_cb_config")
+    draft_model_load_kwargs = (
+        {"scheduler_config": get_scheduler_config_genai(draft_cb_config)} if draft_cb_config is not None else {}
+    )
+    ov_config["draft_model"] = openvino_genai.draft_model(
+        draft_model_path,
+        draft_device,
+        **draft_model_load_kwargs,
+    )
+
+
 class GenAIModelWrapper:
     """
     A helper class to store additional attributes for GenAI models
@@ -181,16 +212,8 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         alphas=kwargs.get("alphas", None),
     )
 
-    draft_model_path = kwargs.get("draft_model", '')
-    if draft_model_path:
-        if not Path(draft_model_path).exists():
-            raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
-        draft_device = kwargs.get("draft_device", None) or device
-        draft_model_load_kwargs = (
-            {"scheduler_config": get_scheduler_config_genai(kwargs["draft_cb_config"])}
-            if kwargs["draft_cb_config"] is not None else {}
-        )
-        ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+    ov_config = {} if ov_config is None else ov_config
+    _add_genai_draft_model_config(ov_config, device, "text", **kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
@@ -223,22 +246,25 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
 def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **kwargs):
     import transformers
 
-    model_cls_name = OMNI_MODEL_TYPES.get(getattr(config, "model_type", None))
+    model_type = getattr(config, "model_type", None)
+    model_cls_name = OMNI_MODEL_TYPES.get(model_type)
     if model_cls_name is None:
         raise ValueError(
-            f"Unsupported Qwen3-Omni model_type='{getattr(config, 'model_type', None)}'. "
-            f"Supported types: {', '.join(sorted(OMNI_MODEL_TYPES))}."
+            f"Unsupported Qwen3-Omni model_type='{model_type}'. Supported types: {', '.join(sorted(OMNI_MODEL_TYPES))}."
         )
     model_cls = getattr(transformers, model_cls_name, None)
     if model_cls is None:
         raise ValueError(
-            f"Qwen3-Omni model_type='{config.model_type}' requires '{model_cls_name}' to be available in transformers. "
+            f"Qwen3-Omni model_type='{model_type}' requires '{model_cls_name}' to be available in transformers. "
             "Please upgrade transformers to a version that provides this class."
         )
-    if device.lower() == "gpu":
-        device = "cuda"
-    device_map = "cpu" if not torch.cuda.is_available() or device.lower() == "cpu" else device.lower()
-    model = model_cls.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map=device_map)
+
+    model = model_cls.from_pretrained(
+        model_id,
+        trust_remote_code=trust_remote_code,
+        device_map=device.lower(),
+        dtype="auto",
+    )
 
     if kwargs.get("adapters") is not None:
         model = apply_peft_adapters(model, kwargs["adapters"], kwargs.get("alphas", None))
@@ -447,6 +473,12 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         alphas=kwargs.get("alphas", None),
         none_if_empty=True,
     )
+
+    ov_config = {} if ov_config is None else ov_config
+    model_type = kwargs.get("model_type", "visual-text")
+    draft_model_kwargs = dict(kwargs)
+    draft_model_kwargs.pop("model_type", None)
+    _add_genai_draft_model_config(ov_config, device, model_type, **draft_model_kwargs)
 
     pipeline_kwargs = {
         "device": device,
@@ -908,6 +940,22 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
 def load_speech_generation_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     import openvino_genai
 
+    try:
+        config = AutoConfig.from_pretrained(model_dir, trust_remote_code=False)
+    except Exception:
+        try:
+            config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
+        except Exception:
+            config = None
+
+    if getattr(config, "model_type", None) in OMNI_MODEL_TYPES:
+        from .speech_generation_evaluator import GenAIOmniSpeechWrapper
+
+        return GenAIOmniSpeechWrapper(
+            openvino_genai.OmniPipeline(model_dir, device, **(ov_config or {})),
+            model_dir,
+        )
+
     return GenAIModelWrapper(
         openvino_genai.Text2SpeechPipeline(model_dir, device=device, **(ov_config or {})),
         model_dir,
@@ -1088,6 +1136,16 @@ def _is_kokoro_model_id(model_id):
     return "kokoro" in model_id.lower()
 
 
+def _wrap_qwen3_omni(model, model_id, remote_code):
+    from transformers import AutoProcessor
+    from .speech_generation_evaluator import Qwen3OmniSpeechWrapper
+
+    if not getattr(model, "has_talker", False):
+        raise ValueError(f"Model {model_id} does not expose a talker module required for speech generation.")
+    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=remote_code)
+    return Qwen3OmniSpeechWrapper(model, processor)
+
+
 def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     from .speech_generation_evaluator import KokoroModelWrapper, SpeechT5Wrapper
 
@@ -1114,10 +1172,14 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
             logger.info("Using Kokoro HF API")
             return KokoroModelWrapper(model_id)
 
+        remote_code, model_config = _resolve_remote_code_and_config(model_id)
         logger.info("Using HF Transformers API")
+        if getattr(model_config, "model_type", None) in OMNI_MODEL_TYPES:
+            model = load_omni_hf_pipeline(model_id, device, model_config, remote_code, **kwargs)
+            return _wrap_qwen3_omni(model, model_id, remote_code)
+
         from transformers import SpeechT5ForTextToSpeech
 
-        remote_code, _ = _resolve_remote_code_and_config(model_id)
         model = SpeechT5ForTextToSpeech.from_pretrained(model_id, trust_remote_code=remote_code)
         processor = _load_speecht5_processor(model_id, remote_code)
 
@@ -1156,6 +1218,23 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
 
     remote_code, model_config = _resolve_remote_code_and_config(model_id)
 
+    if getattr(model_config, "model_type", None) in OMNI_MODEL_TYPES:
+        from optimum.intel.openvino import OVModelForMultimodalLM
+
+        try:
+            model = OVModelForMultimodalLM.from_pretrained(model_id, device=device, ov_config=ov_config, **kwargs)
+        except ValueError:
+            model = OVModelForMultimodalLM.from_pretrained(
+                model_id,
+                config=model_config,
+                trust_remote_code=remote_code,
+                use_cache=True,
+                device=device,
+                ov_config=ov_config,
+                **kwargs,
+            )
+        return _wrap_qwen3_omni(model, model_id, remote_code)
+
     from_pretrained_kwargs = {
         "device": device,
         "ov_config": ov_config,
@@ -1167,10 +1246,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
         # Pass vocoder so that SpeechT5 export can consume it.
         from_pretrained_kwargs["vocoder"] = vocoder_path
 
-    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(
-        model_id,
-        **from_pretrained_kwargs,
-    )
+    model = OVModelForTextToSpeechSeq2Seq.from_pretrained(model_id, **from_pretrained_kwargs)
     processor = _load_speecht5_processor(model_id, remote_code)
 
     # For Optimum, we don't need to load vocoder as it should pick up openvino_vocoder IR by default.
