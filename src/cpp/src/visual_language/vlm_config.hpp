@@ -32,6 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    DEEPSEEK_VL_V2,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -116,6 +117,9 @@ public:
 
     /// @brief Hidden size of Gemma4 per-layer embedding input used during inference.
     size_t hidden_size_per_layer_input = 0;
+
+    /// @brief Learnable separator appended after DeepSeek-OCR-2 image features.
+    std::vector<float> view_separator;
 
     /// @brief Selects bidirectional attention scope for Gemma4 (e.g. "vision" enables
     /// bidirectional masking for image tokens which requires `token_type_ids` as an LM input).

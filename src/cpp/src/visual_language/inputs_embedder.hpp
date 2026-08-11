@@ -396,6 +396,7 @@ private:
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
+    friend class InputsEmbedderDeepseekVLV2;
     friend class InputsEmbedderVideoChatFlashQwen;
 };
 
