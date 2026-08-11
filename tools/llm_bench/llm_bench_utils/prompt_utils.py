@@ -136,7 +136,7 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
         if input_data.get("audio") is not None:
             func_load_audio = load_audio_genai if genai_flag else load_audio_optimum
             audios.append(func_load_audio(str(input_data["audio"])))
-        prompts.append(input_data["prompt"])
+        prompts.append(input_data.get("prompt", ""))
     return prompts, images, videos, audios
 
 
@@ -155,6 +155,21 @@ def get_vlm_prompt(args):
     else:
         vlm_file_list.append(output_data_list)
     return vlm_file_list
+
+
+def get_text_embed_prompt(args):
+    output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
+    if not is_json_data:
+        return [output_data_list[0]]
+
+    result = []
+    for vlm_file in parse_vlm_json_data(output_data_list, optional_prompt=True):
+        if args["prompt_file"] and "media" in vlm_file:
+            vlm_file["media"] = resolve_media_file_path(vlm_file.get("media"), args["prompt_file"][0])
+        if args["prompt_file"] and "video" in vlm_file:
+            vlm_file["video"] = resolve_media_file_path(vlm_file.get("video"), args["prompt_file"][0])
+        result.append(vlm_file)
+    return result
 
 
 def get_image_prompt(args):

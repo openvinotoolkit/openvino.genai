@@ -162,8 +162,8 @@ ASR models can automatically detect the language of the input audio, or you can 
         result = pipe.generate(raw_speech)
         print(result.languages[0])  # e.g. "en", "fr", "de"
 
-        # Explicitly specify language (English). Use "English" for Qwen3-ASR models.
-        result = pipe.generate(raw_speech, language="<|en|>")
+        # Explicitly specify language. In the form of `en`, `<|en|>` for Whisper and `English` for Qwen3-ASR
+        result = pipe.generate(raw_speech, language="en")
         print(result.languages[0])  # "en"
 
         # French speech sample
@@ -181,7 +181,7 @@ ASR models can automatically detect the language of the input audio, or you can 
             auto result = pipe.generate(raw_speech);
             std::cout << result.languages[0] << "\n";  // e.g. "en", "fr", "de"
 
-            // Explicitly specify language (English). Use "English" for Qwen3-ASR models.
+            // Explicitly specify language. In the form of `en`, `<|en|>` for Whisper and `English` for Qwen3-ASR
             result = pipe.generate(raw_speech, ov::genai::language("<|en|>"));
             std::cout << result.languages[0] << "\n";  // "en"
 
