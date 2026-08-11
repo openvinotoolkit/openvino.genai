@@ -208,6 +208,12 @@ public:
             if (m_config.max_length && npu_properties.count("MAX_PROMPT_LEN") == 0) {
                 npu_properties["MAX_PROMPT_LEN"] = static_cast<int>(*m_config.max_length);
             }
+            // Tag the model for batched single-shot scoring. NPUW wraps the request in
+            // its batched element, which unrolls a [N, L] batch over the batch-1 model
+            // (KV-cache reset between rows) and stacks the scores back into [N, ...],
+            // so the scoring code below stays device-agnostic. The tag survives blob
+            // export/import together with the rest of the model config.
+            npu_properties["NPUW_TEXT_RERANK"] = "YES";
             compiled_model = utils::compile_decoder_for_npu(model, npu_properties, utils::get_kv_axes_pos(model)).first;
         } else {
             compiled_model = core.compile_model(model, device, properties);
