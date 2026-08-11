@@ -9,6 +9,7 @@
 #include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "update_request_structs.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
@@ -71,6 +72,16 @@ public:
                         name,
                         "'");
         return compiled_model.get_property(name);
+    }
+
+    // Returns the actual runtime element type of the compiled model's KV cache inputs.
+    // Plugins may select a KV cache precision that differs from the ov::hint::kv_cache_precision
+    // property value (for example, CPU promotes the cache to bf16 based on the resolved inference
+    // precision regardless of the configured hint), so the precision must be read from the
+    // compiled model's key_cache input port to match the tensors actually bound by the scheduler.
+    ov::element::Type get_kv_cache_element_type() {
+        OPENVINO_ASSERT(m_model_runner, "get_kv_cache_element_type() called before model runner is initialized");
+        return utils::get_compiled_kv_cache_precision(m_model_runner->get_infer_request().get_compiled_model());
     }
 
 protected:
