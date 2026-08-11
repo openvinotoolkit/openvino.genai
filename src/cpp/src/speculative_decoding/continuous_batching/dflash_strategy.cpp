@@ -578,6 +578,11 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         m_sd_metrics.update_generated_len(num_generated_tokens);
     }
 
+    if (main_generated_requests.empty() && utils::env_setup_for_print_debug_info()) {
+        m_sd_metrics.print(true);
+        m_sd_metrics.clean_up();
+    }
+
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_main(
@@ -653,7 +658,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
-    m_sd_metrics.clean_up();
     m_request_states.clear();
     auto start_time = std::chrono::steady_clock::now();
 
