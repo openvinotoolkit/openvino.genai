@@ -865,7 +865,7 @@ def genai_gen_speech(
     ref_text="",
 ):
     from whowhatbench.speech_generation_evaluator import GenAIOmniSpeechWrapper
-    
+
     if isinstance(model, GenAIOmniSpeechWrapper):
         # Omni takes a named voice — skip voice-pack .bin lookup and ov.Tensor coercion.
         result = model.generate(prompt, speaker_embedding, language=language, voice=voice)
