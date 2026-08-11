@@ -20,6 +20,7 @@
 #include <openvino/op/subtract.hpp>
 #include <openvino/op/read_value.hpp>
 #include <openvino/op/assign.hpp>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -231,8 +232,10 @@ static std::shared_ptr<ov::Model> make_minimal_model(
     else
         combine_node = truncate[0].get_node_shared_ptr();
     auto model = std::make_shared<ov::Model>(OutputVector{combine_node}, ParameterVector{parameter_1});
+
     if (truncation_read_value) {
         model->add_sinks({std::make_shared<v6::Assign>(truncation_read_value, truncation_variable)});
+        model->add_variables({truncation_variable});
     }
     return model;
 }
