@@ -281,6 +281,7 @@ class Qwen3CustomVoiceWrapper:
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
         kwargs.setdefault("do_sample", False)
         kwargs.setdefault("subtalker_dosample", False)
+        kwargs.setdefault("repetition_penalty", 1.2)
 
         if os.getenv("WWB_QWEN3_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
             LOGGER.info(
@@ -369,6 +370,7 @@ class Qwen3VoiceDesignWrapper:
         # Keep WWB speech comparisons deterministic for Qwen3 unless explicitly overridden.
         kwargs.setdefault("do_sample", False)
         kwargs.setdefault("subtalker_dosample", False)
+        kwargs.setdefault("repetition_penalty", 1.2)
 
         if os.getenv("WWB_QWEN3_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
             LOGGER.info(
@@ -459,9 +461,8 @@ class Qwen3BaseWrapper:
         # GenAI currently defaults non_streaming_mode to True, whereas HF seems to default
         # it to False. So, force them both to True for now...
         kwargs.setdefault("non_streaming_mode", True)
-        # Qwen3 Base currently behaves better in WWB with a slightly stronger
-        # repetition penalty, regardless of the backend-specific default merge.
-        kwargs["repetition_penalty"] = 1.2
+        # Qwen3 Base currently behaves better in WWB with a slightly stronger repetition penalty.
+        kwargs.setdefault("repetition_penalty", 1.2)
 
         if hasattr(self.model, "generate_voice_clone"):
             if not selected_ref_text:
@@ -510,7 +511,6 @@ class Qwen3BaseWrapper:
         generation_properties["voice_clone_ref_audio"] = ov.Tensor(audio_array.reshape(-1))
 
         generation_properties.update(kwargs)
-        generation_properties["repetition_penalty"] = 1.2
 
         result = self.model.generate(prompt, **generation_properties)
 
@@ -730,11 +730,6 @@ class SpeechGenerationEvaluator(BaseEvaluator):
             if effective_max_new_tokens is not None:
                 generation_kwargs["max_new_tokens"] = effective_max_new_tokens
 
-            # default repetition_penalty to 1.2
-            # The default for Qwen3 TTS models is typically 1.05, but with do_sample/subtalker_do_sample
-            # set to False, a higher repetition_penalty helps prevent repetitive outputs,
-            # long periods of silence, etc.
-            generation_kwargs["repetition_penalty"] = 1.2
             result = model.generate(
                 prompt,
                 speaker_embedding,
