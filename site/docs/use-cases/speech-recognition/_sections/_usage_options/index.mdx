@@ -6,7 +6,7 @@ import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/automatic_speech_recognition), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/automatic_speech_recognition), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/whisper_speech_recognition) speech recognition samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/automatic_speech_recognition), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/automatic_speech_recognition), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/automatic_speech_recognition) speech recognition samples.
 :::
 
 ### Use Different Generation Parameters
@@ -57,9 +57,9 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
       </TabItemCpp>
       <TabItemJS>
           ```javascript
-          import { WhisperPipeline } from 'openvino-genai-node';
+          import { ASRPipeline } from 'openvino-genai-node';
 
-          const pipeline = await WhisperPipeline(modelPath, "CPU");
+          const pipeline = await ASRPipeline(modelPath, "CPU");
 
           // Get default configuration
           const config = pipeline.getGenerationConfig();
@@ -123,7 +123,7 @@ Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master
       </TabItemCpp>
       <TabItemJS>
           ```javascript
-          const pipeline = await WhisperPipeline(modelPath, "CPU");
+          const pipeline = await ASRPipeline(modelPath, "CPU");
 
           // Get default generation config
           const config = pipeline.getGenerationConfig();
@@ -194,7 +194,7 @@ ASR models can automatically detect the language of the input audio, or you can 
     </TabItemCpp>
     <TabItemJS>
         ```javascript
-        const pipeline = await WhisperPipeline(modelPath, "CPU");
+        const pipeline = await ASRPipeline(modelPath, "CPU");
 
         // Automatic language detection
         let result = await pipeline.generate(rawSpeech);
@@ -244,7 +244,7 @@ To translate non-English speech to English, use the `translate` task:
     </TabItemCpp>
     <TabItemJS>
         ```javascript
-        const pipeline = await WhisperPipeline(modelPath, "CPU");
+        const pipeline = await ASRPipeline(modelPath, "CPU");
 
         // Translate French audio to English
         const generationConfig = { task: "translate" };
@@ -288,14 +288,14 @@ Whisper can predict timestamps for each segment of speech, which is useful for s
     </TabItemCpp>
     <TabItemJS>
         ```javascript
-        const pipeline = await WhisperPipeline(modelPath, "CPU");
+        const pipeline = await ASRPipeline(modelPath, "CPU");
 
         // Enable timestamp prediction
         const generationConfig = { return_timestamps: true, language: "<|en|>", task: "transcribe" };
         const result = await pipeline.generate(rawSpeech, { generationConfig });
 
         // Print timestamps and text segments
-        for (const chunk of result.chunks ?? []) {
+        for (const chunk of result.chunks?.[0] ?? []) {
           console.log(`timestamps: [${chunk.startTs.toFixed(2)}, ${chunk.endTs.toFixed(2)}] text: ${chunk.text}`);
         }
         ```
@@ -343,15 +343,15 @@ Whisper can predict timestamps for each word of speech, which provides more gran
         ```javascript
         // Word timestamps require decomposition of cross-attention decoder SDPA layers,
         // so word_timestamps must be passed to the pipeline constructor (not just in generation config)
-        const pipeline = await WhisperPipeline(modelPath, "CPU", { word_timestamps: true });
+        const pipeline = await ASRPipeline(modelPath, "CPU", { word_timestamps: true });
 
         // Enable word-level timestamp prediction
         const generationConfig = { return_timestamps: true, word_timestamps: true, language: "<|en|>", task: "transcribe" };
         const result = await pipeline.generate(rawSpeech, { generationConfig });
 
         // Print word-level timestamps
-        for (const w of result.words ?? []) {
-          console.log(`[${w.startTs.toFixed(2)}, ${w.endTs.toFixed(2)}]: ${w.word}`);
+        for (const w of result.words?.[0] ?? []) {
+          console.log(`[${w.startTs.toFixed(2)}, ${w.endTs.toFixed(2)}]: ${w.text}`);
         }
         ```
     </TabItemJS>
@@ -406,7 +406,7 @@ Such prompts can be used to steer the model to use particular spellings or style
     </TabItemCpp>
     <TabItemJS>
         ```javascript
-        const pipeline = await WhisperPipeline(modelPath, "CPU");
+        const pipeline = await ASRPipeline(modelPath, "CPU");
 
         let result = await pipeline.generate(rawSpeech);
         // He has gone and gone for good answered Paul Icrom who...
