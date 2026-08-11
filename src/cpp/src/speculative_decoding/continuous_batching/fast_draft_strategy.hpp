@@ -17,9 +17,7 @@ struct GenerateStrategy {
     std::function<void(size_t,
                        const ov::Tensor& in_ids,
                        GenerationConfig& main_cfg,
-                       GenerationConfig& draft_cfg,
-                       ov::Tensor& main_in,
-                       ov::Tensor& draft_in)> prepare_request;
+                       ov::Tensor& main_in)> prepare_request;
     std::function<void(const std::shared_ptr<ThreadedStreamerWrapper>&,
                        const std::vector<ov::Tensor>&,
                        const std::vector<GenerationConfig>&)> check_streaming;
@@ -68,11 +66,8 @@ std::vector<EncodedGenerationResult> generate_common(
     std::vector<GenerationHandle> main_generations;
     for (size_t rid = 0; rid < input_ids.size(); ++rid) {
         GenerationConfig main_cfg = sampling_params[rid];
-        GenerationConfig draft_cfg = main_cfg;
-        ov::Tensor main_in, draft_in;
-        strategy.prepare_request(rid, input_ids[rid],
-                                main_cfg, draft_cfg,
-                                main_in, draft_in);
+        ov::Tensor main_in;
+        strategy.prepare_request(rid, input_ids[rid], main_cfg, main_in);
 
         const bool has_valid_token_type_ids = token_type_ids.has_value() && rid < token_type_ids->size();
         const bool has_valid_prompt_ids = prompt_ids.has_value() && rid < prompt_ids->size();

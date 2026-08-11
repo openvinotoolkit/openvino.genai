@@ -78,6 +78,8 @@ protected:
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
+    virtual std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
+        const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs) const;
 public:
     GenerationConfig get_config() const;
     void set_config(const GenerationConfig& config);
