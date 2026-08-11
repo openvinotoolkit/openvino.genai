@@ -1018,11 +1018,8 @@ public:
     }
 
     void notify_handle() {
-        if (out_of_memory()) {
+        if (out_of_memory())
             set_generation_status(GenerationStatus::IGNORED);
-        } else if (has_finished()) {
-            set_generation_status(GenerationStatus::FINISHED);
-        }
         // For beam search streaming is not available, so we notify only upon finishing
         if (m_sampling_params.is_beam_search()) {
             if (has_finished()) {
@@ -1060,10 +1057,32 @@ public:
     }
 
 
+    // Push the final output for a finished group; must be called after set_perf_metrics() to close the metrics race.
+    void notify_handle_final() {
+        OPENVINO_ASSERT(has_finished());
+        set_generation_status(GenerationStatus::FINISHED);
+        if (m_sampling_params.is_beam_search()) {
+            push_outputs();
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
+            if (num_total_seqs() == 1) {
+                const auto generated_len = m_sequences.front()->get_generated_len();
+                if (generated_len <= m_num_streamed_tokens) {
+                    push_finished_hidden_states();
+                    return;
+                }
+                const size_t num_to_push = generated_len - m_num_streamed_tokens;
+                push_partial_outputs(num_to_push);
+                m_num_streamed_tokens += num_to_push;
+            } else {
+                push_outputs();
+            }
+        }
+    }
+
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
-        // This method is called after scheduling and before sampling,
-        // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
+        // Called after metrics are updated; m_num_processed_tokens does not yet include
+        // recently forwarded tokens, so it is our starting position.
         // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
         size_t first_token_position = m_num_processed_tokens;
         size_t last_token_position = get_context_len();
