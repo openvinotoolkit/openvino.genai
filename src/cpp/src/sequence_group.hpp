@@ -1061,22 +1061,7 @@ public:
     void notify_handle_final() {
         OPENVINO_ASSERT(has_finished());
         set_generation_status(GenerationStatus::FINISHED);
-        if (m_sampling_params.is_beam_search()) {
-            push_outputs();
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
-            if (num_total_seqs() == 1) {
-                const auto generated_len = m_sequences.front()->get_generated_len();
-                if (generated_len <= m_num_streamed_tokens) {
-                    push_finished_hidden_states();
-                    return;
-                }
-                const size_t num_to_push = generated_len - m_num_streamed_tokens;
-                push_partial_outputs(num_to_push);
-                m_num_streamed_tokens += num_to_push;
-            } else {
-                push_outputs();
-            }
-        }
+        notify_handle();
     }
 
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
