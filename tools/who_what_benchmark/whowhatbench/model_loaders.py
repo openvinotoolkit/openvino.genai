@@ -207,7 +207,7 @@ def _patch_minja_incompatible_chat_template(pipeline):
     """Best-effort: normalize a pipeline's chat template in place if minja-incompatible."""
     try:
         tokenizer = pipeline.get_tokenizer()
-        chat_template = tokenizer.get_chat_template()
+        chat_template = tokenizer.chat_template
     except Exception as exc:
         logger.warning(f"Could not read chat template to check for minja-incompatible syntax: {exc}")
         return
