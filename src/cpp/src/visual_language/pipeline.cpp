@@ -183,6 +183,9 @@ private:
 
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+        if (m_adapter_controller) {
+            m_adapter_controller->prepare(m_language);
+        }
 
         // Reinsert device_properties so InputsEmbedder sub-models can resolve
         // per-role and per-device overrides via utils::get_model_properties(...).
@@ -234,6 +237,9 @@ private:
         m_language = utils::singleton_core().compile_model(
             language_model, device, lm_properties).create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
+        if (m_adapter_controller) {
+            m_adapter_controller->prepare(m_language);
+        }
         finalize_initialization(language_model, kv_pos);
     }
 public:
