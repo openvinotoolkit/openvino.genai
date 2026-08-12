@@ -91,6 +91,14 @@ inline ov::Tensor flux2_prepare_image_ids(const size_t batch_size, const std::ve
     return image_ids;
 }
 
+inline void flux2_apply_npuw_defaults(ov::AnyMap& config) {
+    ov::genai::utils::set_config_default(config, "NPU_USE_NPUW", std::string("YES"));
+    if (!ov::genai::utils::is_npuw_enabled(config)) {
+        return;
+    }
+    ov::genai::utils::set_config_default(config, "NPUW_FLUX2", std::string("YES"));
+}
+
 }  // anonymous namespace
 
 namespace ov {
@@ -251,9 +259,26 @@ public:
                  const ov::AnyMap& properties) override {
         update_adapters_from_properties(properties, m_generation_config.adapters);
         auto updated_properties = update_adapters_in_properties(properties, &Flux2KleinPipeline::derived_adapters);
-        m_text_encoder->compile(text_encode_device, *updated_properties);
-        m_vae->compile(vae_device, *updated_properties);
-        m_transformer->compile(denoise_device, *updated_properties);
+
+        const ov::AnyMap& base_props = *updated_properties;
+        std::optional<ov::AnyMap> npu_props;
+
+        const auto get_compile_props = [&](const std::string& device) -> const ov::AnyMap& {
+            if (device != "NPU") {
+                return base_props;
+            }
+
+            if (!npu_props.has_value()) {
+                npu_props = base_props;
+                flux2_apply_npuw_defaults(*npu_props);
+            }
+
+            return *npu_props;
+        };
+
+        m_text_encoder->compile(text_encode_device, get_compile_props(text_encode_device));
+        m_vae->compile(vae_device, get_compile_props(vae_device));
+        m_transformer->compile(denoise_device, get_compile_props(denoise_device));
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
