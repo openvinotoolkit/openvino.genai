@@ -26,7 +26,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-OPTIMUM_INTEL_MASTER = "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
+# archive instead of git+, the git clone fails in the samples CI container
+OPTIMUM_INTEL_MASTER = "https://github.com/huggingface/optimum-intel/archive/refs/heads/main.tar.gz#egg=optimum-intel"
 
 
 def _install_package(package: str) -> None:
