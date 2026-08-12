@@ -1,0 +1,61 @@
+name: Cleanup stale dependabot branches
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only log branches that would be deleted, do not delete them'
+        type: boolean
+        required: false
+        default: true
+  schedule:
+    # at 06:00 UTC every Monday
+    - cron: '0 6 * * 1'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+permissions: read-all
+
+jobs:
+  Cleanup_Dependabot_Branches:
+    name: Cleanup stale dependabot branches
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
+    permissions:
+      # The fine-grained PAT below carries the branch and pull request privileges.
+      contents: read
+    steps:
+      - name: Checkout cleanup script
+        uses: ababushk/checkout@dd591a6a2ac25618db4eda86e7e0d938f88cf01b # cherry_pick_retries
+        timeout-minutes: 15
+        with:
+          sparse-checkout: '.github/scripts/dependabot_cleanup'
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install deps
+        working-directory: ${{ github.workspace }}/.github/scripts/dependabot_cleanup
+        run: |
+          python -m pip install -r requirements.txt
+
+      - name: Cleanup stale dependabot branches
+        env:
+          # The default GITHUB_TOKEN cannot be granted a ruleset bypass, and the
+          # "dependabot" ruleset restricts deletion of dependabot/* branches.
+          # This is a fine-grained PAT scoped to this repository with
+          # contents:write and pull-requests:read, belonging to an account
+          # that is a repository admin, a role the ruleset bypass list covers.
+          GITHUB_TOKEN: ${{ secrets.DEPENDABOT_CLEANUP_TOKEN }}
+          # Real deletions happen only on the weekly schedule, or on a manual run
+          # where the dry_run checkbox was explicitly unchecked. Every other case
+          # (manual run with the box checked, or any other trigger) stays a dry run.
+          # The "<cond> && 'false' || 'true'" shape is safe because both sides are
+          # non-empty strings, so it never falls through to the wrong value.
+          DRY_RUN: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) && 'false' || 'true' }}
+        run: |
+          python3 ${{ github.workspace }}/.github/scripts/dependabot_cleanup/cleanup_dependabot_branches.py \
+            --repository-name ${GITHUB_REPOSITORY}
