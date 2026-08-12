@@ -86,7 +86,7 @@ std::pair<std::vector<clip_image_u8>, std::pair<int, int>> dynamic_preprocess(co
     const int blocks = target_aspect_ratio.first * target_aspect_ratio.second;
 
     clip_image_u8 resized_img;
-    bilinear_resize(image, resized_img, target_width, target_height);
+    bicubic_resize(image, resized_img, target_width, target_height);
 
     std::vector<clip_image_u8> processed_images;
     processed_images.reserve(blocks);
@@ -152,7 +152,7 @@ clip_image_u8 resize_and_pad_image_pil_contain(const clip_image_u8& image,
     const int new_height = std::max(1, static_cast<int>(std::lround(static_cast<float>(image.ny) * scale)));
 
     clip_image_u8 resized_image;
-    bilinear_resize(image, resized_image, new_width, new_height);
+    bicubic_resize(image, resized_image, new_width, new_height);
 
     clip_image_u8 padded_image;
     padded_image.nx = target_width;
@@ -405,7 +405,14 @@ ov::Tensor InputsEmbedderDeepseekVLV2::apply_chat_template_tokenize(const std::s
 NormalizedPrompt InputsEmbedderDeepseekVLV2::normalize_prompt(const std::string& prompt,
                                                               size_t base_id,
                                                               const std::vector<EncodedImage>& images) const {
-    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
+    std::string prompt_with_tag = prompt;
+    if (!images.empty() &&
+        prompt.find(NATIVE_TAG) == std::string::npos &&
+        !std::regex_search(prompt, UNIVERSAL_IMAGE_PATTERN)) {
+        prompt_with_tag = NATIVE_TAG + "\n" + prompt;
+    }
+
+    auto [unified_prompt, images_sequence] = normalize(prompt_with_tag, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
 
     size_t search_pos = 0;
     for (size_t image_id : images_sequence) {
