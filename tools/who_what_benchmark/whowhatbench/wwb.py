@@ -134,6 +134,7 @@ def parse_args():
             "speech-generation",
             "visual-text",
             "visual-text-chat",
+            "visual-text-only",
             "visual-video-text",
             "image-to-image",
             "image-inpainting",
@@ -148,6 +149,7 @@ def parse_args():
         "text-chat - for causal text generation in chat mode, \n"
         "visual-text - for Visual Language Models with image inputs, \n"
         "visual-text-chat - for Visual Language Models with image inputs in chat mode, \n"
+        "visual-text-only - for validating Visual Language Models with text-only prompts via VLMPipeline (--genai only), \n"
         "visual-video-text - for Visual Language Models with video inputs, \n"
         "text-to-image - for image generation, \n"
         "image-to-image - for image generation based on image and prompt, \n"
@@ -517,6 +519,9 @@ def check_args(args):
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
+    if args.model_type == "visual-text-only" and not args.genai:
+        raise ValueError("--model-type visual-text-only currently requires --genai (OpenVINO GenAI VLMPipeline).")
+
 
 def load_prompts(args):
     if args.dataset is None:
@@ -686,6 +691,39 @@ def genai_gen_text(
         assistant_confidence_threshold=assistant_confidence_threshold,
         **kwargs,
     )
+
+
+def genai_gen_visual_text_only(
+    model,
+    tokenizer,
+    question,
+    max_new_tokens,
+    skip_question,
+    use_chat_template=False,
+    empty_adapters=False,
+    num_assistant_tokens=0,
+    assistant_confidence_threshold=0.0,
+    generation_config_extra=None,
+):
+    kwargs = {}
+    if empty_adapters:
+        import openvino_genai
+
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+    if generation_config_extra:
+        kwargs.update(generation_config_extra)
+
+    # VLMPipeline.generate() returns VLMDecodedResults, unlike LLMPipeline's plain str.
+    result = model.generate(
+        question,
+        do_sample=False,
+        max_new_tokens=max_new_tokens,
+        apply_chat_template=use_chat_template,
+        num_assistant_tokens=num_assistant_tokens,
+        assistant_confidence_threshold=assistant_confidence_threshold,
+        **kwargs,
+    )
+    return result.texts[0]
 
 
 def genai_gen_chat_text(
@@ -1006,10 +1044,12 @@ def create_evaluator(base_model, args):
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
         prompts = load_prompts(args)
 
-        if task == "text":
+        if task == "text" or task == "visual-text-only":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
 
-            if args.genai:
+            if task == "visual-text-only":
+                gen_answer_fn = genai_gen_visual_text_only
+            elif args.genai:
                 gen_answer_fn = genai_gen_text
             elif args.llamacpp:
                 gen_answer_fn = llamacpp_gen_text
@@ -1549,7 +1589,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type

@@ -18,7 +18,7 @@ LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
 
 
 @register_evaluator(
-    "text"
+    "text", "visual-text-only"
 )
 class TextEvaluator(BaseEvaluator):
     def __init__(

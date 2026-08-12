@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import logging
+import re
 import torch
 import os
 
@@ -99,6 +100,7 @@ def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
         "visual-text",
         "visual-video-text",
         "visual-text-chat",
+        "visual-text-only",
     ):
         raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
 
@@ -136,6 +138,7 @@ class GenAIModelWrapper:
             "embedding",
             "text-reranking",
             "visual-text-chat",
+            "visual-text-only",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -194,6 +197,33 @@ def get_scheduler_config_genai(cb_config):
     return scheduler_config
 
 
+# minja (openvino_genai's Jinja engine) doesn't support Python's implicit concatenation of
+# adjacent multiline string literals used by some chat templates (e.g. Gemma tool-calling),
+# causing "Expected closing parenthesis" errors at generate() time.
+_MINJA_MULTILINE_STRING_CONCAT_RE = re.compile(r'"[ \t]*\r?\n[ \t]*"')
+
+
+def _patch_minja_incompatible_chat_template(pipeline):
+    """Best-effort: normalize a pipeline's chat template in place if minja-incompatible."""
+    try:
+        tokenizer = pipeline.get_tokenizer()
+        chat_template = tokenizer.get_chat_template()
+    except Exception as exc:
+        logger.warning(f"Could not read chat template to check for minja-incompatible syntax: {exc}")
+        return
+    if not chat_template:
+        return
+    patched_chat_template = _MINJA_MULTILINE_STRING_CONCAT_RE.sub("", chat_template)
+    if patched_chat_template == chat_template:
+        return
+    try:
+        tokenizer.set_chat_template(patched_chat_template)
+    except Exception as exc:
+        logger.warning(f"Could not patch minja-incompatible chat template: {exc}")
+        return
+    logger.info("Patched chat template to remove minja-incompatible multiline string concatenation")
+
+
 def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
@@ -224,6 +254,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         logger.info("Using OpenVINO GenAI LLMPipeline API")
         pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, **ov_config)
 
+    _patch_minja_incompatible_chat_template(pipeline)
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
 
@@ -238,7 +269,8 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     model_kwargs = {}
     if n_ctx is not None:
         model_kwargs["n_ctx"] = int(n_ctx)
-    model = Llama(model_dir, **model_kwargs)
+    model_path = os.path.join(model_dir, kwargs["gguf_file"]) if kwargs.get("gguf_file") else model_dir
+    model = Llama(model_path, **model_kwargs)
     return model
 
 
@@ -497,11 +529,22 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         logger.info("Using OpenVINO GenAI VLMPipeline API")
         pipeline = openvino_genai.VLMPipeline(model_dir, **pipeline_kwargs)
 
+    _patch_minja_incompatible_chat_template(pipeline)
     return GenAIModelWrapper(
         pipeline,
         model_dir,
         kwargs.get("model_type", "visual-text")
     )
+
+
+def load_visual_text_only_model(
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
+):
+    if not use_genai:
+        raise ValueError(
+            "--model-type visual-text-only currently supports only the OpenVINO GenAI backend (--genai)."
+        )
+    return load_visual_text_genai_pipeline(model_id, device, ov_config, **kwargs)
 
 
 def load_visual_text_model(
@@ -1109,6 +1152,9 @@ def load_model(
     elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
+    elif model_type == "visual-text-only":
+        sanitized_kwargs["model_type"] = model_type
+        return load_visual_text_only_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-inpainting":
