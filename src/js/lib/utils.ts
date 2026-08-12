@@ -381,7 +381,7 @@ export type GenerationConfig = GenericGenerationConfig &
 
 /** Generation config for WhisperPipeline. Extends GenerationConfig with Whisper-specific options. */
 export type WhisperGenerationConfig = GenerationConfig & {
-  /** Language token for generation (e.g. "<|en|>"). For multilingual models only. */
+  /** Language for generation: a plain code (e.g. "en") or the wrapped token form (e.g. "<|en|>"). For multilingual models only. */
   language?: string;
   /** Task: "translate" or "transcribe". For multilingual models only. */
   task?: string;
