@@ -30,7 +30,7 @@ public:
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
-        if (text_encoder == "Qwen3ForCausalLM") {
+        if (text_encoder == "Qwen3ForCausalLM" || text_encoder == "Qwen3Model") {
             m_text_encoder = std::make_shared<Qwen3TextEncoder>(root_dir / "text_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type for ZImagePipeline");
@@ -76,7 +76,7 @@ public:
         auto updated_properties = update_adapters_in_properties(properties, &ZImagePipeline::derived_adapters);
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
-        if (text_encoder == "Qwen3ForCausalLM") {
+        if (text_encoder == "Qwen3ForCausalLM" || text_encoder == "Qwen3Model") {
             m_text_encoder = std::make_shared<Qwen3TextEncoder>(root_dir / "text_encoder", device, *updated_properties);
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type for ZImagePipeline");
