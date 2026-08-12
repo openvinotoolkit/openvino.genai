@@ -38,4 +38,4 @@ jobs:
       # This is a fine-grained PAT scoped to this repository with
       # contents:write and pull-requests:read, belonging to an account
       # that is a repository admin, a role the ruleset bypass list covers.
-      DEPENDABOT_CLEANUP_TOKEN: ${{ secrets.DEPENDABOT_CLEANUP_TOKEN }}
+      DEPENDABOT_CLEANUP_TOKEN: ${{ secrets.DEPENDABOT_CLEANUP_TOKEN || github.token }}
