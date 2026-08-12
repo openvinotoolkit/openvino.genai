@@ -1,0 +1,42 @@
+name: Cleanup stale dependabot branches
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only log branches that would be deleted, do not delete them'
+        type: boolean
+        required: false
+        default: true
+  schedule:
+    # at 06:00 UTC every Monday
+    - cron: '0 6 * * 1'
+  # TEMPORARY (testing): remove before merge
+  pull_request:
+    paths:
+      - '.github/workflows/cleanup_dependabot_branches.yml'
+      - '.github/scripts/dependabot_cleanup/**'
+
+permissions: read-all
+
+jobs:
+  Cleanup_Dependabot_Branches:
+    name: Cleanup stale dependabot branches
+    # The cleanup logic and its script are maintained once in the openvino
+    # repository and reused here, so this workflow only wires up the trigger,
+    # the dry-run choice and the token.
+    if: ${{ github.repository_owner == 'openvinotoolkit' }}
+    uses: openvinotoolkit/openvino/.github/workflows/cleanup_dependabot_branches.yml@cc55626addf78e8876cfc511718260fab4ef4b8c
+    with:
+      # Real deletions happen only on the weekly schedule, or on a manual run
+      # where the dry_run checkbox was explicitly unchecked. Any other trigger
+      # deliberately falls back to a dry run. Resolving this here keeps the
+      # value a real boolean: inputs.dry_run is empty on a schedule, which a
+      # boolean workflow_call input would reject.
+      dry_run: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.dry_run) }}
+    secrets:
+      # The default GITHUB_TOKEN cannot be granted a ruleset bypass, and the
+      # "dependabot" ruleset restricts deletion of dependabot/* branches.
+      # This is a fine-grained PAT scoped to this repository with
+      # contents:write and pull-requests:read, belonging to an account
+      # that is a repository admin, a role the ruleset bypass list covers.
+      DEPENDABOT_CLEANUP_TOKEN: ${{ secrets.DEPENDABOT_CLEANUP_TOKEN }}
