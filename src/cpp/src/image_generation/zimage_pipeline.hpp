@@ -7,6 +7,7 @@
 
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
+#include "image_generation/threaded_callback.hpp"
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/qwen3_text_encoder.hpp"
@@ -238,31 +239,62 @@ public:
             OPENVINO_THROW("Generator must be provided for ZImagePipeline");
         }
 
-        size_t num_inference_steps = custom_generation_config.num_inference_steps;
-        auto timesteps = m_scheduler->get_timesteps();
+        std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        if (callback_iter != properties.end()) {
+            callback_ptr = std::make_shared<ThreadedCallbackWrapper>(callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>());
+            callback_ptr->start();
+        }
+
+        const size_t image_seq_len = (custom_generation_config.height / vae_scale_factor / 2) *
+                                     (custom_generation_config.width / vae_scale_factor / 2);
+        m_scheduler->set_timesteps(image_seq_len,
+                                   custom_generation_config.num_inference_steps,
+                                   custom_generation_config.strength);
+        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         compute_hidden_states(positive_prompt, custom_generation_config);
 
         auto [latent, processed_image, image_latents, noise] = prepare_latents(initial_image, custom_generation_config);
 
         // Denoising loop
-        ov::Tensor timestep(ov::element::i64, {1});
+        ov::Tensor timestep(ov::element::f32, {1});
+        float* timestep_data = timestep.data<float>();
 
         for (size_t step_idx = 0; step_idx < timesteps.size(); ++step_idx) {
             auto step_start = std::chrono::steady_clock::now();
-            int64_t timestep_val = timesteps[step_idx];
-            timestep.data<int64_t>()[0] = timestep_val;
+            timestep_data[0] = (1000.0f - timesteps[step_idx]) / 1000.0f;
 
             auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred = m_transformer->step(latent, timestep, m_prompt_embeds);
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
+            float* noise_pred_data = noise_pred.data<float>();
+            for (size_t i = 0; i < noise_pred.get_size(); ++i) {
+                noise_pred_data[i] = -noise_pred_data[i];
+            }
+
             auto scheduler_step_result = m_scheduler->step(noise_pred, latent, step_idx, generator);
             latent = scheduler_step_result["latent"];
 
+            if (callback_ptr && callback_ptr->has_callback() && callback_ptr->write(step_idx, timesteps.size(), latent) == CallbackStatus::STOP) {
+                callback_ptr->end();
+                auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+
+                auto image = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
+                return image;
+            }
+
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+        }
+
+        if (callback_ptr != nullptr) {
+            callback_ptr->end();
         }
 
         const auto decode_start = std::chrono::steady_clock::now();

@@ -136,7 +136,7 @@ void ZImageTransformer2DModel::set_adapters(const std::optional<AdapterConfig>& 
 ov::Tensor ZImageTransformer2DModel::step(ov::Tensor sample, ov::Tensor timestep, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     
-    m_request.set_tensor("sample", sample);
+    m_request.set_tensor("hidden_states", sample);
     m_request.set_tensor("timestep", timestep);
     m_request.set_tensor("encoder_hidden_states", encoder_hidden_states);
     
