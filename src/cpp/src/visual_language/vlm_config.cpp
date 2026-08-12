@@ -35,6 +35,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
         {"deepseek_ocr2", VLMModelType::DEEPSEEK_VL_V2},
+        {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
     };
 
     auto it = model_types_map.find(value);
