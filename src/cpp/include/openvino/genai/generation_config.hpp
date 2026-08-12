@@ -638,6 +638,11 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param return_omni_outputs if set to true, the pipeline accumulates per-token intermediate hidden
  *        states and full token ids in the result so a Qwen3-Omni talker can consume them. Only the
  *        continuous-batching backend supports this; OmniPipeline sets it internally on the audio path.
+ *
+ * @param text2audio_stream if set to true, OmniPipeline streams the thinker's tokens and hidden states
+ *        to the talker as they are produced instead of handing over the whole sequence once text
+ *        generation has finished, so speech starts before the text is complete. Requires
+ *        talker_speech_config.return_audio and the continuous-batching backend.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
@@ -707,6 +712,13 @@ public:
     // generation. Only supported by the continuous-batching backend; set internally by OmniPipeline.
     // Preview API: subject to change.
     bool return_omni_outputs = false;
+
+    // Stream the thinker's tokens and hidden states to the talker while text generation is still
+    // running, instead of handing the whole sequence over once it has finished. OmniPipeline creates
+    // an OmniChannel and passes it to the VLM when this is set. Requires
+    // talker_speech_config.return_audio and the continuous-batching backend.
+    // Preview API: subject to change.
+    bool text2audio_stream = false;
 
     /** @brief sets eos_token_id to tokenizer_eos_token_id if eos_token_id is less than 0.
      * Otherwise verifies eos_token_id == tokenizer_eos_token_id.
@@ -789,6 +801,9 @@ static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
 
 // Preview API: subject to change.
 static constexpr ov::Property<bool> return_omni_outputs{"return_omni_outputs"};
+
+// Preview API: subject to change.
+static constexpr ov::Property<bool> text2audio_stream{"text2audio_stream"};
 
 }  // namespace genai
 }  // namespace ov

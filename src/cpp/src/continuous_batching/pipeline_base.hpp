@@ -75,6 +75,13 @@ protected:
     // Empty when the no-audio overloads are used.
     std::vector<std::vector<ov::Tensor>> m_pending_audios_batches;
 
+    // Thinker -> talker bridge for the current generate() call, stashed by the omni_streamer-aware
+    // overloads and read by the decode loop in ContinuousBatchingImpl::generate. Threaded as a
+    // member rather than a parameter so the chain of generate() virtuals down to the decode loop
+    // stays untouched — same reason (and same scoped-guard discipline) as m_pending_audios_batches.
+    // Null on every non-Omni path, which is what keeps those paths byte-for-byte unchanged.
+    std::shared_ptr<OmniStreamerBase> m_pending_omni_streamer;
+
     std::shared_ptr<VisionRegistry> m_vision_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
@@ -209,6 +216,21 @@ public:
         const StreamerVariant& streamer
     );
 
+    /**
+     * Same as above, additionally forwarding each decode step to a thinker -> talker bridge.
+     * Non-virtual: it only stashes the bridge for the decode loop and delegates.
+     */
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        const std::shared_ptr<OmniStreamerBase>& omni_streamer
+    );
+
 
     /**
      * Performs monolitic generation based on ChatHistory objects
@@ -251,6 +273,18 @@ public:
         const std::vector<std::vector<ov::Tensor>>& audios,
         const std::vector<GenerationConfig>& sampling_params,
         const StreamerVariant& streamer
+    );
+
+    /// @see the prompts overload taking an omni_streamer.
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<std::vector<VideoMetadata>>& videos_metadata,
+        const std::vector<std::vector<ov::Tensor>>& audios,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer,
+        const std::shared_ptr<OmniStreamerBase>& omni_streamer
     );
 
     /**

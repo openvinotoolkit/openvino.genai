@@ -29,6 +29,10 @@ int main(int argc, char* argv[]) try {
     // path. Set talker_speech_config.return_audio = false to get text-only responses.
     ov::genai::GenerationConfig text_config;
     text_config.max_new_tokens = 256;
+    // Hand the thinker's tokens and hidden states to the talker as they are produced, instead of
+    // after the whole text response is finished. OmniPipeline creates the bridge between the two
+    // stages; nothing else here changes.
+    text_config.text2audio_stream = true;
 
     ov::genai::OmniTalkerSpeechConfig talker_speech_config(models_path);
     talker_speech_config.return_audio = true;

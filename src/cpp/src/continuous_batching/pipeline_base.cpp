@@ -617,6 +617,50 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return generate(histories, images_vector, videos_vector, videos_metadata_vector, sampling_params, streamer);
 }
 
+namespace {
+
+/// @brief Clear the pending thinker -> talker bridge on every exit path, so a bridge from one
+/// generate() call can never leak into the next one (which would write another request's steps
+/// into a talker that already saw end()).
+struct PendingOmniStreamerGuard {
+    std::shared_ptr<OmniStreamerBase>& slot;
+    ~PendingOmniStreamerGuard() { slot.reset(); }
+};
+
+}  // namespace
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+) {
+    PendingOmniStreamerGuard guard{m_pending_omni_streamer};
+    m_pending_omni_streamer = omni_streamer;
+    return generate(prompts, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images_vector,
+    const std::vector<std::vector<ov::Tensor>>& videos_vector,
+    const std::vector<std::vector<VideoMetadata>>& videos_metadata_vector,
+    const std::vector<std::vector<ov::Tensor>>& audios_vector,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer,
+    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+) {
+    PendingOmniStreamerGuard guard{m_pending_omni_streamer};
+    m_pending_omni_streamer = omni_streamer;
+    return generate(histories, images_vector, videos_vector, videos_metadata_vector, audios_vector, sampling_params, streamer);
+}
+
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,

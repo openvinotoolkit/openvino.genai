@@ -393,4 +393,11 @@ OPENVINO_GENAI_EXPORTS std::pair<std::string, ov::Any> audios_batches(
     const std::vector<std::vector<ov::Tensor>>& audios_batches
 );
 
+/// @brief Sink for the thinker's per-step tokens and hidden states, so a Qwen3-Omni talker can
+/// start speaking before text generation finishes. Unlike `streamer`, which carries decoded text,
+/// this carries what the talker needs. Only meaningful for batch size 1 with
+/// GenerationConfig::return_omni_outputs set; ignored (never written to) otherwise.
+/// @note This is a preview API and is subject to change.
+static constexpr ov::Property<std::shared_ptr<OmniStreamerBase>> omni_streamer{"omni_streamer"};
+
 }
