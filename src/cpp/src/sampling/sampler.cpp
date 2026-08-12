@@ -113,8 +113,9 @@ MatchStopStringResult match_stop_string(Tokenizer& tokenizer,
                       size_t draft_generated_tokens = 0) {
     MatchStopStringResult result;
     if (generated_tokens.size() >= stop_strings.first) {
-        // draft_generated_tokens is to handle case with >= 1 generated tokens per step
-        size_t offset = generated_tokens.size() - draft_generated_tokens;
+        // draft_generated_tokens is to handle case with >= 1 generated tokens per step. It is tracked per
+        // sequence group, so it can exceed this sequence's generated length - clamp to avoid underflowing.
+        size_t offset = generated_tokens.size() - std::min(draft_generated_tokens, generated_tokens.size());
         if (offset < stop_strings.first) {
             return result;
         }
