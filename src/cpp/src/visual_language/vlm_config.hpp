@@ -32,6 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
+    MUSE_GLIMMER,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -69,7 +70,7 @@ public:
     std::string im_id_end = "</image_id>";
     /// @brief A placeholder for image embeddings in text.
     std::string unk = "<unk>";
-
+    
     // llava_next specific config params
     std::vector<float> image_newline;
     size_t vision_config_patch_size = 14;
