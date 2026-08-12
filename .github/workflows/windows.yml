@@ -24,7 +24,7 @@ env:
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/775cf1/
-  OPENVINO_LOG_LEVEL: 2  # Windows fails with out of memory because of too verbose logging
+  OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
@@ -89,7 +89,9 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        revision: latest_available_commit
+        # Workaround for ScatterNDUpdate exception.
+        # The ticket for tracking: CVS-192302
+        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request

@@ -56,6 +56,14 @@
   components:
     - Video_generation_samples
 
+- name: Eagle3 decoding
+  extra_cmd: python -m pip install transformers==4.57.6
+  marker: eagle3_decoding
+  cmd: tests/python_tests/samples
+  runner: aks-win-16-cores-32gb-test
+  components:
+    - speculative_decoding
+
 - name: LLM with transformers under 5.0
   extra_cmd: python -m pip install transformers==4.55.4 diffusers==0.37.1
   marker: llm and (transformers_dependent or transformers_lower_v5)
