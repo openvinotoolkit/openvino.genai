@@ -614,11 +614,6 @@ public:
         latent_shape_cfg[0] *= batch_size_multiplier;
         ov::Tensor latent_cfg(ov::element::f32, latent_shape_cfg);
 
-        // Rank-1 [B] (legacy export) or rank-2 [B, S] (current export, per-token conditioning).
-        // Sized from latent_cfg inside the denoising loop so the two always agree.
-        const bool timestep_is_rank2 = m_transformer->get_timestep_partial_shape().size() == 2;
-        ov::Tensor timestep(ov::element::f32, ov::Shape{1});
-
         // Initialize TaylorSeer if configured
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
 
@@ -647,21 +642,13 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            // Derive the timestep shape from the final latent_cfg (after the repeat above) so
-            // batch and token count always match. T2V conditions every token identically.
-            if (timestep_is_rank2) {
-                const ov::Shape& latent_cfg_shape = latent_cfg.get_shape();
-                timestep.set_shape({latent_cfg_shape[0], latent_cfg_shape[1]});
-            }
-            std::fill_n(timestep.data<float>(), timestep.get_size(), timesteps[inference_step]);
-
             ov::Tensor noise_pred_tensor;
             // Use TaylorSeer if enabled and caching is appropriate
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
                 noise_pred_tensor = ts_state.predict(inference_step);
             } else {
                 auto infer_start = std::chrono::steady_clock::now();
-                noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+                noise_pred_tensor = m_transformer->infer(latent_cfg, timesteps[inference_step]);
                 auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
                 m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
                 if (ts_state.is_active()) {
