@@ -51,10 +51,19 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     results.perf_metrics.load_time = m_load_time_ms;
     results.perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
+    // Qwen3-ASR has no batched inference path: its encoder runs one chunk at a time, so accepting several audios
+    // here would only hide a sequential loop behind a batch API. A batch of one is forwarded unchanged.
     const std::vector<float>& audio = std::visit(
         ov::genai::utils::overloaded{
             [](const std::vector<float>& input) -> const std::vector<float>& {
                 return input;
+            },
+            [](const std::vector<std::vector<float>>& inputs) -> const std::vector<float>& {
+                OPENVINO_ASSERT(inputs.size() == 1,
+                                "Qwen3-ASR does not support batched audio input. Got ",
+                                inputs.size(),
+                                " audio inputs.");
+                return inputs.front();
             },
         },
         audio_inputs);

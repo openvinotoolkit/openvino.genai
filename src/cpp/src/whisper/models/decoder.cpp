@@ -3,8 +3,10 @@
 
 #include "decoder.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <limits>
+#include <numeric>
 
 #include "statefull_decoder.hpp"
 #include "whisper/whisper_utils.hpp"
@@ -24,11 +26,21 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
 
 std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
                                                           const WhisperGenerationConfig& config) {
-    Tensor input_ids_tensor = create_host_tensor(ov::element::i64, {1, 1});
-    input_ids_tensor.data<int64_t>()[0] = config.decoder_start_token_id;
+    auto [language_tokens, infer_ms] = detect_languages(encoder_hidden_state, config);
+    return {language_tokens.front(), infer_ms};
+}
 
-    Tensor beam_idx_tensor = create_host_tensor(ov::element::i32, {1});
-    beam_idx_tensor.data<int32_t>()[0] = 0;
+std::pair<std::vector<int64_t>, float> WhisperDecoder::detect_languages(const ov::Tensor& encoder_hidden_state,
+                                                                        const WhisperGenerationConfig& config) {
+    // Language detection uses one decoder row per encoder row; beam expansion happens later during generation.
+    const size_t batch_size = encoder_hidden_state.get_shape().at(0);
+    OPENVINO_ASSERT(batch_size > 0, "Language detection requires at least one encoder hidden state row.");
+
+    Tensor input_ids_tensor = create_host_tensor(ov::element::i64, {batch_size, 1});
+    std::fill_n(input_ids_tensor.data<int64_t>(), batch_size, config.decoder_start_token_id);
+
+    Tensor beam_idx_tensor = create_host_tensor(ov::element::i32, {batch_size});
+    std::iota(beam_idx_tensor.data<int32_t>(), beam_idx_tensor.data<int32_t>() + batch_size, 0);
 
     const auto infer_start = std::chrono::steady_clock::now();
     start_async(encoder_hidden_state, input_ids_tensor, beam_idx_tensor);
@@ -36,28 +48,43 @@ std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& enco
     auto output_tensor = wait();
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
-    auto logits_data = output_tensor.data<float>();
+    const auto logits_shape = output_tensor.get_shape();
+    const size_t seq_len = logits_shape.at(1);
+    const size_t vocab_size = logits_shape.back();
+    const auto* logits_data = output_tensor.data<float>();
 
-    int64_t output_token = -1;
-    float max_prob = -std::numeric_limits<float>::infinity();
+    // Every audio gets its language from its own decoder row, never from row 0.
+    std::vector<int64_t> output_tokens(batch_size);
+    for (size_t batch = 0; batch < batch_size; batch++) {
+        const float* row_logits = logits_data + (batch * seq_len + (seq_len - 1)) * vocab_size;
 
-    for (auto [_, lang_token] : config.lang_to_id) {
-        auto prob = logits_data[lang_token];
-        if (prob > max_prob) {
-            max_prob = prob;
-            output_token = lang_token;
+        int64_t output_token = -1;
+        float max_prob = -std::numeric_limits<float>::infinity();
+
+        for (const auto& [_, lang_token] : config.lang_to_id) {
+            auto prob = row_logits[lang_token];
+            if (prob > max_prob) {
+                max_prob = prob;
+                output_token = lang_token;
+            }
         }
+
+        output_tokens[batch] = output_token;
     }
 
     reset_state();
 
-    return {output_token, infer_ms};
+    return {output_tokens, infer_ms};
 }
 
 /**
- * Encoder hidden states expected to be with batch 1
- * Expand encoder hidden state tensor from batch 1 to requested batch_size.
- * Set new encoder hidden states tensor to infer request.
+ * Set the encoder hidden states tensor of the decoder infer request.
+ *
+ * Two layouts are supported:
+ *  - one encoder row per decoder row: decoder row r cross-attends to encoder row r. This covers single audio
+ *    greedy decoding and batched greedy decoding, where one audio owns exactly one fixed decoder row.
+ *  - a single encoder row expanded to several decoder rows: single audio beam search, where every beam
+ *    cross-attends to the same audio.
  */
 void WhisperDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,
                                                        const size_t batch_size,
@@ -68,12 +95,21 @@ void WhisperDecoder::_set_encoder_hidden_states_tensor(const Tensor& encoder_hid
         return;
     }
 
-    OPENVINO_ASSERT(encoder_hidden_state.get_shape().at(0) == 1);
+    const size_t num_audios = encoder_hidden_state.get_shape().at(0);
 
-    if (batch_size == 1) {
+    if (num_audios == batch_size) {
         request.set_tensor("encoder_hidden_states", encoder_hidden_state);
         return;
     }
+
+    // Expanding several audios over several decoder rows each would be batched beam search, which is not supported.
+    OPENVINO_ASSERT(num_audios == 1,
+                    "Expanding encoder hidden states to a wider decoder batch is only supported for a single audio. "
+                    "Got ",
+                    num_audios,
+                    " encoder hidden states rows for ",
+                    batch_size,
+                    " decoder rows.");
 
     Shape shape{encoder_hidden_state.get_shape()};
     shape[0] = batch_size;

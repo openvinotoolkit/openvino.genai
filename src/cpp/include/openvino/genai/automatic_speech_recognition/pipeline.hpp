@@ -18,7 +18,8 @@
 
 namespace ov::genai {
 
-using AudioInputs = std::variant<std::vector<float>>;
+/// A single raw speech input or a batch of independent inputs. Batch support is model dependent.
+using AudioInputs = std::variant<std::vector<float>, std::vector<std::vector<float>>>;
 
 /// Time-aligned text chunk — used for both segment-level and word-level timestamps.
 /// For segments: text is the decoded segment, token_ids are the tokens in that segment.

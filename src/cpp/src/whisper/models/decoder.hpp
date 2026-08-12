@@ -21,6 +21,13 @@ public:
     std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state,
                                               const WhisperGenerationConfig& config);
 
+    /**
+     * Detect the spoken language of every row of a batched encoder hidden state with a single decoder inference.
+     * Row i of the returned vector corresponds to row i of `encoder_hidden_state`.
+     */
+    std::pair<std::vector<int64_t>, float> detect_languages(const Tensor& encoder_hidden_state,
+                                                            const WhisperGenerationConfig& config);
+
     virtual void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) = 0;
 
     virtual Tensor wait() = 0;

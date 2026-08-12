@@ -138,6 +138,11 @@ std::string to_unescaped_language(const std::string& language) {
     return result;
 }
 
+bool is_whisper_batching_supported_device(const std::string& device) {
+    const std::string device_name = device.substr(0, device.find('.'));
+    return device_name == "CPU" || device_name == "GPU";
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
