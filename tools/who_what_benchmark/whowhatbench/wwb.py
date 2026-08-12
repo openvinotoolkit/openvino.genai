@@ -27,6 +27,18 @@ from whowhatbench.utils import get_json_config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_openvino_genai = None
+
+
+def _import_openvino_genai():
+    """Cache the openvino_genai import so per-prompt gen_answer_fn calls don't re-import it."""
+    global _openvino_genai
+    if _openvino_genai is None:
+        import openvino_genai
+        _openvino_genai = openvino_genai
+    return _openvino_genai
+
+
 # Supported keys for --sd-generation-config and their expected Python types.
 # When updating this dict, also update the CLI help string for --sd-generation-config below to keep them consistent.
 SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
@@ -695,20 +707,21 @@ def genai_gen_text(
 
 def genai_gen_visual_text_only(
     model,
-    tokenizer,
+    _tokenizer,
     question,
     max_new_tokens,
-    skip_question,
+    _skip_question,
     use_chat_template=False,
     empty_adapters=False,
     num_assistant_tokens=0,
     assistant_confidence_threshold=0.0,
     generation_config_extra=None,
 ):
+    # _tokenizer/_skip_question are part of the shared TextEvaluator gen_answer_fn signature but
+    # unused here: VLMPipeline.generate() already returns only the newly generated text.
     kwargs = {}
     if empty_adapters:
-        import openvino_genai
-
+        openvino_genai = _import_openvino_genai()
         kwargs["adapters"] = openvino_genai.AdapterConfig()
     if generation_config_extra:
         kwargs.update(generation_config_extra)
@@ -723,7 +736,11 @@ def genai_gen_visual_text_only(
         assistant_confidence_threshold=assistant_confidence_threshold,
         **kwargs,
     )
-    return result.texts[0]
+    texts = getattr(result, "texts", None)
+    if not texts:
+        # Report prompt length only, not its content, to avoid leaking dataset/user data into logs.
+        raise RuntimeError(f"VLMPipeline.generate() returned no text for a {len(question)}-char prompt")
+    return texts[0]
 
 
 def genai_gen_chat_text(
