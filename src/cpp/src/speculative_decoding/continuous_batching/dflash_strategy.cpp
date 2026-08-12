@@ -595,7 +595,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
                         ", draft_count=", draft_count,
                         ", validation_count=", validation_count);
         draft_generated_by_request[request_id] = candidates.size();
-        
+
         auto candidate_tokens = state.generated_tokens;
         auto candidate_log_probs = zero_log_probs(candidate_tokens.size());
         for (const auto& candidate : candidates) {
