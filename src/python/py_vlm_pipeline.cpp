@@ -432,12 +432,18 @@ An input image without explicit slicing metadata counts as one slice.)")
                 const ov::genai::GenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer) -> ov::genai::VLMDecodedResults {
                  auto native_streamer = pyutils::pystreamer_to_streamer(streamer);
-                 if (const auto* prompt_str = std::get_if<std::string>(&prompt)) {
-                     return self.generate(*prompt_str, images, videos, audios, videos_metadata,
-                                          generation_config, native_streamer);
+                 ov::genai::VLMDecodedResults res;
+                 {
+                     py::gil_scoped_release rel;
+                     if (const auto* prompt_str = std::get_if<std::string>(&prompt)) {
+                         res = self.generate(*prompt_str, images, videos, audios, videos_metadata,
+                                             generation_config, native_streamer);
+                     } else {
+                         res = self.generate(std::get<ov::genai::ChatHistory>(prompt), images, videos, audios,
+                                             videos_metadata, generation_config, native_streamer);
+                     }
                  }
-                 return self.generate(std::get<ov::genai::ChatHistory>(prompt), images, videos, audios,
-                                      videos_metadata, generation_config, native_streamer);
+                 return res;
              },
              py::arg("prompt"),
              py::arg("images") = std::vector<ov::Tensor>{},
