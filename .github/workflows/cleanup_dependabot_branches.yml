@@ -10,7 +10,7 @@ on:
   schedule:
     # at 06:00 UTC every Monday
     - cron: '0 6 * * 1'
-  # TEMPORARY (testing): remove before merge
+  # TEMPORARY (testing): remove before merge#
   pull_request:
     paths:
       - '.github/workflows/cleanup_dependabot_branches.yml'
