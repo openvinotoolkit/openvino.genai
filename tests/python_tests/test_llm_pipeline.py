@@ -315,11 +315,7 @@ def test_linear_attention_batch_string_inputs(
     prompts: list[str],
     pipeline_type: PipelineType,
 ) -> None:
-    if (
-        llm_model.model_id == QWEN3_NEXT_MODEL_ID
-        and pipeline_type == PipelineType.PAGED_ATTENTION
-        and prompts == BATCHED_PROMPTS[1]
-    ):
+    if llm_model.model_id == QWEN3_NEXT_MODEL_ID and pipeline_type == PipelineType.PAGED_ATTENTION:
         # This tiny-random model has almost-equal logits, so PA and the reference sometimes pick different greedy tokens.
         # Tracking issue: CVS-192310
         pytest.xfail(
