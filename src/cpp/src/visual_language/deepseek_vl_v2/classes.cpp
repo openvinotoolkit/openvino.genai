@@ -86,7 +86,7 @@ std::pair<std::vector<clip_image_u8>, std::pair<int, int>> dynamic_preprocess(co
     const int blocks = target_aspect_ratio.first * target_aspect_ratio.second;
 
     clip_image_u8 resized_img;
-    bicubic_resize(image, resized_img, target_width, target_height);
+    bilinear_resize(image, resized_img, target_width, target_height);
 
     std::vector<clip_image_u8> processed_images;
     processed_images.reserve(blocks);
@@ -148,11 +148,11 @@ clip_image_u8 resize_and_pad_image_pil_contain(const clip_image_u8& image,
     const float scale_h = static_cast<float>(target_height) / static_cast<float>(image.ny);
     const float scale = std::min(scale_w, scale_h);
 
-    const int new_width = std::max(1, static_cast<int>(std::floor(static_cast<float>(image.nx) * scale)));
-    const int new_height = std::max(1, static_cast<int>(std::floor(static_cast<float>(image.ny) * scale)));
+    const int new_width = std::max(1, static_cast<int>(std::lround(static_cast<float>(image.nx) * scale)));
+    const int new_height = std::max(1, static_cast<int>(std::lround(static_cast<float>(image.ny) * scale)));
 
     clip_image_u8 resized_image;
-    bicubic_resize(image, resized_image, new_width, new_height);
+    bilinear_resize(image, resized_image, new_width, new_height);
 
     clip_image_u8 padded_image;
     padded_image.nx = target_width;
@@ -370,8 +370,12 @@ InputsEmbedderDeepseekVLV2::InputsEmbedderDeepseekVLV2(const VLMConfig& vlm_conf
                                                        const std::string& device,
                                                        const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, tokenizer, device, device_config) {
-    ov::Tensor encoded_image_token = m_tokenizer.encode(NATIVE_TAG, ov::genai::add_special_tokens(false)).input_ids;
-    m_image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+    if (m_vlm_config.image_token_id >= 0) {
+        m_image_token_id = m_vlm_config.image_token_id;
+    } else {
+        ov::Tensor encoded_image_token = m_tokenizer.encode(NATIVE_TAG, ov::genai::add_special_tokens(false)).input_ids;
+        m_image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+    }
 }
 
 InputsEmbedderDeepseekVLV2::InputsEmbedderDeepseekVLV2(const VLMConfig& vlm_config,
@@ -381,8 +385,12 @@ InputsEmbedderDeepseekVLV2::InputsEmbedderDeepseekVLV2(const VLMConfig& vlm_conf
                                                        const std::string& device,
                                                        const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    ov::Tensor encoded_image_token = m_tokenizer.encode(NATIVE_TAG, ov::genai::add_special_tokens(false)).input_ids;
-    m_image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+    if (m_vlm_config.image_token_id >= 0) {
+        m_image_token_id = m_vlm_config.image_token_id;
+    } else {
+        ov::Tensor encoded_image_token = m_tokenizer.encode(NATIVE_TAG, ov::genai::add_special_tokens(false)).input_ids;
+        m_image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+    }
 }
 
 ov::Tensor InputsEmbedderDeepseekVLV2::apply_chat_template_tokenize(const std::string& prompt,
