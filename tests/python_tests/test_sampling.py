@@ -228,7 +228,8 @@ def test_beam_search(model_facebook_opt_125m: OVConvertedModelSchema, generation
 @pytest.mark.xfail(
     raises=(AssertionError, ValueError),
     reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. "
-    "Since transformers 4.57 HF raises ValueError instead of returning a mismatching result. "
+    "Since transformers 4.57 group beam search runs from a custom_generate Hub module that does not "
+    "forward the tokenizer stop strings need, so HF raises ValueError instead of a mismatching result. "
     "If it changes, these cases shall be merged to the test above.",
     strict=True,
 )
