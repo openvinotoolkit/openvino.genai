@@ -10,11 +10,6 @@ on:
   schedule:
     # at 06:00 UTC every Monday
     - cron: '0 6 * * 1'
-  # TEMPORARY (testing): remove before merge
-  pull_request:
-    paths:
-      - '.github/workflows/cleanup_dependabot_branches.yml'
-      - '.github/scripts/dependabot_cleanup/**'
 
 env:
   PYTHON_VERSION: '3.11'
@@ -54,7 +49,7 @@ jobs:
           # This is a fine-grained PAT scoped to this repository with
           # contents:write and pull-requests:read, belonging to an account
           # that is a repository admin, a role the ruleset bypass list covers.
-          GITHUB_TOKEN: ${{ secrets.DEPENDABOT_CLEANUP_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ secrets.DEPENDABOT_CLEANUP_TOKEN }}
           # Real deletions happen only on the weekly schedule, or on a manual run
           # where the dry_run checkbox was explicitly unchecked. Every other case
           # (manual run with the box checked, or any other trigger) stays a dry run.
