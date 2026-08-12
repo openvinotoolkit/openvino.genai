@@ -537,13 +537,9 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     )
 
 
-def load_visual_text_only_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
-):
+def load_visual_text_only_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     if not use_genai:
-        raise ValueError(
-            "--model-type visual-text-only currently supports only the OpenVINO GenAI backend (--genai)."
-        )
+        raise ValueError("--model-type visual-text-only currently supports only the OpenVINO GenAI backend (--genai).")
     return load_visual_text_genai_pipeline(model_id, device, ov_config, **kwargs)
 
 

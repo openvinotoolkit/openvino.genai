@@ -35,6 +35,7 @@ def _import_openvino_genai():
     global _openvino_genai
     if _openvino_genai is None:
         import openvino_genai
+
         _openvino_genai = openvino_genai
     return _openvino_genai
 
@@ -1606,7 +1607,14 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
+        if args.model_type in [
+            "text",
+            "text-chat",
+            "visual-text",
+            "visual-video-text",
+            "visual-text-chat",
+            "visual-text-only",
+        ]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type

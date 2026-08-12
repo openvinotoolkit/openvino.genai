@@ -24,21 +24,21 @@ def test_regex_joins_adjacent_multiline_string_literals():
     from whowhatbench.model_loaders import _MINJA_MULTILINE_STRING_CONCAT_RE
 
     broken_template = (
-        'raise_exception(\n'
+        "raise_exception(\n"
         '    "chat_template: tool_calls[].function.arguments must be a "\n'
         '    "JSON object (mapping), not a string. Deserialize arguments "\n'
         '    "before passing to the template."\n'
-        ')'
+        ")"
     )
 
     patched = _MINJA_MULTILINE_STRING_CONCAT_RE.sub("", broken_template)
 
     assert patched == (
-        'raise_exception(\n'
+        "raise_exception(\n"
         '    "chat_template: tool_calls[].function.arguments must be a '
-        'JSON object (mapping), not a string. Deserialize arguments '
+        "JSON object (mapping), not a string. Deserialize arguments "
         'before passing to the template."\n'
-        ')'
+        ")"
     )
 
 
