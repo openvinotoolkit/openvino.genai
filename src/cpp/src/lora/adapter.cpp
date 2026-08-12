@@ -2020,12 +2020,6 @@ AdapterController::AdapterController(std::shared_ptr<ov::Model> model, const Ada
     m_pimpl = std::make_shared<AdapterControllerImpl>(model, config, infer_device);
 }
 
-void AdapterController::prepare(ov::InferRequest request) {
-    if (m_pimpl) {
-        m_pimpl->prepare(request);
-    }
-}
-
 // Call it every time when adapter config is changed; if adapter was configured as a static one, this call is not required
 void AdapterController::apply(ov::InferRequest request, const std::optional<AdapterConfig>& config) {
     OPENVINO_ASSERT(m_pimpl || !config || !*config,
