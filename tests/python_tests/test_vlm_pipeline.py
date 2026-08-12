@@ -182,7 +182,7 @@ if is_transformers_version("<", "5.0"):
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
         *VIDEO_MODEL_IDS,
-        "xf2022/tiny-random-minicpm-v-4",
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
     ]
 else:
     MODEL_IDS = [
@@ -433,7 +433,7 @@ def _get_ov_model(model_id: str) -> str:
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
-                    "xf2022/tiny-random-minicpm-v-4",
+                    "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
                 },
             )
         )
