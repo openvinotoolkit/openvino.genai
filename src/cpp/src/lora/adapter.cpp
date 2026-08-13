@@ -1296,7 +1296,6 @@ struct AdapterControllerImpl {
     std::unordered_set<std::string> variable_names;
     AdapterConfig current_config;
     bool need_full_apply = true;
-    bool infer_device_is_gpu = false;
     bool output_type_initialized = false;
     std::optional<ov::element::Type> state_output_type_override;
     InferRequestSignatureCache lora_state_evaluators;
@@ -1335,7 +1334,6 @@ struct AdapterControllerImpl {
                           const AdapterConfig& config,
                           const std::string& device = "CPU") :
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
-        infer_device_is_gpu(device.find("GPU") != std::string::npos),
         lora_state_evaluators(lora_evaluator_device(device), device)
     {
         LoRAConstantGetter const_getter;
@@ -1515,12 +1513,58 @@ struct AdapterControllerImpl {
                lhs.get_adapters_and_alphas() == rhs.get_adapters_and_alphas();
     }
 
+    std::optional<ov::element::Type> get_inference_precision(
+        const ov::CompiledModel& compiled_model,
+        const std::vector<std::string>& execution_devices) const {
+        const auto supported_properties = compiled_model.get_property(ov::supported_properties);
+        if (std::find(supported_properties.begin(),
+                      supported_properties.end(),
+                      ov::hint::inference_precision) != supported_properties.end()) {
+            return compiled_model.get_property(ov::hint::inference_precision);
+        }
+
+        if (std::find(supported_properties.begin(),
+                      supported_properties.end(),
+                      ov::device::properties) == supported_properties.end()) {
+            return std::nullopt;
+        }
+
+        const auto device_properties = compiled_model.get_property(ov::device::properties);
+        std::optional<ov::element::Type> inference_precision;
+        for (const auto& device : execution_devices) {
+            const auto device_it = device_properties.find(device);
+            if (device_it == device_properties.end()) {
+                return std::nullopt;
+            }
+
+            const auto& properties = device_it->second;
+            const auto precision_it = properties.find(ov::hint::inference_precision.name());
+            if (precision_it == properties.end()) {
+                return std::nullopt;
+            }
+
+            const auto device_precision = precision_it->second.as<ov::element::Type>();
+            if (inference_precision && *inference_precision != device_precision) {
+                return std::nullopt;
+            }
+            inference_precision = device_precision;
+        }
+        return inference_precision;
+    }
+
     void prepare(ov::InferRequest& infer_request) {
         std::optional<ov::element::Type> new_output_type;
         const auto compiled_model = infer_request.get_compiled_model();
         ov::element::Type inference_precision = ov::element::dynamic;
+        const auto execution_devices = compiled_model.get_property(ov::execution_devices);
+        const bool infer_device_is_gpu =
+            !execution_devices.empty() &&
+            std::all_of(execution_devices.begin(), execution_devices.end(), [](const std::string& device) {
+                return device.find("GPU") != std::string::npos;
+            });
         if (infer_device_is_gpu) {
-            inference_precision = compiled_model.get_property(ov::hint::inference_precision);
+            inference_precision =
+                get_inference_precision(compiled_model, execution_devices).value_or(ov::element::dynamic);
             OPENVINO_ASSERT(inference_precision == ov::element::f16 ||
                                 inference_precision == ov::element::f32 ||
                                 inference_precision == ov::element::dynamic,
