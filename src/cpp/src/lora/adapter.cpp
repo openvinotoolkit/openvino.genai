@@ -749,9 +749,7 @@ class InferRequestSignatureCache {
 public:
     using Signature = std::string;
 
-    InferRequestSignatureCache(const std::string& device, const std::string& infer_device = {}) :
-        device(device),
-        infer_device(infer_device.empty() ? device : infer_device) {}
+    InferRequestSignatureCache(const std::string& device) : device(device) {}
 
     bool exist (const Signature& signature) {
         return requests.count(signature);
@@ -837,7 +835,6 @@ private:
 
     std::unordered_map<Signature, RequestWithBypass> requests;
     std::string device;
-    std::string infer_device;
 };
 
 
@@ -1334,7 +1331,7 @@ struct AdapterControllerImpl {
                           const AdapterConfig& config,
                           const std::string& device = "CPU") :
         current_config(config),  // FIXME: Compare current and passed configs and change incrementally
-        lora_state_evaluators(lora_evaluator_device(device), device)
+        lora_state_evaluators(lora_evaluator_device(device))
     {
         LoRAConstantGetter const_getter;
         LoRAParametersByWeightGetter params_getter;
@@ -1665,17 +1662,14 @@ struct AdapterControllerImpl {
 
     const std::vector<LoRAParts<ov::Tensor>>& get_or_prepare_config_tensors(
         const AdapterConfig& config,
-        const std::vector<LoRAWeightGetter>& weight_getters,
-        bool& cache_hit) {
+        const std::vector<LoRAWeightGetter>& weight_getters) {
         for (auto it = prepared_tensor_cache.begin(); it != prepared_tensor_cache.end(); ++it) {
             if (same_prepared_tensor_cache_key(it->config, config)) {
-                cache_hit = true;
                 prepared_tensor_cache.splice(prepared_tensor_cache.begin(), prepared_tensor_cache, it);
                 return prepared_tensor_cache.front().tensors;
             }
         }
 
-        cache_hit = false;
         auto tensors = prepare_config_tensors(config, weight_getters);
         auto byte_size = prepared_tensors_byte_size(tensors);
 
@@ -1714,8 +1708,7 @@ struct AdapterControllerImpl {
 
         for (const auto& config : configs) {
             auto weight_getters = make_weight_getters(config);
-            bool cache_hit = false;
-            get_or_prepare_config_tensors(config, weight_getters, cache_hit);
+            get_or_prepare_config_tensors(config, weight_getters);
         }
     }
 
@@ -1756,8 +1749,7 @@ struct AdapterControllerImpl {
         }
 
         // Prepare an unseen config once, then upload cached evaluator outputs.
-        bool cache_hit = false;
-        const auto& prepared_tensors = get_or_prepare_config_tensors(current_config, weight_getters, cache_hit);
+        const auto& prepared_tensors = get_or_prepare_config_tensors(current_config, weight_getters);
 
         auto prepared_tensor_it = prepared_tensors.begin();
         for(const auto& lora_var_ids : variable_ids) {
@@ -1767,7 +1759,7 @@ struct AdapterControllerImpl {
             lora_indices.A = state_name_to_index.at(lora_var_ids.second.A.variable_id);
             lora_indices.B = state_name_to_index.at(lora_var_ids.second.B.variable_id);
             OPENVINO_ASSERT(prepared_tensor_it != prepared_tensors.end());
-            set_lora_tensors(state, lora_var_ids.first, lora_indices, *prepared_tensor_it, alpha_only);
+            set_lora_tensors(state, lora_indices, *prepared_tensor_it, alpha_only);
             ++prepared_tensor_it;
         }
         OPENVINO_ASSERT(prepared_tensor_it == prepared_tensors.end());
@@ -1992,7 +1984,6 @@ struct AdapterControllerImpl {
 
     void set_lora_tensors(
         std::vector<VariableState>& state,
-        const std::string& name,
         const LoRAIndices& lora_indices,
         const LoRAParts<ov::Tensor>& new_tensors,
         bool alpha_only
