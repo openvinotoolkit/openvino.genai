@@ -459,22 +459,27 @@ def test_max_new_tokens(model_descr, sample_from_dataset, pipeline_type):
 @pytest.mark.transformers_lower_v5(reason="CVS-185784")
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
-def test_language_mode(model_descr, language, pipeline_type):
+@pytest.mark.parametrize("language_format", ["plain", "wrapped"])
+def test_language_mode(model_descr, language, language_format, pipeline_type):
     model_id, path, hf_pipe, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
     sample = get_multilingual_audio_dataset(language)[0]
+
+    # Derive the config value to exercise both accepted API forms; the plain
+    # `language` still selects the dataset.
+    language_value = language if language_format == "plain" else f"<|{language}|>"
 
     config_cls = get_config_cls(pipeline_type)
     config = config_cls(max_new_tokens=30, language=language)
 
     expected = run_huggingface(hf_pipe, sample, config)
 
-    genai_result = genai_pipe.generate(sample, max_new_tokens=30, language=f"<|{language}|>")
+    genai_result = genai_pipe.generate(sample, max_new_tokens=30, language=language_value)
 
     compare_results(expected, genai_result)
 
     genai_config = genai_pipe.get_generation_config()
     genai_config.max_new_tokens = 30
-    genai_config.language = f"<|{language}|>"
+    genai_config.language = language_value
     genai_result = genai_pipe.generate(sample, genai_config)
 
     compare_results(expected, genai_result)
