@@ -5,21 +5,18 @@ import os
 import io
 import json
 import torch
+import librosa
 import numpy as np
 import urllib.request
 import logging as log
 from pathlib import Path
-from urllib.parse import urlparse
-from llm_bench_utils.config_class import (
-    PA_ATTENTION_BACKEND,
-    SDPA_ATTENTION_BACKEND,
-)
+from llm_bench_utils.config_class import PA_ATTENTION_BACKEND
 from llm_bench_utils.tts_utils import (
     SPEECHT5_SPEAKER_EMB_SHAPE,
     KOKORO_SPEAKER_EMB_SHAPE,
     is_kokoro_model_id,
 )
-import librosa
+from urllib.parse import urlparse
 
 KNOWN_PRECISIONS = [
     'FP32', 'FP16',
@@ -236,6 +233,7 @@ def analyze_args(args):
     model_type = None
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
+
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
         use_case.model_type = model_type
     model_args["use_case"] = use_case
@@ -248,14 +246,12 @@ def analyze_args(args):
     if args.load_config is not None:
         config = get_config(args.load_config)
         if type(config) is dict and len(config) > 0:
-            model_args['config'] = config
-    if model_framework == 'ov':
-        set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
-            if use_case.task in ['text_gen']:
-                model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
-            elif use_case.task in ['visual_text_gen']:
-                model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
+            model_args["config"] = config
+    if model_framework == "ov":
+        set_default_param_for_ov_config(model_args["config"])
+        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
+            if use_case.task in ["text_gen", "visual_text_gen"]:
+                model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
