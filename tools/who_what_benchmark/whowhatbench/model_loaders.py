@@ -211,7 +211,7 @@ def _patch_minja_incompatible_chat_template(pipeline):
     except Exception as exc:
         logger.warning(f"Could not read chat template to check for minja-incompatible syntax: {exc}")
         return
-    if not chat_template:
+    if not chat_template or not isinstance(chat_template, str):
         return
     patched_chat_template = _MINJA_MULTILINE_STRING_CONCAT_RE.sub("", chat_template)
     if patched_chat_template == chat_template:
@@ -535,12 +535,6 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         model_dir,
         kwargs.get("model_type", "visual-text")
     )
-
-
-def load_visual_text_only_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
-    if not use_genai:
-        raise ValueError("--model-type visual-text-only currently supports only the OpenVINO GenAI backend (--genai).")
-    return load_visual_text_genai_pipeline(model_id, device, ov_config, **kwargs)
 
 
 def load_visual_text_model(
@@ -1145,12 +1139,9 @@ def load_model(
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
+    elif model_type in ["visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type == "visual-text-only":
-        sanitized_kwargs["model_type"] = model_type
-        return load_visual_text_only_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-inpainting":

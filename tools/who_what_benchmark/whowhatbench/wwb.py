@@ -27,19 +27,6 @@ from whowhatbench.utils import get_json_config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_openvino_genai = None
-
-
-def _import_openvino_genai():
-    """Cache the openvino_genai import so per-prompt gen_answer_fn calls don't re-import it."""
-    global _openvino_genai
-    if _openvino_genai is None:
-        import openvino_genai
-
-        _openvino_genai = openvino_genai
-    return _openvino_genai
-
-
 # Supported keys for --sd-generation-config and their expected Python types.
 # When updating this dict, also update the CLI help string for --sd-generation-config below to keep them consistent.
 SD_GENERATION_CONFIG_SUPPORTED_KEYS = {
@@ -162,7 +149,7 @@ def parse_args():
         "text-chat - for causal text generation in chat mode, \n"
         "visual-text - for Visual Language Models with image inputs, \n"
         "visual-text-chat - for Visual Language Models with image inputs in chat mode, \n"
-        "visual-text-only - for validating Visual Language Models with text-only prompts via VLMPipeline (--genai only), \n"
+        "visual-text-only - for validating Visual Language Models with text-only prompts (no images/video), \n"
         "visual-video-text - for Visual Language Models with video inputs, \n"
         "text-to-image - for image generation, \n"
         "image-to-image - for image generation based on image and prompt, \n"
@@ -532,9 +519,6 @@ def check_args(args):
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
-    if args.model_type == "visual-text-only" and not args.genai:
-        raise ValueError("--model-type visual-text-only currently requires --genai (OpenVINO GenAI VLMPipeline).")
-
 
 def load_prompts(args):
     if args.dataset is None:
@@ -704,44 +688,6 @@ def genai_gen_text(
         assistant_confidence_threshold=assistant_confidence_threshold,
         **kwargs,
     )
-
-
-def genai_gen_visual_text_only(
-    model,
-    _tokenizer,
-    question,
-    max_new_tokens,
-    _skip_question,
-    use_chat_template=False,
-    empty_adapters=False,
-    num_assistant_tokens=0,
-    assistant_confidence_threshold=0.0,
-    generation_config_extra=None,
-):
-    # _tokenizer/_skip_question are part of the shared TextEvaluator gen_answer_fn signature but
-    # unused here: VLMPipeline.generate() already returns only the newly generated text.
-    kwargs = {}
-    if empty_adapters:
-        openvino_genai = _import_openvino_genai()
-        kwargs["adapters"] = openvino_genai.AdapterConfig()
-    if generation_config_extra:
-        kwargs.update(generation_config_extra)
-
-    # VLMPipeline.generate() returns VLMDecodedResults, unlike LLMPipeline's plain str.
-    result = model.generate(
-        question,
-        do_sample=False,
-        max_new_tokens=max_new_tokens,
-        apply_chat_template=use_chat_template,
-        num_assistant_tokens=num_assistant_tokens,
-        assistant_confidence_threshold=assistant_confidence_threshold,
-        **kwargs,
-    )
-    texts = getattr(result, "texts", None)
-    if not texts:
-        # Report prompt length only, not its content, to avoid leaking dataset/user data into logs.
-        raise RuntimeError(f"VLMPipeline.generate() returned no text for a {len(question)}-char prompt")
-    return texts[0]
 
 
 def genai_gen_chat_text(
@@ -1062,12 +1008,10 @@ def create_evaluator(base_model, args):
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
         prompts = load_prompts(args)
 
-        if task == "text" or task == "visual-text-only":
+        if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
 
-            if task == "visual-text-only":
-                gen_answer_fn = genai_gen_visual_text_only
-            elif args.genai:
+            if args.genai:
                 gen_answer_fn = genai_gen_text
             elif args.llamacpp:
                 gen_answer_fn = llamacpp_gen_text
@@ -1141,7 +1085,7 @@ def create_evaluator(base_model, args):
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
             )
-        elif task == "visual-text" or task == "visual-video-text":
+        elif task == "visual-text" or task == "visual-video-text" or task == "visual-text-only":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
@@ -1164,6 +1108,8 @@ def create_evaluator(base_model, args):
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
                 generation_config_extra=args.generation_config_extra,
+                language=args.language,
+                long_prompt=(not args.short_prompt),
             )
         elif task == "image-to-image":
             return EvaluatorCLS(

@@ -88,6 +88,20 @@ def test_patch_is_noop_for_none_chat_template():
     assert pipeline.tokenizer.set_calls == []
 
 
+def test_patch_is_noop_for_non_string_chat_template():
+    from whowhatbench.model_loaders import _patch_minja_incompatible_chat_template
+
+    # Some tokenizers may expose chat_template as a non-string (e.g. dict of named templates).
+    non_string_template = {"default": '{{ raise_exception("first "\n"second") }}'}
+    pipeline = FakePipeline(non_string_template)
+
+    # Must not raise.
+    _patch_minja_incompatible_chat_template(pipeline)
+
+    assert pipeline.tokenizer.chat_template == non_string_template
+    assert pipeline.tokenizer.set_calls == []
+
+
 def test_patch_swallows_get_tokenizer_errors():
     from whowhatbench.model_loaders import _patch_minja_incompatible_chat_template
 
