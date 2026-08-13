@@ -43,15 +43,15 @@ class VisualTextEvaluator(TextEvaluator):
         seqs_per_request=None,
         pruning_ratio=None,
         relevance_weight=None,
-        task_type: Literal['visual-text', 'visual-video-text', 'visual-text-only'] = "visual-text",
+        task_type: Literal["visual-text", "visual-video-text", "visual-text-only"] = "visual-text",
         frames_num: int | None = None,
         generation_config_extra=None,
         language="en",
         long_prompt=True,
     ) -> None:
         self.processor = processor
-        self.is_image_input = (task_type == "visual-text")
-        self.is_text_only = (task_type == "visual-text-only")
+        self.is_image_input = task_type == "visual-text"
+        self.is_text_only = task_type == "visual-text-only"
         self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
@@ -200,8 +200,8 @@ class VisualTextEvaluator(TextEvaluator):
         else:
             if self.is_text_only:
                 prompts_file_path = LONG_PROMPTS_FILE if self.long_prompt else PROMPTS_FILE
-                data_path = files('whowhatbench.prompts').joinpath(prompts_file_path)
-                lang_prompt_data = yaml.safe_load(data_path.read_text(encoding='utf-8'))
+                data_path = files("whowhatbench.prompts").joinpath(prompts_file_path)
+                lang_prompt_data = yaml.safe_load(data_path.read_text(encoding="utf-8"))
                 prompts_list = list(lang_prompt_data[self.language]["prompts"])
                 if self.num_samples is not None:
                     prompts_list = prompts_list[: self.num_samples]
