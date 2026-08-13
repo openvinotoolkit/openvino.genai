@@ -8,6 +8,7 @@
 
 #include "audio_chunk.hpp"
 #include "streamer.hpp"
+#include "streaming_session.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -81,7 +82,9 @@ ASRDecodedResults Qwen3ASR::generate(const AudioInputs& audio_inputs,
     return results;
 }
 
-std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const ASRGenerationConfig& config) {
+std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size,
+                                                     const ASRGenerationConfig& config,
+                                                     const std::string& streaming_prefix) {
     std::string context;
     if (config.context.has_value()) {
         context = config.context.value();
@@ -94,7 +97,12 @@ std::vector<std::string> Qwen3ASR::build_text_prompt(size_t batch_size, const AS
                          "<|im_start|>assistant\n";
 
     if (config.language.has_value() && !config.language.value().empty()) {
+        // Language tag is always pre-filled; streaming_prefix (pure text) follows.
         prompt += "language " + config.language.value() + "<asr_text>";
+        prompt += streaming_prefix;
+    } else {
+        // Auto-detection: streaming_prefix includes the language tag from prior decodes.
+        prompt += streaming_prefix;
     }
 
     return std::vector<std::string>(batch_size, prompt);
@@ -245,6 +253,57 @@ std::vector<std::string> Qwen3ASR::infer(std::vector<AudioChunk> chunks,
     }
 
     return results;
+}
+
+std::string Qwen3ASR::infer_streaming_chunk(const std::vector<float>& audio_accum,
+                                            const std::string& streaming_prefix,
+                                            const ASRGenerationConfig& config,
+                                            ASRPerfMetrics& perf_metrics) {
+    const auto features_start = std::chrono::steady_clock::now();
+    const WhisperFeatures features = m_feature_extractor.extract(audio_accum, false);
+    perf_metrics.asr_raw_metrics.features_extraction_durations.emplace_back(
+        MicroSeconds(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - features_start)));
+
+    const auto enc_start = std::chrono::steady_clock::now();
+    const ov::Tensor encoder_hidden_states = m_encoder->encode(features);
+    const auto enc_ms = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - enc_start);
+    perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(enc_ms);
+    perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(enc_ms);
+
+    const size_t audio_token_count = encoder_hidden_states.get_shape()[1];
+
+    const std::string prompt_text = build_text_prompt(1, config, streaming_prefix)[0];
+    const std::vector<std::string> processed_prompts = extend_audio_tokens({prompt_text}, {audio_token_count});
+
+    const auto tok_start = std::chrono::steady_clock::now();
+    const ov::Tensor input_ids = m_tokenizer.encode(processed_prompts).input_ids;
+    perf_metrics.raw_metrics.tokenization_durations.emplace_back(
+        MicroSeconds(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - tok_start)));
+
+    const auto encoded_results = m_decoder->generate(input_ids,
+                                                     encoder_hidden_states,
+                                                     config,
+                                                     perf_metrics.raw_metrics,
+                                                     perf_metrics.asr_raw_metrics,
+                                                     nullptr);
+
+    const auto detok_start = std::chrono::steady_clock::now();
+    const std::string text = m_tokenizer.decode(encoded_results.tokens[0]);
+    perf_metrics.raw_metrics.detokenization_durations.emplace_back(
+        MicroSeconds(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - detok_start)));
+
+    return text;
+}
+
+std::unique_ptr<ASRStreamingSession::Impl> Qwen3ASR::create_streaming_session_impl(
+    const ASRStreamingConfig& streaming_config,
+    const ASRGenerationConfig& generation_config,
+    ASRPartialResultCallback callback) {
+    validate_generation_config(generation_config);
+    return std::make_unique<Qwen3ASRStreamingSessionImpl>(this,
+                                                          streaming_config,
+                                                          generation_config,
+                                                          std::move(callback));
 }
 
 ASRGenerationConfig Qwen3ASR::resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const {

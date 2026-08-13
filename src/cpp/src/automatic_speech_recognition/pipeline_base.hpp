@@ -4,6 +4,7 @@
 #pragma once
 
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
+#include "streaming_session_impl_base.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -23,6 +24,13 @@ public:
     virtual ASRDecodedResults generate(const AudioInputs& audio_inputs,
                                        const std::optional<ASRGenerationConfig>& generation_config,
                                        const std::shared_ptr<StreamerBase> streamer) = 0;
+
+    virtual std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+        const ASRStreamingConfig& streaming_config,
+        const ASRGenerationConfig& generation_config,
+        ASRPartialResultCallback callback) {
+        OPENVINO_THROW("Streaming is not supported for this ASR model type");
+    }
 
     virtual void set_generation_config(const ASRGenerationConfig& config) {
         m_generation_config = config;

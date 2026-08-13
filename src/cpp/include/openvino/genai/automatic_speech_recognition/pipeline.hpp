@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -65,6 +66,55 @@ struct OPENVINO_GENAI_EXPORTS ASRDecodedResults {
     }
 };
 
+/// Parameters controlling a single streaming ASR session.
+struct OPENVINO_GENAI_EXPORTS ASRStreamingConfig {
+    /// Audio duration to accumulate before triggering a decode pass.
+    float chunk_size_sec = 2.0f;
+    /// Number of initial decode passes run without a prefix (cold-start).
+    size_t unfixed_chunk_num = 2;
+    /// Tokens rolled back from accumulated output when computing the prefix for the next pass.
+    size_t unfixed_token_num = 5;
+};
+
+/// A partial transcription delivered after each decode pass.
+struct OPENVINO_GENAI_EXPORTS ASRPartialResult {
+    std::string language;
+    std::string text;
+};
+
+using ASRPartialResultCallback = std::function<void(ASRPartialResult)>;
+
+/// Move-only RAII handle for a streaming ASR session.
+/// Lifetime must not exceed the ASRPipeline that created it.
+/// Only one active session per ASRPipeline is supported at a time.
+class OPENVINO_GENAI_EXPORTS ASRStreamingSession {
+public:
+    ~ASRStreamingSession();
+    ASRStreamingSession(ASRStreamingSession&&) noexcept;
+    ASRStreamingSession& operator=(ASRStreamingSession&&) noexcept;
+    ASRStreamingSession(const ASRStreamingSession&) = delete;
+    ASRStreamingSession& operator=(const ASRStreamingSession&) = delete;
+
+    /// Feed any amount of 16 kHz mono float32 PCM audio.
+    /// Buffers internally; a decode pass fires when chunk_size_sec worth accumulates.
+    void push_chunk(const std::vector<float>& pcm16k);
+
+    /// Flush remaining buffered audio and return the final result.
+    /// The session must not be used after this call.
+    ASRDecodedResults finish();
+
+    /// Return the most recently produced partial result.
+    ASRPartialResult get_partial_result() const;
+
+    // Public so that ASRPipelineImplBase subclasses can inherit from it without friendship.
+    class Impl;
+
+private:
+    std::unique_ptr<Impl> m_impl;
+    explicit ASRStreamingSession(std::unique_ptr<Impl> impl);
+    friend class ASRPipeline;
+};
+
 class ASRPipelineImplBase;
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
@@ -91,6 +141,12 @@ public:
     }
 
     ASRDecodedResults generate(const AudioInputs& audio_inputs, const ov::AnyMap& config_map);
+
+    /// Create a streaming session for incremental audio transcription.
+    ASRStreamingSession create_streaming_session(
+        const ASRStreamingConfig& streaming_config = {},
+        const std::optional<ASRGenerationConfig>& generation_config = std::nullopt,
+        ASRPartialResultCallback callback = nullptr);
 
     Tokenizer get_tokenizer();
     ASRGenerationConfig get_generation_config() const;
