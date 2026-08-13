@@ -1562,11 +1562,6 @@ struct AdapterControllerImpl {
         if (infer_device_is_gpu) {
             inference_precision =
                 get_inference_precision(compiled_model, execution_devices).value_or(ov::element::dynamic);
-            OPENVINO_ASSERT(inference_precision == ov::element::f16 ||
-                                inference_precision == ov::element::f32 ||
-                                inference_precision == ov::element::dynamic,
-                            "Unsupported GPU inference precision hint for LoRA state preparation: ",
-                            inference_precision);
             if (inference_precision == ov::element::f16) {
                 new_output_type = ov::element::f16;
             }
@@ -1689,6 +1684,12 @@ struct AdapterControllerImpl {
 
     void prepare_initial_configs() {
         if (variable_ids.empty()) {
+            return;
+        }
+
+        if (current_config.get_mode() == AdapterConfig::MODE_STATIC_RANK) {
+            auto weight_getters = make_weight_getters(current_config);
+            get_or_prepare_config_tensors(current_config, weight_getters);
             return;
         }
 
