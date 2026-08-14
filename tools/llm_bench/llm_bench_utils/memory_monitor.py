@@ -883,12 +883,12 @@ class MemorySampler(dict, SamplerTiming):
         return tuple(map(self.format_to_export, mapargs))
 
 
-class MemorySampler5(MemorySampler):
+class MemorySamplerBase(MemorySampler):
     chunk_size = 8192
     metrics = OrderedDict(
         [
             ("rss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
-            ("uss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("vms", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
             ("priv", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
             ("sys", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
             ("nsys", {"denom": 1, "unit": "%", "digits": 3, "cv": False}),
@@ -899,31 +899,394 @@ class MemorySampler5(MemorySampler):
         MemorySampler.__init__(self)
         self.process_id = process_id
 
-    def collect(self, marker):
+    def _collect_ram_values(self):
+        """
+        Sum per-process RAM counters for the monitored process and all its
+        descendants and return the raw values in the order of
+        ``MemorySamplerBase.metrics``: ``[rss, vms, priv, sys, nsys]`` (bytes,
+        except ``nsys`` which is a percentage).
+
+        Uses ``memory_info()`` rather than ``memory_full_info()``: the latter
+        is only needed for USS, whose computation requires an expensive and
+        permission-sensitive working-set walk that can raise on Windows.
+        ``rss`` and ``vms`` are available from ``memory_info()`` on every
+        platform; ``private`` (Windows/macOS) is guarded with ``hasattr`` so
+        Linux, which has no ``private`` field, still works.
+
+        Factored out of :meth:`collect` so subclasses (e.g.
+        :class:`MemorySamplerWinGPU`) can reuse the exact same RAM collection
+        and append their own metrics.
+        """
         parent_process = psutilProcess(self.process_id)
-        mem_info = parent_process.memory_full_info()
-        rss_mem, uss_mem, priv_mem = mem_info.rss, 0, 0
-        if hasattr(mem_info, "uss"):
-            uss_mem = mem_info.uss
+        mem_info = parent_process.memory_info()
+        rss_mem, vms_mem, priv_mem = mem_info.rss, mem_info.vms, 0
         if hasattr(mem_info, "private"):
             priv_mem = mem_info.private
         for child_proc in parent_process.children(recursive=True):
-            child_mem_info = child_proc.memory_full_info()
+            child_mem_info = child_proc.memory_info()
             rss_mem += child_mem_info.rss
-            if hasattr(child_mem_info, "uss"):
-                uss_mem += child_mem_info.uss
+            vms_mem += child_mem_info.vms
             if hasattr(child_mem_info, "private"):
                 priv_mem += child_mem_info.private
         sys_mem = psutil.virtual_memory().total - psutil.virtual_memory().available
         nsys_mem = 100 * float(sys_mem) / psutil.virtual_memory().total
-        vals5 = rss_mem, uss_mem, priv_mem, sys_mem, nsys_mem
-        return self.aggregate_and_format(marker, vals5)
+        return [rss_mem, vms_mem, priv_mem, sys_mem, nsys_mem]
+
+    def collect(self, marker):
+        return self.aggregate_and_format(marker, self._collect_ram_values())
+
+
+class MemorySamplerFull(MemorySamplerBase):
+    """
+    Linux extended memory sampler.
+
+    Extends :class:`MemorySamplerBase` with the richer per-process counters that
+    ``psutil.memory_full_info()`` exposes on Linux — ``uss``, ``pss`` and
+    ``swap`` — in addition to the base ``rss`` / ``vms`` / ``priv`` / ``sys`` /
+    ``nsys`` metrics.
+
+    Unlike :class:`MemorySamplerBase` (which uses the cheap ``memory_info()``),
+    ``memory_full_info()`` reads ``/proc/<pid>/smaps`` to compute USS/PSS, so
+    it reflects the "real" footprint more accurately but is slower and needs
+    read access to the target process's smaps.
+
+    Added metrics
+    -------------
+    uss
+        **Unique Set Size** — memory unique to the process, i.e. what would be
+        freed if the process terminated right now.
+    pss
+        **Proportional Set Size** — RSS where each shared page is divided by
+        the number of processes sharing it; sums across processes without
+        double-counting shared memory.
+    swap
+        Amount of the process's memory that has been swapped out to disk.
+
+    Linux only: macOS ``memory_full_info()`` lacks ``pss`` / ``swap``, so on
+    non-Linux platforms the marker monitor falls back to
+    :class:`MemorySamplerBase` with a warning.
+    """
+
+    chunk_size = 8192
+    metrics = OrderedDict(
+        [
+            ("rss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("vms", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("priv", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("sys", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("nsys", {"denom": 1, "unit": "%", "digits": 3, "cv": False}),
+            ("uss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("pss", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+            ("swap", {"denom": 1048576, "unit": "MiB", "digits": 3, "cv": True}),
+        ]
+    )
+
+    @staticmethod
+    def _full_info_values(proc):
+        """
+        Return ``(rss, vms, priv, uss, pss, swap)`` in bytes for a single
+        process from ``memory_full_info()``. Fields absent on the current
+        platform (e.g. ``private`` on Linux) default to 0 via ``getattr``.
+        """
+        mem_info = proc.memory_full_info()
+        return (
+            mem_info.rss,
+            mem_info.vms,
+            getattr(mem_info, "private", 0),
+            getattr(mem_info, "uss", 0),
+            getattr(mem_info, "pss", 0),
+            getattr(mem_info, "swap", 0),
+        )
+
+    def collect(self, marker):
+        parent_process = psutilProcess(self.process_id)
+        rss_mem, vms_mem, priv_mem, uss_mem, pss_mem, swap_mem = self._full_info_values(parent_process)
+        for child_proc in parent_process.children(recursive=True):
+            c_rss, c_vms, c_priv, c_uss, c_pss, c_swap = self._full_info_values(child_proc)
+            rss_mem += c_rss
+            vms_mem += c_vms
+            priv_mem += c_priv
+            uss_mem += c_uss
+            pss_mem += c_pss
+            swap_mem += c_swap
+        sys_mem = psutil.virtual_memory().total - psutil.virtual_memory().available
+        nsys_mem = 100 * float(sys_mem) / psutil.virtual_memory().total
+        # Order must match self.metrics: rss, vms, priv, sys, nsys, uss, pss, swap.
+        vals = [rss_mem, vms_mem, priv_mem, sys_mem, nsys_mem, uss_mem, pss_mem, swap_mem]
+        return self.aggregate_and_format(marker, vals)
+
+
+class MemorySamplerWinGPU(MemorySamplerBase):
+    """
+    Windows GPU-aware memory sampler.
+
+    Extends :class:`MemorySamplerBase` — every RAM / system counter (``rss``,
+    ``vms``, ``priv``, ``sys``, ``nsys``) is collected unchanged from psutil by
+    the parent — and appends per-adapter GPU memory metrics obtained through
+    WMI.  No native / ctypes Win32 memory API is used.
+
+    Added metrics (per detected adapter, in enumeration order)
+    ----------------------------------------------------------
+    gpu_<index>_ded
+        Dedicated GPU memory in use (``DedicatedUsage``): on-board VRAM.
+        Nonzero on discrete GPUs; ~0 on integrated GPUs, which have no
+        dedicated VRAM.
+    gpu_<index>_shr
+        Shared GPU memory in use (``SharedUsage``): system RAM used as GPU
+        memory.  This is where integrated-GPU usage shows up (and where a
+        discrete GPU spills once its VRAM is full).
+
+    Sourced from
+    ``Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory``
+    (bytes, Windows 10 1709+).  Values are system-wide per adapter.  Present
+    only when the optional ``wmi`` package is installed and at least one
+    adapter is detected.  Vendor-agnostic (NVIDIA / AMD / Intel).
+
+    Notes
+    -----
+    * The WMI connection (``wmi.WMI()``) is established once in ``__init__``
+      and cached in ``self._wmi_conn``, avoiding COM re-initialisation on
+      every :meth:`collect` call.
+    * A single GPUAdapterMemory query can take 100–500 ms, so the reading is
+      cached and refreshed at most once per ``self._gpu_poll_min_interval``
+      seconds; GPU memory moves slowly, so a slightly stale value is
+      acceptable and keeps the GPU poll from dominating a short
+      process-sampling interval.
+    """
+
+    # WMI performance-counter class exposing per-adapter GPU memory.  Unlike
+    # Win32_VideoController.DedicatedUsage (dedicated VRAM only), it also
+    # reports the shared pool, so integrated GPUs report real usage.
+    _GPU_ADAPTER_CLS = "Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory"
+
+    @staticmethod
+    def import_wmi():
+        """
+        Import and return the ``wmi`` module, or raise ``RuntimeError`` when
+        win-gpu cannot be honored -- a non-Windows platform, or the optional
+        ``wmi`` package not installed. Raising here (rather than returning
+        ``None``) means callers don't each have to re-check the result: an
+        explicit ``--memory_sampler win-gpu`` request fails loudly instead of
+        silently degrading to a RAM-only sampler.
+
+        GPU memory is read from the WMI performance-counter class
+        ``Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory``
+        (Windows 10 1709+), which exposes per-adapter dedicated AND shared GPU
+        memory currently in use.  Shared coverage is what makes integrated GPUs
+        report non-zero usage.  psutil has no GPU-memory API, so WMI is used
+        here; there is deliberately NO ctypes / native-Win32 memory code —
+        every RAM / system counter comes from :class:`MemorySamplerBase`
+        (psutil).
+        """
+        if sys.platform != "win32":
+            raise RuntimeError(
+                f"--memory_sampler win-gpu is only available on Windows (current platform: {sys.platform!r})."
+            )
+        try:
+            import wmi  # type: ignore[import]
+        except ImportError:
+            raise RuntimeError(
+                "--memory_sampler win-gpu requires the 'wmi' package for per-GPU memory "
+                "metrics (gpu_<index>_ded/shr), but it is not installed. "
+                "Install it with:  pip install wmi"
+            )
+        log.debug("MemorySamplerWinGPU: wmi module loaded — GPU memory metrics (gpu_<index>) enabled.")
+        return wmi
+
+    def __init__(self, process_id):
+        self.process_id = process_id
+
+        # Build an *instance-level* metrics OrderedDict: start from the
+        # inherited RAM metrics, then append gpu_<index> entries (whose count
+        # is only known at runtime).  Must NOT mutate the class-level dict
+        # shared by all instances.
+        self.metrics = OrderedDict(MemorySamplerBase.metrics)
+
+        # ── WMI GPU discovery ────────────────────────────────────────────
+        self._wmi_conn = None
+        self._gpu_instances = []  # ordered adapter instance names (LUID keys)
+        # Throttle WMI GPU polling. A single GPUAdapterMemory query can take
+        # 100–500 ms, so re-querying on every collect() would dominate a short
+        # sampling interval and pollute the measurement. Cache the last reading
+        # and refresh at most once per _gpu_poll_min_interval seconds.
+        self._gpu_poll_min_interval = 1.0
+        self._gpu_cache = ()  # last flat (ded_0, shr_0, …) tuple
+        self._gpu_last_ts = None  # perf_counter() of last WMI query
+        # MemorySamplerWinGPU is only instantiated when the user explicitly asks
+        # for it (e.g. --memory_sampler win-gpu); import_wmi() raises with a
+        # clear message when the request can't be honored (wrong platform or the
+        # 'wmi' package missing) rather than silently degrading to RAM-only.
+        wmi_module = self.import_wmi()
+        self._wmi_conn = wmi_module.WMI()
+        self._discover_gpu_adapters()
+
+        for i in range(len(self._gpu_instances)):
+            for pool in ("ded", "shr"):
+                self.metrics[f"gpu_{i}_{pool}"] = {
+                    "denom": 1_048_576,  # bytes → MiB
+                    "unit": "MiB",
+                    "digits": 3,
+                    "cv": True,
+                }
+
+        # Initialise the sampler base *after* self.metrics is fully populated
+        # so make_header() already sees all entries, including gpu_<index>
+        # ones. (Bypasses MemorySamplerBase.__init__, which would only re-set
+        # process_id and call the base — already handled here.)
+        MemorySampler.__init__(self)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _discover_gpu_adapters(self):
+        """
+        Enumerate GPU adapters via the GPU performance-counter class and fix
+        the per-adapter metric order for the lifetime of the sampler.
+
+        Adapter instance names (e.g. ``luid_0x00000000_0x0002c3ec_phys_0``)
+        are stable for the current boot session, so the index → adapter
+        mapping stays constant across every :meth:`collect` call.  Friendly
+        names from ``Win32_VideoController`` are logged as a legend only:
+        they cannot be mapped 1:1 to counter LUIDs via WMI, so metric keys
+        stay index-based.  Virtual/idle adapters (e.g. Microsoft Basic
+        Render Driver) are included and simply read 0/0 — they are never
+        dropped, so a genuine but momentarily-idle GPU is never missed.
+        """
+        rows = getattr(self._wmi_conn, self._GPU_ADAPTER_CLS)()
+        self._gpu_instances = [r.Name for r in rows]
+
+        if not self._gpu_instances:
+            log.info("MemorySamplerWinGPU: no GPU adapters found — gpu metrics skipped.")
+            return
+
+        try:
+            names = [getattr(v, "Name", None) or "GPU" for v in self._wmi_conn.Win32_VideoController()]
+        except Exception:
+            names = []
+
+        last = len(self._gpu_instances) - 1
+        log.info(
+            f"MemorySamplerWinGPU: {len(self._gpu_instances)} GPU adapter(s) "
+            f"— metrics gpu_0_ded/shr … gpu_{last}_ded/shr "
+            "(ded=dedicated VRAM/discrete, shr=shared system RAM/integrated). "
+            f"Adapters(LUID)={self._gpu_instances} VideoControllers={names}"
+        )
+
+    def _collect_gpu_mem(self):
+        """
+        Query dedicated + shared GPU memory currently in use for every
+        detected adapter via the WMI
+        ``Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory``
+        class.  ``DedicatedUsage`` is on-board VRAM (nonzero on discrete
+        GPUs) and ``SharedUsage`` is system RAM used as GPU memory (nonzero
+        on integrated GPUs).  Values are bytes, system-wide per adapter.
+        The cached ``self._wmi_conn`` is reused on every call to avoid COM
+        re-initialisation overhead.  The query *result* is additionally cached
+        for ``self._gpu_poll_min_interval`` seconds: a call made sooner than
+        that returns the previous reading, so a short process-sampling
+        interval never triggers an expensive WMI query on every sample.
+
+        Two values are returned **per GPU index** — ``(ded, shr)`` — flattened
+        in the same order as the ``gpu_<index>_ded`` / ``gpu_<index>_shr``
+        metrics registered in ``self.metrics``.  This guarantees the tuple
+        length always matches what :meth:`MemorySampler.aggregate_and_format`
+        expects.
+
+        :returns: A flat tuple of ``int`` values in **bytes**,
+                  ``(ded_0, shr_0, ded_1, shr_1, …)``.  Empty tuple when WMI
+                  is unavailable or no adapters were found.  A tuple of zeros
+                  (length ``2 * len(self._gpu_instances)``) when the WMI query
+                  fails at runtime, so sampling continues without crashing.
+        """
+        if self._wmi_conn is None or not self._gpu_instances:
+            return ()
+
+        # Serve the cached reading when the previous WMI query is still fresh,
+        # decoupling the expensive GPU poll from the (usually much shorter)
+        # process-sampling interval.
+        now = time.perf_counter()
+        if self._gpu_last_ts is not None and (now - self._gpu_last_ts) < self._gpu_poll_min_interval:
+            return self._gpu_cache
+
+        try:
+            rows = {r.Name: r for r in getattr(self._wmi_conn, self._GPU_ADAPTER_CLS)()}
+        except Exception as exc:
+            log.debug(f"MemorySamplerWinGPU: WMI GPU memory query failed ({exc}) — returning zeros.")
+            self._gpu_cache = (0,) * (2 * len(self._gpu_instances))
+            self._gpu_last_ts = now
+            return self._gpu_cache
+
+        out = []
+        for name in self._gpu_instances:
+            r = rows.get(name)
+            out.append(int(getattr(r, "DedicatedUsage", 0) or 0) if r is not None else 0)
+            out.append(int(getattr(r, "SharedUsage", 0) or 0) if r is not None else 0)
+        self._gpu_cache = tuple(out)
+        self._gpu_last_ts = now
+        return self._gpu_cache
+
+    # ------------------------------------------------------------------
+    # MemorySampler protocol
+    # ------------------------------------------------------------------
+
+    def collect(self, marker):
+        """
+        Take a single snapshot: RAM counters via the inherited
+        :meth:`MemorySamplerBase._collect_ram_values` (psutil, parent + all
+        descendants) plus per-adapter GPU memory via :meth:`_collect_gpu_mem`.
+        """
+        vals = self._collect_ram_values()
+        vals.extend(self._collect_gpu_mem())  # flat (ded_0, shr_0, ded_1, shr_1, …)
+        # aggregate_and_format() zips vals with self.metrics and silently
+        # truncates on a length mismatch, which would corrupt the running stats
+        # (e.g. leave a metric's min at +inf). Flag it loudly. Kept non-fatal so
+        # a transient GPU-adapter-count hiccup never kills the background
+        # memory-monitor process.
+        if len(vals) != len(self.metrics):
+            log.error(
+                "MemorySamplerWinGPU: metric/value count mismatch "
+                f"({len(vals)} values vs {len(self.metrics)} metrics) "
+                "— GPU adapter set may have changed; sample stats may be unreliable."
+            )
+        return self.aggregate_and_format(marker, vals)
 
 
 class MemoryMarkerMonitor(list):
-    def __init__(self, marker_queue, process_id, sampling_interval, path_prefix):
-        log.info("Memory worker: MemorySampler5 init...")
-        self.sampler = MemorySampler5(process_id)
+    def __init__(self, marker_queue, process_id, sampling_interval, path_prefix, sampler_type="base"):
+        # Select the sampler based on *sampler_type* (the value of --memory_sampler):
+        #   "base"    → MemorySamplerBase:   cross-platform, psutil.memory_info().
+        #                                    Reports RSS, VMS, Private and system RAM.
+        #   "win-gpu" → MemorySamplerWinGPU: MemorySamplerBase (same RAM metrics) PLUS
+        #                                    per-GPU dedicated/shared memory
+        #                                    (gpu_<index>_ded / gpu_<index>_shr) via
+        #                                    the WMI GPUAdapterMemory perf counters.
+        #                                    Windows + 'wmi' only; a request on any
+        #                                    other platform / without wmi is rejected
+        #                                    up front by MemoryMarkerHandler.
+        #   "full"    → MemorySamplerFull:   MemorySamplerBase (same RAM metrics) PLUS
+        #                                    uss/pss/swap from psutil.memory_full_info().
+        #                                    Linux only; falls back to MemorySamplerBase
+        #                                    elsewhere with a warning.
+        if sampler_type == "win-gpu" and sys.platform == "win32":
+            log.info("Memory worker: MemorySamplerWinGPU (psutil RAM + WMI GPU) init...")
+            self.sampler = MemorySamplerWinGPU(process_id)
+        elif sampler_type == "full" and sys.platform == "linux":
+            log.info("Memory worker: MemorySamplerFull (psutil memory_full_info: +uss/pss/swap) init...")
+            self.sampler = MemorySamplerFull(process_id)
+        else:
+            if sampler_type == "win-gpu":
+                log.warning(
+                    "Memory worker: --memory_sampler win-gpu requested but MemorySamplerWinGPU is "
+                    "only available on Windows — falling back to MemorySamplerBase."
+                )
+            elif sampler_type == "full":
+                log.warning(
+                    "Memory worker: --memory_sampler full requested but MemorySamplerFull is "
+                    "only available on Linux — falling back to MemorySamplerBase."
+                )
+            log.info("Memory worker: MemorySamplerBase (psutil cross-platform) init...")
+            self.sampler = MemorySamplerBase(process_id)
         self.sampling_interval = float(sampling_interval)
         self.process_id = int(process_id)
         self.last_ts = time.perf_counter()
@@ -1062,13 +1425,23 @@ class MemoryMarkerHandler:
         cooldown = args.memory_consumption_cooldown
         interval = args.memory_consumption_interval
         report_path = args.memory_consumption_dir
+        sampler_type = getattr(args, "memory_sampler", "base")
+
+        # Fail fast, in the main process, when win-gpu is explicitly requested
+        # but cannot be honored (wrong platform or the 'wmi' package missing).
+        # The sampler itself runs in a background daemon whose exceptions are
+        # caught and logged there (background_worker), so without this check the
+        # benchmark would silently continue with no GPU metrics. import_wmi()
+        # raises the user-facing error; we only need to trigger it here.
+        if sampler_type == "win-gpu":
+            MemorySamplerWinGPU.import_wmi()
 
         parent_pid = os.getpid()
         self.marker_queue = multiprocessing.Queue(maxsize=1000)
         self.s_event = multiprocessing.Event()
 
         time.sleep(max(cooldown or 0, 1))  # needed for some machines
-        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event
+        pargs = self.marker_queue, parent_pid, interval, report_path, mode, cooldown, self.s_event, sampler_type
         self.background_process = mProcess(target=self.background_worker, args=pargs, daemon=True)
         self.background_process.start()
         self.update_marker("start")
@@ -1125,14 +1498,15 @@ class MemoryMarkerHandler:
                 time.sleep(0.1)
 
     @staticmethod
-    def background_worker(conn, pid, interval, path, mode, cooldown, s_event):
+    def background_worker(conn, pid, interval, path, mode, cooldown, s_event, sampler_type="base"):
         try:
-            mmm = MemoryMarkerMonitor(conn, pid, interval, path)
+            mmm = MemoryMarkerMonitor(conn, pid, interval, path, sampler_type)
         except Exception:
             print("Error in background worker:", file=sys.stderr)
             traceback.print_exc()
             sys.stderr.flush()
             s_event.set()
+            return  # prevent UnboundLocalError below if MemoryMarkerMonitor.__init__ raises
 
         metadata = {
             "mode": mode,
