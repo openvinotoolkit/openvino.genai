@@ -758,11 +758,10 @@ public:
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
 
         const size_t B_ts = latent_shape_cfg[0];
-        // Frame-0 conditioning needs a per-token timestep, so the rank-1 [B] path the
-        // text-to-video pipeline still supports is not usable here.
+        // Frame-0 conditioning needs a per-token timestep. Legacy exports have a rank-1 timestep.
         OPENVINO_ASSERT(m_transformer->get_timestep_rank() == 2,
-                        "Image-to-video requires a rank-2 [B, S] timestep input. "
-                        "Re-export the model with: optimum-cli export openvino --task image-to-video");
+                        "Image-to-video requires a rank-2 [B, S] timestep input, but this model has a "
+                        "legacy rank-1 timestep. Please re-export the model.");
         ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
         float* timestep_data = timestep.data<float>();
         for (size_t b = 0; b < B_ts; ++b) {
