@@ -436,9 +436,9 @@ class TestImageGenerationWithBlobTensorModels:
             pipe.export_model(tmp_path / "blob_model")
 
 
-class TestFlux2KleinImageGeneration:
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
-    def test_flux2_klein_text2image(self, image_generation_model):
+class TestImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_text2image(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
 
         image = pipe.generate(
@@ -450,8 +450,8 @@ class TestFlux2KleinImageGeneration:
 
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
-    def test_flux2_klein_text2image_with_callback(self, image_generation_model):
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_text2image_with_callback(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
 
         callback_calls = []
@@ -471,8 +471,36 @@ class TestFlux2KleinImageGeneration:
         assert len(callback_calls) > 0, "Callback should be called at least once"
         assert image is not None
 
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_text2image_with_negative_prompt(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            negative_prompt="bad quality",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            guidance_scale=4.0,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_text2image_reshape_and_generate(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model)
+        pipe.reshape(1, 128, 128, 3.5)
+        pipe.compile("CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
-    def test_flux2_klein_image2image(self, image_generation_model):
+    def test_image2image(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
 
         input_image = get_random_image()
@@ -489,7 +517,7 @@ class TestFlux2KleinImageGeneration:
         assert image is not None
 
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
-    def test_flux2_klein_image2image_with_callback(self, image_generation_model):
+    def test_image2image_with_callback(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
 
         callback_calls = []
@@ -537,70 +565,6 @@ class TestPNDMScheduler:
             width=64,
             height=64,
             num_inference_steps=1,
-        )
-
-        assert image is not None
-
-
-class TestQwenImageGeneration:
-    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
-    def test_qwen_image_text2image(self, image_generation_model):
-        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
-
-        image = pipe.generate(
-            "test prompt",
-            width=64,
-            height=64,
-            num_inference_steps=2,
-        )
-
-        assert image is not None
-
-    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
-    def test_qwen_image_text2image_with_negative_prompt(self, image_generation_model):
-        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
-
-        image = pipe.generate(
-            "test prompt",
-            negative_prompt="bad quality",
-            width=64,
-            height=64,
-            num_inference_steps=2,
-            guidance_scale=4.0,
-        )
-
-        assert image is not None
-
-    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
-    def test_qwen_image_text2image_with_callback(self, image_generation_model):
-        pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
-
-        callback_calls = []
-
-        def callback(step, num_steps, latent):
-            callback_calls.append((step, num_steps))
-            return False
-
-        image = pipe.generate(
-            "test prompt",
-            width=64,
-            height=64,
-            num_inference_steps=2,
-            callback=callback,
-        )
-
-        assert len(callback_calls) > 0, "Callback should be called at least once"
-        assert image is not None
-
-    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
-    def test_qwen_image_reshape_and_generate(self, image_generation_model):
-        pipe = ov_genai.Text2ImagePipeline(image_generation_model)
-        pipe.reshape(1, 128, 128, 3.5)
-        pipe.compile("CPU")
-
-        image = pipe.generate(
-            "test prompt",
-            num_inference_steps=2,
         )
 
         assert image is not None
