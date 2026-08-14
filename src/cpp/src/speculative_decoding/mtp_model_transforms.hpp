@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <filesystem>
-
 #include "openvino/core/any.hpp"
 #include "openvino/core/model.hpp"
 
