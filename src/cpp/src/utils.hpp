@@ -120,6 +120,12 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
+// Sets a key/value pair in config only if the key is not already present.
+void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any value);
+
+// Returns true when NPUW is enabled via NPU_USE_NPUW.
+bool is_npuw_enabled(const ov::AnyMap& config);
+
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
@@ -256,6 +262,14 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(cons
                                                                             const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
 
 size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model);
+
+/// @brief Reads the runtime KV cache element type from a compiled model's key_cache.* / value_cache.* inputs.
+/// Plugins may resolve the actual cache precision (e.g. CPU promoting to bf16 based on the resolved inference
+/// precision) independently of the ov::hint::kv_cache_precision property, so the precision must be read from the
+/// compiled model's cache input ports to match the tensors actually allocated and bound by the cache manager.
+/// Throws if no cache inputs are present or if the cache inputs use non-uniform precision, since downstream
+/// consumers (e.g. the Eagle3 KV cache reorder model) assume a single precision shared by all key/value inputs.
+ov::element::Type get_compiled_kv_cache_precision(const ov::CompiledModel& compiled_model);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
