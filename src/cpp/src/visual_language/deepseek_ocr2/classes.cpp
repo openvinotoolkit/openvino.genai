@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
+#include <regex>
 
 #include "openvino/core/type/float16.hpp"
 #include "utils.hpp"
@@ -209,7 +211,7 @@ ov::Tensor infer_and_copy(CircularBufferQueue<ov::InferRequest>* queue, const ov
 
     const ov::Tensor& output = infer_request.get_output_tensor();
     ov::Tensor copy(output.get_element_type(), output.get_shape());
-    std::memcpy(copy.data(), output.data(), output.get_byte_size());
+    output.copy_to(copy);
     return copy;
 }
 
@@ -395,11 +397,11 @@ InputsEmbedderDeepseekOCR2::InputsEmbedderDeepseekOCR2(const VLMConfig& vlm_conf
 
 ov::Tensor InputsEmbedderDeepseekOCR2::apply_chat_template_tokenize(const std::string& prompt,
                                                                     ov::genai::VLMPerfMetrics& metrics) {
-    const bool saved_apply_chat_template = m_apply_chat_template;
-    m_apply_chat_template = false;
-    ov::Tensor encoded = InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
-    m_apply_chat_template = saved_apply_chat_template;
-    return encoded;
+    // Skip templating unless the user has explicitly set a custom chat template on the tokenizer.
+    const bool saved = m_apply_chat_template;
+    m_apply_chat_template = saved && !m_tokenizer.get_chat_template().empty();
+    struct Guard { bool& flag; bool value; ~Guard() { flag = value; } } guard{m_apply_chat_template, saved};
+    return InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(prompt, metrics);
 }
 
 NormalizedPrompt InputsEmbedderDeepseekOCR2::normalize_prompt(const std::string& prompt,
