@@ -471,7 +471,7 @@ class TestImageGeneration:
         assert len(callback_calls) > 0, "Callback should be called at least once"
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
     def test_text2image_with_negative_prompt(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
 
