@@ -112,11 +112,29 @@ if(OPENVINO_GENAI_USE_SYSTEM_INSTALL_LAYOUT)
         "${OPENVINO_GENAI_INSTALL_LIBDIR}/cmake/OpenVINOGenAI")
     if(ENABLE_PYTHON)
         if(DEFINED OV_CPACK_PYTHONDIR)
-            set(OPENVINO_GENAI_INSTALL_PYTHONDIR "${OV_CPACK_PYTHONDIR}")
+            set(_openvino_genai_python_install_dir "${OV_CPACK_PYTHONDIR}")
         else()
-            set(OPENVINO_GENAI_INSTALL_PYTHONDIR
-                "${CMAKE_INSTALL_LIBDIR}/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages")
+            # Python extension modules do not necessarily install below the
+            # native library directory. For example, Debian keeps public
+            # modules outside its multiarch library directory.
+            set(_openvino_genai_python_install_dir "${Python3_SITEARCH}")
+            if(IS_ABSOLUTE "${_openvino_genai_python_install_dir}")
+                set(_openvino_genai_install_prefix "${CMAKE_INSTALL_PREFIX}")
+                cmake_path(IS_PREFIX _openvino_genai_install_prefix
+                           "${_openvino_genai_python_install_dir}" NORMALIZE
+                           _openvino_genai_python_dir_is_under_prefix)
+                if(_openvino_genai_python_dir_is_under_prefix)
+                    cmake_path(RELATIVE_PATH _openvino_genai_python_install_dir
+                               BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
+                endif()
+            endif()
         endif()
+        set(OPENVINO_GENAI_INSTALL_PYTHONDIR
+            "${_openvino_genai_python_install_dir}" CACHE STRING
+            "Python package destination for native installations; relative paths use CMAKE_INSTALL_PREFIX")
+        unset(_openvino_genai_install_prefix)
+        unset(_openvino_genai_python_dir_is_under_prefix)
+        unset(_openvino_genai_python_install_dir)
     endif()
 else()
     set(OPENVINO_GENAI_INSTALL_INCLUDEDIR "runtime/include")
