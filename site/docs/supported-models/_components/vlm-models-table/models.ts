@@ -111,6 +111,15 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'MuseGlimmerForConditionalGeneration',
+    models: [
+      {
+        name: 'Muse-Glimmer',
+        links: ['https://huggingface.co/meta-models/Muse-Glimmer-30B'],
+      },
+    ],
+  },
+  {
     architecture: 'Phi3VForCausalLM',
     models: [
       {
