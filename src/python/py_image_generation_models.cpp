@@ -1222,8 +1222,15 @@ void init_qwen2_5_vl(py::module_& m) {
             return std::make_unique<ov::genai::Qwen2_5_VLForConditionalGeneration>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory",
-        py::arg("device"), "Device on which inference will be done")
-        .def("reshape", &ov::genai::Qwen2_5_VLForConditionalGeneration::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
+        py::arg("device"), "Device on which inference will be done");
+
+    py::class_<ov::genai::Qwen2_5_VLForConditionalGeneration::Config>(cls, "Config")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::Qwen2_5_VLForConditionalGeneration::Config>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("hidden_size", &ov::genai::Qwen2_5_VLForConditionalGeneration::Config::hidden_size);
+
+    cls.def("reshape", &ov::genai::Qwen2_5_VLForConditionalGeneration::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
         .def("infer",
             [](ov::genai::Qwen2_5_VLForConditionalGeneration& self, const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length) {
                 py::gil_scoped_release rel;
@@ -1239,12 +1246,6 @@ void init_qwen2_5_vl(py::module_& m) {
                 self.compile(device, map);
             },
             py::arg("device"));
-
-    py::class_<ov::genai::Qwen2_5_VLForConditionalGeneration::Config>(cls, "Config")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::Qwen2_5_VLForConditionalGeneration::Config>(config_path);
-        }), py::arg("config_path"))
-        .def_readwrite("hidden_size", &ov::genai::Qwen2_5_VLForConditionalGeneration::Config::hidden_size);
 }
 
 void init_qwen_image_transformer_2d_model(py::module_& m) {
@@ -1261,8 +1262,17 @@ void init_qwen_image_transformer_2d_model(py::module_& m) {
             return std::make_unique<ov::genai::QwenImageTransformer2DModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("root_dir"), "Model root directory",
-        py::arg("device"), "Device on which inference will be done")
-        .def("get_config", &ov::genai::QwenImageTransformer2DModel::get_config)
+        py::arg("device"), "Device on which inference will be done");
+
+    py::class_<ov::genai::QwenImageTransformer2DModel::Config>(cls, "Config")
+        .def(py::init([](const std::filesystem::path& config_path) {
+            return std::make_unique<ov::genai::QwenImageTransformer2DModel::Config>(config_path);
+        }), py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::QwenImageTransformer2DModel::Config::in_channels)
+        .def_readwrite("guidance_embeds", &ov::genai::QwenImageTransformer2DModel::Config::guidance_embeds)
+        .def_readwrite("default_sample_size", &ov::genai::QwenImageTransformer2DModel::Config::default_sample_size);
+
+    cls.def("get_config", &ov::genai::QwenImageTransformer2DModel::get_config)
         .def("reshape", &ov::genai::QwenImageTransformer2DModel::reshape, py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
         .def("infer", &ov::genai::QwenImageTransformer2DModel::infer, py::call_guard<py::gil_scoped_release>(), py::arg("latent"), py::arg("timestep"))
         .def("set_hidden_states", &ov::genai::QwenImageTransformer2DModel::set_hidden_states, py::arg("tensor_name"), py::arg("tensor"))
@@ -1273,12 +1283,4 @@ void init_qwen_image_transformer_2d_model(py::module_& m) {
                 self.compile(device, map);
             },
             py::arg("device"));
-
-    py::class_<ov::genai::QwenImageTransformer2DModel::Config>(cls, "Config")
-        .def(py::init([](const std::filesystem::path& config_path) {
-            return std::make_unique<ov::genai::QwenImageTransformer2DModel::Config>(config_path);
-        }), py::arg("config_path"))
-        .def_readwrite("in_channels", &ov::genai::QwenImageTransformer2DModel::Config::in_channels)
-        .def_readwrite("guidance_embeds", &ov::genai::QwenImageTransformer2DModel::Config::guidance_embeds)
-        .def_readwrite("default_sample_size", &ov::genai::QwenImageTransformer2DModel::Config::default_sample_size);
 }

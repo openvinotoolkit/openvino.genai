@@ -3246,9 +3246,6 @@ class Qwen2_5_VLForConditionalGeneration:
     Qwen2_5_VLForConditionalGeneration class.
     """
     class Config:
-        """
-        This class is used for storing Qwen2_5_VLForConditionalGeneration config.
-        """
         def __init__(self, config_path: os.PathLike | str | bytes) -> None:
             ...
         @property
@@ -3260,23 +3257,15 @@ class Qwen2_5_VLForConditionalGeneration:
     @typing.overload
     def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
-                    Qwen2_5_VLForConditionalGeneration class
-                    root_dir (os.PathLike): Model root directory.
+        Model root directory
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
-                    Qwen2_5_VLForConditionalGeneration class
-                    root_dir (os.PathLike): Model root directory.
-                    device (str): Device on which inference will be done.
-                    kwargs: Device properties.
+        Device on which inference will be done
         """
     def compile(self, device: str, **kwargs) -> None:
-        """
-                        Compiles the model.
-                        device (str): Device to run the model on (e.g., CPU, GPU).
-                        kwargs: Device properties.
-        """
+        ...
     def get_config(self) -> Qwen2_5_VLForConditionalGeneration.Config:
         ...
     def get_encoder_attention_mask(self) -> openvino._pyopenvino.Tensor:
@@ -3351,9 +3340,6 @@ class QwenImageTransformer2DModel:
     QwenImageTransformer2DModel class.
     """
     class Config:
-        """
-        This class is used for storing QwenImageTransformer2DModel config.
-        """
         guidance_embeds: bool
         def __init__(self, config_path: os.PathLike | str | bytes) -> None:
             ...
@@ -3372,30 +3358,22 @@ class QwenImageTransformer2DModel:
     @typing.overload
     def __init__(self, root_dir: os.PathLike | str | bytes) -> None:
         """
-                    QwenImageTransformer2DModel class
-                    root_dir (os.PathLike): Model root directory.
+        Model root directory
         """
     @typing.overload
     def __init__(self, root_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
-                    QwenImageTransformer2DModel class
-                    root_dir (os.PathLike): Model root directory.
-                    device (str): Device on which inference will be done.
-                    kwargs: Device properties.
+        Device on which inference will be done
         """
     def compile(self, device: str, **kwargs) -> None:
-        """
-                        Compiles the model.
-                        device (str): Device to run the model on (e.g., CPU, GPU).
-                        kwargs: Device properties.
-        """
+        ...
     def get_config(self) -> QwenImageTransformer2DModel.Config:
         ...
     def infer(self, latent: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, tokenizer_model_max_length: typing.SupportsInt) -> QwenImageTransformer2DModel:
         ...
-    def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
+    def set_hidden_states(self, tensor_name: str, tensor: openvino._pyopenvino.Tensor) -> None:
         ...
 class RawImageGenerationPerfMetrics:
     """
