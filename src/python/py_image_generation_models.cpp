@@ -1225,11 +1225,12 @@ void init_qwen2_5_vl(py::module_& m) {
         py::arg("device"), "Device on which inference will be done")
         .def("reshape", &ov::genai::Qwen2_5_VLForConditionalGeneration::reshape, py::arg("batch_size"), py::arg("max_sequence_length"))
         .def("infer",
-            [](ov::genai::Qwen2_5_VLForConditionalGeneration& self, const std::string& prompt, int max_sequence_length) {
+            [](ov::genai::Qwen2_5_VLForConditionalGeneration& self, const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length) {
                 py::gil_scoped_release rel;
-                return self.infer(prompt, max_sequence_length);
+                return self.infer(pos_prompt, neg_prompt, do_classifier_free_guidance, max_sequence_length);
             },
-            py::arg("prompt"), py::arg("max_sequence_length"))
+            py::arg("pos_prompt"), py::arg("neg_prompt"), py::arg("do_classifier_free_guidance"), py::arg("max_sequence_length"))
+        .def("get_encoder_attention_mask", &ov::genai::Qwen2_5_VLForConditionalGeneration::get_encoder_attention_mask)
         .def("get_config", &ov::genai::Qwen2_5_VLForConditionalGeneration::get_config)
         .def("compile",
             [](ov::genai::Qwen2_5_VLForConditionalGeneration& self, const std::string& device, const py::kwargs& kwargs) {

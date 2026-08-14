@@ -120,4 +120,14 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
       'https://huggingface.co/black-forest-labs/FLUX.2-klein-4B',
     ],
   },
+  {
+    architecture: 'Qwen-Image',
+    textToImage: true,
+    imageToImage: false,
+    inpainting: false,
+    loraSupport: true,
+    links: [
+      'https://huggingface.co/Qwen/Qwen-Image',
+    ],
+  },
 ];

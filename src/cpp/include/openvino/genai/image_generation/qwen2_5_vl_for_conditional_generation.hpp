@@ -56,8 +56,9 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    // Returns pair of (prompt_embeds, encoder_attention_mask)
-    std::pair<ov::Tensor, ov::Tensor> infer(const std::string& prompt, const int max_sequence_length);
+    ov::Tensor infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length);
+
+    ov::Tensor get_encoder_attention_mask() const;
 
     void set_adapters(const std::optional<AdapterConfig>& adapters);
 
@@ -73,6 +74,7 @@ private:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     Tokenizer m_tokenizer;
+    ov::Tensor m_encoder_attention_mask;
 };
 
 }  // namespace genai

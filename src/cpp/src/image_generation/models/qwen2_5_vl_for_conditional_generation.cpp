@@ -96,104 +96,122 @@ Qwen2_5_VLForConditionalGeneration& Qwen2_5_VLForConditionalGeneration::compile(
     return *this;
 }
 
-std::pair<ov::Tensor, ov::Tensor> Qwen2_5_VLForConditionalGeneration::infer(const std::string& prompt, const int max_sequence_length) {
+ov::Tensor Qwen2_5_VLForConditionalGeneration::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, const int max_sequence_length) {
     OPENVINO_ASSERT(m_request, "QwenImage text encoder model must be compiled first. Cannot infer non-compiled model");
 
-    // 1. Format prompt with template
-    std::string formatted_prompt = PROMPT_TEMPLATE;
-    const std::string placeholder = "{}";
-    size_t pos = formatted_prompt.find(placeholder);
-    OPENVINO_ASSERT(pos != std::string::npos, "Prompt template must contain '{}'");
-    formatted_prompt.replace(pos, placeholder.length(), prompt);
-
-    // 2. Tokenize
+    const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
     const size_t total_max_length = static_cast<size_t>(max_sequence_length) + PROMPT_TEMPLATE_PREFIX_LENGTH;
-    auto tokenizer_output = m_tokenizer.encode(formatted_prompt);
-    ov::Tensor input_ids_token = tokenizer_output.input_ids;
-    ov::Tensor attention_mask_token = tokenizer_output.attention_mask;
 
-    const size_t token_len = input_ids_token.get_shape()[1];
-    const size_t actual_len = std::min(token_len, total_max_length);
-
-    // Get element type from compiled model
     const ov::element::Type input_type = m_request.get_compiled_model().input("input_ids").get_element_type();
     const int64_t pad_token_id = m_tokenizer.get_pad_token_id();
 
-    // Prepare padded tensors
-    ov::Tensor input_ids(input_type, {1, total_max_length});
-    ov::Tensor attention_mask(input_type, {1, total_max_length});
+    auto tokenize_prompt = [&](const std::string& prompt, size_t batch_idx,
+                               ov::Tensor& input_ids, ov::Tensor& attention_mask) {
+        std::string formatted = PROMPT_TEMPLATE;
+        const std::string placeholder = "{}";
+        size_t pos = formatted.find(placeholder);
+        OPENVINO_ASSERT(pos != std::string::npos, "Prompt template must contain '{}'");
+        formatted.replace(pos, placeholder.length(), prompt);
 
-    if (input_type == ov::element::i32) {
-        int32_t* ids_data = input_ids.data<int32_t>();
-        int32_t* mask_data = attention_mask.data<int32_t>();
-        std::fill_n(ids_data, total_max_length, static_cast<int32_t>(pad_token_id));
-        std::fill_n(mask_data, total_max_length, static_cast<int32_t>(0));
-        for (size_t i = 0; i < actual_len; ++i) {
-            ids_data[i] = static_cast<int32_t>(input_ids_token.data<int64_t>()[i]);
-            mask_data[i] = static_cast<int32_t>(attention_mask_token.data<int64_t>()[i]);
+        auto tok_output = m_tokenizer.encode(formatted);
+        ov::Tensor ids_tok = tok_output.input_ids;
+        ov::Tensor mask_tok = tok_output.attention_mask;
+
+        const size_t tok_len = ids_tok.get_shape()[1];
+        const size_t actual_len = std::min(tok_len, total_max_length);
+
+        if (input_type == ov::element::i32) {
+            int32_t* ids_row = input_ids.data<int32_t>() + batch_idx * total_max_length;
+            int32_t* mask_row = attention_mask.data<int32_t>() + batch_idx * total_max_length;
+            std::fill_n(ids_row, total_max_length, static_cast<int32_t>(pad_token_id));
+            std::fill_n(mask_row, total_max_length, static_cast<int32_t>(0));
+            std::copy_n(ids_tok.data<int64_t>(), actual_len, ids_row);
+            std::copy_n(mask_tok.data<int64_t>(), actual_len, mask_row);
+        } else {
+            int64_t* ids_row = input_ids.data<int64_t>() + batch_idx * total_max_length;
+            int64_t* mask_row = attention_mask.data<int64_t>() + batch_idx * total_max_length;
+            std::fill_n(ids_row, total_max_length, pad_token_id);
+            std::fill_n(mask_row, total_max_length, static_cast<int64_t>(0));
+            std::copy_n(ids_tok.data<int64_t>(), actual_len, ids_row);
+            std::copy_n(mask_tok.data<int64_t>(), actual_len, mask_row);
         }
-    } else {
-        int64_t* ids_data = input_ids.data<int64_t>();
-        int64_t* mask_data = attention_mask.data<int64_t>();
-        std::fill_n(ids_data, total_max_length, pad_token_id);
-        std::fill_n(mask_data, total_max_length, static_cast<int64_t>(0));
-        std::copy_n(input_ids_token.data<int64_t>(), actual_len, ids_data);
-        std::copy_n(attention_mask_token.data<int64_t>(), actual_len, mask_data);
-    }
+    };
 
-    // 3. Run inference
+    // Prepare batched input tensors
+    ov::Tensor input_ids(input_type, {text_embedding_batch_size, total_max_length});
+    ov::Tensor attention_mask(input_type, {text_embedding_batch_size, total_max_length});
+
+    size_t current_batch_idx = 0;
+    if (do_classifier_free_guidance) {
+        tokenize_prompt(neg_prompt, current_batch_idx, input_ids, attention_mask);
+        ++current_batch_idx;
+    }
+    tokenize_prompt(pos_prompt, current_batch_idx, input_ids, attention_mask);
+
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.infer();
 
-    // 4. Get last_hidden_state output
+    // Post-process: drop template prefix, pad to max_sequence_length
     ov::Tensor hidden_states = m_request.get_output_tensor();
     const float* hs_data = hidden_states.data<float>();
-    const size_t seq_len = hidden_states.get_shape()[1];
     const size_t hidden_size = hidden_states.get_shape()[2];
+    const size_t output_seq_len = static_cast<size_t>(max_sequence_length);
 
-    // 5. Extract masked hidden states: only tokens where attention_mask == 1
-    size_t valid_length = 0;
-    if (input_type == ov::element::i32) {
-        const int32_t* mask_data = attention_mask.data<int32_t>();
-        for (size_t i = 0; i < total_max_length; ++i) {
-            if (mask_data[i] != 0) ++valid_length;
+    ov::Tensor prompt_embeds(ov::element::f32, {text_embedding_batch_size, output_seq_len, hidden_size});
+    m_encoder_attention_mask = ov::Tensor(ov::element::i64, {text_embedding_batch_size, output_seq_len});
+
+    float* embeds_out = prompt_embeds.data<float>();
+    int64_t* mask_out = m_encoder_attention_mask.data<int64_t>();
+
+    for (size_t b = 0; b < text_embedding_batch_size; ++b) {
+        const float* batch_hs = hs_data + b * total_max_length * hidden_size;
+
+        // Count valid tokens from attention mask
+        size_t valid_length = 0;
+        if (input_type == ov::element::i32) {
+            const int32_t* mask_data = attention_mask.data<int32_t>() + b * total_max_length;
+            for (size_t i = 0; i < total_max_length; ++i) {
+                if (mask_data[i] != 0) ++valid_length;
+            }
+        } else {
+            const int64_t* mask_data = attention_mask.data<int64_t>() + b * total_max_length;
+            for (size_t i = 0; i < total_max_length; ++i) {
+                if (mask_data[i] != 0) ++valid_length;
+            }
         }
-    } else {
-        const int64_t* mask_data = attention_mask.data<int64_t>();
-        for (size_t i = 0; i < total_max_length; ++i) {
-            if (mask_data[i] != 0) ++valid_length;
-        }
+
+        OPENVINO_ASSERT(valid_length > PROMPT_TEMPLATE_PREFIX_LENGTH,
+                        "Token count after encoding must be greater than the template prefix length (",
+                        PROMPT_TEMPLATE_PREFIX_LENGTH, "), got ", valid_length);
+
+        const size_t content_length = valid_length - PROMPT_TEMPLATE_PREFIX_LENGTH;
+        const size_t content_seq_len = std::min(content_length, output_seq_len);
+
+        float* batch_embeds_out = embeds_out + b * output_seq_len * hidden_size;
+        int64_t* batch_mask_out = mask_out + b * output_seq_len;
+
+        // Copy valid content embeddings (skip template prefix)
+        std::memcpy(batch_embeds_out,
+                    batch_hs + PROMPT_TEMPLATE_PREFIX_LENGTH * hidden_size,
+                    content_seq_len * hidden_size * sizeof(float));
+
+        // Zero-pad remaining positions
+        std::memset(batch_embeds_out + content_seq_len * hidden_size, 0,
+                    (output_seq_len - content_seq_len) * hidden_size * sizeof(float));
+
+        // Mask: 1 for valid content tokens, 0 for padding
+        std::fill_n(batch_mask_out, content_seq_len, static_cast<int64_t>(1));
+        std::fill_n(batch_mask_out + content_seq_len, output_seq_len - content_seq_len, static_cast<int64_t>(0));
     }
 
-    // 6. Drop first PROMPT_TEMPLATE_PREFIX_LENGTH tokens from valid hidden states
-    OPENVINO_ASSERT(valid_length > PROMPT_TEMPLATE_PREFIX_LENGTH,
-                    "Token count after encoding must be greater than the template prefix length (",
-                    PROMPT_TEMPLATE_PREFIX_LENGTH, "), got ", valid_length);
-    const size_t content_length = valid_length - PROMPT_TEMPLATE_PREFIX_LENGTH;
+    return prompt_embeds;
+}
 
-    // 7. Clamp to max_sequence_length
-    const size_t output_seq_len = std::min(content_length, static_cast<size_t>(max_sequence_length));
-
-    // 8. Create prompt_embeds and attention mask
-    ov::Tensor prompt_embeds(ov::element::f32, {1, output_seq_len, hidden_size});
-    ov::Tensor encoder_attention_mask(ov::element::i64, {1, output_seq_len});
-
-    float* embeds_data = prompt_embeds.data<float>();
-    int64_t* mask_out_data = encoder_attention_mask.data<int64_t>();
-
-    // Copy from position PROMPT_TEMPLATE_PREFIX_LENGTH within the valid (non-padded) region
-    // Since the model pads at the end and valid tokens are at the beginning,
-    // the hidden states for valid tokens are at indices [0, valid_length)
-    const size_t src_offset = PROMPT_TEMPLATE_PREFIX_LENGTH;
-    std::memcpy(embeds_data,
-                hs_data + src_offset * hidden_size,
-                output_seq_len * hidden_size * sizeof(float));
-
-    // All output tokens are valid (we already trimmed to content length)
-    std::fill_n(mask_out_data, output_seq_len, static_cast<int64_t>(1));
-
-    return {prompt_embeds, encoder_attention_mask};
+ov::Tensor Qwen2_5_VLForConditionalGeneration::get_encoder_attention_mask() const {
+    OPENVINO_ASSERT(m_encoder_attention_mask,
+                    "Encoder attention mask is not available. Run infer() first");
+    return m_encoder_attention_mask;
 }
 
 void Qwen2_5_VLForConditionalGeneration::set_adapters(const std::optional<AdapterConfig>& adapters) {

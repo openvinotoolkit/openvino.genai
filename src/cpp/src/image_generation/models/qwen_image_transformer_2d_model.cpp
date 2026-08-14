@@ -110,12 +110,6 @@ QwenImageTransformer2DModel& QwenImageTransformer2DModel::reshape(int batch_size
         } else if (input_name == "encoder_hidden_states_mask") {
             // (B, text_seq_len)
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length};
-        } else if (input_name == "img_cos" || input_name == "img_sin") {
-            // (image_seq_len, rotary_dim)
-            name_to_shape[input_name][0] = image_seq_len;
-        } else if (input_name == "txt_cos" || input_name == "txt_sin") {
-            // (text_seq_len, rotary_dim)
-            name_to_shape[input_name][0] = tokenizer_model_max_length;
         } else if (input_name == "guidance") {
             name_to_shape[input_name] = {batch_size};
         }

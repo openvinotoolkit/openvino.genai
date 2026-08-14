@@ -5,7 +5,6 @@
 
 #include <cassert>
 #include <cmath>
-#include <complex>
 #include <cstring>
 #include <vector>
 
@@ -30,170 +29,6 @@ inline double qwen_image_calculate_shift(
     double m = (max_shift - base_shift) / (static_cast<double>(max_seq_len) - static_cast<double>(base_seq_len));
     double b = base_shift - m * static_cast<double>(base_seq_len);
     return static_cast<double>(image_seq_len) * m + b;
-}
-
-// Compute complex rotary frequency parameters
-inline std::vector<std::complex<float>> compute_rope_params(const std::vector<int64_t>& indices, size_t dim, float theta = 10000.0f) {
-    const size_t half_dim = dim / 2;
-    std::vector<std::complex<float>> result(indices.size() * half_dim);
-
-    for (size_t i = 0; i < indices.size(); ++i) {
-        for (size_t d = 0; d < half_dim; ++d) {
-            float freq = static_cast<float>(indices[i]) / std::pow(theta, static_cast<float>(2 * d) / static_cast<float>(dim));
-            result[i * half_dim + d] = std::complex<float>(std::cos(freq), std::sin(freq));
-        }
-    }
-
-    return result;
-}
-
-// Compute video rotary embeddings for QwenImage
-// Returns (cos, sin) each of shape (frame*height*width, total_rotary_dim/2)
-inline std::pair<ov::Tensor, ov::Tensor> qwen_image_compute_rotary_embeddings(
-    size_t frame, size_t height, size_t width,
-    const std::vector<size_t>& axes_dims_rope,
-    float theta = 10000.0f) {
-
-    // Build positive and negative index arrays (like diffusers: pos_index = arange(4096), neg_index = arange(4096).flip(0) * -1 - 1)
-    const size_t max_index = 4096;
-
-    // Compute per-axis frequencies for positive and negative indices
-    auto compute_axis_freqs = [&](size_t dim, const std::vector<int64_t>& indices) {
-        return compute_rope_params(indices, dim, theta);
-    };
-
-    // Positive indices for frame dimension
-    std::vector<int64_t> pos_indices(max_index);
-    for (size_t i = 0; i < max_index; ++i) pos_indices[i] = static_cast<int64_t>(i);
-
-    // Negative indices
-    std::vector<int64_t> neg_indices(max_index);
-    for (size_t i = 0; i < max_index; ++i) neg_indices[i] = -static_cast<int64_t>(max_index - i);
-
-    // Compute frequencies for each axis
-    auto pos_freqs_0 = compute_rope_params(pos_indices, axes_dims_rope[0], theta); // frame axis
-    auto pos_freqs_1 = compute_rope_params(pos_indices, axes_dims_rope[1], theta); // height axis
-    auto neg_freqs_1 = compute_rope_params(neg_indices, axes_dims_rope[1], theta); // height axis negative
-    auto pos_freqs_2 = compute_rope_params(pos_indices, axes_dims_rope[2], theta); // width axis
-    auto neg_freqs_2 = compute_rope_params(neg_indices, axes_dims_rope[2], theta); // width axis negative
-
-    const size_t half_dim_0 = axes_dims_rope[0] / 2;
-    const size_t half_dim_1 = axes_dims_rope[1] / 2;
-    const size_t half_dim_2 = axes_dims_rope[2] / 2;
-    const size_t total_half_dim = half_dim_0 + half_dim_1 + half_dim_2;
-
-    const size_t total_seq = frame * height * width;
-
-    ov::Tensor cos_tensor(ov::element::f32, {total_seq, total_half_dim});
-    ov::Tensor sin_tensor(ov::element::f32, {total_seq, total_half_dim});
-    float* cos_data = cos_tensor.data<float>();
-    float* sin_data = sin_tensor.data<float>();
-
-    for (size_t f = 0; f < frame; ++f) {
-        for (size_t h = 0; h < height; ++h) {
-            for (size_t w = 0; w < width; ++w) {
-                const size_t idx = (f * height * width + h * width + w);
-                float* cos_row = cos_data + idx * total_half_dim;
-                float* sin_row = sin_data + idx * total_half_dim;
-
-                // Frame axis: positive indices
-                for (size_t d = 0; d < half_dim_0; ++d) {
-                    cos_row[d] = pos_freqs_0[f * half_dim_0 + d].real();
-                    sin_row[d] = pos_freqs_0[f * half_dim_0 + d].imag();
-                }
-
-                // Height axis: negative for first half, positive for second half
-                // freqs_height = cat([neg[-(height - height//2):], pos[:height//2]])
-                const size_t h_half = height / 2;
-                size_t h_freq_idx;
-                if (h < (height - h_half)) {
-                    // from negative: neg[-(height - h_half) + h] = neg[max_index - (height - h_half) + h]
-                    h_freq_idx = max_index - (height - h_half) + h;
-                    for (size_t d = 0; d < half_dim_1; ++d) {
-                        cos_row[half_dim_0 + d] = neg_freqs_1[h_freq_idx * half_dim_1 + d].real();
-                        sin_row[half_dim_0 + d] = neg_freqs_1[h_freq_idx * half_dim_1 + d].imag();
-                    }
-                } else {
-                    // from positive: pos[h - (height - h_half)]
-                    h_freq_idx = h - (height - h_half);
-                    for (size_t d = 0; d < half_dim_1; ++d) {
-                        cos_row[half_dim_0 + d] = pos_freqs_1[h_freq_idx * half_dim_1 + d].real();
-                        sin_row[half_dim_0 + d] = pos_freqs_1[h_freq_idx * half_dim_1 + d].imag();
-                    }
-                }
-
-                // Width axis: negative for first half, positive for second half
-                // freqs_width = cat([neg[-(width - width//2):], pos[:width//2]])
-                const size_t w_half = width / 2;
-                size_t w_freq_idx;
-                if (w < (width - w_half)) {
-                    w_freq_idx = max_index - (width - w_half) + w;
-                    for (size_t d = 0; d < half_dim_2; ++d) {
-                        cos_row[half_dim_0 + half_dim_1 + d] = neg_freqs_2[w_freq_idx * half_dim_2 + d].real();
-                        sin_row[half_dim_0 + half_dim_1 + d] = neg_freqs_2[w_freq_idx * half_dim_2 + d].imag();
-                    }
-                } else {
-                    w_freq_idx = w - (width - w_half);
-                    for (size_t d = 0; d < half_dim_2; ++d) {
-                        cos_row[half_dim_0 + half_dim_1 + d] = pos_freqs_2[w_freq_idx * half_dim_2 + d].real();
-                        sin_row[half_dim_0 + half_dim_1 + d] = pos_freqs_2[w_freq_idx * half_dim_2 + d].imag();
-                    }
-                }
-            }
-        }
-    }
-
-    return {cos_tensor, sin_tensor};
-}
-
-// Compute text rotary embeddings for QwenImage
-// Text positions start at max(height//2, width//2) — matching diffusers
-inline std::pair<ov::Tensor, ov::Tensor> qwen_image_compute_text_rotary_embeddings(
-    size_t text_seq_len,
-    size_t height, size_t width,
-    const std::vector<size_t>& axes_dims_rope,
-    float theta = 10000.0f) {
-
-    const size_t max_vid_index = std::max(height / 2, width / 2);
-    const size_t half_dim_0 = axes_dims_rope[0] / 2;
-    const size_t half_dim_1 = axes_dims_rope[1] / 2;
-    const size_t half_dim_2 = axes_dims_rope[2] / 2;
-    const size_t total_half_dim = half_dim_0 + half_dim_1 + half_dim_2;
-
-    // Text frequencies use positive indices starting from max_vid_index
-    std::vector<int64_t> text_indices(text_seq_len);
-    for (size_t i = 0; i < text_seq_len; ++i) {
-        text_indices[i] = static_cast<int64_t>(max_vid_index + i);
-    }
-
-    auto freqs_0 = compute_rope_params(text_indices, axes_dims_rope[0], theta);
-    auto freqs_1 = compute_rope_params(text_indices, axes_dims_rope[1], theta);
-    auto freqs_2 = compute_rope_params(text_indices, axes_dims_rope[2], theta);
-
-    ov::Tensor cos_tensor(ov::element::f32, {text_seq_len, total_half_dim});
-    ov::Tensor sin_tensor(ov::element::f32, {text_seq_len, total_half_dim});
-    float* cos_data = cos_tensor.data<float>();
-    float* sin_data = sin_tensor.data<float>();
-
-    for (size_t i = 0; i < text_seq_len; ++i) {
-        float* cos_row = cos_data + i * total_half_dim;
-        float* sin_row = sin_data + i * total_half_dim;
-
-        for (size_t d = 0; d < half_dim_0; ++d) {
-            cos_row[d] = freqs_0[i * half_dim_0 + d].real();
-            sin_row[d] = freqs_0[i * half_dim_0 + d].imag();
-        }
-        for (size_t d = 0; d < half_dim_1; ++d) {
-            cos_row[half_dim_0 + d] = freqs_1[i * half_dim_1 + d].real();
-            sin_row[half_dim_0 + d] = freqs_1[i * half_dim_1 + d].imag();
-        }
-        for (size_t d = 0; d < half_dim_2; ++d) {
-            cos_row[half_dim_0 + half_dim_1 + d] = freqs_2[i * half_dim_2 + d].real();
-            sin_row[half_dim_0 + half_dim_1 + d] = freqs_2[i * half_dim_2 + d].imag();
-        }
-    }
-
-    return {cos_tensor, sin_tensor};
 }
 
 }  // anonymous namespace
@@ -329,7 +164,8 @@ public:
                  const float guidance_scale) override {
         check_image_size(height, width);
 
-        m_text_encoder->reshape(1, m_generation_config.max_sequence_length);
+        const int text_encoder_batch_size = guidance_scale > 1.0f ? 2 : 1;
+        m_text_encoder->reshape(text_encoder_batch_size, m_generation_config.max_sequence_length);
         m_transformer->reshape(num_images_per_prompt, height, width, m_generation_config.max_sequence_length);
         m_vae->reshape(num_images_per_prompt, height, width);
     }
@@ -367,16 +203,38 @@ public:
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+        // Text encoder was reshaped for batch 2 when guidance_scale > 1.0, so always use batch 2 in that case
+        const bool use_cfg_encoding = generation_config.guidance_scale > 1.0f;
+        const bool do_true_cfg = use_cfg_encoding && generation_config.negative_prompt.has_value();
+        const std::string neg_prompt = generation_config.negative_prompt.value_or(std::string{});
+
         auto infer_start = std::chrono::steady_clock::now();
-        auto [prompt_embeds, encoder_mask] = m_text_encoder->infer(positive_prompt, generation_config.max_sequence_length);
+        ov::Tensor embeds = m_text_encoder->infer(positive_prompt, neg_prompt, use_cfg_encoding, generation_config.max_sequence_length);
+        ov::Tensor mask = m_text_encoder->get_encoder_attention_mask();
         auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
-        // Repeat for num_images_per_prompt
-        m_positive_prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
-        m_positive_encoder_mask = numpy_utils::repeat(encoder_mask, generation_config.num_images_per_prompt);
+        if (use_cfg_encoding) {
+            // embeds shape: (2, max_seq_len, hidden_size) — [negative, positive]
+            const size_t seq_len = embeds.get_shape()[1];
+            const size_t hidden_size = embeds.get_shape()[2];
 
-        // Set text encoder outputs to transformer
+            ov::Tensor neg_embeds(embeds, {0, 0, 0}, {1, seq_len, hidden_size});
+            ov::Tensor pos_embeds(embeds, {1, 0, 0}, {2, seq_len, hidden_size});
+            ov::Tensor neg_mask(mask, {0, 0}, {1, seq_len});
+            ov::Tensor pos_mask(mask, {1, 0}, {2, seq_len});
+
+            m_positive_prompt_embeds = numpy_utils::repeat(pos_embeds, generation_config.num_images_per_prompt);
+            m_positive_encoder_mask = numpy_utils::repeat(pos_mask, generation_config.num_images_per_prompt);
+            if (do_true_cfg) {
+                m_negative_prompt_embeds = numpy_utils::repeat(neg_embeds, generation_config.num_images_per_prompt);
+                m_negative_encoder_mask = numpy_utils::repeat(neg_mask, generation_config.num_images_per_prompt);
+            }
+        } else {
+            m_positive_prompt_embeds = numpy_utils::repeat(embeds, generation_config.num_images_per_prompt);
+            m_positive_encoder_mask = numpy_utils::repeat(mask, generation_config.num_images_per_prompt);
+        }
+
         m_transformer->set_hidden_states("encoder_hidden_states", m_positive_prompt_embeds);
         m_transformer->set_hidden_states("encoder_hidden_states_mask", m_positive_encoder_mask);
 
@@ -399,7 +257,6 @@ public:
                                width};
         ov::Tensor latent, noise, processed_image, image_latents;
 
-        // Generate random noise latents
         noise = generation_config.generator->randn_tensor(latent_shape);
         latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
 
@@ -447,44 +304,22 @@ public:
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
-        // Encode negative prompt if true_cfg is active
         const float true_cfg_scale = m_custom_generation_config.guidance_scale;
         const bool do_true_cfg = true_cfg_scale > 1.0f && m_custom_generation_config.negative_prompt.has_value();
-
-        ov::Tensor negative_prompt_embeds, negative_encoder_mask;
-        if (do_true_cfg) {
-            auto neg_infer_start = std::chrono::steady_clock::now();
-            auto [neg_embeds, neg_mask] = m_text_encoder->infer(
-                m_custom_generation_config.negative_prompt.value(),
-                m_custom_generation_config.max_sequence_length);
-            auto neg_infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - neg_infer_start).count();
-            m_perf_metrics.encoder_inference_duration["text_encoder"] += neg_infer_duration;
-
-            negative_prompt_embeds = numpy_utils::repeat(neg_embeds, m_custom_generation_config.num_images_per_prompt);
-            negative_encoder_mask = numpy_utils::repeat(neg_mask, m_custom_generation_config.num_images_per_prompt);
-        }
 
         ov::Tensor latents;
         std::tie(latents, std::ignore, std::ignore, std::ignore) = prepare_latents(initial_image, m_custom_generation_config);
 
-        // Compute image_seq_len for timestep scheduling
         const size_t latent_height = m_custom_generation_config.height / vae_scale_factor / 2;
         const size_t latent_width = m_custom_generation_config.width / vae_scale_factor / 2;
         const size_t image_seq_len = latent_height * latent_width;
 
-        // Compute rotary embeddings on the host side.
-        // TODO: for diffusers this is done inside QwenImageTransformer2DModel.forward()
-        const auto& axes_dims = m_transformer->get_config().axes_dims_rope;
-        const size_t text_seq_len = m_positive_prompt_embeds.get_shape()[1];
-
-        auto [img_cos, img_sin] = qwen_image_compute_rotary_embeddings(1, latent_height, latent_width, axes_dims);
-        auto [txt_cos, txt_sin] = qwen_image_compute_text_rotary_embeddings(text_seq_len, latent_height, latent_width, axes_dims);
-
-        m_transformer->set_hidden_states("img_cos", img_cos);
-        m_transformer->set_hidden_states("img_sin", img_sin);
-        m_transformer->set_hidden_states("txt_cos", txt_cos);
-        m_transformer->set_hidden_states("txt_sin", txt_sin);
+        ov::Tensor height_tensor(ov::element::i64, {});
+        ov::Tensor width_tensor(ov::element::i64, {});
+        height_tensor.data<int64_t>()[0] = static_cast<int64_t>(latent_height);
+        width_tensor.data<int64_t>()[0] = static_cast<int64_t>(latent_width);
+        m_transformer->set_hidden_states("height", height_tensor);
+        m_transformer->set_hidden_states("width", width_tensor);
 
         const double mu = qwen_image_calculate_shift(image_seq_len, m_base_seq_len, m_max_seq_len, m_base_shift, m_max_shift);
         m_scheduler->set_timesteps_with_mu(mu, m_custom_generation_config.num_inference_steps, 1.0f);
@@ -526,17 +361,8 @@ public:
                     cond_norms[t] = std::sqrt(sum_sq);
                 }
 
-                m_transformer->set_hidden_states("encoder_hidden_states", negative_prompt_embeds);
-                m_transformer->set_hidden_states("encoder_hidden_states_mask", negative_encoder_mask);
-
-                // Compute and set text rotary embeddings for negative prompt
-                const size_t neg_text_seq_len = negative_prompt_embeds.get_shape()[1];
-                if (neg_text_seq_len != text_seq_len) {
-                    auto [neg_txt_cos, neg_txt_sin] = qwen_image_compute_text_rotary_embeddings(
-                        neg_text_seq_len, latent_height, latent_width, axes_dims);
-                    m_transformer->set_hidden_states("txt_cos", neg_txt_cos);
-                    m_transformer->set_hidden_states("txt_sin", neg_txt_sin);
-                }
+                m_transformer->set_hidden_states("encoder_hidden_states", m_negative_prompt_embeds);
+                m_transformer->set_hidden_states("encoder_hidden_states_mask", m_negative_encoder_mask);
 
                 auto neg_infer_start = std::chrono::steady_clock::now();
                 ov::Tensor neg_noise_pred = m_transformer->infer(latents, timestep_tensor);
@@ -569,10 +395,6 @@ public:
                 // Restore positive prompt embeddings for the next step
                 m_transformer->set_hidden_states("encoder_hidden_states", m_positive_prompt_embeds);
                 m_transformer->set_hidden_states("encoder_hidden_states_mask", m_positive_encoder_mask);
-                if (neg_text_seq_len != text_seq_len) {
-                    m_transformer->set_hidden_states("txt_cos", txt_cos);
-                    m_transformer->set_hidden_states("txt_sin", txt_sin);
-                }
             }
 
             auto scheduler_step_result = m_scheduler->step(noise_pred, latents, inference_step, m_custom_generation_config.generator);
@@ -600,7 +422,7 @@ public:
         // Unpack latents: (B, seq_len, C*4) -> (B, C, H, W)
         ov::Tensor final_latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
 
-        // Apply VAE latent denormalization: latents = latents / latents_std + latents_mean
+        // Apply VAE latent denormalization
         // The final_latents shape is (B, C, H, W), need to add temporal dim for 3D VAE: (B, C, 1, H, W)
         apply_latent_denormalization(final_latents);
 
@@ -760,6 +582,8 @@ private:
 
     ov::Tensor m_positive_prompt_embeds;
     ov::Tensor m_positive_encoder_mask;
+    ov::Tensor m_negative_prompt_embeds;
+    ov::Tensor m_negative_encoder_mask;
 
     ImageGenerationConfig m_custom_generation_config;
     ImageGenerationPerfMetrics m_perf_metrics;
