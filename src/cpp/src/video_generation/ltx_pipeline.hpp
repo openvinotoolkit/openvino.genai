@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -757,7 +758,9 @@ public:
         TaylorSeerState ts_state(merged_generation_config.taylorseer_config, timesteps.size());
 
         const size_t B_ts = latent_shape_cfg[0];
-        OPENVINO_ASSERT(m_transformer->get_timestep_partial_shape().size() == 2,
+        // Frame-0 conditioning needs a per-token timestep, so the rank-1 [B] path the
+        // text-to-video pipeline still supports is not usable here.
+        OPENVINO_ASSERT(m_transformer->get_timestep_rank() == 2,
                         "Image-to-video requires a rank-2 [B, S] timestep input. "
                         "Re-export the model with: optimum-cli export openvino --task image-to-video");
         ov::Tensor timestep(ov::element::f32, {B_ts, video_sequence_length});
@@ -974,7 +977,7 @@ public:
                                             transformer_temporal_patch_size);
 
         // Prepare timesteps
-        size_t video_sequence_length = latent.get_shape().at(1);
+        size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
         const double mu = m_scheduler->calculate_shift(video_sequence_length);
         m_scheduler->set_timesteps_with_mu(mu,
                                            merged_generation_config.num_inference_steps,
@@ -991,18 +994,6 @@ public:
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
-
-        // Rank-1 [B] (legacy export) or rank-2 [B, S] (current export, per-token conditioning).
-        ov::Shape timestep_shape;
-        const auto& timestep_partial = m_transformer->get_timestep_partial_shape();
-        if (timestep_partial.size() == 2) {
-            timestep_shape = {batch_size_multiplier * merged_generation_config.num_videos_per_prompt,
-                              video_sequence_length};
-        } else {
-            timestep_shape = {batch_size_multiplier * merged_generation_config.num_videos_per_prompt};
-        }
-        ov::Tensor timestep(ov::element::f32, timestep_shape);
-        float* timestep_data = timestep.data<float>();
 
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
@@ -1024,24 +1015,25 @@ public:
                                         merged_generation_config.num_videos_per_prompt,
                                         merged_generation_config.num_videos_per_prompt);
             } else {
+                // just assign to save memory copy
                 latent_cfg = latent;
             }
-            // batch_size_multiplier already incorporates m_transformer->get_expected_batch_size()
-            // (see the override above), so latent_cfg's batch can never fall short of it here.
-            // Tripwire: latent_cfg must stay in sync with the timestep tensor's batch.
-            OPENVINO_ASSERT(latent_cfg.get_shape()[0] == timestep.get_shape()[0],
-                            "latent batch (", latent_cfg.get_shape()[0],
-                            ") must match timestep batch (", timestep.get_shape()[0], ")");
+            // Match compiled model's expected batch size by repeating latent if needed
+            // (e.g., when model was compiled with CFG but current config doesn't require it)
+            const size_t request_input_batch = m_transformer->get_request_input_batch();
+            if (request_input_batch > latent_cfg.get_shape()[0]) {
+                OPENVINO_ASSERT(request_input_batch % latent_cfg.get_shape()[0] == 0,
+                                "Transformer input batch must be divisible by latent batch");
+                latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
+            }
 
-            std::fill_n(timestep_data, timestep.get_size(), timesteps[inference_step]);
-
-            // Use TaylorSeer if enabled and caching is appropriate
             ov::Tensor noise_pred_tensor;
+            // Use TaylorSeer if enabled and caching is appropriate
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
                 noise_pred_tensor = ts_state.predict(inference_step);
             } else {
                 auto infer_start = std::chrono::steady_clock::now();
-                noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+                noise_pred_tensor = m_transformer->infer(latent_cfg, timesteps[inference_step]);
                 auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
                 m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
                 if (ts_state.is_active()) {

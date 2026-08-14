@@ -110,7 +110,7 @@ void init_ltx_video_transformer_3d_model(py::module_& m) {
                 Pass an empty AdapterConfig() to disable all adapters.
             )")
         .def("infer",
-             &ov::genai::LTXVideoTransformer3DModel::infer,
+             py::overload_cast<const ov::Tensor&, const ov::Tensor&>(&ov::genai::LTXVideoTransformer3DModel::infer),
              py::call_guard<py::gil_scoped_release>(),
              py::arg("latent"),
              py::arg("timestep"),
