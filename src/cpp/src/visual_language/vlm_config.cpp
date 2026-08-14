@@ -34,7 +34,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"videochat_flash_qwen", VLMModelType::VIDEOCHAT_FLASH_QWEN},
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
-        {"deepseek_ocr2", VLMModelType::DEEPSEEK_VL_V2},
+        {"deepseek_ocr2", VLMModelType::DEEPSEEK_OCR2},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
     };
 

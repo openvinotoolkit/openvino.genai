@@ -10,14 +10,14 @@
 
 namespace ov::genai {
 
-class VisionEncoderDeepseekVLV2 : public VisionEncoder {
+class VisionEncoderDeepseekOCR2 : public VisionEncoder {
 public:
-    VisionEncoderDeepseekVLV2(
+    VisionEncoderDeepseekOCR2(
         const std::filesystem::path& model_dir,
         const std::string& device,
         const ov::AnyMap properties);
 
-    VisionEncoderDeepseekVLV2(
+    VisionEncoderDeepseekOCR2(
         const ModelsMap& models_map,
         const std::filesystem::path& config_dir_path,
         const std::string& device,
@@ -30,16 +30,16 @@ private:
     VLMConfig m_vlm_config;
 };
 
-class InputsEmbedderDeepseekVLV2 : public InputsEmbedder::IInputsEmbedder {
+class InputsEmbedderDeepseekOCR2 : public InputsEmbedder::IInputsEmbedder {
 public:
-    InputsEmbedderDeepseekVLV2(
+    InputsEmbedderDeepseekOCR2(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
         const Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap device_config);
 
-    InputsEmbedderDeepseekVLV2(
+    InputsEmbedderDeepseekOCR2(
         const VLMConfig& vlm_config,
         const ModelsMap& models_map,
         const Tokenizer& tokenizer,

@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "visual_language/deepseek_vl_v2/classes.hpp"
+#include "visual_language/deepseek_ocr2/classes.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -271,7 +271,7 @@ ov::Tensor build_merged_visual_features(const ov::Tensor& global_features,
 
 }  // namespace
 
-VisionEncoderDeepseekVLV2::VisionEncoderDeepseekVLV2(const std::filesystem::path& model_dir,
+VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const std::filesystem::path& model_dir,
                                                      const std::string& device,
                                                      const ov::AnyMap properties) {
     auto compiled_global = utils::singleton_core().compile_model(
@@ -299,7 +299,7 @@ VisionEncoderDeepseekVLV2::VisionEncoderDeepseekVLV2(const std::filesystem::path
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 }
 
-VisionEncoderDeepseekVLV2::VisionEncoderDeepseekVLV2(const ModelsMap& models_map,
+VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const ModelsMap& models_map,
                                                      const std::filesystem::path& config_dir_path,
                                                      const std::string& device,
                                                      const ov::AnyMap properties) {
@@ -332,7 +332,7 @@ VisionEncoderDeepseekVLV2::VisionEncoderDeepseekVLV2(const ModelsMap& models_map
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 }
 
-EncodedImage VisionEncoderDeepseekVLV2::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderDeepseekOCR2::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     (void)config_map;
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
@@ -364,7 +364,7 @@ EncodedImage VisionEncoderDeepseekVLV2::encode(const ov::Tensor& image, const ov
     return encoded_image;
 }
 
-InputsEmbedderDeepseekVLV2::InputsEmbedderDeepseekVLV2(const VLMConfig& vlm_config,
+InputsEmbedderDeepseekOCR2::InputsEmbedderDeepseekOCR2(const VLMConfig& vlm_config,
                                                        const std::filesystem::path& model_dir,
                                                        const Tokenizer& tokenizer,
                                                        const std::string& device,
@@ -378,7 +378,7 @@ InputsEmbedderDeepseekVLV2::InputsEmbedderDeepseekVLV2(const VLMConfig& vlm_conf
     }
 }
 
-InputsEmbedderDeepseekVLV2::InputsEmbedderDeepseekVLV2(const VLMConfig& vlm_config,
+InputsEmbedderDeepseekOCR2::InputsEmbedderDeepseekOCR2(const VLMConfig& vlm_config,
                                                        const ModelsMap& models_map,
                                                        const Tokenizer& tokenizer,
                                                        const std::filesystem::path& config_dir_path,
@@ -393,7 +393,7 @@ InputsEmbedderDeepseekVLV2::InputsEmbedderDeepseekVLV2(const VLMConfig& vlm_conf
     }
 }
 
-ov::Tensor InputsEmbedderDeepseekVLV2::apply_chat_template_tokenize(const std::string& prompt,
+ov::Tensor InputsEmbedderDeepseekOCR2::apply_chat_template_tokenize(const std::string& prompt,
                                                                     ov::genai::VLMPerfMetrics& metrics) {
     const bool saved_apply_chat_template = m_apply_chat_template;
     m_apply_chat_template = false;
@@ -402,7 +402,7 @@ ov::Tensor InputsEmbedderDeepseekVLV2::apply_chat_template_tokenize(const std::s
     return encoded;
 }
 
-NormalizedPrompt InputsEmbedderDeepseekVLV2::normalize_prompt(const std::string& prompt,
+NormalizedPrompt InputsEmbedderDeepseekOCR2::normalize_prompt(const std::string& prompt,
                                                               size_t base_id,
                                                               const std::vector<EncodedImage>& images) const {
     std::string prompt_with_tag = prompt;
@@ -439,7 +439,7 @@ NormalizedPrompt InputsEmbedderDeepseekVLV2::normalize_prompt(const std::string&
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
-ov::Tensor InputsEmbedderDeepseekVLV2::get_inputs_embeds(const std::string& unified_prompt,
+ov::Tensor InputsEmbedderDeepseekOCR2::get_inputs_embeds(const std::string& unified_prompt,
                                                          const std::vector<ov::genai::EncodedImage>& images,
                                                          ov::genai::VLMPerfMetrics& metrics,
                                                          bool recalculate_merged_embeddings,

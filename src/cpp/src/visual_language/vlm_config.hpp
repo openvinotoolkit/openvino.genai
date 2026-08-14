@@ -32,7 +32,7 @@ enum class VLMModelType {
     GEMMA4_UNIFIED,
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
-    DEEPSEEK_VL_V2,
+    DEEPSEEK_OCR2,
     MUSE_GLIMMER,
 };
 
