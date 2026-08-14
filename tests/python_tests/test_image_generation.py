@@ -591,3 +591,16 @@ class TestQwenImageGeneration:
 
         assert len(callback_calls) > 0, "Callback should be called at least once"
         assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [QWEN_IMAGE_MODEL_ID], indirect=True)
+    def test_qwen_image_reshape_and_generate(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model)
+        pipe.reshape(1, 128, 128, 3.5)
+        pipe.compile("CPU")
+
+        image = pipe.generate(
+            "test prompt",
+            num_inference_steps=2,
+        )
+
+        assert image is not None
