@@ -39,10 +39,12 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder");
-            else {
-                OPENVINO_THROW("ZImagePipeline only supports TEXT_2_IMAGE pipeline type");
+            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder");
+            } else {
+                OPENVINO_THROW("Unsupported pipeline type for ZImagePipeline");
             }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
@@ -85,10 +87,12 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
-            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
+            if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
-            else {
-                OPENVINO_THROW("ZImagePipeline only supports TEXT_2_IMAGE pipeline type");
+            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
+            } else {
+                OPENVINO_THROW("Unsupported pipeline type for ZImagePipeline");
             }
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
@@ -119,8 +123,8 @@ public:
 
     ZImagePipeline(PipelineType pipeline_type, const ZImagePipeline& pipe)
         : ZImagePipeline(pipeline_type) {
-        OPENVINO_ASSERT(m_pipeline_type == PipelineType::TEXT_2_IMAGE,
-            "ZImagePipeline only supports TEXT_2_IMAGE pipeline type");
+        OPENVINO_ASSERT(m_pipeline_type != PipelineType::INPAINTING,
+            "ZImagePipeline does not support inpainting pipeline type");
 
         m_root_dir = pipe.m_root_dir;
         m_text_encoder = std::make_shared<Qwen3TextEncoder>(*pipe.m_text_encoder);
@@ -191,13 +195,25 @@ public:
                                num_channels_latents,
                                height,
                                width};
-        ov::Tensor latent, noise, proccesed_image, image_latents;
+        ov::Tensor latent, noise, processed_image, image_latents;
 
         noise = generation_config.generator->randn_tensor(latent_shape);
-        latent = ov::Tensor(noise.get_element_type(), noise.get_shape());
-        noise.copy_to(latent);
+        if (initial_image) {
+            processed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
+            processed_image = m_image_processor->execute(processed_image);
+            image_latents = m_vae->encode(processed_image, generation_config.generator);
+            image_latents = numpy_utils::repeat(image_latents, generation_config.num_images_per_prompt);
 
-        return std::make_tuple(latent, proccesed_image, image_latents, noise);
+            latent = ov::Tensor(image_latents.get_element_type(), image_latents.get_shape());
+            image_latents.copy_to(latent);
+            const std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+            m_scheduler->scale_noise(latent, timesteps.front(), noise);
+        } else {
+            latent = ov::Tensor(noise.get_element_type(), noise.get_shape());
+            noise.copy_to(latent);
+        }
+
+        return std::make_tuple(latent, processed_image, image_latents, noise);
     }
 
     void set_lora_adapters(std::optional<AdapterConfig> adapters) override {
@@ -230,6 +246,15 @@ public:
 
         custom_generation_config.height = custom_generation_config.height == 0 ? 512 : custom_generation_config.height;
         custom_generation_config.width = custom_generation_config.width == 0 ? 512 : custom_generation_config.width;
+
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            OPENVINO_ASSERT(initial_image, "Initial image is required for image to image pipeline");
+            const ov::Shape initial_image_shape = initial_image.get_shape();
+            custom_generation_config.height = initial_image_shape[1];
+            custom_generation_config.width = initial_image_shape[2];
+        }
+
+        check_inputs(custom_generation_config, initial_image);
 
         OPENVINO_ASSERT(custom_generation_config.height == 512 && custom_generation_config.width == 512,
             "ZImagePipeline only supports fixed resolution of 512x512");
@@ -324,6 +349,7 @@ protected:
         m_generation_config.num_inference_steps = 8;
         m_generation_config.guidance_scale = 7.5f;
         m_generation_config.negative_prompt = "";
+        m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.6f : 1.0f;
     }
 
     void check_image_size(const int height, const int width) const override {
@@ -332,6 +358,15 @@ protected:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+            OPENVINO_ASSERT(initial_image, "Initial image is required for image to image pipeline");
+            OPENVINO_ASSERT(generation_config.strength > 0.0f && generation_config.strength <= 1.0f,
+                "'Strength' generation parameter must be within (0, 1] range");
+        } else {
+            OPENVINO_ASSERT(!initial_image, "Initial image must be empty for text to image pipeline");
+            OPENVINO_ASSERT(generation_config.strength == 1.0f,
+                "'Strength' generation parameter must be 1.0 for text to image pipeline");
+        }
     }
 
     size_t get_config_in_channels() const override {

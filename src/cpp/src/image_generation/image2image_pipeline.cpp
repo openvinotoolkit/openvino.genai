@@ -12,6 +12,7 @@
 #include "image_generation/stable_diffusion_3_pipeline.hpp"
 #include "image_generation/flux_pipeline.hpp"
 #include "image_generation/flux2_klein_pipeline.hpp"
+#include "image_generation/zimage_pipeline.hpp"
 
 #include "utils.hpp"
 
@@ -32,6 +33,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir) 
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else if (class_name == "StableDiffusion3Pipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
+    } else if (class_name == "ZImagePipeline") {
+        m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir);
     } else {
         OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
@@ -52,6 +55,8 @@ Image2ImagePipeline::Image2ImagePipeline(const std::filesystem::path& root_dir, 
         m_impl = std::make_shared<Flux2KleinPipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else if (class_name == "StableDiffusion3Pipeline") {
         m_impl = std::make_shared<StableDiffusion3Pipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
+    } else if (class_name == "ZImagePipeline") {
+        m_impl = std::make_shared<ZImagePipeline>(PipelineType::IMAGE_2_IMAGE, root_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported image to image generation pipeline '", class_name, "'");
     }
