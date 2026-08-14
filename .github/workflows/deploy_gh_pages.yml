@@ -2,6 +2,11 @@ name: Deploy Docs to GitHub Pages
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'site/**'
   push:
     branches:
       - master
@@ -42,11 +47,13 @@ jobs:
         run: npm run build
 
       - name: Upload pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./site/build
 
   deploy_github_pages:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     needs: build_assets
     permissions:
