@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_REVISION: 4b9fd84ebf402ba48558d35e96db897ab0240e20
+  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
   CMAKE_CXX_COMPILER_LAUNCHER: sccache
   CMAKE_C_COMPILER_LAUNCHER: sccache
   SCCACHE_IGNORE_SERVER_IO_ERROR: 1
@@ -27,7 +27,7 @@ env:
   HF_HOME: /mount/caches/huggingface/lin
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/debug-pr-4322/
   OPENVINO_LOG_LEVEL: 4
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
@@ -104,7 +104,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: ${{ env.OV_REVISION }}
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -114,7 +114,7 @@ jobs:
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
-        ref: ${{ env.OV_REVISION }}
+        ref: ${{ env.OV_BRANCH }}
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
