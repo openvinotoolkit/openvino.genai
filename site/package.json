@@ -37,7 +37,7 @@
     "eslint": "9.39.2",
     "eslint-plugin-react": "7.37.5",
     "globals": "17.9.0",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "typescript-eslint": "8.67.0"
   },
   "overrides": {
