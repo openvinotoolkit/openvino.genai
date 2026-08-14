@@ -35,6 +35,9 @@ int main(int argc, char* argv[]) try {
     std::cout << "Loading model from: " << models_path << " on " << device << "\n";
     ov::genai::ASRPipeline pipeline(models_path, device);
 
+    ov::genai::ASRGenerationConfig gen_config = pipeline.get_generation_config();
+    gen_config.max_new_tokens = 32;  // keep chunk decodes fast
+
     ov::genai::ASRStreamingConfig streaming_config;
     streaming_config.chunk_size_sec = chunk_sec;
     streaming_config.unfixed_chunk_num = 2;
@@ -56,7 +59,7 @@ int main(int argc, char* argv[]) try {
         }
     };
 
-    auto session = pipeline.create_streaming_session(streaming_config, std::nullopt, on_partial);
+    auto session = pipeline.create_streaming_session(streaming_config, gen_config, on_partial);
 
     const size_t step_samples = static_cast<size_t>(step_ms * 16000 / 1000);
     const auto wall_start = std::chrono::steady_clock::now();
