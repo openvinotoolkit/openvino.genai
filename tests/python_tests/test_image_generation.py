@@ -427,6 +427,13 @@ class TestImageGenerationWithBlobTensorModels:
         with pytest.raises(RuntimeError, match="Blob export is supported only for Stable Diffusion XL pipelines"):
             pipe.export_model(tmp_path / "blob_model")
 
+    @pytest.mark.parametrize("image_generation_model", [FLUX_MODEL_ID], indirect=True)
+    def test_text2image_blob_export_is_sdxl_only(self, image_generation_model, tmp_path):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model)
+
+        with pytest.raises(RuntimeError, match="Blob export is supported only for Stable Diffusion XL pipelines"):
+            pipe.export_model(tmp_path / "blob_model")
+
 
 class TestFlux2KleinImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
