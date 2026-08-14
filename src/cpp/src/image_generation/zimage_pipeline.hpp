@@ -315,10 +315,6 @@ public:
         return m_perf_metrics;
     }
 
-    void export_model(const std::filesystem::path& export_dir) override {
-        OPENVINO_THROW("export_model is not yet implemented for ZImagePipeline");
-    }
-
 protected:
     void initialize_generation_config(const std::string& class_name) override {
         m_generation_config.max_sequence_length = 128;
