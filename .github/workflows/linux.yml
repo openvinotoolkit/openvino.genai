@@ -17,7 +17,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  OV_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.ref }}
+  OV_REVISION: 4b9fd84ebf402ba48558d35e96db897ab0240e20
   CMAKE_CXX_COMPILER_LAUNCHER: sccache
   CMAKE_C_COMPILER_LAUNCHER: sccache
   SCCACHE_IGNORE_SERVER_IO_ERROR: 1
@@ -104,7 +104,7 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: latest_available_commit
+        revision: ${{ env.OV_REVISION }}
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -114,7 +114,7 @@ jobs:
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
-        ref: ${{ env.OV_BRANCH }}
+        ref: ${{ env.OV_REVISION }}
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
