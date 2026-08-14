@@ -170,6 +170,12 @@ public:
 
     ImageGenerationPerfMetrics get_performance_metrics();
 
+    /**
+      * @brief Exports compiled models to a specified directory.
+      * @param export_path A path to a directory to export compiled models to
+      *
+      * See @ref ov::genai::blob_path property to load previously exported models and for more details.
+      */
     void export_model(const std::filesystem::path& export_path);
 
 private:
