@@ -14,7 +14,7 @@ on:
       - 'site/**'
 
 concurrency:
-  group: 'pages'
+  group: pages-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
