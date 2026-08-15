@@ -3,6 +3,7 @@
 
 #include "openvino/genai/omni/talker_speech_config.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <variant>
 
@@ -36,6 +37,27 @@ OmniTalkerSpeechConfig::OmniTalkerSpeechConfig(const std::filesystem::path& mode
     }
 }
 
+const std::vector<std::string>& omni_talker_speech_config_keys() {
+    // Single source of truth. Keep in sync with update_omni_talker_speech_config below.
+    static const std::vector<std::string> keys{"return_audio",
+                                               "speaker",
+                                               "speaker_embedding",
+                                               "audio_chunk_frames",
+                                               "max_new_tokens",
+                                               "rng_seed",
+                                               "talker_temperature",
+                                               "talker_top_k",
+                                               "talker_repetition_penalty",
+                                               "cp_temperature",
+                                               "cp_top_k"};
+    return keys;
+}
+
+bool is_omni_talker_speech_config_key(const std::string& key) {
+    const auto& keys = omni_talker_speech_config_keys();
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
 void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::AnyMap& properties) {
     using ov::genai::utils::read_anymap_param;
 
@@ -63,7 +85,6 @@ void update_omni_talker_speech_config(OmniTalkerSpeechConfig& config, const ov::
     read_anymap_param(properties, "talker_repetition_penalty", config.talker_repetition_penalty);
     read_anymap_param(properties, "cp_temperature", config.cp_temperature);
     read_anymap_param(properties, "cp_top_k", config.cp_top_k);
-    read_anymap_param(properties, "cp_repetition_penalty", config.cp_repetition_penalty);
 }
 
 void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
@@ -108,11 +129,6 @@ void validate_omni_talker_speech_config(const OmniTalkerSpeechConfig& config) {
         OPENVINO_ASSERT(*config.cp_top_k >= 1,
                         "OmniTalkerSpeechConfig: cp_top_k must be >= 1, got ",
                         *config.cp_top_k);
-    }
-    if (config.cp_repetition_penalty) {
-        OPENVINO_ASSERT(*config.cp_repetition_penalty > 0.0f,
-                        "OmniTalkerSpeechConfig: cp_repetition_penalty must be > 0, got ",
-                        *config.cp_repetition_penalty);
     }
     OPENVINO_ASSERT(config.audio_chunk_frames >= 1,
                     "OmniTalkerSpeechConfig: audio_chunk_frames must be >= 1, got ",
