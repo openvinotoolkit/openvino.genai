@@ -33,6 +33,7 @@ enum class VLMModelType {
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
     MUSE_GLIMMER,
+    HUNYUAN_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to

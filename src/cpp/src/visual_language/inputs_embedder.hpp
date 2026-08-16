@@ -398,6 +398,7 @@ private:
     friend class InputsEmbedderGemma4;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
+    friend class InputsEmbedderHunyuanVL;
 };
 
 template <typename Func>

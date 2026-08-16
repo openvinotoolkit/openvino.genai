@@ -167,6 +167,8 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+# HunYuanVL (hunyuan_vl, e.g. tencent/HunyuanOCR) was added to Transformers in 5.13.0.
+MODEL_HUNYUAN_VL = "optimum-intel-internal-testing/tiny-random-hunyuan-vl"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -188,6 +190,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
+        MODEL_HUNYUAN_VL,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -217,6 +220,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
+    MODEL_HUNYUAN_VL: lambda idx: "<\uff5chy_place\u2581holder\u2581no\u2581102\uff5c>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -244,6 +248,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    MODEL_HUNYUAN_VL: 336,
 }
 
 
@@ -341,6 +346,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     ] and is_transformers_version("<", "5.10.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.10.0."
+        )
+    if model_id == MODEL_HUNYUAN_VL and is_transformers_version("<", "5.13.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of HunYuanVL. Minimum required is 5.13.0."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
