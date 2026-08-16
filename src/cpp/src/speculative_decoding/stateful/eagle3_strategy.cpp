@@ -156,29 +156,49 @@ InputTensors Eagle3TargetWrapper::build_prefill_inputs() const {
     const size_t prompt_len = prompt_ids.size();
 
     OPENVINO_ASSERT(prompt_len > 0, "Empty prompt");
-    const bool is_prefill = generated_ids.empty();
-    const size_t input_len = is_prefill ? prompt_len : 1;
-    const size_t start_pos = is_prefill ? 0 : prompt_len + generated_ids.size() - 1;
+    OPENVINO_ASSERT(generated_ids.empty(), "TARGET_PREFILL expects no generated tokens, got ", generated_ids.size());
 
     InputTensors result;
-    result.input_ids = ov::Tensor(ov::element::i64, {1, input_len});
-    result.position_ids = ov::Tensor(ov::element::i64, {1, input_len});
+    result.input_ids = ov::Tensor(ov::element::i64, {1, prompt_len});
+    result.position_ids = ov::Tensor(ov::element::i64, {1, prompt_len});
     int64_t* ids_ptr = result.input_ids.data<int64_t>();
     int64_t* pos_ptr = result.position_ids.data<int64_t>();
 
-    if (is_prefill) {
-        std::copy_n(prompt_ids.data(), prompt_len, ids_ptr);
-        std::iota(pos_ptr, pos_ptr + input_len, int64_t{0});
-    } else {
-        ids_ptr[0] = generated_ids.back();
-        pos_ptr[0] = static_cast<int64_t>(start_pos);
-    }
+    std::copy_n(prompt_ids.data(), prompt_len, ids_ptr);
+    std::iota(pos_ptr, pos_ptr + prompt_len, int64_t{0});
 
-    const size_t attention_len = is_prefill ? prompt_len : start_pos + 1;
+    result.attention_mask = ov::Tensor(ov::element::i64, {1, prompt_len});
+    std::fill_n(result.attention_mask.data<int64_t>(), prompt_len, 1);
+
+    // TARGET_PREFILL processes tokens causally; no tree attention mask is needed.
+    result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, 1, 1});
+    set_eagle_tree_mask_scalar_zero(result.eagle_tree_mask);
+
+    return result;
+}
+
+InputTensors Eagle3TargetWrapper::build_generate_inputs() const {
+    OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
+    const auto current_sequence = m_sequence_group->get_running_sequences().at(0);
+
+    const auto& prompt_ids = m_sequence_group->get_prompt_ids();
+    const auto& generated_ids = current_sequence->get_generated_ids();
+    const size_t prompt_len = prompt_ids.size();
+
+    OPENVINO_ASSERT(prompt_len > 0, "Empty prompt");
+    OPENVINO_ASSERT(!generated_ids.empty(), "TARGET_GENERATE requires at least one generated token");
+
+    const size_t position_id = prompt_len + generated_ids.size() - 1;
+    InputTensors result;
+    result.input_ids = ov::Tensor(ov::element::i64, {1, 1});
+    result.position_ids = ov::Tensor(ov::element::i64, {1, 1});
+    result.input_ids.data<int64_t>()[0] = generated_ids.back();
+    result.position_ids.data<int64_t>()[0] = static_cast<int64_t>(position_id);
+
+    const size_t attention_len = position_id + 1;
     result.attention_mask = ov::Tensor(ov::element::i64, {1, attention_len});
     std::fill_n(result.attention_mask.data<int64_t>(), attention_len, 1);
 
-    // TARGET_PREFILL processes tokens causally; no tree attention mask is needed.
     result.eagle_tree_mask = ov::Tensor(m_eagle_tree_mask_type, {1, 1, 1, 1});
     set_eagle_tree_mask_scalar_zero(result.eagle_tree_mask);
 
@@ -763,12 +783,14 @@ InferenceOutput Eagle3TargetWrapper::infer(const InputTensors& inputs) {
     return result;
 }
 
-// Runs one target model pass: prefill (initial prompt) or validation (draft tree candidates).
-// Dispatched by ctx.num_tokens_to_validate: 0 = prefill, >0 = tree validation.
+// Runs one target model pass: prefill (initial prompt), target-only generation, or validation (draft tree candidates).
+// ctx.num_tokens_to_validate selects validation; otherwise generated-token presence selects prefill or target-only generation.
 // Hidden states are stored to the target sequence for the next DRAFT_INITIAL pass.
 InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
     const bool is_validation = ctx.num_tokens_to_validate > 0;
-    const InputTensors inputs = is_validation ? build_validation_inputs() : build_prefill_inputs();
+    const bool is_prefill = get_current_sequence()->get_generated_ids().empty();
+    const InputTensors inputs = is_validation ? build_validation_inputs()
+                                              : (is_prefill ? build_prefill_inputs() : build_generate_inputs());
 
     auto output = infer(inputs);
 
@@ -1124,11 +1146,7 @@ Eagle3CompileConfig StatefulEagle3LLMPipeline::build_compile_config(const ModelD
 
 void StatefulEagle3LLMPipeline::validate_construction_params(const ModelDesc& target_model_desc,
                                                              const ModelDesc& draft_model_desc) {
-    const bool draft_disabled =
-        m_generation_config.num_assistant_tokens.has_value() && m_generation_config.num_assistant_tokens.value() == 0;
-
-    OPENVINO_ASSERT(draft_disabled || m_generation_config.is_tree_search(),
-                    "Eagle3 pipeline requires tree search or num_assistant_tokens == 0.");
+    OPENVINO_ASSERT(m_generation_config.is_tree_search(), "Eagle3 pipeline requires tree_depth > 0.");
 
     // Eagle3 stateful pipeline is designed for NPU devices. Non-NPU KV cache management
     // paths exist in the base class but are not validated for correctness in this pipeline.
@@ -1203,13 +1221,10 @@ StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
 }
 
 void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& config) {
-    if (config.num_assistant_tokens.has_value() && config.num_assistant_tokens.value() == 0) {
-        config.tree_depth = 0;
-        config.branching_factor = 0;
-        return;
-    }
     if (config.is_tree_search()) {
         OPENVINO_ASSERT(config.branching_factor > 0, "branching_factor must be > 0 for Eagle3 tree search");
+        OPENVINO_ASSERT(config.num_assistant_tokens.has_value() && config.num_assistant_tokens.value() > 0,
+                        "num_assistant_tokens must be > 0 for Eagle3 tree search");
         return;
     }
 
@@ -1221,8 +1236,10 @@ void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& conf
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(std::move(generation_config));
     OPENVINO_ASSERT(!config.do_sample, "Eagle3 speculative decoding requires greedy sampling (do_sample=false)");
-    ensure_tree_params_is_set(config);
-
+    if (!(config.num_assistant_tokens.has_value() && config.num_assistant_tokens.value() == 0)) {
+        ensure_tree_params_is_set(config);
+    }
+    m_draft_enabled = config.num_assistant_tokens.value() > 0;
     // Validate runtime params do not exceed NPU compile-time shape limits.
     OPENVINO_ASSERT(config.tree_depth <= m_compile_config.max_tree_depth,
                     "tree_depth (",
@@ -1361,7 +1378,6 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     m_target->reset_state();
     m_draft->reset_state();
 
-    m_draft_enabled = config.num_assistant_tokens.value() > 0;
     if (m_draft_enabled) {
         m_draft->initialize_sequence(input_ids, config);
     }
@@ -1371,10 +1387,11 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     const int64_t initial_token = run_prefill();
     auto streaming_status = stream_generated_tokens(streamer_ptr, {initial_token});
 
-    // --- Phase 2: Speculative Decoding Loop ---
-    // Use the runtime config's tree_depth for draft iterations to stay in sync with
-    // the TreeSearcher inside the sampler (which reads tree_depth from the SequenceGroup's config).
-    // m_max_draft_depth (from constructor) is only used for NPU buffer sizing.
+    // --- Phase 2: Generation Loop ---
+    // When m_draft_enabled is true, use the runtime config's tree_depth for draft iterations to stay in sync with
+    // the TreeSearcher inside the sampler, which reads tree_depth from the SequenceGroup's config.
+    // When m_draft_enabled is false, num_assistant_tokens is zero and generation uses only the target model.
+    // m_compile_config.max_tree_depth provides the NPU compile-time upper bound.
     const size_t draft_iterations = config.tree_depth;
     size_t generated_tokens = 1;
     size_t total_draft_accepted = 0;
@@ -1394,36 +1411,31 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
             ++generated_tokens;
             eos_reached = is_stop_token_id_hit(token, config.stop_token_ids);
         }
+    } else {
+        size_t input_token_count = m_draft->get_sequence_length();
 
-        m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
-        if (streamer_ptr)
-            streamer_ptr->end();
-        return build_results(generate_timer, generated_tokens, 0, 0);
-    }
+        while (!eos_reached && generated_tokens < config.max_new_tokens &&
+               streaming_status == ov::genai::StreamingStatus::RUNNING) {
+            auto result = run_speculative_iteration(input_token_count, config.stop_token_ids, draft_iterations);
 
-    size_t input_token_count = m_draft->get_sequence_length();
+            // Truncate validated tokens if they would exceed max_new_tokens.
+            const size_t remaining_budget = config.max_new_tokens - generated_tokens;
+            if (result.validated_tokens.size() > remaining_budget) {
+                result.validated_tokens.resize(remaining_budget);
+                result.accepted_tokens_count = remaining_budget - 1;
+                result.eos_reached = true;  // Force stop after this iteration.
+            }
 
-    while (!eos_reached && generated_tokens < config.max_new_tokens &&
-           streaming_status == ov::genai::StreamingStatus::RUNNING) {
-        auto result = run_speculative_iteration(input_token_count, config.stop_token_ids, draft_iterations);
+            streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
 
-        // Truncate validated tokens if they would exceed max_new_tokens.
-        const size_t remaining_budget = config.max_new_tokens - generated_tokens;
-        if (result.validated_tokens.size() > remaining_budget) {
-            result.validated_tokens.resize(remaining_budget);
-            result.accepted_tokens_count = remaining_budget - 1;
-            result.eos_reached = true;  // Force stop after this iteration.
+            // Update statistics.
+            total_draft_generated += result.num_draft_tokens;
+            total_draft_accepted += result.accepted_tokens_count;
+            generated_tokens += result.validated_tokens.size();
+            eos_reached = result.eos_reached;
+
+            input_token_count = result.next_window_size;
         }
-
-        streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
-
-        // Update statistics.
-        total_draft_generated += result.num_draft_tokens;
-        total_draft_accepted += result.accepted_tokens_count;
-        generated_tokens += result.validated_tokens.size();
-        eos_reached = result.eos_reached;
-
-        input_token_count = result.next_window_size;
     }
 
     // --- Phase 3: Finalization ---
