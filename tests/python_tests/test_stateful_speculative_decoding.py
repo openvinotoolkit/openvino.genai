@@ -615,7 +615,7 @@ def test_eagle3_switch_from_zero_to_speculative(target_model, draft_model, promp
     )
     initial_cb_generation_results = convert_decoded_results_to_generation_result(initial_cb_results, 1, 1, False)
     compare_generation_results(
-       [prompt], initial_cb_generation_results, initial_main_only_generation_results, generation_config
+        [prompt], initial_cb_generation_results, initial_main_only_generation_results, generation_config
     )
 
     generation_config.num_assistant_tokens = 4
