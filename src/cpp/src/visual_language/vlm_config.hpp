@@ -33,6 +33,7 @@ enum class VLMModelType {
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
     MUSE_GLIMMER,
+    YOUTU_VL,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -130,6 +131,17 @@ public:
     size_t vision_config_num_position_embeddings = 2304;
     /// @brief DeepStack visual indexes for Qwen3-VL model.
     std::vector<size_t> vision_config_deepstack_visual_indexes;
+
+    // Youtu-VL specific config
+    /// @brief Spatial merge size of the Siglip2 windowed vision encoder for Youtu-VL model.
+    size_t vision_config_spatial_merge_size = 2;
+    /// @brief Number of image tokens produced per (merged) spatial position; equals spatial_merge_size^2.
+    /// Used to expand the <|image_pad|> placeholder in the prompt.
+    /// @brief Maximum number of patches used by the Siglip2 NaFlex image processor for Youtu-VL.
+    /// The remote-code YoutuVLProcessor.__call__ overrides preprocessor_config.json's max_num_patches
+    /// with a much larger default (36864), so the effective resolution is far higher than 256.
+    /// This value mirrors that processor default and must match optimum-intel's preprocessing.
+    size_t youtu_vl_max_image_patches = 36864;
 
     // Qwen3-Omni specific config
     /// @brief Whether audio output (speech) is enabled.

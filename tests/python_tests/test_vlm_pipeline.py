@@ -48,6 +48,7 @@ import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 from optimum.intel.utils.import_utils import is_optimum_version
+import huggingface_hub
 from huggingface_hub import snapshot_download
 from openvino_genai import (
     VLMPipeline,
@@ -167,6 +168,9 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+# youtu_vl (Siglip2 windowed vision encoder + MLA text decoder). Requires transformers < 5.0
+# (model remote code targets transformers 4.57.x) and trust_remote_code for conversion.
+MODEL_YOUTU_VL = "optimum-intel-internal-testing/tiny-random-youtu-vl"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -181,6 +185,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+        MODEL_YOUTU_VL,
         *VIDEO_MODEL_IDS,
     ]
 else:
@@ -218,6 +223,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
+    MODEL_YOUTU_VL: lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
 }
 
 
@@ -244,6 +250,8 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": 256,
     "optimum-intel-internal-testing/tiny-random-qwen3.5": 256,
+    # Siglip2 NaFlex resizes to <= max_num_patches; keep a small square within that bound.
+    MODEL_YOUTU_VL: 256,
 }
 
 
@@ -295,6 +303,18 @@ VLM_EAGLE3_DRAFT_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-vl
 
 
 def _maybe_skip_unsupported_model_export(model_id: str) -> None:
+    if model_id == MODEL_YOUTU_VL:
+        # The hosted tiny-random-youtu-vl fixture is not published yet. GenAI youtu_vl support is
+        # covered offline by test_vlm_pipeline_youtu_vl_local_ir (YOUTU_VL_LOCAL_IR); skip the shared
+        # matrix entry gracefully until the maintainer uploads the Hub fixture, instead of failing on
+        # a 404 download.
+        try:
+            huggingface_hub.model_info(model_id)
+        except Exception:
+            pytest.skip(
+                f"Hosted tiny-random fixture '{model_id}' is not published yet; youtu_vl is covered by "
+                "test_vlm_pipeline_youtu_vl_local_ir. Remove this skip once the fixture is uploaded."
+            )
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4"
@@ -432,6 +452,7 @@ def _get_ov_model(model_id: str) -> str:
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
+                    MODEL_YOUTU_VL,
                 },
             )
         )
@@ -782,6 +803,44 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         streamer=streamer,
     )
     assert res.texts[0] == "".join(result_from_streamer)
+
+
+# youtu_vl tiny-random model is not yet published on the Hub. Until the maintainer uploads
+# `optimum-intel-internal-testing/tiny-random-youtu-vl`, this test validates the youtu_vl GenAI VLM
+# pipeline (text-only and image-text paths) against a locally converted OpenVINO IR directory,
+# pointed to by the YOUTU_VL_LOCAL_IR environment variable. It is skipped when the variable is unset
+# so it does not require network access or a private cache in CI.
+@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+def test_vlm_pipeline_youtu_vl_local_ir(backend: str):
+    local_ir = os.environ.get("YOUTU_VL_LOCAL_IR")
+    if not local_ir:
+        pytest.skip("YOUTU_VL_LOCAL_IR is not set; hosted tiny-random-youtu-vl not published yet.")
+    models_path = Path(local_ir)
+    if not (models_path / "openvino_language_model.xml").exists():
+        pytest.skip(f"YOUTU_VL_LOCAL_IR={local_ir} does not contain a converted youtu_vl OV IR.")
+
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=8)
+
+    # text-only path
+    text_res = ov_pipe.generate(PROMPTS[0], generation_config=generation_config)
+    assert len(text_res.texts) == 1
+
+    # image-text path: prompt must contain the youtu_vl vision placeholder tag. Use a synthetic
+    # image so the test is fully offline and deterministic.
+    image_tag = IMAGE_TAG_GENERATOR_BY_MODEL[MODEL_YOUTU_VL](0)
+    image_array = np.zeros((64, 64, 3), dtype=np.uint8)
+    image_array[:32, :32] = [255, 0, 0]
+    image_array[:32, 32:] = [0, 255, 0]
+    image_array[32:, :32] = [0, 0, 255]
+    image_array[32:, 32:] = [255, 255, 0]
+    image_tensor = openvino.Tensor(image_array)
+    img_res = ov_pipe.generate(
+        image_tag + PROMPTS[0],
+        images=[image_tensor],
+        generation_config=generation_config,
+    )
+    assert len(img_res.texts) == 1
 
 
 @parametrize_one_model_sdpa

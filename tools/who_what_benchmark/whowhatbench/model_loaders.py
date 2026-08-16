@@ -44,6 +44,85 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _resolve_remote_code_model_class(model_id, config):
+    """Resolve the concrete model class referenced by ``config.auto_map`` for a
+    trust-remote-code model, so its ``__init__`` signature can be inspected.
+
+    Returns ``None`` when the class cannot be resolved (e.g. not a remote-code
+    model or auto_map does not point to a loadable class).
+    """
+    auto_map = getattr(config, "auto_map", None)
+    if not isinstance(auto_map, dict):
+        return None
+
+    # Prefer the generation-capable entries used by visual-text loading.
+    module_ref = None
+    for key in ("AutoModelForCausalLM", "AutoModelForImageTextToText", "AutoModelForVision2Seq"):
+        if key in auto_map:
+            module_ref = auto_map[key]
+            break
+    if module_ref is None:
+        return None
+
+    try:
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module
+
+        return get_class_from_dynamic_module(module_ref, model_id)
+    except Exception as exc:  # pragma: no cover - defensive, resolution is best-effort
+        logger.debug("Could not resolve remote-code model class %s: %s", module_ref, exc)
+        return None
+
+
+def _drop_unsupported_init_kwargs(model_id, config, trust_remote_code, from_pretrained_kwargs):
+    """Remove attention-selection kwargs that the resolved model ``__init__``
+    cannot accept.
+
+    Some remote-code VLM classes define ``__init__(self, config)`` and reject
+    the ``use_flash_attention_2`` / ``_attn_implementation`` kwargs that
+    ``from_pretrained`` forwards to the constructor, which raises a TypeError.
+    When we can resolve the concrete class and it does not accept these kwargs
+    (and has no ``**kwargs`` catch-all), drop them. The eager-attention request
+    is preserved via ``config._attn_implementation`` when the kwarg is removed.
+    """
+    if not trust_remote_code:
+        return from_pretrained_kwargs
+
+    model_cls = _resolve_remote_code_model_class(model_id, config)
+    if model_cls is None:
+        return from_pretrained_kwargs
+
+    import inspect
+
+    try:
+        signature = inspect.signature(model_cls.__init__)
+    except (TypeError, ValueError):
+        return from_pretrained_kwargs
+
+    params = signature.parameters
+    accepts_var_keyword = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
+    if accepts_var_keyword:
+        return from_pretrained_kwargs
+
+    filtered = dict(from_pretrained_kwargs)
+    for kwarg in ("use_flash_attention_2", "_attn_implementation"):
+        if kwarg in filtered and kwarg not in params:
+            dropped = filtered.pop(kwarg)
+            logger.info(
+                "Dropping unsupported '%s' kwarg for %s.__init__ (model_type=%s).",
+                kwarg,
+                getattr(model_cls, "__name__", "model"),
+                getattr(config, "model_type", "unknown"),
+            )
+            # Preserve the eager-attention intent through the config so behavior
+            # is unchanged for models that honor config._attn_implementation.
+            if kwarg == "_attn_implementation" and getattr(config, "_attn_implementation", None) is None:
+                config._attn_implementation = dropped
+
+    return filtered
+
+
 def _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs):
     sanitized_kwargs = dict(kwargs)
     n_ctx = sanitized_kwargs.get("llamacpp_n_ctx")
@@ -571,6 +650,18 @@ def load_visual_text_model(
                     from_pretrained_kwargs = {"config": config}
                 else:
                     from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
+
+                # Some remote-code VLM classes (e.g. youtu_vl's
+                # YoutuVLForConditionalGeneration) define __init__(self, config)
+                # and do not accept the flash-attention selection kwargs that
+                # transformers normally forwards to the model constructor. In
+                # that case, forwarding use_flash_attention_2 / _attn_implementation
+                # raises a TypeError. Drop the kwargs the resolved model class
+                # cannot accept, preferring the config attribute for the eager
+                # attention request when supported.
+                from_pretrained_kwargs = _drop_unsupported_init_kwargs(
+                    model_id, config, trust_remote_code, from_pretrained_kwargs
+                )
 
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
