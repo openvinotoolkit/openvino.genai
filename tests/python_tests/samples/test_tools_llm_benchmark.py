@@ -153,12 +153,18 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize(
         "convert_model, convert_draft_model, sd_sample_args",
         [
-            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3", {"num_assistant_tokens": "5"}),
-            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3", {"num_assistant_tokens": "10", "branching_factor": "4", "tree_depth": "3"}),
+            pytest.param("tiny-random-qwen3-layer10", "tiny-random-qwen3-eagle3", {"num_assistant_tokens": 5}),
+            pytest.param(
+                "tiny-random-qwen3-layer10",
+                "tiny-random-qwen3-eagle3",
+                {"num_assistant_tokens": 10, "branching_factor": 4, "tree_depth": 3},
+            ),
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
-    def test_python_tool_llm_benchmark_sd_generation_config(self, convert_model, convert_draft_model, sd_sample_args, tmp_path):
+    def test_python_tool_llm_benchmark_sd_generation_config(
+       self, convert_model, convert_draft_model, sd_sample_args, tmp_path
+    ):
         """
         Test --sd_generation_config JSON file parsing for Speculative Decoding.
         Verifies that JSON config is parsed and applied with EAGLE3 draft model.
@@ -191,7 +197,9 @@ class TestBenchmarkLLM:
             str(config_path),
         ]
         result = run_sample(benchmark_py_command)
-        assert "Speculative Decoding is activated" in result.stdout, "Expected log message `Speculative Decoding is activated`not found in output"
+        assert "Speculative Decoding is activated" in result.stdout, (
+            "Expected log message `Speculative Decoding is activated`not found in output"
+        )
 
     @pytest.mark.samples
     @pytest.mark.parametrize(
@@ -227,7 +235,9 @@ class TestBenchmarkLLM:
             '{"num_assistant_tokens": 6, "branching_factor": 2, "tree_depth": 3}',
         ]
         result = run_sample(benchmark_py_command)
-        assert "Speculative Decoding is activated" in result.stdout, "Expected log message `Speculative Decoding is activated`not found in output"
+        assert "Speculative Decoding is activated" in result.stdout, (
+            "Expected log message `Speculative Decoding is activated`not found in output"
+        )
 
     @pytest.mark.samples
     @pytest.mark.parametrize("sample_args",
