@@ -137,11 +137,18 @@ public:
 
     ~Talker() override;
 
-    /// Keep TalkerBase's text-source overload visible: declaring generate() here would otherwise
-    /// hide it for callers holding a Talker rather than a TalkerBase.
-    using TalkerBase::generate;
-
     TalkerResults generate(const VLMDecodedResults& vlm_result,
+                          const OmniTalkerSpeechConfig& talker_speech_config,
+                          const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
+
+    /// @brief Consume the bridge incrementally instead of draining it first, so speech starts while
+    /// the thinker is still generating: the talker is prefilled as soon as the prompt and the
+    /// thinker's first token have arrived, and then pulls one token per codec step.
+    ///
+    /// Replaces TalkerBase's drain-everything default, and produces the same waveform it did — with a
+    /// fixed `rng_seed`, bit-identical to the VLMDecodedResults overload's for the same thinker
+    /// output. Only the timing changes.
+    TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
                           const OmniTalkerSpeechConfig& talker_speech_config,
                           const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
 

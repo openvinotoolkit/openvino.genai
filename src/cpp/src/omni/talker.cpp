@@ -112,6 +112,15 @@ public:
                                          talker_speech_config);
     }
 
+    TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                          const OmniTalkerSpeechConfig& talker_speech_config,
+                          const OmniSpeechStreamerVariant& speech_streamer) {
+        // No accumulation here: the pipeline reads the bridge itself so it can prefill and start
+        // emitting codec frames while the thinker is still generating. Config resolution is the same
+        // as in the overload above.
+        return m_speech->generate_speech(text_source, speech_streamer, talker_speech_config);
+    }
+
     std::vector<std::string> list_speakers() const {
         return m_speech->list_speakers();
     }
@@ -135,6 +144,12 @@ TalkerResults Talker::generate(const VLMDecodedResults& vlm_result,
                                         const OmniTalkerSpeechConfig& talker_speech_config,
                                         const OmniSpeechStreamerVariant& speech_streamer) {
     return m_impl->generate(vlm_result, talker_speech_config, speech_streamer);
+}
+
+TalkerResults Talker::generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                                        const OmniTalkerSpeechConfig& talker_speech_config,
+                                        const OmniSpeechStreamerVariant& speech_streamer) {
+    return m_impl->generate(text_source, talker_speech_config, speech_streamer);
 }
 
 std::vector<std::string> Talker::list_speakers() const {
