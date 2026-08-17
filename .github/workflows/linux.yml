@@ -27,7 +27,7 @@ env:
   HF_HOME: /mount/caches/huggingface/lin
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/b53e4e21/
   OPENVINO_LOG_LEVEL: 1
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
@@ -1084,7 +1084,8 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5"
+          python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools transformers under 5.0
@@ -1093,6 +1094,15 @@ jobs:
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pip install transformers==4.57.6
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_lower_v5"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
+      - name: Test LLM Benchmark Tools with Qwen3-Omni model
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install transformers==5.1
+          python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
 

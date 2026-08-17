@@ -9,7 +9,7 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "08:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     ignore:
@@ -32,7 +32,7 @@ updates:
       - "/.github/actions/install_wheel"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "02:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
@@ -54,7 +54,7 @@ updates:
       - "/samples/js"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "04:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: lockfile-only
@@ -75,7 +75,7 @@ updates:
       - "./tools/who_what_benchmark/"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "06:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
     ignore:
