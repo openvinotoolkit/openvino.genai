@@ -69,8 +69,11 @@ TEST(TestBlockManager, general_test) {
 }
 
 TEST(TestBlockManager, IgnoresAlreadyFreedSequencesDuringPartialPreemption) {
+    const int num_blocks = 8;
+    const bool enable_prefix_caching = false;
     constexpr size_t block_size = 4;
-    ov::genai::BlockManager bm = ov::genai::BlockManager(8, false, block_size, 1);
+    const size_t num_layers = 1;
+    ov::genai::BlockManager bm = ov::genai::BlockManager(num_blocks, enable_prefix_caching, block_size, num_layers);
 
     std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
     auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(
