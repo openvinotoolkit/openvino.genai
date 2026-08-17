@@ -730,12 +730,21 @@ public:
     size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         const auto not_finished_sequences = sequence_group->get_not_finished_sequences();
-        const size_t num_not_finished_sequences = not_finished_sequences.size();
+        std::vector<size_t> active_seq_ids;
+        active_seq_ids.reserve(not_finished_sequences.size());
+        for (const auto& sequence : not_finished_sequences) {
+            auto seq_id = sequence->get_id();
+            if (m_block_table.count(seq_id) > 0) {
+                active_seq_ids.push_back(seq_id);
+            }
+        }
+        if (active_seq_ids.empty()) {
+            return 0;
+        }
+        const size_t num_not_finished_sequences = active_seq_ids.size();
         // ceil(num_required_blocks / num_not_finished_sequences) with integer arithmetic
         const size_t blocks_num = (num_required_blocks + num_not_finished_sequences - 1) / num_not_finished_sequences;
-        for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
-            const auto seq_id = not_finished_sequences[idx]->get_id();
-            OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
+        for (const auto seq_id : active_seq_ids) {
             free_sequence_partially(seq_id, blocks_num);
         }
         return _blocks_released_to_tokens(sequence_group, blocks_num);
@@ -757,7 +766,9 @@ public:
         auto not_finished_sequences = sequence_group->get_not_finished_sequences();
         for (size_t idx = 0; idx < not_finished_sequences.size(); ++idx) {
             const auto seq_id = not_finished_sequences[idx]->get_id();
-            OPENVINO_ASSERT(m_block_table.count(seq_id) > 0, "Invalid sequence group.");
+            if (m_block_table.count(seq_id) == 0) {
+                continue;
+            }
             if (free_last_block(seq_id)) {
                 blocks_released++;
             }
@@ -766,7 +777,11 @@ public:
     }
 
     bool free_last_block(size_t seq_id) {
-        auto& block_table = m_block_table[seq_id];
+        const auto block_table_it = m_block_table.find(seq_id);
+        if (block_table_it == m_block_table.end()) {
+            return false;
+        }
+        auto& block_table = block_table_it->second;
         OPENVINO_ASSERT(block_table[0].size() >= 1);
         BlocksPerLayer blocks_to_free;
         blocks_to_free.reserve(m_num_layers);
@@ -1172,9 +1187,11 @@ public:
             }
             m_temporary_block_table.erase(temporary_it);
         }
-        OPENVINO_ASSERT(m_block_table.find(seq_id) != m_block_table.end(), "sequence with id ", seq_id,
-                        " not found in BlockManager, but requested to free");
-        auto& block_table = m_block_table[seq_id];
+        auto block_table_it = m_block_table.find(seq_id);
+        if (block_table_it == m_block_table.end()) {
+            return;
+        }
+        auto& block_table = block_table_it->second;
         size_t effective_num_layers = block_table.size();
         size_t num_allocated_blocks = block_table[0].size();
         for (size_t i = 0; i < num_allocated_blocks; i++) {
@@ -1198,9 +1215,13 @@ public:
      * the highest logical block.
      */
     void free_sequence_partially(size_t seq_id, size_t block_num) {
-        size_t effective_num_layers = m_block_table[seq_id].size();
+        auto block_table_it = m_block_table.find(seq_id);
+        if (block_table_it == m_block_table.end()) {
+            return;
+        }
+        size_t effective_num_layers = block_table_it->second.size();
         for (size_t layer_idx = 0; layer_idx < effective_num_layers; layer_idx++) {
-            auto& layer_block_table = m_block_table[seq_id][layer_idx];
+            auto& layer_block_table = block_table_it->second[layer_idx];
             OPENVINO_ASSERT(layer_block_table.size() >= block_num);
         }
 
