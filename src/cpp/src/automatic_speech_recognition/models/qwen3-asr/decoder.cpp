@@ -109,6 +109,8 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
     m_sampler.sample(sequence_groups, logits);
     raw_metrics.m_sampling_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+    for (auto& sg : sequence_groups)
+        sg->notify_handle();
     stream_generated_tokens();
 
     // Track active (not yet finished) sequence groups
@@ -188,6 +190,8 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
         m_sampler.sample(active_sequence_groups, logits);
         raw_metrics.m_sampling_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+        for (auto& sg : active_sequence_groups)
+            sg->notify_handle();
         stream_generated_tokens();
         free_finished_requests();
     }
