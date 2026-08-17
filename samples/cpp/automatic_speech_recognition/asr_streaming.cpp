@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Streaming ASR from a WAV file using ASRPipeline::create_streaming_session().
-// Simulates a microphone source by pushing the file in fixed-size segments.
+// Pushes the file in fixed-size segments without injecting artificial delays.
 //
 // Usage:
 //   asr_streaming <MODEL_DIR> <WAV_FILE> [DEVICE] [CHUNK_SEC] [STEP_MS]
@@ -11,7 +11,7 @@
 //   WAV_FILE    — mono 16 kHz PCM WAV file to transcribe
 //   DEVICE      — OpenVINO device string (default: CPU)
 //   CHUNK_SEC   — decode interval in seconds (default: 2.0)
-//   STEP_MS     — simulated microphone push interval in ms (default: 500)
+//   STEP_MS     — chunk push interval in ms (default: 500)
 
 #include <chrono>
 #include <iomanip>
@@ -21,16 +21,62 @@
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 6) {
+    if (argc < 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] +
-                                 " <MODEL_DIR> <WAV_FILE> [DEVICE] [CHUNK_SEC] [STEP_MS]");
+                                 " <MODEL_DIR> <WAV_FILE> [DEVICE] [CHUNK_SEC] [STEP_MS] "
+                                 "[--simulate-live] [--device DEVICE] [--chunk-sec SEC] [--step-ms MS]");
     }
 
     const std::filesystem::path models_path = argv[1];
     const std::string wav_file = argv[2];
-    const std::string device = (argc >= 4) ? argv[3] : "CPU";
-    const float chunk_sec = (argc >= 5) ? std::stof(argv[4]) : 2.0f;
-    const int step_ms = (argc >= 6) ? std::stoi(argv[5]) : 500;
+    std::string device = "CPU";
+    float chunk_sec = 2.0f;
+    int step_ms = 500;
+
+    int positional_index = 0;
+    for (int i = 3; i < argc; ++i) {
+        const std::string arg = argv[i];
+
+        if (arg == "--device") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --device");
+            }
+            device = argv[++i];
+            continue;
+        }
+
+        if (arg == "--chunk-sec") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --chunk-sec");
+            }
+            chunk_sec = std::stof(argv[++i]);
+            continue;
+        }
+
+        if (arg == "--step-ms") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --step-ms");
+            }
+            step_ms = std::stoi(argv[++i]);
+            continue;
+        }
+
+        if (positional_index >= 3) {
+            throw std::runtime_error("Unexpected argument: " + arg);
+        }
+
+        switch (positional_index++) {
+            case 0:
+                device = arg;
+                break;
+            case 1:
+                chunk_sec = std::stof(arg);
+                break;
+            case 2:
+                step_ms = std::stoi(arg);
+                break;
+        }
+    }
 
     std::cout << "Loading model from: " << models_path << " on " << device << "\n";
     ov::genai::ASRPipeline pipeline(models_path, device);

@@ -6,9 +6,12 @@ import openvino as openvino
 from openvino_genai.py_openvino_genai import ASRDecodedResultChunk
 from openvino_genai.py_openvino_genai import ASRDecodedResults
 from openvino_genai.py_openvino_genai import ASRGenerationConfig
+from openvino_genai.py_openvino_genai import ASRPartialResult
 from openvino_genai.py_openvino_genai import ASRPerfMetrics
 from openvino_genai.py_openvino_genai import ASRPipeline
 from openvino_genai.py_openvino_genai import ASRRawPerfMetrics
+from openvino_genai.py_openvino_genai import ASRStreamingConfig
+from openvino_genai.py_openvino_genai import ASRStreamingSession
 from openvino_genai.py_openvino_genai import Adapter
 from openvino_genai.py_openvino_genai import AdapterConfig
 from openvino_genai.py_openvino_genai import AggregationMode
