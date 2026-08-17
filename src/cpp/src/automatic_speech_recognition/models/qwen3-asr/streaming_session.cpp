@@ -33,7 +33,7 @@ Qwen3ASRStreamingSessionImpl::Qwen3ASRStreamingSessionImpl(Qwen3ASR* pipeline,
 }
 
 std::string Qwen3ASRStreamingSessionImpl::compute_prefix() const {
-    if (m_chunk_count < m_streaming_config.unfixed_chunk_num || m_accumulated_raw.empty()) {
+    if (m_chunk_count < m_streaming_config.warmup_chunks || m_accumulated_raw.empty()) {
         return "";
     }
 
@@ -41,7 +41,7 @@ std::string Qwen3ASRStreamingSessionImpl::compute_prefix() const {
     const ov::Tensor& ids_tensor = encoded.input_ids;
     const size_t n_tokens = ids_tensor.get_shape()[1];
 
-    size_t rollback = m_streaming_config.unfixed_token_num;
+    size_t rollback = m_streaming_config.context_rollback_tokens;
 
     // Increase rollback until the decoded prefix is free of replacement characters.
     while (true) {

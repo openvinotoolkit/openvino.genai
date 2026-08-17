@@ -40,8 +40,8 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::ASRStreamingConfig streaming_config;
     streaming_config.chunk_size_sec = chunk_sec;
-    streaming_config.unfixed_chunk_num = 2;
-    streaming_config.unfixed_token_num = 5;
+    streaming_config.warmup_chunks = 2;
+    streaming_config.context_rollback_tokens = 5;
 
     std::cout << "Loading audio: " << wav_file << "\n";
     const ov::genai::RawSpeechInput wav = utils::audio::read_wav(wav_file);

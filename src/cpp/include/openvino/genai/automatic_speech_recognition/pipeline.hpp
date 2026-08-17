@@ -71,9 +71,9 @@ struct OPENVINO_GENAI_EXPORTS ASRStreamingConfig {
     /// Audio duration to accumulate before triggering a decode pass.
     float chunk_size_sec = 2.0f;
     /// Number of initial decode passes run without a prefix (cold-start).
-    size_t unfixed_chunk_num = 2;
+    size_t warmup_chunks = 2;
     /// Tokens rolled back from accumulated output when computing the prefix for the next pass.
-    size_t unfixed_token_num = 5;
+    size_t context_rollback_tokens = 5;
 };
 
 /// A partial transcription delivered after each decode pass.
