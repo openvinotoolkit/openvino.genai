@@ -135,6 +135,17 @@ public:
                                const std::vector<VideoMetadata>& videos_metadata,
                                const GenerationConfig& generation_config,
                                const StreamerVariant& streamer) override {
+        return generate(history, images, videos, audios, videos_metadata, generation_config, streamer, nullptr);
+    }
+
+    VLMDecodedResults generate(const ChatHistory& history,
+                               const std::vector<ov::Tensor>& images,
+                               const std::vector<ov::Tensor>& videos,
+                               const std::vector<ov::Tensor>& audios,
+                               const std::vector<VideoMetadata>& videos_metadata,
+                               const GenerationConfig& generation_config,
+                               const StreamerVariant& streamer,
+                               const std::shared_ptr<OmniStreamerBase>& omni_streamer) override {
         auto start_time = std::chrono::steady_clock::now();
         ChatHistoryInternalState::get_or_create(history);
         std::vector<ov::genai::GenerationConfig> generation_configs = {generation_config};
@@ -144,7 +155,8 @@ public:
                                                      ov::genai::videos_metadata_batches({videos_metadata}),
                                                      ov::genai::audios_batches({audios}),
                                                      ov::genai::generation_config_batches(generation_configs),
-                                                     ov::genai::streamer(streamer))[0];
+                                                     ov::genai::streamer(streamer),
+                                                     ov::genai::omni_streamer(omni_streamer))[0];
         auto stop_time = std::chrono::steady_clock::now();
         return finalize_decoded_results(decoded_results, start_time, stop_time);
     }

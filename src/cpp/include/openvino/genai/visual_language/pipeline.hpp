@@ -235,6 +235,27 @@ public:
         return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
     }
 
+    /// @brief ChatHistory form of the omni-streaming generate above. OmniPipeline uses this one for
+    /// its ChatHistory overload rather than applying the chat template itself and calling the string
+    /// form: the multimodal normalization that places image and audio tags inside the user message
+    /// only happens on the ChatHistory path, and going through a templated string changes the
+    /// Thinker's output.
+    /// @note This is a preview API and is subject to change.
+    virtual VLMDecodedResults generate(const ChatHistory& history,
+                                       const std::vector<ov::Tensor>& images,
+                                       const std::vector<ov::Tensor>& videos,
+                                       const std::vector<ov::Tensor>& audios,
+                                       const std::vector<VideoMetadata>& videos_metadata,
+                                       const GenerationConfig& generation_config,
+                                       const StreamerVariant& streamer,
+                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
+        OPENVINO_ASSERT(!omni_streamer,
+                        "This VLM pipeline implementation doesn't support streaming to a talker. "
+                        "Streaming the thinker's hidden states requires the continuous-batching "
+                        "backend: load the model with attention_backend=PA on a CPU or GPU device.");
+        return generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
+    }
+
     /// @brief Backend capability: true when the active execution path emits the per-step hidden
     /// states the talker consumes. Depends on how the model was loaded — only the continuous-batching
     /// backend collects them today; the SDPA fallback returns false. Independent of the model itself:
@@ -473,6 +494,20 @@ public:
     /// @note This is a preview API and is subject to change.
     VLMDecodedResults generate(
         const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<ov::Tensor>& audios,
+        const std::vector<VideoMetadata>& videos_metadata,
+        const GenerationConfig& generation_config,
+        const StreamerVariant& streamer,
+        const std::shared_ptr<OmniStreamerBase>& omni_streamer
+    ) override;
+
+    /// @brief ChatHistory form of the omni-streaming generate. Forwards to the backing
+    /// implementation; see VLMPipelineBase.
+    /// @note This is a preview API and is subject to change.
+    VLMDecodedResults generate(
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
         const std::vector<ov::Tensor>& audios,

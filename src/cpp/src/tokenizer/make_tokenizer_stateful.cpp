@@ -166,6 +166,8 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     if (number_of_main_tokens_inputs != 1 && number_of_main_tokens_inputs != 2) { return false; }
     
     std::shared_ptr<ov::op::v0::Constant> const_node;
+    std::shared_ptr<v1::Select> existing_truncation_select;
+    std::shared_ptr<v6::ReadValue> existing_truncation_rv;
     if (add_or_sub_node) {
         // Minimum between max_length and length of token sequence.
         auto min_node = ov::as_type_ptr<v1::Minimum>(add_or_sub_node->get_input_node_shared_ptr(1));
@@ -179,8 +181,25 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
         }
 
     } else if (trunc_node) {
-        // If truncation is done by Truncate node then we need to check if it has a constant input.
-        const_node = ov::as_type_ptr<v0::Constant>(trunc_node->get_input_node_shared_ptr(number_of_main_tokens_inputs*3));
+        // New tokenizer models already make truncation stateful and pass
+        // Select(ReadValue("truncation"), max_length, disabled_truncation_limit)
+        // to Truncate. Legacy models pass max_length directly as a Constant.
+        auto truncation_max_length = trunc_node->get_input_node_shared_ptr(number_of_main_tokens_inputs * 3);
+        const_node = ov::as_type_ptr<v0::Constant>(truncation_max_length);
+        existing_truncation_select = ov::as_type_ptr<v1::Select>(truncation_max_length);
+        if (existing_truncation_select) {
+            existing_truncation_rv = ov::as_type_ptr<v6::ReadValue>(
+                existing_truncation_select->get_input_node_shared_ptr(0));
+            const_node = ov::as_type_ptr<v0::Constant>(
+                existing_truncation_select->get_input_node_shared_ptr(1));
+            if (!existing_truncation_rv ||
+                existing_truncation_rv->get_variable()->get_info().variable_id != ov::genai::TRUNCATION_VAR_ID) {
+                return false;
+            }
+        }
+        if (!const_node) {
+            return false;
+        }
     } else {
         return false;
     }
@@ -209,22 +228,34 @@ bool ov::genai::MakePaddingSatateful::run_on_model(const std::shared_ptr<ov::Mod
     model->add_variables({max_length_var});
     auto max_length_node = std::make_shared<v1::Subtract>(max_length_rv, num_added_tokens_const);
 
-    var_info = {ov::Shape{}, ov::element::boolean, ov::genai::TRUNCATION_VAR_ID};
-    auto truncation_var = std::make_shared<op::util::Variable>(var_info);
-    auto defaul_false_const = std::make_shared<v0::Constant>(ov::element::boolean, ov::Shape{}, std::vector{false});
-    auto truncation_rv = std::make_shared<v6::ReadValue>(defaul_false_const, truncation_var);
-    auto truncation_assign = std::make_shared<v6::Assign>(truncation_rv, truncation_var);
-    model->add_sinks({truncation_assign});
-    model->add_variables({truncation_var});
-    
-    // TODO: int32_max 2147483647 becomes -2147483648 when accessed from Truncate be inputs[inputs.size() - 3].data<const int32_t>()[0]
-    // int32_max - 1 (-2, -3, etc.) also strangely becomes still -2147483648.
-    // Only starting from int32_max - 64 it is casted to adequate positive value.
-    auto int32_max_constant = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{}, std::vector<int32_t>{std::numeric_limits<int32_t>::max() - 64});
-    auto max_length_for_trunc = std::make_shared<v1::Select>(truncation_rv, max_length_node, int32_max_constant);
-    
-    for (auto target_input : target_inputs) {
-        target_input.replace_source_output(max_length_for_trunc->output(0));
+    if (existing_truncation_select) {
+        // Reuse the tokenizer's truncation state and disabled-truncation branch. Only make its
+        // configured max-length branch runtime-configurable.
+        for (auto target_input : target_inputs) {
+            target_input.replace_source_output(max_length_node->output(0));
+        }
+    } else {
+        var_info = {ov::Shape{}, ov::element::boolean, ov::genai::TRUNCATION_VAR_ID};
+        auto truncation_var = std::make_shared<op::util::Variable>(var_info);
+        auto default_false_const = std::make_shared<v0::Constant>(
+            ov::element::boolean, ov::Shape{}, std::vector{false});
+        auto truncation_rv = std::make_shared<v6::ReadValue>(default_false_const, truncation_var);
+        model->add_sinks({std::make_shared<v6::Assign>(truncation_rv, truncation_var)});
+        model->add_variables({truncation_var});
+
+        // TODO: int32_max 2147483647 becomes -2147483648 when accessed from Truncate be inputs[inputs.size() - 3].data<const int32_t>()[0]
+        // int32_max - 1 (-2, -3, etc.) also strangely becomes still -2147483648.
+        // Only starting from int32_max - 64 it is casted to adequate positive value.
+        auto int32_max_constant = std::make_shared<v0::Constant>(
+            ov::element::i32,
+            ov::Shape{},
+            std::vector<int32_t>{std::numeric_limits<int32_t>::max() - 64});
+        auto max_length_for_trunc = std::make_shared<v1::Select>(
+            truncation_rv, max_length_node, int32_max_constant);
+
+        for (auto target_input : target_inputs) {
+            target_input.replace_source_output(max_length_for_trunc->output(0));
+        }
     }
     
     // We need to check if user requested to not add special tokens.
