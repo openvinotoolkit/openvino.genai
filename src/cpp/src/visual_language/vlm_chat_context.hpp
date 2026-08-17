@@ -36,6 +36,8 @@ public:
         std::vector<std::pair<size_t, size_t>> vision_counts;
 
         bool needs_kv_cache_reset = false;
+
+        float vision_encoder_duration;
     };
 
     VLMChatContext(

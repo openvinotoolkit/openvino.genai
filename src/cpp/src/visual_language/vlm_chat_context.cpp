@@ -40,7 +40,10 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
     std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos);
     
+    const auto vision_encoder_start = std::chrono::steady_clock::now();
     encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata);
+    const auto vision_encoder_end = std::chrono::steady_clock::now();
+    result.vision_encoder_duration = PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start);
     
     fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices);
     
