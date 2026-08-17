@@ -1139,8 +1139,7 @@ Eagle3CompileConfig StatefulEagle3LLMPipeline::build_compile_config(const ModelD
     Eagle3CompileConfig cfg;
     cfg.max_tree_depth = get_or("MAX_TREE_DEPTH", m_generation_config.tree_depth);
     cfg.max_branching_factor = get_or("MAX_BRANCHING_FACTOR", m_generation_config.branching_factor);
-    cfg.max_assistant_tokens =
-        get_or("MAX_ASSISTANT_TOKENS", m_generation_config.num_assistant_tokens.value_or(DEFAULT_EAGLE_NUM_ASSISTANT_TOKENS));
+    cfg.max_assistant_tokens = get_or("MAX_ASSISTANT_TOKENS", m_generation_config.num_assistant_tokens);
     return cfg;
 }
 
