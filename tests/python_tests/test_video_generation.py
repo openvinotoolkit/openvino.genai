@@ -387,6 +387,17 @@ class TestText2VideoPipelineAdvanced:
         result = pipe.generate("test prompt", num_inference_steps=2)
         assert result.video is not None
 
+    def test_reshape_multiple_videos_with_cfg(self, video_generation_model):
+        """Widest timestep shape: batch is num_videos_per_prompt * 2 when CFG is enabled."""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
+        pipe.reshape(2, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate(
+            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, num_videos_per_prompt=2
+        )
+        assert result.video.data.shape == (2, 9, 32, 32, 3)
+
     def test_generate_without_cfg_default_compile(self, video_generation_model):
         """Regression test: direct-compile constructor should work with guidance_scale <= 1."""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -572,6 +583,34 @@ class TestImage2VideoPipeline:
         assert result is not None
         assert result.video is not None
         assert result.video.data.shape == (1, 9, 32, 32, 3)
+
+    def test_reshape(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate(self._make_image(), "test prompt", **self.GENERATE_KWARGS)
+        assert result.video is not None
+        assert result.video.data.shape == (1, 9, 32, 32, 3)
+
+    def test_reshape_updates_generation_config(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model)
+        pipe.reshape(1, 9, 32, 32, 3.0)
+
+        config = pipe.get_generation_config()
+        assert config.num_videos_per_prompt == 1
+        assert config.num_frames == 9
+        assert config.height == 32
+        assert config.width == 32
+        assert config.guidance_scale == 3.0
+
+    def test_reshape_multiple_videos_per_prompt(self, video_generation_model):
+        pipe = ov_genai.Image2VideoPipeline(video_generation_model)
+        pipe.reshape(2, 9, 32, 32, 3.0)
+        pipe.compile("CPU")
+
+        result = pipe.generate(self._make_image(), "test prompt", **self.GENERATE_KWARGS, num_videos_per_prompt=2)
+        assert result.video.data.shape == (2, 9, 32, 32, 3)
 
     def test_determinism(self, video_generation_model):
         pipe = ov_genai.Image2VideoPipeline(video_generation_model, "CPU")

@@ -246,8 +246,9 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
         OPENVINO_ASSERT(input_shape.rank().is_static() && input_shape.rank().get_length() == 5,
             "AutoencoderKLLTXVideo encoder input must be rank 5 [B, C, F, H, W], got rank ",
             input_shape.rank());
-        // The encoder always encodes a single conditioning frame; shape it to 1 regardless of num_frames.
-        std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], 1, height, width}}};
+        // The encoder receives a single conditioning image, not batch_size videos, so its batch
+        // dimension is left unchanged.
+        std::map<size_t, ov::PartialShape> idx_to_shape{{0, {input_shape[0], input_shape[1], 1, height, width}}};
         m_encoder_model->reshape(idx_to_shape);
     }
 
