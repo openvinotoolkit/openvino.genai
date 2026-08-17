@@ -17,7 +17,7 @@ import task.image_generation as bench_image
 import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
-import task.text_embeddings as bench_text_embed
+import task.embedding as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
@@ -174,6 +174,31 @@ def get_argparser():
         required=False,
         type=str,
         help="Path to store memory consumption logs and chart.",
+    )
+    parser.add_argument(
+        "--memory_sampler",
+        default="base",
+        choices=["base", "win-gpu", "full"],
+        type=str.lower,  # normalise e.g. 'WIN-GPU'/'Full' -> 'win-gpu'/'full' before choices validation
+        required=False,
+        help="Memory sampler implementation to use when process-based monitoring is active\n"
+        "(--memory_consumption 3 or 4).\n"
+        "Possible values:\n"
+        "  base (default) — MemorySamplerBase: cross-platform sampler built on\n"
+        "                   psutil.memory_info(). Collects RSS, VMS, Private and\n"
+        "                   system-wide RAM. Works on Linux, macOS and Windows.\n"
+        "  win-gpu        — MemorySamplerWinGPU: same RAM metrics as base plus, when\n"
+        "                   the optional *wmi* package is installed (pip install wmi),\n"
+        "                   two per-GPU-adapter metrics: gpu_<index>_ded (dedicated\n"
+        "                   VRAM) and gpu_<index>_shr (shared system RAM). Sourced\n"
+        "                   from GPUAdapterMemory perf counters (Windows 10 1709+),\n"
+        "                   so integrated GPUs report real usage via the shared pool\n"
+        "                   instead of a constant 0. Windows only; falls back to\n"
+        "                   MemorySamplerBase on other platforms.\n"
+        "  full           — MemorySamplerFull: same RAM metrics as base plus uss, pss\n"
+        "                   and swap from psutil.memory_full_info() (reads /proc smaps).\n"
+        "                   More accurate 'real' footprint but slower. Linux only;\n"
+        "                   falls back to MemorySamplerBase on other platforms.",
     )
     parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
     parser.add_argument(
@@ -379,6 +404,7 @@ def get_argparser():
             "image_cls",
             "code_gen",
             "ldm_super_resolution",
+            "embed",
             "text_embed",
             "text_rerank",
             "text_to_speech",
@@ -428,6 +454,14 @@ def get_argparser():
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
     )
     parser.add_argument(
+        "--embedding_prompt",
+        type=str,
+        default=None,
+        help="Instruction/system prompt used to guide embedding generation for Qwen3-VL-Embedding "
+        "(distinct from -p/--prompt, which is the content being embedded). Ignored by non-Qwen3-VL "
+        'embedding models. Defaults to "Represent the user\'s input."',
+    )
+    parser.add_argument(
         "--reranking_max_length",
         type=int,
         default=None,
@@ -472,7 +506,9 @@ def get_argparser():
         "--speech_voice",
         type=str,
         default="",
-        help="Speech voice for text-to-speech models. For Kokoro defaults to af_heart",
+        help=(
+            "Speech voice for text-to-speech models. For Kokoro defaults to af_heart. For Qwen3-Omni defaults to Ethan."
+        ),
     )
     parser.add_argument(
         "-vf",
