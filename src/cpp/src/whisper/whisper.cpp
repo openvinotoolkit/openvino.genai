@@ -111,6 +111,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
         raw_metrics.m_sampling_durations.emplace_back(
             ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     }
+    sequence_group->notify_handle();
     stream_generated_tokens();
 
     // "Generation" phase
@@ -184,6 +185,7 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
             raw_metrics.m_sampling_durations.emplace_back(
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         }
+        sequence_group->notify_handle();
     }
 
     stream_generated_tokens();

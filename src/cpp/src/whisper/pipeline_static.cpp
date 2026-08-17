@@ -325,6 +325,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
         raw_metrics.m_sampling_durations.emplace_back(
             ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     }
+    sequence_group->notify_handle();
     stream_generated_tokens(streamer, handle, return_timestamps);
 
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
@@ -350,6 +351,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
             raw_metrics.m_sampling_durations.emplace_back(
                 ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         }
+        sequence_group->notify_handle();
         stream_generated_tokens(streamer, handle, return_timestamps);
     }
 

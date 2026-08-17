@@ -332,6 +332,7 @@ EncodedResults StatefulLLMPipeline::generate(
     SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
     raw_perf_counters.m_sampling_durations.emplace_back(
         PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+    sequence_group->notify_handle();
     stream_generated_tokens(streamer_ptr, handle);
 
     int64_t input_ids_data = -1;
@@ -368,6 +369,7 @@ EncodedResults StatefulLLMPipeline::generate(
         SamplerOutput sampler_output = m_sampler.sample({sequence_group}, m_request.get_tensor("logits"));
         raw_perf_counters.m_sampling_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
+        sequence_group->notify_handle();
         stream_generated_tokens(streamer_ptr, handle);
     }
 
