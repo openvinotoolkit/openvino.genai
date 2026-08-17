@@ -23,7 +23,9 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 
 ## Get test image, audio and video
 
-[This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image. Download an example 16kHz mono WAV file:
+[This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.
+
+Download an example 16kHz mono WAV file:
 
 ```sh
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
