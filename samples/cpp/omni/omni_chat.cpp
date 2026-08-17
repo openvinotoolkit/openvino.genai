@@ -1,79 +1,27 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <opencv2/core.hpp>
-#include <opencv2/videoio.hpp>
-
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "audio_utils.hpp"
-#include "load_image.hpp"
+#include "automatic_speech_recognition/audio_utils.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
+#include "speech_generation/audio_utils.hpp"
+#include "visual_language_chat/load_image.hpp"
+#include "visual_language_chat/load_video.hpp"
 
 namespace {
 constexpr uint32_t SPEECH_SAMPLE_RATE = 24000;  // Qwen3-Omni speech output is 24kHz mono PCM.
-constexpr size_t DEFAULT_VIDEO_FRAMES = 8;
 
 ov::genai::StreamingStatus print_subword(std::string&& subword) {
     std::cout << subword << std::flush;
     return ov::genai::StreamingStatus::RUNNING;
-}
-
-// Pick num_frames evenly spaced indices across a video of total_frames.
-std::vector<size_t> sample_frame_indices(size_t total_frames, size_t num_frames) {
-    std::vector<size_t> indices;
-    indices.reserve(num_frames);
-    const float step = static_cast<float>(total_frames) / num_frames;
-    for (size_t i = 0; i < num_frames; ++i) {
-        indices.push_back(std::min(static_cast<size_t>(i * step), total_frames - 1));
-    }
-    return indices;
-}
-
-// Decode a video into an [N, H, W, 3] uint8 tensor and attach sampling metadata.
-std::pair<ov::Tensor, ov::genai::VideoMetadata> load_video(const std::filesystem::path& video_path,
-                                                           size_t num_frames = DEFAULT_VIDEO_FRAMES) {
-    cv::VideoCapture cap(video_path.string());
-    if (!cap.isOpened()) {
-        throw std::runtime_error("Could not open the video file: " + video_path.string());
-    }
-
-    const size_t total_num_frames = static_cast<size_t>(cap.get(cv::CAP_PROP_FRAME_COUNT));
-
-    ov::genai::VideoMetadata video_metadata;
-    video_metadata.fps = cap.get(cv::CAP_PROP_FPS);
-    // Passing frame indices selects those frames within the pipeline and skips model-specific sampling.
-    // Leave frames_indices empty to apply model-specific sampling (e.g. for Qwen3-VL).
-    video_metadata.frames_indices = sample_frame_indices(total_num_frames, num_frames);
-
-    const size_t width = static_cast<size_t>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-    const size_t height = static_cast<size_t>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-    ov::Tensor video_tensor(ov::element::u8, ov::Shape{total_num_frames, height, width, 3});
-    uint8_t* video_tensor_data = video_tensor.data<uint8_t>();
-
-    cv::Mat frame;
-    size_t frame_idx = 0;
-    while (cap.read(frame)) {
-        OPENVINO_ASSERT(static_cast<size_t>(frame.cols) == width && static_cast<size_t>(frame.rows) == height &&
-                            frame.channels() == 3,
-                        "Unexpected frame geometry while decoding video");
-        std::memcpy(video_tensor_data, frame.data, frame.total() * 3 * sizeof(uint8_t));
-        video_tensor_data += frame.total() * 3;
-        ++frame_idx;
-    }
-    OPENVINO_ASSERT(frame_idx == total_num_frames,
-                    "Frame count mismatch: expected " + std::to_string(total_num_frames) + ", got " +
-                        std::to_string(frame_idx));
-
-    return {std::move(video_tensor), std::move(video_metadata)};
 }
 
 // Save the first waveform of a result to a WAV file. Speech output is optional (talker mode),
@@ -88,14 +36,13 @@ void save_speech(const ov::genai::OmniDecodedResults& results, const std::string
                               file_name,
                               waveform.get_element_type().bitwidth(),
                               SPEECH_SAMPLE_RATE);
-    std::cout << "\n[Speech output saved to \"" << file_name << "\"]" << std::endl;
 }
 }  // namespace
 
 int main(int argc, char* argv[]) try {
-    if (argc < 4 || argc > 5) {
+    if (argc != 5) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] +
-                                 " <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> [VIDEO_FILE]");
+                                 " <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> <VIDEO_FILE>");
     }
 
     const std::filesystem::path models_path = argv[1];
@@ -154,13 +101,11 @@ int main(int argc, char* argv[]) try {
     }
 
     ov::genai::ChatHistory history;
+    auto [video, video_metadata] = utils::load_video(argv[4]);
     std::vector<ov::Tensor> videos;
+    videos.push_back(std::move(video));
     std::vector<ov::genai::VideoMetadata> videos_metadata;
-    if (argc == 5) {
-        auto [video, video_metadata] = load_video(argv[4]);
-        videos.push_back(std::move(video));
-        videos_metadata.push_back(std::move(video_metadata));
-    }
+    videos_metadata.push_back(std::move(video_metadata));
 
     std::string prompt;
     std::cout << "question:\n";
