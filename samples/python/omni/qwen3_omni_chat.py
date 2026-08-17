@@ -11,7 +11,7 @@ and is subject to change in future releases.
 Demonstrates text + image + audio + video -> text + speech output using the ChatHistory API.
 
 Usage:
-    python qwen3_omni_chat.py <MODEL_DIR> <IMAGE_FILE_OR_DIR> [--audio AUDIO_WAV] [--video VIDEO]
+    python qwen3_omni_chat.py <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> <VIDEO_FILE>
 """
 
 import argparse
@@ -104,8 +104,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Qwen3-Omni multimodal chat")
     parser.add_argument("model_dir", help="Path to the OpenVINO model directory")
     parser.add_argument("image_dir", help="Image file or directory with images")
-    parser.add_argument("--audio", help="Path to input audio WAV file (optional)")
-    parser.add_argument("--video", help="Path to input video file (optional)")
+    parser.add_argument("audio", help="Path to input audio WAV file")
+    parser.add_argument("video", help="Path to input video file")
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
@@ -124,14 +124,10 @@ def main() -> None:
     # (e.g. MoE exposes "Ethan", "Chelsie", "Aiden", "Cherry"); the full list is in
     # talker_config.speaker_id of the model's config.json.
 
-    if args.video:
-        video_tensor, video_metadata = read_video(args.video)
-        videos = [video_tensor]
-        videos_metadata = [video_metadata]
-    else:
-        videos = []
-        videos_metadata = []
-    audios = [load_audio(args.audio)] if args.audio else []
+    video_tensor, video_metadata = read_video(args.video)
+    videos = [video_tensor]
+    videos_metadata = [video_metadata]
+    audios = [load_audio(args.audio)]
 
     history = openvino_genai.ChatHistory()
     prompt = input("question:\n")

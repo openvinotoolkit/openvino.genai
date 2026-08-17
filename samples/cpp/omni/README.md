@@ -16,9 +16,11 @@ Demonstrates `ov::genai::OmniPipeline` for end-to-end multimodal conversations. 
 
 ## Prerequisites
 
-Prepare image files (JPG, PNG) and audio files (16kHz mono WAV) for testing. A video file is optional.
+Prepare image files (JPG, PNG), audio files (16kHz mono WAV) and a video file for testing.
 
-[This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image. Download an example 16kHz mono WAV file:
+[This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.
+
+Download an example 16kHz mono WAV file:
 
 ```bash
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
@@ -33,14 +35,14 @@ wget https://storage.openvinotoolkit.org/repositories/openvino_notebooks/data/da
 ## Usage
 
 ```bash
-omni_chat <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> [VIDEO_FILE]
+omni_chat <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> <VIDEO_FILE>
 ```
 
 **Parameters:**
 - `<MODEL_DIR>` — Path to exported Qwen3-Omni OpenVINO model directory
 - `<IMAGE_FILE_OR_DIR>` — Path to input image(s) for visual context
 - `<AUDIO_FILE>` — Path to input audio file (16kHz mono WAV)
-- `[VIDEO_FILE]` — Optional path to an input video file
+- `<VIDEO_FILE>` — Path to an input video file
 
 **Example:**
 
