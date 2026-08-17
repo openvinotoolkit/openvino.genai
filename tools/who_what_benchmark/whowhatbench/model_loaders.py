@@ -3,7 +3,6 @@
 
 from pathlib import Path
 import logging
-import re
 import torch
 import os
 
@@ -197,33 +196,6 @@ def get_scheduler_config_genai(cb_config):
     return scheduler_config
 
 
-# minja (openvino_genai's Jinja engine) doesn't support Python's implicit concatenation of
-# adjacent multiline string literals used by some chat templates (e.g. Gemma tool-calling),
-# causing "Expected closing parenthesis" errors at generate() time.
-_MINJA_MULTILINE_STRING_CONCAT_RE = re.compile(r'"[ \t]*\r?\n[ \t]*"')
-
-
-def _patch_minja_incompatible_chat_template(pipeline):
-    """Best-effort: normalize a pipeline's chat template in place if minja-incompatible."""
-    try:
-        tokenizer = pipeline.get_tokenizer()
-        chat_template = tokenizer.chat_template
-    except Exception as exc:
-        logger.warning(f"Could not read chat template to check for minja-incompatible syntax: {exc}")
-        return
-    if not chat_template or not isinstance(chat_template, str):
-        return
-    patched_chat_template = _MINJA_MULTILINE_STRING_CONCAT_RE.sub("", chat_template)
-    if patched_chat_template == chat_template:
-        return
-    try:
-        tokenizer.set_chat_template(patched_chat_template)
-    except Exception as exc:
-        logger.warning(f"Could not patch minja-incompatible chat template: {exc}")
-        return
-    logger.info("Patched chat template to remove minja-incompatible multiline string concatenation")
-
-
 def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     try:
         import openvino_genai
@@ -254,7 +226,6 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         logger.info("Using OpenVINO GenAI LLMPipeline API")
         pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, **ov_config)
 
-    _patch_minja_incompatible_chat_template(pipeline)
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
 
@@ -529,7 +500,6 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         logger.info("Using OpenVINO GenAI VLMPipeline API")
         pipeline = openvino_genai.VLMPipeline(model_dir, **pipeline_kwargs)
 
-    _patch_minja_incompatible_chat_template(pipeline)
     return GenAIModelWrapper(
         pipeline,
         model_dir,
