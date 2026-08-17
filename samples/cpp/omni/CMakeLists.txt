@@ -34,8 +34,11 @@ if(NOT TARGET dr_libs)
     FetchContent_MakeAvailable(dr_libs)
 endif()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
+
 add_executable(omni_chat omni_chat.cpp ../automatic_speech_recognition/audio_utils.cpp ../visual_language_chat/load_image.cpp)
 target_include_directories(omni_chat PRIVATE "${CMAKE_BINARY_DIR}" "../visual_language_chat" "../automatic_speech_recognition" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+ov_genai_link_opencv(omni_chat core videoio)
 target_link_libraries(omni_chat PRIVATE openvino::genai)
 
 set_target_properties(omni_chat PROPERTIES

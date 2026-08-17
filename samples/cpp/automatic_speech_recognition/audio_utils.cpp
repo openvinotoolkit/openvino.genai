@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "openvino/core/except.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 
 #define DR_WAV_IMPLEMENTATION
@@ -138,6 +139,27 @@ ov::Tensor read_wav_as_tensor(const std::string& filename) {
     return ov::Tensor(ov::element::f32,
                       ov::Shape{sample_count},
                       SharedPcmAllocator{std::make_shared<std::vector<float>>(std::move(pcm))});
+}
+
+void save_to_wav(const float* waveform_ptr,
+                 size_t waveform_size,
+                 const std::filesystem::path& file_path,
+                 uint32_t bits_per_sample,
+                 uint32_t sample_rate) {
+    drwav_data_format format;
+    format.container = drwav_container_riff;
+    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+    format.channels = 1;
+    format.sampleRate = sample_rate;
+    format.bitsPerSample = bits_per_sample;
+
+    drwav wav;
+    OPENVINO_ASSERT(drwav_init_file_write(&wav, file_path.string().c_str(), &format, nullptr),
+                    "Failed to initialize WAV writer for ", file_path.string());
+
+    const drwav_uint64 frames_written = drwav_write_pcm_frames(&wav, waveform_size, waveform_ptr);
+    drwav_uninit(&wav);
+    OPENVINO_ASSERT(frames_written == waveform_size, "Failed to write all frames to ", file_path.string());
 }
 }  // namespace audio
 }  // namespace utils
