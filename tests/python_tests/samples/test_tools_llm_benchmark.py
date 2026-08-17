@@ -163,7 +163,7 @@ class TestBenchmarkLLM:
         indirect=["convert_model", "convert_draft_model"],
     )
     def test_python_tool_llm_benchmark_sd_generation_config(
-       self, convert_model, convert_draft_model, sd_sample_args, tmp_path
+        self, convert_model, convert_draft_model, sd_sample_args, tmp_path
     ):
         """
         Test --sd_generation_config JSON file parsing for Speculative Decoding.
