@@ -35,7 +35,7 @@ def read_wav(path: str) -> np.ndarray:
 
 
 def print_partial(result):
-    print(f"[partial] ({result.language}) {result.text}")
+    print(f"[partial] ({result.language}) +{result.committed_text} [{result.partial_text}]")
 
 
 def run_wav_streaming(pipe: Any, wav_path: str, cfg: Any,

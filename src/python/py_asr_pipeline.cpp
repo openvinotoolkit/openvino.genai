@@ -371,9 +371,14 @@ void init_asr_pipeline(py::module_& m) {
     py::class_<ASRPartialResult>(m, "ASRPartialResult", asr_partial_result_docstring)
         .def(py::init<>())
         .def_readwrite("language", &ASRPartialResult::language)
-        .def_readwrite("text", &ASRPartialResult::text)
+        .def_readwrite("committed_text", &ASRPartialResult::committed_text)
+        .def_readwrite("new_committed_text", &ASRPartialResult::new_committed_text)
+        .def_readwrite("partial_text", &ASRPartialResult::partial_text)
         .def("__repr__", [](const ASRPartialResult& result) {
-            return py::str("ASRPartialResult(language='" + result.language + "', text='" + result.text + "')");
+            return py::str("ASRPartialResult(language='" + result.language +
+                           "', committed_text='" + result.committed_text +
+                           "', new_committed_text='" + result.new_committed_text +
+                           "', partial_text='" + result.partial_text + "')");
         });
 
     py::class_<ASRStreamingSession>(m, "ASRStreamingSession")
@@ -430,15 +435,16 @@ void init_asr_pipeline(py::module_& m) {
             (asr_generate_docstring + std::string(" \n ") + asr_generation_config_docstring).c_str())
         .def("create_streaming_session",
              [](ASRPipeline& pipe,
-                const ASRStreamingConfig& streaming_config,
+                const std::optional<ASRStreamingConfig>& streaming_config,
                 const std::optional<ASRGenerationConfig>& generation_config,
                 const std::function<void(ASRPartialResult)>& callback) {
                  py::gil_scoped_release release;
-                 return pipe.create_streaming_session(streaming_config, generation_config, callback);
+                 return pipe.create_streaming_session(
+                     streaming_config.value_or(ASRStreamingConfig{}), generation_config, callback);
              },
-             py::arg("streaming_config") = ASRStreamingConfig{},
-             py::arg("generation_config") = std::nullopt,
-             py::arg("callback") = nullptr,
+             py::arg("streaming_config") = py::none(),
+             py::arg("generation_config") = py::none(),
+             py::arg("callback") = py::none(),
              "Create a streaming ASR session for incremental transcription.")
         .def("get_tokenizer", &ASRPipeline::get_tokenizer)
         .def("get_generation_config", &ASRPipeline::get_generation_config, py::return_value_policy::copy)

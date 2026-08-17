@@ -74,8 +74,24 @@ void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
     m_current_text = std::move(text);
     ++m_chunk_count;
 
+    // committed_text = tokens that will survive into the next decode pass;
+    // partial_text = rolled-back tokens that may still change.
+    const std::string next_prefix_raw = compute_prefix();
+    const std::string prev_committed = m_current_committed_text;
+    if (next_prefix_raw.empty()) {
+        m_current_committed_text = "";
+        m_current_partial_text = m_current_text;
+    } else {
+        auto [next_lang, next_committed] = Qwen3ASR::parse_asr_output(next_prefix_raw, m_generation_config.language);
+        m_current_committed_text = std::move(next_committed);
+        m_current_partial_text = m_current_text.substr(
+            std::min(m_current_text.size(), m_current_committed_text.size()));
+    }
+    m_current_new_committed_text = m_current_committed_text.substr(prev_committed.size());
+
     if (m_callback) {
-        m_callback({m_current_language, m_current_text});
+        m_callback({m_current_language, m_current_committed_text,
+                    m_current_new_committed_text, m_current_partial_text});
     }
 }
 
@@ -105,7 +121,8 @@ ASRDecodedResults Qwen3ASRStreamingSessionImpl::finish() {
 }
 
 ASRPartialResult Qwen3ASRStreamingSessionImpl::get_partial_result() const {
-    return {m_current_language, m_current_text};
+    return {m_current_language, m_current_committed_text,
+            m_current_new_committed_text, m_current_partial_text};
 }
 
 }  // namespace ov::genai

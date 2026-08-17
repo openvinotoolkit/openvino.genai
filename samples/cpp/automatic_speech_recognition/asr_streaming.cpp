@@ -96,13 +96,9 @@ int main(int argc, char* argv[]) try {
     std::cout << std::fixed << std::setprecision(2)
               << "  Duration: " << total_sec << " s  (" << total_samples << " samples @ 16 kHz)\n\n";
 
-    std::string prev_text;
-
     auto on_partial = [&](ov::genai::ASRPartialResult result) {
-        if (result.text != prev_text) {
-            std::cout << "[partial] (" << result.language << ") " << result.text << "\n";
-            prev_text = result.text;
-        }
+        std::cout << "[partial] (" << result.language << ") +" << result.committed_text
+                  << " [" << result.partial_text << "]\n";
     };
 
     auto session = pipeline.create_streaming_session(streaming_config, gen_config, on_partial);

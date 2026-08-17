@@ -41,6 +41,9 @@ private:
 
     std::string m_current_language;
     std::string m_current_text;
+    std::string m_current_committed_text;
+    std::string m_current_new_committed_text;
+    std::string m_current_partial_text;
 
     ASRPerfMetrics m_perf_metrics;
 };

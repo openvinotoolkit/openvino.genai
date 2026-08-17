@@ -79,7 +79,9 @@ struct OPENVINO_GENAI_EXPORTS ASRStreamingConfig {
 /// A partial transcription delivered after each decode pass.
 struct OPENVINO_GENAI_EXPORTS ASRPartialResult {
     std::string language;
-    std::string text;
+    std::string committed_text;     // all stable text confirmed so far, including new_committed_text
+    std::string new_committed_text; // stable text added since the previous partial result
+    std::string partial_text;       // trailing region still subject to change
 };
 
 using ASRPartialResultCallback = std::function<void(ASRPartialResult)>;
