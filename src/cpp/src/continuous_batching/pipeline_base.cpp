@@ -365,16 +365,24 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
+        const auto vision_encoder_start = std::chrono::steady_clock::now();
         encoded_images = m_inputs_embedder->encode_images(images_vector[0]);
+        
         vlm_utils::update_image_slice_counts(vlm_perf_metrics[0], encoded_images);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
-
+        
         encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
+        
+        const auto vision_encoder_end = std::chrono::steady_clock::now();
+        vlm_perf_metrics[0].vlm_raw_metrics.vision_encoder_durations.emplace_back(
+            PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
+        );
 
         // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
         if (!m_pending_audios_batches.empty() && !m_pending_audios_batches[0].empty()) {
             std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+            // TODO Wrap encode_audios with perf metrics as well
             m_inputs_embedder->encode_audios(m_pending_audios_batches[0]);
         }
 
@@ -432,8 +440,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
-            auto start_get_inputs_embeds = std::chrono::steady_clock::now();
+            const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
+            const auto vision_encoder_start = std::chrono::steady_clock::now();
             auto images_to_encode = images_vector.size() > 0 ? images_vector[i] : std::vector<ov::Tensor>{};
             const auto encoded_images = m_inputs_embedder->encode_images(images_to_encode);
             vlm_utils::update_image_slice_counts(vlm_perf_metrics[i], encoded_images);
@@ -442,10 +451,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
             const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode, videos_metadata);
 
+            const auto vision_encoder_end = std::chrono::steady_clock::now();
+            vlm_perf_metrics[i].vlm_raw_metrics.vision_encoder_durations.emplace_back(
+                PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
+            );
+
             // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
             // encode_audios overwrites the embedder's audio cache, so this must run per-prompt.
             if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
                 std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+                // TODO Wrap encode_audios with perf metrics as well
                 m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
             }
 
@@ -675,6 +690,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         auto processed_chat_data = chat_contexts[i].process(images_vector[i], videos_vector[i], videos_metadata_vector[i]);
 
+        vlm_perf_metrics[i].vlm_raw_metrics.vision_encoder_durations.emplace_back(
+            processed_chat_data.vision_encoder_duration
+        );
+
         const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(
             processed_chat_data.normalized_history,
@@ -767,6 +786,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return results;
 }
 
+// TODO Check if this override can fallback to the other add_request overloads to avoid code duplication
 GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
@@ -783,8 +803,14 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+
+        const auto vision_encoder_start = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         vlm_utils::update_image_slice_counts(metrics, encoded_images);
+        const auto vision_encoder_end = std::chrono::steady_clock::now();
+        metrics.vlm_raw_metrics.vision_encoder_durations.emplace_back(
+            PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
+        );
 
         const auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
@@ -843,9 +869,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        
+        const auto vision_encoder_start = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(images);
         vlm_utils::update_image_slice_counts(metrics, encoded_images);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+        const auto vision_encoder_end = std::chrono::steady_clock::now();
+        metrics.vlm_raw_metrics.vision_encoder_durations.emplace_back(
+            PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
+        );
 
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
