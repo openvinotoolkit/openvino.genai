@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "automatic_speech_recognition/audio_utils.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"

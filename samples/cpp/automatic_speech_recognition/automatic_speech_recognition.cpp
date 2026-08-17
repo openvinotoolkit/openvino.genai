@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "audio_utils.hpp"
+#include "../speech_generation/audio_utils.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 auto get_config_for_cache() {
