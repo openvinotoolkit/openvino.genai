@@ -151,7 +151,7 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
 
     for (const ov::Output<const ov::Node>& output : m_request.get_compiled_model().outputs()) {
         const std::unordered_set<std::string>& output_names = output.get_names();
-        if (output_names.count("last_hidden_state") != 0 && m_config.hidden_states_layers.empty()) {
+        if (output_names.count("last_hidden_state") != 0) {
             ov::Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
             const ov::Shape hidden_state_shape = last_hidden_state.get_shape();
             ov::Tensor result(last_hidden_state.get_element_type(), hidden_state_shape);

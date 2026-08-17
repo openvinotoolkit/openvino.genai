@@ -374,7 +374,7 @@ protected:
         m_generation_config.height = 512;
         m_generation_config.width = 512;
         m_generation_config.num_inference_steps = 8;
-        m_generation_config.guidance_scale = 5.0f;
+        m_generation_config.guidance_scale = 7.5f;
         m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.6f : 1.0f;
     }
 
