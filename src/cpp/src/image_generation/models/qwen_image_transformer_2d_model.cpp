@@ -3,6 +3,7 @@
 
 #include "openvino/genai/image_generation/qwen_image_transformer_2d_model.hpp"
 
+#include <algorithm>
 #include <fstream>
 
 #include "json_utils.hpp"

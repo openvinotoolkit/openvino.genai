@@ -3,6 +3,7 @@
 
 #include "openvino/genai/image_generation/autoencoder_kl_qwen_image.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -255,7 +256,8 @@ const AutoencoderKLQwenImage::Config& AutoencoderKLQwenImage::get_config() const
 }
 
 size_t AutoencoderKLQwenImage::get_vae_scale_factor() const {
-    return static_cast<size_t>(std::pow(2, m_config.temperal_downsample.size()));
+    const size_t num_true = std::count(m_config.temperal_downsample.begin(), m_config.temperal_downsample.end(), true);
+    return static_cast<size_t>(std::pow(2, num_true));
 }
 
 void AutoencoderKLQwenImage::merge_vae_image_post_processing() const {
