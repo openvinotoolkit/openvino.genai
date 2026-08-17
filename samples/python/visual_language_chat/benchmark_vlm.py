@@ -183,6 +183,12 @@ def main():
         f"Detokenization time: {perf_metrics.get_detokenization_duration().mean:.2f} ± {perf_metrics.get_detokenization_duration().std:.2f} ms")
     print(
         f"Embeddings preparation time: {perf_metrics.get_prepare_embeddings_duration().mean:.2f} ± {perf_metrics.get_prepare_embeddings_duration().std:.2f} ms")
+    print(
+        f"  Vision encoding time: {perf_metrics.get_vision_encoder_duration().mean:.2f} ± {perf_metrics.get_vision_encoder_duration().std:.2f} ms"
+    )
+    print(
+        f"  Text embedding time: {perf_metrics.get_text_embedding_duration().mean:.2f} ± {perf_metrics.get_text_embedding_duration().std:.2f} ms"
+    )
     print(f"TTFT: {perf_metrics.get_ttft().mean:.2f} ± {perf_metrics.get_ttft().std:.2f} ms")
     print(f"TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms/token")
     print(f"Throughput: {perf_metrics.get_throughput().mean:.2f} ± {perf_metrics.get_throughput().std:.2f} tokens/s")
