@@ -25,14 +25,14 @@ if(NOT TARGET dr_libs)
     FetchContent_MakeAvailable(dr_libs)
 endif()
 
-add_executable(automatic_speech_recognition automatic_speech_recognition.cpp audio_utils.cpp)
+add_executable(automatic_speech_recognition automatic_speech_recognition.cpp ../speech_generation/audio_utils.cpp)
 target_link_libraries(automatic_speech_recognition PRIVATE openvino::genai)
 target_include_directories(automatic_speech_recognition PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 set_target_properties(automatic_speech_recognition PROPERTIES
 
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
-target_compile_features(automatic_speech_recognition PRIVATE cxx_std_11)
+target_compile_features(automatic_speech_recognition PRIVATE cxx_std_17)
 
 install(TARGETS automatic_speech_recognition
     RUNTIME DESTINATION samples_bin/

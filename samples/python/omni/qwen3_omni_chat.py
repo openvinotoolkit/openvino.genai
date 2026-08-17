@@ -97,7 +97,6 @@ def save_speech(decoded_results: openvino_genai.OmniDecodedResults, file_name: s
         return
     waveform = np.array(decoded_results.speech_result.waveforms[0].data).reshape(-1)
     sf.write(file_name, waveform, samplerate=SPEECH_SAMPLE_RATE)
-    print(f'\n[Speech output saved to "{file_name}"]')
 
 
 def main() -> None:

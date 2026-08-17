@@ -7,10 +7,28 @@
 #include <string>
 #include <vector>
 
+#include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/runtime/tensor.hpp"
 
 namespace utils {
 namespace audio {
+/**
+ * Reads a mono or stereo 16kHz WAV file and returns it as mono float samples.
+ *
+ * @param filename Path to the WAV file, a WAV buffer, or "-" to read from stdin
+ */
+ov::genai::RawSpeechInput read_wav(const std::string& filename);
+
+/**
+ * Reads a WAV file into a 1-D f32 ov::Tensor without copying the decoded samples.
+ *
+ * The PCM buffer produced by read_wav() is moved into the tensor's allocator, so the tensor
+ * owns the samples directly.
+ *
+ * @param filename Path to the WAV file
+ */
+ov::Tensor read_wav_as_tensor(const std::string& filename);
+
 /**
  * This function saves an audio waveform, provided as an array of floating-point samples, to a WAV file.
  *
