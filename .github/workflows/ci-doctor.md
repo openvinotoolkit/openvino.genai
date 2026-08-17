@@ -14,7 +14,7 @@ concurrency:
   group: gh-aw-${{ github.workflow }}
 
 # Only allow a select few users to invoke /ci-doctor
-if: ${{ contains(fromJSON('["akashchi","as-suvorov", "Wovchena", "sbalandi", "avasenin-14", "sgonorov", "likholat", "pavel-esir", "apaniukov", "yatarkan", ]'), github.actor) }}
+if: ${{ contains(fromJSON('["akashchi","as-suvorov", "Wovchena", "sbalandi", "avasenin-14", "sgonorov", "likholat", "pavel-esir", "apaniukov", "yatarkan"]'), github.actor) }}
 
 permissions: read-all
 
