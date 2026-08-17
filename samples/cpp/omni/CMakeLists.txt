@@ -36,8 +36,14 @@ endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
 
-add_executable(omni_chat omni_chat.cpp ../automatic_speech_recognition/audio_utils.cpp ../visual_language_chat/load_image.cpp)
-target_include_directories(omni_chat PRIVATE "${CMAKE_BINARY_DIR}" "../visual_language_chat" "../automatic_speech_recognition" "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+add_executable(omni_chat omni_chat.cpp
+    ../automatic_speech_recognition/audio_utils.cpp
+    ../speech_generation/audio_utils.cpp
+    ../visual_language_chat/load_image.cpp
+    ../visual_language_chat/load_video.cpp)
+target_include_directories(omni_chat PRIVATE "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/.." "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
+# speech_generation/audio_utils.cpp already provides the single dr_wav implementation this binary needs.
+target_compile_definitions(omni_chat PRIVATE SAMPLES_DR_WAV_IMPLEMENTATION_PROVIDED)
 ov_genai_link_opencv(omni_chat core videoio)
 target_link_libraries(omni_chat PRIVATE openvino::genai)
 
