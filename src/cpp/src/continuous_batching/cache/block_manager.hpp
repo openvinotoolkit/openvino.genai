@@ -730,10 +730,10 @@ public:
     size_t free_group_partially(SequenceGroup::Ptr sequence_group, size_t num_required_blocks) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         const auto not_finished_sequences = sequence_group->get_not_finished_sequences();
-        std::vector<size_t> active_seq_ids;
+        std::vector<uint64_t> active_seq_ids;
         active_seq_ids.reserve(not_finished_sequences.size());
         for (const auto& sequence : not_finished_sequences) {
-            auto seq_id = sequence->get_id();
+            const uint64_t seq_id = sequence->get_id();
             if (m_block_table.count(seq_id) > 0) {
                 active_seq_ids.push_back(seq_id);
             }
@@ -744,7 +744,7 @@ public:
         const size_t num_not_finished_sequences = active_seq_ids.size();
         // ceil(num_required_blocks / num_not_finished_sequences) with integer arithmetic
         const size_t blocks_num = (num_required_blocks + num_not_finished_sequences - 1) / num_not_finished_sequences;
-        for (const auto seq_id : active_seq_ids) {
+        for (const uint64_t seq_id : active_seq_ids) {
             free_sequence_partially(seq_id, blocks_num);
         }
         return _blocks_released_to_tokens(sequence_group, blocks_num);
@@ -1189,6 +1189,7 @@ public:
         }
         auto block_table_it = m_block_table.find(seq_id);
         if (block_table_it == m_block_table.end()) {
+            m_block_table_logical_start.erase(seq_id);
             return;
         }
         auto& block_table = block_table_it->second;
