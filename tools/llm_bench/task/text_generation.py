@@ -220,6 +220,27 @@ def run_text_generation(
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
     input_data.pop('token_type_ids', None)
+
+    target_prefill_tokens = args.get("num_prefill_tokens", None)
+    if target_prefill_tokens is not None:
+        input_ids = input_data["input_ids"]
+        attention_mask = input_data["attention_mask"]
+        n_prefill_tokens = min(int(target_prefill_tokens), input_ids.shape[1])
+
+        if target_prefill_tokens > input_ids.shape[1]:
+            log.warning(
+                f"The reqested number num_prefill_tokens({target_prefill_tokens}tokens) is larger than the actual number of input tokens in prompt({input_ids.shape[1]}tokens). "
+                f"Using {input_ids.shape[1]} tokens as the number of prefill tokens. Please, specify larger prompt to achieve the required number of prefill tokens. "
+            )
+        elif n_prefill_tokens < input_ids.shape[1]:
+            print(input_data["input_ids"])
+            input_data["input_ids"] = input_ids[:, :n_prefill_tokens]
+            input_data["attention_mask"] = attention_mask[:, :n_prefill_tokens]
+
+            log.info("%s Amount of token for prefill is %stokens. Prompt was trimmed. ", prefix, n_prefill_tokens)
+        else:
+            log.info("%s Amount of token for prefill is %stokens. Full prompt is used. ", prefix, n_prefill_tokens)
+
     # Remove `token_type_ids` from inputs
     input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
     input_token_size = input_tokens[0].numel()
@@ -308,7 +329,8 @@ def run_text_generation(
         warm_up=(num == 0),
         tokenization_time=(tok_encode_time, tok_decode_time),
         batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        prompt_idx=prompt_index,
+        prefill_time=tm_infer_list[0] * 1000 if args.get("num_prefill_tokens", None) else "",
     )
     print_generated_output(
         prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations=False
@@ -470,6 +492,29 @@ def run_text_generation_genai(
         attention_mask = input_data.attention_mask
         input_data = TokenizedInputs(input_ids=ov.Tensor(input_ids), attention_mask=attention_mask)
 
+    target_prefill_tokens = args.get("num_prefill_tokens", None)
+    if target_prefill_tokens is not None:
+        input_ids = input_data.input_ids.data
+        n_prefill_tokens = min(int(target_prefill_tokens), input_ids.shape[1])
+
+        if target_prefill_tokens > input_ids.shape[1]:
+            log.warning(
+                f"It's reqested to run {target_prefill_tokens} num_prefill_tokens, but it is larger than the actual number of input tokens in prompt {input_ids.shape[1]}. "
+                f"Using {input_ids.shape[1]} as the number of prefill tokens. Please, specify larger prompt to achive the required number of prefill tokens. "
+            )
+        elif target_prefill_tokens < input_ids.shape[1]:
+            from openvino_genai import TokenizedInputs
+            import openvino as ov
+
+            attention_mask = input_data.attention_mask.data
+            input_data = TokenizedInputs(
+                input_ids=ov.Tensor(input_ids[:, :n_prefill_tokens]),
+                attention_mask=ov.Tensor(attention_mask[:, :n_prefill_tokens]),
+            )
+            log.info("%s Amount of token for prefill is %stokens. Prompt was trimmed. ", prefix, n_prefill_tokens)
+        else:
+            log.info("%s Amount of token for prefill is %stokens. Full prompt is used. ", prefix, n_prefill_tokens)
+
     num_input_tokens = input_data.input_ids.shape[1]
     print_input_info(args, num, num_input_tokens)
 
@@ -553,7 +598,8 @@ def run_text_generation_genai(
         tokenization_time=tokenization_time,
         batch_size=args['batch_size'],
         prompt_idx=prompt_index,
-        cb_metric=cache_usage
+        cb_metric=cache_usage,
+        prefill_time=inference_durations[0] * 1000 if args.get("num_prefill_tokens", None) else "",
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
