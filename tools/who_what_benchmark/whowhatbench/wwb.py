@@ -141,6 +141,7 @@ def parse_args():
             "image-embedding",
             "video-embedding",
             "text-reranking",
+            "speech-recognition",
         ],
         default="text",
         help="Indicates the model type:\n"
@@ -157,7 +158,8 @@ def parse_args():
         "text-embedding - for creation of embedding for a list of texts, \n"
         "image-embedding - for creation of embedding for a list of texts and images, \n"
         "video-embedding - for creation of embedding for a list of texts and videos, \n"
-        "speech-generation - for text to speech generation ",
+        "speech-generation - for text to speech generation, \n"
+        "speech-recognition - for speech to text generation",
     )
     parser.add_argument(
         "--data-encoder",
@@ -1229,6 +1231,13 @@ def create_evaluator(base_model, args):
                 crop_question=crop_question,
                 device=args.device,
                 generation_config_extra=args.generation_config_extra,
+            )
+        elif task == "speech-recognition":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                device=args.device,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
