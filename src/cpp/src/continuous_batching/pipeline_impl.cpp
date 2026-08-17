@@ -416,7 +416,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                 perf_metrics.load_time = m_load_time_ms;
                 sequence_group->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
                 sequence_group->set_out_of_memory();
-                sequence_group->notify_handle();
+                sequence_group->notify_handle_oom();
             }
         }
         _free_non_running_requests();
