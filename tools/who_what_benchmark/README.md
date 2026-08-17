@@ -268,6 +268,23 @@ The speech-generation evaluator reports these metrics:
 * `duration score` - relative utterance length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
 
+### Compare Speech-recognition models (ASR)
+```sh
+# Collect ground truth from the baseline Hugging Face Transformer model
+wwb --base-model google/gemma-4-E4B-it --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m google/gemma-4-E4B-it --task image-text-to-text gemma-4-openvino
+
+# Measure WER for Optimum-OpenVINO inference backend
+wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recognition
+
+# Measure WER for OpenVINO GenAI inference backend
+wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+> **NOTE**: the speech-recognition metric is WER (Word Error Rate); lower is better.
+
 ### API
 The API provides a way to access to investigate the worst generated text examples.
 

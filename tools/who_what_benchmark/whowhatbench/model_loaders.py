@@ -1088,6 +1088,12 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     return SpeechT5Wrapper(model, processor, None)
 
 
+def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    # Audio LLMs (e.g. Gemma 4) load like visual-text models; audio is fed through the processor.
+    kwargs["model_type"] = "visual-text"
+    return load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -1121,5 +1127,7 @@ def load_model(
         return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "speech-generation":
         return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
+    elif model_type == "speech-recognition":
+        return load_speech_recognition_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

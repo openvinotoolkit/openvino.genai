@@ -3,6 +3,7 @@
 
 import argparse
 import difflib
+import functools
 import numpy as np
 import logging
 import os
@@ -22,6 +23,7 @@ from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
+from whowhatbench.speech_recognition_evaluator import DEFAULT_ASR_INSTRUCTION
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -540,6 +542,50 @@ def load_prompts(args):
     return res
 
 
+DEFAULT_NUM_SAMPLES = 24
+
+
+def load_audio_dataset(args):
+    """Stream an ASR dataset as columns: id, 16 kHz mono float32 waveform, sample rate."""
+    import io
+    import soundfile as sf
+    from datasets import Audio
+
+    dataset = args.dataset or "google/fleurs,en_us"
+    split = args.split if args.split is not None else "validation"
+    if "," in dataset:
+        path, name = dataset.split(",", 1)
+    else:
+        path, name = dataset, None
+    audio_field = args.dataset_field if args.dataset_field != "text" else "audio"
+    num_samples = args.num_samples if args.num_samples is not None else DEFAULT_NUM_SAMPLES
+
+    data = load_dataset(path=path, name=name, split=split, streaming=True)
+    # datasets>=5 needs torchcodec to decode Audio; decode with soundfile instead.
+    data = data.cast_column(audio_field, Audio(decode=False))
+    data = data.take(num_samples)
+
+    audios, sampling_rates, ids = [], [], []
+    for idx, row in enumerate(data):
+        raw = row[audio_field]
+        if raw.get("bytes"):
+            audio, sampling_rate = sf.read(io.BytesIO(raw["bytes"]), dtype="float32")
+        else:
+            audio, sampling_rate = sf.read(raw["path"], dtype="float32")
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)
+        if sampling_rate != 16000:
+            import librosa
+
+            audio = librosa.resample(audio, orig_sr=sampling_rate, target_sr=16000)
+            sampling_rate = 16000
+        audios.append(audio)
+        sampling_rates.append(sampling_rate)
+        ids.append(str(raw.get("path") or idx))
+
+    return {"prompts": ids, "audio": audios, "sampling_rate": sampling_rates}
+
+
 def load_tokenizer(args):
     # Define kwargs based on args attributes
     kwargs = {}
@@ -870,6 +916,16 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
     sample_rate = int(getattr(result, "output_sample_rate", 16000))
     text = getattr(result, "text", "") or ""
     return speech, sample_rate, text
+
+
+def genai_gen_transcription(model, audio, sampling_rate, prompt, max_new_tokens):
+    result = model.generate(
+        prompt,
+        audios=[ov.Tensor(np.asarray(audio, dtype=np.float32))],
+        do_sample=False,
+        max_new_tokens=max_new_tokens,
+    )
+    return result.texts[0]
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
@@ -1233,10 +1289,26 @@ def create_evaluator(base_model, args):
                 generation_config_extra=args.generation_config_extra,
             )
         elif task == "speech-recognition":
+            if args.genai:
+                processor, tokenizer = None, None
+                gen_answer_fn = functools.partial(
+                    genai_gen_transcription, prompt=DEFAULT_ASR_INSTRUCTION, max_new_tokens=args.max_new_tokens
+                )
+            else:
+                processor, _ = load_processor(args)
+                tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
+                gen_answer_fn = None
+            # Audio is only needed when a model generates (gt or target); pure CSV scoring skips it.
+            needs_audio = args.base_model is not None or args.target_model is not None
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=load_audio_dataset(args) if needs_audio else None,
+                processor=processor,
+                tokenizer=tokenizer,
+                max_new_tokens=args.max_new_tokens,
+                num_samples=args.num_samples,
+                gen_answer_fn=gen_answer_fn,
                 device=args.device,
             )
         else:
@@ -1249,8 +1321,8 @@ def create_evaluator(base_model, args):
         )
 
 
-def print_text_results(evaluator):
-    metric_of_interest = "similarity"
+def print_text_results(evaluator, metric="similarity"):
+    metric_of_interest = metric
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
@@ -1560,6 +1632,8 @@ def main():
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
             print_text_results(evaluator)
+        elif args.model_type == "speech-recognition":
+            print_text_results(evaluator, metric="WER")
         elif (
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type

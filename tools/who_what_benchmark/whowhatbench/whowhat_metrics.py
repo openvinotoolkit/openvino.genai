@@ -201,6 +201,29 @@ class TextDivergency:
         return evaluate_divergency(self.tokenizer, gt, prediction)
 
 
+class WordErrorRate:
+    """Word Error Rate between reference (gt) and hypothesis (prediction) transcriptions."""
+
+    def evaluate(self, gt, prediction):
+        from jiwer import wer as jiwer_wer
+        from .tts_similarity import normalize_text
+
+        references = gt["answers"].values
+        hypotheses = prediction["answers"].values
+        per_prompt = []
+        for reference, hypothesis in tqdm(
+            zip(references, hypotheses), total=min(len(references), len(hypotheses)), desc="WER evaluation"
+        ):
+            reference = normalize_text(str(reference))
+            hypothesis = normalize_text(str(hypothesis))
+            if not reference:
+                per_prompt.append(0.0 if not hypothesis else 1.0)
+            else:
+                per_prompt.append(float(jiwer_wer(reference, hypothesis)))
+
+        return {"WER": float(np.mean(per_prompt))}, {"WER": per_prompt}
+
+
 # Image metrics
 def evaluate_image_similarity(processor, model, data_gold, data_prediction):
     images_gold = data_gold["images"].values
