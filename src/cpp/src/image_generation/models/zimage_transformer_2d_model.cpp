@@ -93,10 +93,15 @@ ZImageTransformer2DModel& ZImageTransformer2DModel::reshape(int batch_size,
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
             name_to_shape[input_name][0] = 1;
-        } else if (input_name == "sample") {
-            name_to_shape[input_name] = {batch_size, m_config.in_channels, height, width};
+        } else if (input_name == "hidden_states") {
+            name_to_shape[input_name] = {
+                batch_size,
+                static_cast<int64_t>(m_config.in_channels),
+                height,
+                width,
+            };
         } else if (input_name == "encoder_hidden_states") {
-            name_to_shape[input_name] = {batch_size, 128, name_to_shape[input_name][2]};
+            name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
         }
     }
 

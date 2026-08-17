@@ -141,7 +141,8 @@ public:
                  const float guidance_scale) override {
         check_image_size(height, width);
 
-        m_text_encoder->reshape(1, m_generation_config.max_sequence_length);
+        m_text_encoder->reshape(do_classifier_free_guidance(guidance_scale) ? 2 : 1,
+                    m_generation_config.max_sequence_length);
         m_transformer->reshape(num_images_per_prompt, height, width, m_generation_config.max_sequence_length);
         m_vae->reshape(num_images_per_prompt, height, width);
     }
@@ -175,13 +176,23 @@ public:
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
+        const bool do_cfg = do_classifier_free_guidance(generation_config.guidance_scale);
         auto infer_start = std::chrono::steady_clock::now();
-        ov::Tensor prompt_embeds = m_text_encoder->infer(positive_prompt, "", false, generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds = m_text_encoder->infer(positive_prompt,
+                                                         generation_config.negative_prompt.value_or(""),
+                                                         do_cfg,
+                                                         generation_config.max_sequence_length);
         auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - infer_start).count();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = infer_duration;
 
-        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
-        m_prompt_embeds = prompt_embeds;
+        m_prompt_embeds = repeat_prompt_embeds(prompt_embeds,
+                                               do_cfg ? 1 : 0,
+                                               generation_config.num_images_per_prompt);
+        if (do_cfg) {
+            m_negative_prompt_embeds = repeat_prompt_embeds(prompt_embeds,
+                                                            0,
+                                                            generation_config.num_images_per_prompt);
+        }
     }
 
     std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, ov::Tensor> prepare_latents(ov::Tensor initial_image, const ImageGenerationConfig& generation_config) override {
@@ -242,6 +253,8 @@ public:
         ImageGenerationConfig custom_generation_config = m_generation_config;
         custom_generation_config.update_generation_config(properties);
 
+        OPENVINO_ASSERT(!mask_image, "Mask image is not supported by ZImagePipeline");
+
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
         custom_generation_config.height = custom_generation_config.height == 0 ? 512 : custom_generation_config.height;
@@ -292,6 +305,20 @@ public:
 
             auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred = m_transformer->step(latent, timestep, m_prompt_embeds);
+            if (do_classifier_free_guidance(custom_generation_config.guidance_scale)) {
+                ov::Tensor positive_noise_pred(noise_pred.get_element_type(), noise_pred.get_shape());
+                noise_pred.copy_to(positive_noise_pred);
+                const ov::Tensor negative_noise_pred =
+                    m_transformer->step(latent, timestep, m_negative_prompt_embeds);
+
+                float* positive_noise_pred_data = positive_noise_pred.data<float>();
+                const float* negative_noise_pred_data = negative_noise_pred.data<const float>();
+                for (size_t i = 0; i < positive_noise_pred.get_size(); ++i) {
+                    positive_noise_pred_data[i] += custom_generation_config.guidance_scale *
+                                                   (positive_noise_pred_data[i] - negative_noise_pred_data[i]);
+                }
+                noise_pred = positive_noise_pred;
+            }
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
@@ -347,8 +374,7 @@ protected:
         m_generation_config.height = 512;
         m_generation_config.width = 512;
         m_generation_config.num_inference_steps = 8;
-        m_generation_config.guidance_scale = 7.5f;
-        m_generation_config.negative_prompt = "";
+        m_generation_config.guidance_scale = 5.0f;
         m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.6f : 1.0f;
     }
 
@@ -374,9 +400,25 @@ protected:
     }
 
 private:
+    static bool do_classifier_free_guidance(const float guidance_scale) {
+        return guidance_scale > 0.0f;
+    }
+
+    static ov::Tensor repeat_prompt_embeds(const ov::Tensor& prompt_embeds,
+                                           const size_t batch_idx,
+                                           const size_t num_images_per_prompt) {
+        ov::Shape selected_shape = prompt_embeds.get_shape();
+        OPENVINO_ASSERT(batch_idx < selected_shape[0]);
+        selected_shape[0] = 1;
+        ov::Tensor selected_prompt_embeds(prompt_embeds.get_element_type(), selected_shape);
+        numpy_utils::batch_copy(prompt_embeds, selected_prompt_embeds, batch_idx, 0);
+        return numpy_utils::repeat(selected_prompt_embeds, num_images_per_prompt);
+    }
+
     std::shared_ptr<Qwen3TextEncoder> m_text_encoder;
     std::shared_ptr<ZImageTransformer2DModel> m_transformer;
     ov::Tensor m_prompt_embeds;
+    ov::Tensor m_negative_prompt_embeds;
 
     ZImagePipeline(PipelineType pipeline_type) : DiffusionPipeline(pipeline_type) {}
 
