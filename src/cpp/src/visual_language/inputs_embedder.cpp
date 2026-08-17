@@ -265,6 +265,18 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
     return single_image_tensors;
 }
 
+ov::Tensor InputsEmbedder::IInputsEmbedder::get_text_embedding(
+    EmbeddingsRequest& req,
+    const ov::Tensor& input_ids,
+    ov::genai::VLMPerfMetrics& metrics
+) {
+    const auto start = std::chrono::steady_clock::now();
+    ov::Tensor result = m_embedding->infer(req, input_ids);
+    metrics.vlm_raw_metrics.text_embedding_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start));
+    return result;
+}
+
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
