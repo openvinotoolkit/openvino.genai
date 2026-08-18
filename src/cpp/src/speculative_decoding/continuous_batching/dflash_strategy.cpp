@@ -784,9 +784,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
         if (position_ids.has_value()) {
             const auto& [main_position_ids, rope_delta] = (*position_ids)[request_id];
             m_inputs_embedder->set_position_ids(main_position_ids);
-            if (rope_delta.has_value()) {
-                m_inputs_embedder->set_rope_delta(*rope_delta);
-            }
+            m_inputs_embedder->set_rope_delta(rope_delta.value_or(compute_rope_delta(main_position_ids)));
         }
         const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
         const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();

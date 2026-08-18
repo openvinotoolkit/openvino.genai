@@ -185,6 +185,7 @@ protected:
         m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
     }
 
+    static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     void drop_requests();
     virtual void align_request_pair_processed_prefix(uint64_t) {}
     bool is_requests_empty();
