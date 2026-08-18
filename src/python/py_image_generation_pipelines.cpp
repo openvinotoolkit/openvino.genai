@@ -634,7 +634,8 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics)
+        .def("export_model", &ov::genai::Image2ImagePipeline::export_model, py::arg("export_path"));
 
 
     auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
@@ -741,7 +742,8 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics)
+        .def("export_model", &ov::genai::InpaintingPipeline::export_model, py::arg("export_path"));
 
     // define constructors to create one pipeline from another
     // NOTE: needs to be defined once all pipelines are created
