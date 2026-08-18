@@ -2128,6 +2128,8 @@ class Image2ImagePipeline:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        ...
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
@@ -2427,6 +2429,8 @@ class InpaintingPipeline:
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         ...
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, mask_image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
