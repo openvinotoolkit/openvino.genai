@@ -1235,6 +1235,8 @@ void StatefulEagle3LLMPipeline::ensure_tree_params_is_set(GenerationConfig& conf
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(std::move(generation_config));
     OPENVINO_ASSERT(!config.do_sample, "Eagle3 speculative decoding requires greedy sampling (do_sample=false)");
+    OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
+                    "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
     if (!(config.num_assistant_tokens.has_value() && config.num_assistant_tokens.value() == 0)) {
         ensure_tree_params_is_set(config);
     }
