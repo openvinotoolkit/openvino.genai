@@ -7,6 +7,7 @@ Setup script to download and convert models for JS tests.
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from optimum.intel import (
     OVModelForSequenceClassification,
     OVModelForSpeechSeq2Seq,
     OVModelForTextToSpeechSeq2Seq,
+    OVModelForMultimodalLM,
 )
 
 # Add the Python tests utils directory to the path
@@ -34,6 +36,10 @@ TEST_MODELS = {
     "VLM": {
         "model_id": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "model_class": OVModelForVisualCausalLM,
+    },
+    "OMNI": {
+        "model_id": "optimum-intel-internal-testing/tiny-random-qwen3-omni",
+        "model_class": OVModelForMultimodalLM,
     },
     "EMBEDDING_MODEL": {
         "model_id": "BAAI/bge-small-en-v1.5",
@@ -61,6 +67,62 @@ TEST_MODELS = {
     },
 }
 
+
+def _patch_tiny_qwen3_omni(model_path: Path, hf_tokenizer) -> None:
+    """Align the known-broken tiny checkpoint until it is regenerated upstream."""
+    native_audio_tokens = ["<|audio_start|>", "<|audio_pad|>", "<|audio_end|>"]
+    missing_audio_tokens = [token for token in native_audio_tokens if token not in hf_tokenizer.get_vocab()]
+    if missing_audio_tokens:
+        added_tokens = hf_tokenizer.add_special_tokens({"additional_special_tokens": native_audio_tokens})
+        if added_tokens != len(missing_audio_tokens):
+            raise RuntimeError(
+                f"Expected to add {len(missing_audio_tokens)} Qwen3-Omni audio tokens, added {added_tokens}"
+            )
+        hf_tokenizer.save_pretrained(model_path)
+        hugging_face.convert_and_save_tokenizer(hf_tokenizer, model_path)
+
+    def token_id(token: str) -> int:
+        return int(hf_tokenizer.convert_tokens_to_ids(token))
+
+    def first_token_id(text: str) -> int:
+        tokens = hf_tokenizer.encode(text, add_special_tokens=False)
+        if not tokens:
+            raise RuntimeError(f"Qwen3-Omni tokenizer produced no tokens for role '{text}'")
+        return int(tokens[0])
+
+    config_path = model_path / "config.json"
+    with config_path.open(encoding="utf-8") as config_file:
+        config = json.load(config_file)
+
+    role_token_ids = {role: first_token_id(role) for role in ("system", "user", "assistant")}
+    expected_config = {
+        "im_start_token_id": token_id("<|im_start|>"),
+        "im_end_token_id": token_id("<|im_end|>"),
+        "system_token_id": role_token_ids["system"],
+        "user_token_id": role_token_ids["user"],
+        "assistant_token_id": role_token_ids["assistant"],
+    }
+    expected_thinker_config = {
+        "audio_start_token_id": token_id("<|audio_start|>"),
+        "audio_token_id": token_id("<|audio_pad|>"),
+        "image_token_id": token_id("<|image_pad|>"),
+        "video_token_id": token_id("<|video_pad|>"),
+        "vision_start_token_id": token_id("<|vision_start|>"),
+        "user_token_id": role_token_ids["user"],
+    }
+
+    if all(config.get(key) == value for key, value in expected_config.items()) and all(
+        config["thinker_config"].get(key) == value for key, value in expected_thinker_config.items()
+    ):
+        return
+
+    config.update(expected_config)
+    config["thinker_config"].update(expected_thinker_config)
+
+    with config_path.open("w", encoding="utf-8") as config_file:
+        json.dump(config, config_file, indent=2)
+        config_file.write("\n")
+
 if __name__ == "__main__":
     """Download and convert all models required for JS tests."""
     # Check if OV_CACHE environment variable is set
@@ -79,6 +141,8 @@ if __name__ == "__main__":
     for model_name, model_info in TEST_MODELS.items():
         try:
             result = hugging_face.download_and_convert_model_class(**model_info)
+            if model_name == "OMNI":
+                _patch_tiny_qwen3_omni(result.models_path, result.hf_tokenizer)
             env_vars[f"{model_name}_PATH"] = str(result.models_path)
         except Exception as e:
             print(f"Error processing model '{model_name}': {e}")
