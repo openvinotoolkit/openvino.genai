@@ -120,6 +120,12 @@ ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
+// Sets a key/value pair in config only if the key is not already present.
+void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any value);
+
+// Returns true when NPUW is enabled via NPU_USE_NPUW.
+bool is_npuw_enabled(const ov::AnyMap& config);
+
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
 void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
