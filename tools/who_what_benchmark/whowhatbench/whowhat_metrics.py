@@ -201,25 +201,29 @@ class TextDivergency:
         return evaluate_divergency(self.tokenizer, gt, prediction)
 
 
-class WordErrorRate:
-    """Corpus Word Error Rate (total edits / total reference words) between reference (gt) and
-    hypothesis (prediction) transcriptions, plus per-utterance WER."""
+def _word_similarity(reference, hypothesis):
+    from jiwer import process_words
+
+    return max(0.0, 1.0 - float(process_words(reference, hypothesis).wer))
+
+
+class WordSimilarity:
+    """Corpus and per-utterance word similarity between reference (gt) and hypothesis
+    (prediction) transcriptions."""
 
     def evaluate(self, gt, prediction):
-        from jiwer import process_words
         from .utils import normalize_text
 
         references = [normalize_text(str(x)) for x in gt["answers"].values]
         hypotheses = [normalize_text(str(x)) for x in prediction["answers"].values]
-        if len(references) != len(hypotheses):
-            raise ValueError(f"Reference ({len(references)}) and hypothesis ({len(hypotheses)}) counts differ")
 
         per_prompt = [
-            float(process_words(reference, hypothesis).wer)
-            for reference, hypothesis in tqdm(zip(references, hypotheses), total=len(references), desc="WER evaluation")
+            _word_similarity(reference, hypothesis)
+            for reference, hypothesis in tqdm(
+                zip(references, hypotheses), total=len(references), desc="Similarity evaluation"
+            )
         ]
-        corpus_wer = process_words(references, hypotheses).wer
-        return {"WER": float(corpus_wer)}, {"WER": per_prompt}
+        return {"similarity": _word_similarity(references, hypotheses)}, {"similarity": per_prompt}
 
 
 # Image metrics

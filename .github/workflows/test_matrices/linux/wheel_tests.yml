@@ -139,7 +139,7 @@
 
 - name: WWB FunASR tests
   cmd: |-
-    python -m pip install transformers==4.57.6 funasr "git+https://github.com/huggingface/optimum-intel.git@b841dde559e306a0535f55a5cd4432239ca18c09#egg=optimum-intel"
+    python -m pip install transformers==4.57.6 funasr==1.4.2 "git+https://github.com/huggingface/optimum-intel.git@b841dde559e306a0535f55a5cd4432239ca18c09#egg=optimum-intel"
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr"
   timeout: 120
   components:

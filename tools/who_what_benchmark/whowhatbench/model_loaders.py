@@ -1089,12 +1089,7 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     return SpeechT5Wrapper(model, processor, None)
 
 
-FUNASR_SOURCE_MODEL_TYPE = "funasr"
-FUNASR_EXPORTED_MODEL_TYPE = "fun_asr"
 FUNASR_TOKENIZER_SUBFOLDER = "Qwen3-0.6B"
-FUNASR_DETOKENIZER_NAME = "openvino_detokenizer.xml"
-DEFAULT_FUNASR_LANGUAGE = "en"
-DEFAULT_MULTIMODAL_ASR_LANGUAGE = "English"
 
 
 def _read_model_json(model_id, filename):
@@ -1118,63 +1113,22 @@ def _read_model_json(model_id, filename):
         return None
 
 
-def is_funasr_model(model_id):
-    # Source repos have no root config.json, they are loaded by the `funasr` library and declare
-    # their type in configuration.json; exports carry the FunASR model type in config.json.
-    if not model_id:
-        return False
-
+def funasr_model_kind(model_id):
+    """Return "source" for a funasr repo, "export" for an Optimum export of one, None otherwise."""
     source_metadata = _read_model_json(model_id, "configuration.json")
     if isinstance(source_metadata, dict):
         source_model = source_metadata.get("model")
-        if isinstance(source_model, dict) and source_model.get("type") == FUNASR_SOURCE_MODEL_TYPE:
-            return True
+        if isinstance(source_model, dict) and source_model.get("type") == "funasr":
+            return "source"
 
     exported_config = _read_model_json(model_id, "config.json")
-    if isinstance(exported_config, dict):
-        # `export_model_type` is the fallback because a plain PretrainedConfig does not always
-        # serialize the instance-level model type.
-        for key in ("model_type", "export_model_type"):
-            value = exported_config.get(key)
-            if isinstance(value, str) and value.strip().lower().replace("-", "_") == FUNASR_EXPORTED_MODEL_TYPE:
-                return True
+    if isinstance(exported_config, dict) and exported_config.get("model_type") == "fun_asr":
+        return "export"
 
-    return False
+    return None
 
 
-def _load_funasr_tokenizer(model_id, model):
-    # An export keeps the tokenizer next to the model, a source repo keeps it in a subfolder, and an
-    # export saved without preprocessors only ships the detokenizer IR.
-    model_save_dir = getattr(model, "model_save_dir", None)
-
-    errors = []
-    for location, extra_kwargs in (
-        (model_id, {}),
-        (model_save_dir, {}),
-        (model_id, {"subfolder": FUNASR_TOKENIZER_SUBFOLDER}),
-    ):
-        if location is None:
-            continue
-        try:
-            return AutoTokenizer.from_pretrained(str(location), **extra_kwargs)
-        except Exception as error:
-            errors.append(f"{location} {extra_kwargs or ''}: {error}")
-
-    from .speech_recognition_evaluator import OVDetokenizer
-
-    for location in (model_id, model_save_dir):
-        detokenizer_path = Path(location) / FUNASR_DETOKENIZER_NAME if location is not None else None
-        if detokenizer_path is not None and detokenizer_path.is_file():
-            logger.info(f"Decoding FunASR transcripts with the exported detokenizer {detokenizer_path}")
-            return OVDetokenizer(detokenizer_path)
-
-    raise ValueError(
-        "Failed to load a decoder for FunASR transcripts: neither the Qwen tokenizer nor an exported "
-        f"{FUNASR_DETOKENIZER_NAME} was found. Tokenizer attempts:\n" + "\n".join(errors)
-    )
-
-
-def load_funasr_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, language=""):
+def load_funasr_model(model_id, kind, device="CPU", ov_config=None, use_hf=False, use_genai=False, language=""):
     from .speech_recognition_evaluator import (
         FunASRGenAITranscriber,
         FunASROptimumTranscriber,
@@ -1196,7 +1150,10 @@ def load_funasr_model(model_id, device="CPU", ov_config=None, use_hf=False, use_
     from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 
     model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
-    return FunASROptimumTranscriber(model, _load_funasr_tokenizer(model_id, model), language)
+    # A source repo keeps the LLM tokenizer in a subfolder, an export keeps it next to the model.
+    subfolder = FUNASR_TOKENIZER_SUBFOLDER if kind == "source" else ""
+    tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
+    return FunASROptimumTranscriber(model, tokenizer, language)
 
 
 def _load_audio_vlm_processor(model_id):
@@ -1211,13 +1168,13 @@ def _load_audio_vlm_processor(model_id):
 def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     language = kwargs.pop("speech_language", "") or ""
 
-    if is_funasr_model(model_id):
-        language = language or DEFAULT_FUNASR_LANGUAGE
-        return load_funasr_model(model_id, device, ov_config, use_hf, use_genai, language)
+    kind = funasr_model_kind(model_id)
+    if kind:
+        return load_funasr_model(model_id, kind, device, ov_config, use_hf, use_genai, language or "en")
 
     from .speech_recognition_evaluator import GenAIMultimodalTranscriber, MultimodalTranscriber
 
-    language = language or DEFAULT_MULTIMODAL_ASR_LANGUAGE
+    language = language or "English"
     kwargs["model_type"] = "visual-text"
     model = load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
     if use_genai:

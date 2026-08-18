@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
 from .utils import no_double_bos
-from .whowhat_metrics import WordErrorRate
+from .whowhat_metrics import WordSimilarity
 
 AUDIO_SAMPLING_RATE = 16000
 
@@ -117,17 +117,6 @@ class FunASRSourceTranscriber:
         return str(results[0]["text"]).strip()
 
 
-class OVDetokenizer:
-    def __init__(self, detokenizer_path) -> None:
-        import openvino_tokenizers  # noqa: F401 - registers the tokenizer extension in openvino
-        from openvino import Core
-
-        self.detokenizer = Core().compile_model(str(detokenizer_path), "CPU")
-
-    def batch_decode(self, ids, **kwargs):
-        return [str(text) for text in self.detokenizer(np.asarray(ids, dtype=np.int64))[0]]
-
-
 class FunASROptimumTranscriber:
     def __init__(self, model: Any, tokenizer: Any, language: str = "") -> None:
         self.model = model
@@ -138,7 +127,7 @@ class FunASROptimumTranscriber:
         import torch
 
         inputs = self.model.preprocess_input(audio, sampling_rate=AUDIO_SAMPLING_RATE, **self.preprocess_kwargs)
-        prompt_len = inputs["decoder_input_ids"].shape[1]
+        prompt_len = inputs["decoder_input_ids"].shape[-1]
         with torch.inference_mode():
             tokens = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
         tokens = getattr(tokens, "sequences", tokens)
@@ -154,8 +143,6 @@ class FunASRGenAITranscriber:
     def transcribe(self, audio, max_new_tokens: int) -> str:
         generation_kwargs = {"max_new_tokens": max_new_tokens}
         if self.language:
-            # Omitting the argument keeps the prompt language-neutral, an empty string would be
-            # treated as a forced (empty) language.
             generation_kwargs["language"] = self.language
         result = self.pipeline.generate(np.asarray(audio, dtype=np.float32).tolist(), **generation_kwargs)
         return result.texts[0].strip()
@@ -179,7 +166,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
         self.max_new_tokens = max_new_tokens
         self.num_samples = num_samples
         self.generation_fn = gen_answer_fn
-        self.wer = WordErrorRate()
+        self.similarity = WordSimilarity()
         self.last_cmp = None
 
         if base_model:
@@ -231,18 +218,16 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
         if not (self.gt_data["prompts"].astype(str).values == predictions["prompts"].astype(str).values).all():
             raise ValueError("Ground truth and prediction audio ids ('prompts') do not match")
 
-        wer, per_prompt_wer = self.wer.evaluate(self.gt_data, predictions)
-        similarity = max(0.0, 1.0 - wer["WER"])
-        per_prompt_similarity = [max(0.0, 1.0 - value) for value in per_prompt_wer["WER"]]
+        metric, per_prompt_metric = self.similarity.evaluate(self.gt_data, predictions)
         self.last_cmp = pd.DataFrame(
             {
                 "prompt": self.gt_data["prompts"].values,
                 "source_model": self.gt_data["answers"].values,
                 "optimized_model": predictions["answers"].values,
-                "similarity": per_prompt_similarity,
+                "similarity": per_prompt_metric["similarity"],
             }
         )
-        return pd.DataFrame({"similarity": per_prompt_similarity}), pd.DataFrame([{"similarity": similarity}])
+        return pd.DataFrame(per_prompt_metric), pd.DataFrame([metric])
 
     @staticmethod
     def _validate_columns(data, name):

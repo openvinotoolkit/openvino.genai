@@ -274,8 +274,8 @@ The speech-generation evaluator reports these metrics:
 [FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512), and with
 audio-capable multimodal models (audio VLMs), for example Gemma-4.
 
-The metric is `similarity = max(0, 1 - WER)`, where 1 is a perfect match and 0 is completely different.
-It compares the target transcript against the `--base-model` transcript after text normalization.
+The metric is `similarity = max(0, 1 - WER)` between the normalized target and `--base-model`
+transcripts, where 1 is a perfect match and 0 is completely different.
 
 #### FunASR
 
@@ -296,12 +296,12 @@ wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recogni
 wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition --genai
 ```
 
-`--speech-language` forces the transcription language in the form the model expects (Fun-ASR-Nano-2512
-supports `en`, `zh`, and `ja`). WWB defaults to `en`.
+`--speech-language` forces the transcription language as a code (Fun-ASR-Nano-2512 supports `en`, `zh`,
+and `ja`). WWB defaults to `en`.
 
-> **NOTE**: pass the same `--speech-language` to the baseline and to the targets when overriding the default.
-> **NOTE**: WER is computed on whitespace-separated words. For languages that are not written with spaces
-> (Chinese, Japanese) an utterance counts as a single word, so per-utterance WER degenerates to 0.0 or 1.0.
+> **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
+> **NOTE**: WER counts whitespace-separated words, so for Chinese and Japanese an utterance is a single
+> word and its similarity degenerates to 0.0 or 1.0.
 
 #### Audio VLMs
 
@@ -319,10 +319,10 @@ wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recogni
 wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recognition --genai
 ```
 
-Audio VLMs are asked to `"Transcribe this audio."`, or to `"Transcribe this audio in <language>."` when
-`--speech-language` is set.
+Audio VLMs are asked to `"Transcribe this audio in <language>."`. Here `--speech-language` takes a
+language name such as `English` or `Japanese`, and WWB defaults to `English`.
 
-> **NOTE**: audio is read from `--dataset` (`google/fleurs,en_us` by default) and resampled to 16 kHz mono.
+> **NOTE**: audio comes from `--dataset` (`google/fleurs,en_us` by default) and is resampled to 16 kHz mono.
 > Use `--dataset google/fleurs,cmn_hans_cn` and friends to evaluate other languages.
 
 ### API

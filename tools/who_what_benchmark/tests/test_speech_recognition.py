@@ -12,7 +12,8 @@ import pytest
 import torch
 
 from whowhatbench import model_loaders
-from whowhatbench.whowhat_metrics import WordErrorRate
+from whowhatbench.whowhat_metrics import WordSimilarity
+from whowhatbench.wwb import to_mono_16k
 from whowhatbench.speech_recognition_evaluator import (
     DEFAULT_ASR_INSTRUCTION,
     FunASRGenAITranscriber,
@@ -24,56 +25,52 @@ from whowhatbench.speech_recognition_evaluator import (
 )
 
 
-def _frame(prompts, answers):
-    return pd.DataFrame({"prompts": prompts, "answers": answers})
+def _frame(answers):
+    return pd.DataFrame({"prompts": [str(i) for i in range(len(answers))], "answers": answers})
 
 
 def _csv(tmp_path, name, prompts, answers):
     path = tmp_path / name
-    _frame(prompts, answers).to_csv(path, index=False)
+    pd.DataFrame({"prompts": prompts, "answers": answers}).to_csv(path, index=False)
     return str(path)
 
 
-def test_wer_corpus_and_per_utterance():
-    gt = _frame(["a", "b"], ["the quick brown fox", "hello world"])
-    pred = _frame(["a", "b"], ["the quick brown fox", "hello there world"])
-    aggregate, per_prompt = WordErrorRate().evaluate(gt, pred)
-    # 1 insertion over 6 reference words -> corpus 1/6; mean-utterance would be 0.25.
-    assert per_prompt["WER"] == [0.0, 0.5]
-    assert math.isclose(aggregate["WER"], 1 / 6)
+@pytest.mark.parametrize(
+    "references, hypotheses, corpus, per_prompt",
+    [
+        # 1 insertion over 6 reference words: the corpus value is 5/6, not the 0.75 mean of the two.
+        (["the quick brown fox", "hello world"], ["the quick brown fox", "hello there world"], 5 / 6, [1.0, 0.5]),
+        (["hello world"], ["hello world"], 1.0, [1.0]),
+        # 3 insertions over 1 reference word: 1 - WER is negative and must clamp to 0.
+        (["hello", ""], ["hello", "spurious extra words"], 0.0, [1.0, 0.0]),
+        ([], [], 1.0, []),
+    ],
+)
+def test_word_similarity(references, hypotheses, corpus, per_prompt):
+    aggregate, per_utterance = WordSimilarity().evaluate(_frame(references), _frame(hypotheses))
+    assert per_utterance == {"similarity": per_prompt}
+    assert math.isclose(aggregate["similarity"], corpus)
 
 
-def test_wer_identical_is_zero():
-    gt = _frame(["a"], ["hello world"])
-    assert WordErrorRate().evaluate(gt, _frame(["a"], ["hello world"]))[0]["WER"] == 0.0
+def test_word_similarity_rejects_length_mismatch():
+    with pytest.raises(ValueError, match="lengths must match"):
+        WordSimilarity().evaluate(_frame(["x", "y"]), _frame(["x"]))
 
 
-def test_wer_empty_reference_counts_insertions():
-    gt = _frame(["a", "b"], ["hello", ""])
-    pred = _frame(["a", "b"], ["hello", "spurious words"])
-    aggregate, per_prompt = WordErrorRate().evaluate(gt, pred)
-    assert aggregate["WER"] == 2.0
-    assert per_prompt["WER"] == [0.0, 2.0]
-
-
-def test_wer_empty_data_is_zero():
-    aggregate, per_prompt = WordErrorRate().evaluate(_frame([], []), _frame([], []))
-    assert aggregate["WER"] == 0.0
-    assert per_prompt["WER"] == []
-
-
-def test_wer_length_mismatch_raises():
-    with pytest.raises(ValueError, match="counts differ"):
-        WordErrorRate().evaluate(_frame(["a", "b"], ["x", "y"]), _frame(["a"], ["x"]))
-
-
-def test_score_row_count_mismatch(tmp_path):
+@pytest.mark.parametrize(
+    "prompts, answers, error",
+    [
+        (["a"], ["x"], "differ in length"),
+        (["a", "c"], ["x", "y"], "do not match"),
+    ],
+)
+def test_score_rejects_inconsistent_predictions(tmp_path, prompts, answers, error):
     evaluator = SpeechRecognitionEvaluator(gt_data=_csv(tmp_path, "gt.csv", ["a", "b"], ["x", "y"]))
-    with pytest.raises(ValueError, match="differ in length"):
-        evaluator.score(_csv(tmp_path, "target.csv", ["a"], ["x"]))
+    with pytest.raises(ValueError, match=error):
+        evaluator.score(_csv(tmp_path, "target.csv", prompts, answers))
 
 
-def test_score_missing_column(tmp_path):
+def test_score_rejects_missing_column(tmp_path):
     evaluator = SpeechRecognitionEvaluator(gt_data=_csv(tmp_path, "gt.csv", ["a"], ["x"]))
     bad = tmp_path / "target.csv"
     pd.DataFrame({"prompts": ["a"]}).to_csv(bad, index=False)
@@ -81,26 +78,16 @@ def test_score_missing_column(tmp_path):
         evaluator.score(str(bad))
 
 
-def test_score_prompt_ids_mismatch(tmp_path):
-    evaluator = SpeechRecognitionEvaluator(gt_data=_csv(tmp_path, "gt.csv", ["a", "b"], ["x", "y"]))
-    with pytest.raises(ValueError, match="do not match"):
-        evaluator.score(_csv(tmp_path, "target.csv", ["a", "c"], ["x", "y"]))
-
-
-def test_score_end_to_end(tmp_path):
+def test_score_reports_similarity(tmp_path):
     gt = _csv(tmp_path, "gt.csv", ["a", "b"], ["the quick brown fox", "hello world"])
     target = _csv(tmp_path, "target.csv", ["a", "b"], ["the quick brown fox", "hello there world"])
     evaluator = SpeechRecognitionEvaluator(gt_data=gt)
+
     per_prompt, aggregate = evaluator.score(target)
-    assert per_prompt["similarity"].tolist() == [1.0, 0.5]
     assert per_prompt.columns.tolist() == ["similarity"]
+    assert per_prompt["similarity"].tolist() == [1.0, 0.5]
     assert math.isclose(aggregate["similarity"].iloc[0], 5 / 6)
-
-
-def test_score_clamps_similarity_at_zero(tmp_path):
-    evaluator = SpeechRecognitionEvaluator(gt_data=_csv(tmp_path, "gt.csv", ["a"], [""]))
-    _, aggregate = evaluator.score(_csv(tmp_path, "target.csv", ["a"], ["spurious words"]))
-    assert aggregate["similarity"].iloc[0] == 0.0
+    assert [example["prompt"] for example in evaluator.worst_examples(top_k=1)] == ["b"]
 
 
 class _FakeTranscriber:
@@ -158,75 +145,40 @@ def test_evaluator_uses_explicit_gen_answer_fn():
 
 
 def _write_json(path, payload):
-    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_is_funasr_model_detects_local_source(tmp_path):
-    _write_json(tmp_path / "configuration.json", {"framework": "pytorch", "model": {"type": "funasr"}})
-    assert model_loaders.is_funasr_model(str(tmp_path))
+DETECTION_CASES = [
+    ({"configuration.json": {"framework": "pytorch", "model": {"type": "funasr"}}}, "source"),
+    ({"config.json": {"model_type": "fun_asr"}}, "export"),
+    ({}, None),
+    ({"config.json": {"model_type": "gemma4_unified"}}, None),
+    ({"configuration.json": {"model": {"type": "sensevoice"}}}, None),
+    ({"configuration.json": {"model": "funasr"}}, None),
+]
 
 
-@pytest.mark.parametrize(
-    "config",
-    [
-        {"model_type": "fun_asr"},
-        {"model_type": "fun-asr"},
-        {"export_model_type": "fun_asr"},
-        {"model_type": "", "export_model_type": "FUN_ASR"},
-    ],
-)
-def test_is_funasr_model_detects_local_export(tmp_path, config):
-    _write_json(tmp_path / "config.json", config)
-    assert model_loaders.is_funasr_model(str(tmp_path))
-
-
-@pytest.mark.parametrize(
-    "files",
-    [
-        {},
-        {"config.json": {"model_type": "gemma4_unified"}},
-        {"configuration.json": {"model": {"type": "sensevoice"}}},
-        {"configuration.json": {"model": "funasr"}},
-    ],
-)
-def test_is_funasr_model_rejects_other_models(tmp_path, files):
+@pytest.mark.parametrize("files, kind", DETECTION_CASES)
+def test_funasr_model_kind_local(tmp_path, files, kind):
     for name, payload in files.items():
         _write_json(tmp_path / name, payload)
-    assert not model_loaders.is_funasr_model(str(tmp_path))
+    assert model_loaders.funasr_model_kind(str(tmp_path)) == kind
 
 
-def test_is_funasr_model_ignores_empty_model_id():
-    assert not model_loaders.is_funasr_model(None)
-    assert not model_loaders.is_funasr_model("")
-
-
-def test_is_funasr_model_detects_remote_source(monkeypatch, tmp_path):
+@pytest.mark.parametrize("files, kind", DETECTION_CASES)
+def test_funasr_model_kind_remote(monkeypatch, tmp_path, files, kind):
     import huggingface_hub
 
-    source = tmp_path / "configuration.json"
-    _write_json(source, {"model": {"type": "funasr"}})
-    requested = []
+    for name, payload in files.items():
+        _write_json(tmp_path / name, payload)
 
     def fake_hf_hub_download(repo_id, filename, **kwargs):
-        requested.append((repo_id, filename))
-        if filename == "configuration.json":
-            return str(source)
-        raise FileNotFoundError(filename)
+        if filename not in files:
+            raise FileNotFoundError(filename)  # the hub 404s for a file the repo does not have
+        return str(tmp_path / filename)
 
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_hf_hub_download)
-    assert model_loaders.is_funasr_model("FunAudioLLM/Fun-ASR-Nano-2512")
-    assert ("FunAudioLLM/Fun-ASR-Nano-2512", "configuration.json") in requested
-
-
-def test_is_funasr_model_survives_missing_remote_files(monkeypatch):
-    import huggingface_hub
-
-    def fake_hf_hub_download(repo_id, filename, **kwargs):
-        raise FileNotFoundError(filename)
-
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_hf_hub_download)
-    assert not model_loaders.is_funasr_model("google/gemma-4-E4B-it")
+    assert model_loaders.funasr_model_kind("FunAudioLLM/Fun-ASR-Nano-2512") == kind
 
 
 class _FakeFunASRAutoModel:
@@ -239,7 +191,7 @@ class _FakeFunASRAutoModel:
 
     def generate(self, **kwargs):
         self.generate_kwargs = kwargs
-        return [{"text": " 你好世界 "}]
+        return [{"text": " hello world "}]
 
 
 @pytest.fixture
@@ -252,7 +204,6 @@ def fake_funasr(monkeypatch):
 
 
 class _FakeOVSpeechSeq2Seq:
-    model_save_dir = "/export/dir"
     from_pretrained_kwargs = None
 
     @classmethod
@@ -264,9 +215,7 @@ class _FakeOVSpeechSeq2Seq:
         self.preprocess_call = {"sampling_rate": sampling_rate, **kwargs}
         return {
             "input_features": torch.zeros(1, 2, 3),
-            "attention_mask": torch.ones(1, 2, dtype=torch.long),
             "decoder_input_ids": torch.tensor([[1, 2, 3]]),
-            "decoder_attention_mask": torch.ones(1, 3, dtype=torch.long),
         }
 
     def generate(self, **kwargs):
@@ -315,7 +264,7 @@ def fake_genai(monkeypatch):
 
 
 def test_load_speech_recognition_model_dispatches_funasr_source(monkeypatch, fake_funasr):
-    monkeypatch.setattr(model_loaders, "is_funasr_model", lambda model_id: True)
+    monkeypatch.setattr(model_loaders, "funasr_model_kind", lambda model_id: "source")
     model = model_loaders.load_speech_recognition_model(
         "FunAudioLLM/Fun-ASR-Nano-2512", use_hf=True, speech_language="zh"
     )
@@ -327,83 +276,35 @@ def test_load_speech_recognition_model_dispatches_funasr_source(monkeypatch, fak
     assert model.language == "zh"
 
 
-def test_load_speech_recognition_model_dispatches_funasr_optimum(monkeypatch, fake_optimum):
-    monkeypatch.setattr(model_loaders, "is_funasr_model", lambda model_id: True)
+@pytest.mark.parametrize("kind, subfolder", [("source", "Qwen3-0.6B"), ("export", "")])
+def test_load_speech_recognition_model_dispatches_funasr_optimum(monkeypatch, fake_optimum, kind, subfolder):
+    monkeypatch.setattr(model_loaders, "funasr_model_kind", lambda model_id: kind)
     model = model_loaders.load_speech_recognition_model(
         "fun-asr-ov", device="CPU", ov_config={"CACHE_DIR": ""}, speech_language="en"
     )
 
     assert isinstance(model, FunASROptimumTranscriber)
-    assert _FakeOVSpeechSeq2Seq.from_pretrained_kwargs["model_id"] == "fun-asr-ov"
-    assert _FakeOVSpeechSeq2Seq.from_pretrained_kwargs["device"] == "CPU"
-    assert "trust_remote_code" not in _FakeOVSpeechSeq2Seq.from_pretrained_kwargs
+    assert _FakeOVSpeechSeq2Seq.from_pretrained_kwargs == {
+        "model_id": "fun-asr-ov",
+        "device": "CPU",
+        "ov_config": {"CACHE_DIR": ""},
+    }
     assert model.preprocess_kwargs == {"language": "en"}
-    assert model.tokenizer.location == "fun-asr-ov"
+    # a source repo keeps the LLM tokenizer in a subfolder, an export keeps it next to the model
+    assert (model.tokenizer.location, model.tokenizer.kwargs["subfolder"]) == ("fun-asr-ov", subfolder)
 
 
-def test_load_speech_recognition_model_dispatches_funasr_genai(monkeypatch, fake_genai):
-    monkeypatch.setattr(model_loaders, "is_funasr_model", lambda model_id: True)
+@pytest.mark.parametrize("requested, language", [("zh", "zh"), ("", "en")])
+def test_load_speech_recognition_model_dispatches_funasr_genai(monkeypatch, fake_genai, requested, language):
+    monkeypatch.setattr(model_loaders, "funasr_model_kind", lambda model_id: "export")
     model = model_loaders.load_speech_recognition_model(
-        "fun-asr-ov", device="cpu", ov_config={"CACHE_DIR": "cache"}, use_genai=True, speech_language="en"
+        "fun-asr-ov", device="cpu", ov_config={"CACHE_DIR": "cache"}, use_genai=True, speech_language=requested
     )
 
     assert isinstance(model, FunASRGenAITranscriber)
-    assert model.pipeline.models_path == "fun-asr-ov"
-    assert model.pipeline.device == "CPU"
+    assert (model.pipeline.models_path, model.pipeline.device) == ("fun-asr-ov", "CPU")
     assert model.pipeline.properties == {"CACHE_DIR": "cache"}
-    assert model.language == "en"
-
-
-def test_load_speech_recognition_model_defaults_funasr_to_english(monkeypatch, fake_genai):
-    monkeypatch.setattr(model_loaders, "is_funasr_model", lambda model_id: True)
-    model = model_loaders.load_speech_recognition_model("fun-asr-ov", use_genai=True, speech_language="")
-    assert model.language == "en"
-
-
-def test_load_funasr_tokenizer_falls_back_to_llm_subfolder(monkeypatch):
-    attempts = []
-
-    def from_pretrained(location, **kwargs):
-        attempts.append((location, kwargs.get("subfolder")))
-        if kwargs.get("subfolder") is None:
-            raise OSError("no tokenizer here")
-        return _FakeTokenizer(location, **kwargs)
-
-    monkeypatch.setattr(model_loaders, "AutoTokenizer", types.SimpleNamespace(from_pretrained=from_pretrained))
-    tokenizer = model_loaders._load_funasr_tokenizer("FunAudioLLM/Fun-ASR-Nano-2512", _FakeOVSpeechSeq2Seq())
-
-    assert tokenizer.kwargs["subfolder"] == model_loaders.FUNASR_TOKENIZER_SUBFOLDER
-    assert attempts == [
-        ("FunAudioLLM/Fun-ASR-Nano-2512", None),
-        ("/export/dir", None),
-        ("FunAudioLLM/Fun-ASR-Nano-2512", model_loaders.FUNASR_TOKENIZER_SUBFOLDER),
-    ]
-
-
-def test_load_funasr_tokenizer_falls_back_to_exported_detokenizer(monkeypatch, tmp_path):
-    def from_pretrained(location, **kwargs):
-        raise OSError("no tokenizer here")
-
-    detokenizer_path = tmp_path / model_loaders.FUNASR_DETOKENIZER_NAME
-    detokenizer_path.write_text("<net/>", encoding="utf-8")
-    monkeypatch.setattr(model_loaders, "AutoTokenizer", types.SimpleNamespace(from_pretrained=from_pretrained))
-    monkeypatch.setattr(
-        "whowhatbench.speech_recognition_evaluator.OVDetokenizer", lambda path: ("detokenizer", str(path))
-    )
-
-    assert model_loaders._load_funasr_tokenizer(str(tmp_path), _FakeOVSpeechSeq2Seq()) == (
-        "detokenizer",
-        str(detokenizer_path),
-    )
-
-
-def test_load_funasr_tokenizer_reports_all_attempts(monkeypatch):
-    def from_pretrained(location, **kwargs):
-        raise OSError("nope")
-
-    monkeypatch.setattr(model_loaders, "AutoTokenizer", types.SimpleNamespace(from_pretrained=from_pretrained))
-    with pytest.raises(ValueError, match="decoder for FunASR transcripts"):
-        model_loaders._load_funasr_tokenizer("FunAudioLLM/Fun-ASR-Nano-2512", _FakeOVSpeechSeq2Seq())
+    assert model.language == language
 
 
 def test_load_speech_recognition_model_dispatches_audio_vlm(monkeypatch):
@@ -413,7 +314,7 @@ def test_load_speech_recognition_model_dispatches_audio_vlm(monkeypatch):
         loaded.update({"model_id": model_id, "use_hf": use_hf, "use_genai": use_genai, "kwargs": kwargs})
         return "vlm-model"
 
-    monkeypatch.setattr(model_loaders, "is_funasr_model", lambda model_id: False)
+    monkeypatch.setattr(model_loaders, "funasr_model_kind", lambda model_id: None)
     monkeypatch.setattr(model_loaders, "load_visual_text_model", fake_load_visual_text_model)
     monkeypatch.setattr(model_loaders, "_load_audio_vlm_processor", lambda model_id: "processor")
 
@@ -424,25 +325,21 @@ def test_load_speech_recognition_model_dispatches_audio_vlm(monkeypatch):
     # the audio VLM path reuses the visual-text loaders and must not receive ASR-only arguments
     assert loaded["kwargs"] == {"model_type": "visual-text"}
 
-    genai_model = model_loaders.load_speech_recognition_model("gemma-4-ov", use_genai=True, speech_language="English")
+    genai_model = model_loaders.load_speech_recognition_model("gemma-4-ov", use_genai=True, speech_language="Japanese")
     assert isinstance(genai_model, GenAIMultimodalTranscriber)
-    assert genai_model.instruction == "Transcribe this audio in English."
+    assert genai_model.instruction == "Transcribe this audio in Japanese."
 
 
-def test_funasr_source_transcriber_maps_arguments(fake_funasr):
-    transcriber = FunASRSourceTranscriber("FunAudioLLM/Fun-ASR-Nano-2512")
-    assert transcriber.transcribe(np.zeros(16, dtype=np.float32), 64) == "你好世界"
+@pytest.mark.parametrize("requested, forwarded", [("", None), ("zh", "zh")])
+def test_funasr_source_transcriber_maps_arguments(fake_funasr, requested, forwarded):
+    transcriber = FunASRSourceTranscriber("FunAudioLLM/Fun-ASR-Nano-2512", requested)
+    assert transcriber.transcribe(np.zeros(16, dtype=np.float32), 64) == "hello world"
 
     generate_kwargs = fake_funasr.instances[0].generate_kwargs
-    assert generate_kwargs["language"] is None  # neutral funasr prompt
+    assert generate_kwargs["language"] is forwarded
     assert generate_kwargs["max_length"] == 64
     assert generate_kwargs["itn"] is True
     assert generate_kwargs["batch_size"] == 1
-
-
-def test_funasr_source_transcriber_forwards_language(fake_funasr):
-    FunASRSourceTranscriber("FunAudioLLM/Fun-ASR-Nano-2512", "zh").transcribe(np.zeros(16, dtype=np.float32), 8)
-    assert fake_funasr.instances[0].generate_kwargs["language"] == "zh"
 
 
 def test_funasr_source_transcriber_requires_funasr(monkeypatch):
@@ -451,34 +348,39 @@ def test_funasr_source_transcriber_requires_funasr(monkeypatch):
         FunASRSourceTranscriber("FunAudioLLM/Fun-ASR-Nano-2512")
 
 
-def test_funasr_optimum_transcriber_decodes_generated_ids_only():
-    model = _FakeOVSpeechSeq2Seq()
-    tokenizer = _FakeTokenizer("export")
-    transcriber = FunASROptimumTranscriber(model, tokenizer, "en")
+@pytest.mark.parametrize(
+    "language, preprocess_call",
+    [("en", {"sampling_rate": 16000, "language": "en"}), ("", {"sampling_rate": 16000})],
+)
+def test_funasr_optimum_transcriber_decodes_generated_ids_only(language, preprocess_call):
+    model, tokenizer = _FakeOVSpeechSeq2Seq(), _FakeTokenizer("export")
 
-    assert transcriber.transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
-    assert model.preprocess_call == {"sampling_rate": 16000, "language": "en"}
+    assert (
+        FunASROptimumTranscriber(model, tokenizer, language).transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
+    )
+    assert model.preprocess_call == preprocess_call
     assert model.generate_call["max_new_tokens"] == 32
     # the 3 prompt ids are dropped, only the generated ids are decoded
     assert tokenizer.decoded.tolist() == [[7, 8]]
 
+    model.generate = lambda **kwargs: types.SimpleNamespace(sequences=torch.tensor([[1, 2, 3, 7, 8]]))
+    assert (
+        FunASROptimumTranscriber(model, tokenizer, language).transcribe(np.zeros(16, dtype=np.float32), 32) == "decoded"
+    )
+    assert tokenizer.decoded.tolist() == [[7, 8]]
 
-def test_funasr_optimum_transcriber_keeps_optimum_language_default():
-    model = _FakeOVSpeechSeq2Seq()
-    FunASROptimumTranscriber(model, _FakeTokenizer("export")).transcribe(np.zeros(4, dtype=np.float32), 8)
-    assert model.preprocess_call == {"sampling_rate": 16000}
 
-
-def test_funasr_genai_transcriber_omits_unset_language():
+@pytest.mark.parametrize(
+    "language, generate_call",
+    [
+        ("", {"audio": [0.0, 0.0, 0.0], "max_new_tokens": 16}),
+        ("en", {"audio": [0.0, 0.0, 0.0], "max_new_tokens": 16, "language": "en"}),
+    ],
+)
+def test_funasr_genai_transcriber_forwards_language(language, generate_call):
     pipeline = _FakeASRPipeline("dir", "CPU")
-    assert FunASRGenAITranscriber(pipeline).transcribe(np.zeros(3, dtype=np.float32), 16) == "transcript"
-    assert pipeline.generate_call == {"audio": [0.0, 0.0, 0.0], "max_new_tokens": 16}
-
-
-def test_funasr_genai_transcriber_forwards_language():
-    pipeline = _FakeASRPipeline("dir", "CPU")
-    FunASRGenAITranscriber(pipeline, "en").transcribe(np.zeros(1, dtype=np.float32), 16)
-    assert pipeline.generate_call["language"] == "en"
+    assert FunASRGenAITranscriber(pipeline, language).transcribe(np.zeros(3, dtype=np.float32), 16) == "transcript"
+    assert pipeline.generate_call == generate_call
 
 
 class _FakeVLMProcessor:
@@ -496,32 +398,26 @@ class _FakeVLMProcessor:
 
 
 class _FakeVLMModel:
-    def __init__(self):
-        self.generate_call = None
-
     def generate(self, **kwargs):
         self.generate_call = kwargs
         return torch.tensor([[1, 2, 5, 6]])
 
 
-def test_multimodal_transcriber_prompts_and_slices_prompt():
+@pytest.mark.parametrize(
+    "language, instruction",
+    [("", DEFAULT_ASR_INSTRUCTION), ("English", "Transcribe this audio in English.")],
+)
+def test_multimodal_transcriber_prompts_and_slices_prompt(language, instruction):
     model, processor = _FakeVLMModel(), _FakeVLMProcessor()
-    transcriber = MultimodalTranscriber(model, processor)
     audio = np.zeros(8, dtype=np.float32)
 
-    assert transcriber.transcribe(audio, 24) == "multimodal transcript"
+    assert MultimodalTranscriber(model, processor, language).transcribe(audio, 24) == "multimodal transcript"
     content = processor.messages[0]["content"]
     assert content[0]["type"] == "audio" and content[0]["audio"] is audio
-    assert content[1] == {"type": "text", "text": DEFAULT_ASR_INSTRUCTION}
+    assert content[1] == {"type": "text", "text": instruction}
     assert model.generate_call["max_new_tokens"] == 24
     assert model.generate_call["do_sample"] is False
     assert processor.decoded.tolist() == [[5, 6]]
-
-
-def test_multimodal_transcriber_uses_language_in_instruction():
-    processor = _FakeVLMProcessor()
-    MultimodalTranscriber(_FakeVLMModel(), processor, "English").transcribe(np.zeros(2, dtype=np.float32), 8)
-    assert processor.messages[0]["content"][1]["text"] == "Transcribe this audio in English."
 
 
 def test_genai_multimodal_transcriber_passes_audio_tensor():
@@ -537,3 +433,19 @@ def test_genai_multimodal_transcriber_passes_audio_tensor():
     assert calls["prompt"] == DEFAULT_ASR_INSTRUCTION
     assert calls["max_new_tokens"] == 12
     assert calls["audios"][0].get_shape() == [4]
+
+
+@pytest.mark.parametrize("sampling_rate, length", [(48000, 1600), (44100, 1742), (16000, 4800)])
+def test_to_mono_16k_resamples(sampling_rate, length):
+    audio = np.sin(np.arange(4800, dtype=np.float64) / 10.0)
+    resampled = to_mono_16k(audio, sampling_rate)
+    assert resampled.shape == (length,)
+    assert resampled.dtype == np.float32
+
+
+def test_to_mono_16k_downmixes_channels():
+    stereo = np.stack([np.ones(96, dtype=np.float64), -np.ones(96, dtype=np.float64)], axis=1)
+    mono = to_mono_16k(stereo, 48000)
+    assert mono.shape == (32,)
+    assert mono.dtype == np.float32
+    assert np.allclose(mono, 0.0)  # the two channels cancel out

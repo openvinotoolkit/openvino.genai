@@ -48,7 +48,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-fun-asr": {
         "name": "optimum-intel-internal-testing/tiny-random-fun-asr",
-        "convert_args": ["--trust-remote-code"],
+        "convert_args": [],
     },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",

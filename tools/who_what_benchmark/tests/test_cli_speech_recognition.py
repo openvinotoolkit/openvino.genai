@@ -3,7 +3,6 @@
 
 import importlib.util
 import re
-import subprocess  # nosec B404
 
 import pytest
 
@@ -109,14 +108,9 @@ def test_asr_funasr_genai(tmp_path, funasr_ground_truth):
     common = [*_common_args(funasr_ground_truth), "--speech-language", FUNASR_LANGUAGE, "--max_new_tokens", "16"]
 
     model_path = convert_model(FUNASR_MODEL)
-    try:
-        genai_similarity = get_similarity_score(
-            run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path])
-        )
-    except subprocess.CalledProcessError as error:
-        if "fun_asr" in (error.output or "") and "Unsupported" in (error.output or ""):
-            pytest.skip("Installed OpenVINO GenAI build has no FunASR support in ASRPipeline")
-        raise
+    genai_similarity = get_similarity_score(
+        run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path])
+    )
     reproduced = get_similarity_score(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
     assert 0.0 <= genai_similarity <= 1.0

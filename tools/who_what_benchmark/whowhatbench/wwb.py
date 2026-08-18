@@ -21,6 +21,7 @@ from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
+from whowhatbench.speech_recognition_evaluator import AUDIO_SAMPLING_RATE
 from whowhatbench.utils import get_json_config
 
 # Configure logging
@@ -417,8 +418,9 @@ def parse_args():
         default="",
         help="For speech-generation: language code, currently used only for Kokoro. "
         "If omitted, the default language used is 'en-us'. \n"
-        "For speech-recognition: the language forced during transcription, in the form expected by the model "
-        "(for example 'en', 'zh', or 'ja' for FunASR). If omitted, English is used.",
+        "For speech-recognition: the language forced during transcription, in the form the model expects. "
+        "FunASR takes a code such as 'en', 'zh' or 'ja' and defaults to 'en'; audio VLMs take a name such as "
+        "'English' or 'Japanese' and default to 'English'.",
     )
     parser.add_argument(
         "--speech-voice",
@@ -546,6 +548,19 @@ def load_prompts(args):
 DEFAULT_NUM_SAMPLES = 24
 
 
+def to_mono_16k(audio, sampling_rate):
+    """Downmix to mono and resample to 16 kHz float32."""
+    from math import gcd
+    from scipy.signal import resample_poly
+
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    if sampling_rate != AUDIO_SAMPLING_RATE:
+        common = gcd(int(sampling_rate), AUDIO_SAMPLING_RATE)
+        audio = resample_poly(audio, AUDIO_SAMPLING_RATE // common, int(sampling_rate) // common)
+    return np.asarray(audio, dtype=np.float32)
+
+
 def load_audio_dataset(args):
     """Stream an ASR dataset as columns: id and 16 kHz mono float32 waveform."""
     import io
@@ -573,13 +588,7 @@ def load_audio_dataset(args):
             audio, sampling_rate = sf.read(io.BytesIO(raw["bytes"]), dtype="float32")
         else:
             audio, sampling_rate = sf.read(raw["path"], dtype="float32")
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-        if sampling_rate != 16000:
-            import librosa
-
-            audio = librosa.resample(audio, orig_sr=sampling_rate, target_sr=16000)
-        audios.append(audio)
+        audios.append(to_mono_16k(audio, sampling_rate))
         ids.append(os.path.basename(raw["path"]) if raw.get("path") else str(idx))
 
     return {"prompts": ids, "audio": audios}
@@ -1299,8 +1308,8 @@ def create_evaluator(base_model, args):
         )
 
 
-def print_text_results(evaluator, metric="similarity"):
-    metric_of_interest = metric
+def print_text_results(evaluator):
+    metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
     for i, e in enumerate(worst_examples):
@@ -1611,9 +1620,14 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
-            print_text_results(evaluator)
-        elif args.model_type == "speech-recognition":
+        if args.model_type in [
+            "text",
+            "text-chat",
+            "visual-text",
+            "visual-video-text",
+            "visual-text-chat",
+            "speech-recognition",
+        ]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type
