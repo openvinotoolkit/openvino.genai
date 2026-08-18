@@ -51,7 +51,7 @@ def print_metrics(
         output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
     if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
-    if prefill_time != "":
+    if prefill_time and prefill_time != "":
         output_str += "Prefill Time: {:.2f}ms, ".format(prefill_time)
     if iter_data.get("total_time", "") != "":
         output_str += "Total Time: {:.4f}s, ".format(iter_data["total_time"])

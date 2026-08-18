@@ -982,3 +982,55 @@ class TestBenchmarkLLM:
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [sys.executable, benchmark_script, "-m", convert_model, *prompt_args] + sample_args
         run_sample(benchmark_py_command)
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "convert_model, sample_args, prefill_info_log_msg",
+        [
+            pytest.param(
+                "tiny-random-qwen2",
+                ["--num_prefill_tokens", "4"],
+                "Amount of token for prefill is 4tokens. Prompt was trimmed.",
+            ),
+            pytest.param(
+                "tiny-random-qwen2",
+                ["-np", "30"],
+                "The reqested number num_prefill_tokens(30tokens) is larger than the actual number of input tokens in prompt",
+            ),
+            pytest.param(
+                "tiny-random-qwen2",
+                ["--optimum", "-np", "4"],
+                "Amount of token for prefill is 4tokens. Prompt was trimmed.",
+            ),
+            pytest.param(
+                "tiny-random-qwen2",
+                ["--optimum", "--num_prefill_tokens", "30"],
+                "The reqested number num_prefill_tokens(30tokens) is larger than the actual number of input tokens in prompt",
+            ),
+        ],
+        indirect=["convert_model"],
+    )
+    def test_python_tool_llm_benchmark_convert_model(self, convert_model, sample_args, prefill_info_log_msg):
+        # Run Python benchmark
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            "-d",
+            "cpu",
+            "-n",
+            "1",
+            "-ic",
+            "4",
+            "--task",
+            "text_gen",
+            "-p",
+            "Why is the Sun yellow?",
+        ] + sample_args
+        result = run_sample(benchmark_py_command)
+        assert "Prefill Time: " in result.stdout, "Expected log message `Prefill Time: ` not found in output"
+        assert prefill_info_log_msg in result.stdout, (
+            f"Expected log message `{prefill_info_log_msg}` not found in output"
+        )

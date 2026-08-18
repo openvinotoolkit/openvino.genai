@@ -229,8 +229,10 @@ def run_text_generation(
 
         if target_prefill_tokens > input_ids.shape[1]:
             log.warning(
-                f"The reqested number num_prefill_tokens({target_prefill_tokens}tokens) is larger than the actual number of input tokens in prompt({input_ids.shape[1]}tokens). "
-                f"Using {input_ids.shape[1]} tokens as the number of prefill tokens. Please, specify larger prompt to achieve the required number of prefill tokens. "
+                f"The reqested number num_prefill_tokens({target_prefill_tokens}tokens) "
+                f"is larger than the actual number of input tokens in prompt({input_ids.shape[1]}tokens). "
+                f"Using {input_ids.shape[1]} tokens as the number of prefill tokens. "
+                "Please, specify larger prompt to achieve the required number of prefill tokens. "
             )
         elif n_prefill_tokens < input_ids.shape[1]:
             print(input_data["input_ids"])
@@ -330,7 +332,7 @@ def run_text_generation(
         tokenization_time=(tok_encode_time, tok_decode_time),
         batch_size=args['batch_size'],
         prompt_idx=prompt_index,
-        prefill_time=tm_infer_list[0] * 1000 if args.get("num_prefill_tokens", None) else "",
+        prefill_time=tm_infer_list[0] * 1000 if args.get("num_prefill_tokens", None) and len(tm_infer_list) > 0 else "",
     )
     print_generated_output(
         prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations=False
@@ -499,8 +501,10 @@ def run_text_generation_genai(
 
         if target_prefill_tokens > input_ids.shape[1]:
             log.warning(
-                f"It's reqested to run {target_prefill_tokens} num_prefill_tokens, but it is larger than the actual number of input tokens in prompt {input_ids.shape[1]}. "
-                f"Using {input_ids.shape[1]} as the number of prefill tokens. Please, specify larger prompt to achive the required number of prefill tokens. "
+                f"The reqested number num_prefill_tokens({target_prefill_tokens}tokens) "
+                f"is larger than the actual number of input tokens in prompt({input_ids.shape[1]}tokens). "
+                f"Using {input_ids.shape[1]} tokens as the number of prefill tokens. "
+                "Please, specify larger prompt to achieve the required number of prefill tokens. "
             )
         elif target_prefill_tokens < input_ids.shape[1]:
             from openvino_genai import TokenizedInputs
