@@ -323,7 +323,8 @@ Audio VLMs are asked to `"Transcribe this audio in <language>."`. Here `--speech
 language name such as `English` or `Japanese`, and WWB defaults to `English`.
 
 > **NOTE**: audio comes from `--dataset` (`google/fleurs,en_us` by default) and is resampled to 16 kHz mono.
-> Use `--dataset google/fleurs,cmn_hans_cn` and friends to evaluate other languages.
+> Use `--dataset google/fleurs,cmn_hans_cn` for Mandarin Chinese or
+> `--dataset google/fleurs,ja_jp` for Japanese.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.
