@@ -104,6 +104,8 @@ std::optional<ASRPartialResult> Qwen3ASRStreamingSessionImpl::push_chunk(const s
 }
 
 ASRPartialResult Qwen3ASRStreamingSessionImpl::finish() {
+    m_current_new_committed_text = "";
+
     if (!m_buffer.empty()) {
         m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.end());
         m_buffer.clear();
@@ -112,7 +114,7 @@ ASRPartialResult Qwen3ASRStreamingSessionImpl::finish() {
 
     // Commit any remaining partial tail; final result always has partial_text == "".
     m_current_committed_text += m_current_partial_text;
-    m_current_new_committed_text = std::move(m_current_partial_text);
+    m_current_new_committed_text += std::move(m_current_partial_text);
     m_current_partial_text = "";
 
     return {m_current_language, m_current_committed_text,
