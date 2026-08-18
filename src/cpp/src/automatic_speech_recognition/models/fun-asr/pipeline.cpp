@@ -8,6 +8,27 @@
 
 #include "utils.hpp"
 
+namespace {
+
+struct FunASRTextPrompt {
+    std::string prefix;
+    std::string suffix;
+    std::string language;
+};
+
+FunASRTextPrompt build_text_prompt(const ov::genai::ASRGenerationConfig& config) {
+    const std::string language_instruction = config.language.has_value() ? "语音转写成" + *config.language : "语音转写";
+
+    // "\xEF\xBC\x9A" - UTF-8 full-width colon "：". ASCII ":" gives worse accuracy.
+    const std::string prefix = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" +
+                               language_instruction + "\xEF\xBC\x9A";
+    const std::string suffix = "<|im_end|>\n<|im_start|>assistant\n";
+    // Fun-ASR does not detect the spoken language, so return the requested language or an empty string.
+    return {prefix, suffix, config.language.value_or("")};
+}
+
+}  // namespace
+
 namespace ov::genai {
 
 FunASR::FunASR(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties)
@@ -57,11 +78,8 @@ ASRDecodedResults FunASR::generate(const AudioInputs& audio_inputs,
     results.perf_metrics.raw_metrics.m_inference_durations[0] += MicroSeconds(encoder_infer_ms);
     results.perf_metrics.asr_raw_metrics.encode_inference_durations.emplace_back(encoder_infer_ms);
 
-    const auto tokenization_start_time = std::chrono::steady_clock::now();
-    const ov::Tensor prompt = build_input_ids(encoder_hidden_states.get_shape()[1], config);
-    const auto tokenization_stop_time = std::chrono::steady_clock::now();
-    results.perf_metrics.raw_metrics.tokenization_durations.emplace_back(
-        MicroSeconds(PerfMetrics::get_microsec(tokenization_stop_time - tokenization_start_time)));
+    auto [prompt, language] =
+        build_input_ids(encoder_hidden_states.get_shape()[1], config, results.perf_metrics.raw_metrics);
 
     const auto encoded_results = m_decoder->generate(prompt,
                                                      encoder_hidden_states,
@@ -77,8 +95,7 @@ ASRDecodedResults FunASR::generate(const AudioInputs& audio_inputs,
     results.texts.push_back(m_tokenizer.decode(encoded_results.tokens[0]));
     const auto detokenization_stop_time = std::chrono::steady_clock::now();
     results.scores.push_back(encoded_results.scores[0]);
-    // no language detection in Fun-ASR, so we return the requested language or an empty string
-    results.languages.push_back(config.language.value_or(""));
+    results.languages.push_back(std::move(language));
     results.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
         MicroSeconds(PerfMetrics::get_microsec(detokenization_stop_time - detokenization_start_time)));
 
@@ -89,10 +106,18 @@ ASRDecodedResults FunASR::generate(const AudioInputs& audio_inputs,
     return results;
 }
 
-ov::Tensor FunASR::build_input_ids(const size_t num_audio_tokens, const ASRGenerationConfig& config) {
-    const TokenizedInstructions instructions = get_tokenized_instructions(config);
-    const auto prefix_ids = instructions.prefix_ids;
-    const auto suffix_ids = instructions.suffix_ids;
+std::pair<ov::Tensor, std::string> FunASR::build_input_ids(const size_t num_audio_tokens,
+                                                           const ASRGenerationConfig& config,
+                                                           RawPerfMetrics& raw_metrics) {
+    FunASRTextPrompt text_prompt = build_text_prompt(config);
+    const auto tokenization_start_time = std::chrono::steady_clock::now();
+    const ov::Tensor prefix_ids =
+        m_tokenizer.encode(text_prompt.prefix, ov::genai::add_special_tokens(false)).input_ids;
+    const ov::Tensor suffix_ids =
+        m_tokenizer.encode(text_prompt.suffix, ov::genai::add_special_tokens(false)).input_ids;
+    const auto tokenization_stop_time = std::chrono::steady_clock::now();
+    raw_metrics.tokenization_durations.emplace_back(
+        MicroSeconds(PerfMetrics::get_microsec(tokenization_stop_time - tokenization_start_time)));
 
     const size_t prompt_length = prefix_ids.get_size() + num_audio_tokens + suffix_ids.get_size();
 
@@ -104,28 +129,7 @@ ov::Tensor FunASR::build_input_ids(const size_t num_audio_tokens, const ASRGener
     input_ids_data += num_audio_tokens;
     std::memcpy(input_ids_data, suffix_ids.data<const int64_t>(), suffix_ids.get_byte_size());
 
-    return input_ids;
-}
-
-FunASR::TokenizedInstructions FunASR::get_tokenized_instructions(const ASRGenerationConfig& config) {
-    std::lock_guard<std::mutex> lock(m_tokenized_instructions_mutex);
-    const auto cached = m_tokenized_instructions.find(config.language);
-    if (cached != m_tokenized_instructions.end()) {
-        return cached->second;
-    }
-
-    const std::string language_instruction = config.language.has_value() ? "语音转写成" + *config.language : "语音转写";
-
-    // "\xEF\xBC\x9A" - UTF-8 full-width colon "：". ASCII ":" gives worse accuracy.
-    const std::string prefix = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" +
-                               language_instruction + "\xEF\xBC\x9A";
-    const std::string suffix = "<|im_end|>\n<|im_start|>assistant\n";
-    TokenizedInstructions instructions{
-        m_tokenizer.encode(prefix, ov::genai::add_special_tokens(false)).input_ids,
-        m_tokenizer.encode(suffix, ov::genai::add_special_tokens(false)).input_ids,
-    };
-    m_tokenized_instructions.emplace(config.language, instructions);
-    return instructions;
+    return {input_ids, std::move(text_prompt.language)};
 }
 
 ASRGenerationConfig FunASR::resolve_generation_config(

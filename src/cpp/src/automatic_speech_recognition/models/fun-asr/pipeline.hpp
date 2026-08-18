@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <mutex>
-#include <unordered_map>
+#include <string>
+#include <utility>
 
 #include "automatic_speech_recognition/models/qwen3-asr/decoder.hpp"
 #include "automatic_speech_recognition/pipeline_base.hpp"
@@ -22,19 +22,13 @@ public:
                                const std::shared_ptr<StreamerBase> streamer = nullptr) override;
 
 private:
-    struct TokenizedInstructions {
-        ov::Tensor prefix_ids;
-        ov::Tensor suffix_ids;
-    };
-
     FunASRFeatureExtractor m_feature_extractor;
     std::unique_ptr<FunASREncoder> m_encoder;
     std::unique_ptr<Qwen3ASRDecoder> m_decoder;
-    std::mutex m_tokenized_instructions_mutex;
-    std::unordered_map<std::optional<std::string>, TokenizedInstructions> m_tokenized_instructions;
 
-    ov::Tensor build_input_ids(size_t num_audio_tokens, const ASRGenerationConfig& config);
-    TokenizedInstructions get_tokenized_instructions(const ASRGenerationConfig& config);
+    std::pair<ov::Tensor, std::string> build_input_ids(size_t num_audio_tokens,
+                                                       const ASRGenerationConfig& config,
+                                                       RawPerfMetrics& raw_metrics);
 
     ASRGenerationConfig resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const;
 
