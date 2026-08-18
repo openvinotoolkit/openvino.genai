@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 import { ASRPipeline } from 'openvino-genai-node';
-import { readAudio } from './wav_utils.js';
+import { readAudio } from '../wav_utils.js';
 
 /**
  * Parse CLI arguments, run ASR inference and print transcription output.

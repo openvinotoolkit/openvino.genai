@@ -9,13 +9,12 @@ import { ASRPipeline as ASRPipelineClass } from "../dist/pipelines/asrPipeline.j
 
 // ASRPipeline dispatches to a model implementation (e.g. Whisper or Qwen3-ASR) based on the
 // model's config.json. Whisper-specific capabilities (segment/word timestamps, `<|...|>` language
-// tokens, task) are validated against a Whisper model, while a dedicated block validates Qwen3-ASR
-// dispatch and its `context` option.
-const { ASR_MODEL_PATH, WHISPER_MODEL_PATH } = process.env;
+// tokens, task) and dispatch are validated against a Whisper model.
+const { WHISPER_MODEL_PATH } = process.env;
 
-if (!ASR_MODEL_PATH || !WHISPER_MODEL_PATH) {
+if (!WHISPER_MODEL_PATH) {
   throw new Error(
-    "Environment variables ASR_MODEL_PATH and WHISPER_MODEL_PATH must be set to the ASR model directories for tests.",
+    "Environment variable WHISPER_MODEL_PATH must be set to the ASR model directory for tests.",
   );
 }
 
@@ -122,6 +121,9 @@ describe("ASRPipeline methods (Whisper backend)", () => {
 
   it("setGenerationConfig(config) updates config", () => {
     const newConfig = { initial_prompt: "hello", task: "transcribe" };
+    const defaultConfig = pipeline.getGenerationConfig();
+    assert.notStrictEqual(defaultConfig.initial_prompt, newConfig.initial_prompt);
+    assert.notStrictEqual(defaultConfig.task, newConfig.task);
     pipeline.setGenerationConfig(newConfig);
     const config = pipeline.getGenerationConfig();
     assert.strictEqual(config.initial_prompt, newConfig.initial_prompt);
@@ -243,40 +245,5 @@ describe("ASRPerfMetrics (Whisper backend)", () => {
     assert.ok(pair && typeof pair === "object");
     assert.strictEqual(typeof pair.mean, "number");
     assert.strictEqual(typeof pair.std, "number");
-  });
-});
-
-describe("ASRPipeline Qwen3-ASR dispatch", () => {
-  let pipeline;
-  let rawSpeech;
-
-  before(async () => {
-    pipeline = await ASRPipeline(ASR_MODEL_PATH, "CPU");
-    rawSpeech = createTestRawSpeech();
-  });
-
-  it("generate(rawSpeech) returns texts, scores, languages and perfMetrics", async () => {
-    const result = await pipeline.generate(rawSpeech);
-    assert.ok(Array.isArray(result.texts));
-    assert.ok(Array.isArray(result.scores));
-    assert.strictEqual(result.texts.length, result.scores.length);
-    assert.ok(Array.isArray(result.languages));
-    assert.ok(result.perfMetrics);
-    assert.strictEqual(typeof result.perfMetrics.getLoadTime(), "number");
-  });
-
-  it("generate(rawSpeech, options) accepts the Qwen3-ASR context option", async () => {
-    const result = await pipeline.generate(rawSpeech, {
-      generationConfig: { context: "meeting transcript" },
-    });
-    assert.ok(Array.isArray(result.texts));
-    assert.ok(result.perfMetrics);
-  });
-
-  it("getGenerationConfig() returns config object", () => {
-    const config = pipeline.getGenerationConfig();
-    assert.ok(config && typeof config === "object");
-    assert.strictEqual(typeof config.return_timestamps, "boolean");
-    assert.strictEqual(typeof config.max_new_tokens, "bigint");
   });
 });

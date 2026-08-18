@@ -49,6 +49,18 @@ bool is_js_set(const Napi::Value& value) {
     return value.IsObject() && value.ToString().Utf8Value() == "[object Set]";
 }
 
+/** Set an optional string property on obj, or Undefined() when the value is not set. */
+void set_napi_string_or_undefined(const Napi::Env& env,
+                                  Napi::Object& obj,
+                                  const char* key,
+                                  const std::optional<std::string>& value) {
+    if (value.has_value()) {
+        obj.Set(key, Napi::String::New(env, value.value()));
+    } else {
+        obj.Set(key, env.Undefined());
+    }
+}
+
 /** Get the first element of a JS Set, or Undefined() if empty. */
 Napi::Value get_first_set_value(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
@@ -1429,16 +1441,8 @@ Napi::Value cpp_to_js<ov::genai::WhisperGenerationConfig, Napi::Value>(
     const Napi::Env& env,
     const ov::genai::WhisperGenerationConfig& config) {
     Napi::Object obj = cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config).As<Napi::Object>();
-    if (config.language.has_value()) {
-        obj.Set("language", Napi::String::New(env, config.language.value()));
-    } else {
-        obj.Set("language", env.Undefined());
-    }
-    if (config.task.has_value()) {
-        obj.Set("task", Napi::String::New(env, config.task.value()));
-    } else {
-        obj.Set("task", env.Undefined());
-    }
+    set_napi_string_or_undefined(env, obj, "language", config.language);
+    set_napi_string_or_undefined(env, obj, "task", config.task);
     obj.Set("return_timestamps", Napi::Boolean::New(env, config.return_timestamps));
     obj.Set("word_timestamps", Napi::Boolean::New(env, config.word_timestamps));
     obj.Set("decoder_start_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.decoder_start_token_id));
@@ -1470,16 +1474,8 @@ Napi::Value cpp_to_js<ov::genai::WhisperGenerationConfig, Napi::Value>(
     } else {
         obj.Set("alignment_heads", env.Undefined());
     }
-    if (config.initial_prompt.has_value()) {
-        obj.Set("initial_prompt", Napi::String::New(env, config.initial_prompt.value()));
-    } else {
-        obj.Set("initial_prompt", env.Undefined());
-    }
-    if (config.hotwords.has_value()) {
-        obj.Set("hotwords", Napi::String::New(env, config.hotwords.value()));
-    } else {
-        obj.Set("hotwords", env.Undefined());
-    }
+    set_napi_string_or_undefined(env, obj, "initial_prompt", config.initial_prompt);
+    set_napi_string_or_undefined(env, obj, "hotwords", config.hotwords);
     if (!config.begin_suppress_tokens.empty()) {
         Napi::Array arr = Napi::Array::New(env, config.begin_suppress_tokens.size());
         for (size_t i = 0; i < config.begin_suppress_tokens.size(); ++i) {
@@ -1505,16 +1501,8 @@ template <>
 Napi::Value cpp_to_js<ov::genai::ASRGenerationConfig, Napi::Value>(const Napi::Env& env,
                                                                    const ov::genai::ASRGenerationConfig& config) {
     Napi::Object obj = cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config).As<Napi::Object>();
-    if (config.language.has_value()) {
-        obj.Set("language", Napi::String::New(env, config.language.value()));
-    } else {
-        obj.Set("language", env.Undefined());
-    }
-    if (config.task.has_value()) {
-        obj.Set("task", Napi::String::New(env, config.task.value()));
-    } else {
-        obj.Set("task", env.Undefined());
-    }
+    set_napi_string_or_undefined(env, obj, "language", config.language);
+    set_napi_string_or_undefined(env, obj, "task", config.task);
     obj.Set("return_timestamps", Napi::Boolean::New(env, config.return_timestamps));
     obj.Set("word_timestamps", Napi::Boolean::New(env, config.word_timestamps));
     obj.Set("decoder_start_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.decoder_start_token_id));
@@ -1546,21 +1534,9 @@ Napi::Value cpp_to_js<ov::genai::ASRGenerationConfig, Napi::Value>(const Napi::E
     } else {
         obj.Set("alignment_heads", env.Undefined());
     }
-    if (config.initial_prompt.has_value()) {
-        obj.Set("initial_prompt", Napi::String::New(env, config.initial_prompt.value()));
-    } else {
-        obj.Set("initial_prompt", env.Undefined());
-    }
-    if (config.hotwords.has_value()) {
-        obj.Set("hotwords", Napi::String::New(env, config.hotwords.value()));
-    } else {
-        obj.Set("hotwords", env.Undefined());
-    }
-    if (config.context.has_value()) {
-        obj.Set("context", Napi::String::New(env, config.context.value()));
-    } else {
-        obj.Set("context", env.Undefined());
-    }
+    set_napi_string_or_undefined(env, obj, "initial_prompt", config.initial_prompt);
+    set_napi_string_or_undefined(env, obj, "hotwords", config.hotwords);
+    set_napi_string_or_undefined(env, obj, "context", config.context);
     if (!config.begin_suppress_tokens.empty()) {
         Napi::Array arr = Napi::Array::New(env, config.begin_suppress_tokens.size());
         for (size_t i = 0; i < config.begin_suppress_tokens.size(); ++i) {

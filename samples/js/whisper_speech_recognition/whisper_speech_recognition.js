@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 import { WhisperPipeline } from 'openvino-genai-node';
-import { readAudio } from './wav_utils.js';
+import { readAudio } from '../wav_utils.js';
 
 /**
  * Parse CLI arguments, run Whisper inference and print transcription output.
