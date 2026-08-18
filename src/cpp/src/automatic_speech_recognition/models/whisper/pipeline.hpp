@@ -76,6 +76,7 @@ private:
         config.alignment_heads = asr_config.alignment_heads;
         config.initial_prompt = asr_config.initial_prompt;
         config.hotwords = asr_config.hotwords;
+        config.prefix = asr_config.prefix;
         config.begin_suppress_tokens = asr_config.begin_suppress_tokens;
         config.suppress_tokens = asr_config.suppress_tokens;
 

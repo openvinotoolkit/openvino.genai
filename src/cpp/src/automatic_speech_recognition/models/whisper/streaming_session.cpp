@@ -64,13 +64,23 @@ std::string WhisperASRStreamingSessionImpl::compute_committed_text() const {
 }
 
 void WhisperASRStreamingSessionImpl::decode_current_accum() {
-    // Re-decode the full accumulated audio. For Whisper, Phase 1 does not inject a prefix —
-    // stability is derived from the rollback policy applied to the output tokens.
-    const ASRDecodedResults results = m_pipeline->generate(m_audio_accum, m_generation_config, nullptr);
+    // Inject committed_text as the decoder prefix so the model is anchored to stable prior output.
+    // With no prior committed text (warmup or rollback=0) the prefix is left unset.
+    const bool inject_prefix = m_chunk_count >= m_streaming_config.warmup_chunks &&
+                               !m_current_committed_text.empty();
+    ASRGenerationConfig config_for_pass = m_generation_config;
+    if (inject_prefix) {
+        config_for_pass.prefix = m_current_committed_text;
+    }
+
+    const ASRDecodedResults results = m_pipeline->generate(m_audio_accum, config_for_pass, nullptr);
     OPENVINO_ASSERT(!results.texts.empty(), "WhisperASRStreamingSessionImpl: generate returned empty results");
 
     m_current_language = results.languages.empty() ? "" : results.languages[0];
-    m_current_text = results.texts[0];
+
+    // When a prefix was injected the decoder only generates the continuation; reconstruct the full
+    // transcript by prepending the committed prefix so that compute_committed_text() can operate on it.
+    m_current_text = (inject_prefix ? m_current_committed_text : "") + results.texts[0];
     ++m_chunk_count;
 
     const std::string prev_committed = m_current_committed_text;

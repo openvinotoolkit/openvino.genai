@@ -351,6 +351,14 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             chunk_sot_tokens.push_back(config.no_timestamps_token_id);
         }
 
+        // Prefix tokens are forced as the first output tokens; appended after the SOT header so the
+        // decoder reproduces them verbatim before free generation begins.
+        if (!context_tokens.prefix.empty()) {
+            chunk_sot_tokens.insert(chunk_sot_tokens.end(),
+                                    context_tokens.prefix.begin(),
+                                    context_tokens.prefix.end());
+        }
+
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config);
 
         auto [chunk_result, cancelled] = decode(decoder,
