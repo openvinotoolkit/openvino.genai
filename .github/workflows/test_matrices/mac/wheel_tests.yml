@@ -18,6 +18,16 @@
   components:
     - automatic_speech_recognition
 
+- name: ASR (Fun-ASR)
+  cmd: |-
+    # optimum intel master commit with Fun-ASR support
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@b841dde559e306a0535f55a5cd4432239ca18c09"
+    python -m pip install transformers==4.57.6 funasr
+    python -m pytest ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
+  timeout: 60
+  components:
+    - automatic_speech_recognition
+
 # Only supported on X64 or ARM with SVE support
 # - name: Cacheopt E2E (Part 1)
 #   cmd: python -m pytest -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py
