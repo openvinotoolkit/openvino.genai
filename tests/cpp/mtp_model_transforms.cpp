@@ -23,7 +23,8 @@ constexpr size_t HIDDEN = 8;
 constexpr size_t VOCAB = 16;
 
 // Main model stand-in with logits and last_hidden_state outputs.
-std::shared_ptr<ov::Model> make_main_model(const std::vector<float>& weights_data) {
+std::shared_ptr<ov::Model> make_main_model(const std::vector<float>& weights_data,
+                                           bool matching_result_friendly_names = true) {
     auto embeds = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, HIDDEN});
     embeds->output(0).set_names({"inputs_embeds"});
 
@@ -35,18 +36,18 @@ std::shared_ptr<ov::Model> make_main_model(const std::vector<float>& weights_dat
 
     auto logits_result = std::make_shared<ov::op::v0::Result>(logits_matmul);
     logits_result->output(0).set_names({"logits"});
-    logits_result->set_friendly_name("logits");
+    logits_result->set_friendly_name(matching_result_friendly_names ? "logits" : "main_logits_result");
 
     auto hidden_result = std::make_shared<ov::op::v0::Result>(hidden);
     hidden_result->output(0).set_names({"last_hidden_state"});
-    hidden_result->set_friendly_name("last_hidden_state");
+    hidden_result->set_friendly_name(matching_result_friendly_names ? "last_hidden_state" : "main_hidden_result");
 
     return std::make_shared<ov::Model>(ov::ResultVector{logits_result, hidden_result},
                                        ov::ParameterVector{embeds});
 }
 
 // MTP stand-in: hidden_states -> last_hidden_state only.
-std::shared_ptr<ov::Model> make_mtp_model() {
+std::shared_ptr<ov::Model> make_mtp_model(bool matching_result_friendly_name = true) {
     auto hidden_states = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1, HIDDEN});
     hidden_states->output(0).set_names({"hidden_states"});
 
@@ -55,7 +56,7 @@ std::shared_ptr<ov::Model> make_mtp_model() {
 
     auto result = std::make_shared<ov::op::v0::Result>(out);
     result->output(0).set_names({"last_hidden_state"});
-    result->set_friendly_name("last_hidden_state");
+    result->set_friendly_name(matching_result_friendly_name ? "last_hidden_state" : "mtp_hidden_result");
 
     return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{hidden_states});
 }
@@ -109,6 +110,16 @@ TEST(MtpModelTransforms, ExtractTiedLmHeadWeight) {
     ASSERT_TRUE(weight.get_node());
     EXPECT_TRUE(transpose_weight);
     EXPECT_EQ(weight.get_partial_shape(), (ov::PartialShape{VOCAB, HIDDEN}));
+}
+
+TEST(MtpModelTransforms, FindsOutputsByResultTensorName) {
+    std::vector<float> weights_data(VOCAB * HIDDEN, 0.1f);
+    auto main_model = make_main_model(weights_data, false);
+    auto mtp_model = make_mtp_model(false);
+
+    bool transpose_weight = false;
+    EXPECT_TRUE(extract_tied_lm_head_weight(main_model, transpose_weight).get_node());
+    EXPECT_NO_THROW(graft_lm_head_on_mtp(mtp_model, main_model));
 }
 
 TEST(MtpModelTransforms, GraftLmHeadAddsLogitsResult) {

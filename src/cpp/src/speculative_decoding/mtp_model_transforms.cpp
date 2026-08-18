@@ -20,11 +20,9 @@ namespace {
 ov::Output<ov::Node> find_result_source(const std::shared_ptr<ov::Model>& model, const std::string& tensor_name) {
     for (const auto& result : model->get_results()) {
         const auto source = result->input_value(0);
-        const auto& names = source.get_names();
-        if (names.find(tensor_name) != names.end()) {
-            return source;
-        }
-        if (result->get_friendly_name() == tensor_name) {
+        if (result->output(0).get_names().count(tensor_name) != 0 ||
+            source.get_names().count(tensor_name) != 0 ||
+            result->get_friendly_name() == tensor_name) {
             return source;
         }
     }

@@ -3008,7 +3008,7 @@ TEST(TestScheduler, linear_attention_borrowed_release_keeps_committed_row) {
     orchestrator->free_sequence(seq_id);
 }
 
-// Shared-pool shortages must defer before reservation (ADR 0004 I4).
+// Shared-pool shortages must defer before reservation
 namespace {
 // Prompt-processes several sequences and leaves them ready for a speculative step.
 std::vector<SequenceGroup::Ptr> make_prompt_processed_sequence_groups(Scheduler& scheduler,
