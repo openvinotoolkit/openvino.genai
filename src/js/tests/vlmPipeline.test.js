@@ -169,17 +169,45 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
       "Number of tokens should be between 0 and max_new_tokens",
     );
     // VLM-specific properties
-    const prepareEmbeddings = result.perfMetrics.getPrepareEmbeddingsDuration();
+    const metricAndRawPairs = [
+      [
+        result.perfMetrics.getPrepareEmbeddingsDuration(),
+        result.perfMetrics.vlmRawMetrics.prepareEmbeddingsDurations,
+      ],
+      [
+        result.perfMetrics.getVisionEncodingDuration(),
+        result.perfMetrics.vlmRawMetrics.visionEncodingDurations,
+      ],
+      [
+        result.perfMetrics.getAudioEncodingDuration(),
+        result.perfMetrics.vlmRawMetrics.audioEncodingDurations,
+      ],
+      [
+        result.perfMetrics.getTextEmbeddingDuration(),
+        result.perfMetrics.vlmRawMetrics.textEmbeddingDurations,
+      ],
+    ];
+
+    for (const [metric, raw] of metricAndRawPairs) {
+      assert.ok(typeof metric.mean === "number", "Metric should have mean value");
+      assert.ok(Array.isArray(raw), "Raw metric should be an array");
+      assert.ok(raw.length > 0, "Raw metric should have at least one value");
+    }
+
+    const totalImageSliceCount = result.perfMetrics.getTotalImageSliceCount();
     assert.ok(
-      typeof prepareEmbeddings.mean === "number",
-      "PrepareEmbeddingsDuration should have mean",
+      typeof totalImageSliceCount === "number",
+      "Total image slice count should be a number",
     );
-    const { prepareEmbeddingsDurations } = result.perfMetrics.vlmRawMetrics;
+    const { perImageSliceCounts } = result.perfMetrics.vlmRawMetrics;
     assert.ok(
-      Array.isArray(prepareEmbeddingsDurations),
-      "Should have duration of preparation of embeddings",
+      Array.isArray(perImageSliceCounts),
+      "perImageSliceCounts raw metric should be an array",
     );
-    assert.ok(prepareEmbeddingsDurations.length > 0, "Should have at least one duration value");
+    assert.ok(
+      perImageSliceCounts.length > 0,
+      "perImageSliceCounts raw metric should have at least one value",
+    );
   });
 
   it("should get tokenizer from pipeline", () => {
