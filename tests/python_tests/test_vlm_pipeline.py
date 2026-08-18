@@ -885,6 +885,12 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == len(
             cb_vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations
         )
+        assert len(vlm_perf_metrics.vlm_raw_metrics.vision_encoder_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.vision_encoder_durations
+        )
+        assert len(vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations
+        )
 
         assert vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
         assert cb_vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
@@ -892,9 +898,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         if images or videos:
             assert vlm_perf_metrics.get_vision_encoder_duration().mean > 0
             assert cb_vlm_perf_metrics.get_vision_encoder_duration().mean > 0
-        else:
-            assert vlm_perf_metrics.get_vision_encoder_duration().mean == 0
-            assert cb_vlm_perf_metrics.get_vision_encoder_duration().mean == 0
 
         assert vlm_perf_metrics.get_text_embedding_duration().mean > 0
         assert cb_vlm_perf_metrics.get_text_embedding_duration().mean > 0
