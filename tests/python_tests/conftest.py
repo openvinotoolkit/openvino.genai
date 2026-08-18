@@ -85,7 +85,7 @@ DEFAULT_IMAGE_GEN_MODEL_ID = "tiny-random-latent-consistency"
 
 
 OPTIMUM_INTEL_MASTER = "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
-MODELS_REQUIRING_OPTIMUM_MASTER = {"tiny-random-flux.2-klein", "tiny-random-z-image-turbo"}
+MODELS_REQUIRING_OPTIMUM_MASTER = {"tiny-random-flux.2-klein"}
 
 
 def _install_package(package: str) -> None:
@@ -115,6 +115,7 @@ def image_generation_model(request):
     model_id = getattr(request, "param", DEFAULT_IMAGE_GEN_MODEL_ID)
     model_name = IMAGE_GEN_MODELS[model_id]
     models_dir = get_ov_cache_converted_models_dir()
+    print("MODELS DIR", models_dir)
     model_path = Path(models_dir) / model_id / model_name
 
     manager = AtomicDownloadManager(model_path)

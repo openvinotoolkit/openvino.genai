@@ -269,9 +269,6 @@ public:
 
         check_inputs(custom_generation_config, initial_image);
 
-        OPENVINO_ASSERT(custom_generation_config.height == 512 && custom_generation_config.width == 512,
-            "ZImagePipeline only supports fixed resolution of 512x512");
-
         std::shared_ptr<Generator> generator = custom_generation_config.generator;
         if (!generator) {
             OPENVINO_THROW("Generator must be provided for ZImagePipeline");
@@ -373,8 +370,8 @@ protected:
         m_generation_config.num_images_per_prompt = 1;
         m_generation_config.height = 512;
         m_generation_config.width = 512;
-        m_generation_config.num_inference_steps = 8;
-        m_generation_config.guidance_scale = 7.5f;
+        m_generation_config.num_inference_steps = 4;
+        m_generation_config.guidance_scale = 0.0f;
         m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.6f : 1.0f;
     }
 
