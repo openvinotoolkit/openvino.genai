@@ -159,7 +159,8 @@ def parse_args():
         "image-embedding - for creation of embedding for a list of texts and images, \n"
         "video-embedding - for creation of embedding for a list of texts and videos, \n"
         "speech-generation - for text to speech generation, \n"
-        "speech-recognition - for speech to text generation",
+        "speech-recognition - for speech to text generation, with native ASR models (FunASR) "
+        "or audio-capable multimodal models",
     )
     parser.add_argument(
         "--data-encoder",
@@ -414,8 +415,10 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="Speech-generation language code. This is currently used only for Kokoro. "
-        "If omitted, the default language used is 'en-us'.",
+        help="For speech-generation: language code, currently used only for Kokoro. "
+        "If omitted, the default language used is 'en-us'. \n"
+        "For speech-recognition: the language forced during transcription, in the form expected by the model "
+        "(for example 'en', 'zh', or 'ja' for FunASR). If omitted, English is used.",
     )
     parser.add_argument(
         "--speech-voice",
@@ -914,16 +917,6 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
     return speech, sample_rate, text
 
 
-def genai_gen_transcription(model, audio, prompt, max_new_tokens):
-    result = model.generate(
-        prompt,
-        audios=[ov.Tensor(np.asarray(audio, dtype=np.float32))],
-        do_sample=False,
-        max_new_tokens=max_new_tokens,
-    )
-    return result.texts[0]
-
-
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
     image_data = ov.Tensor(np.array(image)[None])
     mask_data = ov.Tensor(np.array(mask)[None])
@@ -1285,21 +1278,13 @@ def create_evaluator(base_model, args):
                 generation_config_extra=args.generation_config_extra,
             )
         elif task == "speech-recognition":
-            if args.genai:
-                processor = None
-                gen_answer_fn = genai_gen_transcription
-            else:
-                processor, _ = load_processor(args)
-                gen_answer_fn = None
             needs_audio = args.base_model is not None or args.target_model is not None
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
                 test_data=load_audio_dataset(args) if needs_audio else None,
-                processor=processor,
                 max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
-                gen_answer_fn=gen_answer_fn,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -1541,6 +1526,9 @@ def main():
     if args.model_type == "speech-generation" and args.vocoder_path is not None:
         kwargs["vocoder_path"] = args.vocoder_path
 
+    if args.model_type == "speech-recognition":
+        kwargs["speech_language"] = args.speech_language
+
     kwargs["llamacpp_n_ctx"] = args.llamacpp_n_ctx
 
     if args.base_model is not None:
@@ -1626,7 +1614,7 @@ def main():
         if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
             print_text_results(evaluator)
         elif args.model_type == "speech-recognition":
-            print_text_results(evaluator, metric="WER")
+            print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type
             or "image-to-image" in args.model_type
