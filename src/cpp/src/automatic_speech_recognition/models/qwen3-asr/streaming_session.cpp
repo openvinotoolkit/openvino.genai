@@ -112,6 +112,15 @@ ASRDecodedResults Qwen3ASRStreamingSessionImpl::finish() {
         decode_current_accum();
     }
 
+    // Flush any remaining partial tail so callers see a clean committed-only final result.
+    if (m_callback && !m_current_partial_text.empty()) {
+        m_current_committed_text += m_current_partial_text;
+        m_current_new_committed_text = std::move(m_current_partial_text);
+        m_current_partial_text = "";
+        m_callback({m_current_language, m_current_committed_text,
+                    m_current_new_committed_text, m_current_partial_text});
+    }
+
     ASRDecodedResults results;
     results.texts = {m_current_text};
     results.scores = {0.0f};
