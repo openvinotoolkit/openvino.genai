@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
     if (argc < 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] +
                                  " <MODEL_DIR> <WAV_FILE> [DEVICE] [CHUNK_SEC] [STEP_MS] "
-                                 "[--simulate-live] [--device DEVICE] [--chunk-sec SEC] [--step-ms MS]");
+                                 "[--device DEVICE] [--chunk-sec SEC] [--step-ms MS]");
     }
 
     const std::filesystem::path models_path = argv[1];
