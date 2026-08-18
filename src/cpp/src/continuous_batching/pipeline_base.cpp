@@ -367,17 +367,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         const auto vision_encoder_start = std::chrono::steady_clock::now();
         encoded_images = m_inputs_embedder->encode_images(images_vector[0]);
-        
-        vlm_utils::update_image_slice_counts(vlm_perf_metrics[0], encoded_images);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
         
         encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
-        
         const auto vision_encoder_end = std::chrono::steady_clock::now();
+
         vlm_perf_metrics[0].vlm_raw_metrics.vision_encoder_durations.emplace_back(
             PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
         );
+
+        vlm_utils::update_image_slice_counts(vlm_perf_metrics[0], encoded_images);
 
         // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
         if (!m_pending_audios_batches.empty() && !m_pending_audios_batches[0].empty()) {
@@ -445,16 +445,17 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             const auto vision_encoder_start = std::chrono::steady_clock::now();
             auto images_to_encode = images_vector.size() > 0 ? images_vector[i] : std::vector<ov::Tensor>{};
             const auto encoded_images = m_inputs_embedder->encode_images(images_to_encode);
-            vlm_utils::update_image_slice_counts(vlm_perf_metrics[i], encoded_images);
-
+            
             auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
             auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
             const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode, videos_metadata);
-
             const auto vision_encoder_end = std::chrono::steady_clock::now();
+            
             vlm_perf_metrics[i].vlm_raw_metrics.vision_encoder_durations.emplace_back(
                 PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
             );
+            
+            vlm_utils::update_image_slice_counts(vlm_perf_metrics[i], encoded_images);
 
             // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
             // encode_audios overwrites the embedder's audio cache, so this must run per-prompt.
