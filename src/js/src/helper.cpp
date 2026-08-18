@@ -768,6 +768,57 @@ ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(c
 }
 
 template <>
+ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(const Napi::Env& env,
+                                                                               const Napi::Value& value) {
+    ov::genai::OmniTalkerSpeechConfig config;
+    if (value.IsUndefined() || value.IsNull()) {
+        return config;
+    }
+    OPENVINO_ASSERT(value.IsObject(), "talkerSpeechConfig must be an object.");
+    const auto object = value.As<Napi::Object>();
+
+    if (const Napi::Value field = object.Get("return_audio"); !field.IsUndefined() && !field.IsNull()) {
+        OPENVINO_ASSERT(field.IsBoolean(), "talkerSpeechConfig.return_audio must be a boolean.");
+        config.return_audio = field.ToBoolean().Value();
+    }
+    if (const Napi::Value field = object.Get("speaker"); !field.IsUndefined() && !field.IsNull()) {
+        if (field.IsString()) {
+            config.speaker = js_to_cpp<std::string>(env, field);
+        } else {
+            config.speaker = js_to_cpp<ov::Tensor>(env, field);
+        }
+    }
+    if (const Napi::Value field = object.Get("audio_chunk_frames"); !field.IsUndefined() && !field.IsNull()) {
+        config.audio_chunk_frames = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("max_new_tokens"); !field.IsUndefined() && !field.IsNull()) {
+        config.max_new_tokens = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("rng_seed"); !field.IsUndefined() && !field.IsNull()) {
+        config.rng_seed = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("talker_temperature"); !field.IsUndefined() && !field.IsNull()) {
+        config.talker_temperature = js_to_cpp<float>(env, field);
+    }
+    if (const Napi::Value field = object.Get("talker_top_k"); !field.IsUndefined() && !field.IsNull()) {
+        config.talker_top_k = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("talker_repetition_penalty"); !field.IsUndefined() && !field.IsNull()) {
+        config.talker_repetition_penalty = js_to_cpp<float>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_temperature"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_temperature = js_to_cpp<float>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_top_k"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_top_k = js_to_cpp<size_t>(env, field);
+    }
+    if (const Napi::Value field = object.Get("cp_repetition_penalty"); !field.IsUndefined() && !field.IsNull()) {
+        config.cp_repetition_penalty = js_to_cpp<float>(env, field);
+    }
+    return config;
+}
+
+template <>
 ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
                                                                               const Napi::Value& value) {
     ov::genai::ImageGenerationConfig config;
@@ -1658,6 +1709,33 @@ Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDec
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
     obj.Set("finishReasons",
             cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
+    return obj;
+}
+
+Napi::Object to_omni_decoded_result(const Napi::Env& env, const ov::genai::OmniDecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
+    obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    obj.Set("finishReasons",
+            cpp_to_js<std::vector<ov::genai::GenerationFinishReason>, Napi::Value>(env, results.finish_reasons));
+
+    const ov::genai::TalkerResults& speech_result = results.speech_result;
+    Napi::Array waveforms = Napi::Array::New(env, speech_result.waveforms.size());
+    for (size_t i = 0; i < speech_result.waveforms.size(); ++i) {
+        waveforms[i] = cpp_to_js<ov::Tensor, Napi::Value>(env, speech_result.waveforms[i]);
+    }
+    Napi::Object speech_perf_metrics = Napi::Object::New(env);
+    speech_perf_metrics.Set(
+        "numGeneratedSamples",
+        cpp_to_js<size_t, Napi::Value>(env, speech_result.perf_metrics.num_generated_samples));
+    speech_perf_metrics.Set("generationTimeMs",
+                            cpp_to_js<float, Napi::Value>(env, speech_result.perf_metrics.generation_time_ms));
+    Napi::Object speech = Napi::Object::New(env);
+    speech.Set("waveforms", waveforms);
+    speech.Set("perfMetrics", speech_perf_metrics);
+    obj.Set("speechResult", speech);
     return obj;
 }
 

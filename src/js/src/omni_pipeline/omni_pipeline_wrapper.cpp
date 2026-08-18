@@ -1,0 +1,288 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "include/omni_pipeline/omni_pipeline_wrapper.hpp"
+
+#include <future>
+
+#include "include/addon.hpp"
+#include "include/helper.hpp"
+#include "include/omni_pipeline/init_worker.hpp"
+
+struct OmniTsfnContext {
+    OmniTsfnContext(VLMGenerateInputs inputs, std::shared_ptr<std::atomic<bool>> is_generating)
+        : inputs(std::move(inputs)),
+          is_generating(is_generating) {};
+    ~OmniTsfnContext() {};
+
+    std::thread native_thread;
+    Napi::ThreadSafeFunction callback;
+    std::optional<Napi::ThreadSafeFunction> streamer;
+    std::optional<Napi::ThreadSafeFunction> speech_streamer;
+
+    VLMGenerateInputs inputs;
+    std::vector<ov::Tensor> images;
+    std::vector<ov::Tensor> videos;
+    std::vector<ov::Tensor> audios;
+    ov::genai::GenerationConfig text_config;
+    ov::genai::OmniTalkerSpeechConfig talker_speech_config;
+    std::shared_ptr<std::atomic<bool>> is_generating;
+    std::shared_ptr<ov::genai::OmniPipeline> pipe = nullptr;
+};
+
+void omniPerformInferenceThread(OmniTsfnContext* context) {
+    auto report_error = [context](const std::string& message) {
+        auto status = context->callback.BlockingCall([message](Napi::Env env, Napi::Function jsCallback) {
+            try {
+                jsCallback.Call(
+                    {Napi::Error::New(env, "omniPerformInferenceThread error. " + message).Value(), env.Null()});
+            } catch (const std::exception& err) {
+                std::cerr << "The callback failed when attempting to return an error from omniPerformInferenceThread. "
+                             "Details:\n"
+                          << err.what() << std::endl;
+                std::cerr << "Original error message:\n" << message << std::endl;
+            }
+        });
+        if (status != napi_ok) {
+            std::cerr << "The BlockingCall failed with status " << status
+                      << " when trying to return an error from omniPerformInferenceThread." << std::endl;
+            std::cerr << "Original error message:\n" << message << std::endl;
+        }
+    };
+    auto finalize = [context]() {
+        context->callback.Release();
+        if (context->streamer.has_value()) {
+            context->streamer->Release();
+        }
+        if (context->speech_streamer.has_value()) {
+            context->speech_streamer->Release();
+        }
+    };
+    std::vector<std::string> streamer_exceptions;
+    ov::genai::OmniDecodedResults result;
+    try {
+        ov::genai::StreamerVariant streamer = std::monostate();
+        if (context->streamer.has_value()) {
+            streamer = [context, &streamer_exceptions](std::string word) {
+                std::promise<ov::genai::StreamingStatus> resultPromise;
+                napi_status status = context->streamer->BlockingCall(
+                    [word, &resultPromise, &streamer_exceptions](Napi::Env env, Napi::Function jsCallback) {
+                        try {
+                            auto callback_result = jsCallback.Call({Napi::String::New(env, word)});
+                            if (callback_result.IsNumber()) {
+                                resultPromise.set_value(static_cast<ov::genai::StreamingStatus>(
+                                    callback_result.As<Napi::Number>().Int32Value()));
+                            } else {
+                                resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
+                            }
+                        } catch (const std::exception& err) {
+                            streamer_exceptions.push_back(err.what());
+                            resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
+                        }
+                    });
+
+                if (status != napi_ok) {
+                    streamer_exceptions.push_back("The streamer callback BlockingCall failed with the status: " +
+                                                  status);
+                    return ov::genai::StreamingStatus::CANCEL;
+                }
+
+                return resultPromise.get_future().get();
+            };
+        }
+
+        ov::genai::OmniSpeechStreamerVariant speech_streamer = std::monostate();
+        if (context->speech_streamer.has_value()) {
+            speech_streamer = [context, &streamer_exceptions](const ov::Tensor& audio_chunk) {
+                std::promise<ov::genai::StreamingStatus> resultPromise;
+                napi_status status = context->speech_streamer->BlockingCall(
+                    [audio_chunk, &resultPromise, &streamer_exceptions](Napi::Env env, Napi::Function jsCallback) {
+                        try {
+                            auto callback_result =
+                                jsCallback.Call({cpp_to_js<ov::Tensor, Napi::Value>(env, audio_chunk)});
+                            if (callback_result.IsNumber()) {
+                                resultPromise.set_value(static_cast<ov::genai::StreamingStatus>(
+                                    callback_result.As<Napi::Number>().Int32Value()));
+                            } else {
+                                resultPromise.set_value(ov::genai::StreamingStatus::RUNNING);
+                            }
+                        } catch (const std::exception& err) {
+                            streamer_exceptions.push_back(err.what());
+                            resultPromise.set_value(ov::genai::StreamingStatus::CANCEL);
+                        }
+                    });
+
+                if (status != napi_ok) {
+                    streamer_exceptions.push_back(
+                        "The speech streamer callback BlockingCall failed with the status: " + status);
+                    return ov::genai::StreamingStatus::CANCEL;
+                }
+
+                return resultPromise.get_future().get();
+            };
+        }
+
+        const std::vector<ov::genai::VideoMetadata> videos_metadata;
+        std::visit(
+            overloaded{[&](const std::string& prompt) {
+                           result = context->pipe->generate(prompt,
+                                                            context->images,
+                                                            context->videos,
+                                                            videos_metadata,
+                                                            context->audios,
+                                                            context->text_config,
+                                                            context->talker_speech_config,
+                                                            streamer,
+                                                            speech_streamer);
+                       },
+                       [&](const ov::genai::ChatHistory& history) {
+                           result = context->pipe->generate(history,
+                                                            context->images,
+                                                            context->videos,
+                                                            videos_metadata,
+                                                            context->audios,
+                                                            context->text_config,
+                                                            context->talker_speech_config,
+                                                            streamer,
+                                                            speech_streamer);
+                       }},
+            context->inputs);
+
+    } catch (const std::exception& e) {
+        *context->is_generating = false;
+        report_error(e.what());
+        finalize();
+        return;
+    }
+    // should be called right after inference to release the flag asap
+    *context->is_generating = false;
+
+    // Call callback with result or error
+    try {
+        if (!streamer_exceptions.empty()) {
+            std::string combined_error = "Streamer exceptions occurred:\n";
+            for (size_t i = 0; i < streamer_exceptions.size(); ++i) {
+                combined_error += "[" + std::to_string(i + 1) + "] " + streamer_exceptions[i] + "\n";
+            }
+            report_error(combined_error);
+        } else {
+            napi_status status =
+                context->callback.BlockingCall([result, &report_error](Napi::Env env, Napi::Function jsCallback) {
+                    try {
+                        jsCallback.Call({
+                            env.Null(),
+                            to_omni_decoded_result(env, result),
+                        });
+                    } catch (const std::exception& err) {
+                        report_error("The final callback failed. Details:\n" + std::string(err.what()));
+                    }
+                });
+
+            if (status != napi_ok) {
+                report_error("The final BlockingCall failed with status " + status);
+            }
+        }
+    } catch (const std::exception& e) {
+        report_error(e.what());
+    }
+    finalize();
+}
+
+OmniPipelineWrapper::OmniPipelineWrapper(const Napi::CallbackInfo& info)
+    : Napi::ObjectWrap<OmniPipelineWrapper>(info) {};
+
+Napi::Function OmniPipelineWrapper::get_class(Napi::Env env) {
+    return DefineClass(env,
+                       "OmniPipeline",
+                       {InstanceMethod("init", &OmniPipelineWrapper::init),
+                        InstanceMethod("generate", &OmniPipelineWrapper::generate)});
+}
+
+Napi::Value OmniPipelineWrapper::init(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(!this->pipe, "Pipeline is already initialized");
+        OPENVINO_ASSERT(!*this->is_initializing, "Pipeline is already initializing");
+        VALIDATE_ARGS_COUNT(info, 4, "init()");
+        auto model_path = js_to_cpp<std::filesystem::path>(env, info[0]);
+        auto device = js_to_cpp<std::string>(env, info[1]);
+        auto properties = js_to_cpp<ov::AnyMap>(env, info[2]);
+        OPENVINO_ASSERT(info[3].IsFunction(), "init callback is not a function");
+        auto callback = info[3].As<Napi::Function>();
+
+        auto* asyncWorker = new OmniInitWorker(callback,
+                                               this->pipe,
+                                               this->is_initializing,
+                                               std::move(model_path),
+                                               std::move(device),
+                                               std::move(properties));
+        asyncWorker->Queue();
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
+
+Napi::Value OmniPipelineWrapper::generate(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "OmniPipeline is not initialized");
+        OPENVINO_ASSERT(!*this->is_generating, "Another generation is already in progress");
+        *this->is_generating = true;
+        VALIDATE_ARGS_COUNT(info, 9, "generate()");
+
+        // Arguments: prompt or ChatHistory, images, videos, audios, streamer, speechStreamer,
+        //            textConfig, talkerSpeechConfig, callback
+        auto inputs = js_to_cpp<VLMGenerateInputs>(env, info[0]);
+        auto images = js_to_cpp<std::vector<ov::Tensor>>(env, info[1]);
+        auto videos = js_to_cpp<std::vector<ov::Tensor>>(env, info[2]);
+        auto audios = js_to_cpp<std::vector<ov::Tensor>>(env, info[3]);
+        auto streamer = info[4];
+        OPENVINO_ASSERT(streamer.IsFunction() || streamer.IsUndefined(), "streamer must be a function or undefined");
+        auto speech_streamer = info[5];
+        OPENVINO_ASSERT(speech_streamer.IsFunction() || speech_streamer.IsUndefined(),
+                        "speechStreamer must be a function or undefined");
+        auto text_config = js_to_cpp<ov::genai::GenerationConfig>(env, info[6]);
+        auto talker_speech_config = js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(env, info[7]);
+        OPENVINO_ASSERT(info[8].IsFunction(), "generate callback is not a function");
+        auto callback = info[8].As<Napi::Function>();
+
+        auto* context = new OmniTsfnContext(std::move(inputs), this->is_generating);
+        context->images = std::move(images);
+        context->videos = std::move(videos);
+        context->audios = std::move(audios);
+        context->text_config = std::move(text_config);
+        context->talker_speech_config = std::move(talker_speech_config);
+        context->pipe = this->pipe;
+
+        context->callback =
+            Napi::ThreadSafeFunction::New(env,
+                                          callback,                     // JavaScript function called asynchronously
+                                          "Omni_generate_callback",     // Name
+                                          0,                            // Unlimited queue
+                                          1,                            // Only one thread will use this initially
+                                          [context, this](Napi::Env) {  // Finalizer used to clean threads up
+                                              context->native_thread.join();
+                                              delete context;
+                                          });
+        if (!streamer.IsUndefined()) {
+            context->streamer = Napi::ThreadSafeFunction::New(env,
+                                                              streamer.As<Napi::Function>(),
+                                                              "Omni_generate_streamer",
+                                                              0,
+                                                              1);
+        }
+        if (!speech_streamer.IsUndefined()) {
+            context->speech_streamer = Napi::ThreadSafeFunction::New(env,
+                                                                     speech_streamer.As<Napi::Function>(),
+                                                                     "Omni_generate_speech_streamer",
+                                                                     0,
+                                                                     1);
+        }
+        context->native_thread = std::thread(omniPerformInferenceThread, context);
+    } catch (const std::exception& ex) {
+        *this->is_generating = false;
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
