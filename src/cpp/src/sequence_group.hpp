@@ -1050,15 +1050,17 @@ public:
     }
 
     void notify_handle_oom() {
-        set_generation_status(GenerationStatus::IGNORED);
         stream_output();
+        set_generation_status(GenerationStatus::IGNORED);
+        push_empty_outputs();  // unblock any reader blocked in read() before the status change
     }
 
     // Push the final output for a finished group; must be called after set_perf_metrics() to close the metrics race.
     void notify_handle_final() {
         OPENVINO_ASSERT(has_finished());
-        set_generation_status(GenerationStatus::FINISHED);
         stream_output();
+        set_generation_status(GenerationStatus::FINISHED);
+        push_empty_outputs();  // unblock any reader blocked in read() before the status change
     }
 
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
@@ -1077,12 +1079,15 @@ public:
 
         if (last_token_position == get_prompt_len()) {
             output.finish_reason = GenerationFinishReason::LENGTH;
-            set_generation_status(GenerationStatus::FINISHED);
             m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
         }
         GenerationOutputs outputs;
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
+        if (last_token_position == get_prompt_len()) {
+            set_generation_status(GenerationStatus::FINISHED);
+            push_empty_outputs();  // unblock any reader blocked in read() before the status change
+        }
     }
 
     size_t get_max_new_tokens() const {
