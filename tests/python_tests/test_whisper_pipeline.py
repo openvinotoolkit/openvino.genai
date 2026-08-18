@@ -707,7 +707,6 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
 @pytest.mark.parametrize(
     "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True
 )
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio(sample_from_dataset, pipelines_fixture):
     hf_pipe, genai_pipe, model_id, pipeline_type = pipelines_fixture
 
@@ -1095,7 +1094,6 @@ def streamer_for_test(request):
     ),
     indirect=True,
 )
-@pytest.mark.xfail(sys.platform == "darwin", reason="Ticket - 182134", raises=AssertionError)
 def test_streamers(sample_from_dataset, pipelines_fixture, streamer_for_test):
     _, genai_pipe, model_id, _ = pipelines_fixture
 
