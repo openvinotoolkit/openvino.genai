@@ -484,22 +484,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         free_fork_timer.end();
     }
 
-    {
-        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
-        candidates_timer.start();
-        generate_candidates_for_prompt_lookup();
-        candidates_timer.end();
-    }
-
-    // Append embeddings for tokens produced in this step.
-    // Validation mode usually skips this because speculative validation reuses/rewinds
-    // candidate tokens instead of committing them here. prompt_lookup is the exception:
-    // it appends validation candidates after sampling and must keep embeddings in sync
-    // before the next scheduling/hash step.
-    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
-    }
-
     const auto step_end_time = std::chrono::steady_clock::now();
     for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
         const auto& request = m_requests.at(request_index);
@@ -515,7 +499,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                                      step_end_time);
     }
 
+    // notify handles before appending candidates: generated_ids must not include unvalidated draft tokens
     _notify_handles(scheduler_output);
+
+    {
+        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
+        candidates_timer.start();
+        generate_candidates_for_prompt_lookup();
+        candidates_timer.end();
+    }
+
+    // Append embeddings for tokens produced in this step.
+    // Validation mode usually skips this because speculative validation reuses/rewinds
+    // candidate tokens instead of committing them here. prompt_lookup is the exception:
+    // it appends validation candidates after sampling and must keep embeddings in sync
+    // before the next scheduling/hash step.
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     {
         static ManualTimer clean_up_requests_timer("free non running requests");
