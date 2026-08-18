@@ -37,7 +37,7 @@ public:
 
         bool needs_kv_cache_reset = false;
 
-        float vision_encoder_duration = 0.0f;
+        float vision_encoding_duration = 0.0f;
     };
 
     VLMChatContext(

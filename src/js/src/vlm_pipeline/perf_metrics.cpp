@@ -17,7 +17,7 @@ Napi::Function VLMPerfMetricsWrapper::get_class(Napi::Env env) {
         InstanceMethod("getPrepareEmbeddingsDuration", &VLMPerfMetricsWrapper::get_prepare_embeddings_duration)
     );
     properties.push_back(
-        InstanceMethod("getVisionEncoderDuration", &VLMPerfMetricsWrapper::get_vision_encoder_duration)
+        InstanceMethod("getVisionEncodingDuration", &VLMPerfMetricsWrapper::get_vision_encoding_duration)
     );
     properties.push_back(
         InstanceMethod("getTextEmbeddingDuration", &VLMPerfMetricsWrapper::get_text_embedding_duration)
@@ -43,9 +43,9 @@ Napi::Value VLMPerfMetricsWrapper::get_prepare_embeddings_duration(const Napi::C
     return perf_utils::create_mean_std_pair(info.Env(), _metrics.get_prepare_embeddings_duration());
 }
 
-Napi::Value VLMPerfMetricsWrapper::get_vision_encoder_duration(const Napi::CallbackInfo& info) {
-    VALIDATE_ARGS_COUNT(info, 0, "getVisionEncoderDuration()");
-    return perf_utils::create_mean_std_pair(info.Env(), _metrics.get_vision_encoder_duration());
+Napi::Value VLMPerfMetricsWrapper::get_vision_encoding_duration(const Napi::CallbackInfo& info) {
+    VALIDATE_ARGS_COUNT(info, 0, "getVisionEncodingDuration()");
+    return perf_utils::create_mean_std_pair(info.Env(), _metrics.get_vision_encoding_duration());
 }
 
 Napi::Value VLMPerfMetricsWrapper::get_text_embedding_duration(const Napi::CallbackInfo& info) {
@@ -73,10 +73,10 @@ Napi::Value VLMPerfMetricsWrapper::get_vlm_raw_metrics(const Napi::CallbackInfo&
     );
     
     obj.Set(
-        "visionEncoderDurations",
+        "visionEncodingDurations",
         cpp_to_js<std::vector<float>, Napi::Value>(
             info.Env(),
-            get_ms(_metrics.vlm_raw_metrics, &ov::genai::VLMRawPerfMetrics::vision_encoder_durations)
+            get_ms(_metrics.vlm_raw_metrics, &ov::genai::VLMRawPerfMetrics::vision_encoding_durations)
         )
     );
     

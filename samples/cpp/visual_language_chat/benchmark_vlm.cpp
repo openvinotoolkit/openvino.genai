@@ -158,7 +158,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "Tokenization time: " << metrics.get_tokenization_duration().mean << " ± " << metrics.get_tokenization_duration().std << " ms" << std::endl;
     std::cout << "Detokenization time: " << metrics.get_detokenization_duration().mean << " ± " << metrics.get_detokenization_duration().std << " ms" << std::endl;
     std::cout << "Embeddings preparation time: " << metrics.get_prepare_embeddings_duration().mean << " ± " << metrics.get_prepare_embeddings_duration().std << " ms" << std::endl;
-    std::cout << "  Vision encoding time: " << metrics.get_vision_encoder_duration().mean << " ± " << metrics.get_vision_encoder_duration().std << " ms" << std::endl;
+    std::cout << "  Vision encoding time: " << metrics.get_vision_encoding_duration().mean << " ± " << metrics.get_vision_encoding_duration().std << " ms" << std::endl;
     std::cout << "  Text embedding time: " << metrics.get_text_embedding_duration().mean << " ± " << metrics.get_text_embedding_duration().std << " ms" << std::endl;
     std::cout << "TTFT: " << metrics.get_ttft().mean  << " ± " << metrics.get_ttft().std << " ms" << std::endl;
     std::cout << "TPOT: " << metrics.get_tpot().mean  << " ± " << metrics.get_tpot().std << " ms/token " << std::endl;

@@ -885,8 +885,8 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == len(
             cb_vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations
         )
-        assert len(vlm_perf_metrics.vlm_raw_metrics.vision_encoder_durations) == len(
-            cb_vlm_perf_metrics.vlm_raw_metrics.vision_encoder_durations
+        assert len(vlm_perf_metrics.vlm_raw_metrics.vision_encoding_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.vision_encoding_durations
         )
         assert len(vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations) == len(
             cb_vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations
@@ -896,8 +896,8 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         assert cb_vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
 
         if images or videos:
-            assert vlm_perf_metrics.get_vision_encoder_duration().mean > 0
-            assert cb_vlm_perf_metrics.get_vision_encoder_duration().mean > 0
+            assert vlm_perf_metrics.get_vision_encoding_duration().mean > 0
+            assert cb_vlm_perf_metrics.get_vision_encoding_duration().mean > 0
 
         assert vlm_perf_metrics.get_text_embedding_duration().mean > 0
         assert cb_vlm_perf_metrics.get_text_embedding_duration().mean > 0
@@ -1423,11 +1423,11 @@ def test_perf_metrics(
 
     prepare_embeddings_mean = perf_metrics.get_prepare_embeddings_duration().mean
     assert 0 < prepare_embeddings_mean < generate_time
-    vision_encoder_mean = perf_metrics.get_vision_encoder_duration().mean
-    assert 0 < vision_encoder_mean < prepare_embeddings_mean
+    vision_encoding_mean = perf_metrics.get_vision_encoding_duration().mean
+    assert 0 < vision_encoding_mean < prepare_embeddings_mean
     text_embedding_mean = perf_metrics.get_text_embedding_duration().mean
     assert 0 < text_embedding_mean < prepare_embeddings_mean
-    assert 0 < vision_encoder_mean + text_embedding_mean < prepare_embeddings_mean
+    assert 0 < vision_encoding_mean + text_embedding_mean < prepare_embeddings_mean
 
     squared_generate_time = generate_time * generate_time
     assert 0 <= perf_metrics.get_ttft().std < squared_generate_time
@@ -1439,7 +1439,7 @@ def test_perf_metrics(
     assert 0 <= perf_metrics.get_tokenization_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_detokenization_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
-    assert 0 <= perf_metrics.get_vision_encoder_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_vision_encoding_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_text_embedding_duration().std < squared_generate_time
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
@@ -1447,7 +1447,7 @@ def test_perf_metrics(
 
     metrics_and_raw_pairs = [
         (perf_metrics.get_prepare_embeddings_duration(), vlm_raw_metrics.prepare_embeddings_durations),
-        (perf_metrics.get_vision_encoder_duration(), vlm_raw_metrics.vision_encoder_durations),
+        (perf_metrics.get_vision_encoding_duration(), vlm_raw_metrics.vision_encoding_durations),
         (perf_metrics.get_text_embedding_duration(), vlm_raw_metrics.text_embedding_durations),
     ]
 

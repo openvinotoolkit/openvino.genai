@@ -5392,8 +5392,8 @@ class VLMPerfMetrics(PerfMetrics):
         :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
         :type get_prepare_embeddings_duration: MeanStdPair
     
-        :param get_vision_encoder_duration: Returns mean and standard deviation of vision encoder duration in milliseconds
-        :type get_vision_encoder_duration: MeanStdPair
+        :param get_vision_encoding_duration: Returns mean and standard deviation of vision encoding duration in milliseconds
+        :type get_vision_encoding_duration: MeanStdPair
     
         :param get_text_embedding_duration: Returns mean and standard deviation of text embedding duration in milliseconds
         :type get_text_embedding_duration: MeanStdPair
@@ -5415,7 +5415,7 @@ class VLMPerfMetrics(PerfMetrics):
         Returns the total number of image slices processed for the request.
         An input image without explicit slicing metadata counts as one slice.
         """
-    def get_vision_encoder_duration(self) -> MeanStdPair:
+    def get_vision_encoding_duration(self) -> MeanStdPair:
         ...
     @property
     def vlm_raw_metrics(self) -> VLMRawPerfMetrics:
@@ -5792,10 +5792,10 @@ class VLMRawPerfMetrics:
         :param prepare_embeddings_durations: Durations of embeddings preparation.
         :type prepare_embeddings_durations: list[MicroSeconds]
     
-        :param vision_encoder_durations: Durations of vision encoder execution.
-        :type vision_encoder_durations: list[MicroSeconds]
+        :param vision_encoding_durations: Durations of vision encoding.
+        :type vision_encoding_durations: list[MicroSeconds]
     
-        :param text_embedding_durations: Durations of text embedding execution.
+        :param text_embedding_durations: Durations of text embedding.
         :type text_embedding_durations: list[MicroSeconds]
     
         :param per_image_slice_counts: Number of image slices processed for each input image.
@@ -5813,7 +5813,7 @@ class VLMRawPerfMetrics:
     def text_embedding_durations(self) -> list[float]:
         ...
     @property
-    def vision_encoder_durations(self) -> list[float]:
+    def vision_encoding_durations(self) -> list[float]:
         ...
 class VideoGenerationConfig:
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None

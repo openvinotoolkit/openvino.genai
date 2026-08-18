@@ -366,13 +366,13 @@ public:
         // TODO Wrap encode_audios with perf metrics as well
         m_inputs_embedder->encode_audios(audios);
 
-        const auto vision_encoder_start = std::chrono::steady_clock::now();
+        const auto vision_encoding_start = std::chrono::steady_clock::now();
         auto encoded_images = m_inputs_embedder->encode_images(images);
         auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
-        const auto vision_encoder_end = std::chrono::steady_clock::now();
+        const auto vision_encoding_end = std::chrono::steady_clock::now();
 
-        perf_metrics.vlm_raw_metrics.vision_encoder_durations.emplace_back(
-            PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start));
+        perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(
+            PerfMetrics::get_microsec(vision_encoding_end - vision_encoding_start));
 
         vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
 
@@ -503,10 +503,10 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
-        decoded.perf_metrics.vlm_raw_metrics.vision_encoder_durations.insert(
-            decoded.perf_metrics.vlm_raw_metrics.vision_encoder_durations.end(),
-            perf_metrics.vlm_raw_metrics.vision_encoder_durations.begin(),
-            perf_metrics.vlm_raw_metrics.vision_encoder_durations.end()
+        decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
         );
         decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(
             decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.end(),
@@ -577,7 +577,7 @@ public:
 
         auto processed_chat_data = chat_context.process(images, videos, videos_metadata);
 
-        perf_metrics.vlm_raw_metrics.vision_encoder_durations.emplace_back(processed_chat_data.vision_encoder_duration);
+        perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
 
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
@@ -671,10 +671,10 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
 
-        decoded.perf_metrics.vlm_raw_metrics.vision_encoder_durations.insert(
-            decoded.perf_metrics.vlm_raw_metrics.vision_encoder_durations.end(),
-            perf_metrics.vlm_raw_metrics.vision_encoder_durations.begin(),
-            perf_metrics.vlm_raw_metrics.vision_encoder_durations.end()
+        decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
         );
 
         decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(

@@ -184,7 +184,7 @@ def main():
     print(
         f"Embeddings preparation time: {perf_metrics.get_prepare_embeddings_duration().mean:.2f} ± {perf_metrics.get_prepare_embeddings_duration().std:.2f} ms")
     print(
-        f"  Vision encoding time: {perf_metrics.get_vision_encoder_duration().mean:.2f} ± {perf_metrics.get_vision_encoder_duration().std:.2f} ms"
+        f"  Vision encoding time: {perf_metrics.get_vision_encoding_duration().mean:.2f} ± {perf_metrics.get_vision_encoding_duration().std:.2f} ms"
     )
     print(
         f"  Text embedding time: {perf_metrics.get_text_embedding_duration().mean:.2f} ± {perf_metrics.get_text_embedding_duration().std:.2f} ms"
