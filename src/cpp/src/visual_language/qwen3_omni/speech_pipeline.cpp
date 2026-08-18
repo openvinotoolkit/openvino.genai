@@ -20,6 +20,19 @@
 
 namespace {
 
+/// @brief Compilation properties for one speech submodel.
+ov::AnyMap speech_compilation_props(const ov::AnyMap& properties,
+                                    const std::string& device,
+                                    bool force_fp32,
+                                    const std::string& model_name) {
+    ov::AnyMap props = properties;
+    if (force_fp32 && device.find("GPU") != std::string::npos) {
+        props[ov::hint::inference_precision.name()] = ov::element::f32;
+        GENAI_DEBUG("Speech: forcing f32 precision for %s on %s", model_name.c_str(), device.c_str());
+    }
+    return props;
+}
+
 ov::genai::StreamingStatus invoke_speech_streamer(const ov::genai::OmniSpeechStreamerVariant& streamer,
                                                   const ov::Tensor& chunk) {
     return std::visit(
@@ -93,22 +106,16 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
                                                  const std::string& device,
                                                  const ov::AnyMap& properties)
     : m_config(Qwen3OmniSpeechConfig::from_vlm_config(config)) {
-    // Load all 6 speech sub-models (all optional)
-    auto load_model = [&](const std::string& filename) -> ov::InferRequest {
+    // Load all 6 speech sub-models (all optional). See speech_compilation_props() for the
+    // per-submodel GPU precision rules.
+    auto load_model = [&](const std::string& filename, bool force_fp32 = false) -> ov::InferRequest {
         auto path = model_dir / (filename + ".xml");
         if (!std::filesystem::exists(path)) {
             return {};
         }
         auto model = utils::singleton_core().read_model(path);
 
-        // Force FP32 inference precision on GPU for talker models to match CPU behavior
-        // GPU FP16 causes numerical differences in logits → different sampled tokens → wrong speech length
-        ov::AnyMap compilation_props = properties;
-        if (device == "GPU" || device.find("GPU") == 0) {
-            compilation_props["INFERENCE_PRECISION_HINT"] = "f32";
-            GENAI_DEBUG("Speech: forcing FP32 precision for %s on GPU", filename.c_str());
-        }
-
+        auto compilation_props = speech_compilation_props(properties, device, force_fp32, filename);
         auto compiled = utils::singleton_core().compile_model(model, device, compilation_props);
         return compiled.create_infer_request();
     };
@@ -119,9 +126,49 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
     m_talker = load_model("openvino_talker_model");
     m_talker_text_embeddings = load_model("openvino_talker_text_embeddings_model");
     m_talker_projections = load_model("openvino_talker_projections_model");
-    m_code_predictor = load_model("openvino_code_predictor_model");
+    m_code_predictor = load_model("openvino_code_predictor_model", true);
     m_code2wav = load_model("openvino_code2wav_model");
 
+    initialize(model_dir);
+}
+
+Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const ModelsMap& models_map,
+                                                 const VLMConfig& config,
+                                                 const std::filesystem::path& config_dir_path,
+                                                 const std::map<std::string, std::string>& device_mapping,
+                                                 const std::string& default_device,
+                                                 const ov::AnyMap& properties)
+    : m_config(Qwen3OmniSpeechConfig::from_vlm_config(config)) {
+    // Compile each submodel from its in-memory IR + weights, placing it on the device named in
+    // device_mapping (falling back to default_device). Submodels absent from models_map stay empty
+    // and trip the availability check in initialize().
+    auto load_model = [&](const std::string& name, bool force_fp32 = false) -> ov::InferRequest {
+        auto it = models_map.find(name);
+        if (it == models_map.end()) {
+            return {};
+        }
+        const auto& [ir, weights] = it->second;
+        auto model = utils::singleton_core().read_model(ir, weights);
+
+        auto dev_it = device_mapping.find(name);
+        const std::string& device = dev_it != device_mapping.end() ? dev_it->second : default_device;
+
+        auto compilation_props = speech_compilation_props(properties, device, force_fp32, name);
+        auto compiled = utils::singleton_core().compile_model(model, device, compilation_props);
+        return compiled.create_infer_request();
+    };
+
+    m_thinker_text_embeddings = load_model("text_embeddings");
+    m_talker = load_model("talker");
+    m_talker_text_embeddings = load_model("talker_text_embeddings");
+    m_talker_projections = load_model("talker_projections");
+    m_code_predictor = load_model("code_predictor", true);
+    m_code2wav = load_model("code2wav");
+
+    initialize(config_dir_path);
+}
+
+void Qwen3OmniSpeechPipeline::initialize(const std::filesystem::path& config_dir) {
     // All speech models must be present for speech generation
     m_talker_available = m_talker && m_talker_text_embeddings && m_talker_projections && m_code_predictor &&
                          m_code2wav && m_thinker_text_embeddings;
@@ -175,9 +222,9 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
     }
 
     // Load talker and CodePredictor generation parameters from generation_config.json.
-    // CP defaults (1.0 / 50 / 1.0) match the reference Qwen3-Omni implementation; json keys
-    // cp_temperature / cp_top_k / cp_repetition_penalty may override them if present.
-    auto gen_config_path = model_dir / "generation_config.json";
+    // CP defaults (1.0 / 50) match the reference Qwen3-Omni implementation; json keys
+    // cp_temperature / cp_top_k may override them if present.
+    auto gen_config_path = config_dir / "generation_config.json";
     if (std::filesystem::exists(gen_config_path)) {
         std::ifstream f(gen_config_path);
         auto gen_data = nlohmann::json::parse(f);
@@ -187,16 +234,12 @@ Qwen3OmniSpeechPipeline::Qwen3OmniSpeechPipeline(const std::filesystem::path& mo
         utils::read_json_param(gen_data, "talker_max_new_tokens", m_config.talker_max_new_tokens);
         utils::read_json_param(gen_data, "cp_temperature", m_config.cp_temperature);
         utils::read_json_param(gen_data, "cp_top_k", m_config.cp_top_k);
-        utils::read_json_param(gen_data, "cp_repetition_penalty", m_config.cp_repetition_penalty);
         GENAI_INFO("Speech: talker params: temp=%.2f, top_k=%zu, rep_penalty=%.2f, max_tokens=%zu",
                     m_config.talker_temperature,
                     m_config.talker_top_k,
                     m_config.talker_repetition_penalty,
                     m_config.talker_max_new_tokens);
-        GENAI_INFO("Speech: code_predictor params: temp=%.2f, top_k=%zu, rep_penalty=%.2f",
-                    m_config.cp_temperature,
-                    m_config.cp_top_k,
-                    m_config.cp_repetition_penalty);
+        GENAI_INFO("Speech: code_predictor params: temp=%.2f, top_k=%zu", m_config.cp_temperature, m_config.cp_top_k);
     }
 
     // Detect vocab_size from talker logits output and build suppress_tokens list
@@ -753,13 +796,6 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
         talker_speech_config.talker_repetition_penalty.value_or(m_config.talker_repetition_penalty);
     const float cp_temp = talker_speech_config.cp_temperature.value_or(m_config.cp_temperature);
     const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
-    if (talker_speech_config.cp_repetition_penalty) {
-        // The single-step CodePredictor graph samples in-graph (Gumbel-max) and exposes only
-        // step / seed / temperature / top_k, so a per-call repetition-penalty override has no
-        // effect. Warn once so users don't silently assume it took.
-        GENAI_WARN("Speech: cp_repetition_penalty override is ignored — the CodePredictor model "
-                   "samples in-graph and has no repetition-penalty input.");
-    }
 
     const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
     OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
@@ -861,6 +897,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
 
     // Streaming cursor: index into all_codes for next chunk start
     size_t chunk_cursor = 0;
+    std::vector<ov::Tensor> streamed_chunks;
 
     auto trailing_len = trailing_text_hidden.get_shape()[1];
     size_t trailing_idx = 0;
@@ -950,6 +987,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
             auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
             auto chunk_wav = codes_to_wav(chunk_tensor);
             chunk_cursor = all_codes.size();
+            streamed_chunks.push_back(chunk_wav);
 
             auto status = invoke_speech_streamer(audio_streamer, chunk_wav);
             if (status == StreamingStatus::STOP || status == StreamingStatus::CANCEL) {
@@ -961,13 +999,10 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
             }
         }
 
-        // Build next talker input: sum of all codec representations + trailing text
-        auto first_code_embed = embed_talker_token(first_code);
         auto* next_data = next_input.data<float>();
-        auto* fc_data = first_code_embed.data<float>();
         auto* cp_data = cp_embed_sum.data<float>();
         for (size_t i = 0; i < hidden_size; i++) {
-            next_data[i] = fc_data[i] + cp_data[i];
+            next_data[i] = cp_data[i];
         }
 
         if (trailing_idx < trailing_len) {
@@ -1000,6 +1035,7 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     if (streaming && chunk_cursor < all_codes.size() && !early_stop) {
         auto chunk_tensor = stack_codes_range(chunk_cursor, all_codes.size());
         auto chunk_wav = codes_to_wav(chunk_tensor);
+        streamed_chunks.push_back(chunk_wav);
         invoke_speech_streamer(audio_streamer, chunk_wav);
     }
 
@@ -1015,6 +1051,25 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     if (all_codes.empty()) {
         GENAI_WARN("Speech: no codes generated");
         return build_result(ov::Tensor{});
+    }
+
+    if (streaming) {
+        size_t total_samples = 0;
+        for (const auto& chunk : streamed_chunks) {
+            total_samples += chunk.get_size();
+        }
+        if (total_samples == 0) {
+            return build_result(ov::Tensor{});
+        }
+        ov::Tensor full_wav(ov::element::f32, {1, 1, total_samples});
+        auto* dst = full_wav.data<float>();
+        for (const auto& chunk : streamed_chunks) {
+            std::memcpy(dst, chunk.data<float>(), chunk.get_size() * sizeof(float));
+            dst += chunk.get_size();
+        }
+        GENAI_INFO("Speech: %zu codec steps generated, %zu streamed chunks -> %zu samples",
+                   all_codes.size(), streamed_chunks.size(), total_samples);
+        return build_result(std::move(full_wav));
     }
 
     GENAI_INFO("Speech: %zu codec steps generated, converting to waveform...", all_codes.size());

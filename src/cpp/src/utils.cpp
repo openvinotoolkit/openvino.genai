@@ -35,9 +35,7 @@ const std::string SDPA_BACKEND = "SDPA";
 namespace {
 
 void update_config(ov::AnyMap& config, const std::pair<std::string, ov::Any>& pair) {
-    if (config.count(pair.first) == 0) {
-        config.insert(pair);
-    }
+    ov::genai::utils::set_config_default(config, pair.first, pair.second);
 }
 
 void rename_key(ov::AnyMap& config, const std::string& old_key, const std::string& new_key) {
@@ -253,6 +251,42 @@ bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
     }
 
     return false;
+}
+
+void set_config_default(ov::AnyMap& config, const std::string& key, ov::Any value) {
+    if (config.count(key) == 0) {
+        config.emplace(key, std::move(value));
+    }
+}
+
+bool is_npuw_enabled(const ov::AnyMap& config) {
+    constexpr const char* npu_use_npuw = "NPU_USE_NPUW";
+    constexpr const char* yes = "YES";
+    constexpr const char* no = "NO";
+
+    auto it = config.find(npu_use_npuw);
+    if (it == config.end()) {
+        return false;
+    }
+
+    const ov::Any& value = it->second;
+    if (value.is<bool>()) {
+        return value.as<bool>();
+    }
+
+    if (value.is<std::string>()) {
+        const std::string str_value = value.as<std::string>();
+        if (str_value == yes) {
+            return true;
+        }
+        if (str_value == no) {
+            return false;
+        }
+
+        OPENVINO_THROW("'", npu_use_npuw, "' must be '", yes, "' or '", no, "', got '", str_value, "'");
+    }
+
+    OPENVINO_THROW("'", npu_use_npuw, "' must be bool or string, got type: ", value.type_info().name());
 }
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
@@ -803,6 +837,31 @@ size_t get_npu_kv_cache_capacity(const ov::CompiledModel& compiled_model) {
     return max_prompt_len + min_response_len - max_generation_token_len;
 }
 
+ov::element::Type get_compiled_kv_cache_precision(const ov::CompiledModel& compiled_model) {
+    std::optional<ov::element::Type> kv_cache_precision;
+    for (const auto& input : compiled_model.inputs()) {
+        for (const auto& name : input.get_names()) {
+            if (name.find("key_cache.") == 0 || name.find("value_cache.") == 0) {
+                const ov::element::Type precision = input.get_element_type();
+                OPENVINO_ASSERT(!kv_cache_precision || *kv_cache_precision == precision,
+                                "Non-uniform KV cache precision across cache inputs is not supported: got ",
+                                *kv_cache_precision,
+                                " and ",
+                                precision,
+                                " for input '",
+                                name,
+                                "'");
+                kv_cache_precision = precision;
+                break;
+            }
+        }
+    }
+    OPENVINO_ASSERT(
+        kv_cache_precision,
+        "Compiled model does not expose key_cache/value_cache inputs required to determine KV cache precision");
+    return *kv_cache_precision;
+}
+
 std::optional<ov::Any> pop_option(ov::AnyMap& config, const std::string& option_name) {
     if (auto it = config.find(option_name); it != config.end()) {
         std::optional<ov::Any> found = std::make_optional(it->second);
@@ -830,6 +889,7 @@ void validate_vlm_model_properties(const ov::AnyMap& properties) {
         "vision_embeddings_pos",
         "vision_projection",
         "multi_modal_projector",
+        "audio_encoder",
         "language_model",
     };
     const auto it = properties.find(PER_MODEL_PROPERTIES);

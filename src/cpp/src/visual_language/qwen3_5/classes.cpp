@@ -9,9 +9,12 @@ namespace ov::genai {
 InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
     const VLMConfig& vlm_config,
     const std::filesystem::path& model_dir,
+    const Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen3VL(vlm_config, model_dir, device, device_config) {}
+) : InputsEmbedderQwen3VL(vlm_config, model_dir, tokenizer, device, device_config) {
+    patch_chat_template();
+}
 
 InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
     const VLMConfig& vlm_config,
@@ -20,7 +23,20 @@ InputsEmbedderQwen3_5::InputsEmbedderQwen3_5(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config
-) : InputsEmbedderQwen3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+) : InputsEmbedderQwen3VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    patch_chat_template();
+}
+
+void InputsEmbedderQwen3_5::patch_chat_template() {
+    std::string patched_chat_template = m_tokenizer.get_chat_template();
+    // minja does not support "undefined" keyword for "is" operator:
+    // e.g. "if enable_thinking is undefined" in Qwen3.8 chat template.
+    // Replace with supported syntax "not var is defined"
+    const std::regex var_is_undefined_pattern{R"((\b[\w\.]+)\s+is\s+undefined)"};
+    patched_chat_template = std::regex_replace(patched_chat_template, var_is_undefined_pattern, "not $1 is defined");
+
+    m_tokenizer.set_chat_template(patched_chat_template);
+}
 
 std::pair<ov::Tensor, int64_t> InputsEmbedderQwen3_5::create_position_ids(
     const ov::Tensor& input_ids_tensor,

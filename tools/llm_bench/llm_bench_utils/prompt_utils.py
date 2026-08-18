@@ -7,6 +7,7 @@ import os
 import numpy as np
 from PIL import Image
 import logging as log
+import librosa
 from transformers.image_utils import load_image
 from .model_utils import get_param_from_file, resolve_media_file_path
 from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data
@@ -97,8 +98,19 @@ def load_image_genai(image_path):
     return ov.Tensor(image_data)
 
 
+def load_audio_genai(audio_path):
+    # GenAI pipelines expect a 16 kHz mono waveform tensor.
+    audio_data, _ = librosa.load(audio_path, sr=16000, mono=True)
+    return ov.Tensor(audio_data.astype(np.float32))
+
+
+def load_audio_optimum(audio_path):
+    # Optimum processors resample internally; return (array, native_rate).
+    return librosa.load(audio_path, sr=None, mono=True)
+
+
 def extract_prompt_data(inputs, required_frames, genai_flag):
-    prompts, images, videos = [], [], []
+    prompts, images, videos, audios = [], [], [], []
     if not isinstance(inputs, (list, tuple, set)):
         inputs = [inputs]
     for input_data in inputs:
@@ -121,8 +133,11 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
             else:
                 img = func_load_image(input_data["media"])
                 images.append(img)
-        prompts.append(input_data["prompt"])
-    return prompts, images, videos
+        if input_data.get("audio") is not None:
+            func_load_audio = load_audio_genai if genai_flag else load_audio_optimum
+            audios.append(func_load_audio(str(input_data["audio"])))
+        prompts.append(input_data.get("prompt", ""))
+    return prompts, images, videos, audios
 
 
 def get_vlm_prompt(args):
@@ -140,6 +155,21 @@ def get_vlm_prompt(args):
     else:
         vlm_file_list.append(output_data_list)
     return vlm_file_list
+
+
+def get_text_embed_prompt(args):
+    output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
+    if not is_json_data:
+        return [output_data_list[0]]
+
+    result = []
+    for vlm_file in parse_vlm_json_data(output_data_list, optional_prompt=True):
+        if args["prompt_file"] and "media" in vlm_file:
+            vlm_file["media"] = resolve_media_file_path(vlm_file.get("media"), args["prompt_file"][0])
+        if args["prompt_file"] and "video" in vlm_file:
+            vlm_file["video"] = resolve_media_file_path(vlm_file.get("video"), args["prompt_file"][0])
+        result.append(vlm_file)
+    return result
 
 
 def get_image_prompt(args):

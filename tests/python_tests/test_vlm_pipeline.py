@@ -158,6 +158,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
         "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        "optimum-intel-internal-testing/tiny-random-muse-glimmer",
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
         "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
@@ -166,6 +167,7 @@ else:
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
+MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -215,6 +217,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -230,6 +233,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -310,9 +314,17 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
+    if model_id == MODEL_QWEN3_OMNI and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Qwen3-Omni. Minimum required is 4.57.0."
+        )
     if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
+        )
+    if model_id == "optimum-intel-internal-testing/tiny-random-muse-glimmer" and is_transformers_version("<", "5.15.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
         )
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -2217,6 +2229,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if optimum_model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "muse_glimmer":
+            processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
@@ -2292,6 +2306,9 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
+    # muse glimmer
+    "*tiny-random-muse-glimmer/*/CPP/image*": "CVS-192673",
+    "*tiny-random-muse-glimmer/*/CPP/video*": "CVS-192673",
     # gemma3n cases
     "*tiny-random-gemma3n/PA/CPP/image*": "CVS-190429",
     "*tiny-random-gemma3n/SDPA/CPP/image*": "CVS-190429",
@@ -3248,4 +3265,52 @@ def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_te
         f"VISION_POS_EMBEDS modes produced different results.\n"
         f"Default (patched model): '{result_default.texts[0]}'\n"
         f"CPP (CPU fallback):      '{result_cpp.texts[0]}'"
+    )
+
+
+def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
+    """Qwen3-Omni CPP and OV_REARRANGE preprocessing must produce identical generation results."""
+    try:
+        model_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    except AttributeError as error:
+        error_message = str(error)
+        if (
+            is_transformers_version(">=", "5.0")
+            and is_transformers_version("<", "5.1")
+            and "Qwen3OmniMoeTalkerCodePredictorConfig" in error_message
+            and "use_sliding_window" in error_message
+        ):
+            # Transformers 5.0 generated this config with an uninitialized
+            # use_sliding_window reference. The optimum-intel revision pinned by CI
+            # predates its workaround. Mark only this known export failure as expected;
+            # once either dependency fixes it, export succeeds and this test runs normally.
+            pytest.xfail(
+                "Known Transformers 5.0.x Qwen3-Omni config initialization bug; "
+                "the optimum-intel revision pinned by CI does not contain its workaround"
+            )
+        raise
+
+    previous_value = os.environ.get("VISION_PREPROCESS")
+    results = {}
+
+    try:
+        for mode in ("CPP", "OV_REARRANGE"):
+            os.environ["VISION_PREPROCESS"] = mode
+            pipeline = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="SDPA")
+            generation_config = GenerationConfig()
+            generation_config.max_new_tokens = 20
+            generation_config.do_sample = False
+            results[mode] = pipeline.generate(
+                PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+            ).texts[0]
+    finally:
+        if previous_value is None:
+            os.environ.pop("VISION_PREPROCESS", None)
+        else:
+            os.environ["VISION_PREPROCESS"] = previous_value
+
+    assert results["CPP"] == results["OV_REARRANGE"], (
+        "Qwen3-Omni vision preprocessing modes produced different results.\n"
+        f"CPP:          '{results['CPP']}'\n"
+        f"OV_REARRANGE: '{results['OV_REARRANGE']}'"
     )
