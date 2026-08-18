@@ -16,6 +16,11 @@ MeanStdPair VLMPerfMetrics::get_vision_encoding_duration() {
     return vision_encoding_duration;
 }
 
+MeanStdPair VLMPerfMetrics::get_audio_encoding_duration() {
+    evaluate_statistics();
+    return audio_encoding_duration;
+}
+
 MeanStdPair VLMPerfMetrics::get_text_embedding_duration() {
     evaluate_statistics();
     return text_embedding_duration;
@@ -33,6 +38,7 @@ void VLMPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
 
     prepare_embeddings_duration = ov::genai::calc_mean_and_std(vlm_raw_metrics.prepare_embeddings_durations);
     vision_encoding_duration = ov::genai::calc_mean_and_std(vlm_raw_metrics.vision_encoding_durations);
+    audio_encoding_duration = ov::genai::calc_mean_and_std(vlm_raw_metrics.audio_encoding_durations);
     text_embedding_duration = ov::genai::calc_mean_and_std(vlm_raw_metrics.text_embedding_durations);
 
     total_image_slice_count = 0;
@@ -62,6 +68,14 @@ VLMPerfMetrics VLMPerfMetrics::operator+(const VLMPerfMetrics& right) const {
         result_vision_encoding_durations.end(),
         right_vision_encoding_durations.begin(),
         right_vision_encoding_durations.end()
+    );
+
+    auto& result_audio_encoding_durations = result.vlm_raw_metrics.audio_encoding_durations;
+    auto& right_audio_encoding_durations = right.vlm_raw_metrics.audio_encoding_durations;
+    result_audio_encoding_durations.insert(
+        result_audio_encoding_durations.end(),
+        right_audio_encoding_durations.begin(),
+        right_audio_encoding_durations.end()
     );
 
     auto& result_text_embedding_durations = result.vlm_raw_metrics.text_embedding_durations;

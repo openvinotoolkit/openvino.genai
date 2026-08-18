@@ -5395,6 +5395,9 @@ class VLMPerfMetrics(PerfMetrics):
         :param get_vision_encoding_duration: Returns mean and standard deviation of vision encoding duration in milliseconds
         :type get_vision_encoding_duration: MeanStdPair
     
+        :param get_audio_encoding_duration: Returns mean and standard deviation of audio encoding duration in milliseconds
+        :type get_audio_encoding_duration: MeanStdPair
+    
         :param get_text_embedding_duration: Returns mean and standard deviation of text embedding duration in milliseconds
         :type get_text_embedding_duration: MeanStdPair
     
@@ -5405,6 +5408,8 @@ class VLMPerfMetrics(PerfMetrics):
         :type VLMRawPerfMetrics:
     """
     def __init__(self) -> None:
+        ...
+    def get_audio_encoding_duration(self) -> MeanStdPair:
         ...
     def get_prepare_embeddings_duration(self) -> MeanStdPair:
         ...
@@ -5795,6 +5800,9 @@ class VLMRawPerfMetrics:
         :param vision_encoding_durations: Durations of vision encoding.
         :type vision_encoding_durations: list[MicroSeconds]
     
+        :param audio_encoding_durations: Durations of audio encoding.
+        :type audio_encoding_durations: list[MicroSeconds]
+    
         :param text_embedding_durations: Durations of text embedding.
         :type text_embedding_durations: list[MicroSeconds]
     
@@ -5802,6 +5810,9 @@ class VLMRawPerfMetrics:
         :type per_image_slice_counts: list[int]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def audio_encoding_durations(self) -> list[float]:
         ...
     @property
     def per_image_slice_counts(self) -> list[int]:

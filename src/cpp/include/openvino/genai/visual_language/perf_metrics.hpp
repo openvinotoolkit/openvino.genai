@@ -15,6 +15,8 @@ struct OPENVINO_GENAI_EXPORTS VLMRawPerfMetrics {
     std::vector<MicroSeconds> prepare_embeddings_durations;
     /** @brief Duration of vision encoding */
     std::vector<MicroSeconds> vision_encoding_durations;
+    /** @brief Duration of audio encoding */
+    std::vector<MicroSeconds> audio_encoding_durations;
     /** @brief Duration of text embedding */
     std::vector<MicroSeconds> text_embedding_durations;
     /** @brief Number of image slices produced for each input image */
@@ -26,6 +28,8 @@ struct OPENVINO_GENAI_EXPORTS VLMPerfMetrics : public PerfMetrics {
     MeanStdPair prepare_embeddings_duration;
     /** @brief Mean and standard deviation of vision encoding in milliseconds */
     MeanStdPair vision_encoding_duration;
+    /** @brief Mean and standard deviation of audio encoding in milliseconds */
+    MeanStdPair audio_encoding_duration;
     /** @brief Mean and standard deviation of text embedding in milliseconds */
     MeanStdPair text_embedding_duration;
     /** @brief Total number of image slices produced for the request */
@@ -33,6 +37,7 @@ struct OPENVINO_GENAI_EXPORTS VLMPerfMetrics : public PerfMetrics {
 
     MeanStdPair get_prepare_embeddings_duration();
     MeanStdPair get_vision_encoding_duration();
+    MeanStdPair get_audio_encoding_duration();
     MeanStdPair get_text_embedding_duration();
     size_t get_total_image_slice_count();
 

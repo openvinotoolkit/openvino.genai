@@ -363,8 +363,13 @@ public:
                                                            generation_config.relevance_weight);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
-        // TODO Wrap encode_audios with perf metrics as well
+        
+        const auto audio_encoding_start = std::chrono::steady_clock::now();
         m_inputs_embedder->encode_audios(audios);
+        const auto audio_encoding_end = std::chrono::steady_clock::now();
+        perf_metrics.vlm_raw_metrics.audio_encoding_durations.emplace_back(
+            PerfMetrics::get_microsec(audio_encoding_end - audio_encoding_start)
+        );
 
         const auto vision_encoding_start = std::chrono::steady_clock::now();
         auto encoded_images = m_inputs_embedder->encode_images(images);
@@ -503,16 +508,25 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
+
         decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.insert(
             decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
             perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
             perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
         );
+
+        decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.end()
+        );
+
         decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(
             decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.end(),
             perf_metrics.vlm_raw_metrics.text_embedding_durations.begin(),
             perf_metrics.vlm_raw_metrics.text_embedding_durations.end()
         );
+        
         decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
             decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
             perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
@@ -675,6 +689,12 @@ public:
             decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
             perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
             perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.end()
         );
 
         decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(

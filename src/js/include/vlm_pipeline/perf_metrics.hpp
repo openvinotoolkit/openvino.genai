@@ -17,6 +17,7 @@ public:
 
     Napi::Value get_prepare_embeddings_duration(const Napi::CallbackInfo& info);
     Napi::Value get_vision_encoding_duration(const Napi::CallbackInfo& info);
+    Napi::Value get_audio_encoding_duration(const Napi::CallbackInfo& info);
     Napi::Value get_text_embedding_duration(const Napi::CallbackInfo& info);
     Napi::Value get_total_image_slice_count(const Napi::CallbackInfo& info);
     Napi::Value get_raw_metrics(const Napi::CallbackInfo& info);

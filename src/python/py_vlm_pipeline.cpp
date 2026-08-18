@@ -113,6 +113,9 @@ auto raw_perf_metrics_docstring = R"(
     :param vision_encoding_durations: Durations of vision encoding.
     :type vision_encoding_durations: list[MicroSeconds]
 
+    :param audio_encoding_durations: Durations of audio encoding.
+    :type audio_encoding_durations: list[MicroSeconds]
+
     :param text_embedding_durations: Durations of text embedding.
     :type text_embedding_durations: list[MicroSeconds]
 
@@ -128,6 +131,9 @@ auto perf_metrics_docstring = R"(
 
     :param get_vision_encoding_duration: Returns mean and standard deviation of vision encoding duration in milliseconds
     :type get_vision_encoding_duration: MeanStdPair
+
+    :param get_audio_encoding_duration: Returns mean and standard deviation of audio encoding duration in milliseconds
+    :type get_audio_encoding_duration: MeanStdPair
 
     :param get_text_embedding_duration: Returns mean and standard deviation of text embedding duration in milliseconds
     :type get_text_embedding_duration: MeanStdPair
@@ -278,6 +284,9 @@ void init_vlm_pipeline(py::module_& m) {
         .def_property_readonly("vision_encoding_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::vision_encoding_durations);
         })
+        .def_property_readonly("audio_encoding_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::audio_encoding_durations);
+        })
         .def_property_readonly("text_embedding_durations", [](const ov::genai::VLMRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &ov::genai::VLMRawPerfMetrics::text_embedding_durations);
         })
@@ -287,6 +296,7 @@ void init_vlm_pipeline(py::module_& m) {
         .def(py::init<>())
         .def("get_prepare_embeddings_duration", &ov::genai::VLMPerfMetrics::get_prepare_embeddings_duration)
         .def("get_vision_encoding_duration", &ov::genai::VLMPerfMetrics::get_vision_encoding_duration)
+        .def("get_audio_encoding_duration", &ov::genai::VLMPerfMetrics::get_audio_encoding_duration)
         .def("get_text_embedding_duration", &ov::genai::VLMPerfMetrics::get_text_embedding_duration)
         .def("get_total_image_slice_count", &ov::genai::VLMPerfMetrics::get_total_image_slice_count,
              R"(Returns the total number of image slices processed for the request.

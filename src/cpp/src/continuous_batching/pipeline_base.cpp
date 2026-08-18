@@ -382,8 +382,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
         if (!m_pending_audios_batches.empty() && !m_pending_audios_batches[0].empty()) {
             std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-            // TODO Wrap encode_audios with perf metrics as well
+            const auto audio_encoding_start = std::chrono::steady_clock::now();
             m_inputs_embedder->encode_audios(m_pending_audios_batches[0]);
+            const auto audio_encoding_end = std::chrono::steady_clock::now();
+            vlm_perf_metrics[0].vlm_raw_metrics.audio_encoding_durations.emplace_back(
+                PerfMetrics::get_microsec(audio_encoding_end - audio_encoding_start)
+            );
         }
 
         auto [unified_prompt, image_sequence, video_sequence] =
@@ -461,8 +465,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             // encode_audios overwrites the embedder's audio cache, so this must run per-prompt.
             if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
                 std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-                // TODO Wrap encode_audios with perf metrics as well
+                const auto audio_encoding_start = std::chrono::steady_clock::now();
                 m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
+                const auto audio_encoding_end = std::chrono::steady_clock::now();
+                vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations.emplace_back(
+                    PerfMetrics::get_microsec(audio_encoding_end - audio_encoding_start)
+                );
             }
 
             auto [unified_prompt, image_sequence, video_sequence] =
@@ -683,7 +691,12 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // encode_audios overwrites the embedder's audio cache, so this must run per-history.
         if (i < m_pending_audios_batches.size() && !m_pending_audios_batches[i].empty()) {
             std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+            const auto audio_encoding_start = std::chrono::steady_clock::now();
             m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
+            const auto audio_encoding_end = std::chrono::steady_clock::now();
+            vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations.emplace_back(
+                PerfMetrics::get_microsec(audio_encoding_end - audio_encoding_start)
+            );
         }
 
         VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
