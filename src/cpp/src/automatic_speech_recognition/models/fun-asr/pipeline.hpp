@@ -31,7 +31,7 @@ private:
     std::unique_ptr<FunASREncoder> m_encoder;
     std::unique_ptr<Qwen3ASRDecoder> m_decoder;
     std::mutex m_tokenized_instructions_mutex;
-    std::unordered_map<std::string, TokenizedInstructions> m_tokenized_instructions;
+    std::unordered_map<std::optional<std::string>, TokenizedInstructions> m_tokenized_instructions;
 
     ov::Tensor build_input_ids(size_t num_audio_tokens, const ASRGenerationConfig& config);
     TokenizedInstructions get_tokenized_instructions(const ASRGenerationConfig& config);

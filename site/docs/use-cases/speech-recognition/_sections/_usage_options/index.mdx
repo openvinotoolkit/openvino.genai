@@ -150,14 +150,14 @@ Beam search support depends on the selected model architecture. Qwen3-ASR models
 
 ### Transcription
 
-ASR models can automatically detect the language of the input audio, or you can specify the language to improve accuracy. The detected (or specified) language is available in the result via the `languages` field:
+Language handling depends on the model architecture. Models with language identification support can automatically detect the language of the input audio. You can also specify the language to improve accuracy. The detected or specified language is available in the result via the `languages` field.
 
 <LanguageTabs>
     <TabItemPython>
         ```python
         pipe = ov_genai.ASRPipeline(model_path, "CPU")
 
-        # Automatic language detection
+        # Automatic language detection for models with language identification support
         raw_speech = read_wav("speech_sample.wav")
         result = pipe.generate(raw_speech)
         print(result.languages[0])  # e.g. "en", "fr", "de"
@@ -177,7 +177,7 @@ ASR models can automatically detect the language of the input audio, or you can 
         int main() {
             ov::genai::ASRPipeline pipe(model_path, "CPU");
 
-            // Automatic language detection
+            // Automatic language detection for models with language identification support
             auto result = pipe.generate(raw_speech);
             std::cout << result.languages[0] << "\n";  // e.g. "en", "fr", "de"
 
@@ -196,7 +196,7 @@ ASR models can automatically detect the language of the input audio, or you can 
         ```javascript
         const pipeline = await WhisperPipeline(modelPath, "CPU");
 
-        // Automatic language detection
+        // Automatic language detection for models with language identification support
         let result = await pipeline.generate(rawSpeech);
 
         // Explicitly specify language (English)
