@@ -4,6 +4,7 @@
 #pragma once
 
 #include "automatic_speech_recognition/pipeline_base.hpp"
+#include "automatic_speech_recognition/models/whisper/streaming_session.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "utils.hpp"
 
@@ -44,6 +45,12 @@ public:
             m_whisper_pipeline.generate(raw_speech, std::move(whisper_config), streamer_variant);
 
         return to_asr_results(std::move(whisper_result));
+    }
+
+    std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
+        const ASRStreamingConfig& streaming_config,
+        const ASRGenerationConfig& generation_config) override {
+        return std::make_unique<WhisperASRStreamingSessionImpl>(this, streaming_config, generation_config);
     }
 
 private:
