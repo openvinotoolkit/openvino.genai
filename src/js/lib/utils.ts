@@ -613,6 +613,4 @@ export type OmniTalkerSpeechConfig = {
   cp_temperature?: number;
   /** CodePredictor top-k override (must be >= 1 when set). */
   cp_top_k?: Uint;
-  /** CodePredictor repetition penalty override (must be > 0 when set; 1.0 = no penalty). */
-  cp_repetition_penalty?: number;
 };

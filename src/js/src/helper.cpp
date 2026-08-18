@@ -812,9 +812,6 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
     if (const Napi::Value field = object.Get("cp_top_k"); !field.IsUndefined() && !field.IsNull()) {
         config.cp_top_k = js_to_cpp<size_t>(env, field);
     }
-    if (const Napi::Value field = object.Get("cp_repetition_penalty"); !field.IsUndefined() && !field.IsNull()) {
-        config.cp_repetition_penalty = js_to_cpp<float>(env, field);
-    }
     return config;
 }
 
