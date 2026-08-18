@@ -786,56 +786,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     return results;
 }
 
-// TODO Check if this override can fallback to the other add_request overloads to avoid code duplication
 GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     uint64_t request_id,
     const std::string& prompt,
-    const std::vector<ov::Tensor>& rgbs,
-    GenerationConfig sampling_params) {
-    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
-    ov::genai::VLMPerfMetrics metrics;
-    ov::Tensor inputs;
-    std::optional<ov::Tensor> token_type_ids;
-    // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
-    std::optional<ov::Tensor> prompt_ids;
-    GenerationHandle handle;
-    {
-        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
-        const auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
-
-        const auto vision_encoder_start = std::chrono::steady_clock::now();
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
-        vlm_utils::update_image_slice_counts(metrics, encoded_images);
-        const auto vision_encoder_end = std::chrono::steady_clock::now();
-        metrics.vlm_raw_metrics.vision_encoder_durations.emplace_back(
-            PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
-        );
-
-        const auto [unified_prompt, image_sequence, video_sequence] =
-            m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
-                                                                                                        encoded_images,
-                                                                                                        metrics,
-                                                                                                        true,
-                                                                                                        image_sequence);
-        } else {
-            inputs =
-                m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
-        }
-        const auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
-            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
-        handle = add_request(request_id,
-                             inputs,
-                             sampling_params,
-                             token_type_ids,
-                             prompt_ids,
-                             m_inputs_embedder->get_lm_extra_inputs());
-        handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
-    }
-    return handle;
+    const std::vector<ov::Tensor>& images,
+    GenerationConfig sampling_params
+) {
+    return add_request(request_id, prompt, images, {}, {}, sampling_params);
 }
 
 GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
@@ -860,7 +817,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
-    // token_type_ids is not supported for video inputs
     std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
@@ -872,15 +828,38 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         
         const auto vision_encoder_start = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(images);
-        vlm_utils::update_image_slice_counts(metrics, encoded_images);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
         const auto vision_encoder_end = std::chrono::steady_clock::now();
         metrics.vlm_raw_metrics.vision_encoder_durations.emplace_back(
             PerfMetrics::get_microsec(vision_encoder_end - vision_encoder_start)
         );
 
-        const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
-        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
+        vlm_utils::update_image_slice_counts(metrics, encoded_images);
+
+        const auto [unified_prompt, image_sequence, video_sequence] =
+            m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
+
+        if (m_inputs_embedder->has_token_type_ids()) {
+            std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
+                unified_prompt,
+                encoded_images,
+                encoded_videos,
+                metrics,
+                true,
+                image_sequence,
+                video_sequence
+            );
+        } else {
+            inputs = m_inputs_embedder->get_inputs_embeds(
+                unified_prompt,
+                encoded_images,
+                encoded_videos,
+                metrics,
+                true,
+                image_sequence,
+                video_sequence
+            );
+        }
         const auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
             PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
