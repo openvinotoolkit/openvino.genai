@@ -96,12 +96,7 @@ int main(int argc, char* argv[]) try {
     std::cout << std::fixed << std::setprecision(2)
               << "  Duration: " << total_sec << " s  (" << total_samples << " samples @ 16 kHz)\n\n";
 
-    auto on_partial = [&](ov::genai::ASRPartialResult result) {
-        std::cout << "[partial] (" << result.language << ") +" << result.committed_text
-                  << " [" << result.partial_text << "]\n";
-    };
-
-    auto session = pipeline.create_streaming_session(streaming_config, gen_config, on_partial);
+    auto session = pipeline.create_streaming_session(streaming_config, gen_config);
 
     const size_t step_samples = static_cast<size_t>(step_ms * 16000 / 1000);
     const auto wall_start = std::chrono::steady_clock::now();
@@ -109,14 +104,20 @@ int main(int argc, char* argv[]) try {
     for (size_t pos = 0; pos < total_samples; pos += step_samples) {
         const size_t end = std::min(pos + step_samples, total_samples);
         const std::vector<float> segment(wav.begin() + pos, wav.begin() + end);
-        session.push_chunk(segment);
+        if (const auto result = session.push_chunk(segment)) {
+            std::cout << "[partial] (" << result->language << ") +" << result->new_committed_text
+                      << " [" << result->partial_text << "]\n";
+        }
     }
 
-    auto result = session.finish();
+    const auto final_result = session.finish();
+    if (!final_result.new_committed_text.empty()) {
+        std::cout << "[partial] (" << final_result.language << ") +" << final_result.new_committed_text << " []\n";
+    }
 
     const auto wall_sec =
         std::chrono::duration<float>(std::chrono::steady_clock::now() - wall_start).count();
-    std::cout << "\n[final ] (" << result.languages[0] << ") " << result.texts[0] << "\n";
+    std::cout << "\n[final ] (" << final_result.language << ") " << final_result.committed_text << "\n";
     std::cout << std::fixed << std::setprecision(2)
               << "\nTotal wall time: " << wall_sec << " s  (RTF " << wall_sec / total_sec << "x)\n";
     return 0;

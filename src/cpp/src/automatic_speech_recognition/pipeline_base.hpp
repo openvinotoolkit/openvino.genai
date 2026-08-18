@@ -27,8 +27,7 @@ public:
 
     virtual std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
         const ASRStreamingConfig& streaming_config,
-        const ASRGenerationConfig& generation_config,
-        ASRPartialResultCallback callback) {
+        const ASRGenerationConfig& generation_config) {
         OPENVINO_THROW("Streaming is not supported for this ASR model type");
     }
 

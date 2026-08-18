@@ -10,9 +10,8 @@ namespace ov::genai {
 // Abstract base for ASRStreamingSession's PIMPL — one concrete subclass per model family.
 class ASRStreamingSession::Impl {
 public:
-    virtual void push_chunk(const std::vector<float>& pcm16k) = 0;
-    virtual ASRDecodedResults finish() = 0;
-    virtual ASRPartialResult get_partial_result() const = 0;
+    virtual std::optional<ASRPartialResult> push_chunk(const std::vector<float>& pcm16k) = 0;
+    virtual ASRPartialResult finish() = 0;
     virtual ~Impl() = default;
 };
 

@@ -34,30 +34,32 @@ def read_wav(path: str) -> np.ndarray:
     return np.asarray(audio, dtype=np.float32)
 
 
-def make_callback(inline: bool):
-    def callback(result):
-        if inline:
-            print(result.new_committed_text, end="", flush=True)
-        else:
-            print(f"[partial] ({result.language}) +{result.new_committed_text} [{result.partial_text}]")
-    return callback
+def print_result(result: Any, inline: bool) -> None:
+    if result is None:
+        return
+    if inline:
+        print(result.new_committed_text, end="", flush=True)
+    else:
+        print(f"[partial] ({result.language}) +{result.new_committed_text} [{result.partial_text}]")
 
 
 def run_wav_streaming(pipe: Any, wav_path: str, cfg: Any,
-                     callback: Any, block_ms: int = 250) -> Any:
+                     inline: bool, block_ms: int = 250) -> Any:
     audio = read_wav(wav_path)
-    session = pipe.create_streaming_session(cfg, callback=callback)
+    session = pipe.create_streaming_session(cfg)
 
     block_size = max(1, int((block_ms / 1000.0) * SAMPLE_RATE))
     for start in range(0, len(audio), block_size):
         end = min(start + block_size, len(audio))
-        session.push_chunk(audio[start:end].tolist())
+        print_result(session.push_chunk(audio[start:end].tolist()), inline)
 
-    return session.finish()
+    final = session.finish()
+    print_result(final, inline)
+    return final
 
 
 def run_microphone_streaming(pipe: Any, cfg: Any,
-                            callback: Any, duration_sec: float, block_ms: int = 250) -> Any:
+                            inline: bool, duration_sec: float, block_ms: int = 250) -> Any:
     try:
         import pyaudio
     except ModuleNotFoundError as exc:
@@ -66,7 +68,7 @@ def run_microphone_streaming(pipe: Any, cfg: Any,
             "Install it with: pip install pyaudio"
         ) from exc
 
-    session = pipe.create_streaming_session(cfg, callback=callback)
+    session = pipe.create_streaming_session(cfg)
 
     block_size = max(1, int((block_ms / 1000.0) * SAMPLE_RATE))
     total_samples = int(duration_sec * SAMPLE_RATE)
@@ -86,14 +88,16 @@ def run_microphone_streaming(pipe: Any, cfg: Any,
             samples_to_read = min(block_size, remaining)
             data = stream.read(samples_to_read, exception_on_overflow=False)
             chunk = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-            session.push_chunk(chunk.tolist())
+            print_result(session.push_chunk(chunk.tolist()), inline)
             collected += len(chunk)
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
 
-    return session.finish()
+    final = session.finish()
+    print_result(final, inline)
+    return final
 
 
 def build_streaming_config(args) -> Any:
@@ -128,16 +132,15 @@ def main():
 
     cfg = build_streaming_config(args)
     pipe = openvino_genai.ASRPipeline(args.model_dir, args.device)
-    callback = make_callback(inline=args.inline)
 
     if args.wav is not None:
-        result = run_wav_streaming(pipe, args.wav, cfg, callback=callback, block_ms=args.block_ms)
+        final = run_wav_streaming(pipe, args.wav, cfg, inline=args.inline, block_ms=args.block_ms)
     else:
-        result = run_microphone_streaming(pipe, cfg, callback=callback, duration_sec=args.duration, block_ms=args.block_ms)
+        final = run_microphone_streaming(pipe, cfg, inline=args.inline, duration_sec=args.duration, block_ms=args.block_ms)
 
     if args.inline:
         print()  # newline after the inline committed text stream
-    print(f"\n[final] ({result.languages[0]}) {result.texts[0]}")
+    print(f"\n[final] ({final.language}) {final.committed_text}")
 
 
 if __name__ == "__main__":

@@ -20,12 +20,10 @@ static constexpr const char* REPLACEMENT_CHAR_UTF8 = "\xef\xbf\xbd";
 
 Qwen3ASRStreamingSessionImpl::Qwen3ASRStreamingSessionImpl(Qwen3ASR* pipeline,
                                                            const ASRStreamingConfig& streaming_config,
-                                                           const ASRGenerationConfig& generation_config,
-                                                           ASRPartialResultCallback callback)
+                                                           const ASRGenerationConfig& generation_config)
     : m_pipeline{pipeline},
       m_streaming_config{streaming_config},
       m_generation_config{generation_config},
-      m_callback{std::move(callback)},
       m_chunk_size_samples{static_cast<size_t>(
           std::max(1.0f, streaming_config.chunk_size_sec) * m_pipeline->m_feature_extractor.sampling_rate)} {
     OPENVINO_ASSERT(m_pipeline != nullptr, "Qwen3ASRStreamingSessionImpl: pipeline pointer must not be null");
@@ -88,48 +86,35 @@ void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
             std::min(m_current_text.size(), m_current_committed_text.size()));
     }
     m_current_new_committed_text = m_current_committed_text.substr(prev_committed.size());
-
-    if (m_callback) {
-        m_callback({m_current_language, m_current_committed_text,
-                    m_current_new_committed_text, m_current_partial_text});
-    }
 }
 
-void Qwen3ASRStreamingSessionImpl::push_chunk(const std::vector<float>& pcm16k) {
+std::optional<ASRPartialResult> Qwen3ASRStreamingSessionImpl::push_chunk(const std::vector<float>& pcm16k) {
     m_buffer.insert(m_buffer.end(), pcm16k.begin(), pcm16k.end());
 
-    while (m_buffer.size() >= m_chunk_size_samples) {
-        m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.begin() + m_chunk_size_samples);
-        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + m_chunk_size_samples);
-        decode_current_accum();
+    if (m_buffer.size() < m_chunk_size_samples) {
+        return std::nullopt;
     }
+
+    // Drain the entire buffer in one pass (single decode per push_chunk call).
+    m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.end());
+    m_buffer.clear();
+    decode_current_accum();
+    return ASRPartialResult{m_current_language, m_current_committed_text,
+                            m_current_new_committed_text, m_current_partial_text};
 }
 
-ASRDecodedResults Qwen3ASRStreamingSessionImpl::finish() {
+ASRPartialResult Qwen3ASRStreamingSessionImpl::finish() {
     if (!m_buffer.empty()) {
         m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.end());
         m_buffer.clear();
         decode_current_accum();
     }
 
-    // Flush any remaining partial tail so callers see a clean committed-only final result.
-    if (m_callback && !m_current_partial_text.empty()) {
-        m_current_committed_text += m_current_partial_text;
-        m_current_new_committed_text = std::move(m_current_partial_text);
-        m_current_partial_text = "";
-        m_callback({m_current_language, m_current_committed_text,
-                    m_current_new_committed_text, m_current_partial_text});
-    }
+    // Commit any remaining partial tail; final result always has partial_text == "".
+    m_current_committed_text += m_current_partial_text;
+    m_current_new_committed_text = std::move(m_current_partial_text);
+    m_current_partial_text = "";
 
-    ASRDecodedResults results;
-    results.texts = {m_current_text};
-    results.scores = {0.0f};
-    results.languages = {m_current_language};
-    results.perf_metrics = m_perf_metrics;
-    return results;
-}
-
-ASRPartialResult Qwen3ASRStreamingSessionImpl::get_partial_result() const {
     return {m_current_language, m_current_committed_text,
             m_current_new_committed_text, m_current_partial_text};
 }

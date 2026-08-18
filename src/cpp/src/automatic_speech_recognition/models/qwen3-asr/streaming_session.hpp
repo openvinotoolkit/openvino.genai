@@ -17,12 +17,10 @@ class Qwen3ASRStreamingSessionImpl final : public ASRStreamingSession::Impl {
 public:
     Qwen3ASRStreamingSessionImpl(Qwen3ASR* pipeline,
                                  const ASRStreamingConfig& streaming_config,
-                                 const ASRGenerationConfig& generation_config,
-                                 ASRPartialResultCallback callback);
+                                 const ASRGenerationConfig& generation_config);
 
-    void push_chunk(const std::vector<float>& pcm16k) override;
-    ASRDecodedResults finish() override;
-    ASRPartialResult get_partial_result() const override;
+    std::optional<ASRPartialResult> push_chunk(const std::vector<float>& pcm16k) override;
+    ASRPartialResult finish() override;
 
 private:
     void decode_current_accum();
@@ -31,7 +29,6 @@ private:
     Qwen3ASR* m_pipeline;  // non-owning; lifetime guaranteed by ASRPipeline
     ASRStreamingConfig m_streaming_config;
     ASRGenerationConfig m_generation_config;
-    ASRPartialResultCallback m_callback;
 
     std::vector<float> m_buffer;
     std::vector<float> m_audio_accum;

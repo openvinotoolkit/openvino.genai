@@ -297,13 +297,9 @@ std::string Qwen3ASR::infer_streaming_chunk(const std::vector<float>& audio_accu
 
 std::unique_ptr<ASRStreamingSession::Impl> Qwen3ASR::create_streaming_session_impl(
     const ASRStreamingConfig& streaming_config,
-    const ASRGenerationConfig& generation_config,
-    ASRPartialResultCallback callback) {
+    const ASRGenerationConfig& generation_config) {
     validate_generation_config(generation_config);
-    return std::make_unique<Qwen3ASRStreamingSessionImpl>(this,
-                                                          streaming_config,
-                                                          generation_config,
-                                                          std::move(callback));
+    return std::make_unique<Qwen3ASRStreamingSessionImpl>(this, streaming_config, generation_config);
 }
 
 ASRGenerationConfig Qwen3ASR::resolve_generation_config(const std::optional<ASRGenerationConfig>& generation_config) const {

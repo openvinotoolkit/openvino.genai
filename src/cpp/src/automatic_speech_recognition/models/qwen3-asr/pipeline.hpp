@@ -27,8 +27,7 @@ public:
 
     std::unique_ptr<ASRStreamingSession::Impl> create_streaming_session_impl(
         const ASRStreamingConfig& streaming_config,
-        const ASRGenerationConfig& generation_config,
-        ASRPartialResultCallback callback) override;
+        const ASRGenerationConfig& generation_config) override;
 
     static std::pair<std::string, std::string> parse_asr_output(const std::string& raw,
                                                                  const std::optional<std::string>& forced_language);

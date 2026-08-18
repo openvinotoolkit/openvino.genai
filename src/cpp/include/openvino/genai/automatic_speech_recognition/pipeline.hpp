@@ -4,7 +4,6 @@
 #pragma once
 
 #include <filesystem>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -84,8 +83,6 @@ struct OPENVINO_GENAI_EXPORTS ASRPartialResult {
     std::string partial_text;       // trailing region still subject to change
 };
 
-using ASRPartialResultCallback = std::function<void(ASRPartialResult)>;
-
 /// Move-only RAII handle for a streaming ASR session.
 /// Lifetime must not exceed the ASRPipeline that created it.
 /// Only one active session per ASRPipeline is supported at a time.
@@ -98,15 +95,13 @@ public:
     ASRStreamingSession& operator=(const ASRStreamingSession&) = delete;
 
     /// Feed any amount of 16 kHz mono float32 PCM audio.
-    /// Buffers internally; a decode pass fires when chunk_size_sec worth accumulates.
-    void push_chunk(const std::vector<float>& pcm16k);
+    /// Returns a partial result if a decode pass was triggered, std::nullopt otherwise.
+    std::optional<ASRPartialResult> push_chunk(const std::vector<float>& pcm16k);
 
-    /// Flush remaining buffered audio and return the final result.
+    /// Flush remaining buffered audio and return the final partial result.
+    /// partial_text is always empty on the returned result.
     /// The session must not be used after this call.
-    ASRDecodedResults finish();
-
-    /// Return the most recently produced partial result.
-    ASRPartialResult get_partial_result() const;
+    ASRPartialResult finish();
 
     // Public so that ASRPipelineImplBase subclasses can inherit from it without friendship.
     class Impl;
@@ -147,8 +142,7 @@ public:
     /// Create a streaming session for incremental audio transcription.
     ASRStreamingSession create_streaming_session(
         const ASRStreamingConfig& streaming_config = {},
-        const std::optional<ASRGenerationConfig>& generation_config = std::nullopt,
-        ASRPartialResultCallback callback = nullptr);
+        const std::optional<ASRGenerationConfig>& generation_config = std::nullopt);
 
     Tokenizer get_tokenizer();
     ASRGenerationConfig get_generation_config() const;
