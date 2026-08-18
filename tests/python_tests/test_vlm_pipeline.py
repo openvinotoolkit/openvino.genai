@@ -1448,6 +1448,7 @@ def test_perf_metrics(
     metrics_and_raw_pairs = [
         (perf_metrics.get_prepare_embeddings_duration(), vlm_raw_metrics.prepare_embeddings_durations),
         (perf_metrics.get_vision_encoding_duration(), vlm_raw_metrics.vision_encoding_durations),
+        (perf_metrics.get_audio_encoding_duration(), vlm_raw_metrics.audio_encoding_durations),
         (perf_metrics.get_text_embedding_duration(), vlm_raw_metrics.text_embedding_durations),
     ]
 
