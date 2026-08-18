@@ -202,26 +202,32 @@ class TextDivergency:
 
 
 class WordErrorRate:
-    """Word Error Rate between reference (gt) and hypothesis (prediction) transcriptions."""
+    """Corpus Word Error Rate (total edits / total reference words) between reference (gt) and
+    hypothesis (prediction) transcriptions, plus per-utterance WER."""
 
     def evaluate(self, gt, prediction):
-        from jiwer import wer as jiwer_wer
-        from .tts_similarity import normalize_text
+        from jiwer import process_words
+        from .utils import normalize_text
 
-        references = gt["answers"].values
-        hypotheses = prediction["answers"].values
+        references = [normalize_text(str(x)) for x in gt["answers"].values]
+        hypotheses = [normalize_text(str(x)) for x in prediction["answers"].values]
+
         per_prompt = []
-        for reference, hypothesis in tqdm(
-            zip(references, hypotheses), total=min(len(references), len(hypotheses)), desc="WER evaluation"
-        ):
-            reference = normalize_text(str(reference))
-            hypothesis = normalize_text(str(hypothesis))
+        total_errors = 0
+        total_ref_words = 0
+        for reference, hypothesis in tqdm(zip(references, hypotheses), total=len(references), desc="WER evaluation"):
             if not reference:
                 per_prompt.append(0.0 if not hypothesis else 1.0)
-            else:
-                per_prompt.append(float(jiwer_wer(reference, hypothesis)))
+                continue
+            measures = process_words(reference, hypothesis)
+            errors = measures.substitutions + measures.deletions + measures.insertions
+            ref_words = measures.hits + measures.substitutions + measures.deletions
+            per_prompt.append(errors / ref_words)
+            total_errors += errors
+            total_ref_words += ref_words
 
-        return {"WER": float(np.mean(per_prompt))}, {"WER": per_prompt}
+        corpus_wer = total_errors / total_ref_words if total_ref_words else float("nan")
+        return {"WER": float(corpus_wer)}, {"WER": per_prompt}
 
 
 # Image metrics

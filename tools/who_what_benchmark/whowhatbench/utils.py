@@ -9,6 +9,8 @@ import sys
 import json
 import torch
 import random
+import re
+import string
 import logging
 import tarfile
 import datasets
@@ -245,6 +247,32 @@ def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lor
 
 
 # preapre default dataset for visualtext(VLM) evalutor
+def normalize_text(text: str) -> str:
+    """Normalize text for forgiving transcript comparison."""
+    text = text.lower().strip()
+    text = re.sub(r"[-‐-‒–—]+", " ", text)  # treat hyphens/dashes as separators
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def apply_chat_template_no_double_bos(processor, messages, **kwargs):
+    """apply_chat_template with add_bos_token disabled when the template already emits bos (Gemma)."""
+    tokenizer = getattr(processor, "tokenizer", None)
+    orig_add_bos_token = getattr(tokenizer, "add_bos_token", None)
+    if (
+        orig_add_bos_token is not None
+        and getattr(tokenizer, "chat_template", None)
+        and "bos_token" in tokenizer.chat_template
+    ):
+        tokenizer.add_bos_token = False
+    try:
+        return processor.apply_chat_template(messages, **kwargs)
+    finally:
+        if orig_add_bos_token is not None:
+            tokenizer.add_bos_token = orig_add_bos_token
+
+
 def preprocess_fn(example):
     return {
         "prompts": example["question"],

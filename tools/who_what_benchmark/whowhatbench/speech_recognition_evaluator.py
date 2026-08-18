@@ -8,6 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
+from .utils import apply_chat_template_no_double_bos
 from .whowhat_metrics import WordErrorRate
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -21,19 +22,16 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
         gt_data: str = None,
         test_data: Union[str, dict] = None,
         processor: Any = None,
-        tokenizer: Any = None,
         max_new_tokens: int = 256,
         num_samples: int = None,
         gen_answer_fn=None,
         instruction: str = DEFAULT_ASR_INSTRUCTION,
-        device: str = "CPU",
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Speech recognition pipeline for evaluation or ground truth data must be defined")
 
         self.test_data = test_data
         self.processor = processor
-        self.tokenizer = tokenizer
         self.max_new_tokens = max_new_tokens
         self.num_samples = num_samples
         self.instruction = instruction
@@ -49,7 +47,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def _transcribe(self, model, audio, sampling_rate):
+    def _transcribe(self, model, audio):
         import torch
 
         messages = [
@@ -61,28 +59,14 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
                 ],
             }
         ]
-
-        # Gemma chat templates already emit the bos token; avoid duplicating it.
-        tokenizer = getattr(self.processor, "tokenizer", None)
-        orig_add_bos_token = getattr(tokenizer, "add_bos_token", None)
-        if (
-            orig_add_bos_token is not None
-            and getattr(tokenizer, "chat_template", None)
-            and "bos_token" in tokenizer.chat_template
-        ):
-            tokenizer.add_bos_token = False
-        try:
-            inputs = self.processor.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_dict=True,
-                return_tensors="pt",
-            )
-        finally:
-            if orig_add_bos_token is not None:
-                tokenizer.add_bos_token = orig_add_bos_token
-
+        inputs = apply_chat_template_no_double_bos(
+            self.processor,
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
         device = getattr(model, "device", None)
         if isinstance(device, torch.device):
             inputs = inputs.to(device)
@@ -101,12 +85,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
         if self.num_samples is not None:
             data = data.iloc[: self.num_samples]
 
-        answers = []
-        for audio, sampling_rate in tqdm(
-            zip(data["audio"].values, data["sampling_rate"].values), total=len(data), desc="Evaluate pipeline"
-        ):
-            answers.append(gen_answer_fn(model, audio, int(sampling_rate)))
-
+        answers = [gen_answer_fn(model, audio) for audio in tqdm(data["audio"].values, desc="Evaluate pipeline")]
         return pd.DataFrame({"prompts": list(data["prompts"].values), "answers": answers})
 
     def score(self, model_or_data, gen_answer_fn=None, output_dir=None, verbose=False, **kwargs):
@@ -116,19 +95,31 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
             predictions = self._generate_data(model_or_data, gen_answer_fn)
         self.predictions = predictions
 
-        metric_dict, per_prompt = self.wer.evaluate(self.gt_data, predictions)
+        self._validate_columns(self.gt_data, "Ground truth")
+        self._validate_columns(predictions, "Prediction")
+        if len(self.gt_data) != len(predictions):
+            raise ValueError(
+                f"Ground truth ({len(self.gt_data)} rows) and predictions ({len(predictions)} rows) differ in length"
+            )
+        if not (self.gt_data["prompts"].values == predictions["prompts"].values).all():
+            raise ValueError("Ground truth and prediction audio ids ('prompts') do not match")
 
-        compared = min(len(self.gt_data), len(predictions))
+        metric_dict, per_prompt = self.wer.evaluate(self.gt_data, predictions)
         self.last_cmp = pd.DataFrame(
             {
-                "prompt": self.gt_data["prompts"].values[:compared],
-                "source_model": self.gt_data["answers"].values[:compared],
-                "optimized_model": predictions["answers"].values[:compared],
-                "WER": per_prompt["WER"][:compared],
+                "prompt": self.gt_data["prompts"].values,
+                "source_model": self.gt_data["answers"].values,
+                "optimized_model": predictions["answers"].values,
+                "WER": per_prompt["WER"],
             }
         )
-
         return pd.DataFrame(per_prompt), pd.DataFrame([metric_dict])
+
+    @staticmethod
+    def _validate_columns(data, name):
+        for column in ("prompts", "answers"):
+            if column not in data.columns:
+                raise ValueError(f"{name} data is missing required column '{column}'")
 
     def worst_examples(self, top_k: int = 5, metric="WER"):
         assert self.last_cmp is not None

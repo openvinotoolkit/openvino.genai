@@ -28,8 +28,6 @@ def test_asr_gemma4_hf(tmp_path):
         "CPU",
         "--model-type",
         "speech-recognition",
-        "--dataset",
-        DATASET,
     ]
 
     run_wwb(["--base-model", ASR_MODEL, *common, "--hf"])

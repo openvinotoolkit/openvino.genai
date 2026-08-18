@@ -546,7 +546,7 @@ DEFAULT_NUM_SAMPLES = 24
 
 
 def load_audio_dataset(args):
-    """Stream an ASR dataset as columns: id, 16 kHz mono float32 waveform, sample rate."""
+    """Stream an ASR dataset as columns: id and 16 kHz mono float32 waveform."""
     import io
     import soundfile as sf
     from datasets import Audio
@@ -565,7 +565,7 @@ def load_audio_dataset(args):
     data = data.cast_column(audio_field, Audio(decode=False))
     data = data.take(num_samples)
 
-    audios, sampling_rates, ids = [], [], []
+    audios, ids = [], []
     for idx, row in enumerate(data):
         raw = row[audio_field]
         if raw.get("bytes"):
@@ -578,12 +578,10 @@ def load_audio_dataset(args):
             import librosa
 
             audio = librosa.resample(audio, orig_sr=sampling_rate, target_sr=16000)
-            sampling_rate = 16000
         audios.append(audio)
-        sampling_rates.append(sampling_rate)
         ids.append(str(raw.get("path") or idx))
 
-    return {"prompts": ids, "audio": audios, "sampling_rate": sampling_rates}
+    return {"prompts": ids, "audio": audios}
 
 
 def load_tokenizer(args):
@@ -918,7 +916,7 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
     return speech, sample_rate, text
 
 
-def genai_gen_transcription(model, audio, sampling_rate, prompt, max_new_tokens):
+def genai_gen_transcription(model, audio, prompt, max_new_tokens):
     result = model.generate(
         prompt,
         audios=[ov.Tensor(np.asarray(audio, dtype=np.float32))],
@@ -1062,7 +1060,7 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args)
+        prompts = load_prompts(args) if task != "speech-recognition" else None
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
@@ -1290,26 +1288,22 @@ def create_evaluator(base_model, args):
             )
         elif task == "speech-recognition":
             if args.genai:
-                processor, tokenizer = None, None
+                processor = None
                 gen_answer_fn = functools.partial(
                     genai_gen_transcription, prompt=DEFAULT_ASR_INSTRUCTION, max_new_tokens=args.max_new_tokens
                 )
             else:
                 processor, _ = load_processor(args)
-                tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
                 gen_answer_fn = None
-            # Audio is only needed when a model generates (gt or target); pure CSV scoring skips it.
             needs_audio = args.base_model is not None or args.target_model is not None
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
                 test_data=load_audio_dataset(args) if needs_audio else None,
                 processor=processor,
-                tokenizer=tokenizer,
                 max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
                 gen_answer_fn=gen_answer_fn,
-                device=args.device,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
