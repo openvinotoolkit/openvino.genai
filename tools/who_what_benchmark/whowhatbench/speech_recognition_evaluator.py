@@ -8,7 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
-from .utils import apply_chat_template_no_double_bos
+from .utils import no_double_bos
 from .whowhat_metrics import WordErrorRate
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
@@ -59,14 +59,14 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
                 ],
             }
         ]
-        inputs = apply_chat_template_no_double_bos(
-            self.processor,
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
+        with no_double_bos(self.processor):
+            inputs = self.processor.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
         device = getattr(model, "device", None)
         if isinstance(device, torch.device):
             inputs = inputs.to(device)

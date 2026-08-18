@@ -34,10 +34,18 @@ def test_wer_identical_is_zero():
     assert WordErrorRate().evaluate(gt, _frame(["a"], ["hello world"]))[0]["WER"] == 0.0
 
 
-def test_wer_empty_reference():
-    aggregate, per_prompt = WordErrorRate().evaluate(_frame(["a"], [""]), _frame(["a"], ["spurious"]))
-    assert per_prompt["WER"] == [1.0]
-    assert math.isnan(aggregate["WER"])
+def test_wer_empty_reference_counts_insertions():
+    gt = _frame(["a", "b"], ["hello", ""])
+    pred = _frame(["a", "b"], ["hello", "spurious words"])
+    aggregate, per_prompt = WordErrorRate().evaluate(gt, pred)
+    assert aggregate["WER"] == 2.0
+    assert per_prompt["WER"][0] == 0.0
+    assert per_prompt["WER"][1] == float("inf")
+
+
+def test_wer_length_mismatch_raises():
+    with pytest.raises(ValueError, match="counts differ"):
+        WordErrorRate().evaluate(_frame(["a", "b"], ["x", "y"]), _frame(["a"], ["x"]))
 
 
 def test_score_row_count_mismatch(tmp_path):

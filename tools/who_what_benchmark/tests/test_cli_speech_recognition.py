@@ -3,7 +3,9 @@
 
 import re
 
-from conftest import run_wwb
+import pytest
+
+from conftest import convert_model, run_wwb
 
 ASR_MODEL = "optimum-intel-internal-testing/tiny-random-gemma4"
 
@@ -17,23 +19,28 @@ def get_wer_score(output: str) -> float:
     return float(matches[-1])
 
 
-def test_asr_gemma4_hf(tmp_path):
+def _ov_gemma_audio_supported() -> bool:
+    try:
+        from optimum.exporters.openvino.model_configs import Gemma4ConfigBehavior
+
+        return "audio_embeddings" in {behavior.value for behavior in Gemma4ConfigBehavior}
+    except Exception:
+        return False
+
+
+def test_asr_gemma4(tmp_path):
     gt_file = tmp_path / "gt.csv"
-    common = [
-        "--num-samples",
-        "1",
-        "--gt-data",
-        gt_file,
-        "--device",
-        "CPU",
-        "--model-type",
-        "speech-recognition",
-    ]
+    common = ["--num-samples", "1", "--gt-data", gt_file, "--device", "CPU", "--model-type", "speech-recognition"]
 
     run_wwb(["--base-model", ASR_MODEL, *common, "--hf"])
 
-    output = run_wwb(["--target-model", ASR_MODEL, *common, "--hf", "--output", tmp_path])
-    score = get_wer_score(output)
+    if not _ov_gemma_audio_supported():
+        pytest.skip("optimum-intel build lacks Gemma-4 OpenVINO audio export")
 
-    output = run_wwb(["--target-data", tmp_path / "target.csv", *common])
-    assert get_wer_score(output) == score
+    model_path = convert_model(ASR_MODEL)
+    optimum_wer = get_wer_score(run_wwb(["--target-model", model_path, *common, "--output", tmp_path]))
+    genai_wer = get_wer_score(run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path]))
+    reproduced = get_wer_score(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
+
+    assert optimum_wer >= 0.0 and genai_wer >= 0.0
+    assert reproduced == genai_wer

@@ -7,7 +7,7 @@ from transformers import (
 )
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 from .gemma3 import Gemma3InputsPreprocessor
-from ..utils import apply_chat_template_no_double_bos
+from ..utils import no_double_bos
 from typing import TYPE_CHECKING, Optional, Union, Any
 
 if TYPE_CHECKING:
@@ -68,14 +68,14 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         else:
             messages = [new_message]
 
-        return apply_chat_template_no_double_bos(
-            processor,
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
+        with no_double_bos(processor):
+            return processor.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
 
 
 class Gemma4InputsPreprocessor(Gemma3InputsPreprocessor):
