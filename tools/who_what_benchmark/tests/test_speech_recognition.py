@@ -39,8 +39,13 @@ def test_wer_empty_reference_counts_insertions():
     pred = _frame(["a", "b"], ["hello", "spurious words"])
     aggregate, per_prompt = WordErrorRate().evaluate(gt, pred)
     assert aggregate["WER"] == 2.0
-    assert per_prompt["WER"][0] == 0.0
-    assert per_prompt["WER"][1] == float("inf")
+    assert per_prompt["WER"] == [0.0, 2.0]
+
+
+def test_wer_empty_data_is_zero():
+    aggregate, per_prompt = WordErrorRate().evaluate(_frame([], []), _frame([], []))
+    assert aggregate["WER"] == 0.0
+    assert per_prompt["WER"] == []
 
 
 def test_wer_length_mismatch_raises():

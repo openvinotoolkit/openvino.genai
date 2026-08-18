@@ -214,18 +214,11 @@ class WordErrorRate:
         if len(references) != len(hypotheses):
             raise ValueError(f"Reference ({len(references)}) and hypothesis ({len(hypotheses)}) counts differ")
 
-        per_prompt = []
-        total_errors = 0
-        total_ref_words = 0
-        for reference, hypothesis in tqdm(zip(references, hypotheses), total=len(references), desc="WER evaluation"):
-            measures = process_words(reference, hypothesis)
-            errors = measures.substitutions + measures.deletions + measures.insertions
-            ref_words = measures.hits + measures.substitutions + measures.deletions
-            total_errors += errors
-            total_ref_words += ref_words
-            per_prompt.append(errors / ref_words if ref_words else (0.0 if errors == 0 else float("inf")))
-
-        corpus_wer = total_errors / total_ref_words if total_ref_words else (0.0 if total_errors == 0 else float("inf"))
+        per_prompt = [
+            float(process_words(reference, hypothesis).wer)
+            for reference, hypothesis in tqdm(zip(references, hypotheses), total=len(references), desc="WER evaluation")
+        ]
+        corpus_wer = process_words(references, hypotheses).wer
         return {"WER": float(corpus_wer)}, {"WER": per_prompt}
 
 

@@ -3,7 +3,6 @@
 
 import argparse
 import difflib
-import functools
 import numpy as np
 import logging
 import os
@@ -23,7 +22,6 @@ from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
 from whowhatbench.utils import get_json_config
-from whowhatbench.speech_recognition_evaluator import DEFAULT_ASR_INSTRUCTION
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -579,7 +577,7 @@ def load_audio_dataset(args):
 
             audio = librosa.resample(audio, orig_sr=sampling_rate, target_sr=16000)
         audios.append(audio)
-        ids.append(str(raw.get("path") or idx))
+        ids.append(os.path.basename(raw["path"]) if raw.get("path") else str(idx))
 
     return {"prompts": ids, "audio": audios}
 
@@ -1289,9 +1287,7 @@ def create_evaluator(base_model, args):
         elif task == "speech-recognition":
             if args.genai:
                 processor = None
-                gen_answer_fn = functools.partial(
-                    genai_gen_transcription, prompt=DEFAULT_ASR_INSTRUCTION, max_new_tokens=args.max_new_tokens
-                )
+                gen_answer_fn = genai_gen_transcription
             else:
                 processor, _ = load_processor(args)
                 gen_answer_fn = None
@@ -1308,6 +1304,9 @@ def create_evaluator(base_model, args):
         else:
             raise ValueError(f"Unsupported task: {task}")
     except KeyError as e:
+        # A registered task means the KeyError came from the evaluator body, not this lookup.
+        if task in EVALUATOR_REGISTRY:
+            raise
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
             f"Supported model types: {', '.join(EVALUATOR_REGISTRY.keys())}. Details:\n",

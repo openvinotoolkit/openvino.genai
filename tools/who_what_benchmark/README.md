@@ -283,7 +283,8 @@ wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recogni
 wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recognition --genai
 ```
 
-> **NOTE**: the speech-recognition metric is WER (Word Error Rate); lower is better.
+> **NOTE**: `speech-recognition` transcribes audio with an audio-capable multimodal model (for example Gemma-4) through the same generation path as `visual-text`; it is not the OpenVINO GenAI Whisper/ASR pipeline.
+> **NOTE**: the metric is WER (Word Error Rate, lower is better) of the target transcript against the `--base-model` transcript after text normalization — a baseline-to-target divergence, not accuracy against dataset labels.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.

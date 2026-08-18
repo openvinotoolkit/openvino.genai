@@ -47,7 +47,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    def _transcribe(self, model, audio):
+    def _transcribe(self, model, audio, prompt, max_new_tokens):
         import torch
 
         messages = [
@@ -55,7 +55,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
                 "role": "user",
                 "content": [
                     {"type": "audio", "audio": audio},
-                    {"type": "text", "text": self.instruction},
+                    {"type": "text", "text": prompt},
                 ],
             }
         ]
@@ -73,7 +73,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
 
         input_len = inputs["input_ids"].shape[-1]
         with torch.inference_mode():
-            tokens = model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
+            tokens = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
         return self.processor.batch_decode(tokens[:, input_len:], skip_special_tokens=True)[0]
 
     def _generate_data(self, model, gen_answer_fn=None):
@@ -85,7 +85,10 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
         if self.num_samples is not None:
             data = data.iloc[: self.num_samples]
 
-        answers = [gen_answer_fn(model, audio) for audio in tqdm(data["audio"].values, desc="Evaluate pipeline")]
+        answers = [
+            gen_answer_fn(model, audio, self.instruction, self.max_new_tokens)
+            for audio in tqdm(data["audio"].values, desc="Evaluate pipeline")
+        ]
         return pd.DataFrame({"prompts": list(data["prompts"].values), "answers": answers})
 
     def score(self, model_or_data, gen_answer_fn=None, output_dir=None, verbose=False, **kwargs):
@@ -101,7 +104,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
             raise ValueError(
                 f"Ground truth ({len(self.gt_data)} rows) and predictions ({len(predictions)} rows) differ in length"
             )
-        if not (self.gt_data["prompts"].values == predictions["prompts"].values).all():
+        if not (self.gt_data["prompts"].astype(str).values == predictions["prompts"].astype(str).values).all():
             raise ValueError("Ground truth and prediction audio ids ('prompts') do not match")
 
         metric_dict, per_prompt = self.wer.evaluate(self.gt_data, predictions)
