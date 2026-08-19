@@ -242,6 +242,8 @@ Text2ImagePipeline Text2ImagePipeline::clone() {
 }
 
 void Text2ImagePipeline::export_model(const std::filesystem::path& export_dir) {
+    OPENVINO_ASSERT(std::dynamic_pointer_cast<StableDiffusionXLPipeline>(m_impl),
+                     "Blob export is supported only for Stable Diffusion XL pipelines");
     m_impl->export_model(export_dir);
 }
 
