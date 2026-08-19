@@ -3,11 +3,17 @@
 
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
+#include "pipeline_base.hpp"
 #include "streaming_session_impl_base.hpp"
 
 namespace ov::genai {
 
-ASRStreamingSession::ASRStreamingSession(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
+ASRStreamingSession::ASRStreamingSession(ASRPipeline& pipeline,
+                                          const ASRStreamingConfig& streaming_config,
+                                          const std::optional<ASRGenerationConfig>& generation_config) {
+    const ASRGenerationConfig resolved = generation_config.value_or(pipeline.get_generation_config());
+    m_impl = pipeline.m_impl->create_streaming_session_impl(streaming_config, resolved);
+}
 
 ASRStreamingSession::~ASRStreamingSession() = default;
 

@@ -437,8 +437,7 @@ void init_asr_pipeline(py::module_& m) {
                 const std::optional<ASRStreamingConfig>& streaming_config,
                 const std::optional<ASRGenerationConfig>& generation_config) {
                  py::gil_scoped_release release;
-                 return pipe.create_streaming_session(
-                     streaming_config.value_or(ASRStreamingConfig{}), generation_config);
+                 return ASRStreamingSession(pipe, streaming_config.value_or(ASRStreamingConfig{}), generation_config);
              },
              py::arg("streaming_config") = py::none(),
              py::arg("generation_config") = py::none(),

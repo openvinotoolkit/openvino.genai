@@ -97,13 +97,6 @@ void ASRPipeline::set_generation_config(const ASRGenerationConfig& config) {
     m_impl->set_generation_config(config);
 }
 
-ASRStreamingSession ASRPipeline::create_streaming_session(const ASRStreamingConfig& streaming_config,
-                                                          const std::optional<ASRGenerationConfig>& generation_config) {
-    const ASRGenerationConfig resolved = generation_config.value_or(get_generation_config());
-    auto impl = m_impl->create_streaming_session_impl(streaming_config, resolved);
-    return ASRStreamingSession{std::move(impl)};
-}
-
 ASRPipeline::~ASRPipeline() = default;
 
 }  // namespace ov::genai

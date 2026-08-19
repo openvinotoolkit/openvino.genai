@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-// Streaming ASR from a WAV file using ASRPipeline::create_streaming_session().
+// Streaming ASR from a WAV file using ASRStreamingSession.
 // Pushes the file in fixed-size segments without injecting artificial delays.
 //
 // Usage:
@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) try {
     std::cout << std::fixed << std::setprecision(2)
               << "  Duration: " << total_sec << " s  (" << total_samples << " samples @ 16 kHz)\n\n";
 
-    auto session = pipeline.create_streaming_session(streaming_config, gen_config);
+    auto session = ov::genai::ASRStreamingSession(pipeline, streaming_config, gen_config);
 
     const size_t step_samples = static_cast<size_t>(step_ms * 16000 / 1000);
     const auto wall_start = std::chrono::steady_clock::now();
