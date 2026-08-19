@@ -196,24 +196,7 @@ def get_json_config(config):
         except json.JSONDecodeError:
             raise RuntimeError(f"Failed to parse JSON config: {config}")
 
-    return _flatten_nested_config_key(json_config)
-
-
-def _flatten_nested_config_key(json_config):
-    """Merge a top-level "config" dict (a GenAI-only nesting convention some scopes/testplans
-    use for device properties) into the top-level dict, so Optimum's plain ov_config consumers
-    (which don't special-case "config" the way GenAI's kwargs_to_any_map does) see a flat map too.
-    Sibling top-level keys win over the nested ones on conflict, matching GenAI's own
-    insert-only-if-absent merge semantics (see kwargs_to_any_map in py_utils.cpp).
-    """
-    if not isinstance(json_config, dict):
-        return json_config
-    nested_config = json_config.get("config")
-    if not isinstance(nested_config, dict):
-        return json_config
-    merged_config = dict(nested_config)
-    merged_config.update({key: value for key, value in json_config.items() if key != "config"})
-    return merged_config
+    return json_config
 
 
 def normalize_lora_adapters_and_alphas(adapters, alphas):
