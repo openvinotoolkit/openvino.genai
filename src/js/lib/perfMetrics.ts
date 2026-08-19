@@ -51,6 +51,18 @@ export type WhisperRawMetrics = {
   wordLevelTimestampsProcessingDurations: number[];
 };
 
+/** Structure with raw performance metrics for ASR generation. */
+export type ASRRawMetrics = {
+  /** Durations for features extraction in milliseconds. */
+  featuresExtractionDurations: number[];
+  /** Durations for word-level timestamps processing in milliseconds. */
+  wordLevelTimestampsProcessingDurations: number[];
+  /** Durations for encoder inference in milliseconds. */
+  encodeInferenceDurations: number[];
+  /** Durations for decoder inference in milliseconds. */
+  decodeInferenceDurations: number[];
+};
+
 /**
  * Holds performance metrics for each generate call.
  *
@@ -144,6 +156,33 @@ export interface WhisperPerfMetrics extends PerfMetrics {
    * @returns The current WhisperPerfMetrics instance.
    */
   add(other: WhisperPerfMetrics): this;
+}
+
+/**
+ * Holds performance metrics for each ASR generate call.
+ *
+ * ASRPerfMetrics extends PerfMetrics with speech-recognition-specific metrics:
+ *  - Features extraction duration, ms
+ *  - Word-level timestamps processing duration, ms
+ *  - Encoder inference duration, ms
+ *  - Decoder inference duration, ms
+ */
+export interface ASRPerfMetrics extends PerfMetrics {
+  /** Returns the mean and standard deviation of features extraction duration in milliseconds. */
+  getFeaturesExtractionDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of word-level timestamps processing duration in milliseconds. */
+  getWordLevelTimestampsProcessingDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of encoder inference duration in milliseconds. */
+  getEncodeInferenceDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of decoder inference duration in milliseconds. */
+  getDecodeInferenceDuration(): MeanStdPair;
+  /** ASR-specific raw metrics */
+  asrRawMetrics: ASRRawMetrics;
+
+  /** Adds the metrics from another ASRPerfMetrics object to this one.
+   * @returns The current ASRPerfMetrics instance.
+   */
+  add(other: ASRPerfMetrics): this;
 }
 
 /**
