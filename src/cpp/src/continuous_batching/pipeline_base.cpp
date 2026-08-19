@@ -152,7 +152,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         for (size_t idx = 0; idx < res.m_generation_ids.size(); ++idx) {
             const auto decode_start = std::chrono::steady_clock::now();
             generated.push_back(m_tokenizer.decode(res.m_generation_ids.at(idx)));
-            raw_counters.detokenization_durations.emplace_back(std::chrono::steady_clock::now() - decode_start);
+            PerfMetrics::emplace_duration(raw_counters.detokenization_durations, decode_start);
             if (m_is_chat_conversation && 0 == idx && res.m_status != ov::genai::GenerationStatus::CANCEL) {
                 m_history.push_back({{"role", "assistant"}, {"content", generated.back()}});
             }
@@ -160,8 +160,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
 
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
-        perf_metrics.raw_metrics.generate_durations.emplace_back(
-            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        PerfMetrics::emplace_duration(perf_metrics.raw_metrics.generate_durations, start_time);
         // Reevaluate taking into account tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
@@ -261,14 +260,12 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::IContinuousBatchingPip
         for (size_t idx = 0; idx < encoded_result.m_generation_ids.size(); ++idx) {
             const auto decode_start = std::chrono::steady_clock::now();
             decoded_outputs.push_back(m_tokenizer.decode(encoded_result.m_generation_ids.at(idx)));
-
-            raw_counters.detokenization_durations.emplace_back(std::chrono::steady_clock::now() - decode_start);
+            PerfMetrics::emplace_duration(raw_counters.detokenization_durations, decode_start);
         }
 
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
-        perf_metrics.raw_metrics.generate_durations.emplace_back(
-            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        PerfMetrics::emplace_duration(perf_metrics.raw_metrics.generate_durations, start_time);
         // Reevaluate taking into accound tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
@@ -371,11 +368,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         
         encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0], videos_metadata_vector[0]);
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
-        const auto vision_encoding_end = std::chrono::steady_clock::now();
 
-        vlm_perf_metrics[0].vlm_raw_metrics.vision_encoding_durations.emplace_back(
-            PerfMetrics::get_microsec(vision_encoding_end - vision_encoding_start)
-        );
+        PerfMetrics::emplace_duration(vlm_perf_metrics[0].vlm_raw_metrics.vision_encoding_durations, vision_encoding_start);
 
         vlm_utils::update_image_slice_counts(vlm_perf_metrics[0], encoded_images);
 
@@ -384,10 +378,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             std::lock_guard<std::mutex> lock(m_embeddings_mutex);
             const auto audio_encoding_start = std::chrono::steady_clock::now();
             m_inputs_embedder->encode_audios(m_pending_audios_batches[0]);
-            const auto audio_encoding_end = std::chrono::steady_clock::now();
-            vlm_perf_metrics[0].vlm_raw_metrics.audio_encoding_durations.emplace_back(
-                PerfMetrics::get_microsec(audio_encoding_end - audio_encoding_start)
-            );
+            PerfMetrics::emplace_duration(vlm_perf_metrics[0].vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
         }
 
         auto [unified_prompt, image_sequence, video_sequence] =
@@ -400,9 +391,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         const auto template_start = std::chrono::steady_clock::now();
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
-        vlm_perf_metrics[0].raw_metrics.chat_template_durations.emplace_back(
-            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start)
-        );
+        PerfMetrics::emplace_duration(vlm_perf_metrics[0].raw_metrics.chat_template_durations, template_start);
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
@@ -437,10 +426,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         lm_extra_inputs_list.push_back(m_inputs_embedder->get_lm_extra_inputs());
 
-        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-        vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
-            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
-
+        PerfMetrics::emplace_duration(vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     } else {
         for (size_t i = 0; i < prompts.size(); i++) {
             const auto& prompt = prompts[i];
@@ -453,12 +439,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             auto videos_to_encode = videos_vector.size() > 0 ? videos_vector[i] : std::vector<ov::Tensor>{};
             auto videos_metadata = videos_metadata_vector.size() > 0 ? videos_metadata_vector[i] : std::vector<ov::genai::VideoMetadata>{};
             const auto encoded_videos = m_inputs_embedder->encode_videos(videos_to_encode, videos_metadata);
-            const auto vision_encoding_end = std::chrono::steady_clock::now();
+            PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.vision_encoding_durations, vision_encoding_start);
 
-            vlm_perf_metrics[i].vlm_raw_metrics.vision_encoding_durations.emplace_back(
-                PerfMetrics::get_microsec(vision_encoding_end - vision_encoding_start)
-            );
-            
             vlm_utils::update_image_slice_counts(vlm_perf_metrics[i], encoded_images);
 
             // Encode this prompt's audios under m_embeddings_mutex right before tokenization.
@@ -467,10 +449,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                 std::lock_guard<std::mutex> lock(m_embeddings_mutex);
                 const auto audio_encoding_start = std::chrono::steady_clock::now();
                 m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
-                const auto audio_encoding_end = std::chrono::steady_clock::now();
-                vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations.emplace_back(
-                    PerfMetrics::get_microsec(audio_encoding_end - audio_encoding_start)
-                );
+                PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
             }
 
             auto [unified_prompt, image_sequence, video_sequence] =
@@ -507,9 +486,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
 
-            auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-            vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
-                PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+            PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         }
     }
     std::vector<VLMDecodedResults> results;
@@ -539,9 +516,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             gen_result.scores.push_back(result.m_scores.at(idx));
         }
         gen_result.finish_reasons = result.m_finish_reasons;
-        auto decode_end_time = std::chrono::steady_clock::now();
-        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
-            PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        PerfMetrics::emplace_duration(gen_result.perf_metrics.raw_metrics.detokenization_durations, decode_start_time);
 
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
@@ -693,10 +668,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             std::lock_guard<std::mutex> lock(m_embeddings_mutex);
             const auto audio_encoding_start = std::chrono::steady_clock::now();
             m_inputs_embedder->encode_audios(m_pending_audios_batches[i]);
-            const auto audio_encoding_end = std::chrono::steady_clock::now();
-            vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations.emplace_back(
-                PerfMetrics::get_microsec(audio_encoding_end - audio_encoding_start)
-            );
+            PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
         }
 
         VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
@@ -713,10 +685,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             processed_chat_data.normalized_history,
             true
         );
-        vlm_perf_metrics[i].raw_metrics.chat_template_durations.emplace_back(
-            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start)
-        );
-
+        PerfMetrics::emplace_duration(vlm_perf_metrics[i].raw_metrics.chat_template_durations, template_start);
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
@@ -747,9 +716,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         lm_extra_inputs_list.push_back(deep_copy_tensors_map(m_inputs_embedder->get_lm_extra_inputs()));
 
-        auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-        vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
-            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        PerfMetrics::emplace_duration(vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
     }
 
     std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
@@ -781,9 +748,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             gen_result.scores.push_back(result.m_scores.at(idx));
         }
         gen_result.finish_reasons = result.m_finish_reasons;
-        auto decode_end_time = std::chrono::steady_clock::now();
-        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
-            PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        PerfMetrics::emplace_duration(gen_result.perf_metrics.raw_metrics.detokenization_durations, decode_start_time);
 
         gen_result.perf_metrics.m_evaluated = false;
         gen_result.perf_metrics.evaluate_statistics(generate_start_time);
@@ -843,10 +808,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         const auto vision_encoding_start = std::chrono::steady_clock::now();
         const auto encoded_images = m_inputs_embedder->encode_images(images);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
-        const auto vision_encoding_end = std::chrono::steady_clock::now();
-        metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(
-            PerfMetrics::get_microsec(vision_encoding_end - vision_encoding_start)
-        );
+        PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.vision_encoding_durations, vision_encoding_start);
 
         vlm_utils::update_image_slice_counts(metrics, encoded_images);
 
@@ -874,9 +836,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
                 video_sequence
             );
         }
-        const auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-        metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
-            PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
+        PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         handle = add_request(request_id,
                              inputs,
                              sampling_params,
