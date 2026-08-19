@@ -122,6 +122,25 @@ class ASRHook:
             self.greedy_hook.clear_time_infer_list()
             self.greedy_hook.clear_time_sample_list()
 
+    def attach(self, pipe):
+        model = getattr(pipe, "model", None)
+        encoder = getattr(model, "encoder", None)
+        if not (
+            callable(getattr(encoder, "forward", None))
+            and getattr(encoder, "request", None) is not None
+            and callable(getattr(model, "generate", None))
+        ):
+            logger.warning(
+                "ASR latency hooks are not compatible with this pipeline; per-token latency will be unavailable."
+            )
+            return False
+
+        self.new_text_encoder(pipe)
+        self.new_text_encoder_request(pipe)
+        self.new_generate(pipe)
+        self.new_text_sample(pipe)
+        return True
+
     def new_text_encoder(self, pipe):
         old_text_encoder = pipe.model.encoder.forward
 

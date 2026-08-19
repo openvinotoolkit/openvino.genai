@@ -7,19 +7,38 @@ import numpy as np
 from pathlib import Path
 import hashlib
 import logging as log
-import llm_bench_utils
+import llm_bench_utils.ov_utils as ov_utils
+import llm_bench_utils.pt_utils as pt_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
 from llm_bench_utils.hook_forward_whisper import ASRHook
 
-FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
+FW_UTILS = {"pt": pt_utils, "ov": ov_utils}
 asr_hook = ASRHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000
 DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
 DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
+
+STT_DEFAULT_LANGUAGES = {"qwen3-asr": "English", "fun-asr": "en"}
+STT_FALLBACK_LANGUAGE = "<|en|>"
+
+
+def resolve_speech_language(model_type, speech_param, cli_language):
+    entry_language = speech_param.get("language")
+    if entry_language:
+        return entry_language
+    cli_language = (cli_language or "").strip()
+    if cli_language:
+        return cli_language
+    return STT_DEFAULT_LANGUAGES.get(model_type, STT_FALLBACK_LANGUAGE)
+
+
+def resolve_return_timestamps(model_type, speech_param):
+    default = False if model_type == "fun-asr" else True
+    return speech_param.get("timestamp", default)
 
 
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
@@ -32,9 +51,10 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     use_genai = input_param["use_genai"]
     use_case = args["use_case"]
 
-    default_language = "English" if use_case.model_type in ["qwen3-asr"] else "<|en|>"
-    speech_language = input_param["speech_param"].get("language", default_language)
-    ret_timestamps = input_param["speech_param"].get("timestamp", True)
+    speech_language = resolve_speech_language(
+        use_case.model_type, input_param["speech_param"], args.get("speech_language")
+    )
+    ret_timestamps = resolve_return_timestamps(use_case.model_type, input_param["speech_param"])
     max_gen_tokens = args["infer_count"]
     if max_gen_tokens is None:
         max_gen_tokens = (
@@ -236,10 +256,7 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     }
 
     if framework == "ov" and use_genai is False:
-        asr_hook.new_text_encoder(pipe)
-        asr_hook.new_text_encoder_request(pipe)
-        asr_hook.new_generate(pipe)
-        asr_hook.new_text_sample(pipe)
+        asr_hook.attach(pipe)
 
     sampling_rate = processor.feature_extractor.sampling_rate if hasattr(processor, "feature_extractor") else 16000
     mem_consumption.activate_cooldown("after model compilation")
