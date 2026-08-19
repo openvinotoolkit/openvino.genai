@@ -96,15 +96,18 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
             (static_cast<uint64_t>(wav.channels) * static_cast<uint64_t>(wav.bitsPerSample) / 8ul)
         );
 
+    // drwav_uninit invalidates the struct, so keep what we still need for the conversion below.
+    const auto channels = wav.channels;
+
     std::vector<int16_t> pcm16;
-    pcm16.resize(n * wav.channels);
+    pcm16.resize(n * channels);
     drwav_read_pcm_frames_s16(&wav, n, pcm16.data());
     drwav_uninit(&wav);
 
     // convert to mono, float
     std::vector<float> pcmf32;
     pcmf32.resize(n);
-    if (wav.channels == 1) {
+    if (channels == 1) {
         for (uint64_t i = 0; i < n; i++) {
             pcmf32[i] = float(pcm16[i]) / 32768.0f;
         }
