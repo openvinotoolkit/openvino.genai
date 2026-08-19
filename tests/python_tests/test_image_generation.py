@@ -436,7 +436,7 @@ class TestImageGenerationWithBlobTensorModels:
             pipe.export_model(tmp_path / "blob_model")
 
 
-@pytest.mark.xfail(reason="CVS-178687 is not enabled")
+@pytest.mark.xfail(reason="CVS-178687 z-image is not implemented in optimum-intel yet")
 class TestFlux2KleinImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
     def test_flux2_klein_text2image(self, image_generation_model):
@@ -515,7 +515,7 @@ class TestFlux2KleinImageGeneration:
         assert image is not None
 
 
-@pytest.mark.xfail(reason="CVS-178687 is not enabled")
+@pytest.mark.xfail(reason="CVS-178687 z-image is not implemented in optimum-intel yet")
 class TestZImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [ZIMAGE_MODEL_ID], indirect=True)
     def test_zimage_text2image(self, image_generation_model):

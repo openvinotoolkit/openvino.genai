@@ -153,9 +153,10 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
         const std::unordered_set<std::string>& output_names = output.get_names();
         if (output_names.count("last_hidden_state") != 0) {
             ov::Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
+            OPENVINO_ASSERT(last_hidden_state.get_element_type() == ov::element::f32, "'last_hidden_state' output must be f32");
+
             const ov::Shape hidden_state_shape = last_hidden_state.get_shape();
-            ov::Tensor result(last_hidden_state.get_element_type(), hidden_state_shape);
-            std::memset(result.data(), 0, result.get_byte_size());
+            ov::Tensor result(ov::element::f32, hidden_state_shape);
 
             const float* last_hidden_state_data = last_hidden_state.data<const float>();
             float* result_data = result.data<float>();
