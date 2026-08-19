@@ -469,6 +469,8 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     OPENVINO_ASSERT(sampling_params.is_greedy_decoding(), "DFlash CB/PA currently supports greedy decoding only.");
     OPENVINO_ASSERT(sampling_params.num_beams == 1, "DFlash CB/PA does not support beam search.");
     OPENVINO_ASSERT(sampling_params.num_return_sequences == 1, "DFlash CB/PA supports one sequence per request.");
+    OPENVINO_ASSERT(!sampling_params.adapters.has_value(),
+                    "DFlash CB/PA does not support adapters until target and draft adapter parity is validated.");
     if (is_vlm_dflash) {
         dflash_cb::ensure_vlm_generation_config(sampling_params);
     }

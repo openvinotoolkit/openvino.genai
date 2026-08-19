@@ -131,8 +131,6 @@ inline void ensure_num_assistant_tokens_is_set(GenerationConfig& config) {
                     "DFlash CB/PA only supports num_assistant_tokens; assistant_confidence_threshold must be 0.f.");
     OPENVINO_ASSERT(config.max_ngram_size == 0,
                     "DFlash CB/PA does not support prompt lookup decoding; max_ngram_size must be 0.");
-    OPENVINO_ASSERT(!config.adapters.has_value(),
-                    "DFlash CB/PA does not support adapters until target and draft adapter parity is validated.");
     if (config.num_assistant_tokens == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
