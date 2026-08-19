@@ -238,6 +238,16 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
+        const bool is_tree_validation = std::any_of(checked_sequence.second.begin(),
+                                                    checked_sequence.second.end(),
+                                                    [](const auto& sequence) {
+                                                        return sequence.second.tree_metadata != nullptr;
+                                                    });
+        if (is_tree_validation) {
+            OPENVINO_ASSERT(update_result.removed_tokens_cnt > 0,
+                            "EAGLE tree reconciliation must replace the target-generated token.");
+            --update_result.removed_tokens_cnt;
+        }
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
     m_draft_pipeline->sync_generated_embeddings();
