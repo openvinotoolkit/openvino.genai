@@ -1,0 +1,81 @@
+# Test matrix for the genai_samples_tests job.
+# Each entry runs when any of its `components` is affected (has `.test`).
+- name: LLM
+  marker: llm and not transformers_lower_v5
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - LLM_samples
+
+- name: Automatic Speech Recognition
+  marker: automatic_speech_recognition
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - automatic_speech_recognition_samples
+
+- name: dreamlike_anime_1_0
+  marker: dreamlike_anime_1_0
+  cmd: tests/python_tests/samples
+  runner: aks-linux-8-cores-32gb
+  components:
+    - Image_generation_samples
+
+- name: LCM_Dreamshaper_v7_int8_ov
+  marker: LCM_Dreamshaper_v7_int8_ov
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - Image_generation_samples
+
+- name: tiny_random_latent_consistency
+  marker: tiny_random_latent_consistency
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - Image_generation_samples
+
+# Test hangs on Linux. Ticket: 181387
+# - name: VLM
+#   marker: vlm
+#   cmd: tests/python_tests/samples
+#   runner: aks-linux-8-cores-32gb
+#   components:
+#     - VLM_samples
+
+- name: Rag
+  marker: rag
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - RAG_samples
+
+- name: Speech generation
+  marker: speech_generation
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - Speech_generation_samples
+
+- name: Video generation
+  marker: video_generation
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - Video_generation_samples
+
+- name: Eagle3 decoding
+  extra_cmd: python -m pip install transformers==4.57.6
+  marker: eagle3_decoding
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - speculative_decoding
+
+- name: LLM with transformers under 5.0
+  extra_cmd: python -m pip install transformers==4.57.6 diffusers==0.37.1
+  marker: llm and (transformers_dependent or transformers_lower_v5)
+  cmd: tests/python_tests/samples
+  runner: aks-linux-4-cores-16gb
+  components:
+    - LLM_samples
