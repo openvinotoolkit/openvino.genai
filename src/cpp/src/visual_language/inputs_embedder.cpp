@@ -270,10 +270,9 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_text_embedding(
     const ov::Tensor& input_ids,
     ov::genai::VLMPerfMetrics& metrics
 ) {
-    const auto start = std::chrono::steady_clock::now();
+    const auto text_embedding_start = std::chrono::steady_clock::now();
     ov::Tensor result = m_embedding->infer(req, input_ids);
-    metrics.vlm_raw_metrics.text_embedding_durations.emplace_back(
-        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start));
+    PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.text_embedding_durations, text_embedding_start);
     return result;
 }
 
