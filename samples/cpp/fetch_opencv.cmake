@@ -60,7 +60,7 @@ function(ov_genai_link_opencv target_name)
 
         FetchContent_Declare(opencv
             GIT_REPOSITORY https://github.com/opencv/opencv.git
-            GIT_TAG 4.14.0
+            GIT_TAG 4.11.0
             GIT_SHALLOW TRUE
         )
         FetchContent_MakeAvailable(opencv)
