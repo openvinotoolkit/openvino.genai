@@ -1,7 +1,6 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import json
 import math
 import types
 
@@ -10,7 +9,6 @@ import pandas as pd
 import pytest
 import torch
 
-from whowhatbench import model_loaders
 from whowhatbench.whowhat_metrics import WordSimilarity
 from whowhatbench.wwb import to_mono_16k
 from whowhatbench.speech_recognition_evaluator import (
@@ -32,17 +30,17 @@ def _csv(tmp_path, name, prompts, answers):
 @pytest.mark.parametrize(
     "references, hypotheses, corpus, per_prompt",
     [
-        # 1 insertion over 6 reference words: the corpus value is 5/6, not the 0.75 mean of the two.
+        # 1 insertion over 6 reference words: corpus similarity is 5/6, not the 0.75 sample mean.
         (["the quick brown fox", "hello world"], ["the quick brown fox", "hello there world"], 5 / 6, [1.0, 0.5]),
         (["hello world"], ["hello world"], 1.0, [1.0]),
-        # 3 insertions over 1 reference word: 1 - WER is negative and must clamp to 0.
+        # 3 insertions over 1 reference word: 1 - WER is clamped to 0.
         (["hello", ""], ["hello", "spurious extra words"], 0.0, [1.0, 0.0]),
         ([], [], 1.0, []),
     ],
 )
 def test_word_similarity(references, hypotheses, corpus, per_prompt):
-    aggregate, per_utterance = WordSimilarity().evaluate(_frame(references), _frame(hypotheses))
-    assert per_utterance == {"similarity": per_prompt}
+    aggregate, per_sample = WordSimilarity().evaluate(_frame(references), _frame(hypotheses))
+    assert per_sample == {"similarity": per_prompt}
     assert math.isclose(aggregate["similarity"], corpus)
 
 
@@ -91,7 +89,7 @@ AUDIO_DATA = {"prompts": ["a", "b"], "audio": [np.zeros(4, dtype=np.float32), np
 @pytest.mark.parametrize(
     "num_samples, calls, prompts, corpus",
     [
-        # 1 substitution over 4 reference words
+        # 1 substitution over 4 reference words.
         (None, [(4, 42), (8, 42)], ["a", "b"], 0.75),
         (1, [(4, 42)], ["a"], 1.0),
     ],
@@ -109,20 +107,6 @@ def test_evaluator_delegates_to_transcriber(num_samples, calls, prompts, corpus)
     _, aggregate = evaluator.score(target)
     assert target.calls == calls
     assert math.isclose(aggregate["similarity"].iloc[0], corpus)
-
-
-@pytest.mark.parametrize(
-    "files, kind",
-    [
-        ({"configuration.json": {"framework": "pytorch", "model": {"type": "funasr"}}}, "source"),
-        ({"config.json": {"model_type": "fun_asr"}}, "export"),
-        ({"config.json": {"model_type": "gemma4_unified"}}, None),
-    ],
-)
-def test_funasr_model_kind_local(tmp_path, files, kind):
-    for name, payload in files.items():
-        (tmp_path / name).write_text(json.dumps(payload), encoding="utf-8")
-    assert model_loaders.funasr_model_kind(str(tmp_path)) == kind
 
 
 class _FakeSpeechSeq2Seq:

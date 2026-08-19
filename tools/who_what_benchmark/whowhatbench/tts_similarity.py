@@ -29,7 +29,7 @@ class Scores:
     speaker: Optional[float]
     # Content = same words?
     content: Optional[float]
-    # Duration = similar overall utterance length / pacing?
+    # Duration = similar overall audio length / pacing?
     duration: Optional[float]
     # Acoustic = similar loudness / spectral richness / bandwidth?
     acoustic: Optional[float]

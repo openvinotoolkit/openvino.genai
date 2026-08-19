@@ -44,7 +44,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-gemma4": {
         "name": "optimum-intel-internal-testing/tiny-random-gemma4",
-        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+        "convert_args": ["--task", "image-text-to-text"],
     },
     "tiny-random-fun-asr": {
         "name": "optimum-intel-internal-testing/tiny-random-fun-asr",

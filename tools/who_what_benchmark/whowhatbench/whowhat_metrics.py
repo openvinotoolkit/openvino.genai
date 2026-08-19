@@ -208,7 +208,7 @@ def _word_similarity(reference, hypothesis):
 
 
 class WordSimilarity:
-    """Corpus and per-utterance word similarity between reference (gt) and hypothesis
+    """Corpus and per-sample word similarity between reference (gt) and hypothesis
     (prediction) transcriptions."""
 
     def evaluate(self, gt, prediction):

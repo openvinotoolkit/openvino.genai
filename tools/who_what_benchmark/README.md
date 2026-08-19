@@ -265,7 +265,7 @@ The speech-generation evaluator reports these metrics:
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
-* `duration score` - relative utterance length similarity between target and reference.
+* `duration score` - relative audio length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
 
 ### Compare Speech-recognition models (ASR)
@@ -300,7 +300,7 @@ wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recogni
 and `ja`). WWB defaults to `en`.
 
 > **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
-> **NOTE**: WER counts whitespace-separated words, so for Chinese and Japanese an utterance is a single
+> **NOTE**: WER counts whitespace-separated words, so for Chinese and Japanese an audio sample is a single
 > word and its similarity degenerates to 0.0 or 1.0.
 
 #### Audio VLMs
