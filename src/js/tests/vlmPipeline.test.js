@@ -198,7 +198,7 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     const { audioEncodingDurations } = result.perfMetrics.vlmRawMetrics;
     assert.ok(
       Array.isArray(audioEncodingDurations),
-      "Raw audio encoding durationz should be an array",
+      "Raw audio encoding durations should be an array",
     );
 
     const totalImageSliceCount = result.perfMetrics.getTotalImageSliceCount();
