@@ -518,9 +518,99 @@ def check_args(args):
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
 
+VISUAL_TEXT_TASKS = ("visual-text", "visual-text-chat", "visual-video-text")
+
+
+def _load_local_visual_text_csv(csv_path):
+    """Load a local CSV for visual-text tasks.
+
+    The CSV must contain a ``prompts`` column and may contain ``images`` and
+    ``videos`` columns. Image (and video) paths are resolved deterministically
+    relative to the CSV's own directory when they are not absolute, then loaded
+    into PIL images via transformers' ``load_image`` (which also supports URLs).
+    Empty/NaN media cells are treated as ``None`` so the row is text-only.
+
+    This keeps the behavior generic across models: it relies only on the column
+    contract, never on a specific model name.
+    """
+    from whowhatbench.utils import load_image
+
+    csv_path = Path(csv_path)
+    base_dir = csv_path.parent
+    data = pd.read_csv(csv_path)
+
+    if "prompts" not in data.columns:
+        raise ValueError(
+            f"Local visual-text dataset '{csv_path}' must contain a 'prompts' column, "
+            f"got columns: {list(data.columns)}"
+        )
+
+    def _resolve_media(cell, loader):
+        if cell is None:
+            return None
+        # pandas represents empty cells as float NaN
+        if isinstance(cell, float) and pd.isna(cell):
+            return None
+        text = str(cell).strip()
+        if not text or text.lower() in ("nan", "none"):
+            return None
+        # Resolve non-absolute, non-URL paths relative to the CSV directory.
+        if "://" not in text and not os.path.isabs(text):
+            text = str((base_dir / text).resolve())
+        return loader(text)
+
+    prompts = list(data["prompts"].values)
+    num_rows = len(prompts)
+
+    if "images" in data.columns:
+        images = [_resolve_media(v, load_image) for v in data["images"].values]
+    else:
+        images = [None] * num_rows
+
+    if "videos" in data.columns:
+        # Videos are passed through as resolved paths; the evaluator/preprocessor
+        # decodes them. Keep them as filesystem paths (deterministically resolved).
+        def _resolve_video_path(cell):
+            if cell is None:
+                return None
+            if isinstance(cell, float) and pd.isna(cell):
+                return None
+            text = str(cell).strip()
+            if not text or text.lower() in ("nan", "none"):
+                return None
+            if "://" not in text and not os.path.isabs(text):
+                text = str((base_dir / text).resolve())
+            return text
+
+        videos = [_resolve_video_path(v) for v in data["videos"].values]
+    else:
+        videos = [None] * num_rows
+
+    return {"prompts": prompts, "images": images, "videos": videos}
+
+
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Local CSV support: a local file path with a .csv extension is treated as a
+    # local dataset. For visual-text tasks this enables an offline dataset with
+    # 'prompts'/'images'/'videos' columns, avoiding a dependency on the default
+    # remote dataset loader (which may be unavailable or slow).
+    dataset_path = args.dataset.split(",")[0]
+    is_local_csv = dataset_path.lower().endswith(".csv") and os.path.isfile(dataset_path)
+    if is_local_csv:
+        if getattr(args, "model_type", None) in VISUAL_TEXT_TASKS:
+            return _load_local_visual_text_csv(dataset_path)
+        data = pd.read_csv(dataset_path)
+        field = args.dataset_field
+        if field not in data.columns:
+            raise ValueError(
+                f"Local dataset '{dataset_path}' has no '{field}' column; "
+                f"available columns: {list(data.columns)}"
+            )
+        return {"prompts": list(data[field].values)}
+
     split = "validation"
     if args.split is not None:
         split = args.split

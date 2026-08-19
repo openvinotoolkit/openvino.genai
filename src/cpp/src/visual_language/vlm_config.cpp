@@ -35,6 +35,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
+        {"youtu_vl", VLMModelType::YOUTU_VL},
     };
 
     auto it = model_types_map.find(value);
@@ -79,6 +80,13 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen2.5VL
     read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
     read_json_param(parsed, "vision_config.tokens_per_second", vision_config_tokens_per_second);
+
+    // Youtu-VL
+    read_json_param(parsed, "vision_config.spatial_merge_size", vision_config_spatial_merge_size);
+    read_json_param(parsed, "image_token_id", image_token_id);
+    // The remote-code processor default (36864) is not stored in any exported JSON; keep the
+    // built-in default but allow an override if a future export surfaces the value.
+    read_json_param(parsed, "vision_config.max_image_patches", youtu_vl_max_image_patches);
 
     // Qwen3-VL
     read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
