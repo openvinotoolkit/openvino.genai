@@ -177,7 +177,7 @@ def parse_args():
         default=None,
         help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
         " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
-        " If None then internal list of prompts will be used.",
+        " If omitted, task-specific default dataset will be used.",
     )
     parser.add_argument(
         "--dataset-field",
