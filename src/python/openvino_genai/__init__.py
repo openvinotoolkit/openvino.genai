@@ -127,6 +127,7 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     LTXVideoTransformer3DModel,
     AutoencoderKLLTXVideo,
+    Image2VideoPipeline,
     Text2VideoPipeline,
     VideoGenerationConfig,
     VideoGenerationResult,
