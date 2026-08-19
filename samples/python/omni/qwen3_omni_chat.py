@@ -64,17 +64,26 @@ def read_video(path: str, num_frames: int = 8) -> tuple[Tensor, openvino_genai.V
     if not cap.isOpened():
         raise RuntimeError(f"Could not open the video file: {path}")
 
+    # OpenCV reports 0 or -1 when a container/codec doesn't expose a frame count.
     total_num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    indices = np.arange(0, total_num_frames, total_num_frames / num_frames).astype(int)
+    if total_num_frames <= 0:
+        cap.release()
+        raise RuntimeError(f"Could not determine the frame count of {path}. The container or codec may not expose it.")
+
+    # A short video can't yield num_frames distinct indices; sampling fewer beats emitting duplicates.
+    sampled_frames = min(num_frames, total_num_frames)
+    step = total_num_frames / sampled_frames
+    indices = [min(int(i * step), total_num_frames - 1) for i in range(sampled_frames)]
 
     video_metadata = openvino_genai.VideoMetadata()
     video_metadata.fps = cap.get(cv2.CAP_PROP_FPS)
     # Passing frame indices selects those frames within the pipeline and skips model-specific sampling.
     # Leave frames_indices empty to apply model-specific sampling (e.g. for Qwen3-VL).
-    video_metadata.frames_indices = indices.tolist()
+    video_metadata.frames_indices = indices
 
     frames = []
-    while cap.isOpened():
+    # Bound by the reported count: containers that under-report it would otherwise grow this unbounded.
+    while len(frames) < total_num_frames:
         ret, frame = cap.read()
         if not ret:
             break
