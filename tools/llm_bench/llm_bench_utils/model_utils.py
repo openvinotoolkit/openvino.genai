@@ -191,6 +191,7 @@ def analyze_args(args):
     model_args["video_frames"] = args.video_frames
     model_args["pruning_ratio"] = args.pruning_ratio
     model_args["relevance_weight"] = args.relevance_weight
+    model_args["num_prefill_tokens"] = args.num_prefill_tokens
     optimum = args.optimum
 
     if optimum and args.genai:
