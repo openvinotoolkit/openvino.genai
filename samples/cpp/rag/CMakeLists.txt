@@ -11,9 +11,17 @@ find_package(OpenVINOGenAI REQUIRED
 include(${CMAKE_CURRENT_SOURCE_DIR}/../fetch_opencv.cmake)
 
 function(add_sample_executable target_name)
-    add_executable(${target_name} ${target_name}.cpp)
+    if("${target_name}" STREQUAL "image_video_embedding")
+        add_executable(${target_name}
+            ${target_name}.cpp
+            ../visual_language_chat/load_image.cpp
+            ../visual_language_chat/load_video.cpp)
+        target_include_directories(${target_name} PRIVATE "${CMAKE_BINARY_DIR}")
+    else()
+        add_executable(${target_name} ${target_name}.cpp)
+    endif()
     if(target_name STREQUAL image_video_embedding)
-        ov_genai_link_opencv(${target_name} core imgproc videoio imgcodecs)
+        ov_genai_link_opencv(${target_name} core imgproc videoio)
     endif()
     target_link_libraries(${target_name} PRIVATE openvino::genai)
     set_target_properties(${target_name} PROPERTIES
