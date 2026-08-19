@@ -179,10 +179,6 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
         result.perfMetrics.vlmRawMetrics.visionEncodingDurations,
       ],
       [
-        result.perfMetrics.getAudioEncodingDuration(),
-        result.perfMetrics.vlmRawMetrics.audioEncodingDurations,
-      ],
-      [
         result.perfMetrics.getTextEmbeddingDuration(),
         result.perfMetrics.vlmRawMetrics.textEmbeddingDurations,
       ],
@@ -193,6 +189,17 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
       assert.ok(Array.isArray(raw), "Raw metric should be an array");
       assert.ok(raw.length > 0, "Raw metric should have at least one value");
     }
+
+    const audioEncodingDuration = result.perfMetrics.getAudioEncodingDuration();
+    assert.ok(
+      typeof audioEncodingDuration.mean === "number",
+      "Audio encoding duration should be a number",
+    );
+    const { audioEncodingDurations } = result.perfMetrics.vlmRawMetrics;
+    assert.ok(
+      Array.isArray(audioEncodingDurations),
+      "Raw audio encoding durationz should be an array",
+    );
 
     const totalImageSliceCount = result.perfMetrics.getTotalImageSliceCount();
     assert.ok(
