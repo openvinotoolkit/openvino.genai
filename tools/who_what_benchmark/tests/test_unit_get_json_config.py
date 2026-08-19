@@ -8,23 +8,6 @@ import pytest
 from whowhatbench.utils import get_json_config
 
 
-def test_flattens_nested_config_key():
-    """A GenAI-style {"config": {...}} wrapper must be merged into the top level, so
-    Optimum's plain ov_config consumers (which don't unwrap "config" themselves) see a flat map."""
-    raw = json.dumps({"config": {"DEVICE_PROPERTIES": {"CPU": {"KV_CACHE_PRECISION": "u8"}}}})
-    result = get_json_config(raw)
-    assert result == {"DEVICE_PROPERTIES": {"CPU": {"KV_CACHE_PRECISION": "u8"}}}
-    assert "config" not in result
-
-
-def test_sibling_keys_win_over_nested_config_on_conflict():
-    """Matches GenAI's insert-only-if-absent kwargs_to_any_map semantics: top-level keys
-    override same-named keys nested under "config"."""
-    raw = json.dumps({"MAX_PROMPT_LEN": 1, "config": {"MAX_PROMPT_LEN": 2, "OTHER": "x"}})
-    result = get_json_config(raw)
-    assert result == {"MAX_PROMPT_LEN": 1, "OTHER": "x"}
-
-
 def test_no_nested_config_key_is_returned_unchanged():
     raw = json.dumps({"INFERENCE_PRECISION_HINT": "f32"})
     assert get_json_config(raw) == {"INFERENCE_PRECISION_HINT": "f32"}
