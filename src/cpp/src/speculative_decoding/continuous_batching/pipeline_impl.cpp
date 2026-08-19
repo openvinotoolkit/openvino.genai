@@ -409,6 +409,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             if (requires_main_hidden_state && main_published_hidden_state) {
                 m_model_runner->set_initial_hidden_state(request_id,
                                                          published_hidden_state_it->second.hidden_states);
+                if (mtp_mode_enabled && m_scheduler) {
+                    m_scheduler->set_expected_num_scheduled_tokens(
+                        request_id,
+                        published_hidden_state_it->second.hidden_states.get_shape()[0]);
+                }
             }
         } else {
             // update existing sequences by the candidates
@@ -489,6 +494,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     std::vector<size_t> indices(mtp_update_plan.hidden_state_count);
                     std::iota(indices.begin(), indices.end(), mtp_update_plan.hidden_state_start);
                     m_model_runner->set_initial_hidden_state(request_id, select_rows_by_indices(hidden_state, indices));
+                    if (m_scheduler) {
+                        m_scheduler->set_expected_num_scheduled_tokens(request_id,
+                                                                       mtp_update_plan.hidden_state_count);
+                    }
                     num_tokens_needs_kv_update = static_cast<int>(mtp_update_plan.num_tokens_to_validate);
                 }
                 if (candidate_sequence.tree_metadata && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) {
@@ -702,6 +711,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             } else if (request->get_max_new_tokens() == 0) {
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
+                request->pause_generation(true);
+            } else if (mtp_mode_enabled && request->get_num_processed_tokens() < request->get_prompt_len()) {
                 request->pause_generation(true);
             } else if (!sampling_params.is_tree_search() && is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
                 // in branching tree mode, we ignore the stop token, as we may have several candidates at the same tree layer
