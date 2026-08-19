@@ -562,6 +562,9 @@ public:
     BlocksPerLayer get_cached_block(size_t hash, std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
         auto blocks_for_all_layers = m_overwriteable_blocks.get_block_to_restore(hash);
         if (!blocks_for_all_layers.empty()) {
+            GENAI_INFO("[KV_TRACE] prefix_restore hash=%zu source=overwriteable blocks=%zu",
+                       hash,
+                       blocks_for_all_layers.size());
             // use cached block from internal store
             return blocks_for_all_layers;
         }
@@ -573,6 +576,9 @@ public:
             for (auto& block_ptr : cached_blocks[hash]) {
                 block_ptr->increment();
             }
+            GENAI_INFO("[KV_TRACE] prefix_restore hash=%zu source=active blocks=%zu",
+                       hash,
+                       blocks_for_all_layers.size());
             return blocks_for_all_layers;
         }
         return {};
@@ -1237,7 +1243,7 @@ public:
      * @param seq_id Sequence identifier for the blocks to be freed from.
      * @param logical_block_index_sets_to_free Sets (one for each layer) of logical block indices to be freed from this sequence.
      */
-    void free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& logical_block_index_sets_to_free) {
+    std::vector<BlocksPerLayer> free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& logical_block_index_sets_to_free) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         std::vector<std::vector<size_t>> logical_block_indices_to_free(logical_block_index_sets_to_free.size());
         for (size_t i = 0; i < logical_block_index_sets_to_free.size(); i++) {
@@ -1254,10 +1260,12 @@ public:
         }
 
         if (logical_block_indices_to_free[0].empty()) {
-            return;
+            return {};
         }
 
         size_t num_blocks_to_free = logical_block_indices_to_free[0].size();
+        std::vector<BlocksPerLayer> captured_blocks;
+        captured_blocks.reserve(num_blocks_to_free);
 
         // free blocks at the allocator level
         for (size_t block_idx = 0; block_idx < num_blocks_to_free; block_idx++) {
@@ -1273,6 +1281,7 @@ public:
                 auto block = per_layer_block_table[logical_block_idx];
                 per_layer_cache_blocks_to_free.push_back(block);
             }
+            captured_blocks.push_back(per_layer_cache_blocks_to_free);
             free_cached_blocks(per_layer_cache_blocks_to_free);
         }
 
@@ -1293,6 +1302,7 @@ public:
 
             per_layer_block_table = new_sequence_blocks;
         }
+        return captured_blocks;
     }
 
     /**
@@ -1783,6 +1793,12 @@ private:
         OPENVINO_ASSERT(num_blocks > 0 && can_allocate_blocks(num_blocks));
 
         auto sequence_id = sequence->get_id();
+        GENAI_INFO("[KV_TRACE] logical_allocate seq=%llu blocks=%zu prompt=%zu prefix=%s free_before=%zu",
+                   static_cast<unsigned long long>(sequence_id),
+                   num_blocks,
+                   prompt_size,
+                   m_enable_prefix_caching ? "true" : "false",
+                   num_free_blocks());
         if (m_block_table.find(sequence_id) == m_block_table.end()) {
             m_block_table[sequence_id].resize(m_num_layers);
         }
@@ -1834,6 +1850,10 @@ private:
                 }
             }
         }
+        GENAI_INFO("[KV_TRACE] logical_allocate_done seq=%llu table_blocks=%zu free_after=%zu",
+                   static_cast<unsigned long long>(sequence_id),
+                   m_block_table[sequence_id][0].size(),
+                   num_free_blocks());
     }
 };
 

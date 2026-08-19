@@ -128,7 +128,13 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     ASSERT_EQ(bm.num_free_blocks(), 5);
 
     size_t seq_id = sequence_group->get_sequences()[0]->get_id();
-    bm.free_blocks_from_sequence(seq_id, {{0}, {1}, {2}});
+    const auto block_tables_before_free = bm.get_block_tables(seq_id);
+    const auto captured_blocks = bm.free_blocks_from_sequence(seq_id, {{0}, {1}, {2}});
+    ASSERT_EQ(captured_blocks.size(), 1);
+    ASSERT_EQ(captured_blocks[0].size(), 3);
+    EXPECT_EQ(captured_blocks[0][0]->get_index(), block_tables_before_free[0][0]->get_index());
+    EXPECT_EQ(captured_blocks[0][1]->get_index(), block_tables_before_free[1][1]->get_index());
+    EXPECT_EQ(captured_blocks[0][2]->get_index(), block_tables_before_free[2][2]->get_index());
     EXPECT_EQ(bm.num_free_blocks(), 6);
 
     for (auto& sequence : sequence_group->get_sequences()) {

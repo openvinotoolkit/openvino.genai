@@ -5,9 +5,12 @@
 
 #include <vector>
 #include <list>
+#include <cstdint>
+#include <cstring>
 
 #include "openvino/runtime/tensor.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
+#include "logger.hpp"
 #include "utils.hpp"
 namespace ov::genai {
 
@@ -110,6 +113,12 @@ public:
         m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_layers = m_value_precisions.size();
         OPENVINO_ASSERT(m_num_layers == m_key_precisions.size(), "Invalid case: a different number of K and V caches in a LLM model");
+        GENAI_INFO("[KV_TRACE] physical_manager device=%s layers=%zu block_size=%zu block_bytes=%zu remote=%s",
+               m_device.c_str(),
+               m_num_layers,
+               m_block_size,
+               m_block_size_in_bytes,
+               m_context ? "true" : "false");
     }
 
     // --- ICacheManager interface ---
@@ -160,6 +169,10 @@ public:
         if (m_num_allocated_kv_blocks >= num_kv_blocks) {
             return;
         }
+        GENAI_INFO("[KV_TRACE] allocate_physical_cache old_blocks=%zu new_blocks=%zu layers=%zu",
+                   m_num_allocated_kv_blocks,
+                   num_kv_blocks,
+                   m_num_layers);
         try {
             m_num_allocated_kv_blocks = num_kv_blocks;
 
@@ -271,15 +284,81 @@ public:
         return m_value_cache[decoder_layer_id];
     }
 
+    std::vector<uint8_t> read_block(size_t block_id) const {
+        OPENVINO_ASSERT(!m_context, "KV cache block read currently supports CPU tensors only");
+        OPENVINO_ASSERT(block_id < m_num_allocated_kv_blocks, "Invalid KV cache block ID ", block_id);
+
+        std::vector<uint8_t> block_data;
+        block_data.reserve(m_block_size_in_bytes);
+        for (size_t layer = 0; layer < m_num_layers; ++layer) {
+            append_tensor_block(block_data, m_key_cache[layer], block_id);
+            append_tensor_block(block_data, m_value_cache[layer], block_id);
+        }
+        OPENVINO_ASSERT(block_data.size() == m_block_size_in_bytes,
+                        "Unexpected KV cache block byte size");
+        return block_data;
+    }
+
+    void write_block(size_t block_id, const std::vector<uint8_t>& block_data) {
+        OPENVINO_ASSERT(!m_context, "KV cache block write currently supports CPU tensors only");
+        OPENVINO_ASSERT(block_id < m_num_allocated_kv_blocks, "Invalid KV cache block ID ", block_id);
+        OPENVINO_ASSERT(block_data.size() == m_block_size_in_bytes,
+                        "Unexpected KV cache block byte size");
+
+        size_t offset = 0;
+        for (size_t layer = 0; layer < m_num_layers; ++layer) {
+            write_tensor_block(m_key_cache[layer], block_id, block_data, offset);
+            offset += get_tensor_block_byte_size(m_key_cache[layer]);
+            write_tensor_block(m_value_cache[layer], block_id, block_data, offset);
+            offset += get_tensor_block_byte_size(m_value_cache[layer]);
+        }
+    }
+
+private:
+    static size_t get_tensor_block_byte_size(const ov::Tensor& tensor) {
+        const auto shape = tensor.get_shape();
+        size_t elements = 1;
+        for (size_t dimension = 1; dimension < shape.size(); ++dimension) {
+            elements *= shape[dimension];
+        }
+        if (tensor.get_element_type() == ov::element::u4 || tensor.get_element_type() == ov::element::i4) {
+            return (elements + 1) / 2;
+        }
+        return elements * tensor.get_element_type().size();
+    }
+
+    static void append_tensor_block(std::vector<uint8_t>& destination,
+                                    const ov::Tensor& tensor,
+                                    size_t block_id) {
+        const size_t block_size = get_tensor_block_byte_size(tensor);
+        const size_t block_stride = tensor.get_byte_size() / tensor.get_shape()[0];
+        const auto* source = reinterpret_cast<const uint8_t*>(tensor.data()) + block_id * block_stride;
+        destination.insert(destination.end(), source, source + block_size);
+    }
+
+    static void write_tensor_block(ov::Tensor& tensor,
+                                   size_t block_id,
+                                   const std::vector<uint8_t>& source,
+                                   size_t source_offset) {
+        const size_t block_size = get_tensor_block_byte_size(tensor);
+        const size_t block_stride = tensor.get_byte_size() / tensor.get_shape()[0];
+        auto* destination = reinterpret_cast<uint8_t*>(tensor.data()) + block_id * block_stride;
+        std::memcpy(destination, source.data() + source_offset, block_size);
+    }
+
+public:
+
     size_t get_v_head_size(size_t layer_id) const {
         return m_value_shapes[layer_id][3].get_length();
     }
 
     void copy_blocks(const std::map<size_t, std::list<size_t>>& block_copy_map) override {
+        size_t copied_blocks = 0;
         for (const auto & blocks_pair : block_copy_map) {
             size_t src_block_id = blocks_pair.first;
             const std::list<size_t>& dst_block_ids = blocks_pair.second;
             for (size_t dst_block_id : dst_block_ids) {
+                ++copied_blocks;
                 for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_layers; ++decoder_layer_id) {
                     ov::Shape key_shape = set_kv_blocks(m_key_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
                     ov::Shape value_shape = set_kv_blocks(m_value_shapes[decoder_layer_id], m_num_allocated_kv_blocks);
@@ -331,6 +410,11 @@ public:
                     }
                 }
             }
+        }
+        if (copied_blocks > 0) {
+            GENAI_INFO("[KV_TRACE] copy_physical_blocks count=%zu allocated_blocks=%zu",
+                       copied_blocks,
+                       m_num_allocated_kv_blocks);
         }
     }
 

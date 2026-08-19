@@ -6,6 +6,7 @@
 #include "openvino/runtime/core.hpp"
 #include "continuous_batching/scheduler.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "helper.hpp"
 
 using namespace ov::genai;
@@ -105,4 +106,36 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     // check that cache does not increase if new blocks were not allocated
     cache_manager->allocate_cache_if_needed(block_manager.get_total_block_count());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
+}
+
+TEST(TestCacheManager, test_cpu_block_round_trip) {
+    ov::Core core;
+    constexpr size_t num_layers = 2;
+    constexpr size_t num_blocks = 3;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_layers)).create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request);
+    cache_manager->allocate_cache_if_needed(num_blocks);
+
+    std::vector<uint8_t> expected(cache_manager->get_block_size_in_bytes());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        expected[i] = static_cast<uint8_t>(i);
+    }
+
+    cache_manager->write_block(1, expected);
+    EXPECT_EQ(cache_manager->read_block(1), expected);
+    EXPECT_NE(cache_manager->read_block(0), expected);
+}
+
+TEST(TestCacheManager, test_disk_layout_is_layer_key_value_ordered) {
+    KVCacheDiskLayout layout({10, 20}, {3, 4});
+
+    EXPECT_EQ(layout.get_num_layers(), 2);
+    EXPECT_EQ(layout.get_slot_size(), 37);
+    EXPECT_EQ(layout.get_key_segment(0).offset, 0);
+    EXPECT_EQ(layout.get_key_segment(0).size, 10);
+    EXPECT_EQ(layout.get_value_segment(0).offset, 10);
+    EXPECT_EQ(layout.get_value_segment(0).size, 3);
+    EXPECT_EQ(layout.get_key_segment(1).offset, 13);
+    EXPECT_EQ(layout.get_value_segment(1).offset, 33);
+    EXPECT_EQ(layout.get_slot_offset(2), 74);
 }
