@@ -217,6 +217,14 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code mo
 python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
 ```
 
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino -m google/gemma-3n-E2B-it gemma-3n-E2B-it --task=image-text-to-text
+# chat iteration
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
+```
+
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models

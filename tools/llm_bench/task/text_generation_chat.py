@@ -102,7 +102,7 @@ class ChatIterationResult:
     cache_usage: dict | None = None
 
 
-class TextGenerationChatAdapter(ABC):
+class ChatGenerationAdapter(ABC):
     @abstractmethod
     def run_chat_iteration(self, prompt: str, prefix: str, bench_hook: object) -> ChatIterationResult:
         pass
@@ -120,7 +120,7 @@ class TextGenerationChatAdapter(ABC):
         pass
 
 
-class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
+class OptimumTextGenerationChatAdapter(ChatGenerationAdapter):
     def __init__(
         self,
         model: object,
@@ -173,12 +173,12 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
 
         return prefix_len
 
-    def get_kv_cache_seq_len(self) -> int:
+    def get_kv_cache_seq_len(self, model: object) -> int:
         past_key_values_len = 0
         if self.past_key_values is None:
             return past_key_values_len
 
-        if "transformers" in str(type(self.model)):
+        if "transformers" in str(type(model)):
             if isinstance(self.past_key_values, Cache):
                 if (
                     hasattr(self.past_key_values, "get_seq_length")
@@ -193,18 +193,18 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
 
         return past_key_values_len
 
-    def trim_kv_cache(self, prefix_len: int) -> Union[tuple, "Cache", None]:
+    def trim_kv_cache(self, prefix_len: int, model: object) -> Union[tuple, "Cache", None]:
         if self.past_key_values is None:
             return None
 
         if prefix_len == 0:
-            if "transformers" in str(type(self.model)):
+            if "transformers" in str(type(model)):
                 return None
             else:
-                self.model.request.reset_state()
+                model.request.reset_state()
                 return [None]
 
-        if "transformers" in str(type(self.model)):
+        if "transformers" in str(type(model)):
             if isinstance(self.past_key_values, Cache):
                 if hasattr(self.past_key_values, "crop"):
                     self.past_key_values.crop(max_length=prefix_len)
@@ -212,10 +212,10 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
                 trimmed = tuple((k[..., :prefix_len, :], v[..., :prefix_len, :]) for k, v in self.past_key_values)
                 self.past_key_values = trimmed
         else:
-            self.model._past_length = prefix_len
+            model._past_length = prefix_len
             import openvino as ov
 
-            states = self.model.request.query_state()
+            states = model.request.query_state()
             for state in states:
                 old_tensor = state.state
                 # [BATCH_SIZE, num_kv_heads, seq_len, head_size]
@@ -248,7 +248,7 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
         if len(self.tokenized_history) > 0 and not self.full_chat:
             prefix_len = self.find_common_prefix_length(full_input_ids_list)
             if prefix_len < len(self.tokenized_history):
-                self.trim_kv_cache(prefix_len)
+                self.trim_kv_cache(prefix_len, self.model)
             self.tokenized_history = self.tokenized_history[:prefix_len]
 
         num_new_token_input_size = len(full_input_ids_list) - prefix_len
@@ -285,7 +285,7 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
         if new_past_key_values is not None and not self.full_chat:
             self.past_key_values = new_past_key_values
             self.tokenized_history = full_input_ids_list + answer_result.tolist()
-            actual_cache_len = self.get_kv_cache_seq_len()
+            actual_cache_len = self.get_kv_cache_seq_len(self.model)
             if actual_cache_len > 0 and len(self.tokenized_history) != actual_cache_len:
                 self.tokenized_history = self.tokenized_history[:actual_cache_len]
         else:
@@ -340,7 +340,7 @@ class OptimumTextGenerationChatAdapter(TextGenerationChatAdapter):
         return self.chat_history
 
 
-class GenAITextGenerationChatAdapter(TextGenerationChatAdapter):
+class GenAITextGenerationChatAdapter(ChatGenerationAdapter):
     def __init__(self, model: object, args: dict, streaming: bool, tokens_len: int):
         self.model = model
         self.args = args
@@ -352,9 +352,7 @@ class GenAITextGenerationChatAdapter(TextGenerationChatAdapter):
         self.gen_config = None
         self.adapters_args = None
         self.chat_history = None
-        self.chat_iter_data_list = []
         self.chat_token_size = 0
-        self.num_input_size = 0
         self.streamer = None
 
     def setup_generation_config(self):
@@ -384,10 +382,51 @@ class GenAITextGenerationChatAdapter(TextGenerationChatAdapter):
         self.gen_config = None
         self.adapters_args = None
         self.chat_history = None
-        self.chat_iter_data_list = []
         self.chat_token_size = 0
-        self.num_input_size = 0
         self.streamer = None
+
+    def collect_input_output_sizes(self, perf_metrics: object, prefix: str):
+        # For GenAI it's impossible to calculate precise token size, but we can calulate approximate number
+        num_full_chat_input_tokens = perf_metrics.get_num_input_tokens()
+        if self.full_chat:
+            num_input_size = num_full_chat_input_tokens
+        else:
+            num_input_size = num_full_chat_input_tokens - self.chat_token_size
+
+        num_generated_tokens = perf_metrics.get_num_generated_tokens()
+        self.chat_token_size = num_full_chat_input_tokens + num_generated_tokens
+
+        if num_generated_tokens > self.max_gen_tokens:
+            log.error(
+                "%s Output token size is over max output token size! num_tokens=%d, max_gen_tokens=%d",
+                prefix,
+                num_generated_tokens,
+                self.max_gen_tokens,
+            )
+
+        return num_input_size, num_generated_tokens
+
+    def collect_time_perf_metrics(self, perf_metrics: object):
+        first_token_time = perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000
+        second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_durations) / 1000).tolist()
+        tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
+        inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
+        log.debug("latency of all tokens:")
+        [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
+
+        tokenization_time = []
+        tokenization_time.append(np.mean(perf_metrics.raw_metrics.tokenization_durations) / 1000)
+        tokenization_time.append(np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
+
+        cache_usage = None
+        if hasattr(self.model, "get_metrics"):
+            pipeline_metrics = self.model.get_metrics()
+            if hasattr(pipeline_metrics, "avg_cache_usage") and hasattr(pipeline_metrics, "max_cache_usage"):
+                cache_usage = {
+                    "avg_cache_usage": pipeline_metrics.avg_cache_usage,
+                    "max_cache_usage": pipeline_metrics.max_cache_usage,
+                }
+        return tm_list, inference_durations, tokenization_time, cache_usage
 
     def run_chat_iteration(self, prompt: str, prefix: str, bench_hook: object) -> ChatIterationResult:
         self.chat_history.append({"role": "user", "content": prompt})
@@ -406,44 +445,16 @@ class GenAITextGenerationChatAdapter(TextGenerationChatAdapter):
         generation_time = end - start
         self.chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
+        # ==== Performance Data Collection and Print Results =====
         perf_metrics = decoded_results.perf_metrics
-        # For GenAI it's impossible to calculate precise token size, but we can calulate approximate number
-        num_full_chat_input_tokens = perf_metrics.get_num_input_tokens()
-        if self.chat_token_size == 0 and self.args.get("full_chat", False):
-            num_input_size = num_full_chat_input_tokens
-        else:
-            num_input_size = num_full_chat_input_tokens - self.chat_token_size
-        num_tokens = perf_metrics.get_num_generated_tokens()
-        self.chat_token_size = num_full_chat_input_tokens + num_tokens
-
-        if num_tokens > self.max_gen_tokens:
-            log.error("Output token size is over max output token size!")
-
-        first_token_time = perf_metrics.get_ttft().mean - perf_metrics.raw_metrics.tokenization_durations[-1] / 1000
-        second_tokens_durations = (np.array(perf_metrics.raw_metrics.m_durations) / 1000).tolist()
-        tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
-        inference_durations = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
-        log.debug("latency of all tokens:")
-        [log.debug("[{}]{:.4f}".format(idx, tm)) for idx, tm in enumerate(tm_list)]
-
-        tokenization_time = []
-        tokenization_time.append(np.mean(perf_metrics.raw_metrics.tokenization_durations) / 1000)
-        tokenization_time.append(np.mean(perf_metrics.raw_metrics.detokenization_durations) / 1000)
+        num_input_size, num_generated_tokens = self.collect_input_output_sizes(perf_metrics, prefix)
+        tm_list, inference_durations, tokenization_time, cache_usage = self.collect_time_perf_metrics(perf_metrics)
 
         rendered_chat = self.tokenizer.apply_chat_template(self.chat_history, add_generation_prompt=True)
 
-        cache_usage = None
-        if hasattr(self.model, "get_metrics"):
-            pipeline_metrics = self.model.get_metrics()
-            if hasattr(pipeline_metrics, "avg_cache_usage") and hasattr(pipeline_metrics, "max_cache_usage"):
-                cache_usage = {
-                    "avg_cache_usage": pipeline_metrics.avg_cache_usage,
-                    "max_cache_usage": pipeline_metrics.max_cache_usage,
-                }
-
         return ChatIterationResult(
             input_size=num_input_size,
-            output_size=num_tokens,
+            output_size=num_generated_tokens,
             generation_time=generation_time,
             infer_count=len(tm_list),
             tm_list=tm_list,
@@ -460,7 +471,7 @@ class GenAITextGenerationChatAdapter(TextGenerationChatAdapter):
 
 
 def run_text_generation_chat_common(
-    pipeline: TextGenerationChatAdapter,
+    pipeline: ChatGenerationAdapter,
     input_text: str | list,
     iter_num: int,
     args: dict,

@@ -1,0 +1,2 @@
+[{"prompt": "What animal is this?", "media": ["http://images.cocodataset.org/val2017/000000329219.jpg"]}, {"prompt": "What do the images have in common?", "media": ["http://images.cocodataset.org/val2017/000000338624.jpg"]}]
+[{"prompt": "Describe these image in details", "media": ["https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11", "http://images.cocodataset.org/val2017/000000152740.jpg"]}]
