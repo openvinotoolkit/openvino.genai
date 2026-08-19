@@ -160,6 +160,7 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
 
             const float* last_hidden_state_data = last_hidden_state.data<const float>();
             float* result_data = result.data<float>();
+            std::fill_n(result_data, result.get_size(), 0.0f);
             const size_t hidden_size = hidden_state_shape[2];
 
             for (size_t batch_idx = 0; batch_idx < text_embedding_batch_size; ++batch_idx) {
