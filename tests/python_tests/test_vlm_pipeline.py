@@ -1300,7 +1300,7 @@ def test_vlm_pipeline_chat_with_video(
     system_message: str,
     iteration_images_and_videos,
 ):
-    if sys.platform == "win32" and "gemma4-unified-it" in ov_pipe_model.model_id and not ov_pipe_model.prompt_lookup:
+    if sys.platform == "win32" and "gemma4" in ov_pipe_model.model_id:
         pytest.skip("Access violation on Windows, CVS-192891")
 
     def streamer(word: str) -> bool:
