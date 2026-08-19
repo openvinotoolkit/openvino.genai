@@ -3,7 +3,7 @@
 
 import importlib.util
 import re
-import subprocess
+import subprocess  # nosec B404
 
 import pytest
 
