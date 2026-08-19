@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import importlib.util
+import platform
 import re
 import subprocess  # nosec B404
+import sys
 
 import pytest
 
@@ -60,6 +62,10 @@ def test_asr_gemma4_hf(tmp_path, asr_ground_truth):
 
 
 @pytest.mark.skipif(not _ov_gemma_audio_supported(), reason="optimum-intel build lacks Gemma-4 OpenVINO audio export")
+@pytest.mark.skipif(
+    sys.platform == "darwin" and platform.machine() == "arm64",
+    reason="OpenVINO oneDNN ARM CPU backend can't compile the Gemma-4 audio encoder matmul. Ticket CVS-193092",
+)
 def test_asr_gemma4_optimum_genai(tmp_path, asr_ground_truth):
     common = _common_args(asr_ground_truth)
 
