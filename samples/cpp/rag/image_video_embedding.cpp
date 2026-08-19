@@ -110,6 +110,10 @@ int main(int argc, char* argv[]) try {
         return a.score > b.score;
     });
 
+    if (results.empty()) {
+        throw std::runtime_error("No inputs were embedded. Check --images/--videos paths.");
+    }
+    
     std::cout << std::fixed << std::setprecision(6);
     std::cout << "Query: " << *query << "\nRanked inputs by cosine similarity:\n";
     for (size_t i = 0; i < results.size(); ++i) {
