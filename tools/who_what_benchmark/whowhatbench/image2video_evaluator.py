@@ -17,6 +17,8 @@ import openvino_genai
 
 from .registry import register_evaluator
 from .text2video_evaluator import Text2VideoEvaluator
+from .utils import parquet_generate_tables
+from .inpaint_evaluator import patched_parquet
 
 
 def prepare_default_data(num_samples=None):
@@ -76,7 +78,8 @@ class Image2VideoEvaluator(Text2VideoEvaluator):
             prompts = json.load(input_file)
 
         num = self.num_samples if self.num_samples is not None else len(prompts)
-        images = prepare_default_data(num_samples=num)
+        with patched_parquet(parquet_generate_tables):
+            images = prepare_default_data(num_samples=num)
         # The dataset is streamed and filtered, so it may yield fewer images than requested.
         # Cycle the prompts to match however many images we actually got.
         selected = [prompts[i % len(prompts)] for i in range(len(images))]
