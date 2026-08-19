@@ -17,7 +17,7 @@ import task.image_generation as bench_image
 import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
-import task.text_embeddings as bench_text_embed
+import task.embedding as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
@@ -404,6 +404,7 @@ def get_argparser():
             "image_cls",
             "code_gen",
             "ldm_super_resolution",
+            "embed",
             "text_embed",
             "text_rerank",
             "text_to_speech",
@@ -453,6 +454,14 @@ def get_argparser():
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
     )
     parser.add_argument(
+        "--embedding_prompt",
+        type=str,
+        default=None,
+        help="Instruction/system prompt used to guide embedding generation for Qwen3-VL-Embedding "
+        "(distinct from -p/--prompt, which is the content being embedded). Ignored by non-Qwen3-VL "
+        'embedding models. Defaults to "Represent the user\'s input."',
+    )
+    parser.add_argument(
         "--reranking_max_length",
         type=int,
         default=None,
@@ -497,7 +506,9 @@ def get_argparser():
         "--speech_voice",
         type=str,
         default="",
-        help="Speech voice for text-to-speech models. For Kokoro defaults to af_heart",
+        help=(
+            "Speech voice for text-to-speech models. For Kokoro defaults to af_heart. For Qwen3-Omni defaults to Ethan."
+        ),
     )
     parser.add_argument(
         "-vf",
@@ -519,6 +530,16 @@ def get_argparser():
         action="store_true",
         help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
         "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
+    )
+    parser.add_argument(
+        "-np",
+        "--num_prefill_tokens",
+        type=greater_than_zero,
+        default=None,
+        help="Use with --task text_gen/visual_text_gen. "
+        "Specifies the number of prefill tokens to use for generation. \n"
+        "If this number is not specified or is greater than the tokens in the prompt, the entire prompt is used for generation.\n"
+        "If this number is less than the tokens in the prompt, llm_bench trims prompt and takes only the first prefill tokens.\n",
     )
 
     return parser.parse_args()
