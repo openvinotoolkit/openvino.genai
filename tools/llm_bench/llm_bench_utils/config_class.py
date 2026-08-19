@@ -26,13 +26,17 @@ from optimum.intel.openvino import (
     OVModelForTextToSpeechSeq2Seq,
     OVModelForSequenceClassification,
     OVLTXPipeline,
-    OVLTXImageToVideoPipeline,
 )
 
 try:
     from optimum.intel.openvino import OVModelForMultimodalLM
 except ImportError:
     OVModelForMultimodalLM = None
+
+try:
+    from optimum.intel.openvino import OVLTXImageToVideoPipeline
+except ImportError:
+    OVLTXImageToVideoPipeline = None
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 from dataclasses import dataclass, field
 
