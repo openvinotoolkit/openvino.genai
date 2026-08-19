@@ -80,6 +80,7 @@ std::vector<EncodedGenerationResult> generate_common(
         if (position_ids.has_value() && self->m_inputs_embedder) {
             const auto [position_ids_tensor, rope_delta] = (*position_ids)[rid];
             self->m_inputs_embedder->set_position_ids(position_ids_tensor);
+            // TODO: The rope_delta here has to be recomputed, if rope_delta is not provided then a stale value is used
             if (rope_delta.has_value()) {
                 self->m_inputs_embedder->set_rope_delta(*rope_delta);
             }
