@@ -531,6 +531,16 @@ def get_argparser():
         help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
         "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
     )
+    parser.add_argument(
+        "-np",
+        "--num_prefill_tokens",
+        type=greater_than_zero,
+        default=None,
+        help="Use with --task text_gen/visual_text_gen. "
+        "Specifies the number of prefill tokens to use for generation. \n"
+        "If this number is not specified or is greater than the tokens in the prompt, the entire prompt is used for generation.\n"
+        "If this number is less than the tokens in the prompt, llm_bench trims prompt and takes only the first prefill tokens.\n",
+    )
 
     return parser.parse_args()
 
