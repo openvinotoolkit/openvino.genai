@@ -20,6 +20,9 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
+    // thinking / reasoning budget
+    std::shared_ptr<LogitTransformers::ThinkingBudgetTransform> m_thinking_budget;
+
     // speculative decoding parameters
     float m_assistant_confidence_threshold = 0.f;
 
@@ -109,6 +112,24 @@ public:
                 m_assistant_confidence_threshold = sampling_params.assistant_confidence_threshold;
             }
         }
+
+        // Thinking / Reasoning Budget - inserted last so its -inf mask overrides all prior transforms
+        if (!sampling_params.enable_thinking || sampling_params.reasoning_budget_tokens >= 0) {
+            int64_t start_id = sampling_params.thinking_start_token_id;
+            int64_t end_id   = sampling_params.thinking_end_token_id;
+            int64_t budget   = sampling_params.reasoning_budget_tokens;
+
+            if (!sampling_params.enable_thinking && end_id >= 0) {
+                budget = 0;
+            }
+
+            if (start_id >= 0 && end_id >= 0 && budget >= 0) {
+                // Pass prompt token IDs to determine initial state (IDLE vs COUNTING).
+                m_thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
+                    budget, start_id, end_id, input_ids);
+                m_logit_transformers.push_back(m_thinking_budget);
+            }
+        }
     }
 
     float get_assistant_confidence_threshold() {
@@ -142,6 +163,10 @@ public:
             if (transformer->is_applicable(m_generated_tokens)) {
                 transformer->accept_tokens({new_token_id});
             }
+        }
+        // Notify thinking budget transformer
+        if (m_thinking_budget) {
+            m_thinking_budget->accept_token(new_token_id);
         }
     }
 
