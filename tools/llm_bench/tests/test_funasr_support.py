@@ -97,7 +97,10 @@ def test_model_detection_maps_fun_asr_to_speech_to_text():
 def test_asr_hook_skips_incompatible_pipeline():
     from llm_bench_utils.hook_forward_whisper import ASRHook
 
-    assert ASRHook().attach(types.SimpleNamespace(model=object())) is False
+    hook = ASRHook()
+    assert hook.attach(types.SimpleNamespace(model=object())) is False
+    assert hook.get_time_list() == []
+    assert hook.get_time_infer_list() == []
 
 
 @pytest.mark.parametrize(
@@ -116,22 +119,6 @@ def test_resolve_speech_language_precedence(model_type, speech_param, cli_langua
     from task.speech_to_text_generation import resolve_speech_language
 
     assert resolve_speech_language(model_type, speech_param, cli_language) == expected
-
-
-@pytest.mark.parametrize(
-    ("model_type", "speech_param", "expected"),
-    [
-        ("fun-asr", {}, False),
-        ("fun-asr", {"timestamp": True}, True),
-        ("whisper", {}, True),
-        ("qwen3-asr", {}, True),
-        ("whisper", {"timestamp": False}, False),
-    ],
-)
-def test_resolve_return_timestamps(model_type, speech_param, expected):
-    from task.speech_to_text_generation import resolve_return_timestamps
-
-    assert resolve_return_timestamps(model_type, speech_param) is expected
 
 
 def _has_asr_pipeline():

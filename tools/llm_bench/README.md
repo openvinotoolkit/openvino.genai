@@ -296,8 +296,8 @@ python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wa
 python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
 
 # FunASR speech recognition
-optimum-cli export openvino --trust-remote-code --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
-python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text --speech_language en
+optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
+python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2
 ```
 
 **Some additional parameters:**

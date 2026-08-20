@@ -19,7 +19,7 @@ convert_draft_model = convert_model
 download_mask_image = download_test_content
 
 
-def _funasr_optimum_supported():
+def _funasr_export_supported():
     return (
         importlib.util.find_spec("funasr") is not None
         and importlib.util.find_spec("optimum.intel.openvino.modeling_funasr") is not None
@@ -498,8 +498,8 @@ class TestBenchmarkLLM:
 
     @pytest.mark.samples
     @pytest.mark.skipif(
-        not _funasr_optimum_supported(),
-        reason="requires the funasr package and FunASR support in optimum-intel",
+        not _funasr_export_supported(),
+        reason="requires the funasr package and FunASR export support in optimum-intel",
     )
     @pytest.mark.parametrize(
         "sample_args",

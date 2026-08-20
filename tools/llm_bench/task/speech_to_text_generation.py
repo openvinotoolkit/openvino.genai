@@ -36,11 +36,6 @@ def resolve_speech_language(model_type, speech_param, cli_language):
     return STT_DEFAULT_LANGUAGES.get(model_type, STT_FALLBACK_LANGUAGE)
 
 
-def resolve_return_timestamps(model_type, speech_param):
-    default = False if model_type == "fun-asr" else True
-    return speech_param.get("timestamp", default)
-
-
 def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     result_md5_list = []
     pipe = input_param["pipe"]
@@ -54,7 +49,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     speech_language = resolve_speech_language(
         use_case.model_type, input_param["speech_param"], args.get("speech_language")
     )
-    ret_timestamps = resolve_return_timestamps(use_case.model_type, input_param["speech_param"])
+    ret_timestamps = input_param["speech_param"].get("timestamp", use_case.model_type != "fun-asr")
     max_gen_tokens = args["infer_count"]
     if max_gen_tokens is None:
         max_gen_tokens = (
