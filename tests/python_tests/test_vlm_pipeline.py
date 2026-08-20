@@ -898,8 +898,23 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == len(
             cb_vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations
         )
+        assert len(vlm_perf_metrics.vlm_raw_metrics.vision_encoding_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.vision_encoding_durations
+        )
+        assert len(vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations
+        )
+
         assert vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
         assert cb_vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
+
+        if images or videos:
+            assert vlm_perf_metrics.get_vision_encoding_duration().mean > 0
+            assert cb_vlm_perf_metrics.get_vision_encoding_duration().mean > 0
+
+        assert vlm_perf_metrics.get_text_embedding_duration().mean > 0
+        assert cb_vlm_perf_metrics.get_text_embedding_duration().mean > 0
+
         assert (
             vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
             == cb_vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
@@ -1421,7 +1436,14 @@ def test_perf_metrics(
     assert 0 < perf_metrics.get_generate_duration().mean < generate_time
     assert 0 < perf_metrics.get_tokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_detokenization_duration().mean < generate_time
-    assert 0 < perf_metrics.get_prepare_embeddings_duration().mean < generate_time
+
+    prepare_embeddings_mean = perf_metrics.get_prepare_embeddings_duration().mean
+    assert 0 < prepare_embeddings_mean < generate_time
+    vision_encoding_mean = perf_metrics.get_vision_encoding_duration().mean
+    assert 0 < vision_encoding_mean < prepare_embeddings_mean
+    text_embedding_mean = perf_metrics.get_text_embedding_duration().mean
+    assert 0 < text_embedding_mean < prepare_embeddings_mean
+    assert 0 < vision_encoding_mean + text_embedding_mean < prepare_embeddings_mean
 
     squared_generate_time = generate_time * generate_time
     assert 0 <= perf_metrics.get_ttft().std < squared_generate_time
@@ -1432,17 +1454,24 @@ def test_perf_metrics(
     assert 0 <= perf_metrics.get_generate_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_tokenization_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_detokenization_duration().std < squared_generate_time
-    assert (
-        0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
-    )
+    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_vision_encoding_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_text_embedding_duration().std < squared_generate_time
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
 
-    raw_dur = np.array(vlm_raw_metrics.prepare_embeddings_durations) / 1000.0
-    mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
-    assert np.allclose(mean_dur, np.mean(raw_dur))
-    assert np.allclose(std_dur, np.std(raw_dur))
+    metrics_and_raw_pairs = [
+        (perf_metrics.get_prepare_embeddings_duration(), vlm_raw_metrics.prepare_embeddings_durations),
+        (perf_metrics.get_vision_encoding_duration(), vlm_raw_metrics.vision_encoding_durations),
+        (perf_metrics.get_audio_encoding_duration(), vlm_raw_metrics.audio_encoding_durations),
+        (perf_metrics.get_text_embedding_duration(), vlm_raw_metrics.text_embedding_durations),
+    ]
+
+    for (mean_duration, std_duration), raw_metrics in metrics_and_raw_pairs:
+        raw_durations = np.array(raw_metrics) / 1000.0
+        assert np.allclose(mean_duration, np.mean(raw_durations))
+        assert np.allclose(std_duration, np.std(raw_durations))
 
     # Test per-image and request-level image slice metrics.
     assert perf_metrics.get_total_image_slice_count() > 0
