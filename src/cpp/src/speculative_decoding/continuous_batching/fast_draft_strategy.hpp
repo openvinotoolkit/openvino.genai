@@ -187,6 +187,10 @@ protected:
 
     void drop_requests();
     virtual void align_request_pair_processed_prefix(uint64_t) {}
+    virtual void prepare_main_validation(const GeneratedRequests&,
+                                         const std::map<int64_t, UpdateRequestResult>&) {}
+    virtual void finalize_main_validation(const GeneratedRequests&) {}
+    virtual void abort_main_validation() {}
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig> init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);

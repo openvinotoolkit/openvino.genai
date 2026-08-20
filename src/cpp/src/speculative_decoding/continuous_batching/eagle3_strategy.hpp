@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <map>
+#include <optional>
+
 #include "fast_draft_strategy.hpp"
 #include "openvino/op/constant.hpp"
 
@@ -80,12 +83,20 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 protected:
     void align_request_pair_processed_prefix(uint64_t request_id) override;
+    void prepare_main_validation(const GeneratedRequests& main_generated_requests_before_validation,
+                                 const std::map<int64_t, UpdateRequestResult>& update_sequence_info) override;
+    void finalize_main_validation(const GeneratedRequests& main_generated_requests) override;
+    void abort_main_validation() override;
     void update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
     ov::Tensor create_draft_input(const ov::Tensor& original_input);
     // Creates draft model input by removing the first token from the original input sequence.
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
     // the wrapper for executing kv cache update model in eagle3 pipeline
     std::shared_ptr<KVUpdateWrapper> m_kv_update_wrapper;
+    bool m_main_has_linear_attention = false;
+    std::map<uint64_t, std::optional<uint64_t>> m_linear_attention_checkpoint_sequences;
+    std::map<uint64_t, size_t> m_main_generated_lengths_before_validation;
+    std::map<uint64_t, size_t> m_validation_candidate_counts;
     ov::Tensor create_draft_input_embeddings(const ov::Tensor& original_input_embeddings);
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     static ov::Tensor trim_first_token_sequence_tensor(const ov::Tensor& tensor, const char* tensor_name);

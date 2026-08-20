@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <limits>
 
 #include "eagle3_strategy.hpp"
 #include "openvino/pass/pa_kv_reorder_fusion.hpp"
@@ -17,7 +18,15 @@ KVUpdateWrapper::KVUpdateWrapper(const ov::genai::ModelDesc& kv_model_desc) {
 ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
                                                                  const std::vector<int32_t>& hidden_layers) {
-    // Enable query-to-query bias for Eagle3 main model only
+    auto main_model = main_model_desc.model;
+    auto draft_model = draft_model_desc.model;
+    OPENVINO_ASSERT(main_model && draft_model);
+    // SDPAToPagedAttention replaces stateful ReadValue nodes with cache parameters, while
+    // get_cache_types() recognizes the pre-conversion stateful representation.
+    const bool main_has_linear_attention = utils::get_cache_types(*main_model).has_linear();
+    const bool draft_has_linear_attention = utils::get_cache_types(*draft_model).has_linear();
+    m_main_has_linear_attention = main_has_linear_attention;
+
     ov::genai::ModelDesc main_model_desc_with_qq_bias = main_model_desc;
     main_model_desc_with_qq_bias.properties["query_to_query_bias"] = true;
     auto scheduler_configs = init_speculative_models(main_model_desc_with_qq_bias, draft_model_desc);
@@ -28,9 +37,19 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
         m_vision_registry = std::make_shared<VisionRegistry>();
     }
 
-    auto main_model = main_model_desc.model;
-    auto draft_model = draft_model_desc.model;
-    OPENVINO_ASSERT(main_model && draft_model);
+    if (!scheduler_configs.first.enable_prefix_caching && main_has_linear_attention) {
+        const size_t num_assistant_tokens = std::max(main_model_desc.generation_config.num_assistant_tokens, size_t{5});
+        OPENVINO_ASSERT(num_assistant_tokens <= std::numeric_limits<size_t>::max() - 2,
+                        "Eagle3 num_assistant_tokens is too large for linear attention checkpoint allocation.");
+        // One block holds the committed recurrent state; the main validation pass needs one
+        // temporary checkpoint for the seed token and one for each draft candidate.
+        scheduler_configs.first.num_linear_attention_blocks = std::max(
+            scheduler_configs.first.num_linear_attention_blocks,
+            num_assistant_tokens + 2);
+    }
+    if (!draft_has_linear_attention) {
+        scheduler_configs.second.num_linear_attention_blocks = 0;
+    }
 
     auto main_device = main_model_desc.device;
     std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
@@ -200,6 +219,97 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
     }
 }
 
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_main_validation(
+    const GeneratedRequests& main_generated_requests_before_validation,
+    const std::map<int64_t, UpdateRequestResult>& update_sequence_info) {
+    OPENVINO_ASSERT(m_linear_attention_checkpoint_sequences.empty(),
+                    "Eagle3 linear attention checkpoints were not finalized before the next validation step.");
+
+    for (const auto& [request_id, sequences] : main_generated_requests_before_validation) {
+        OPENVINO_ASSERT(sequences.size() == 1,
+                        "Eagle3 linear attention checkpointing supports one running sequence per request.");
+        m_main_generated_lengths_before_validation[request_id] = sequences.begin()->second.token_ids.size();
+    }
+
+    for (const auto& [request_id, update_result] : update_sequence_info) {
+        const size_t validation_candidate_count = update_result.inserted_tokens_cnt;
+        if (validation_candidate_count == 0) {
+            continue;
+        }
+
+        const uint64_t eagle_request_id = static_cast<uint64_t>(request_id);
+        m_validation_candidate_counts[eagle_request_id] = validation_candidate_count;
+        m_linear_attention_checkpoint_sequences[eagle_request_id] =
+            m_main_pipeline->reserve_linear_attention_checkpoints_for_next_step(eagle_request_id,
+                                                                                 validation_candidate_count + 1);
+    }
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::finalize_main_validation(
+    const GeneratedRequests& main_generated_requests) {
+    for (const auto& [request_id, checkpoint_sequence_id] : m_linear_attention_checkpoint_sequences) {
+        if (!checkpoint_sequence_id.has_value()) {
+            continue;
+        }
+
+        const auto generated_request_it = main_generated_requests.find(request_id);
+        if (generated_request_it == main_generated_requests.end()) {
+            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(checkpoint_sequence_id);
+            continue;
+        }
+
+        const auto& generated_sequences = generated_request_it->second;
+        OPENVINO_ASSERT(generated_sequences.size() == 1,
+                        "Eagle3 linear attention checkpointing supports one generated sequence per request.");
+        const auto& generated_sequence = generated_sequences.begin()->second;
+        const size_t validation_candidate_count = m_validation_candidate_counts.at(request_id);
+
+        if (generated_sequence.tree_metadata && !generated_sequence.tree_metadata->validated_indices.empty()) {
+            const size_t checkpoint_slot = generated_sequence.tree_metadata->validated_indices.back() + 1;
+            OPENVINO_ASSERT(checkpoint_slot <= validation_candidate_count + 1,
+                            "Eagle3 validated tree index exceeds reserved linear attention checkpoints. request_id=",
+                            request_id,
+                            ", checkpoint_slot=",
+                            checkpoint_slot,
+                            ", reserved_checkpoints=",
+                            validation_candidate_count + 1);
+            m_main_pipeline->promote_linear_attention_checkpoint_for_sequence(checkpoint_sequence_id, checkpoint_slot);
+            continue;
+        }
+
+        const auto before_validation_it = m_main_generated_lengths_before_validation.find(request_id);
+        const size_t generated_length_before_validation = before_validation_it == m_main_generated_lengths_before_validation.end()
+                                                            ? 0
+                                                            : before_validation_it->second;
+        const size_t generated_length_after_validation = generated_sequence.token_ids.size();
+        if (generated_length_after_validation <= generated_length_before_validation) {
+            m_main_pipeline->release_linear_attention_checkpoints_for_sequence(checkpoint_sequence_id);
+            continue;
+        }
+
+        // The first checkpoint is the state after the validation seed token. Each accepted sequential
+        // draft token advances to the following checkpoint; a rejected first draft token keeps slot one.
+        const size_t generated_by_main = generated_length_after_validation - generated_length_before_validation;
+        const size_t accepted_draft_tokens = std::min(validation_candidate_count, generated_by_main - 1);
+        const size_t checkpoint_slot = accepted_draft_tokens + 1;
+        m_main_pipeline->promote_linear_attention_checkpoint_for_sequence(checkpoint_sequence_id, checkpoint_slot);
+    }
+
+    m_linear_attention_checkpoint_sequences.clear();
+    m_main_generated_lengths_before_validation.clear();
+    m_validation_candidate_counts.clear();
+}
+
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::abort_main_validation() {
+    for (const auto& [_, checkpoint_sequence_id] : m_linear_attention_checkpoint_sequences) {
+        m_main_pipeline->release_linear_attention_checkpoints_for_sequence(checkpoint_sequence_id);
+    }
+
+    m_linear_attention_checkpoint_sequences.clear();
+    m_main_generated_lengths_before_validation.clear();
+    m_validation_candidate_counts.clear();
+}
+
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
     auto shape = original_input_embeddings.get_shape();
 
@@ -232,6 +342,10 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    OPENVINO_ASSERT(!m_main_has_linear_attention || !sampling_params.is_tree_search(),
+                    "Eagle3 tree search is not supported for models with linear attention. "
+                    "Tree validation flattens sibling candidates, but the recurrent linear-attention state "
+                    "must be restored for the accepted branch.");
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -282,6 +396,12 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+
+    OPENVINO_ASSERT(!m_main_has_linear_attention || !sampling_params.is_tree_search(),
+                    "Eagle3 tree search is not supported for models with linear attention. "
+                    "Tree validation flattens sibling candidates, but the recurrent linear-attention state "
+                    "must be restored for the accepted branch.");
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
