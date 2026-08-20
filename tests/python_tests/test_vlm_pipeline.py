@@ -158,10 +158,16 @@ else:
         "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
         "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        "optimum-intel-internal-testing/tiny-random-muse-glimmer",
+        "optimum-intel-internal-testing/tiny-random-gemma4",
+        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
+        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
+        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
     ]
 
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
+MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -183,10 +189,6 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
-        "optimum-intel-internal-testing/tiny-random-gemma4",
-        "optimum-intel-internal-testing/tiny-random-gemma4-moe",
-        "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
-        "optimum-intel-internal-testing/tiny-random-gemma4-31B",
         *VIDEO_MODEL_IDS,
     ]
 
@@ -215,6 +217,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -226,6 +229,11 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen3.5": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -306,9 +314,17 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
+    if model_id == MODEL_QWEN3_OMNI and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Qwen3-Omni. Minimum required is 4.57.0."
+        )
     if "optimum-intel-internal-testing/tiny-random-qwen3.5" == model_id and is_transformers_version("<", "5.2.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
+        )
+    if model_id == "optimum-intel-internal-testing/tiny-random-muse-glimmer" and is_transformers_version("<", "5.15.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
         )
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -491,9 +507,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
-
-    if ("gemma4" in ov_model or ov_model == MODEL_GEMMA3N) and ov_backend == "PA" and ov_prompt_lookup:
-        pytest.xfail(f"{ov_model} does not support PA with prompt_lookup=True")
 
     models_path = _get_ov_model(ov_model)
 
@@ -829,6 +842,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         videos_list = [[], []]
 
     res_generate = []
+    res_cb_generate = []
     for idx, images in enumerate(images_list):
         videos = videos_list[idx]
         res_generate.append(
@@ -838,6 +852,14 @@ def test_vlm_continuous_batching_generate_vs_add_request(
                 videos=videos,
                 generation_config=generation_config,
             )
+        )
+        res_cb_generate.append(
+            ov_continuous_batching_pipe.generate(
+                [PROMPTS[0]],
+                images=[images],
+                videos=[videos],
+                generation_config=[generation_config],
+            )[0]
         )
 
     tokenizer = ov_continuous_batching_pipe.get_tokenizer()
@@ -854,6 +876,38 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         while handle.get_status() != GenerationStatus.FINISHED:
             ov_continuous_batching_pipe.step()
         outputs = handle.read_all()
+        perf_metrics = handle.get_perf_metrics()
+        vlm_perf_metrics = handle.get_vlm_perf_metrics()
+        cb_vlm_perf_metrics = res_cb_generate[idx].perf_metrics
+
+        assert perf_metrics.get_num_generated_tokens() > 0
+        assert len(perf_metrics.raw_metrics.token_infer_durations) == perf_metrics.get_num_generated_tokens()
+        assert sum(perf_metrics.raw_metrics.m_batch_sizes) == perf_metrics.get_num_generated_tokens()
+        assert len(perf_metrics.raw_metrics.sampling_durations) == len(perf_metrics.raw_metrics.m_batch_sizes)
+        assert perf_metrics.get_sampling_duration().mean > 0
+        assert perf_metrics.get_load_time() > 0
+        assert vlm_perf_metrics.get_load_time() == perf_metrics.get_load_time()
+        assert vlm_perf_metrics.get_num_generated_tokens() == perf_metrics.get_num_generated_tokens()
+        assert perf_metrics.get_num_input_tokens() == cb_vlm_perf_metrics.get_num_input_tokens()
+        assert perf_metrics.get_num_generated_tokens() == cb_vlm_perf_metrics.get_num_generated_tokens()
+        assert vlm_perf_metrics.get_num_input_tokens() == cb_vlm_perf_metrics.get_num_input_tokens()
+        assert vlm_perf_metrics.get_num_generated_tokens() == cb_vlm_perf_metrics.get_num_generated_tokens()
+        assert vlm_perf_metrics.get_tokenization_duration().mean > 0
+        assert cb_vlm_perf_metrics.get_tokenization_duration().mean > 0
+        assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == 1
+        assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations
+        )
+        assert vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
+        assert cb_vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
+        assert (
+            vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
+            == cb_vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
+        )
+        assert vlm_perf_metrics.get_total_image_slice_count() == sum(
+            vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
+        )
+        assert vlm_perf_metrics.get_total_image_slice_count() == cb_vlm_perf_metrics.get_total_image_slice_count()
         for out_idx, output in enumerate(outputs):
             text = tokenizer.decode(output.generated_ids)
             assert text == res_generate[idx].texts[out_idx]
@@ -1074,9 +1128,6 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
-    if "gemma3" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("Outputs don't match for Gemma3 with PA. CVS-188205")
-
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1390,6 +1441,12 @@ def test_perf_metrics(
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
 
+    # Test per-image and request-level image slice metrics.
+    assert perf_metrics.get_total_image_slice_count() > 0
+    assert len(vlm_raw_metrics.per_image_slice_counts) > 0
+    assert all(count > 0 for count in vlm_raw_metrics.per_image_slice_counts)
+    assert perf_metrics.get_total_image_slice_count() == sum(vlm_raw_metrics.per_image_slice_counts)
+
 
 @pytest.mark.transformers_dependent(
     reason="minicpmv, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
@@ -1499,11 +1556,6 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
-    if (
-        "gemma4-moe" in ov_pipe_model.model_id or "gemma4-31B" in ov_pipe_model.model_id
-    ) and ov_pipe_model.ov_backend == "PA":
-        pytest.xfail("Outputs don't match for Gemma4 models with token_type_ids and PA. CVS-189726")
-
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -2183,6 +2235,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if optimum_model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "muse_glimmer":
+            processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
@@ -2258,8 +2312,9 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
-    # gemma3 PA cases
-    "*tiny-random-gemma3/PA/*": "CVS-167316",
+    # muse glimmer
+    "*tiny-random-muse-glimmer/*/CPP/image*": "CVS-192673",
+    "*tiny-random-muse-glimmer/*/CPP/video*": "CVS-192673",
     # gemma3n cases
     "*tiny-random-gemma3n/PA/CPP/image*": "CVS-190429",
     "*tiny-random-gemma3n/SDPA/CPP/image*": "CVS-190429",
@@ -2272,6 +2327,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # Gemma4 models (with token_type_ids input) PA cases with image input
     "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
     "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
+    # Gemma4 video inputs (not yet supported by optimum)
+    "*tiny-random-gemma4*/*/video*": "CVS-190256",
     # qwen2vl cases that use 70x70 video resolution
     "*tiny-random-qwen2vl/*/video-70x70": "CVS-180070",
     # qwen2.5-vl cases that use 350x350 image, or 70x70 video resolutions
@@ -3125,7 +3182,7 @@ def test_video_metadata_sampling(
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(
-        ov_pipe, max_new_tokens=20, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+        ov_pipe, max_new_tokens=50, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
     )
 
     prompt = PROMPTS[0]
@@ -3233,4 +3290,52 @@ def test_vision_pos_embeds_modes_equivalence(ov_pipe_model: VlmModelInfo, cat_te
         f"VISION_POS_EMBEDS modes produced different results.\n"
         f"Default (patched model): '{result_default.texts[0]}'\n"
         f"CPP (CPU fallback):      '{result_cpp.texts[0]}'"
+    )
+
+
+def test_qwen3_omni_vision_preprocess_modes_equivalence(cat_tensor):
+    """Qwen3-Omni CPP and OV_REARRANGE preprocessing must produce identical generation results."""
+    try:
+        model_path = _get_ov_model(MODEL_QWEN3_OMNI)
+    except AttributeError as error:
+        error_message = str(error)
+        if (
+            is_transformers_version(">=", "5.0")
+            and is_transformers_version("<", "5.1")
+            and "Qwen3OmniMoeTalkerCodePredictorConfig" in error_message
+            and "use_sliding_window" in error_message
+        ):
+            # Transformers 5.0 generated this config with an uninitialized
+            # use_sliding_window reference. The optimum-intel revision pinned by CI
+            # predates its workaround. Mark only this known export failure as expected;
+            # once either dependency fixes it, export succeeds and this test runs normally.
+            pytest.xfail(
+                "Known Transformers 5.0.x Qwen3-Omni config initialization bug; "
+                "the optimum-intel revision pinned by CI does not contain its workaround"
+            )
+        raise
+
+    previous_value = os.environ.get("VISION_PREPROCESS")
+    results = {}
+
+    try:
+        for mode in ("CPP", "OV_REARRANGE"):
+            os.environ["VISION_PREPROCESS"] = mode
+            pipeline = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND="SDPA")
+            generation_config = GenerationConfig()
+            generation_config.max_new_tokens = 20
+            generation_config.do_sample = False
+            results[mode] = pipeline.generate(
+                PROMPTS[0], images=[cat_tensor], generation_config=generation_config
+            ).texts[0]
+    finally:
+        if previous_value is None:
+            os.environ.pop("VISION_PREPROCESS", None)
+        else:
+            os.environ["VISION_PREPROCESS"] = previous_value
+
+    assert results["CPP"] == results["OV_REARRANGE"], (
+        "Qwen3-Omni vision preprocessing modes produced different results.\n"
+        f"CPP:          '{results['CPP']}'\n"
+        f"OV_REARRANGE: '{results['OV_REARRANGE']}'"
     )

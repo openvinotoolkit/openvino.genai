@@ -24,6 +24,12 @@ std::pair<std::string, ov::Any> videos_metadata_batches(
     return {utils::VIDEOS_METADATA_BATCHES_ARG_NAME, wrap_vectors_to_any(videos_metadata_batches)};
 }
 
+std::pair<std::string, ov::Any> audios_batches(
+    const std::vector<std::vector<ov::Tensor>>& audios_batches
+) {
+    return {utils::AUDIOS_BATCHES_ARG_NAME, wrap_vectors_to_any(audios_batches)};
+}
+
 CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& properties_map) {
     CBGenerateProperties properties;
 
@@ -51,6 +57,11 @@ CBGenerateProperties extract_cb_generate_properties(const ov::AnyMap& properties
         properties.videos_metadata_batches = unwrap_vectors_from_any<VideoMetadata>(
             videos_metadata_batches_iter->second.as<ov::AnyVector>()
         );
+    }
+
+    auto audios_batches_iter = properties_map.find(utils::AUDIOS_BATCHES_ARG_NAME);
+    if (audios_batches_iter != properties_map.end()) {
+        properties.audios_batches = unwrap_vectors_from_any<ov::Tensor>(audios_batches_iter->second.as<ov::AnyVector>());
     }
 
     return properties;

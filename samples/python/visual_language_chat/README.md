@@ -91,7 +91,7 @@ A model that supports video input is required to run this sample, for example `l
 
 `python video_to_text_chat.py ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4`
 
-Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt).
+Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/visual-processing/#use-image-or-video-tags-in-prompt).
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM.
 Modify the source code to change the device for inference to the GPU.
@@ -105,6 +105,8 @@ python benchmark_vlm.py [OPTIONS]
 ### Options
 
 - `-m, --model` (required): Path to the model and tokenizers base directory.
+- `-D, --draft_model` (default: `None`): Path to the draft model and tokenizers base directory. Not supported with `-d NPU`.
+- `-a, --num_assistant_tokens` (default: `5`): Number of assistant tokens used for speculative decoding when `--draft_model` is provided.
 - `-p, --prompt` (default: `None`): The prompt to generate text. If without `-p, --prompt`, and `-F, --prompt_file`, the default prompt is `"What is on the image?"`
 - `-F, --prompt_file`: Read prompt from file.
 - `-i, --image` (default: `image.jpg`): Path to image. Can be a single image or a directory of images.

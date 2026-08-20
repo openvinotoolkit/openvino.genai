@@ -27,8 +27,8 @@ env:
   HF_HOME: /mount/caches/huggingface/lin
   # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
   HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
-  OPENVINO_LOG_LEVEL: 4
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/b53e4e21/
+  OPENVINO_LOG_LEVEL: 1
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -48,21 +48,14 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 15
         with:
           sparse-checkout: .github
 
-      - name: Create Smart CI dependency constraints
-        # ghapi 1.0.4 used by Smart CI breaks with fastcore 2.x; create the constraint before the action upgrades pip.
-        run: echo "fastcore==1.12.1" > "${{ runner.temp }}/smart-ci-constraints.txt"
-        shell: bash
-
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@46c59b29a3cbdaf30e9eaacf5c04686b196d9a0f
-        env:
-          PIP_CONSTRAINT: ${{ runner.temp }}/smart-ci-constraints.txt
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@009fce994252679e838bfa14efc0c27f7e66daad
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -104,17 +97,21 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: latest_available_commit
+        # Workaround for ScatterNDUpdate exception.
+        # The ticket for tracking: CVS-192302
+        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
 
     - name: Clone docker tag from OpenVINO repo
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
-        ref: ${{ env.OV_BRANCH }}
+        # ref: ${{ env.OV_BRANCH }}
+        # Must match the pinned revision above so the docker image matches the OV artifacts. Ticket: 192302
+        ref: aa154b5f870b9b1c118dabc970989f9c7de163d3
         sparse-checkout: |
           .github/dockerfiles/docker_tag
 
@@ -154,13 +151,13 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -280,13 +277,13 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -341,13 +338,13 @@ jobs:
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -411,7 +408,7 @@ jobs:
 
     steps:
       - name: Download genai package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}_${{ matrix.build-type }}
           path: ${{ env.CPACK_PATH }}
@@ -421,7 +418,7 @@ jobs:
         working-directory: ${{ env.CPACK_PATH }}
 
       - name: Download manifest and wheels
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: '{genai_wheels,genai_wheel_python_*,manifest_${{ matrix.build-type }}}'
           path: ${{ github.workspace }}
@@ -467,13 +464,13 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }}}"
           path: ${{ env.OV_INSTALL_DIR }}
@@ -541,13 +538,13 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
 
       - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
@@ -573,199 +570,44 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
+  # genai_tests_wheel and genai_samples_tests matrices are defined in .github/workflows/test_matrices/linux/*.yml.
+  # Add/remove entries there; each entry runs only when one of its `components` is affected (see .github/scripts/build_test_matrices.py).
+  prepare_test_matrices:
+    name: Prepare test matrices
+    needs: [ smart_ci ]
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      wheel_tests: ${{ steps.build_matrices.outputs.wheel_tests }}
+      samples_tests: ${{ steps.build_matrices.outputs.samples_tests }}
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            .github/scripts
+            .github/workflows/test_matrices
+
+      - name: Build filtered test matrices from affected components
+        id: build_matrices
+        env:
+          AFFECTED_COMPONENTS: ${{ needs.smart_ci.outputs.affected_components }}
+        run: |
+          python3 -m pip install PyYAML==6.0.3
+          python3 .github/scripts/build_test_matrices.py --platform linux
+
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, prepare_test_matrices ]
+    if: ${{ needs.prepare_test_matrices.outputs.wheel_tests != '[]' }}
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
       matrix:
-        test:
-          - name: 'ASR'
-            # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
-            cmd: 'python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
-            timeout: 45
-          - name: 'ASR Transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
-            timeout: 45
-          - name: 'ASR (Qwen3-ASR)'
-            cmd: |
-              # optimum intel master commit with Qwen3-ASR support
-              python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4"
-              python -m pip install transformers==4.57.6 qwen-asr==0.0.6
-              python -m pytest -s -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition.test }}
-            timeout: 20
-          - name: 'Cacheopt E2E (Part 1)'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 180
-          - name: 'Cacheopt E2E (Part 2)'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 360
-          - name: 'Cacheopt E2E (xattention)'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_sparse_prefill.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 180
-          - name: 'LLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
-            timeout: 90
-
-          - name: 'VLM (match_optimum_with_resolutions)'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "test_vlm_pipeline_match_optimum_with_resolutions" --override-ini cache_dir=/mount/caches/pytest/'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 90
-          - name: 'VLM'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat and not eagle3" -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 90
-
-          - name: 'Video Generation'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
-            timeout: 60
-          - name: 'Kokoro TTS'
-            cmd: 'python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
-            timeout: 60
-          - name: 'Misaki C++ Parity'
-            cmd: |
-              rm -rf ./build_misaki_cpp_ci
-              unset CMAKE_CXX_COMPILER_LAUNCHER
-              unset CMAKE_C_COMPILER_LAUNCHER
-              cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build_misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER:STRING= -DCMAKE_C_COMPILER_LAUNCHER:STRING=
-              cmake --build ./build_misaki_cpp_ci --target misaki_cpp_py --parallel
-              export PYTHONPATH="./build_misaki_cpp_ci:./build_misaki_cpp_ci/Release:${PYTHONPATH}"
-              python -m pytest -s -v src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speech_generation.test }}
-            timeout: 30
-          - name: 'GGUF Reader tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 60
-          - name: 'Tokenizer tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_tokenizer.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
-            timeout: 60
-          - name: 'API tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
-            timeout: 60
-
-          - name: 'Rag tests'
-            # Pin optimum which supports qwen3-vl-embedding
-            cmd: |
-              python -m pip install "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
-              python -m pytest -v ./tests/python_tests/test_rag.py
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
-            timeout: 35
-          - name: 'WWB tests'
-            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava and not transformers_lower_v5" -k "not videochat"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 120
-          - name: 'WWB tests with transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pytest -v ./tools/who_what_benchmark/tests -m "transformers_dependent or transformers_lower_v5" -k "not videochat"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 120
-          - name: 'EAGLE3 speculative decoding tests'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
-            timeout: 90
-          - name: 'Gemma4 MTP speculative decoding tests'
-            cmd: |
-              python -m pip install git+https://github.com/openvino-agent/optimum-intel.git@support_mtp
-              python -m pip install transformers==5.8.0
-              python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "gemma4_mtp"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
-            timeout: 90
-          - name: 'WWB tests (nanollava)'
-            cmd: |
-              python -m pip install transformers==4.48.0 diffusers==0.35.2
-              python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 90
-          - name: 'WWB tests (videochat)'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pytest -v ./tools/who_what_benchmark/tests -k "videochat"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 90
-          - name: 'VLM (MiniCPM-o-2_6)'
-            cmd: |
-              python -m pip install transformers==4.51.3 diffusers==0.37.1
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
-          - name: 'VLM (videochat)'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 90
-          - name: 'VLM (qwen3-vl and qwen3-next)'
-            cmd: |
-              python -m pip install transformers==4.57.6
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl or eagle3"
-              python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test  || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 60
-          - name: 'VLM (qwen3.5)'
-            cmd: |
-              python -m pip install transformers==5.2.0
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
-          - name: 'VLM (gemma3n)'
-            cmd: |
-              python -m pip install transformers==4.57.0
-              pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@09d4c961f7ccc99f445dd3418fb85b9a46547ce4
-              pip show transformers optimum-intel openvino_tokenizers openvino_genai
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma3n"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
-          - name: 'VLM (gemma4)'
-            cmd: |
-              python -m pip install transformers==5.5.0
-              pip show transformers optimum-intel openvino_tokenizers openvino_genai
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4 and not gemma4-unified"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
-          - name: 'VLM (gemma4-unified)'
-            cmd: |
-              pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@3e159833682a192132094443b7ff8da3d7d46c42
-              python -m pip install transformers==5.10.0
-              pip show transformers optimum-intel openvino_tokenizers openvino_genai
-              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4-unified"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 60
-          - name: 'LLM with transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.55.4 diffusers==0.37.1
-              python -m pytest -v ./tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py tests/python_tests/test_image_generation_multi_call.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
-            timeout: 90
-          - name: 'VLM with transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.55.4 diffusers==0.37.1
-              python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
-            timeout: 90
-          - name: 'API tests transformers under 5.0'
-            cmd: |
-              python -m pip install transformers==4.55.4 diffusers==0.37.1
-              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
-            timeout: 60
+        test: ${{ fromJSON(needs.prepare_test_matrices.outputs.wheel_tests) }}
     defaults:
       run:
         shell: bash
@@ -789,22 +631,19 @@ jobs:
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
-        if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
-        if: ${{ matrix.test.run_condition }}
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
       - name: Install GenAI Wheels
-        if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
@@ -812,77 +651,25 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Install llama-cpp-python for WWB
-        if: ${{ matrix.test.run_condition && startsWith(matrix.test.name, 'WWB') }}
+        if: ${{ startsWith(matrix.test.name, 'WWB') }}
         env:
           CMAKE_CXX_COMPILER_LAUNCHER: ""
           CMAKE_C_COMPILER_LAUNCHER: ""
         run: python -m pip install --prefer-binary -c "${{ env.SRC_DIR }}/tests/python_tests/constraints-wwb.txt" llama-cpp-python
 
       - name: Tests
-        if: ${{ matrix.test.run_condition }}
         run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
-    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, prepare_test_matrices ]
+    if: ${{ needs.prepare_test_matrices.outputs.samples_tests != '[]' }}
     strategy:
       fail-fast: false
       matrix:
         build-type: [Release]
-        test:
-          - name: 'LLM'
-            marker: 'llm and not transformers_lower_v5'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
-          - name: 'Automatic Speech Recognition'
-            marker: 'automatic_speech_recognition'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).automatic_speech_recognition_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
-          - name: 'dreamlike_anime_1_0'
-            marker: 'dreamlike_anime_1_0'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-linux-8-cores-32gb'
-          - name: 'LCM_Dreamshaper_v7_int8_ov'
-            marker: 'LCM_Dreamshaper_v7_int8_ov'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
-          - name: 'tiny_random_latent_consistency'
-            marker: 'tiny_random_latent_consistency'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
-          # Test hangs on Linux. Ticket: 181387
-          # - name: 'VLM'
-          #   marker: 'vlm'
-          #   cmd: 'tests/python_tests/samples'
-          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
-          #   runner: 'aks-linux-8-cores-32gb'
-          - name: 'Rag'
-            marker: 'rag'
-            cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
-          - name: 'Speech generation'
-            marker: 'speech_generation'
-            cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
-          - name: 'Eagle3 decoding'
-            marker: 'eagle3_decoding'
-            cmd: 'tests/python_tests/samples'
-            runner: 'aks-linux-4-cores-16gb'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
-          - name: 'LLM with transformers under 5.0'
-            extra_cmd: 'python -m pip install transformers==4.55.4 diffusers==0.37.1'
-            marker: 'llm and (transformers_dependent or transformers_lower_v5)'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
-            runner: 'aks-linux-4-cores-16gb'
+        test: ${{ fromJSON(needs.prepare_test_matrices.outputs.samples_tests) }}
 
     timeout-minutes: 120
     defaults:
@@ -909,37 +696,32 @@ jobs:
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
-        if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
-        if: ${{ matrix.test.run_condition }}
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
       - name: Download GenAI JS Bildings Artifacts
-        if: ${{ matrix.test.run_condition }}
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: genai_nodejs_bindings
           path: ${{ env.SRC_DIR }}/src/js/bin
           merge-multiple: true
 
       - name: Extract Artifacts
-        if: ${{ matrix.test.run_condition }}
         run: |
           pigz -dc ${{ env.GENAI_ARCHIVE_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
 
       - name: Install GenAI wheels
-        if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
@@ -947,13 +729,11 @@ jobs:
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Setup Node
-        if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 21
 
       - name: Install GenAI NPM package
-        if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
@@ -961,7 +741,6 @@ jobs:
           npm install --verbose
 
       - name: Install NPM dependencies for samples
-        if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/samples/js
         run: |
           npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* ${{ env.SRC_DIR }}/src/js --ignore-scripts
@@ -969,7 +748,6 @@ jobs:
           npm install --verbose
 
       - name: Test Samples (Python and C++)
-        if: ${{ matrix.test.run_condition }}
         run: |
           ${{ matrix.test.extra_cmd }}
           python -m pytest -vvs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
@@ -1011,13 +789,13 @@ jobs:
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
@@ -1073,7 +851,8 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5"
+          python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
       - name: Test LLM Benchmark Tools transformers under 5.0
@@ -1082,6 +861,15 @@ jobs:
           source ${{ env.INSTALL_DIR }}/setupvars.sh
           python -m pip install transformers==4.57.6
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_lower_v5"
+        env:
+          SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
+      - name: Test LLM Benchmark Tools with Qwen3-Omni model
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
+        run: |
+          source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install transformers==5.1
+          python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16
+          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
 
@@ -1118,32 +906,32 @@ jobs:
           echo "HF_TOKEN_PATH=${{ runner.os == 'Linux' && env.HF_TOKEN_PATH_LIN || env.HF_TOKEN_PATH_WIN }}" >> "$GITHUB_ENV"
 
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download OpenVINO Artifacts
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
 
       - name: Download GenAI JS Bildings Artifacts
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: genai_nodejs_bindings
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Download Python wheels for JS tests
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.PY_INSTALL_DIR }}
@@ -1198,13 +986,13 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
       - name: Download Build Artifacts
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_tests_Release}"
           path: ${{ env.INSTALL_DIR }}
@@ -1248,7 +1036,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
+    needs: [smart_ci, openvino_download, prepare_test_matrices, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

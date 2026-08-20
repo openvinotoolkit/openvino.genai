@@ -40,10 +40,14 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         sys_mem_share = iter_data.get("max_sys_mem_share")
 
         result_md5 = []
-        for idx_md5 in range(len(iter_data['result_md5'])):
-            result_md5.append(iter_data['result_md5'][idx_md5])
+        for idx_md5 in range(len(iter_data["result_md5"])):
+            result_md5.append(iter_data["result_md5"][idx_md5])
 
-        timestamp_start, timestamp_end = get_timestamp(iter_data['iteration'], iter_data['prompt_idx'], iter_timestamp)
+        prompt_idx = iter_data.get("prompt_idx", "")
+        chat_idx = iter_data.get("chat_idx", "")
+
+        input_idx = chat_idx if chat_idx != "" else prompt_idx
+        timestamp_start, timestamp_end = get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
 
         if first_token_infer_latency:
             first_token_infer_latency = round(first_token_infer_latency, 5)
@@ -69,7 +73,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "second_infer_avg_latency": other_token_infer_latency,
             "tokenization_time": tokenization_time,
             "detokenization_time": detokenization_time,
-            "prompt_idx": iter_data["prompt_idx"],
+            "prompt_idx": prompt_idx,
+            "chat_idx": chat_idx,
             "result_md5": result_md5,
             "start": timestamp_start,
             "end": timestamp_end,

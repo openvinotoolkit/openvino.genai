@@ -13,7 +13,7 @@ from typing import Any, Union, List, TypedDict, Optional
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .whowhat_metrics import TextSimilarity
-from .utils import get_ignore_parameters_flag, load_image, fix_phi3_v_eos_token_id
+from .utils import OMNI_MODEL_TYPES, get_ignore_parameters_flag, load_image, fix_phi3_v_eos_token_id
 from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 from .chat_utils import find_common_prefix_length, get_kv_cache_seq_len, trim_kv_cache, get_kv_axes_pos
 
@@ -39,6 +39,8 @@ full_chat_types = [
     "qwen3_5_moe",
     "llava_next",
     "llava-qwen2",
+    "qwen3_omni",
+    "qwen3_omni_moe",
 ]
 
 
@@ -53,6 +55,7 @@ def default_gen_answer(
     kv_axes_pos,
     crop_question=False,
     full_chat=False,
+    generation_config_extra=None,
 ):
     if model.config.model_type not in MODEL_TYPE_TO_CLS_MAPPING:
         raise ValueError(
@@ -126,16 +129,27 @@ def default_gen_answer(
         if model.config.model_type not in ["phi4mm"]:
             generate_kwargs["tokenizer"] = tokenizer
 
+        is_optimum_ov = "openvino" in str(type(model)).lower()
+        is_hf_omni = model.config.model_type in OMNI_MODEL_TYPES and not is_optimum_ov
+        if is_hf_omni:
+            # Qwen3-Omni's generate() bounds text output via thinker_max_new_tokens
+            # and would synthesize audio unless return_audio is disabled.
+            generate_kwargs["thinker_max_new_tokens"] = max_new_tokens
+            generate_kwargs["return_audio"] = False
+        else:
+            generate_kwargs["max_new_tokens"] = max_new_tokens
+
         output = model.generate(
             **preprocess_inputs,
             **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
             do_sample=False,
-            max_new_tokens=max_new_tokens,
             **get_ignore_parameters_flag(),
             return_dict_in_generate=True,
             **generate_kwargs,
         )
-
+        if is_hf_omni and isinstance(output, tuple):
+            # (text_ids, audio) is returned when return_audio=false on transformers <= 4.57
+            output = output[0]
         if isinstance(output, tuple) and isinstance(output[0], list) and isinstance(output[0][0], str):
             # Some models return a decoded output, like miniCPM-o
             # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
@@ -184,6 +198,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
         relevance_weight=None,
         crop_question=True,
         device="CPU",
+        generation_config_extra=None,
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Text generation pipeline for evaluation or ground truth data must be defined")
@@ -198,6 +213,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
         self.processor = processor
         self._crop_question = crop_question
         self._full_chat = device == "NPU"
+        self.generation_config_extra = generation_config_extra or {}
 
         self.gt_dir = Path(gt_data or "").parent
         if base_model:
@@ -327,6 +343,8 @@ class ChatVisualTextEvaluator(TextEvaluator):
         prompts_dir = Path(result_dir) / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
 
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
+
         inputs: List[VisualTextChatInput]
         for i, inputs in tqdm(
             enumerate(input_data),
@@ -343,6 +361,7 @@ class ChatVisualTextEvaluator(TextEvaluator):
                 kv_axes_pos,
                 self._crop_question,
                 _full_chat,
+                **extra_kwargs,
             )
 
             result_path = Path(result_dir) / f"chat_vlm_output_{i}.json"

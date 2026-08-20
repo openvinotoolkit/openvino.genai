@@ -20,7 +20,12 @@ ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           std::optional<ov::Tensor> prompt_ids,
                                                           std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
-    return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    return m_pipeline->add_request(request_id,
+                                   input_ids,
+                                   sampling_params,
+                                   token_type_ids,
+                                   prompt_ids,
+                                   lm_extra_inputs);
 }
 
 GenerationHandle
@@ -116,6 +121,10 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
     OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
         "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
+    
+    if (lm_extra_inputs_list.has_value()) {
+        OPENVINO_ASSERT(lm_extra_inputs_list->size() == input_ids.size(), "lm_extra_inputs_list size must match input_ids size.");
+    }
 
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
@@ -124,12 +133,15 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
 
         bool has_valid_ttid = token_type_ids.has_value() && request_id < token_type_ids->size();
         bool has_valid_pid = prompt_ids.has_value() && request_id < prompt_ids->size();
+        bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
         generations.push_back(m_pipeline->add_request(
             request_id,
             input_ids[request_id],
             sampling_params[request_id],
             has_valid_ttid ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
-            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt));
+            has_valid_pid ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt
+        ));
     }
     auto all_requests = m_pipeline->get_awaiting_requests();
 

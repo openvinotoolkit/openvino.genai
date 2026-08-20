@@ -19,6 +19,7 @@ struct CBGenerateProperties {
     std::optional<std::vector<std::vector<ov::Tensor>>> images_batches;
     std::optional<std::vector<std::vector<ov::Tensor>>> videos_batches;
     std::optional<std::vector<std::vector<VideoMetadata>>> videos_metadata_batches;
+    std::optional<std::vector<std::vector<ov::Tensor>>> audios_batches;
     std::optional<std::vector<GenerationConfig>> generation_config_batches;
     StreamerVariant streamer = std::monostate();
 

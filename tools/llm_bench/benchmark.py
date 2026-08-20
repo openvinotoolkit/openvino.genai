@@ -12,11 +12,12 @@ import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
 import task.text_generation as bench_text
+import task.text_generation_chat as bench_text_chat
 import task.image_generation as bench_image
 import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
-import task.text_embeddings as bench_text_embed
+import task.embedding as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
@@ -26,14 +27,14 @@ from llm_bench_utils.memory_monitor import MemoryMonitorHandler
 DEFAULT_TORCH_THREAD_NUMS = 16
 
 
-def num_iters_type(x):
+def positive_integer(x):
     x = int(x)
     if x < 0:
         raise argparse.ArgumentTypeError("Minimum input value is 0")
     return x
 
 
-def num_infer_count_type(x):
+def greater_than_zero(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError("Minimum input value is 1")
@@ -89,7 +90,7 @@ def get_argparser():
         "-pi",
         "--prompt_index",
         nargs="+",
-        type=num_iters_type,
+        type=positive_integer,
         default=None,
         help="Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.",
     )
@@ -98,14 +99,14 @@ def get_argparser():
         "-ic",
         "--infer_count",
         default=None,
-        type=num_infer_count_type,
+        type=greater_than_zero,
         help="set the output token size, the value must be greater than 0.",
     )
     parser.add_argument(
         "-n",
         "--num_iters",
         default=0,
-        type=num_iters_type,
+        type=positive_integer,
         help="number of benchmarking iterations, "
         "if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n"
         "if the value equals 0 (default), execute the warm-up iteration(0th iteration).",
@@ -173,6 +174,31 @@ def get_argparser():
         required=False,
         type=str,
         help="Path to store memory consumption logs and chart.",
+    )
+    parser.add_argument(
+        "--memory_sampler",
+        default="base",
+        choices=["base", "win-gpu", "full"],
+        type=str.lower,  # normalise e.g. 'WIN-GPU'/'Full' -> 'win-gpu'/'full' before choices validation
+        required=False,
+        help="Memory sampler implementation to use when process-based monitoring is active\n"
+        "(--memory_consumption 3 or 4).\n"
+        "Possible values:\n"
+        "  base (default) — MemorySamplerBase: cross-platform sampler built on\n"
+        "                   psutil.memory_info(). Collects RSS, VMS, Private and\n"
+        "                   system-wide RAM. Works on Linux, macOS and Windows.\n"
+        "  win-gpu        — MemorySamplerWinGPU: same RAM metrics as base plus, when\n"
+        "                   the optional *wmi* package is installed (pip install wmi),\n"
+        "                   two per-GPU-adapter metrics: gpu_<index>_ded (dedicated\n"
+        "                   VRAM) and gpu_<index>_shr (shared system RAM). Sourced\n"
+        "                   from GPUAdapterMemory perf counters (Windows 10 1709+),\n"
+        "                   so integrated GPUs report real usage via the shared pool\n"
+        "                   instead of a constant 0. Windows only; falls back to\n"
+        "                   MemorySamplerBase on other platforms.\n"
+        "  full           — MemorySamplerFull: same RAM metrics as base plus uss, pss\n"
+        "                   and swap from psutil.memory_full_info() (reads /proc smaps).\n"
+        "                   More accurate 'real' footprint but slower. Linux only;\n"
+        "                   falls back to MemorySamplerBase on other platforms.",
     )
     parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
     parser.add_argument(
@@ -316,7 +342,7 @@ def get_argparser():
         help="Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).",
     )
     parser.add_argument(
-        "--set_torch_thread", default=0, type=num_infer_count_type, help="Set the number of Torch thread. "
+        "--set_torch_thread", default=0, type=greater_than_zero, help="Set the number of Torch thread. "
     )
     parser.add_argument(
         "-tl",
@@ -371,12 +397,14 @@ def get_argparser():
         default=None,
         choices=[
             "text_gen",
+            "text_gen_chat",
             "image_gen",
             "visual_text_gen",
             "speech_to_text",
             "image_cls",
             "code_gen",
             "ldm_super_resolution",
+            "embed",
             "text_embed",
             "text_rerank",
             "text_to_speech",
@@ -426,6 +454,14 @@ def get_argparser():
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
     )
     parser.add_argument(
+        "--embedding_prompt",
+        type=str,
+        default=None,
+        help="Instruction/system prompt used to guide embedding generation for Qwen3-VL-Embedding "
+        "(distinct from -p/--prompt, which is the content being embedded). Ignored by non-Qwen3-VL "
+        'embedding models. Defaults to "Represent the user\'s input."',
+    )
+    parser.add_argument(
         "--reranking_max_length",
         type=int,
         default=None,
@@ -470,7 +506,9 @@ def get_argparser():
         "--speech_voice",
         type=str,
         default="",
-        help="Speech voice for text-to-speech models. For Kokoro defaults to af_heart",
+        help=(
+            "Speech voice for text-to-speech models. For Kokoro defaults to af_heart. For Qwen3-Omni defaults to Ethan."
+        ),
     )
     parser.add_argument(
         "-vf",
@@ -479,11 +517,37 @@ def get_argparser():
         default=None,
         help="controller of video frames to process (required frame number if positive or decimation factor if negative)",
     )
+    parser.add_argument(
+        "--chat_iter",
+        type=greater_than_zero,
+        default=None,
+        help="Use with --task text_gen_chat. The chat will run chat-iter iterations with the one prompt."
+        " Alternative option is setup prompts list in JSONL via -pf option."
+        " The parameter specifies the amount of the chat iterations.",
+    )
+    parser.add_argument(
+        "--full_chat",
+        action="store_true",
+        help="Use with --task text_gen_chat and optimum-intel/PyTorch backends. "
+        "Benchmark will send the full chat history as input for generation on each turn. By default, only the new prompt is used.",
+    )
+    parser.add_argument(
+        "-np",
+        "--num_prefill_tokens",
+        type=greater_than_zero,
+        default=None,
+        help="Use with --task text_gen/visual_text_gen. "
+        "Specifies the number of prefill tokens to use for generation. \n"
+        "If this number is not specified or is greater than the tokens in the prompt, the entire prompt is used for generation.\n"
+        "If this number is less than the tokens in the prompt, llm_bench trims prompt and takes only the first prefill tokens.\n",
+    )
+
     return parser.parse_args()
 
 
 CASE_TO_BENCH = {
     "text_gen": bench_text.run_text_generation_benchmark,
+    "text_gen_chat": bench_text_chat.run_text_generation_benchmark,
     "image_gen": bench_image.run_image_generation_benchmark,
     "video_gen": bench_video.run_video_generation_benchmark,
     "code_gen": bench_text.run_text_generation_benchmark,
@@ -569,7 +633,7 @@ def main():
     log.info(out_str)
 
     try:
-        if model_args["use_case"].task in ["text_gen", "code_gen"]:
+        if model_args["use_case"].task in ["text_gen", "text_gen_chat", "code_gen"]:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args["use_case"].task](
                 model_path,
                 framework,

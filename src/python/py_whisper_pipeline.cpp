@@ -107,7 +107,7 @@ auto whisper_generation_config_docstring = R"(
     :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
     :type suppress_tokens: list[int]
 
-    :param language: Language token to use for generation in the form of <|en|>.
+    :param language: Language to use for generation. In the form of `en`, `<|en|>`.
                      You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
     :type language: Optional[str]
 

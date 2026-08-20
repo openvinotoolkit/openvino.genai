@@ -117,3 +117,12 @@ class Gemma4InputsPreprocessor(Gemma3InputsPreprocessor):
                     inputs["image_position_ids"] = inputs["image_position_ids"][cached_image_num:]
 
         return inputs
+
+
+class Gemma3nInputsPreprocessor(Gemma4InputsPreprocessor):
+    def __init__(self, chat_mode: bool = False, model: Optional[Any] = None):
+        super().__init__(chat_mode)
+        if model is not None:
+            self.def_image_token_id = getattr(model.config, "image_token_id", 262145)
+        else:
+            self.def_image_token_id = 262145
