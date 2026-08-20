@@ -526,7 +526,7 @@ void InputsEmbedderGemma4::expand_audio_tags_in_prompt(std::string& unified_prom
         for (size_t audio = 0; audio < m_audio_token_counts.size(); ++audio) {
             audio_placeholders += audio_token;
         }
-        unified_prompt.insert(0, audio_placeholders);
+        unified_prompt += audio_placeholders;
     }
 
     size_t search_offset = 0;
