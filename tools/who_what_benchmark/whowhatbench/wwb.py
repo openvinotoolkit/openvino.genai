@@ -134,6 +134,7 @@ def parse_args():
             "speech-generation",
             "visual-text",
             "visual-text-chat",
+            "visual-text-only",
             "visual-video-text",
             "image-to-image",
             "image-inpainting",
@@ -148,6 +149,7 @@ def parse_args():
         "text-chat - for causal text generation in chat mode, \n"
         "visual-text - for Visual Language Models with image inputs, \n"
         "visual-text-chat - for Visual Language Models with image inputs in chat mode, \n"
+        "visual-text-only - for validating Visual Language Models with text-only prompts (no images/video), \n"
         "visual-video-text - for Visual Language Models with video inputs, \n"
         "text-to-image - for image generation, \n"
         "image-to-image - for image generation based on image and prompt, \n"
@@ -419,9 +421,9 @@ def parse_args():
         "--speech-voice",
         type=str,
         default="",
-        help="Speech-generation voice name (for example, af_heart for Kokoro). This is currently used only for Kokoro. \n"
-        "For other TTS models (such as SpeechT5), please use --speaker_embeddings parameter to specify the voice. "
-        "If omitted for Kokoro, the default voice used is 'af_heart'",
+        help="Speech-generation voice name (for example, af_heart for Kokoro or Ethan for Qwen3-Omni). \n"
+        "For SpeechT5, please use --speaker_embeddings parameter to specify the voice. "
+        "If omitted, WWB uses the model-specific default speaker/voice.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
@@ -830,24 +832,26 @@ def _is_voice_pack_enabled_model(model):
 
 
 def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
-    if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
-        speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
+    from whowhatbench.speech_generation_evaluator import GenAIOmniSpeechWrapper
 
-    generation_properties = {}
-    if isinstance(language, str) and language.strip():
-        generation_properties["language"] = language.strip().lower()
+    if isinstance(model, GenAIOmniSpeechWrapper):
+        # Omni takes a named voice — skip voice-pack .bin lookup and ov.Tensor coercion.
+        result = model.generate(prompt, speaker_embedding, language=language, voice=voice)
+    else:
+        if speaker_embedding is not None and not isinstance(speaker_embedding, ov.Tensor):
+            speaker_embedding = ov.Tensor(np.array(speaker_embedding, dtype=np.float32).reshape(1, -1))
 
-    selected_voice = voice.strip() if isinstance(voice, str) else ""
+        generation_properties = {}
+        if isinstance(language, str) and language.strip():
+            generation_properties["language"] = language.strip().lower()
 
-    # Only Kokoro voice-pack exports use named voice bins under <model_dir>/voices.
-    if _is_voice_pack_enabled_model(model) and speaker_embedding is None:
-        if not selected_voice:
-            selected_voice = "af_heart"
-
-        # Voice selection loads <model_dir>/voices/<voice>.bin.
-        voices_dir = Path(model.model_dir) / "voices"
-        voice_path = voices_dir / f"{selected_voice}.bin"
-        if voice_path.exists():
+        # Kokoro voice-pack exports select the voice by loading <model_dir>/voices/<voice>.bin
+        # and forwarding it as the speaker embedding.
+        if _is_voice_pack_enabled_model(model) and speaker_embedding is None:
+            selected_voice = voice.strip() if isinstance(voice, str) and voice.strip() else "af_heart"
+            voice_path = Path(model.model_dir) / "voices" / f"{selected_voice}.bin"
+            if not voice_path.exists():
+                raise ValueError(f"Voice embedding file does not exist: {voice_path}")
             speaker_data = np.fromfile(voice_path, dtype=np.float32)
             expected_shape = tuple(int(dim) for dim in model.get_speaker_embedding_shape())
             expected_flat_size = int(np.prod(expected_shape))
@@ -856,16 +860,16 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
                     f"Voice embedding file {voice_path} has {speaker_data.size} values; expected {expected_flat_size}."
                 )
             speaker_embedding = ov.Tensor(speaker_data.reshape(expected_shape))
-        else:
-            raise ValueError(f"Voice embedding file does not exist: {voice_path}")
 
-    result = model.generate(prompt, speaker_embedding, **generation_properties)
+        result = model.generate(prompt, speaker_embedding, **generation_properties)
+
     if len(result.speeches) != 1:
         raise ValueError(f"Expected exactly one generated waveform per prompt, got {len(result.speeches)}")
 
     speech = np.array(result.speeches[0].data).reshape(-1)
     sample_rate = int(getattr(result, "output_sample_rate", 16000))
-    return speech, sample_rate
+    text = getattr(result, "text", "") or ""
+    return speech, sample_rate, text
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
@@ -882,7 +886,17 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(
-    model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight
+    model,
+    prompt,
+    image,
+    video,
+    processor,
+    tokenizer,
+    max_new_tokens,
+    crop_question,
+    pruning_ratio,
+    relevance_weight,
+    generation_config_extra=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
@@ -893,6 +907,8 @@ def genai_gen_visual_text(
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
+    if generation_config_extra is not None:
+        kwargs.update(generation_config_extra)
 
     out = model.generate(
         prompt,
@@ -914,12 +930,15 @@ def genai_gen_visual_text_chat(
     _kv_axes_pos=None,
     _crop_question=None,
     _full_chat=None,
+    generation_config_extra=None,
 ):
     kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if pruning_ratio is not None:
         kwargs["pruning_ratio"] = pruning_ratio
     if relevance_weight is not None:
         kwargs["relevance_weight"] = relevance_weight
+    if generation_config_extra is not None:
+        kwargs.update(generation_config_extra)
 
     import openvino_genai
 
@@ -1066,7 +1085,7 @@ def create_evaluator(base_model, args):
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
             )
-        elif task == "visual-text" or task == "visual-video-text":
+        elif task == "visual-text" or task == "visual-video-text" or task == "visual-text-only":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
@@ -1088,6 +1107,9 @@ def create_evaluator(base_model, args):
                 frames_num=args.video_frames_num,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
+                generation_config_extra=args.generation_config_extra,
+                language=args.language,
+                long_prompt=(not args.short_prompt),
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -1210,6 +1232,7 @@ def create_evaluator(base_model, args):
                 relevance_weight=args.relevance_weight,
                 crop_question=crop_question,
                 device=args.device,
+                generation_config_extra=args.generation_config_extra,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")
@@ -1369,9 +1392,24 @@ def main():
         if "assistant_confidence_threshold" in validated:
             args.assistant_confidence_threshold = validated["assistant_confidence_threshold"]
             logger.info(f"assistant_confidence_threshold (final): {args.assistant_confidence_threshold}")
-        args.generation_config_extra = {
-            k: v for k, v in validated.items() if k not in ("num_assistant_tokens", "assistant_confidence_threshold")
-        }
+        if validated.get("num_assistant_tokens", 0) and validated.get("assistant_confidence_threshold", 0.0):
+            raise ValueError(
+                "Parameters 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive in --sd-generation-config"
+            )
+        if ("branching_factor" in validated or "tree_depth" in validated) and validated.get(
+            "assistant_confidence_threshold", 0.0
+        ):
+            raise ValueError(
+                "EAGLE3 mode (branching_factor/tree_depth) does not support assistant_confidence_threshold; set it to 0.0"
+            )
+        if args.model_type in ("text", "text-chat"):
+            args.generation_config_extra = {
+                k: v
+                for k, v in validated.items()
+                if k not in ("num_assistant_tokens", "assistant_confidence_threshold")
+            }
+        else:
+            args.generation_config_extra = dict(validated)
     else:
         args.generation_config_extra = {}
 
@@ -1515,7 +1553,14 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+        if args.model_type in [
+            "text",
+            "text-chat",
+            "visual-text",
+            "visual-video-text",
+            "visual-text-chat",
+            "visual-text-only",
+        ]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type

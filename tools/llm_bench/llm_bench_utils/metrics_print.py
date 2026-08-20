@@ -25,6 +25,7 @@ def print_metrics(
     text_rerank=None,
     whisper_genai=None,
     chat_idx=None,
+    prefill_time=None,
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -50,12 +51,14 @@ def print_metrics(
         output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
     if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
-    if iter_data.get('total_time', '') != '':
-        output_str += 'Total Time: {:.4f}s, '.format(iter_data["total_time"])
-    if iter_data['latency'] != '':
-        output_str += 'Latency: {:.4f} ms/{}'.format(iter_data['latency'], latency_unit)
-    if output_str != '':
-        output_str = ' '.join([prefix, output_str])
+    if prefill_time and prefill_time != "":
+        output_str += "Prefill Time: {:.2f}ms, ".format(prefill_time)
+    if iter_data.get("total_time", "") != "":
+        output_str += "Total Time: {:.4f}s, ".format(iter_data["total_time"])
+    if iter_data["latency"] != "":
+        output_str += "Latency: {:.4f} ms/{}".format(iter_data["latency"], latency_unit)
+    if output_str != "":
+        output_str = " ".join([prefix, output_str])
         log.info(output_str)
     if tms is not None:
         iter_data["first_token_latency"] = tms[0] * 1000 if len(tms) > 0 else -1
@@ -115,7 +118,7 @@ def print_metrics(
     if whisper is not None:
         print_whisper_infer_latency(iter_str, whisper, prompt_idx)
     if whisper_genai is not None:
-        print_whisper_genai_latency(iter_str, whisper_genai, prompt_idx)
+        print_asr_genai_latency(iter_str, whisper_genai, prompt_idx)
     if tts is not None:
         print_tts_latency(iter_str, tts, prompt_idx)
     print_memory_info(iter_num, iter_data, chat_idx, prompt_idx)
@@ -396,14 +399,14 @@ def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
     log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')
 
 
-def print_whisper_genai_latency(iter_str, metrics, prompt_idx=-1):
+def print_asr_genai_latency(iter_str, metrics, prompt_idx=-1):
     prefix = f"[{iter_str}][P{prompt_idx}]"
 
     def _fmt(val):
         return f"{val:.2f} ms" if val >= 0 else "N/A"
 
     log.info(
-        f"{prefix} Whisper stage latencies | "
+        f"{prefix} ASR stage latencies | "
         f"Tokenization={_fmt(metrics['tokenization_ms'])}, "
         f"First token: "
         f"features_extraction={_fmt(metrics['features_extraction_ms'])}, "
