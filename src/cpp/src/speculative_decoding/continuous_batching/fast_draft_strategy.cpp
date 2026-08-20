@@ -34,6 +34,8 @@ int64_t ContinuousBatchingPipeline::SpeculativeDecodingImpl::compute_rope_delta(
 
     const size_t seq_axis = shape.size() == 3 ? 2 : 1;
     OPENVINO_ASSERT(shape[seq_axis] > 0, "position_ids sequence length must be greater than 0.");
+    OPENVINO_ASSERT(position_ids.get_element_type() == ov::element::i64,
+                    "Expected position_ids element type i64 when computing rope_delta.");
 
     const int64_t* data = position_ids.data<const int64_t>();
     const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
