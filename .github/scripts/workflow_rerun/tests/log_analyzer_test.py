@@ -41,6 +41,7 @@ class LogAnalyzerTest(unittest.TestCase):
         for error_data in analyzer._errors_to_look_for:
             self.assertTrue(error_data["error_text"], "Each error_data should have text")
             self.assertTrue(error_data["ticket"], "Each error_data should have ticket")
+            self.assertTrue(error_data["category"], "Each error_data should have category")
 
         for log_file in analyzer._log_files:
             self.assertTrue(log_file["file_name"], "Each log_file should have file_name")
@@ -81,6 +82,7 @@ class LogAnalyzerTest(unittest.TestCase):
         self.assertTrue(analyzer.found_matching_error)
         self.assertEqual(analyzer.found_error_ticket, 130955)
         self.assertEqual(analyzer.matched_error_text, "Network is unreachable")
+        self.assertEqual(analyzer.matched_category, "Network")
 
     def test_analyzer_wo_error(self) -> None:
         """
