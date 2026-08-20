@@ -29,7 +29,7 @@ namespace ov::genai {
 std::unordered_map<std::string, ov::Tensor>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::prepare_lm_extra_inputs(
     const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs) const {
-    return deep_copy_tensors_map(lm_extra_inputs);
+    return lm_extra_inputs;
 }
 
 GenerationConfig ContinuousBatchingPipeline::IContinuousBatchingPipeline::get_config() const {
@@ -487,7 +487,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-            lm_extra_inputs_list.push_back(prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs()));
+            lm_extra_inputs_list.push_back(
+                deep_copy_tensors_map(prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs())));
 
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
@@ -718,7 +719,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
-        lm_extra_inputs_list.push_back(prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs()));
+        lm_extra_inputs_list.push_back(
+            deep_copy_tensors_map(prepare_lm_extra_inputs(m_inputs_embedder->get_lm_extra_inputs())));
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(
