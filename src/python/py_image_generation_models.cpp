@@ -18,6 +18,7 @@
 #include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/flux2_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/qwen3_text_encoder.hpp"
+#include "openvino/genai/image_generation/zimage_transformer_2d_model.hpp"
 
 #include "tokenizer/tokenizers_path.hpp"
 #include "py_utils.hpp"
@@ -882,6 +883,53 @@ void init_flux2_transformer_2d_model(py::module_& m) {
                 device (str): Device to run the model on (e.g., CPU, GPU).
                 kwargs: Device properties.
             )");
+}
+
+void init_zimage_transformer_2d_model(py::module_& m) {
+    auto cls = py::class_<ov::genai::ZImageTransformer2DModel>(m, "ZImageTransformer2DModel", "ZImageTransformer2DModel class.")
+        .def(py::init<const std::filesystem::path&>(), py::arg("root_dir"), "Model root directory")
+        .def(py::init([](const std::filesystem::path& root_dir,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+            return std::make_unique<ov::genai::ZImageTransformer2DModel>(root_dir, device, pyutils::kwargs_to_any_map(kwargs));
+        }), py::arg("root_dir"), py::arg("device"), "Device on which inference will be done")
+        .def(py::init<const ov::genai::ZImageTransformer2DModel&>(), py::arg("model"));
+
+    py::class_<ov::genai::ZImageTransformer2DModel::Config>(cls, "Config")
+        .def(py::init<const std::filesystem::path&>(), py::arg("config_path"))
+        .def_readwrite("in_channels", &ov::genai::ZImageTransformer2DModel::Config::in_channels)
+        .def_readwrite("out_channels", &ov::genai::ZImageTransformer2DModel::Config::out_channels)
+        .def_readwrite("sample_size", &ov::genai::ZImageTransformer2DModel::Config::sample_size);
+
+    cls.def(py::init<const std::string&,
+                     const ov::Tensor&,
+                     const ov::genai::ZImageTransformer2DModel::Config&,
+                     size_t>(),
+            py::arg("model"), py::arg("weights"), py::arg("config"), py::arg("vae_scale_factor"))
+        .def(py::init([](const std::string& model,
+                         const ov::Tensor& weights,
+                         const ov::genai::ZImageTransformer2DModel::Config& config,
+                         size_t vae_scale_factor,
+                         const std::string& device,
+                         const py::kwargs& kwargs) {
+            return std::make_unique<ov::genai::ZImageTransformer2DModel>(
+                model, weights, config, vae_scale_factor, device, pyutils::kwargs_to_any_map(kwargs));
+        }), py::arg("model"), py::arg("weights"), py::arg("config"), py::arg("vae_scale_factor"), py::arg("device"))
+        .def("get_config", &ov::genai::ZImageTransformer2DModel::get_config)
+        .def("reshape", &ov::genai::ZImageTransformer2DModel::reshape,
+             py::arg("batch_size"), py::arg("height"), py::arg("width"), py::arg("tokenizer_model_max_length"))
+        .def("step", &ov::genai::ZImageTransformer2DModel::step,
+             py::call_guard<py::gil_scoped_release>(),
+             py::arg("sample"), py::arg("timestep"), py::arg("encoder_hidden_states"))
+        .def("set_hidden_states", &ov::genai::ZImageTransformer2DModel::set_hidden_states,
+             py::arg("tensor_name"), py::arg("encoder_hidden_states"))
+        .def("compile", [](ov::genai::ZImageTransformer2DModel& self,
+                            const std::string& device,
+                            const py::kwargs& kwargs) {
+            const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+            py::gil_scoped_release release;
+            self.compile(device, properties);
+        }, py::arg("device"));
 }
 
 void init_qwen3_text_encoder(py::module_& m) {

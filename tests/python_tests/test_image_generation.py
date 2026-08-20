@@ -1,6 +1,8 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import json
+
 import pytest
 import numpy as np
 import openvino as ov
@@ -14,6 +16,17 @@ FLUX2_KLEIN_MODEL_ID = "tiny-random-flux.2-klein"
 SD3_MODEL_ID = "tiny-random-sd3"
 SDXL_MODEL_ID = "tiny-random-sdxl"
 ZIMAGE_MODEL_ID = "tiny-random-z-image-turbo"
+
+
+def test_zimage_transformer_config_python_api(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"in_channels": 16, "out_channels": 16, "sample_size": 64}))
+
+    config = ov_genai.ZImageTransformer2DModel.Config(config_path)
+
+    assert config.in_channels == 16
+    assert config.out_channels == 16
+    assert config.sample_size == 64
 
 
 def get_random_image(height: int = 64, width: int = 64) -> ov.Tensor:
