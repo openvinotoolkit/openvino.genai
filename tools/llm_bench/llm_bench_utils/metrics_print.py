@@ -25,6 +25,7 @@ def print_metrics(
     text_rerank=None,
     whisper_genai=None,
     chat_idx=None,
+    prefill_time=None,
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -50,12 +51,14 @@ def print_metrics(
         output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
     if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
-    if iter_data.get('total_time', '') != '':
-        output_str += 'Total Time: {:.4f}s, '.format(iter_data["total_time"])
-    if iter_data['latency'] != '':
-        output_str += 'Latency: {:.4f} ms/{}'.format(iter_data['latency'], latency_unit)
-    if output_str != '':
-        output_str = ' '.join([prefix, output_str])
+    if prefill_time and prefill_time != "":
+        output_str += "Prefill Time: {:.2f}ms, ".format(prefill_time)
+    if iter_data.get("total_time", "") != "":
+        output_str += "Total Time: {:.4f}s, ".format(iter_data["total_time"])
+    if iter_data["latency"] != "":
+        output_str += "Latency: {:.4f} ms/{}".format(iter_data["latency"], latency_unit)
+    if output_str != "":
+        output_str = " ".join([prefix, output_str])
         log.info(output_str)
     if tms is not None:
         iter_data["first_token_latency"] = tms[0] * 1000 if len(tms) > 0 else -1
