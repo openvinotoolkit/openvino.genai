@@ -20,8 +20,6 @@ class ASRHook:
         self.greedy_hook = None
 
     def get_time_list(self):
-        if not self.time_data:
-            return []
         first_token_latency = 0
         for data in self.time_data:
             if 'enc_token_time' in data:
@@ -33,8 +31,6 @@ class ASRHook:
         return self.tm_list
 
     def get_time_infer_list(self):
-        if not self.time_data:
-            return []
         first_infer_latency = 0
         for data in self.time_data:
             if 'enc_infer_time' in data:

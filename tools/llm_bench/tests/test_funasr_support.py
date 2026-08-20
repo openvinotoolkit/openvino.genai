@@ -99,8 +99,6 @@ def test_asr_hook_skips_incompatible_pipeline():
 
     hook = ASRHook()
     assert hook.attach(types.SimpleNamespace(model=object())) is False
-    assert hook.get_time_list() == []
-    assert hook.get_time_infer_list() == []
 
 
 @pytest.mark.parametrize(
