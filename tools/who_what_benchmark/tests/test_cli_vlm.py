@@ -200,6 +200,16 @@ def test_vlm_chat(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("optimum-intel-internal-testing/tiny-random-llava", "visual-text-only"),
+    ],
+)
+def test_vlm_text_only(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
 # The optimum-intel-internal-testing/tiny-random-qwen3-omni model has to be regenerated upstream
 # its chat_template emits <|image_pad|> while image_token_id refers to <|IMAGE|>,
 # and its tokenizer.json ships an empty BPE vocab.
