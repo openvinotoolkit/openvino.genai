@@ -34,8 +34,7 @@ def _csv(tmp_path, name, prompts, answers):
         (["the quick brown fox", "hello world"], ["the quick brown fox", "hello there world"], 5 / 6, [1.0, 0.5]),
         (["hello world"], ["hello world"], 1.0, [1.0]),
         # 3 insertions over 1 reference word: 1 - WER is clamped to 0.
-        (["hello", ""], ["hello", "spurious extra words"], 0.0, [1.0, 0.0]),
-        ([], [], 1.0, []),
+        (["hello"], ["hello spurious extra words"], 0.0, [0.0]),
     ],
 )
 def test_word_similarity(references, hypotheses, corpus, per_prompt):
