@@ -44,6 +44,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     speech_id = input_param["speech_idx"]
     processor = input_param["processor"]
     use_genai = input_param["use_genai"]
+    active_asr_hook = input_param["asr_hook"]
     use_case = args["use_case"]
 
     speech_language = resolve_speech_language(
@@ -138,8 +139,12 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
             generation_time = end - start
 
         result_text = output["text"]
-        tm_list = asr_hook.get_time_list()
-        tm_infer_list = asr_hook.get_time_infer_list()
+        if active_asr_hook is not None:
+            tm_list = active_asr_hook.get_time_list()
+            tm_infer_list = active_asr_hook.get_time_infer_list()
+        else:
+            tm_list = []
+            tm_infer_list = []
 
     log.debug('latency of all tokens:')
     [log.debug('[{}]{:.4f}'.format(idx, tm)) for idx, tm in enumerate(tm_list)]
@@ -176,7 +181,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tms_infer=tm_infer_list,
         warm_up=(num == 0),
         prompt_idx=speech_id,
-        asr=asr_hook,
+        asr=active_asr_hook,
         asr_genai=asr_genai_metrics,
         **perf_kwargs,
     )
@@ -196,8 +201,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     else:
         metrics_print.print_generated(num, warm_up=(num == 0), generated=result_text, prompt_idx=speech_id)
 
-    if asr_hook is not None:
-        asr_hook.clear_statistics()
+    if active_asr_hook is not None:
+        active_asr_hook.clear_statistics()
 
 
 def run_omni_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, mem_consumption, speech_file_list):
@@ -241,6 +246,9 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
     mem_consumption.update_marker("model")
     pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(model_path, device, mem_consumption, **args)
+    active_asr_hook = None
+    if framework == "ov" and use_genai is False and asr_hook.attach(pipe):
+        active_asr_hook = asr_hook
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {
@@ -248,10 +256,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         "mem_consumption": mem_consumption,
         "processor": processor,
         "use_genai": use_genai,
+        "asr_hook": active_asr_hook,
     }
-
-    if framework == "ov" and use_genai is False:
-        asr_hook.attach(pipe)
 
     sampling_rate = processor.feature_extractor.sampling_rate if hasattr(processor, "feature_extractor") else 16000
     mem_consumption.activate_cooldown("after model compilation")
