@@ -17,13 +17,13 @@ def print_metrics(
     tokenization_time=None,
     batch_size=1,
     prompt_idx=-1,
-    whisper=None,
+    asr=None,
     text_emb=None,
     latency_unit=None,
     tts=None,
     cb_metric=None,
     text_rerank=None,
-    whisper_genai=None,
+    asr_genai=None,
     chat_idx=None,
     prefill_time=None,
 ):
@@ -115,10 +115,10 @@ def print_metrics(
         )
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
-    if whisper is not None:
-        print_whisper_infer_latency(iter_str, whisper, prompt_idx)
-    if whisper_genai is not None:
-        print_asr_genai_latency(iter_str, whisper_genai, prompt_idx)
+    if asr is not None:
+        print_asr_infer_latency(iter_str, asr, prompt_idx)
+    if asr_genai is not None:
+        print_asr_genai_latency(iter_str, asr_genai, prompt_idx)
     if tts is not None:
         print_tts_latency(iter_str, tts, prompt_idx)
     print_memory_info(iter_num, iter_data, chat_idx, prompt_idx)
@@ -395,8 +395,8 @@ def print_average(
         log.info(out_str)
 
 
-def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
-    log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')
+def print_asr_infer_latency(iter_str, asr, prompt_idx=-1):
+    log.debug(f"{asr.print_asr_latency(iter_str, prompt_idx)}")
 
 
 def print_asr_genai_latency(iter_str, metrics, prompt_idx=-1):

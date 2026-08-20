@@ -13,7 +13,7 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.parse_json_data as parse_json_data
-from llm_bench_utils.hook_forward_whisper import ASRHook
+from llm_bench_utils.hook_forward_asr import ASRHook
 
 FW_UTILS = {"pt": pt_utils, "ov": ov_utils}
 asr_hook = ASRHook()
@@ -176,8 +176,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tms_infer=tm_infer_list,
         warm_up=(num == 0),
         prompt_idx=speech_id,
-        whisper=asr_hook,
-        whisper_genai=asr_genai_metrics,
+        asr=asr_hook,
+        asr_genai=asr_genai_metrics,
         **perf_kwargs,
     )
     if num > 0:
