@@ -1290,6 +1290,22 @@ def test_vlm_pipeline_audio_chat_history(
 
 
 @parametrize_audio_models
+def test_vlm_pipeline_implicit_audio_placement(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    prompt = "Describe this audio."
+    audios = [synthetic_audio_tensor]
+
+    implicit_result = ov_pipe.generate(prompt, audios=audios, generation_config=generation_config)
+    explicit_result = ov_pipe.generate(prompt + "<|audio|>", audios=audios, generation_config=generation_config)
+
+    assert implicit_result.texts == explicit_result.texts
+
+
+@parametrize_audio_models
 @pytest.mark.parametrize(
     "prompt,audio_count",
     [
