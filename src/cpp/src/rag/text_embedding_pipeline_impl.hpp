@@ -9,7 +9,6 @@
 #include "utils.hpp"
 
 namespace ov::genai {
-namespace {
 
 ov::Tensor embedding_results_to_tensor(const EmbeddingResults& embedding_results) {
     return std::visit([](const auto& values) {
@@ -70,7 +69,5 @@ public:
 private:
     std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
 };
-
-}  // namespace
 
 }  // namespace ov::genai

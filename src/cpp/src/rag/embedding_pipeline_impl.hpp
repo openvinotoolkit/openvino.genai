@@ -18,17 +18,6 @@ public:
                               const std::vector<ov::Tensor>& videos,
                               const std::vector<VideoMetadata>& videos_metadata,
                               const ov::AnyMap& properties) = 0;
-
 };
-
-std::unique_ptr<EmbeddingPipelineImpl> make_text_embedding_pipeline_impl(
-    const std::filesystem::path& models_path,
-    const std::string& device,
-    const ov::AnyMap& properties);
-
-std::unique_ptr<EmbeddingPipelineImpl> make_multimodal_embedding_pipeline_impl(
-    const std::filesystem::path& models_path,
-    const std::string& device,
-    const ov::AnyMap& properties);
 
 }  // namespace ov::genai

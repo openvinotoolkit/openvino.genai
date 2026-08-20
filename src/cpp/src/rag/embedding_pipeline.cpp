@@ -4,7 +4,9 @@
 #include "openvino/genai/rag/embedding_pipeline.hpp"
 
 #include "embedding_pipeline_impl.hpp"
+#include "multimodal_embedding_pipeline_impl.hpp"
 #include "text_embedding_utils.hpp"
+#include "text_embedding_pipeline_impl.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -14,9 +16,9 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const std::string& device,
                                      const ov::AnyMap& properties) {
     if (std::filesystem::exists(models_path / "openvino_language_model.xml")) {
-        m_impl = make_multimodal_embedding_pipeline_impl(models_path, device, properties);
+        m_impl = std::make_unique<MultimodalEmbeddingPipelineImpl>(models_path, device, properties);
     } else {
-        m_impl = make_text_embedding_pipeline_impl(models_path, device, properties);
+        m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, properties);
     }
 }
 
