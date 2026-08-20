@@ -305,11 +305,6 @@ python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 
 
 > **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
 
-**Prerequisites:**
-- GenAI benchmarking of FunASR (`--genai`, the default) requires an OpenVINO GenAI build that provides `openvino_genai.ASRPipeline`. Older builds without `ASRPipeline` are rejected with an actionable error.
-- Optimum benchmarking of FunASR (`--optimum`) requires an `optimum-intel` build with FunASR support (`optimum.intel.openvino.modeling_funasr`).
-
-
 ### Text Rerank models
 ```sh
 # convert model to OpenVINO IR format
