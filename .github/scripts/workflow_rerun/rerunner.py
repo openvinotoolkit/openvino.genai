@@ -42,7 +42,9 @@ def record_rerun_to_db(
             VALUES (%s, %s, %s, NOW() AT TIME ZONE 'UTC', %s, %s, %s)
         """)
 
-        cursor.execute(insert_query, (repository_full_name, run_id, ticket_number, rerunner_run_id, error_text, category))
+        cursor.execute(
+            insert_query, (repository_full_name, run_id, ticket_number, rerunner_run_id, error_text, category)
+        )
         conn.commit()
 
         LOGGER.info(

@@ -31,8 +31,7 @@ def _download_logs_archive(run: WorkflowRun, log_archive_path: Path, session: re
             return
         except requests.exceptions.RequestException as error:
             LOGGER.warning(
-                f"FAILED TO DOWNLOAD LOGS FOR RUN ID {run.id} ON ATTEMPT "
-                f"{attempt}/{LOG_DOWNLOAD_MAX_ATTEMPTS}: {error}"
+                f"FAILED TO DOWNLOAD LOGS FOR RUN ID {run.id} ON ATTEMPT {attempt}/{LOG_DOWNLOAD_MAX_ATTEMPTS}: {error}"
             )
             if attempt == LOG_DOWNLOAD_MAX_ATTEMPTS:
                 raise

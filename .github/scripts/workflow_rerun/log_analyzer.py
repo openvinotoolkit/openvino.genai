@@ -117,7 +117,7 @@ class LogAnalyzer:
                 if self._is_error_in_log(error_to_look_for=error["error_text"], log_file_path=log_file["path"]):
                     LOGGER.info(
                         f'FOUND "{error["error_text"]}" ERROR IN {log_file["path"]}. '
-                        f'TICKET: {error["ticket"]}. CATEGORY: {error["category"]}'
+                        f"TICKET: {error['ticket']}. CATEGORY: {error['category']}"
                     )
                     self.found_matching_error = True
                     self.found_error_ticket = error["ticket"]
