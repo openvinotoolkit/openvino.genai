@@ -17,10 +17,18 @@ from .whowhat_metrics import WordSimilarity
 AUDIO_SAMPLING_RATE = 16000
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
+# Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
+DEFAULT_ASR_INSTRUCTION_WITH_LANGUAGE = (
+    "Transcribe the following speech segment in {language} into {language} text.\n\n"
+    "Follow these specific instructions for formatting the answer:\n"
+    "* Only output the transcription, with no newlines.\n"
+    "* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, "
+    "and write 3 instead of three."
+)
 
 
 def asr_instruction(language: str = "") -> str:
-    return f"Transcribe this audio in {language}." if language else DEFAULT_ASR_INSTRUCTION
+    return DEFAULT_ASR_INSTRUCTION_WITH_LANGUAGE.format(language=language) if language else DEFAULT_ASR_INSTRUCTION
 
 
 @contextlib.contextmanager
