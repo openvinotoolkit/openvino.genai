@@ -22,7 +22,7 @@ FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 MS_PER_SEC = 1000
 DEFAULT_FRAME_RATE = 25
 DEFAULT_NUM_INF_STEPS = 25
-DEFAULT_NUM_FRAMES = 9
+DEFAULT_NUM_FRAMES = 25
 DEFAULT_WIDTH = 704
 DEFAULT_HEIGHT = 480
 
@@ -360,7 +360,7 @@ class TextToVideoGenAI(CommonPipeline):
 
         self.mem_consumption_meter.start(iter_num)
         generation_result = self.generate(
-            input_param["prompt"], generator=openvino_genai.TorchGenerator(self.seed), guidance_scale=1, **input_args
+            input_param["prompt"], generator=openvino_genai.TorchGenerator(self.seed), **input_args
         )
         memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
