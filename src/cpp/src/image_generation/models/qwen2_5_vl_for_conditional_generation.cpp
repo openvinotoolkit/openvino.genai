@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstring>
 #include <algorithm>
+#include <type_traits>
 
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
