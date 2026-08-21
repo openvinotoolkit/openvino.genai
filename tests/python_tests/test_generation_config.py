@@ -1,7 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig
+from openvino_genai import GenerationConfig, ReasoningConfig
 import json
 import math
 import os
@@ -69,12 +69,9 @@ configs = [
     dict(max_new_tokens=1, apply_chat_template=True),
     dict(max_new_tokens=1, apply_chat_template=False),
     # thinking / reasoning
-    dict(max_new_tokens=1, enable_thinking=True),
-    dict(max_new_tokens=1, enable_thinking=False),
-    dict(max_new_tokens=1, enable_thinking=False, thinking_start_token_id=151667, thinking_end_token_id=151668),
-    dict(max_new_tokens=1, reasoning_budget_tokens=10, thinking_start_token_id=151667, thinking_end_token_id=151668),
-    dict(max_new_tokens=1, reasoning_budget_tokens=100, thinking_start_token_id=151667, thinking_end_token_id=151668),
-    dict(max_new_tokens=1, reasoning_budget_tokens=-1, thinking_start_token_id=151667, thinking_end_token_id=151668),
+    dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=0, start_token_id=151667, end_token_id=151668)),
+    dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=10, start_token_id=151667, end_token_id=151668)),
+    dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=-1)),
 ]
 @pytest.mark.parametrize("generation_config_kwargs", configs)
 def test_valid_configs(generation_config_kwargs):
@@ -122,11 +119,9 @@ invalid_configs = [
     dict(max_new_tokens=1, assistant_confidence_threshold=1.0, num_assistant_tokens=2), # 'assistant_confidence_threshold' and 'num_assistant_tokens' are mutually exclusive
     dict(max_new_tokens=1, max_ngram_size=1), # 'max_ngram_size' is for prompt lookup, but assistant generation is turned off ('num_assistant_tokens' is 0)
     # thinking / reasoning
-    dict(max_new_tokens=1, enable_thinking=False, thinking_end_token_id=151668), # missing thinking_start_token_id
-    dict(max_new_tokens=1, enable_thinking=False, thinking_start_token_id=151667), # missing thinking_end_token_id
-    dict(max_new_tokens=1, reasoning_budget_tokens=10), # missing thinking_start_token_id and thinking_end_token_id
-    dict(max_new_tokens=1, reasoning_budget_tokens=10, thinking_start_token_id=151667), # missing thinking_end_token_id
-    dict(max_new_tokens=1, reasoning_budget_tokens=-2), # invalid negative value
+    dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=10)), # budget >= 0 requires both token ids
+    dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=10, start_token_id=151667)), # missing end_token_id
+    dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=-2)), # invalid negative value
     # TODO: add tests for invalid properties
 ]
 @pytest.mark.parametrize("generation_config_kwargs", invalid_configs)
