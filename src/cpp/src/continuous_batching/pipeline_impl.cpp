@@ -193,7 +193,17 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(std
     ov::InferRequest infer_request = compiled_model.create_infer_request();
 
     // Detect cache types, create managers and block managers, normalize config
-    auto get_available_memory = [&execution_device](const std::string& /*device*/, size_t num_cache_tensors) -> size_t {
+    auto get_available_memory = [&execution_device, &execution_devices, all_gpu_device](const std::string& /*device*/, size_t num_cache_tensors) -> size_t {
+        // For multi-GPU setups (e.g. HETERO:GPU.0,GPU.1 pipeline-parallel), the
+        // KV cache is distributed across all execution devices, so aggregate
+        // their available memory instead of validating against the first one.
+        if (all_gpu_device && execution_devices.size() > 1) {
+            size_t total_mem_size = 0;
+            for (const auto& dev : execution_devices) {
+                total_mem_size += utils::get_available_gpu_memory(dev, num_cache_tensors);
+            }
+            return total_mem_size;
+        }
         if (execution_device.find("GPU") != std::string::npos) {
             return utils::get_available_gpu_memory(execution_device, num_cache_tensors);
         }
