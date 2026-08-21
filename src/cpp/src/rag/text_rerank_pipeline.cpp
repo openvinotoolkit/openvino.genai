@@ -3,6 +3,7 @@
 
 #include "openvino/genai/rag/text_rerank_pipeline.hpp"
 
+#include <algorithm>
 #include <fstream>
 
 #include "debug_utils.hpp"
@@ -188,7 +189,47 @@ public:
             model = apply_postprocessing(model);
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        // A stateful decoder reranker (a Qwen3-Reranker-style causal LM, recognized by the
+        // beam_idx input its stateful export carries) must run on NPU through the NPUW LLM
+        // pipeline. compile_decoder_for_npu sets it up the same way LLMPipeline does and
+        // provides BLOB_PATH/EXPORT_BLOB caching, with explicit properties taking
+        // precedence. Encoder cross-encoders keep the plain compile path. The device match
+        // covers "NPU", "NPU.0" and the like.
+        ov::CompiledModel compiled_model;
+        if (device.find("NPU") != std::string::npos && m_has_beam_idx) {
+            ov::AnyMap npu_properties = properties;
+            // The reranker only scores the prompt and never generates a token, so the
+            // smallest response window keeps the (unused) generate model minimal.
+            if (npu_properties.count("MIN_RESPONSE_LEN") == 0) {
+                npu_properties["MIN_RESPONSE_LEN"] = 2;
+            }
+            // Size the prefill to the tokenizer limit when one is configured, so documents
+            // up to max_length tokens fit (the NPUW default prompt length is 1024).
+            if (m_config.max_length && npu_properties.count("MAX_PROMPT_LEN") == 0) {
+                npu_properties["MAX_PROMPT_LEN"] = static_cast<int>(*m_config.max_length);
+            }
+            // Tag the model for batched single-shot scoring. NPUW wraps the request in
+            // its batched element, which unrolls a [N, L] batch over the batch-1 model
+            // (KV-cache reset between rows) and stacks the scores back into [N, ...],
+            // so the scoring code below stays device-agnostic. The tag survives blob
+            // export/import together with the rest of the model config.
+            npu_properties["NPUW_TEXT_RERANK"] = "YES";
+            compiled_model = utils::compile_decoder_for_npu(model, npu_properties, utils::get_kv_axes_pos(model)).first;
+        } else {
+            compiled_model = core.compile_model(model, device, properties);
+        }
+
+        // NPUW rewrites the stateful model: beam_idx is consumed by the state machinery
+        // and disappears from the compiled I/O. Re-derive the input flags from what was
+        // actually compiled so the infer path binds only inputs that exist.
+        const auto has_compiled_input = [&compiled_model](const std::string& name) {
+            const auto& compiled_inputs = compiled_model.inputs();
+            return std::any_of(compiled_inputs.begin(), compiled_inputs.end(), [&name](const auto& input) {
+                return input.get_names().count(name) > 0;
+            });
+        };
+        m_has_position_ids = has_compiled_input("position_ids");
+        m_has_beam_idx = has_compiled_input("beam_idx");
 
         utils::print_compiled_model_properties(compiled_model, "text rerank model");
         m_request = compiled_model.create_infer_request();
