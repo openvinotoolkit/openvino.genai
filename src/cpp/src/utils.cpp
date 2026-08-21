@@ -993,6 +993,20 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
     return {properties, attention_backend};
 };
 
+bool is_paged_attention_model_construction_failure(const ov::Exception& exception) {
+    const std::string message = exception.what();
+    // The SDPAToPagedAttention transformation fails to convert hybrid Mamba/attention models (e.g. Falcon-H1):
+    // the recurrent convolution/SSM state keeps referencing the beam_idx parameter after the parameter itself is
+    // removed, which ov::Model validation reports as an undeclared/unregistered beam_idx parameter. Match this
+    // specific model-construction failure so only genuinely PagedAttention-incompatible models fall back to the
+    // stateful backend, while models that merely hit a transient runtime error still surface it.
+    const bool references_beam_idx = message.find("beam_idx") != std::string::npos;
+    const bool undeclared_parameter =
+        message.find("undeclared parameters") != std::string::npos ||
+        message.find("unregistered_parameters") != std::string::npos;
+    return references_beam_idx && undeclared_parameter;
+}
+
 ExtensionList extract_extensions(ov::AnyMap& properties) {
     auto it = properties.find(EXTENSIONS_ARG_NAME);
     ExtensionList extensions = {};
