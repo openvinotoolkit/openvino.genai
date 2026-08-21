@@ -9,6 +9,15 @@ type VLMModelType = {
 
 export const VLM_MODELS: VLMModelType[] = [
   {
+    architecture: 'HunYuanVLForConditionalGeneration',
+    models: [
+      {
+        name: 'HunYuanVL',
+        links: ['https://huggingface.co/tencent/HunyuanOCR'],
+      },
+    ],
+  },
+  {
     architecture: 'InternVLChat',
     models: [
       {

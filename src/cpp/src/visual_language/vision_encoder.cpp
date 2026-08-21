@@ -26,6 +26,7 @@
 #include "visual_language/gemma4/classes.hpp"
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
+#include "visual_language/hunyuan_vl/classes.hpp"
 
 namespace ov::genai {
 
@@ -76,6 +77,23 @@ void VisionEncoder::resolve_processor_configs(const std::filesystem::path& confi
         if (parsed_processor_config.contains("image_processor") && parsed_processor_config.contains("video_processor")) {
             m_processor_config = ProcessorConfig(parsed_processor_config.at("image_processor"));
             m_video_processor_config = VideoProcessorConfig(parsed_processor_config.at("video_processor"));
+            return;
+        }
+
+        // Image-only VLMs (e.g. HunYuanVL / HunyuanOCR) are saved by transformers>=5 with a combined
+        // processor_config.json that embeds only an "image_processor" block and no separate
+        // preprocessor_config.json. When there is no standalone preprocessor_config.json to fall back to,
+        // read the image ProcessorConfig from that embedded block so patch/temporal/merge sizes come from
+        // the model instead of the unrelated built-in defaults. Guarded by the missing standalone file so
+        // models that already ship preprocessor_config.json keep their existing behavior.
+        const bool has_standalone_preprocessor_config =
+            std::filesystem::exists(config_dir_path / preprocessor_config_filename);
+        if (parsed_processor_config.contains("image_processor") && !has_standalone_preprocessor_config) {
+            m_processor_config = ProcessorConfig(parsed_processor_config.at("image_processor"));
+            const auto embedded_video_config_path = config_dir_path / video_preprocessor_config_filename;
+            if (std::filesystem::exists(embedded_video_config_path)) {
+                m_video_processor_config = VideoProcessorConfig(embedded_video_config_path);
+            }
             return;
         }
     }
@@ -149,6 +167,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(model_dir, device, properties);
+    } else if (model_type == VLMModelType::HUNYUAN_VL) {
+        return std::make_shared<VisionEncoderHunyuanVL>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -198,6 +218,8 @@ VisionEncoder::Ptr VisionEncoder::create(
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
         return std::make_shared<VisionEncoderMuseGlimmer>(models_map, config_dir_path, device, device_config);
+    } else if (model_type == VLMModelType::HUNYUAN_VL) {
+        return std::make_shared<VisionEncoderHunyuanVL>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
