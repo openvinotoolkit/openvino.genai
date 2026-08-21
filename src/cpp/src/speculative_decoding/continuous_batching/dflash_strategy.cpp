@@ -691,6 +691,14 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         m_sd_metrics.update_generated_len(num_generated_tokens);
     }
 
+    if (main_generated_requests.empty()) {
+        drop_finished_request_states();
+        if (utils::env_setup_for_print_debug_info()) {
+            m_sd_metrics.print(true);
+            m_sd_metrics.clean_up();
+        }
+    }
+
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_main(
@@ -718,6 +726,8 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::drop_requests() {
+    std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
+
     for (auto& [_, state] : m_request_states) {
         if (m_main_pipeline) {
             m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
@@ -771,8 +781,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
-    m_sd_metrics.clean_up();
-    m_request_states.clear();
     auto start_time = std::chrono::steady_clock::now();
 
     auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
@@ -863,7 +871,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
         results.push_back(std::move(result));
     }
 
-    m_request_states.clear();
     OPENVINO_ASSERT(results.size() == input_ids.size());
     return results;
 }
