@@ -391,7 +391,88 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         generated_tokens = np.array(generation_result.tokens)
 
     perf_metrics = generation_result[0].perf_metrics if cb_pipeline else generation_result.perf_metrics
-    return generated_tokens, perf_metrics, end - start
+    extended_perf_metrics = generation_result[0].extended_perf_metrics if cb_pipeline else generation_result.extended_perf_metrics
+    return generated_tokens, perf_metrics, extended_perf_metrics, end - start
+
+
+# number of draft tokens of each model already reported, see get_sd_metrics()
+sd_prev_draft_generated = {}
+# raw metrics entries of each model already reported, see get_sd_raw_slices()
+sd_prev_raw_entries = {}
+# whether the raw metrics of each model turned out to be accumulated, see get_sd_raw_slices()
+sd_raw_accumulated = {}
+
+
+def get_sd_raw_slices(key, *raw_lists):
+    # some backends accumulate the raw metrics over generate() calls of the same pipeline, others reset
+    # them, so the already reported entries are detected by the iteration latencies and dropped
+    prev_counts, prev_marker = sd_prev_raw_entries.get(key, ((0,) * len(raw_lists), None))
+    durations = raw_lists[0]
+    prev_count = prev_counts[0]
+    is_accumulated = 0 < prev_count <= len(durations) and durations[prev_count - 1] == prev_marker
+    sd_raw_accumulated[key] = is_accumulated
+    sd_prev_raw_entries[key] = (
+        tuple(len(raw_list) for raw_list in raw_lists),
+        durations[-1] if len(durations) > 0 else None,
+    )
+    return [raw_list[count:] if is_accumulated else raw_list for raw_list, count in zip(raw_lists, prev_counts)]
+
+
+def get_average(values):
+    return sum(values) / len(values) if len(values) > 0 else -1
+
+
+def get_sd_per_model_metrics(model_metrics, key):
+    raw_metrics = model_metrics.raw_metrics
+    # m_inference_durations is a single accumulated total, so m_durations is used for the per iteration values
+    durations, batch_sizes, infer_durations = get_sd_raw_slices(
+        key, raw_metrics.m_durations, raw_metrics.m_batch_sizes, raw_metrics.token_infer_durations,
+    )
+    # inference only durations are not filled by every backend
+    infer_durations = infer_durations or durations
+    # the first two iterations include the prompt processing, so they are reported apart from TPOT
+    tpot = get_average([
+        duration / batch_sizes[idx] if idx < len(batch_sizes) and batch_sizes[idx] > 0 else duration
+        for idx, duration in enumerate(durations)
+    ][2:])
+    return {
+        "generate_duration": sum(durations),
+        "ttft": durations[0] if len(durations) > 0 else -1,
+        "ttst": durations[1] if len(durations) > 1 else -1,
+        "tpot": tpot,
+        "throughput": 1000.0 / tpot if tpot > 0 else -1,
+        "num_generated_tokens": sum(batch_sizes) if len(batch_sizes) > 0 else len(durations),
+        "infer_count": len(durations),
+        "first_infer_latency": infer_durations[0] if len(infer_durations) > 0 else -1,
+        "other_infers_avg_latency": get_average(infer_durations[1:]),
+    }
+
+
+def get_sd_metrics(extended_perf_metrics, model):
+    # SDPerModelsPerfMetrics is set as extended_perf_metrics only for speculative decoding pipelines
+    if not hasattr(extended_perf_metrics, "get_num_accepted_tokens"):
+        return None
+    draft_key = f'{id(model)}_draft'
+    main_model = get_sd_per_model_metrics(extended_perf_metrics.main_model_metrics, f'{id(model)}_main')
+    draft_model = get_sd_per_model_metrics(extended_perf_metrics.draft_model_metrics, draft_key)
+    # the counters of the backends accumulating the raw metrics are accumulated as well, while
+    # num_accepted_tokens is always reported per generate() call, so the per call value is taken as a delta
+    total_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+    prev_draft_generated = sd_prev_draft_generated.get(draft_key, 0) if sd_raw_accumulated.get(draft_key) else 0
+    num_draft_generated = total_draft_generated - prev_draft_generated
+    sd_prev_draft_generated[draft_key] = total_draft_generated
+    num_accepted = extended_perf_metrics.get_num_accepted_tokens()
+    # a negative value means the counters got out of sync, so the per call value is unknown
+    if num_draft_generated < 0:
+        return None
+    return {
+        "num_draft_generated": num_draft_generated,
+        "num_accepted": num_accepted,
+        "acceptance_rate": num_accepted / num_draft_generated * 100 if num_draft_generated > 0 else 0.0,
+        "miss_rate": (num_draft_generated - num_accepted) / num_draft_generated * 100 if num_draft_generated > 0 else 0.0,
+        "main_model": main_model,
+        "draft_model": draft_model,
+    }
 
 
 # ===== GenAI Utils =====
@@ -527,7 +608,7 @@ def run_text_generation_genai(
 
     # ===== Generate =====
     mem_consumption.start(num)
-    generated_tokens, perf_metrics, generation_time = genai_generate(
+    generated_tokens, perf_metrics, extended_perf_metrics, generation_time = genai_generate(
         streaming, model, tokens_len, gen_config, args["empty_lora"], input_data, args["batch_size"], prefix
     )
     memory_metrics = mem_consumption.iter_stop_and_collect_data(num)
@@ -604,6 +685,7 @@ def run_text_generation_genai(
         prompt_idx=prompt_index,
         cb_metric=cache_usage,
         prefill_time=inference_durations[0] * 1000 if args.get("num_prefill_tokens", None) else "",
+        sd_metric=get_sd_metrics(extended_perf_metrics, model),
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
@@ -664,7 +746,8 @@ def run_text_generation_genai_with_stream(
     mem_consumption.start(num)
     log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
     start = time.perf_counter()
-    generated_tokens = model.generate(input_data, gen_config, streamer=streamer).tokens
+    generation_result = model.generate(input_data, gen_config, streamer=streamer)
+    generated_tokens = generation_result.tokens
     end = time.perf_counter()
     log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
     generation_time = end - start
@@ -726,7 +809,8 @@ def run_text_generation_genai_with_stream(
         warm_up=(num == 0),
         tokenization_time=(tok_encode_time, tok_decode_time),
         batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        prompt_idx=prompt_index,
+        sd_metric=get_sd_metrics(generation_result.extended_perf_metrics, model)
     )
 
     print_generated_output(prompt_index, num, result_md5_list, md5_list, generated_text, enable_prompt_permutations)
