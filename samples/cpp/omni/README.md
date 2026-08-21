@@ -2,43 +2,58 @@
 
 > **Preview:** The Qwen3-Omni API (`OmniPipeline` and related types) is a preview feature and is subject to change in future releases.
 
-Interactive multimodal chat with Qwen3-Omni models supporting text, image, and speech input/output.
+Interactive multimodal chat with Qwen3-Omni models supporting text, image, audio, and video input, and text/speech output.
 
 ## Description
 
-Demonstrates `ov::genai::OmniPipeline` for end-to-end multimodal conversations. Qwen3-Omni models accept text, images, and audio inputs, generating text and optionally synthesized speech responses.
+Demonstrates `ov::genai::OmniPipeline` for end-to-end multimodal conversations. Qwen3-Omni models accept text, images, audio, and video inputs, generating text and optionally synthesized speech responses.
 
 **Key features:**
-- Multi-turn conversations with image context
+- Multi-turn conversations with image and video context
 - Optional speech synthesis (talker mode)
 - Separate generation configs for text decoding and speech output
 - Interactive CLI interface
 
 ## Prerequisites
 
-Prepare image files (JPG, PNG) and audio files (16kHz mono WAV) for testing.
+Prepare image files (JPG, PNG), audio files (16kHz mono WAV) and a video file for testing.
+
+[This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.
+
+Download an example 16kHz mono WAV file:
+
+```bash
+wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
+```
+
+Download an example video file:
+
+```bash
+wget https://storage.openvinotoolkit.org/repositories/openvino_notebooks/data/data/video/Coco%20Walking%20in%20Berkeley.mp4
+```
 
 ## Usage
 
 ```bash
-omni_chat <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE>
+omni_chat <MODEL_DIR> <IMAGE_FILE_OR_DIR> <AUDIO_FILE> <VIDEO_FILE>
 ```
 
 **Parameters:**
 - `<MODEL_DIR>` — Path to exported Qwen3-Omni OpenVINO model directory
 - `<IMAGE_FILE_OR_DIR>` — Path to input image(s) for visual context
 - `<AUDIO_FILE>` — Path to input audio file (16kHz mono WAV)
+- `<VIDEO_FILE>` — Path to an input video file
 
 **Example:**
 
 ```bash
-./build/samples/cpp/omni/omni_chat /models/qwen3-omni-ov ./coco.jpg ./audio.wav
+./build/samples/cpp/omni/omni_chat /models/qwen3-omni-ov ./coco.jpg ./audio.wav "./Coco Walking in Berkeley.mp4"
 ```
 
 **Interactive usage:**
-1. Images are loaded once at startup and available to all turns
+1. Images and video are loaded once at startup and available to all turns
 2. Type questions and press Enter
-3. Model responds with streaming text; speech output indicated when enabled
+3. Model responds with streaming text; when speech output is enabled, each turn's audio is saved to `output_audio_<turn>.wav`
 4. Continue the conversation across multiple turns
 5. Press Ctrl+D to exit
 
@@ -71,7 +86,7 @@ talker_speech_config.speaker = "Cherry";   // Select voice (optional)
 
 **Available voices** vary by checkpoint. MoE models typically expose: `"Ethan"`, `"Chelsie"`, `"Aiden"`, `"Cherry"`. Check `talker_config.speaker_id` in the model's `config.json` for the full list. Leaving `speaker` empty selects the default voice.
 
-**Speech output:** 24kHz mono PCM samples returned in `OmniDecodedResults.speech_result.waveforms`.
+**Speech output:** 24kHz mono PCM samples returned in `OmniDecodedResults.speech_result.waveforms` and saved to `output_audio_<turn>.wav` for each turn.
 
 ## GPU Inference
 
