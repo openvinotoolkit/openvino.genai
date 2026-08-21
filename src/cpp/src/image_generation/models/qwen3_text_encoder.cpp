@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <cstring>
+#include <unordered_set>
 
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
@@ -147,6 +148,46 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.infer();
+
+    if (m_config.hidden_states_layers.empty()) {
+        for (const ov::Output<const ov::Node>& output : m_request.get_compiled_model().outputs()) {
+            const std::unordered_set<std::string>& output_names = output.get_names();
+            if (output_names.count("last_hidden_state") == 0) {
+                continue;
+            }
+
+            ov::Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
+            OPENVINO_ASSERT(last_hidden_state.get_element_type() == ov::element::f32,
+                            "'last_hidden_state' output must be f32");
+
+            const ov::Shape hidden_state_shape = last_hidden_state.get_shape();
+            ov::Tensor result(ov::element::f32, hidden_state_shape);
+
+            const float* last_hidden_state_data = last_hidden_state.data<const float>();
+            float* result_data = result.data<float>();
+            std::fill_n(result_data, result.get_size(), 0.0f);
+            const size_t hidden_size = hidden_state_shape[2];
+
+            for (size_t batch_idx = 0; batch_idx < text_embedding_batch_size; ++batch_idx) {
+                size_t output_token_idx = 0;
+                for (size_t token_idx = 0; token_idx < seq_len; ++token_idx) {
+                    const bool is_prompt_token = input_type == ov::element::i32 ?
+                        attention_mask.data<const int32_t>()[batch_idx * seq_len + token_idx] != 0 :
+                        attention_mask.data<const int64_t>()[batch_idx * seq_len + token_idx] != 0;
+                    if (!is_prompt_token) {
+                        continue;
+                    }
+
+                    std::memcpy(result_data + (batch_idx * seq_len + output_token_idx) * hidden_size,
+                                last_hidden_state_data + (batch_idx * seq_len + token_idx) * hidden_size,
+                                hidden_size * sizeof(float));
+                    ++output_token_idx;
+                }
+            }
+
+            return result;
+        }
+    }
 
     // Gather hidden states from selected layers and concatenate along channel dimension
     const size_t num_layers = m_config.hidden_states_layers.size();

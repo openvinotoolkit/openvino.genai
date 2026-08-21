@@ -108,6 +108,7 @@ from .py_openvino_genai import (
     UNet2DConditionModel,
     Flux2Transformer2DModel,
     FluxTransformer2DModel,
+    ZImageTransformer2DModel,
     SD3Transformer2DModel,
     AutoencoderKL,
     Text2ImagePipeline,

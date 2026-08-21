@@ -284,6 +284,7 @@ void init_unet2d_condition_model(py::module_& m);
 void init_sd3_transformer_2d_model(py::module_& m);
 void init_flux_transformer_2d_model(py::module_& m);
 void init_flux2_transformer_2d_model(py::module_& m);
+void init_zimage_transformer_2d_model(py::module_& m);
 void init_qwen3_text_encoder(py::module_& m);
 void init_autoencoder_kl(py::module_& m);
 
@@ -315,6 +316,7 @@ void init_image_generation_pipelines(py::module_& m) {
     init_sd3_transformer_2d_model(m);
     init_flux_transformer_2d_model(m);
     init_flux2_transformer_2d_model(m);
+    init_zimage_transformer_2d_model(m);
     init_qwen3_text_encoder(m);
     init_autoencoder_kl(m);
 
