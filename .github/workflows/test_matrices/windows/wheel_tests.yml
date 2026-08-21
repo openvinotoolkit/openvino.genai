@@ -138,7 +138,25 @@
 - name: WWB tests
   cmd: |-
     python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
-    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB ASR tests (Gemma4)
+  cmd: |-
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@4b025618bdf981ad9539d4f8daf56755ebee03d2#egg=optimum-intel"
+    python -m pip install transformers==5.5.0
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "gemma4"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB ASR tests (FunASR)
+  cmd: |-
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@4b025618bdf981ad9539d4f8daf56755ebee03d2#egg=optimum-intel"
+    python -m pip install transformers==4.57.6 funasr==1.4.2
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr"
   timeout: 120
   components:
     - WWB

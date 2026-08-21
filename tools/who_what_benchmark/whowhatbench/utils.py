@@ -9,6 +9,8 @@ import sys
 import json
 import torch
 import random
+import re
+import string
 import logging
 import tarfile
 import datasets
@@ -242,6 +244,33 @@ def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lor
     model.set_adapter(merged_adapter_name)
 
     return model
+
+
+def normalize_text(text: str) -> str:
+    """Normalize text for forgiving transcript comparison."""
+    text = text.lower().strip()
+    text = re.sub(r"[-‐-‒–—]+", " ", text)  # treat hyphens/dashes as separators
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+@contextmanager
+def no_double_bos(processor):
+    """Disable add_bos_token while a Gemma chat template that already emits bos is applied."""
+    tokenizer = getattr(processor, "tokenizer", None)
+    orig_add_bos_token = getattr(tokenizer, "add_bos_token", None)
+    if (
+        orig_add_bos_token is not None
+        and getattr(tokenizer, "chat_template", None)
+        and "bos_token" in tokenizer.chat_template
+    ):
+        tokenizer.add_bos_token = False
+    try:
+        yield
+    finally:
+        if orig_add_bos_token is not None:
+            tokenizer.add_bos_token = orig_add_bos_token
 
 
 # preapre default dataset for visualtext(VLM) evalutor

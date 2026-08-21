@@ -265,8 +265,66 @@ The speech-generation evaluator reports these metrics:
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
-* `duration score` - relative utterance length similarity between target and reference.
+* `duration score` - relative audio length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
+
+### Compare Speech-recognition models (ASR)
+
+`speech-recognition` works with native ASR models, for example
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512), and with
+audio-capable multimodal models (audio VLMs), for example Gemma-4.
+
+The metric is `similarity = max(0, 1 - WER)` between the normalized target and `--base-model`
+transcripts, where 1 is a perfect match and 0 is completely different.
+
+#### FunASR
+
+```sh
+# The funasr library is needed for the baseline and for the export
+pip install funasr
+
+# Collect ground truth from the baseline funasr model
+wwb --base-model FunAudioLLM/Fun-ASR-Nano-2512 --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-openvino
+
+# Measure similarity with the Optimum-OpenVINO inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition
+
+# Measure similarity with the OpenVINO GenAI inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+`--speech-language` forces the transcription language as a code (Fun-ASR-Nano-2512 supports `en`, `zh`,
+and `ja`). WWB defaults to `en`.
+
+> **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
+> **NOTE**: WER counts whitespace-separated words, so for Chinese and Japanese an audio sample is a single
+> word and its similarity degenerates to 0.0 or 1.0.
+
+#### Audio VLMs
+
+```sh
+# Collect ground truth from the baseline Hugging Face Transformer model
+wwb --base-model google/gemma-4-E4B-it --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m google/gemma-4-E4B-it --task image-text-to-text gemma-4-openvino
+
+# Measure similarity with the Optimum-OpenVINO inference backend
+wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recognition
+
+# Measure similarity with the OpenVINO GenAI inference backend
+wwb --target-model gemma-4-openvino --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+Audio VLMs are asked to `"Transcribe this audio in <language>."`. Here `--speech-language` takes a
+language name such as `English` or `Japanese`, and WWB defaults to `English`.
+
+> **NOTE**: audio comes from `--dataset` (`google/fleurs,en_us` by default) and is resampled to 16 kHz mono.
+> Use `--dataset google/fleurs,cmn_hans_cn` for Mandarin Chinese or
+> `--dataset google/fleurs,ja_jp` for Japanese.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.

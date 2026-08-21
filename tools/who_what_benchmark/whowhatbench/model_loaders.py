@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
+import json
 import logging
 import torch
 import os
@@ -1091,6 +1092,100 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     return SpeechT5Wrapper(model, processor, None)
 
 
+FUNASR_TOKENIZER_SUBFOLDER = (
+    "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
+)
+NATIVE_ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+
+
+def _read_model_json(model_id, filename):
+    model_path = Path(model_id)
+    if model_path.is_dir():
+        json_path = model_path / filename
+        if not json_path.is_file():
+            return None
+    else:
+        from huggingface_hub import hf_hub_download
+
+        try:
+            json_path = hf_hub_download(repo_id=str(model_id), filename=filename)
+        except Exception:
+            return None
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as json_file:
+            return json.load(json_file)
+    except Exception:
+        return None
+
+
+def get_model_type(model_id):
+    config = _read_model_json(model_id, "config.json")
+    if isinstance(config, dict) and config.get("model_type"):
+        return config["model_type"]
+
+    metadata = _read_model_json(model_id, "configuration.json")
+    if isinstance(metadata, dict):
+        model = metadata.get("model")
+        if isinstance(model, dict) and model.get("type"):
+            return model["type"]
+
+    return None
+
+
+def load_funasr_model(model_id, model_type, device="CPU", ov_config=None, use_hf=False, use_genai=False, language=""):
+    from .speech_recognition_evaluator import (
+        FunASRGenAITranscriber,
+        FunASROptimumTranscriber,
+        FunASRSourceTranscriber,
+    )
+
+    if use_hf:
+        logger.info("Using FunASR API")
+        return FunASRSourceTranscriber(model_id, language)
+
+    if use_genai:
+        logger.info("Using OpenVINO GenAI ASRPipeline API")
+        import openvino_genai
+
+        pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
+        return FunASRGenAITranscriber(pipeline, language)
+
+    logger.info("Using Optimum API")
+    from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+
+    model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+    subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
+    tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
+    return FunASROptimumTranscriber(model, tokenizer, language)
+
+
+def _load_audio_vlm_processor(model_id):
+    from transformers import AutoProcessor
+
+    try:
+        return AutoProcessor.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        return AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+
+
+def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    language = kwargs.pop("speech_language", "") or ""
+
+    model_type = get_model_type(model_id)
+    if model_type in NATIVE_ASR_MODEL_TYPES:
+        return load_funasr_model(model_id, model_type, device, ov_config, use_hf, use_genai, language or "en")
+
+    from .speech_recognition_evaluator import GenAIMultimodalTranscriber, MultimodalTranscriber
+
+    language = language or "English"
+    kwargs["model_type"] = "visual-text"
+    model = load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
+    if use_genai:
+        return GenAIMultimodalTranscriber(model, language)
+    return MultimodalTranscriber(model, _load_audio_vlm_processor(model_id), language)
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -1124,5 +1219,7 @@ def load_model(
         return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "speech-generation":
         return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
+    elif model_type == "speech-recognition":
+        return load_speech_recognition_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

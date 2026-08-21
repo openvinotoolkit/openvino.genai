@@ -201,6 +201,31 @@ class TextDivergency:
         return evaluate_divergency(self.tokenizer, gt, prediction)
 
 
+def _word_similarity(reference, hypothesis):
+    from jiwer import process_words
+
+    return max(0.0, 1.0 - float(process_words(reference, hypothesis).wer))
+
+
+class WordSimilarity:
+    """Corpus and per-sample word similarity between reference (gt) and hypothesis
+    (prediction) transcriptions."""
+
+    def evaluate(self, gt, prediction):
+        from .utils import normalize_text
+
+        references = [normalize_text(str(x)) for x in gt["answers"].values]
+        hypotheses = [normalize_text(str(x)) for x in prediction["answers"].values]
+
+        per_prompt = [
+            _word_similarity(reference, hypothesis)
+            for reference, hypothesis in tqdm(
+                zip(references, hypotheses), total=len(references), desc="Similarity evaluation"
+            )
+        ]
+        return {"similarity": _word_similarity(references, hypotheses)}, {"similarity": per_prompt}
+
+
 # Image metrics
 def evaluate_image_similarity(processor, model, data_gold, data_prediction):
     images_gold = data_gold["images"].values
