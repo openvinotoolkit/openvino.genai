@@ -99,6 +99,7 @@ def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
         "visual-text",
         "visual-video-text",
         "visual-text-chat",
+        "visual-text-only",
     ):
         raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
 
@@ -136,6 +137,7 @@ class GenAIModelWrapper:
             "embedding",
             "text-reranking",
             "visual-text-chat",
+            "visual-text-only",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -238,7 +240,8 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     model_kwargs = {}
     if n_ctx is not None:
         model_kwargs["n_ctx"] = int(n_ctx)
-    model = Llama(model_dir, **model_kwargs)
+    model_path = os.path.join(model_dir, kwargs["gguf_file"]) if kwargs.get("gguf_file") else model_dir
+    model = Llama(model_path, **model_kwargs)
     return model
 
 
@@ -1106,7 +1109,7 @@ def load_model(
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
+    elif model_type in ["visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
