@@ -495,7 +495,9 @@ An input image without explicit slicing metadata counts as one slice.)")
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
-                ov::genai::GenerationConfig gen_cfg;
+                // Start from the pipeline's loaded config so kwargs-only calls (no
+                // generation_config) inherit EOS, length limits and sampling defaults.
+                ov::genai::GenerationConfig gen_cfg = pipe.get_generation_config();
                 auto it = map.find("generation_config");
                 if (it != map.end()) {
                     gen_cfg = it->second.as<ov::genai::GenerationConfig>();
