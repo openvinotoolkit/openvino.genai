@@ -447,6 +447,11 @@ void init_generation_config(py::module_& m) {
             return "ReasoningConfig(budget=" + std::to_string(self.budget) +
                    ", start_token_id=" + std::to_string(self.start_token_id) +
                    ", end_token_id=" + std::to_string(self.end_token_id) + ")";
+        })
+        .def("__eq__", [](const ReasoningConfig& self, const ReasoningConfig& other) {
+            return self.budget == other.budget &&
+                   self.start_token_id == other.start_token_id &&
+                   self.end_token_id == other.end_token_id;
         });
 
     // Binding for GenerationConfig
