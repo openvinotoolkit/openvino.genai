@@ -376,11 +376,16 @@ protected:
     }
 
     void check_image_size(const int height, const int width) const override {
-        OPENVINO_ASSERT(height == 512 && width == 512,
-            "ZImagePipeline only supports fixed resolution of 512x512");
+        const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+        OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) &&
+                        (width % vae_scale_factor == 0 || width < 0),
+                        "Both 'width' and 'height' must be divisible by ",
+                        vae_scale_factor);
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
+        check_image_size(generation_config.height, generation_config.width);
+
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             OPENVINO_ASSERT(initial_image, "Initial image is required for image to image pipeline");
             OPENVINO_ASSERT(generation_config.strength > 0.0f && generation_config.strength <= 1.0f,

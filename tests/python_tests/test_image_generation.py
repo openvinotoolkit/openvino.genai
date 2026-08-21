@@ -449,7 +449,6 @@ class TestImageGenerationWithBlobTensorModels:
             pipe.export_model(tmp_path / "blob_model")
 
 
-@pytest.mark.xfail(reason="CVS-178687 z-image is not implemented in optimum-intel yet")
 class TestFlux2KleinImageGeneration:
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
     def test_flux2_klein_text2image(self, image_generation_model):
@@ -530,6 +529,17 @@ class TestFlux2KleinImageGeneration:
 
 @pytest.mark.xfail(reason="CVS-178687 z-image is not implemented in optimum-intel yet")
 class TestZImageGeneration:
+    @pytest.mark.parametrize("image_generation_model", [ZIMAGE_MODEL_ID], indirect=True)
+    def test_zimage_reshape(self, image_generation_model):
+        pipe = ov_genai.Text2ImagePipeline(image_generation_model)
+
+        pipe.reshape(
+            num_images_per_prompt=1,
+            height=1024,
+            width=1024,
+            guidance_scale=0.0,
+        )
+
     @pytest.mark.parametrize("image_generation_model", [ZIMAGE_MODEL_ID], indirect=True)
     def test_zimage_text2image(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")

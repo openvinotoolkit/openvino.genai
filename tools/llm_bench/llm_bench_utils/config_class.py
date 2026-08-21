@@ -161,7 +161,9 @@ class UseCaseTextToSpeech(UseCase):
 
 USE_CASES = {
     "image_gen": [
-        UseCaseImageGen(["stable-diffusion-", "ssd-", "tiny-sd", "small-sd", "lcm-", "sdxl", "dreamlike", "flux", "z-image"])
+        UseCaseImageGen(
+            ["stable-diffusion-", "ssd-", "tiny-sd", "small-sd", "lcm-", "sdxl", "dreamlike", "flux", "z-image"]
+        )
     ],
     "video_gen": [UseCaseVideoGen(["ltx"])],
     "visual_text_gen": [
