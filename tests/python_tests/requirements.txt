@@ -8,7 +8,7 @@ gguf==0.19.0
 
 # rag requirements
 langchain_community==0.4.2
-langchain-core==1.5.2
+langchain-core==1.5.6
 
 # requirements for specific models
 # - Qwen/Qwen-7B
@@ -19,7 +19,7 @@ torchvision==0.26.0
 # - openbmb/MiniCPM-V-2
 timm==1.0.28
 # - openai/whisper-base
-librosa==0.11.0
+librosa==1.0.0
 soundfile==0.14.0
 datasets==5.0.1; sys_platform == "linux"
 datasets==3.6.0; sys_platform != "linux"
@@ -30,9 +30,9 @@ peft==0.20.0
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.11.0
-vector-quantize-pytorch==1.31.0
+vector-quantize-pytorch==1.31.1
 # - OpenGVLab/VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B
-av==18.0.0
+av==18.1.0
 imageio==2.37.4
 decord==0.6.0; platform_system != "Darwin"
 opencv-python==5.0.0.93
