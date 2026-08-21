@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "embedding_pipeline_impl.hpp"
+#include "text_embedding_pipeline_impl.hpp"
 
 #include <optional>
 
@@ -33,44 +33,38 @@ ov::Tensor embedding_results_to_tensor(const EmbeddingResults& embedding_results
     }, embedding_results);
 }
 
-class TextEmbeddingPipelineImpl final : public EmbeddingPipelineImpl {
-public:
-    TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
-                              const std::string& device,
-                              const ov::AnyMap& properties)
-        : m_text_embedding_pipeline(std::make_unique<TextEmbeddingPipeline>(
-              models_path,
-              device,
-              TextEmbeddingPipeline::Config(properties),
-              utils::remove_config_properties(properties))) {}
-
-    EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) override {
-        std::optional<std::string> prompt;
-        utils::read_anymap_param(properties, embedding_prompt.name(), prompt);
-        const std::vector<std::string> texts = std::holds_alternative<std::string>(text)
-            ? std::vector<std::string>{std::get<std::string>(text)}
-            : std::get<std::vector<std::string>>(text);
-
-        if (prompt.has_value()) {
-            return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
-        }
-        return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
-    }
-
-    EmbedResult embed(const StringInputs& text,
-                      const std::vector<ov::Tensor>& images,
-                      const std::vector<ov::Tensor>& videos,
-                      const std::vector<VideoMetadata>& videos_metadata,
-                      const ov::AnyMap& properties) override {
-        OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
-                        "This model does not support image/video input");
-        return embed(text, properties);
-    }
-
-private:
-    std::unique_ptr<TextEmbeddingPipeline> m_text_embedding_pipeline;
-};
-
 }  // namespace
+
+TextEmbeddingPipelineImpl::TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
+                                                     const std::string& device,
+                                                     const ov::AnyMap& properties)
+    : m_text_embedding_pipeline(std::make_unique<TextEmbeddingPipeline>(
+          models_path,
+          device,
+          TextEmbeddingPipeline::Config(properties),
+          utils::remove_config_properties(properties))) {}
+
+EmbedResult TextEmbeddingPipelineImpl::embed(const StringInputs& text, const ov::AnyMap& properties) {
+    std::optional<std::string> prompt;
+    utils::read_anymap_param(properties, embedding_prompt.name(), prompt);
+    const std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+        ? std::vector<std::string>{std::get<std::string>(text)}
+        : std::get<std::vector<std::string>>(text);
+
+    if (prompt.has_value()) {
+        return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed(texts, *prompt))};
+    }
+    return EmbedResult{embedding_results_to_tensor(m_text_embedding_pipeline->embed_documents(texts))};
+}
+
+EmbedResult TextEmbeddingPipelineImpl::embed(const StringInputs& text,
+                                             const std::vector<ov::Tensor>& images,
+                                             const std::vector<ov::Tensor>& videos,
+                                             const std::vector<VideoMetadata>& videos_metadata,
+                                             const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(images.empty() && videos.empty() && videos_metadata.empty(),
+                    "This model does not support image/video input");
+    return embed(text, properties);
+}
 
 }  // namespace ov::genai

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "embedding_pipeline_impl.hpp"
+#include "multimodal_embedding_pipeline_impl.hpp"
 
 #include <algorithm>
 #include <numeric>
@@ -64,58 +64,55 @@ std::string append_visual_tags(const std::string& text, size_t image_count, size
 
 namespace ov::genai {
 
-class MultimodalEmbeddingPipelineImpl final : public EmbeddingPipelineImpl {
-public:
-    MultimodalEmbeddingPipelineImpl(const std::filesystem::path& models_path,
-                                    const std::string& device,
-                                    const ov::AnyMap& properties)
-        : m_config{get_multimodal_config(properties)} {
-        m_config.validate();
-        const ov::AnyMap plugin_properties = utils::remove_config_properties(properties);
-        init_multimodal(models_path, device, plugin_properties);
-    }
+MultimodalEmbeddingPipelineImpl::MultimodalEmbeddingPipelineImpl(const std::filesystem::path& models_path,
+                                                                 const std::string& device,
+                                                                 const ov::AnyMap& properties)
+    : m_config{get_multimodal_config(properties)} {
+    m_config.validate();
+    const ov::AnyMap plugin_properties = utils::remove_config_properties(properties);
+    init_multimodal(models_path, device, plugin_properties);
+}
 
-    EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) override {
-        std::optional<std::string> prompt;
-        utils::read_anymap_param(properties, embedding_prompt.name(), prompt);
+EmbedResult MultimodalEmbeddingPipelineImpl::embed(const StringInputs& text, const ov::AnyMap& properties) {
+    std::optional<std::string> prompt;
+    utils::read_anymap_param(properties, embedding_prompt.name(), prompt);
 
-        std::vector<std::string> texts = std::holds_alternative<std::string>(text)
-            ? std::vector<std::string>{std::get<std::string>(text)}
-            : std::get<std::vector<std::string>>(text);
+    std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+        ? std::vector<std::string>{std::get<std::string>(text)}
+        : std::get<std::vector<std::string>>(text);
 
-        std::vector<EncodedImage> encoded_images;
-        std::vector<EncodedVideo> encoded_videos;
-        return multimodal_embed(texts, encoded_images, encoded_videos, prompt);
-    }
+    std::vector<EncodedImage> encoded_images;
+    std::vector<EncodedVideo> encoded_videos;
+    return multimodal_embed(texts, encoded_images, encoded_videos, prompt);
+}
 
-    EmbedResult embed(const StringInputs& text,
-                      const std::vector<ov::Tensor>& images,
-                      const std::vector<ov::Tensor>& videos,
-                      const std::vector<VideoMetadata>& videos_metadata,
-                      const ov::AnyMap& properties) override {
-        std::optional<std::string> prompt;
-        utils::read_anymap_param(properties, embedding_prompt.name(), prompt);
+EmbedResult MultimodalEmbeddingPipelineImpl::embed(const StringInputs& text,
+                                                   const std::vector<ov::Tensor>& images,
+                                                   const std::vector<ov::Tensor>& videos,
+                                                   const std::vector<VideoMetadata>& videos_metadata,
+                                                   const ov::AnyMap& properties) {
+    std::optional<std::string> prompt;
+    utils::read_anymap_param(properties, embedding_prompt.name(), prompt);
 
-        OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
-                        "videos_metadata size (",
-                        videos_metadata.size(),
-                        ") must be equal to videos size (",
-                        videos.size(),
-                        ") or empty");
+    OPENVINO_ASSERT(videos_metadata.empty() || videos_metadata.size() == videos.size(),
+                    "videos_metadata size (",
+                    videos_metadata.size(),
+                    ") must be equal to videos size (",
+                    videos.size(),
+                    ") or empty");
 
-        std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
-        std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
-        std::vector<std::string> texts = std::holds_alternative<std::string>(text)
-            ? std::vector<std::string>{std::get<std::string>(text)}
-            : std::get<std::vector<std::string>>(text);
+    std::vector<EncodedImage> encoded_images = m_inputs_embedder->encode_images(images);
+    std::vector<EncodedVideo> encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+    std::vector<std::string> texts = std::holds_alternative<std::string>(text)
+        ? std::vector<std::string>{std::get<std::string>(text)}
+        : std::get<std::vector<std::string>>(text);
 
-        return multimodal_embed(texts, encoded_images, encoded_videos, prompt);
-    }
+    return multimodal_embed(texts, encoded_images, encoded_videos, prompt);
+}
 
-private:
-    void init_multimodal(const std::filesystem::path& models_path,
-                         const std::string& device,
-                         const ov::AnyMap& properties) {
+void MultimodalEmbeddingPipelineImpl::init_multimodal(const std::filesystem::path& models_path,
+                                                      const std::string& device,
+                                                      const ov::AnyMap& properties) {
         ov::AnyMap properties_copy = properties;
         utils::extract_extensions_to_core(properties_copy);
         const ov::AnyMap language_model_properties =
@@ -146,10 +143,11 @@ private:
                         "Language model must expose 'inputs_embeds' input for EmbeddingPipeline");
     }
 
-    EmbedResult multimodal_embed(const std::vector<std::string>& texts,
-                                 const std::vector<EncodedImage>& encoded_images,
-                                 const std::vector<EncodedVideo>& encoded_videos,
-                                 const std::optional<std::string>& prompt) {
+EmbedResult MultimodalEmbeddingPipelineImpl::multimodal_embed(
+    const std::vector<std::string>& texts,
+    const std::vector<EncodedImage>& encoded_images,
+    const std::vector<EncodedVideo>& encoded_videos,
+    const std::optional<std::string>& prompt) {
         if (texts.empty()) {
             return EmbedResult{ov::Tensor(ov::element::f32, {0, 0})};
         }
@@ -311,15 +309,17 @@ private:
         return EmbedResult{std::move(output_copy)};
     }
 
-    bool has_lm_input(const std::string& input_name) const {
-        return m_language_model_input_names.count(input_name) > 0;
-    }
+bool MultimodalEmbeddingPipelineImpl::has_lm_input(const std::string& input_name) const {
+    return m_language_model_input_names.count(input_name) > 0;
+}
 
-    bool has_lm_output(const std::string& output_name) const {
-        return m_language_model_output_names.count(output_name) > 0;
-    }
+bool MultimodalEmbeddingPipelineImpl::has_lm_output(const std::string& output_name) const {
+    return m_language_model_output_names.count(output_name) > 0;
+}
 
-    std::string format_prompt(const std::string& text, const std::optional<std::string>& prompt) const {
+std::string MultimodalEmbeddingPipelineImpl::format_prompt(
+    const std::string& text,
+    const std::optional<std::string>& prompt) const {
         Tokenizer tokenizer = m_inputs_embedder->get_tokenizer();
         if (!prompt.has_value()) {
             return append_added_special_tokens(tokenizer, text);
@@ -334,7 +334,8 @@ private:
         return append_added_special_tokens(tokenizer, tokenizer.apply_chat_template(history, add_generation_prompt));
     }
 
-    std::string append_added_special_tokens(Tokenizer& tokenizer, const std::string& text) const {
+std::string MultimodalEmbeddingPipelineImpl::append_added_special_tokens(Tokenizer& tokenizer,
+                                                                        const std::string& text) const {
         const ov::Tensor with_special_tokens = tokenizer.encode(text, add_special_tokens(true)).input_ids;
         const ov::Tensor without_special_tokens = tokenizer.encode(text, add_special_tokens(false)).input_ids;
         const ov::Shape with_shape = with_special_tokens.get_shape();
@@ -361,14 +362,5 @@ private:
         std::vector<int64_t> added_tokens(with_data + without_shape[1], with_data + with_shape[1]);
         return text + tokenizer.decode(added_tokens, skip_special_tokens(false));
     }
-
-    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
-    TextEmbeddingPipeline::Config m_config;
-    ov::CompiledModel m_compiled_language_model;
-    ov::InferRequest m_language_model_request;
-    std::unordered_set<std::string> m_language_model_input_names;
-    std::unordered_set<std::string> m_language_model_output_names;
-    std::string m_embedding_output_name;
-};
 
 }  // namespace ov::genai
