@@ -47,13 +47,11 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "gguf_filename": "SmolLM2-135M.F16.gguf",
         "convert_args": ['--trust-remote-code']
     },
-    "SmolLM2-360M": {
-        "name": "HuggingFaceTB/SmolLM2-360M",
-        "convert_args": ['--trust-remote-code']
-    },
-    "WhisperTiny": {
-        "name": "openai/whisper-tiny",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
+    "SmolLM2-360M": {"name": "HuggingFaceTB/SmolLM2-360M", "convert_args": ["--trust-remote-code"]},
+    "WhisperTiny": {"name": "openai/whisper-tiny", "convert_args": ["--trust-remote-code", "--weight-format", "fp16"]},
+    "tiny-random-fun-asr": {
+        "name": "optimum-intel-internal-testing/tiny-random-fun-asr",
+        "convert_args": ["--weight-format", "fp16"],
     },
     "Qwen2.5-0.5B-Instruct": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct",

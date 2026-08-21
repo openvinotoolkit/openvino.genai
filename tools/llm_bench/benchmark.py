@@ -500,7 +500,11 @@ def get_argparser():
         "--speech_language",
         type=str,
         default="",
-        help="Speech language for text-to-speech models. For Kokoro this can be one of en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, zh",
+        help=(
+            "Speech language. For text-to-speech Kokoro models this can be one of en-us, en-gb, es, fr-fr, hi, it, "
+            "pt-br, ja, zh. For speech-to-text models it selects the transcription language (e.g. en for FunASR, "
+            "English for Qwen3-ASR, <|en|> for Whisper); a per-entry JSON 'language' takes precedence over this."
+        ),
     )
     parser.add_argument(
         "--speech_voice",

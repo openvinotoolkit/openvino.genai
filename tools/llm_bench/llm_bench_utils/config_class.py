@@ -188,7 +188,7 @@ USE_CASES = {
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "speech_to_text": [
-        UseCaseSpeech2Text(["whisper", "qwen3-asr"]),
+        UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr"]),
         UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "image_cls": [UseCaseImageCls(["vit"])],
