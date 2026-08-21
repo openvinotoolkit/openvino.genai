@@ -1261,6 +1261,12 @@ def test_vlm_pipeline_chat_history_multipart_content(
         )
 
 
+def finish_audio_test_chat(ov_pipe_model: VlmModelInfo):
+    # Audio tests share a module-scoped pipeline, while audio multi-turn generation is not supported yet.
+    # Reset chat and KV-cache state so every audio test remains an independent single-turn scenario.
+    ov_pipe_model.pipeline.finish_chat()
+
+
 @parametrize_audio_models
 def test_vlm_pipeline_audio_chat_history(
     ov_pipe_model: VlmModelInfo,
@@ -1278,6 +1284,7 @@ def test_vlm_pipeline_audio_chat_history(
         generation_config=generation_config,
     )
     assert history.get_messages() == messages_before
+    finish_audio_test_chat(ov_pipe_model)
 
 
 @parametrize_audio_models
@@ -1294,6 +1301,7 @@ def test_vlm_pipeline_implicit_audio_placement(
     explicit_result = ov_pipe.generate(prompt + "<|audio|>", audios=audios, generation_config=generation_config)
 
     assert implicit_result.texts == explicit_result.texts
+    finish_audio_test_chat(ov_pipe_model)
 
 
 @parametrize_audio_models
@@ -1318,6 +1326,7 @@ def test_vlm_pipeline_audio_placeholder_count(
             audios=[synthetic_audio_tensor] * audio_count,
             do_sample=False,
         )
+    finish_audio_test_chat(ov_pipe_model)
 
 
 @pytest.fixture(scope="module", params=[
@@ -2635,6 +2644,7 @@ def test_vlm_pipeline_audio_match_optimum(
     synthetic_audio_tensor: openvino.Tensor,
 ):
     run_compare_genai_optimum(ov_pipe_model, None, None, np.array(synthetic_audio_tensor.data, copy=True))
+    finish_audio_test_chat(ov_pipe_model)
 
 
 # CDPruner Tests
