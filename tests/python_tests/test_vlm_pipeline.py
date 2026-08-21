@@ -1277,7 +1277,7 @@ def test_vlm_pipeline_audio_chat_history(
 ):
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, do_sample=False)
-    prompt = "Describe this audio.<|audio|>"
+    prompt = "Describe this audio."
 
     history = ChatHistory([{"role": "user", "content": prompt}])
     messages_before = history.get_messages()
@@ -2329,6 +2329,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=N
             processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type == "muse_glimmer":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "gemma4_unified":
+            tokenizer = processor.tokenizer
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
@@ -2375,8 +2377,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=N
     if audio is not None:
         params["audios"] = [openvino.Tensor(audio)]
 
-    genai_prompt = prompt + "<|audio|>" if audio is not None else prompt
-    genai_output = ov_pipe.generate(genai_prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
+    genai_output = ov_pipe.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
