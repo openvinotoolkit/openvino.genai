@@ -634,11 +634,16 @@ NormalizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prom
 
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     std::string unk64;
+    // MiniCPM tokenizer always adds special tokens (leading BOS) in pytorch,
+    // regardless of whether the chat template was applied.
+    set_add_special_tokens(true);
     ov::Tensor encoded_input = get_encoded_input_ids(unified_prompt, metrics);
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor inputs_embeds = get_text_embedding(req, encoded_input, metrics);
+    // make a copy of inputs_embeds to avoid data corruption when the infer request is used by another thread
+    cache_draft_inputs_embeds(inputs_embeds);
 
     OPENVINO_ASSERT(
         m_vlm_config.hidden_size == inputs_embeds.get_shape().at(2),

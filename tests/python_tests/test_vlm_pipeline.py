@@ -183,6 +183,7 @@ if is_transformers_version("<", "5.0"):
         MODEL_GEMMA3N,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
         *VIDEO_MODEL_IDS,
+        "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
     ]
 else:
     MODEL_IDS = [
@@ -445,6 +446,7 @@ def _get_ov_model(model_id: str) -> str:
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
+                    "optimum-intel-internal-testing/tiny-random-minicpm-v-4",
                 },
             )
         )
@@ -2294,6 +2296,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
     elif optimum_model.config.model_type == "videochat_flash_qwen":
         assert tokenizer is not None, "Tokenizer should be set for videochat_flash_qwen models."
+        optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+    elif optimum_model.config.model_type == "minicpmv":
+        assert tokenizer is not None, "Tokenizer should be set for minicpmv models."
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     else:
         optimum_output = processor.batch_decode(
