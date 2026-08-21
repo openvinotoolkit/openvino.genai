@@ -380,19 +380,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
-int64_t ContinuousBatchingPipeline::Eagle3DecodingImpl::compute_rope_delta(const ov::Tensor& position_ids) {
-    const ov::Shape shape = position_ids.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
-                    "Expected position_ids rank 2 or 3 when computing rope_delta.");
-
-    const size_t seq_axis = shape.size() == 3 ? 2 : 1;
-    OPENVINO_ASSERT(shape[seq_axis] > 0, "position_ids sequence length must be greater than 0.");
-
-    const int64_t* data = position_ids.data<const int64_t>();
-    const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
-    return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
-}
-
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_sequence_tensor(const ov::Tensor& tensor,
                                                                                              const char* tensor_name) {
     const ov::Shape shape = tensor.get_shape();

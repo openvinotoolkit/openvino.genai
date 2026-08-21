@@ -4,6 +4,7 @@
 #include "dflash_strategy.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,8 @@
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
 #include "utils.hpp"
+#include "visual_language/embedding_model.hpp"
+#include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
 
@@ -62,9 +65,11 @@ class ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashCBDraftRunner {
 public:
     DFlashCBDraftRunner(const ov::genai::ModelDesc& model_desc,
                         const Tokenizer& tokenizer,
-                        const ov::genai::utils::dflash::DFlashRTInfo& rt_info)
+                        const ov::genai::utils::dflash::DFlashRTInfo& rt_info,
+                        EmbeddingsModel::Ptr embedding_model = nullptr)
         : m_tokenizer(tokenizer),
-          m_request(create_draft_infer_request(model_desc)),
+          m_embedding_model(std::move(embedding_model)),
+          m_request(create_draft_infer_request(model_desc, static_cast<bool>(m_embedding_model))),
           m_sampler(tokenizer),
           m_mask_token_id(rt_info.mask_token_id) {
         m_has_beam_idx = has_compiled_input(m_request.get_compiled_model(), "beam_idx");
@@ -83,19 +88,13 @@ public:
                         "Expected DFlash input_ids shape [1, seq_len].");
         const int64_t* ids_data = input_ids.data<const int64_t>();
         TokenIds prompt_ids(ids_data, ids_data + shape[1]);
-        m_prompt_length = shape[1];
-        // Sampler state is keyed by request_id; we reuse request_id=1, so clear per-request context.
-        m_sampler.clear_request_info(1);
-        m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config);
-        m_sequence_group->update_processed_tokens_num(m_prompt_length);
-        m_committed_context_length = 0;
-        m_request.reset_state();
-        if (m_has_beam_idx) {
-            m_request.set_tensor("beam_idx", m_beam_idx);
-        }
-        m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
-        m_raw_perf_metrics.m_durations.clear();
-        m_raw_perf_metrics.m_batch_sizes.clear();
+        initialize_sampler_sequence(std::move(prompt_ids), config);
+    }
+
+    void initialize_sequence(size_t prompt_length, const GenerationConfig& config) {
+        initialize_sampler_sequence(
+            dflash_cb::build_placeholder_prompt_ids(prompt_length, m_tokenizer.get_pad_token_id()),
+            config);
     }
 
     void sync_generated_tokens(const std::vector<int64_t>& target_generated_tokens) {
@@ -123,10 +122,18 @@ public:
         m_request.set_tensor("hidden_states", hidden_delta);
         m_request.set_tensor("position_ids", position_ids);
         m_request.set_tensor("attention_mask", attention_mask);
-        // After load-time transforms the draft is always input_ids-native (target embedding
-        // attached in-graph when needed), so feed token ids directly.
-        m_request.set_tensor("input_ids", input_ids);
-        update_inference_time(execute_inference());
+        if (m_embedding_model) {
+            CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(
+                m_embedding_model->get_request_queue().get());
+            ov::Tensor input_embeds = m_embedding_model->infer(embeddings_request_guard.get(), input_ids);
+            m_request.set_tensor("inputs_embeds", input_embeds);
+            // The embeddings request owns input_embeds. Keep it reserved until
+            // synchronous draft inference has consumed that tensor.
+            update_inference_time(execute_inference());
+        } else {
+            m_request.set_tensor("input_ids", input_ids);
+            update_inference_time(execute_inference());
+        }
         m_committed_context_length += hidden_delta_length;
         return m_request.get_tensor("logits");
     }
@@ -155,12 +162,36 @@ public:
     }
 
 private:
-    static ov::InferRequest create_draft_infer_request(const ov::genai::ModelDesc& model_desc) {
+    void initialize_sampler_sequence(TokenIds prompt_ids, const GenerationConfig& config) {
+        m_prompt_length = prompt_ids.size();
+        // Sampler state is keyed by request_id; we reuse request_id=1, so clear per-request context.
+        m_sampler.clear_request_info(1);
+        m_sequence_group = std::make_shared<SequenceGroup>(1, prompt_ids, config);
+        m_sequence_group->update_processed_tokens_num(m_prompt_length);
+        m_committed_context_length = 0;
+        m_request.reset_state();
+        if (m_has_beam_idx) {
+            m_request.set_tensor("beam_idx", m_beam_idx);
+        }
+        m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
+        m_raw_perf_metrics.m_durations.clear();
+        m_raw_perf_metrics.m_batch_sizes.clear();
+    }
+
+    static ov::InferRequest create_draft_infer_request(const ov::genai::ModelDesc& model_desc,
+                                                        bool use_external_embeddings) {
         OPENVINO_ASSERT(model_desc.model, "DFlash draft model cannot be null.");
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "hidden_states"),
                         "DFlash CB/PA draft model must have 'hidden_states' input.");
-        OPENVINO_ASSERT(utils::has_input(model_desc.model, "input_ids"),
-                        "DFlash CB/PA draft model must have an 'input_ids' input after load-time transforms.");
+        if (use_external_embeddings) {
+            OPENVINO_ASSERT(utils::has_input(model_desc.model, "inputs_embeds"),
+                            "DFlash VLM draft model must have an 'inputs_embeds' input.");
+            OPENVINO_ASSERT(!utils::has_input(model_desc.model, "input_ids"),
+                            "DFlash VLM draft model must not have an 'input_ids' input.");
+        } else {
+            OPENVINO_ASSERT(utils::has_input(model_desc.model, "input_ids"),
+                            "DFlash CB/PA draft model must have an 'input_ids' input after load-time transforms.");
+        }
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "position_ids"),
                         "DFlash CB/PA draft model must have a 'position_ids' input.");
         OPENVINO_ASSERT(utils::has_input(model_desc.model, "attention_mask"),
@@ -224,6 +255,7 @@ private:
 
     static constexpr size_t BATCH_SIZE = 1;
     Tokenizer m_tokenizer;
+    EmbeddingsModel::Ptr m_embedding_model;
     mutable ov::InferRequest m_request;
     SequenceGroup::Ptr m_sequence_group;
     Sampler m_sampler;
@@ -242,9 +274,19 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     : m_rt_info(rt_info) {
     OPENVINO_ASSERT(m_rt_info.dflash_mode, "DFlash continuous batching requires dflash_mode=true.");
     OPENVINO_ASSERT(!m_rt_info.target_layer_ids.empty(), "DFlash target_layer_ids cannot be empty.");
+    OPENVINO_ASSERT(!main_model_desc.scheduler_config.enable_prefix_caching,
+                    "DFlash CB/PA does not support scheduler_config.enable_prefix_caching.");
 
     auto main_model = main_model_desc.model;
     OPENVINO_ASSERT(main_model && draft_model_desc.model, "DFlash requires both target and draft models.");
+    const bool is_vlm_dflash = static_cast<bool>(main_model_desc.inputs_embedder);
+    if (is_vlm_dflash) {
+        m_inputs_embedder = main_model_desc.inputs_embedder;
+        m_model_input_type = ModelInputType::EMBEDDINGS;
+        m_vision_registry = std::make_shared<VisionRegistry>();
+    }
+    const auto draft_embedding_model =
+        m_inputs_embedder ? m_inputs_embedder->get_embedding_model() : nullptr;
 
     // Detect each draft capability independently from its I/O signature (no RT-info markers) and
     // apply only the missing transform(s); a well-formed draft has exactly one input/output per pair.
@@ -259,8 +301,12 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     auto retained_hidden_state_locators =
         utils::dflash::resolve_target_hidden_state_locators(main_model, m_rt_info.target_layer_ids);
 
-    // Transform while the target is pristine so the compiled draft is self-contained (input_ids -> logits).
-    if (needs_embedding_attach) {
+    // Preserve the VLM draft's external inputs_embeds bridge. The legacy LLM
+    // path still grafts an in-graph target embedding and remains input_ids-native.
+    if (is_vlm_dflash) {
+        OPENVINO_ASSERT(needs_embedding_attach,
+                        "DFlash VLM draft model must be inputs_embeds-native.");
+    } else if (needs_embedding_attach) {
         utils::dflash::attach_target_embedding_to_draft(main_model, draft_model_desc.model);
     }
     if (needs_lm_head_graft) {
@@ -311,16 +357,29 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
 
     m_draft = std::make_shared<DFlashCBDraftRunner>(draft_model_desc_for_runner,
                                                     m_tokenizer,
-                                                    m_rt_info);
+                                                    m_rt_info,
+                                                    draft_embedding_model);
 
-    m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
-        main_model,
-        main_model_desc.tokenizer,
-        main_generation_config,
-        target_scheduler_config,
-        main_model_desc.device,
-        main_model_desc.properties,
-        true);
+    if (is_vlm_dflash) {
+        m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
+            main_model,
+            m_inputs_embedder,
+            main_model_desc.tokenizer,
+            main_generation_config,
+            target_scheduler_config,
+            main_model_desc.device,
+            main_model_desc.properties,
+            true);
+    } else {
+        m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
+            main_model,
+            main_model_desc.tokenizer,
+            main_generation_config,
+            target_scheduler_config,
+            main_model_desc.device,
+            main_model_desc.properties,
+            true);
+    }
     m_main_pipeline->set_hidden_state_export_needed(true);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
@@ -334,6 +393,20 @@ GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_gene
     auto draft_config = config;
     draft_config.ignore_eos = true;
     draft_config.stop_strings = {};
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        // The target sampler retains these options and sees verified token
+        // history. The placeholder-backed draft sampler must not apply state
+        // that it cannot reconstruct after a speculative rejection.
+        draft_config.repetition_penalty = 1.0f;
+        draft_config.presence_penalty = 0.0f;
+        draft_config.frequency_penalty = 0.0f;
+        draft_config.no_repeat_ngram_size = std::numeric_limits<size_t>::max();
+        draft_config.min_new_tokens = 0;
+        draft_config.stop_token_ids = {};
+        draft_config.include_stop_str_in_output = false;
+        draft_config.structured_output_config.reset();
+        draft_config.parsers.clear();
+    }
     draft_config.max_new_tokens = config.max_new_tokens + config.num_assistant_tokens.value();
     draft_config.num_assistant_tokens = 0;
     return draft_config;
@@ -393,36 +466,73 @@ GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    const bool is_vlm_dflash = m_model_input_type == ModelInputType::EMBEDDINGS;
     OPENVINO_ASSERT(sampling_params.is_greedy_decoding(), "DFlash CB/PA currently supports greedy decoding only.");
     OPENVINO_ASSERT(sampling_params.num_beams == 1, "DFlash CB/PA does not support beam search.");
     OPENVINO_ASSERT(sampling_params.num_return_sequences == 1, "DFlash CB/PA supports one sequence per request.");
+    OPENVINO_ASSERT(!sampling_params.adapters.has_value(),
+                    "DFlash CB/PA does not support adapters until target and draft adapter parity is validated.");
+    if (is_vlm_dflash) {
+        dflash_cb::ensure_vlm_generation_config(sampling_params);
+    }
     drop_finished_request_states();
     OPENVINO_ASSERT(!has_active_request_state() && !m_main_pipeline->has_non_finished_requests(),
                     "DFlash CB/PA POC supports only one active request. Wait for the current request to finish before adding another.");
 
     const auto input_shape = input_ids.get_shape();
-    OPENVINO_ASSERT(input_shape.size() == 2 && input_shape[0] == 1 && input_shape[1] > 0,
-                    "Expected DFlash input_ids shape [1, seq_len].");
+    if (is_vlm_dflash) {
+        OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::f32 &&
+                            input_shape.size() == 3 && input_shape[0] == 1 && input_shape[1] > 0,
+                        "DFlash VLM expects main input embeddings with shape [1, rows, hidden].");
+    } else {
+        OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::i64 &&
+                            input_shape.size() == 2 && input_shape[0] == 1 && input_shape[1] > 0,
+                        "Expected DFlash input_ids shape [1, seq_len].");
+    }
     auto sampling_params_copy = sampling_params;
     dflash_cb::ensure_num_assistant_tokens_is_set(sampling_params_copy);
     RequestState state;
     state.generation_config = sampling_params_copy;
     state.prompt_len = input_shape[1];
-    m_draft->initialize_sequence(input_ids, make_draft_generation_config(sampling_params_copy));
+    if (is_vlm_dflash) {
+        // FIXME: The draft's token-mode SequenceGroup derives prompt length from
+        // prompt_ids.size(), but DFlash receives the full prompt through target
+        // hidden states rather than prompt IDs. This creates placeholder IDs for
+        // sampler-length bookkeeping only; they are never fed to either model.
+        // Replace this when SequenceGroup supports a sampler-only logical prompt length.
+        m_draft->initialize_sequence(state.prompt_len, make_draft_generation_config(sampling_params_copy));
+    } else {
+        m_draft->initialize_sequence(input_ids, make_draft_generation_config(sampling_params_copy));
+    }
     m_request_states[request_id] = std::move(state);
 
-    return m_main_pipeline->add_request(request_id,
-                                        input_ids,
-                                        sampling_params_copy,
-                                        token_type_ids,
-                                        prompt_ids,
-                                        lm_extra_inputs);
+    // The draft sampler and request state are initialized above. If target
+    // request creation fails, erase the state so a later request is not
+    // rejected as a stale active DFlash request.
+    try {
+        return m_main_pipeline->add_request(request_id,
+                                            input_ids,
+                                            sampling_params_copy,
+                                            token_type_ids,
+                                            prompt_ids,
+                                            lm_extra_inputs);
+    } catch (...) {
+        m_request_states.erase(request_id);
+        throw;
+    }
 }
 
 GenerationHandle ContinuousBatchingPipeline::DFlashDecodingImpl::add_request(
     uint64_t request_id,
     const std::string& prompt,
     const ov::genai::GenerationConfig& sampling_params) {
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        return ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
+            request_id,
+            prompt,
+            {},
+            sampling_params);
+    }
     auto input_ids = m_tokenizer.encode(prompt).input_ids;
     return add_request(request_id, input_ids, sampling_params);
 }
@@ -508,6 +618,9 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
 
     const auto main_start = std::chrono::steady_clock::now();
     try {
+        // Main VLM validation consumes generated IDs as embeddings, not raw IDs.
+        // Synchronize after candidate insertion and before target validation.
+        m_main_pipeline->sync_generated_embeddings();
         m_main_pipeline->step();
     } catch (...) {
         for (auto& [_, state] : m_request_states) {
@@ -644,7 +757,12 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
-    OPENVINO_ASSERT(!position_ids.has_value(), "DFlash CB/PA does not support explicit position_ids yet.");
+    if (position_ids.has_value()) {
+        OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS,
+                        "DFlash CB/PA only accepts explicit position_ids in VLM embedding mode.");
+        OPENVINO_ASSERT(position_ids->size() == input_ids.size(),
+                        "DFlash VLM position_ids count must match input embeddings.");
+    }
     OPENVINO_ASSERT(!has_non_finished_requests(),
                     "Generate cannot be called while ContinuousBatchingPipeline is already running");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
@@ -658,12 +776,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     m_request_states.clear();
     auto start_time = std::chrono::steady_clock::now();
 
-    for (size_t i = 1; i < sampling_params.size(); ++i) {
-        OPENVINO_ASSERT(sampling_params[i - 1].adapters == sampling_params[i].adapters,
-                        "LoRA adapters must be same for all requests");
-    }
-    m_main_pipeline->set_adapters(sampling_params[0].adapters);
-
     auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
     OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
                         (input_ids.size() == 1 && sampling_params[0].is_greedy_decoding()),
@@ -672,6 +784,11 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(input_ids[request_id].get_shape().at(0) == 1, "Use multiple tensors to pass a batch.");
+        if (position_ids.has_value()) {
+            const auto& [main_position_ids, rope_delta] = (*position_ids)[request_id];
+            m_inputs_embedder->set_position_ids(main_position_ids);
+            m_inputs_embedder->set_rope_delta(rope_delta.value_or(compute_rope_delta(main_position_ids)));
+        }
         const bool has_valid_token_type_ids = token_type_ids.has_value() && request_id < token_type_ids->size();
         const bool has_valid_prompt_ids = prompt_ids.has_value() && request_id < prompt_ids->size();
         const bool has_valid_lm_extra_inputs = lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();

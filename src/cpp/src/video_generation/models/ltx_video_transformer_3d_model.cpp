@@ -81,6 +81,7 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input(0).get_partial_shape();
     m_expected_batch_size = input_shape.is_static() ? input_shape[0].get_length() : 0;
+
     // release the original model
     m_model.reset();
 
@@ -130,6 +131,30 @@ size_t LTXVideoTransformer3DModel::get_request_input_batch() {
     return shape[0];
 }
 
+ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_input, float timestep) {
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
+
+    // Legacy exports condition the whole video with a single rank-1 [B] timestep. Current ones take a
+    // rank-2 [B, S] timestep, one entry per packed token, sized from the latents so the two always agree.
+    const auto& timestep_shape = m_request.get_compiled_model().input("timestep").get_partial_shape();
+    const auto timestep_rank = timestep_shape.rank().get_length();
+    OPENVINO_ASSERT(timestep_rank == 1 || timestep_rank == 2,
+                    "LTX-Video transformer expects a rank-1 or rank-2 'timestep' input, got rank ", timestep_rank);
+
+    ov::Shape shape{1};
+    if (timestep_rank == 2) {
+        const ov::Shape& latent_shape = latent_model_input.get_shape();
+        OPENVINO_ASSERT(latent_shape.size() == 3,
+                        "Packed latents must be rank-3 [B, S, C], got rank ", latent_shape.size());
+        shape = {latent_shape[0], latent_shape[1]};
+    }
+
+    ov::Tensor timestep_tensor(ov::element::f32, shape);
+    std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timestep);
+
+    return infer(latent_model_input, timestep_tensor);
+}
+
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
                                                             int64_t num_frames,
                                                             int64_t height,
@@ -151,15 +176,26 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
 
     std::map<std::string, ov::PartialShape> name_to_shape;
 
+    // Packed token count shared by hidden_states and a rank-2 timestep.
+    const int64_t video_sequence_length = num_frames * height * width;
+
     for (auto&& input : m_model->inputs()) {
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
         if (input_name == "timestep") {
-            name_to_shape[input_name][0] = 1;
+            const auto timestep_rank = name_to_shape[input_name].rank().get_length();
+            OPENVINO_ASSERT(timestep_rank == 1 || timestep_rank == 2,
+                            "LTX-Video transformer expects a rank-1 or rank-2 'timestep' input, got rank ",
+                            timestep_rank);
+            if (timestep_rank == 2) {
+                name_to_shape[input_name] = {batch_size, video_sequence_length};
+            } else {
+                name_to_shape[input_name][0] = 1;
+            }
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
         } else if (input_name == "hidden_states") {
-            name_to_shape[input_name] = {batch_size, num_frames * height * width, name_to_shape[input_name][2]};
+            name_to_shape[input_name] = {batch_size, video_sequence_length, name_to_shape[input_name][2]};
         } else if (input_name == "encoder_attention_mask") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length};
         }
