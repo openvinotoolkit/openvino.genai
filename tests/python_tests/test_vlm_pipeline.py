@@ -169,6 +169,11 @@ MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
+AUDIO_INPUT_SUPPORTED_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-gemma4",
+    "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
+]
+
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
     # minicpmv, internvl_chat architectures are deprecating support for transformers >= v5 by optimum-intel
@@ -412,6 +417,10 @@ def is_optimum_intel_version_for_videochat_flash_qwen():
 def _get_ov_model(model_id: str) -> str:
     _maybe_skip_unsupported_model_export(model_id)
 
+    local_model_dir = Path(model_id)
+    if (local_model_dir / "openvino_language_model.xml").exists():
+        return str(local_model_dir)
+
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_converted_dir / dir_name
@@ -469,17 +478,17 @@ def _get_ov_model(model_id: str) -> str:
             # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
             processor.chat_template = tokenizer.chat_template
 
-        if (
-            isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
-            or model.config.model_type == "qwen3_5"
-            or is_transformers_version(">=", "5.0")
-        ):
-            # Remove audio_tokenizer to avoid serialization issues (audio inputs are not supported).
-            # Setting to None is insufficient because Gemma4Processor.to_dict() still detects
-            # the key and calls .name_or_path on a None object.
-            processor.__dict__.pop("audio_tokenizer", None)
-        else:
-            processor.audio_tokenizer = None
+        if model_id not in AUDIO_INPUT_SUPPORTED_MODELS:
+            if (
+                isinstance(processor, getattr(transformers, "Gemma4Processor", type(None)))
+                or model.config.model_type == "qwen3_5"
+                or is_transformers_version(">=", "5.0")
+            ):
+                # Setting to None is insufficient because some processors still serialize
+                # audio_tokenizer and access its name_or_path attribute.
+                processor.__dict__.pop("audio_tokenizer", None)
+            else:
+                processor.audio_tokenizer = None
 
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
@@ -536,6 +545,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         ov_prompt_lookup,
     )
 
+
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
     [(m, b, pl) for m in MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP if b == "PA" or pl is False],
@@ -577,6 +587,14 @@ parametrize_one_model_pa = pytest.mark.parametrize(
 parametrize_one_model_backends = pytest.mark.parametrize(
     "ov_pipe_model",
     [(MODEL_IDS[0], b) for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+
+
+parametrize_audio_models = pytest.mark.parametrize(
+    "ov_pipe_model",
+    [(model_id, backend) for model_id in AUDIO_INPUT_SUPPORTED_MODELS for backend in ATTENTION_BACKEND],
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
@@ -758,6 +776,14 @@ def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
+
+
+@pytest.fixture(scope="module")
+def synthetic_audio_tensor() -> openvino.Tensor:
+    sampling_rate = 16000
+    timestamps = np.arange(sampling_rate, dtype=np.float32) / sampling_rate
+    audio = 0.5 * np.sin(2 * np.pi * 440 * timestamps) + 0.25 * np.sin(2 * np.pi * 880 * timestamps)
+    return openvino.Tensor(audio.astype(np.float32))
 
 
 @pytest.fixture(scope="module")
@@ -1254,6 +1280,74 @@ def test_vlm_pipeline_chat_history_multipart_content(
             f"answers_chat_history: {answer_1}\n"
             f"answers_chat_history_multipart_content: {answer_2}"
         )
+
+
+def finish_audio_test_chat(ov_pipe_model: VlmModelInfo):
+    # Audio tests share a module-scoped pipeline, while audio multi-turn generation is not supported yet.
+    # Reset chat and KV-cache state so every audio test remains an independent single-turn scenario.
+    ov_pipe_model.pipeline.finish_chat()
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_audio_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    prompt = "Describe this audio."
+
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    messages_before = history.get_messages()
+    ov_pipe.generate(
+        history,
+        audios=[synthetic_audio_tensor],
+        generation_config=generation_config,
+    )
+    assert history.get_messages() == messages_before
+    finish_audio_test_chat(ov_pipe_model)
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_implicit_audio_placement(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    prompt = "Describe this audio."
+    audios = [synthetic_audio_tensor]
+
+    implicit_result = ov_pipe.generate(prompt, audios=audios, generation_config=generation_config)
+    explicit_result = ov_pipe.generate(prompt + "<|audio|>", audios=audios, generation_config=generation_config)
+
+    assert implicit_result.texts == explicit_result.texts
+    finish_audio_test_chat(ov_pipe_model)
+
+
+@parametrize_audio_models
+@pytest.mark.parametrize(
+    "prompt,audio_count",
+    [
+        pytest.param("<|audio|><|audio|>Describe.", 1, id="more-placeholders-than-audios"),
+        pytest.param("<|audio|>Describe.", 2, id="fewer-placeholders-than-audios"),
+        pytest.param("<|audio|>Describe.", 0, id="placeholder-without-audio"),
+    ],
+)
+def test_vlm_pipeline_audio_placeholder_count(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+    prompt: str,
+    audio_count: int,
+):
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    with pytest.raises(RuntimeError):
+        ov_pipe_model.pipeline.generate(
+            history,
+            audios=[synthetic_audio_tensor] * audio_count,
+            do_sample=False,
+        )
+    finish_audio_test_chat(ov_pipe_model)
 
 
 @pytest.fixture(scope="module", params=[
@@ -2191,7 +2285,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo, vision_type: Vis
         ov_pipe.generate(vision_tag(0))
 
 
-def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
+def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video, audio=None):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -2225,7 +2319,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     ov_pipe = ov_pipe_model.pipeline
 
     model_id = ov_pipe_model.model_id
-    model_cached = snapshot_download(model_id)  # required to avoid HF rate limits
+    model_path = Path(model_id)
+    model_cached = str(model_path) if model_path.is_dir() else snapshot_download(model_id)
     model_path = _get_ov_model(model_id)
     optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 
@@ -2235,6 +2330,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     if video is not None:
         prompt_parts.append("video")
+
+    if audio is not None:
+        prompt_parts.append("audio")
 
     if len(prompt_parts) == 1:
         prompt = f"Describe this {prompt_parts[0]}."
@@ -2269,6 +2367,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
             processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type == "muse_glimmer":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "gemma4_unified":
+            tokenizer = processor.tokenizer
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
@@ -2281,7 +2381,13 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
                 processor.chat_template = tokenizer.chat_template
 
         inputs = optimum_model.preprocess_inputs(
-            text=prompt, image=image, video=video, processor=processor, tokenizer=tokenizer, config=optimum_model.config
+            text=prompt,
+            image=image,
+            video=video,
+            audio=audio,
+            processor=processor,
+            tokenizer=tokenizer,
+            config=optimum_model.config,
         )
 
     max_new_tokens = 100
@@ -2306,6 +2412,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         params["images"] = [openvino.Tensor(image)]
     if video is not None:
         params["videos"] = [openvino.Tensor(video)]
+    if audio is not None:
+        params["audios"] = [openvino.Tensor(audio)]
 
     genai_output = ov_pipe.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
@@ -2353,9 +2461,7 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-gemma3n/SDPA/CPP/text-only": "CVS-190429",
     # Gemma4-unified cases
     "*tiny-random-gemma4-unified-it/SDPA/CPP/image*": "CVS-190429",
-    "*tiny-random-gemma4-unified-it/SDPA/CPP/text-only": "CVS-190429",
     "*tiny-random-gemma4-unified-it/PA/CPP/image*": "CVS-190429",
-    "*tiny-random-gemma4-unified-it/PA/CPP/text-only": "CVS-190429",
     # Gemma4 models (with token_type_ids input) PA cases with image input
     "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
     "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
@@ -2568,6 +2674,15 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
         resized_video = resize_video(resized_video, video_input_resolution)
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
+
+
+@parametrize_audio_models
+def test_vlm_pipeline_audio_match_optimum(
+    ov_pipe_model: VlmModelInfo,
+    synthetic_audio_tensor: openvino.Tensor,
+):
+    run_compare_genai_optimum(ov_pipe_model, None, None, np.array(synthetic_audio_tensor.data, copy=True))
+    finish_audio_test_chat(ov_pipe_model)
 
 
 # CDPruner Tests

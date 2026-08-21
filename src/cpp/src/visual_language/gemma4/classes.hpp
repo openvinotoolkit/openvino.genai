@@ -9,6 +9,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "visual_language/gemma4/audio_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/vlm_config.hpp"
@@ -82,6 +83,8 @@ public:
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos,
                                                        const std::vector<VideoMetadata>& videos_metadata = {}) override;
 
+    void encode_audios(const std::vector<ov::Tensor>& audios) override;
+
     NormalizedPrompt normalize_prompt(const std::string& prompt,
                                       size_t base_id,
                                       const std::vector<EncodedImage>& images) const override;
@@ -105,6 +108,10 @@ public:
     }
 
 private:
+    std::unique_ptr<AudioEncoderGemma4> m_audio_encoder;
+    ov::Tensor m_audio_embeddings;
+    std::vector<size_t> m_audio_token_counts;
+
     // Per-layer text embeddings model (Gemma4-specific)
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_per_layer_embeddings_requests = nullptr;
 
@@ -115,6 +122,10 @@ private:
                                      const std::vector<EncodedVideo>& encoded_videos,
                                      const std::vector<size_t>& videos_sequence,
                                      size_t video_base_id) const;
+
+    void expand_audio_tags_in_prompt(std::string& unified_prompt) const;
+
+    void merge_audio_embeddings(ov::Tensor& input_embeds, const ov::Tensor& input_ids) const;
 
     ov::Tensor get_per_layer_embeddings(const ov::Tensor& input_ids);
 

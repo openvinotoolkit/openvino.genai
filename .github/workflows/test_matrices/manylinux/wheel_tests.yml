@@ -243,6 +243,7 @@
 
 - name: VLM (gemma4)
   cmd: |-
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@refs/pull/1902/head"
     python -m pip install transformers==5.5.0
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4 and not gemma4-unified"
@@ -252,7 +253,7 @@
 
 - name: VLM (gemma4-unified)
   cmd: |-
-    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@3e159833682a192132094443b7ff8da3d7d46c42
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@refs/pull/1902/head"
     python -m pip install transformers==5.10.0
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4-unified"
