@@ -504,9 +504,11 @@ An input image without explicit slicing metadata counts as one slice.)")
                     map.erase(it);
                 }
                 // Apply reasoning_config from kwargs to gen_cfg so auto-detect can see it.
-                // (kwargs_to_any_map stores it in the map; gen_cfg is default-constructed above.)
+                // A one-shot kwarg always wins (like every other kwarg): move it out of the map
+                // unconditionally so the auto-detect block below sees the user-provided value,
+                // even when the pipeline already carries its own reasoning_config.
                 auto rc_it = map.find("reasoning_config");
-                if (rc_it != map.end() && !gen_cfg.reasoning_config.has_value()) {
+                if (rc_it != map.end()) {
                     gen_cfg.reasoning_config = rc_it->second.as<ov::genai::ReasoningConfig>();
                     map.erase(rc_it);
                 }
