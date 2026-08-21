@@ -523,6 +523,52 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Allow passing a local CSV file through the same --dataset interface.
+    # This keeps VLM evaluation deterministic and independent of remote dataset
+    # availability. The CSV must contain a "prompts" column and may optionally
+    # contain "images" and "videos" columns (paths or None). Image paths are
+    # resolved relative to the CSV file location when not absolute.
+    dataset_path = Path(args.dataset)
+    if dataset_path.suffix.lower() == ".csv" and dataset_path.is_file():
+        from transformers.image_utils import load_image
+
+        base_dir = dataset_path.resolve().parent
+        df = pd.read_csv(dataset_path)
+        if "prompts" not in df.columns:
+            raise ValueError(
+                f"Local dataset CSV '{dataset_path}' must contain a 'prompts' column, "
+                f"got columns: {list(df.columns)}."
+            )
+
+        def _resolve_media(value):
+            if value is None:
+                return None
+            # pandas represents empty cells as NaN (float)
+            if isinstance(value, float) and pd.isna(value):
+                return None
+            text = str(value).strip()
+            if text == "" or text.lower() == "none":
+                return None
+            path = Path(text)
+            if not path.is_absolute():
+                path = (base_dir / path)
+            return str(path)
+
+        prompts = list(df["prompts"])
+        if "images" in df.columns:
+            images = [
+                load_image(resolved) if (resolved := _resolve_media(v)) is not None else None
+                for v in df["images"]
+            ]
+        else:
+            images = [None] * len(prompts)
+        if "videos" in df.columns:
+            videos = [_resolve_media(v) for v in df["videos"]]
+        else:
+            videos = [None] * len(prompts)
+
+        return {"prompts": prompts, "images": images, "videos": videos}
+
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -990,11 +1036,20 @@ def genai_gen_reranking(model, tokenizer, query, documents):
 
 
 def is_model_with_automatic_crop(config):
+    model_type = getattr(config, "model_type", "")
+    # MiniCPM-V-4.6 (model_type="minicpmv4_6") is a standard transformers
+    # image-text-to-text model: its generate() returns the full input+output
+    # sequence, so the question must be cropped like for other HF VLMs. Only the
+    # legacy custom-code MiniCPM-V/-o models return an already-cropped decoded
+    # answer and must keep crop_question=False. The substring check below would
+    # otherwise wrongly match "minicpmv" inside "minicpmv4_6".
+    if model_type == "minicpmv4_6":
+        return False
     return (
-        "internvl" in config.model_type
-        or "minicpmv" in config.model_type
-        or "minicpmo" in config.model_type
-        or "videochat_flash_qwen" in config.model_type
+        "internvl" in model_type
+        or "minicpmv" in model_type
+        or "minicpmo" in model_type
+        or "videochat_flash_qwen" in model_type
     )
 
 
