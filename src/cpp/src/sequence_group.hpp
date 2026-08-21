@@ -448,6 +448,43 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
         return false;
     }
 
+    void stream_output() {
+        // For beam search streaming is not available, so we notify only upon finishing
+        if (m_sampling_params.is_beam_search()) {
+            if (has_finished()) {
+                push_outputs();
+            }
+        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
+            // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
+            // (after stop string is detected its tokens are already sent)
+            if (num_total_seqs() == 1) {
+                const auto generated_len = m_sequences.front()->get_generated_len();
+                if (has_finished()) {
+                    m_stream_window_size = 0;
+                }
+                // push empty output in case we won't stream generation res
+                if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
+                    if (has_finished()) {
+                        // All tokens already streamed; still deliver accumulated hidden states
+                        // (falls back to an empty terminator push when there are none).
+                        push_finished_hidden_states();
+                    }
+                    return;
+                }
+                // speculative decoding draft handling
+                if (generated_len < m_num_streamed_tokens) {
+                    m_num_streamed_tokens = generated_len;
+                }
+                OPENVINO_ASSERT(generated_len >= (m_num_streamed_tokens + m_stream_window_size));
+                size_t num_output_token_to_push = generated_len - m_num_streamed_tokens - m_stream_window_size;
+                push_partial_outputs(num_output_token_to_push);
+                m_num_streamed_tokens += (num_output_token_to_push);
+            } else if (has_finished()) {
+                push_outputs();
+            }
+        }
+    }
+
 public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
@@ -1002,53 +1039,34 @@ public:
         m_generation_stream->push(std::move(outputs));
     }
 
+    // Convenience dispatcher for callers that don't know the terminal state in advance (e.g. non-CB pipelines).
     void notify_handle() {
-        if (out_of_memory()) {
-            set_generation_status(GenerationStatus::IGNORED);
-        } else if (has_finished()) {
-            set_generation_status(GenerationStatus::FINISHED);
-        }
-        // For beam search streaming is not available, so we notify only upon finishing
-        if (m_sampling_params.is_beam_search()) {
-            if (has_finished()) {
-                push_outputs();
-            }
-        } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
-            // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
-            // (after stop string is detected its tokens are already sent)
-            if (num_total_seqs() == 1) {
-                const auto generated_len = m_sequences.front()->get_generated_len();
-                if (has_finished()) {
-                    m_stream_window_size = 0;
-                }
-                // push empty output in case we won't stream generation res
-                if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
-                    if (has_finished()) {
-                        // All tokens already streamed; still deliver accumulated hidden states
-                        // (falls back to an empty terminator push when there are none).
-                        push_finished_hidden_states();
-                    }
-                    return;
-                }
-                // speculative decoding draft handling
-                if (generated_len < m_num_streamed_tokens) {
-                    m_num_streamed_tokens = generated_len;
-                }
-                OPENVINO_ASSERT(generated_len >= (m_num_streamed_tokens + m_stream_window_size));
-                size_t num_output_token_to_push = generated_len - m_num_streamed_tokens - m_stream_window_size;
-                push_partial_outputs(num_output_token_to_push);
-                m_num_streamed_tokens += (num_output_token_to_push);
-            } else if (has_finished()) {
-                push_outputs();
-            }
-        }
+        if (out_of_memory())
+            notify_handle_oom();
+        else if (has_finished())
+            notify_handle_final();
+        else
+            stream_output();
     }
 
+    void notify_handle_oom() {
+        stream_output();
+        set_generation_status(GenerationStatus::IGNORED);
+        push_empty_outputs();  // unblock any reader blocked in read() before the status change
+    }
+
+    // Push the final output for a finished group; must be called after set_perf_metrics() to close the metrics race.
+    void notify_handle_final() {
+        OPENVINO_ASSERT(has_finished());
+        stream_output();
+        set_generation_status(GenerationStatus::FINISHED);
+        push_empty_outputs();  // unblock any reader blocked in read() before the status change
+    }
 
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
-        // This method is called after scheduling and before sampling,
-        // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
+        // Called after metrics are updated; m_num_processed_tokens does not yet include
+        // recently forwarded tokens, so it is our starting position.
         // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
         size_t first_token_position = m_num_processed_tokens;
         size_t last_token_position = get_context_len();
@@ -1061,12 +1079,15 @@ public:
 
         if (last_token_position == get_prompt_len()) {
             output.finish_reason = GenerationFinishReason::LENGTH;
-            set_generation_status(GenerationStatus::FINISHED);
             m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
         }
         GenerationOutputs outputs;
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
+        if (last_token_position == get_prompt_len()) {
+            set_generation_status(GenerationStatus::FINISHED);
+            push_empty_outputs();  // unblock any reader blocked in read() before the status change
+        }
     }
 
     size_t get_max_new_tokens() const {

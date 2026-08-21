@@ -1674,10 +1674,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     } else {
         OPENVINO_THROW("Unsupported sampling method");
     }
-    // Notify handle after sampling is done. 
-    // For non-streaming this is effective only when the generation is finished.
     OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
-    sequence_group->notify_handle();
     return sg_sampling_info;
 }
 

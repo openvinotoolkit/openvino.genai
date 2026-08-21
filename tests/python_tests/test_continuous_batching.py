@@ -5,6 +5,7 @@ import os
 import pytest
 import math
 import sys
+import threading
 import numpy as np
 
 from pathlib import Path
@@ -1059,3 +1060,72 @@ def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OV
         f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
         f"but all produced identical token sequences: {token_seqs[0]}"
     )
+
+
+def test_cb_perf_metrics_available_after_concurrent_read(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Metrics must be committed before the final token push so the reader never hits the assertion."""
+    models_path = model_facebook_opt_125m.models_path
+    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    config = GenerationConfig(max_new_tokens=10)
+
+    for i in range(50):
+        handle = cb_pipe.add_request(i, "1+1=", generation_config=config)
+        errors = []
+
+        def make_reader(h, errs):
+            def reader():
+                h.read_all()
+                # no sleep: immediate call is the exact race window the fix closes
+                try:
+                    metrics = h.get_perf_metrics()
+                    assert metrics.get_num_generated_tokens() > 0
+                except Exception as e:
+                    errs.append(e)
+
+            return reader
+
+        t = threading.Thread(target=make_reader(handle, errors))
+        t.start()
+        while cb_pipe.has_non_finished_requests():
+            cb_pipe.step()
+        t.join()
+        assert not errors, f"Iteration {i}: get_perf_metrics() raised: {errors[0]}"
+
+
+@pytest.mark.parametrize(
+    "generation_config_factory",
+    [
+        get_greedy,
+        get_beam_search,
+        get_multinomial_temperature,
+    ],
+)
+def test_cb_perf_metrics_valid_per_sampling_mode(
+    model_facebook_opt_125m: OVConvertedModelSchema,
+    generation_config_factory,
+):
+    """get_perf_metrics() must return valid data for every sampling mode after generation."""
+    models_path = model_facebook_opt_125m.models_path
+    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    config = generation_config_factory()
+    config.max_new_tokens = 10
+    handle = cb_pipe.add_request(0, "What is OpenVINO?", generation_config=config)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    handle.read_all()
+    metrics = handle.get_perf_metrics()
+    assert metrics.get_num_generated_tokens() > 0
+    assert metrics.get_num_input_tokens() > 0
+
+
+def test_cb_perf_metrics_available_for_echo_only(model_facebook_opt_125m: OVConvertedModelSchema):
+    """Echo-only requests (max_new_tokens=0) use a separate notify path; metrics must still be set."""
+    models_path = model_facebook_opt_125m.models_path
+    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    config = GenerationConfig(max_new_tokens=0, echo=True)
+    handle = cb_pipe.add_request(0, "What is OpenVINO?", generation_config=config)
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+    handle.read_all()
+    metrics = handle.get_perf_metrics()
+    assert metrics.get_num_input_tokens() > 0
