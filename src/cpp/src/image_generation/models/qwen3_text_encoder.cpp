@@ -149,11 +149,16 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.infer();
 
-    for (const ov::Output<const ov::Node>& output : m_request.get_compiled_model().outputs()) {
-        const std::unordered_set<std::string>& output_names = output.get_names();
-        if (output_names.count("last_hidden_state") != 0) {
+    if (m_config.hidden_states_layers.empty()) {
+        for (const ov::Output<const ov::Node>& output : m_request.get_compiled_model().outputs()) {
+            const std::unordered_set<std::string>& output_names = output.get_names();
+            if (output_names.count("last_hidden_state") == 0) {
+                continue;
+            }
+
             ov::Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
-            OPENVINO_ASSERT(last_hidden_state.get_element_type() == ov::element::f32, "'last_hidden_state' output must be f32");
+            OPENVINO_ASSERT(last_hidden_state.get_element_type() == ov::element::f32,
+                            "'last_hidden_state' output must be f32");
 
             const ov::Shape hidden_state_shape = last_hidden_state.get_shape();
             ov::Tensor result(ov::element::f32, hidden_state_shape);

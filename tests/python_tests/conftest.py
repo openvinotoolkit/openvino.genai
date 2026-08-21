@@ -115,7 +115,6 @@ def image_generation_model(request):
     model_id = getattr(request, "param", DEFAULT_IMAGE_GEN_MODEL_ID)
     model_name = IMAGE_GEN_MODELS[model_id]
     models_dir = get_ov_cache_converted_models_dir()
-    print("MODELS DIR", models_dir)
     model_path = Path(models_dir) / model_id / model_name
 
     manager = AtomicDownloadManager(model_path)
