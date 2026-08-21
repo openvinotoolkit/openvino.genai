@@ -10,6 +10,7 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/functional.h>
 
+#include "openvino/core/except.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
@@ -20,6 +21,130 @@
 namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 namespace common_utils = ov::genai::common_bindings::utils;
+
+namespace {
+
+// Trampoline enabling Python subclasses of VLMPipelineBase (injected via the OmniPipeline DI ctor).
+// C++ has many generate overloads but Python has one name: the videos_metadata-aware overloads map
+// to the Python "generate", the narrower ones forward to them, and the AnyMap overloads throw.
+class PyVLMPipelineBase : public ov::genai::VLMPipelineBase {
+public:
+    using ov::genai::VLMPipelineBase::VLMPipelineBase;
+
+    ov::genai::VLMDecodedResults generate(const std::string& prompt,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::VLMDecodedResults,
+                               ov::genai::VLMPipelineBase,
+                               generate,
+                               prompt,
+                               images,
+                               videos,
+                               audios,
+                               videos_metadata,
+                               generation_config,
+                               streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory& history,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const std::vector<ov::Tensor>& audios,
+                                          const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::VLMDecodedResults,
+                               ov::genai::VLMPipelineBase,
+                               generate,
+                               history,
+                               images,
+                               videos,
+                               audios,
+                               videos_metadata,
+                               generation_config,
+                               streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const std::string& prompt,
+                                          const std::vector<ov::Tensor>& images,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer) override {
+        return generate(prompt, images, {}, {}, {}, generation_config, streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const std::string& prompt,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer) override {
+        return generate(prompt, images, videos, {}, {}, generation_config, streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory& history,
+                                          const std::vector<ov::Tensor>& images,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer) override {
+        return generate(history, images, {}, {}, {}, generation_config, streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory& history,
+                                          const std::vector<ov::Tensor>& images,
+                                          const std::vector<ov::Tensor>& videos,
+                                          const ov::genai::GenerationConfig& generation_config,
+                                          const ov::genai::StreamerVariant& streamer) override {
+        return generate(history, images, videos, {}, {}, generation_config, streamer);
+    }
+
+    ov::genai::VLMDecodedResults generate(const std::string&, const ov::AnyMap&) override {
+        OPENVINO_THROW("VLMPipelineBase: the property-bag generate(prompt, config_map) overload is not supported "
+                       "for Python-defined subclasses. Override the "
+                       "generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer) method.");
+    }
+
+    ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory&, const ov::AnyMap&) override {
+        OPENVINO_THROW("VLMPipelineBase: the property-bag generate(history, config_map) overload is not supported "
+                       "for Python-defined subclasses. Override the "
+                       "generate(history, images, videos, audios, videos_metadata, generation_config, streamer) method.");
+    }
+
+    ov::genai::Tokenizer get_tokenizer() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::Tokenizer, ov::genai::VLMPipelineBase, get_tokenizer);
+    }
+
+    void set_chat_template(const std::string& new_template) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(void, ov::genai::VLMPipelineBase, set_chat_template, new_template);
+    }
+
+    ov::genai::GenerationConfig get_generation_config() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::GenerationConfig, ov::genai::VLMPipelineBase, get_generation_config);
+    }
+
+    void set_generation_config(const ov::genai::GenerationConfig& new_config) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(void, ov::genai::VLMPipelineBase, set_generation_config, new_config);
+    }
+
+    bool supports_hidden_states_collection() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(bool, ov::genai::VLMPipelineBase, supports_hidden_states_collection);
+    }
+
+    bool is_audio_output_enabled() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(bool, ov::genai::VLMPipelineBase, is_audio_output_enabled);
+    }
+};
+
+}  // namespace
 
 auto vlm_generate_description = R"(
     Generates sequences for VLMs.
@@ -324,10 +449,52 @@ An input image without explicit slicing metadata counts as one slice.)")
             return res;
         });
 
-    // Abstract public base. Registered (without a constructor) so that a VLMPipeline can be
-    // passed to OmniPipeline's DI constructor as a shared_ptr<VLMPipelineBase>.
-    py::class_<ov::genai::VLMPipelineBase, std::shared_ptr<ov::genai::VLMPipelineBase>>(
-        m, "VLMPipelineBase", "Abstract base of VLM-style pipelines.");
+    py::class_<ov::genai::VLMPipelineBase, PyVLMPipelineBase, std::shared_ptr<ov::genai::VLMPipelineBase>>(
+        m, "VLMPipelineBase",
+        R"(Abstract base of VLM-style pipelines.
+
+        Subclass to plug a custom thinker into OmniPipeline via its dependency-injection
+        constructor. A subclass must override generate(), get_tokenizer(), get_generation_config(),
+        set_generation_config(), set_chat_template(), and the Qwen3-Omni capability queries
+        supports_hidden_states_collection() and is_audio_output_enabled().)")
+        .def(py::init<>())
+        .def("generate",
+             [](ov::genai::VLMPipelineBase& self,
+                const std::variant<std::string, ov::genai::ChatHistory>& prompt,
+                const std::vector<ov::Tensor>& images,
+                const std::vector<ov::Tensor>& videos,
+                const std::vector<ov::Tensor>& audios,
+                const std::vector<ov::genai::VideoMetadata>& videos_metadata,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer) -> ov::genai::VLMDecodedResults {
+                 auto native_streamer = pyutils::pystreamer_to_streamer(streamer);
+                 ov::genai::VLMDecodedResults res;
+                 {
+                     py::gil_scoped_release rel;
+                     if (const auto* prompt_str = std::get_if<std::string>(&prompt)) {
+                         res = self.generate(*prompt_str, images, videos, audios, videos_metadata,
+                                             generation_config, native_streamer);
+                     } else {
+                         res = self.generate(std::get<ov::genai::ChatHistory>(prompt), images, videos, audios,
+                                             videos_metadata, generation_config, native_streamer);
+                     }
+                 }
+                 return res;
+             },
+             py::arg("prompt"),
+             py::arg("images") = std::vector<ov::Tensor>{},
+             py::arg("videos") = std::vector<ov::Tensor>{},
+             py::arg("audios") = std::vector<ov::Tensor>{},
+             py::arg("videos_metadata") = std::vector<ov::genai::VideoMetadata>{},
+             py::arg("generation_config") = ov::genai::GenerationConfig{},
+             py::arg("streamer") = std::monostate{},
+             "Generate a VLM response. prompt may be a str or a ChatHistory. Override in a subclass.")
+        .def("get_tokenizer", &ov::genai::VLMPipelineBase::get_tokenizer)
+        .def("set_chat_template", &ov::genai::VLMPipelineBase::set_chat_template, py::arg("chat_template"))
+        .def("get_generation_config", &ov::genai::VLMPipelineBase::get_generation_config)
+        .def("set_generation_config", &ov::genai::VLMPipelineBase::set_generation_config, py::arg("config"))
+        .def("supports_hidden_states_collection", &ov::genai::VLMPipelineBase::supports_hidden_states_collection)
+        .def("is_audio_output_enabled", &ov::genai::VLMPipelineBase::is_audio_output_enabled);
 
     py::class_<ov::genai::VLMPipeline, ov::genai::VLMPipelineBase, std::shared_ptr<ov::genai::VLMPipeline>>(m, "VLMPipeline", "This class is used for generation with VLMs")
         .def(py::init([](

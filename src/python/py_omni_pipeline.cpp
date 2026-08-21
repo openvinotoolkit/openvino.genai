@@ -156,6 +156,52 @@ auto omni_generate_history_docstring = R"(
     :type videos_metadata: list[VideoMetadata]
 )";
 
+// Trampoline enabling Python subclasses of TalkerBase (injected via the OmniPipeline DI ctor).
+class PyTalkerBase : public TalkerBase {
+public:
+    using TalkerBase::TalkerBase;
+
+    ov::genai::TalkerResults generate(const VLMDecodedResults& vlm_result,
+                                      const OmniTalkerSpeechConfig& talker_speech_config,
+                                      const ov::genai::OmniSpeechStreamerVariant& speech_streamer) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::genai::TalkerResults,
+                               TalkerBase,
+                               generate,
+                               vlm_result,
+                               talker_speech_config,
+                               speech_streamer);
+    }
+
+    // OmniPipeline only ever calls the typed overload above, and the property-bag form would need
+    // the internal config-parsing helpers that these bindings deliberately don't include.
+    ov::genai::TalkerResults generate(const VLMDecodedResults&, const ov::AnyMap&) override {
+        OPENVINO_THROW(
+            "Python TalkerBase subclasses implement generate(vlm_result, talker_speech_config, speech_streamer). "
+            "The property-bag generate(vlm_result, properties) overload is not available from Python.");
+    }
+
+    OmniTalkerSpeechConfig get_speech_config() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(OmniTalkerSpeechConfig, TalkerBase, get_speech_config);
+    }
+
+    void set_speech_config(const OmniTalkerSpeechConfig& config) override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(void, TalkerBase, set_speech_config, config);
+    }
+
+    std::vector<std::string> list_speakers() const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(std::vector<std::string>, TalkerBase, list_speakers);
+    }
+
+    ov::Tensor get_speaker_embedding(const std::string& name) const override {
+        py::gil_scoped_acquire acquire;
+        PYBIND11_OVERRIDE_PURE(ov::Tensor, TalkerBase, get_speaker_embedding, name);
+    }
+};
+
 py::object call_omni_generate(OmniPipeline& pipe,
                               const std::string& prompt,
                               const std::vector<ov::Tensor>& images,
@@ -270,13 +316,17 @@ void init_omni_pipeline(py::module_& m) {
         .def_readwrite("cp_temperature", &OmniTalkerSpeechConfig::cp_temperature)
         .def_readwrite("cp_top_k", &OmniTalkerSpeechConfig::cp_top_k);
 
-    py::class_<TalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
+    // PyTalkerBase is the trampoline that lets a Python subclass satisfy the pure virtuals.
+    // generate() is bound further down, once TalkerResults is registered, so its signature
+    // renders as a Python type rather than a raw C++ name.
+    auto talker_base = py::class_<TalkerBase, PyTalkerBase, std::shared_ptr<TalkerBase>>(m, "TalkerBase",
         R"(Abstract speech-output backend for OmniPipeline.
 
         Pure interface with no storage of its own. Subclass to plug a custom talker into
         OmniPipeline; the default implementation is Talker. Subclasses must override
         generate(), get_speech_config(), set_speech_config(), list_speakers(), and
         get_speaker_embedding().)")
+        .def(py::init<>())
         .def("list_speakers", &TalkerBase::list_speakers)
         .def("get_speaker_embedding", &TalkerBase::get_speaker_embedding, py::arg("name"))
         .def("get_speech_config",
@@ -364,6 +414,25 @@ void init_omni_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readonly("waveforms", &ov::genai::TalkerResults::waveforms)
         .def_readonly("perf_metrics", &ov::genai::TalkerResults::perf_metrics);
+
+    // Deferred from the TalkerBase registration so OmniTalkerSpeechConfig and TalkerResults render
+    // as Python types in the signature rather than raw C++ names.
+    talker_base.def("generate",
+                    [](TalkerBase& self,
+                       const VLMDecodedResults& vlm_result,
+                       const OmniTalkerSpeechConfig& talker_speech_config,
+                       const ov::genai::OmniSpeechStreamerVariant& speech_streamer) {
+                        ov::genai::TalkerResults res;
+                        {
+                            py::gil_scoped_release rel;
+                            res = self.generate(vlm_result, talker_speech_config, speech_streamer);
+                        }
+                        return res;
+                    },
+                    py::arg("vlm_result"),
+                    py::arg("talker_speech_config"),
+                    py::arg("speech_streamer") = std::monostate{},
+                    "Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.");
 
     py::class_<OmniDecodedResults, VLMDecodedResults>(m, "OmniDecodedResults",
         R"(Omni-specific decoded results including speech outputs.
