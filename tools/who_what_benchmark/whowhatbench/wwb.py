@@ -134,6 +134,7 @@ def parse_args():
             "speech-generation",
             "visual-text",
             "visual-text-chat",
+            "visual-text-only",
             "visual-video-text",
             "image-to-image",
             "image-inpainting",
@@ -148,6 +149,7 @@ def parse_args():
         "text-chat - for causal text generation in chat mode, \n"
         "visual-text - for Visual Language Models with image inputs, \n"
         "visual-text-chat - for Visual Language Models with image inputs in chat mode, \n"
+        "visual-text-only - for validating Visual Language Models with text-only prompts (no images/video), \n"
         "visual-video-text - for Visual Language Models with video inputs, \n"
         "text-to-image - for image generation, \n"
         "image-to-image - for image generation based on image and prompt, \n"
@@ -1083,7 +1085,7 @@ def create_evaluator(base_model, args):
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
             )
-        elif task == "visual-text" or task == "visual-video-text":
+        elif task == "visual-text" or task == "visual-video-text" or task == "visual-text-only":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
@@ -1106,6 +1108,8 @@ def create_evaluator(base_model, args):
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
                 generation_config_extra=args.generation_config_extra,
+                language=args.language,
+                long_prompt=(not args.short_prompt),
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -1549,7 +1553,14 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type in ["text", "text-chat", "visual-text", "visual-video-text", "visual-text-chat"]:
+        if args.model_type in [
+            "text",
+            "text-chat",
+            "visual-text",
+            "visual-video-text",
+            "visual-text-chat",
+            "visual-text-only",
+        ]:
             print_text_results(evaluator)
         elif (
             "text-to-image" in args.model_type

@@ -136,6 +136,24 @@ inline void ensure_num_assistant_tokens_is_set(GenerationConfig& config) {
     }
 }
 
+inline void ensure_vlm_generation_config(const GenerationConfig& config) {
+    // Keep generic DFlash decoding behavior unchanged. These checks cover only
+    // VLM representation/output modes that cannot be expressed faithfully with
+    // row-aligned multimodal prompt IDs.
+    OPENVINO_ASSERT(config.pruning_ratio == 0,
+                    "DFlash VLM does not support visual token pruning.");
+    OPENVINO_ASSERT(!config.echo && config.logprobs == 0,
+                    "DFlash VLM does not support echo or prompt logprobs for row-aligned multimodal prompt IDs.");
+    OPENVINO_ASSERT(!config.return_omni_outputs,
+                    "DFlash VLM does not support Omni intermediate outputs.");
+}
+
+inline std::vector<int64_t> build_placeholder_prompt_ids(size_t prompt_length, int64_t placeholder_id) {
+    OPENVINO_ASSERT(prompt_length > 0, "DFlash VLM logical prompt length must be greater than 0.");
+    OPENVINO_ASSERT(placeholder_id >= 0, "DFlash VLM requires a valid placeholder token ID.");
+    return std::vector<int64_t>(prompt_length, placeholder_id);
+}
+
 inline size_t linear_attention_checkpoint_block_count(size_t num_assistant_tokens) {
     OPENVINO_ASSERT(num_assistant_tokens <= std::numeric_limits<size_t>::max() - 2,
                     "DFlash num_assistant_tokens is too large for linear attention checkpoint block count.");

@@ -7,7 +7,6 @@
 #include "eagle3_strategy.hpp"
 #include "openvino/pass/pa_kv_reorder_fusion.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
-#include "logger.hpp"
 
 namespace ov::genai {
 namespace {
@@ -114,15 +113,12 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     ov::genai::ModelDesc kv_model_desc;
     kv_model_desc.model = kv_model;
     kv_model_desc.device = std::move(main_device);
-    // only kv cache information is needed for kv update model
-    if (main_model_desc.properties.count(ov::hint::kv_cache_precision.name()) > 0) {
-        kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
-    } else {
-        GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
-    }
 
-    auto kv_cache_precision =
-        m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
+    // Read the KV cache precision from the compiled main model's key_cache input port rather than
+    // the ov::hint::kv_cache_precision property: plugins may resolve the actual cache precision
+    // (e.g. CPU promoting to bf16 based on inference precision) independently of that hint, and the
+    // reorder model must match the precision of the tensors actually bound by the scheduler.
+    auto kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
     kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
@@ -130,7 +126,13 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
         kv_cache_precision = ov::element::u8;
     }
     ov::pass::PaKVReorderFusion(kv_cache_precision).run_on_model(kv_model);
-    // add rt_info for real kv precision into kv_model
+    // Pass the resolved (post u4->u8) precision explicitly instead of forwarding the raw
+    // ov::hint::kv_cache_precision value from main_model_desc.properties: for u4 caches that raw
+    // value would still say "u4" while PaKVReorderFusion above already rewrote the key_cache./
+    // value_cache. parameters to u8, and some plugins (e.g. GPU) give an explicitly user-set
+    // kv_cache_precision property priority over the auxiliary_kv_cache_precision rt_info, which
+    // would reintroduce a precision mismatch between the property and the actual parameter type.
+    kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = kv_cache_precision;
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
@@ -373,19 +375,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     };
 
     return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
-}
-
-int64_t ContinuousBatchingPipeline::Eagle3DecodingImpl::compute_rope_delta(const ov::Tensor& position_ids) {
-    const ov::Shape shape = position_ids.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
-                    "Expected position_ids rank 2 or 3 when computing rope_delta.");
-
-    const size_t seq_axis = shape.size() == 3 ? 2 : 1;
-    OPENVINO_ASSERT(shape[seq_axis] > 0, "position_ids sequence length must be greater than 0.");
-
-    const int64_t* data = position_ids.data<const int64_t>();
-    const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
-    return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_sequence_tensor(const ov::Tensor& tensor,

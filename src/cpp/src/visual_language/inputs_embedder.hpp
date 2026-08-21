@@ -368,6 +368,12 @@ private:
         */
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
 
+        ov::Tensor get_text_embedding(
+            EmbeddingsRequest& req,
+            const ov::Tensor& input_ids,
+            ov::genai::VLMPerfMetrics& metrics
+        );
+
         /**
          * @brief Check if CDPruner is available and enabled.
          * @return true if CDPruner processor exists, is available, and enabled (pruning_ratio > 0)
@@ -414,6 +420,7 @@ private:
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
     friend class InputsEmbedderVideoChatFlashQwen;
+    friend class InputsEmbedderMuseGlimmer;
 };
 
 template <typename Func>

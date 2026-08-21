@@ -153,8 +153,18 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
                              const std::filesystem::path& vae_decoder_path,
                              const std::string& device,
                              const ov::AnyMap& properties)
-    : AutoencoderKL(vae_encoder_path, vae_decoder_path) {
-    compile(device, *extract_adapters_from_properties(properties));
+    : m_config(vae_decoder_path / "config.json") {
+    const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
+
+    if (blob_path.has_value()) {
+        import_model(*blob_path, device, properties_without_blob);
+        return;
+    }
+
+    m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
+    merge_vae_image_post_processing();
+    m_encoder_model = utils::singleton_core().read_model(vae_encoder_path / "openvino_model.xml");
+    compile(device, *extract_adapters_from_properties(properties_without_blob));
 }
 
 AutoencoderKL::AutoencoderKL(const std::string& vae_decoder_model,
