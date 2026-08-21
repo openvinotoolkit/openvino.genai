@@ -20,12 +20,6 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
-    // Thinking budget / suppression transformer.
-    // Forces </think> when the reasoning budget is exhausted (or immediately
-    // when budget == 0). Created per-request, no shared state.
-
-    std::shared_ptr<LogitTransformers::ThinkingBudgetTransform> m_thinking_budget;
-
     // speculative decoding parameters
     float m_assistant_confidence_threshold = 0.f;
 
@@ -127,10 +121,14 @@ public:
 
             // Only create the transform when start/end IDs are valid.
             // Pass input_ids (prompt token sequence) to determine initial state.
+            // Stateful: registered in m_stateful_logit_transformers (like the
+            // structured output transformer) so register_new_generated_token
+            // feeds it accepted tokens through the generic loop.
             if (start_id >= 0 && end_id >= 0 && budget >= 0) {
-                m_thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
+                auto thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
                     budget, start_id, end_id, input_ids);
-                m_logit_transformers.push_back(m_thinking_budget);
+                m_logit_transformers.push_back(thinking_budget);
+                m_stateful_logit_transformers.emplace_back(thinking_budget);
             }
         }
     }
@@ -166,11 +164,6 @@ public:
             if (transformer->is_applicable(m_generated_tokens)) {
                 transformer->accept_tokens({new_token_id});
             }
-        }
-        // Feed the new token to the thinking budget transformer to update the
-        // state machine (COUNTING -> FORCING -> DONE transitions).
-        if (m_thinking_budget) {
-            m_thinking_budget->accept_token(new_token_id);
         }
     }
 

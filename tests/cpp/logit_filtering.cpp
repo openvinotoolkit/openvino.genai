@@ -761,3 +761,54 @@ TEST(ThinkingBudgetTransformTest, UnlimitedBudgetIgnoresTrailingCount) {
     auto transform = ThinkingBudgetTransform(-1, THINKING_START_ID, THINKING_END_ID, prompt);
     EXPECT_FALSE(thinking_transform_is_forcing(transform));
 }
+
+TEST(ThinkingBudgetTransformTest, AcceptTokensBatchMatchesSequentialSingleTokens) {
+    // accept_tokens() (IStatefulLogitTransformer) must drive the state machine
+    // exactly like the equivalent sequence of accept_token() calls — this is
+    // the shape speculative decoding produces when a batch of draft tokens is
+    // accepted at once.
+    TokenIds prompt{7, THINKING_START_ID};
+
+    auto batch = ThinkingBudgetTransform(3, THINKING_START_ID, THINKING_END_ID, prompt);
+    batch.accept_tokens({6, 7, 6});
+
+    auto sequential = ThinkingBudgetTransform(3, THINKING_START_ID, THINKING_END_ID, prompt);
+    sequential.accept_token(6);
+    sequential.accept_token(7);
+    sequential.accept_token(6);
+
+    EXPECT_TRUE(thinking_transform_is_forcing(batch));
+    EXPECT_TRUE(thinking_transform_is_forcing(sequential));
+}
+
+TEST(ThinkingBudgetTransformTest, AcceptTokensBatchCrossingBudgetForces) {
+    // A single accepted batch that crosses the budget mid-batch must leave the
+    // transform FORCING, even when later tokens in the same batch are ordinary.
+    TokenIds prompt{7, THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(2, THINKING_START_ID, THINKING_END_ID, prompt);
+    transform.accept_tokens({6, 7, 6, 7});
+    EXPECT_TRUE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, AcceptTokensBatchWithNaturalCloseBecomesPassthrough) {
+    // A batch that contains the natural </think> before the budget is reached
+    // must end DONE (passthrough), not FORCING.
+    TokenIds prompt{7, THINKING_START_ID};
+    auto transform = ThinkingBudgetTransform(10, THINKING_START_ID, THINKING_END_ID, prompt);
+    transform.accept_tokens({6, THINKING_END_ID, 7, 6});
+    EXPECT_FALSE(thinking_transform_is_forcing(transform));
+}
+
+TEST(ThinkingBudgetTransformTest, AcceptTokensViaStatefulInterfacePointer) {
+    // The transform is registered through m_stateful_logit_transformers, so the
+    // production call site only sees IStatefulLogitTransformer. Exercise that
+    // exact path: one id per call, as register_new_generated_token does.
+    TokenIds prompt{7, THINKING_START_ID};
+    auto transform = std::make_shared<ThinkingBudgetTransform>(2, THINKING_START_ID, THINKING_END_ID, prompt);
+    std::shared_ptr<IStatefulLogitTransformer> stateful = transform;
+
+    stateful->accept_tokens({6});
+    EXPECT_FALSE(thinking_transform_is_forcing(*transform));
+    stateful->accept_tokens({7});
+    EXPECT_TRUE(thinking_transform_is_forcing(*transform));
+}

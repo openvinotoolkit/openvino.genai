@@ -542,7 +542,7 @@ public:
 //   - no think tokens found   → prompt has no think block     → IDLE
 // This avoids always starting in COUNTING, which would over-count
 // tokens generated before the model emits <think>.
-class ThinkingBudgetTransform : public ILogitTransformer {
+class ThinkingBudgetTransform : public IStatefulLogitTransformer {
 public:
     enum State { IDLE, COUNTING, FORCING, DONE };
 
@@ -600,7 +600,16 @@ public:
 
     bool is_applicable(size_t /*generated_tokens_cnt*/) override { return true; }
 
-    // Called by LogitProcessor::register_new_generated_token
+    // IStatefulLogitTransformer: called from the generic
+    // m_stateful_logit_transformers loop in register_new_generated_token
+    // (one id per step in regular decoding; multiple ids when speculative
+    // decoding accepts a batch of draft tokens at once).
+    void accept_tokens(const TokenIds& input_ids) override {
+        for (int64_t token_id : input_ids) {
+            accept_token(token_id);
+        }
+    }
+
     void accept_token(int64_t token_id) {
         // token_text is not passed (LogitProcessor has no tokenizer reference),
         // so UTF-8 safe truncation is not available.
