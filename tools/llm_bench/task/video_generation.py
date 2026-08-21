@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import logging as log
+import torch
 
+from PIL import Image
+import logging as log
 from typing import Any
 from pathlib import Path
 from transformers import set_seed
-
-from PIL import Image
 
 import llm_bench_utils
 import llm_bench_utils.metrics_print as metrics_print
@@ -21,6 +21,10 @@ FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
 MS_PER_SEC = 1000
 DEFAULT_FRAME_RATE = 25
+DEFAULT_NUM_INF_STEPS = 25
+DEFAULT_NUM_FRAMES = 25
+DEFAULT_WIDTH = 704
+DEFAULT_HEIGHT = 480
 
 
 def collect_input_args(
@@ -52,6 +56,7 @@ def collect_input_args(
     if "negative_prompt" in input_param:
         input_args["negative_prompt"] = input_param["negative_prompt"]
 
+    input_args["max_sequence_length"] = 128
     return input_args
 
 
@@ -69,13 +74,15 @@ class TextToVideoOptimum(CommonPipeline):
         self.genai = False
 
         self.use_case = args.get("use_case")
-        self.num_steps = args.get("num_steps")
-        self.num_frames = args.get("num_frames")
-        self.frame_rate = args.get("frame_rate")
-        self.height = args.get("height")
-        self.width = args.get("width")
+        self.num_steps = args.get("num_steps") or DEFAULT_NUM_INF_STEPS
+        self.num_frames = args.get("num_frames") or DEFAULT_NUM_FRAMES
+        self.frame_rate = args.get("frame_rate") or DEFAULT_FRAME_RATE
+        self.height = args.get("height") or DEFAULT_HEIGHT
+        self.width = args.get("width") or DEFAULT_WIDTH
 
         self.time_collection_hook = time_collection_hook
+
+        self.rng = torch.Generator(device="cpu")
 
     @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
@@ -195,7 +202,9 @@ class TextToVideoOptimum(CommonPipeline):
         self.print_batch_size_info(iter_num, input_args)
 
         self.mem_consumption_meter.start(iter_num)
-        generation_result, generation_time = self.generate(input_param["prompt"], **input_args)
+        generation_result, generation_time = self.generate(
+            input_param["prompt"], generator=self.rng.manual_seed(self.seed), **input_args
+        )
         memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data = {}
@@ -230,11 +239,11 @@ class TextToVideoGenAI(CommonPipeline):
         self.genai = True
 
         self.use_case = args.get("use_case")
-        self.num_steps = args.get("num_steps")
-        self.num_frames = args.get("num_frames")
-        self.frame_rate = args.get("frame_rate")
-        self.height = args.get("height")
-        self.width = args.get("width")
+        self.num_steps = args.get("num_steps") or DEFAULT_NUM_INF_STEPS
+        self.num_frames = args.get("num_frames") or DEFAULT_NUM_FRAMES
+        self.frame_rate = args.get("frame_rate") or DEFAULT_FRAME_RATE
+        self.height = args.get("height") or DEFAULT_HEIGHT
+        self.width = args.get("width") or DEFAULT_WIDTH
 
     def generate(self, input_data: Any, **kwargs):
         return self.model.generate(input_data, **kwargs)
@@ -334,6 +343,8 @@ class TextToVideoGenAI(CommonPipeline):
         return iter_data, result_md5_list
 
     def run(self, input_param: dict, iter_num: int, prompt_index: int, proc_id: int, bench_hook) -> tuple[dict, list]:
+        import openvino_genai
+
         set_seed(self.seed)
 
         input_args = collect_input_args(
@@ -348,7 +359,9 @@ class TextToVideoGenAI(CommonPipeline):
         self.print_batch_size_info(iter_num, input_args)
 
         self.mem_consumption_meter.start(iter_num)
-        generation_result = self.generate(input_param["prompt"], **input_args)
+        generation_result = self.generate(
+            input_param["prompt"], generator=openvino_genai.TorchGenerator(self.seed), **input_args
+        )
         memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
         iter_data, _ = self.postprocess_output_info(
