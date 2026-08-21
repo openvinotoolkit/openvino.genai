@@ -16,8 +16,10 @@
 #include "speculative_decoding/continuous_batching/dflash_strategy.hpp"
 #include "speculative_decoding/continuous_batching/eagle3_strategy.hpp"
 #include "speculative_decoding/continuous_batching/fast_draft_strategy.hpp"
+#include "speculative_decoding/continuous_batching/mtp_strategy.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "speculative_decoding/dflash_model_transforms.hpp"
+#include "speculative_decoding/mtp_model_transforms.hpp"
 #include "utils.hpp"
 #include "model_desc.hpp"
 #include "visual_language/inputs_embedder.hpp"
@@ -59,6 +61,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
+    auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
@@ -85,6 +88,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         } else {
             m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
         }
+    } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
+        OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -124,6 +131,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
+    auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
@@ -148,6 +156,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
         } else {
             m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
         }
+    } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
+        OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -185,6 +197,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
+    auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
@@ -206,6 +219,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(draft_model_descr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+    } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
+        OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -246,9 +263,16 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, model_config_dir_path);
+    auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
     if (!model_config_dir_path.empty()) {
         properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = model_config_dir_path;
+    }
+
+    std::shared_ptr<InputsEmbedder> embedder;
+    if (!model_config_dir_path.empty() && std::filesystem::exists(model_config_dir_path / "openvino_text_embeddings_model.xml")) {
+        auto non_adapter_properties = extract_adapters_from_properties(properties_without_draft_model);
+        embedder = std::make_shared<InputsEmbedder>(model_config_dir_path, device, non_adapter_properties.fork());
     }
 
     utils::print_scheduler_config_info(scheduler_config);
@@ -256,6 +280,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_descr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         m_impl = std::make_shared<PromptLookupImpl>(language_model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
+    } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
+        OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
+        auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         if (dflash_rt_info.dflash_mode) {
@@ -288,6 +316,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
     auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, std::filesystem::path(model_str));
+    auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
@@ -311,6 +340,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(draft_model_descr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
+    } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
+        OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
@@ -350,6 +383,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
+    auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
     auto model_pair = utils::get_model_weights_pair(models_map, "language");
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
@@ -387,6 +421,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         }
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
+    } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
+        OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
@@ -415,6 +453,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto dflash_rt_info = utils::dflash::extract_dflash_info_from_config(draft_model_descr.properties);
+    auto mtp_rt_info = utils::mtp::extract_mtp_info_from_config(draft_model_descr.properties);
 
     utils::validate_vlm_model_properties(properties_without_draft_model);
 
@@ -449,6 +488,10 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         }
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
+    } else if (draft_model_descr.model != nullptr && mtp_rt_info.mtp_mode) {
+        OPENVINO_ASSERT(embedder != nullptr, "MTP speculative decoding requires a decomposed model with a text embeddings model");
+        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        m_impl = std::make_shared<MtpDecodingImpl>(main_model_descr, draft_model_descr, embedder);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);

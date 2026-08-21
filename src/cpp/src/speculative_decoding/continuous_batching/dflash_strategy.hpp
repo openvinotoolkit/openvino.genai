@@ -50,7 +50,6 @@ private:
         size_t prompt_len = 0;
         size_t generated_before_draft = 0;
         size_t draft_generated = 0;
-        std::optional<uint64_t> target_la_checkpoint_sequence_id;
         bool finished = false;
         GenerationConfig generation_config;
     };
