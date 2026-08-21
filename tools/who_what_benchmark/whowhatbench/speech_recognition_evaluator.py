@@ -51,8 +51,8 @@ class MultimodalTranscriber:
             {
                 "role": "user",
                 "content": [
-                    {"type": "audio", "audio": audio},
                     {"type": "text", "text": self.instruction},
+                    {"type": "audio", "audio": audio},
                 ],
             }
         ]
