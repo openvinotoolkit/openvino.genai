@@ -623,7 +623,10 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
 
     const ov::Tensor& output = req.get_output_tensor();
     ov::Tensor result(output.get_element_type(), output.get_shape());
-    output.copy_to(result);
+    // Avoid copy_to() for zero-sized outputs because it may invoke memcpy with null tensor data.
+    if (output.get_size() > 0) {
+        output.copy_to(result);
+    }
     return result;
 }
 
