@@ -56,4 +56,15 @@ GGUF_MODEL_LIST = (
         "gguf_filename": "tiny-random-deepseek-distill-qwen_q8_0.gguf",
         "dynamic_quantization_group_size": "64",
     },
+    # Q5_K_M on a model with 256-aligned dims is dominated by Q5_K tensors
+    # (here 96 Q5_K + 17 Q6_K), so it exercises the Q5_K dequantization path.
+    # See GGUF load failure in openvinotoolkit/model_server#4046.
+    # NOTE: small models (e.g. 135M) fall back to legacy Q5_0/Q5_1 for
+    # dims not divisible by 256, so a >=1B model is used here on purpose.
+    {
+        "hf_model_id": "meta-llama/Llama-3.2-1B-Instruct",
+        "gguf_model_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
+        "gguf_filename": "Llama-3.2-1B-Instruct-Q5_K_M.gguf",
+        "dynamic_quantization_group_size": None,
+    },
 )
