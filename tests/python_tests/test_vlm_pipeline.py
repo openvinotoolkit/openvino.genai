@@ -540,15 +540,6 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     )
 
 
-@pytest.fixture(autouse=True)
-def reset_ov_pipe_model_chat(request: pytest.FixtureRequest) -> Generator[None, None, None]:
-    ov_pipe_model = request.getfixturevalue("ov_pipe_model") if "ov_pipe_model" in request.fixturenames else None
-    yield
-    if ov_pipe_model is not None:
-        # The module-scoped pipeline is shared across tests, so always clear chat and KV-cache state between tests.
-        ov_pipe_model.pipeline.finish_chat()
-
-
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
     [(m, b, pl) for m in MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP if b == "PA" or pl is False],
