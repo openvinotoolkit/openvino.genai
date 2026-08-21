@@ -123,7 +123,7 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
   {
     architecture: 'Qwen-Image',
     textToImage: true,
-    imageToImage: false,
+    imageToImage: true,
     inpainting: false,
     loraSupport: true,
     links: [

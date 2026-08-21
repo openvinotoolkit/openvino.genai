@@ -120,20 +120,20 @@ ov::Tensor Qwen2_5_VLForConditionalGeneration::infer(const std::string& pos_prom
         const size_t tok_len = ids_tok.get_shape()[1];
         const size_t actual_len = std::min(tok_len, total_max_length);
 
+        auto fill_and_copy = [&](auto* ids_row, auto* mask_row) {
+            using T = std::remove_pointer_t<decltype(ids_row)>;
+            std::fill_n(ids_row, total_max_length, static_cast<T>(pad_token_id));
+            std::fill_n(mask_row, total_max_length, T{0});
+            std::copy_n(ids_tok.data<int64_t>(), actual_len, ids_row);
+            std::copy_n(mask_tok.data<int64_t>(), actual_len, mask_row);
+        };
+
         if (input_type == ov::element::i32) {
-            int32_t* ids_row = input_ids.data<int32_t>() + batch_idx * total_max_length;
-            int32_t* mask_row = attention_mask.data<int32_t>() + batch_idx * total_max_length;
-            std::fill_n(ids_row, total_max_length, static_cast<int32_t>(pad_token_id));
-            std::fill_n(mask_row, total_max_length, static_cast<int32_t>(0));
-            std::copy_n(ids_tok.data<int64_t>(), actual_len, ids_row);
-            std::copy_n(mask_tok.data<int64_t>(), actual_len, mask_row);
+            fill_and_copy(input_ids.data<int32_t>() + batch_idx * total_max_length,
+                          attention_mask.data<int32_t>() + batch_idx * total_max_length);
         } else {
-            int64_t* ids_row = input_ids.data<int64_t>() + batch_idx * total_max_length;
-            int64_t* mask_row = attention_mask.data<int64_t>() + batch_idx * total_max_length;
-            std::fill_n(ids_row, total_max_length, pad_token_id);
-            std::fill_n(mask_row, total_max_length, static_cast<int64_t>(0));
-            std::copy_n(ids_tok.data<int64_t>(), actual_len, ids_row);
-            std::copy_n(mask_tok.data<int64_t>(), actual_len, mask_row);
+            fill_and_copy(input_ids.data<int64_t>() + batch_idx * total_max_length,
+                          attention_mask.data<int64_t>() + batch_idx * total_max_length);
         }
     };
 

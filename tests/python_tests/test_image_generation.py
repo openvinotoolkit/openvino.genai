@@ -499,7 +499,7 @@ class TestImageGeneration:
 
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
     def test_image2image(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
 
@@ -516,7 +516,7 @@ class TestImageGeneration:
 
         assert image is not None
 
-    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID, QWEN_IMAGE_MODEL_ID], indirect=True)
     def test_image2image_with_callback(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
 

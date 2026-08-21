@@ -60,6 +60,8 @@ public:
         if (vae == "AutoencoderKLQwenImage" || vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
                 m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / "vae_decoder");
+            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / "vae_encoder", root_dir / "vae_decoder");
             } else {
                 OPENVINO_ASSERT(false, "Unsupported pipeline type for QwenImagePipeline");
             }
@@ -108,6 +110,8 @@ public:
         if (vae == "AutoencoderKLQwenImage" || vae == "AutoencoderKL") {
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE) {
                 m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / "vae_decoder", device, *updated_properties);
+            } else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_vae = std::make_shared<AutoencoderKLQwenImage>(root_dir / "vae_encoder", root_dir / "vae_decoder", device, *updated_properties);
             } else {
                 OPENVINO_ASSERT(false, "Unsupported pipeline type for QwenImagePipeline");
             }
@@ -257,8 +261,42 @@ public:
                                width};
         ov::Tensor latent, noise, processed_image, image_latents;
 
-        noise = generation_config.generator->randn_tensor(latent_shape);
-        latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+        if (initial_image) {
+            processed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
+            processed_image = m_image_processor->execute(processed_image);
+
+            // Reshape from (B, C, H, W) to (B, C, 1, H, W) for the 3D VAE
+            const ov::Shape& img_shape = processed_image.get_shape();
+            ov::Tensor vae_input(processed_image.get_element_type(),
+                                {img_shape[0], img_shape[1], 1, img_shape[2], img_shape[3]});
+            std::memcpy(vae_input.data<float>(), processed_image.data<float>(), processed_image.get_byte_size());
+
+            auto encode_start = std::chrono::steady_clock::now();
+            image_latents = m_vae->encode(vae_input, generation_config.generator);
+            m_perf_metrics.vae_encoder_inference_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - encode_start).count();
+
+            // Apply latent normalization: (latent - mean) * (1/std)
+            apply_latent_normalization(image_latents);
+
+            // Remove temporal dim: (B, z_dim, 1, H', W') -> (B, z_dim, H', W')
+            const ov::Shape& lat_shape = image_latents.get_shape();
+            ov::Tensor image_latents_4d(image_latents.get_element_type(),
+                                       {lat_shape[0], lat_shape[1], lat_shape[3], lat_shape[4]});
+            std::memcpy(image_latents_4d.data<float>(), image_latents.data<float>(), image_latents.get_byte_size());
+            image_latents = image_latents_4d;
+
+            noise = generation_config.generator->randn_tensor(latent_shape);
+
+            latent = ov::Tensor(image_latents.get_element_type(), image_latents.get_shape());
+            image_latents.copy_to(latent);
+
+            m_scheduler->scale_noise(latent, m_latent_timestep, noise);
+            latent = pack_latents(latent, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+        } else {
+            noise = generation_config.generator->randn_tensor(latent_shape);
+            latent = pack_latents(noise, generation_config.num_images_per_prompt, num_channels_latents, height, width);
+        }
 
         return std::make_tuple(latent, processed_image, image_latents, noise);
     }
@@ -307,12 +345,17 @@ public:
         const float true_cfg_scale = m_custom_generation_config.guidance_scale;
         const bool do_true_cfg = true_cfg_scale > 1.0f && m_custom_generation_config.negative_prompt.has_value();
 
-        ov::Tensor latents;
-        std::tie(latents, std::ignore, std::ignore, std::ignore) = prepare_latents(initial_image, m_custom_generation_config);
-
         const size_t latent_height = m_custom_generation_config.height / vae_scale_factor / 2;
         const size_t latent_width = m_custom_generation_config.width / vae_scale_factor / 2;
         const size_t image_seq_len = latent_height * latent_width;
+
+        const double mu = qwen_image_calculate_shift(image_seq_len, m_base_seq_len, m_max_seq_len, m_base_shift, m_max_shift);
+        m_scheduler->set_timesteps_with_mu(mu, m_custom_generation_config.num_inference_steps, m_custom_generation_config.strength);
+        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+        m_latent_timestep = timesteps[0];
+
+        ov::Tensor latents;
+        std::tie(latents, std::ignore, std::ignore, std::ignore) = prepare_latents(initial_image, m_custom_generation_config);
 
         ov::Tensor height_tensor(ov::element::i64, {});
         ov::Tensor width_tensor(ov::element::i64, {});
@@ -320,10 +363,6 @@ public:
         width_tensor.data<int64_t>()[0] = static_cast<int64_t>(latent_width);
         m_transformer->set_hidden_states("height", height_tensor);
         m_transformer->set_hidden_states("width", width_tensor);
-
-        const double mu = qwen_image_calculate_shift(image_seq_len, m_base_seq_len, m_max_seq_len, m_base_shift, m_max_shift);
-        m_scheduler->set_timesteps_with_mu(mu, m_custom_generation_config.num_inference_steps, 1.0f);
-        std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         // Denoising loop
         ov::Tensor timestep_tensor(ov::element::f32, {m_custom_generation_config.num_images_per_prompt});
@@ -483,7 +522,11 @@ protected:
             m_generation_config.guidance_scale = 4.0f;
             m_generation_config.num_inference_steps = 50;
             m_generation_config.max_sequence_length = 512;
-            m_generation_config.strength = 1.0f;
+            if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
+                m_generation_config.strength = 0.6f;
+            } else {
+                m_generation_config.strength = 1.0f;
+            }
         } else {
             OPENVINO_THROW("Unsupported class_name '", class_name, "'. Please, contact OpenVINO GenAI developers");
         }
@@ -507,7 +550,16 @@ protected:
         OPENVINO_ASSERT(generation_config.prompt_3 == std::nullopt, "Prompt 3 is not used by QwenImagePipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_2 == std::nullopt, "Negative prompt 2 is not used by QwenImagePipeline");
         OPENVINO_ASSERT(generation_config.negative_prompt_3 == std::nullopt, "Negative prompt 3 is not used by QwenImagePipeline");
-        OPENVINO_ASSERT(!initial_image, "QwenImagePipeline does not support initial_image");
+
+        OPENVINO_ASSERT(m_pipeline_type != PipelineType::INPAINTING, "QwenImagePipeline does not support inpainting");
+
+        if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE && initial_image) {
+            OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
+                "'Strength' generation parameter must be within [0, 1] range");
+        } else {
+            OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
+            OPENVINO_ASSERT(!initial_image, "'initial_image' must be empty for Text 2 image pipeline");
+        }
     }
 
     size_t get_config_in_channels() const override {
@@ -525,6 +577,37 @@ protected:
 
     static std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters) {
         return std::nullopt;
+    }
+
+    // Apply VAE latent normalization for encoding: latents = (latents - mean) * (1/std)
+    // Matches diffusers: latents_std_inv = 1.0 / latents_std; latents = (latents - latents_mean) * latents_std_inv
+    // latents shape: (B, z_dim, 1, H', W')
+    void apply_latent_normalization(ov::Tensor& latents) const {
+        const auto& vae_config = m_vae->get_config();
+        if (vae_config.latents_mean.empty() || vae_config.latents_std.empty()) {
+            return;
+        }
+
+        const ov::Shape& shape = latents.get_shape();
+        const size_t batch_size = shape[0];
+        const size_t channels = shape[1];
+        const size_t spatial = shape[2] * shape[3] * shape[4];
+
+        OPENVINO_ASSERT(channels <= vae_config.latents_mean.size() && channels <= vae_config.latents_std.size(),
+                        "Latent channels (", channels, ") exceed latents_mean/std size");
+
+        float* data = latents.data<float>();
+
+        for (size_t b = 0; b < batch_size; ++b) {
+            for (size_t c = 0; c < channels; ++c) {
+                const float mean = vae_config.latents_mean[c];
+                const float std_inv = 1.0f / vae_config.latents_std[c];
+                float* channel_data = data + (b * channels + c) * spatial;
+                for (size_t i = 0; i < spatial; ++i) {
+                    channel_data[i] = (channel_data[i] - mean) * std_inv;
+                }
+            }
+        }
     }
 
 private:
@@ -587,6 +670,8 @@ private:
 
     ImageGenerationConfig m_custom_generation_config;
     ImageGenerationPerfMetrics m_perf_metrics;
+
+    float m_latent_timestep = -1.0f;
 
     size_t m_base_seq_len = 256;
     size_t m_max_seq_len = 4096;
