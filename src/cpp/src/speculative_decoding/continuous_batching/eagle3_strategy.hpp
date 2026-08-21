@@ -82,7 +82,7 @@ protected:
     void align_request_pair_processed_prefix(uint64_t request_id) override;
     void update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
     std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
-        const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs) const override;
+        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const override;
     ov::Tensor create_draft_input(const ov::Tensor& original_input);
     // Creates draft model input by removing the first token from the original input sequence.
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);

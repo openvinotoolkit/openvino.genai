@@ -248,8 +248,8 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_param
 
 std::unordered_map<std::string, ov::Tensor>
 ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_lm_extra_inputs(
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs) const {
-    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(lm_extra_inputs);
+    std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const {
+    auto prepared_inputs = IContinuousBatchingPipeline::prepare_lm_extra_inputs(std::move(lm_extra_inputs));
     if (m_inputs_embedder) {
         // For embeddings input mode, pass precomputed draft embeddings via extra inputs
         // so add_request() can consume them for draft-path first-token trimming.
