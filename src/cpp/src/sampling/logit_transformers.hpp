@@ -524,16 +524,16 @@ public:
     }
 };
 
-// Forces thinking_end_token_id when reasoning budget is exhausted.
+// Forces end_token_id when reasoning budget is exhausted.
 //
 // State machine:
 //   IDLE -> COUNTING -> FORCING -> DONE
 //     ^                         |
 //     +--- re-arm (DONE -> COUNTING) ---+
 //
-// IDLE:    Passthrough, watches for thinking_start_token_id.
+// IDLE:    Passthrough, watches for start_token_id.
 // COUNTING: Counts tokens in the think block, watches for natural end.
-// FORCING:  All logits = -inf, only thinking_end_token_id allowed.
+// FORCING:  All logits = -inf, only end_token_id allowed.
 // DONE:    Passthrough forever. Re-arms on new start token (multi-block).
 //
 // Constructor scans prompt_ids to determine initial state:

@@ -20,7 +20,10 @@ protected:
     std::shared_ptr<std::set<int64_t>> m_unique_prompt_token_ids = std::shared_ptr<std::set<int64_t>>(new std::set<int64_t>);
     size_t m_generated_tokens = 0;
 
-    // thinking / reasoning budget
+    // Thinking budget / suppression transformer.
+    // Forces </think> when the reasoning budget is exhausted (or immediately
+    // when budget == 0). Created per-request, no shared state.
+
     std::shared_ptr<LogitTransformers::ThinkingBudgetTransform> m_thinking_budget;
 
     // speculative decoding parameters
@@ -113,18 +116,18 @@ public:
             }
         }
 
-        // Thinking / Reasoning Budget - inserted last so its -inf mask overrides all prior transforms
-        if (!sampling_params.enable_thinking || sampling_params.reasoning_budget_tokens >= 0) {
-            int64_t start_id = sampling_params.thinking_start_token_id;
-            int64_t end_id   = sampling_params.thinking_end_token_id;
-            int64_t budget   = sampling_params.reasoning_budget_tokens;
+        // Thinking / Reasoning control - inserted last so its -inf mask overrides all prior transforms.
+        // When reasoning_config is set, create the transform if start/end IDs are known.
+        // budget == 0 means disable thinking: force </think> immediately.
+        if (sampling_params.reasoning_config.has_value()) {
+            const auto& rc = *sampling_params.reasoning_config;
+            int64_t start_id = rc.start_token_id;
+            int64_t end_id   = rc.end_token_id;
+            int64_t budget   = rc.budget;
 
-            if (!sampling_params.enable_thinking && end_id >= 0) {
-                budget = 0;
-            }
-
+            // Only create the transform when start/end IDs are valid.
+            // Pass input_ids (prompt token sequence) to determine initial state.
             if (start_id >= 0 && end_id >= 0 && budget >= 0) {
-                // Pass prompt token IDs to determine initial state (IDLE vs COUNTING).
                 m_thinking_budget = std::make_shared<LogitTransformers::ThinkingBudgetTransform>(
                     budget, start_id, end_id, input_ids);
                 m_logit_transformers.push_back(m_thinking_budget);
@@ -164,7 +167,9 @@ public:
                 transformer->accept_tokens({new_token_id});
             }
         }
-        // Notify thinking budget transformer
+        // 通知思考预算变换器：生成了一个新 token
+        // 变换器根据这个 token 更新状态机
+        // （COUNTING → FORCING → DONE 等状态转换）
         if (m_thinking_budget) {
             m_thinking_budget->accept_token(new_token_id);
         }
