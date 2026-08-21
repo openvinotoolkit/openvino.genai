@@ -7,6 +7,7 @@ import json
 import pytest
 import shutil
 import logging
+import uuid
 import requests
 from importlib import metadata
 from pathlib import Path
@@ -464,11 +465,18 @@ def download_test_content(request):
         if not os.path.exists(file_path):
             logger.info(f"Downloading test content from {file_url} to {file_path}...")
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            response = requests.get(file_url, stream=True)
-            response.raise_for_status()
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            temp_path = f"{file_path}.tmp_{uuid.uuid4().hex[:8]}"
+            try:
+                response = requests.get(file_url, stream=True)
+                response.raise_for_status()
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                os.replace(temp_path, file_path)
+            except Exception:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                raise
             logger.info(f"Downloaded test content to {file_path}")
         else:
             logger.info(f"Test content already exists at {file_path}")
