@@ -167,9 +167,8 @@ public:
                 transformer->accept_tokens({new_token_id});
             }
         }
-        // 通知思考预算变换器：生成了一个新 token
-        // 变换器根据这个 token 更新状态机
-        // （COUNTING → FORCING → DONE 等状态转换）
+        // Feed the new token to the thinking budget transformer to update the
+        // state machine (COUNTING -> FORCING -> DONE transitions).
         if (m_thinking_budget) {
             m_thinking_budget->accept_token(new_token_id);
         }
