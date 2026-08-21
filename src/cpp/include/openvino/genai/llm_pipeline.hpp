@@ -411,6 +411,18 @@ static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 */
 static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
 
+/**
+* @brief Selects which reader converts a `.gguf` file.
+*
+* Accepted values:
+*  - `"FRONTEND"` (default) - the OpenVINO GGUF frontend, supporting the full set of architectures.
+*  - `"LEGACY"` - the pre-frontend, hand-written GGUF reader. Temporary fallback; only handles
+*    llama/qwen2/qwen3 and ignores `rope_freqs.weight` (no llama-3 RoPE scaling).
+*
+* Example: `LLMPipeline(model_path, "CPU", ov::genai::gguf_reader("LEGACY"))`.
+*/
+static constexpr ov::Property<std::string> gguf_reader{"GGUF_READER"};
+
 
 }  // namespace genai
 }  // namespace ov

@@ -282,8 +282,11 @@ def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_di
     # Regression test for the K-quant heap-buffer-overflow: a crafted GGUF whose
     # K-quant tensor has a last dim that is a multiple of the sub-block size but
     # not of 256 must be rejected at load time rather than overflowing the heap.
+    # Message wording differs between the frontend ("not a multiple of its block
+    # size 256", gguf.cpp) and the legacy reader ("super-block size 256",
+    # gguf_quants.cpp::gguf_load_quantized()); match the part common to both.
     gguf_path = tmp_path / "malformed_kquant.gguf"
     _write_minimal_gguf(gguf_path, tensor_type, last_dim)
 
-    with pytest.raises(RuntimeError, match="super-block size 256"):
+    with pytest.raises(RuntimeError, match="multiple of.*256"):
         ov_genai.LLMPipeline(str(gguf_path), "CPU")
