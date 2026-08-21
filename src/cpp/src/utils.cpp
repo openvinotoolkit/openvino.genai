@@ -30,6 +30,8 @@ namespace ov {
 namespace genai {
 const std::string PA_BACKEND = "PA";
 const std::string SDPA_BACKEND = "SDPA";
+const std::string FRONTEND_GGUF_READER = "FRONTEND";
+const std::string LEGACY_GGUF_READER = "LEGACY";
 }
 }
 
@@ -453,17 +455,31 @@ ov::AnyMap get_model_properties(const ov::AnyMap& properties, const std::string&
     return result;
 }
 
-std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
-    bool enable_save_ov_model = false;
-    ov::AnyMap properties = external_properties;
+GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties) {
+    GGUFProperties result;
+    result.rest = external_properties;
 
-    auto it = properties.find(ov::genai::enable_save_ov_model.name());
-    if (it != properties.end()) {
-        enable_save_ov_model = it->second.as<bool>();
-        properties.erase(it);
+    auto save_it = result.rest.find(ov::genai::enable_save_ov_model.name());
+    if (save_it != result.rest.end()) {
+        result.enable_save_ov_model = save_it->second.as<bool>();
+        result.rest.erase(save_it);
     }
 
-    return {properties, enable_save_ov_model};
+    auto reader_it = result.rest.find(ov::genai::gguf_reader.name());
+    if (reader_it != result.rest.end()) {
+        result.reader = reader_it->second.as<std::string>();
+        OPENVINO_ASSERT(result.reader == FRONTEND_GGUF_READER || result.reader == LEGACY_GGUF_READER,
+                        "GGUF reader must be either '",
+                        FRONTEND_GGUF_READER,
+                        "' or '",
+                        LEGACY_GGUF_READER,
+                        "', got '",
+                        result.reader,
+                        "'");
+        result.rest.erase(reader_it);
+    }
+
+    return result;
 }
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
@@ -482,10 +498,11 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+    const auto gguf_props = extract_gguf_properties(properties);
+    const ov::AnyMap& filtered_properties = gguf_props.rest;
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), enable_save_ov_model);
+        return create_from_gguf(model_dir.string(), gguf_props.enable_save_ov_model, gguf_props.use_legacy_reader());
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif

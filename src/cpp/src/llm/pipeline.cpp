@@ -19,6 +19,7 @@
 #include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
+#include "gguf_utils/gguf_modeling.hpp"
 #include "model_desc.hpp"
 #include "logger.hpp"
 
@@ -54,6 +55,25 @@ bool should_use_stateful_pipeline(bool is_npu_requested,
         return true;
     }
     return false;
+}
+
+// A .gguf converted by the OpenVINO GGUF frontend must run on the SDPA backend: its graph is not
+// accepted by ov::pass::SDPAToPagedAttention, and pushing it through the CB adapter fails deep in
+// the plugin with a confusing shape mismatch rather than a usable error. A scheduler_config alone
+// (without ATTENTION_BACKEND=PA) also selects the CB adapter, so check for that too.
+// The legacy reader's graph does convert to PagedAttention, so leave it alone.
+bool gguf_requires_sdpa(const std::filesystem::path& models_path, bool use_legacy_reader) {
+    return models_path.extension() == ".gguf" && !use_legacy_reader;
+}
+
+void warn_if_paged_attention_requested_for_gguf(const ov::AnyMap& user_properties) {
+    auto it = user_properties.find("ATTENTION_BACKEND");
+    const bool asked_for_pa = it != user_properties.end() && it->second.as<std::string>() == ov::genai::PA_BACKEND;
+    if (asked_for_pa || user_properties.find(ov::genai::scheduler_config.name()) != user_properties.end()) {
+        ov::genai::utils::print_gguf_debug_info(
+            "GGUF models converted by the OpenVINO GGUF frontend only run on the SDPA attention backend; "
+            "the requested PagedAttention / continuous-batching configuration is ignored.");
+    }
 }
 
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
@@ -194,6 +214,11 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
 
+    // GGUF-specific properties configure conversion, which already happened by the time we get a
+    // model, so drop them: the plugin rejects unknown properties, and this descriptor outlives
+    // the function so strip once, here (StatefulLLMPipeline strips them itself elsewhere).
+    properties_without_draft_model = utils::extract_gguf_properties(properties_without_draft_model).rest;
+
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
     OPENVINO_ASSERT(main_model_descr.model, "Model descriptor must contain a valid model");
@@ -257,10 +282,28 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
     utils::extract_extensions_to_core(properties);
 
+    // GGUF models convert to a stateful SDPA decoder (see gguf_requires_sdpa above); default to
+    // SDPA unless the user explicitly picked a backend.
+    if (models_path.extension() == ".gguf" && !is_npu_requested &&
+        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
+        attention_backend = SDPA_BACKEND;
+    }
+
+    // read_model() consumes the GGUF-specific properties (and strips them before they reach the
+    // plugin); read them here too, because which reader ran decides the branches below.
+    const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
+
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
+    if (gguf_requires_sdpa(models_path, use_legacy_reader)) {
+        warn_if_paged_attention_requested_for_gguf(user_properties);
+        // Drop scheduler_config: it only configures continuous batching, and the plugin rejects
+        // it as an unknown property on the stateful path.
+        properties = utils::extract_scheduler_config(properties).first;
+    }
+    if (gguf_requires_sdpa(models_path, use_legacy_reader) ||
+        should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -300,12 +343,39 @@ ov::genai::LLMPipeline::LLMPipeline(
     utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
+    // GGUF models are converted to a stateful SDPA decoder (see the GGUF-path comment in the
+    // tokenizer-aware constructor above); default them to SDPA unless the user chose a backend.
+    if (models_path.extension() == ".gguf" && !is_npu_requested &&
+        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
+        attention_backend = SDPA_BACKEND;
+    }
+
+    // read_model() consumes the GGUF-specific properties (and strips them before they reach the
+    // plugin); read them here too, because which reader ran decides the branches below.
+    const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
+
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
-    const Tokenizer tokenizer(models_path, properties);
+    // For GGUF the frontend attaches tokenizer metadata to the model's rt_info, so build the
+    // tokenizer from what was already read instead of re-opening the .gguf. Exceptions: the
+    // legacy reader's model has no such rt_info, and enable_save_ov_model needs the source
+    // directory to write the tokenizer/detokenizer IRs to, which the metadata alone can't give.
+    const bool needs_tokenizer_from_file =
+        utils::extract_gguf_properties(properties).enable_save_ov_model || use_legacy_reader;
+    const Tokenizer tokenizer =
+        (models_path.extension() == ".gguf" && !needs_tokenizer_from_file)
+            ? Tokenizer(GGUFTokenizerParameters::from_model(model), properties)
+            : Tokenizer(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
+    if (gguf_requires_sdpa(models_path, use_legacy_reader)) {
+        warn_if_paged_attention_requested_for_gguf(user_properties);
+        // Drop scheduler_config: it only configures continuous batching, and the plugin rejects
+        // it as an unknown property on the stateful path.
+        properties = utils::extract_scheduler_config(properties).first;
+    }
+    if (gguf_requires_sdpa(models_path, use_legacy_reader) ||
+        should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
