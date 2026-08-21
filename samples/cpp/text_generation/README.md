@@ -138,7 +138,7 @@ Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLl
   | `branching_factor` | `1` | ContinuousBatching (EAGLE only) | Number of candidate tokens to consider at each tree level when running tree-based speculative decoding. |
   | `tree_depth` | `0` | ContinuousBatching (EAGLE only) | Depth of the candidate token tree. Tree drafting requires `num_assistant_tokens >= tree_depth`. |
 
-  The sample prints accepted, rejected, and total draft candidate tokens. Draft candidate tokens are the tokens offered to the main model for validation and are the denominator for acceptance rate. Draft processed tokens count tokens handled by draft-side inference, not only candidates offered to the main model. In continuous-batching speculative decoding, this value can also include tokens processed while restoring the draft request to the validated prefix after candidate rejection, so it can be larger than the draft candidate count.
+  The sample prints accepted, rejected, and total draft candidate tokens. Draft generated tokens count tokens sampled by the draft pipeline. Draft candidate tokens count the subset offered to the main model for validation and are used as the denominator for acceptance rate.
 
   Example:
   ```cpp
