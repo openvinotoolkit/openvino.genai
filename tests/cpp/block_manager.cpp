@@ -68,6 +68,39 @@ TEST(TestBlockManager, general_test) {
     bm.free_sequence(1);
 }
 
+TEST(TestBlockManager, IgnoresAlreadyFreedSequencesDuringPartialPreemption) {
+    constexpr int num_blocks = 8;
+    constexpr bool enable_prefix_caching = false;
+    constexpr size_t block_size = 4;
+    constexpr size_t num_layers = 1;
+    ov::genai::BlockManager bm = ov::genai::BlockManager(num_blocks, enable_prefix_caching, block_size, num_layers);
+
+    std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto sequence_group = std::make_shared<ov::genai::SequenceGroup>(
+        0,
+        ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
+        ov::genai::utils::get_beam_search_config());
+
+    sequence_group->schedule_tokens(tokens.size());
+    bm.append_slots(sequence_group);
+    ASSERT_EQ(sequence_group->num_running_seqs(), 1);
+
+    auto parent = sequence_group->get_running_sequences().front();
+    auto child = sequence_group->fork_sequence(parent);
+    bm.fork_sequence(parent->get_id(), child->get_id());
+
+    const auto stale_seq_id = child->get_id();
+    EXPECT_NO_THROW(bm.free_sequence(stale_seq_id));
+    EXPECT_FALSE(bm.has_block_table(stale_seq_id));
+    EXPECT_TRUE(bm.has_block_table(parent->get_id()));
+
+    EXPECT_NO_THROW(bm.free_group_partially(sequence_group, 1));
+
+    for (auto& sequence : sequence_group->get_sequences()) {
+        EXPECT_NO_THROW(bm.free_sequence(sequence->get_id()));
+    }
+}
+
 TEST(TestBlockManager, required_blocks_count) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(8, false, 4, 3);
 
