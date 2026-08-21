@@ -17,9 +17,10 @@ PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
 
 
-# the draft model raw metrics are accumulated over generate() calls of the same pipeline,
-# while num_accepted_tokens is reported per call, so track the previous total to get per-prompt values
+# number of draft tokens of each model already reported, see get_sd_token_numbers()
 sd_prev_draft_generated = {}
+# last raw metrics entry of each model already reported, see get_sd_token_numbers()
+sd_prev_raw_durations = {}
 
 
 def get_sd_token_numbers(answer, model):
@@ -27,10 +28,19 @@ def get_sd_token_numbers(answer, model):
     extended_perf_metrics = getattr(answer, "extended_perf_metrics", None)
     if not hasattr(extended_perf_metrics, "get_num_accepted_tokens"):
         return None
-    total_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
-    num_draft_generated = total_draft_generated - sd_prev_draft_generated.get(id(model), 0)
+    draft_model_metrics = extended_perf_metrics.draft_model_metrics
+    # some backends accumulate the metrics over generate() calls of the same pipeline, others reset them,
+    # so the already reported iterations are detected by the draft model latencies to know which case it is
+    durations = draft_model_metrics.raw_metrics.m_durations
+    prev_count, prev_marker = sd_prev_raw_durations.get(id(model), (0, None))
+    is_accumulated = 0 < prev_count <= len(durations) and durations[prev_count - 1] == prev_marker
+    sd_prev_raw_durations[id(model)] = (len(durations), durations[-1] if len(durations) > 0 else None)
+    total_draft_generated = draft_model_metrics.get_num_generated_tokens()
+    prev_draft_generated = sd_prev_draft_generated.get(id(model), 0) if is_accumulated else 0
+    num_draft_generated = total_draft_generated - prev_draft_generated
     sd_prev_draft_generated[id(model)] = total_draft_generated
-    if num_draft_generated <= 0:
+    # a negative value means the counters got out of sync, so the per prompt value is unknown
+    if num_draft_generated < 0:
         return None
     return {
         "num_draft_generated": num_draft_generated,
