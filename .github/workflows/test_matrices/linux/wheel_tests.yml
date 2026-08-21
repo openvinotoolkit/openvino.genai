@@ -21,7 +21,17 @@
     # optimum intel master commit with Qwen3-ASR support
     python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4"
     python -m pip install transformers==4.57.6 qwen-asr==0.0.6
-    python -m pytest -s -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
+- name: ASR (Fun-ASR)
+  cmd: |-
+    # optimum intel master commit with Fun-ASR support
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@e1de5beecfd0c3ae6047ea22cea4a4cad4307aff"
+    python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
   timeout: 20
   components:
     - automatic_speech_recognition
