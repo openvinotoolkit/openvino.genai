@@ -15,6 +15,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
     static const std::unordered_map<std::string, VLMModelType> model_types_map = {
         {"minicpmv", VLMModelType::MINICPM},
         {"minicpmo", VLMModelType::MINICPM},
+        {"minicpmv4_6", VLMModelType::MINICPMV4_6},
         {"llava", VLMModelType::LLAVA},
         {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
