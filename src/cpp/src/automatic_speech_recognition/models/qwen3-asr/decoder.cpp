@@ -63,6 +63,9 @@ EncodedResults Qwen3ASRDecoder::generate(const ov::Tensor& input_ids,
             return;
         }
         std::unordered_map<uint64_t, GenerationOutput> token = handle->read();
+        if (token.empty()) {
+            return;
+        }
         auto streaming_status = streamer_ptr->write(token.begin()->second.generated_ids);
         if (streaming_status == StreamingStatus::CANCEL) {
             handle->cancel();
