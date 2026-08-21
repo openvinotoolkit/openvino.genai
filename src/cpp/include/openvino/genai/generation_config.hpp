@@ -639,6 +639,30 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *        states and full token ids in the result so a Qwen3-Omni talker can consume them. Only the
  *        continuous-batching backend supports this; OmniPipeline sets it internally on the audio path.
  */
+
+/**
+ * @brief Configures thinking/reasoning control for models that emit
+ *        <think>/</think> tags (e.g. Qwen3, DeepSeek).
+ *
+ * When set on GenerationConfig, the pipeline may force the </think> tag
+ * once the reasoning budget is exhausted, or immediately when budget == 0.
+ *
+ * @param budget Max tokens allowed in the thinking block before forcing
+ *               </think>. 0 = disable thinking (force immediately),
+ *               N = allow N thinking tokens, -1 = unlimited (no enforcement).
+ * @param start_token_id Token ID of the <think> tag.
+ * @param end_token_id Token ID of the </think> tag.
+ */
+struct OPENVINO_GENAI_EXPORTS ReasoningConfig {
+    ReasoningConfig() = default;
+    ReasoningConfig(const ov::AnyMap& properties);
+    void update_config(const ov::AnyMap& properties);
+
+    int64_t budget = -1;
+    int64_t start_token_id = -1;
+    int64_t end_token_id = -1;
+};
+
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
     GenerationConfig() = default;
@@ -695,22 +719,10 @@ public:
     size_t branching_factor = 1;
     size_t tree_depth = 0;
 
-    // Thinking / Reasoning control
-    // Whether to allow thinking/reasoning in model output.
-    // When false, forces </think> immediately (if end token ID is known).
-    bool enable_thinking = true;
-
-    // Max tokens allowed in the thinking block before forcing </think>.
-    // -1 = disabled (no budget enforcement)
-    //  0 = force </think> immediately
-    //  N = allow N thinking tokens before forcing
-    int64_t reasoning_budget_tokens = -1;
-
-    // Token ID for the thinking start tag (e.g. <think>).
-    int64_t thinking_start_token_id = -1;
-
-    // Token ID for the thinking end tag (e.g. </think>).
-    int64_t thinking_end_token_id = -1;
+    // Thinking / reasoning control. When set, the pipeline may force the
+    // </think> tag once the reasoning budget is exhausted (or immediately
+    // when budget == 0). When unset, thinking is left untouched.
+    std::optional<ReasoningConfig> reasoning_config;
 
     // Structured output parameters
     std::optional<StructuredOutputConfig> structured_output_config;
@@ -796,10 +808,7 @@ static constexpr ov::Property<size_t> max_ngram_size{"max_ngram_size"};
 static constexpr ov::Property<size_t> branching_factor{"branching_factor"};
 static constexpr ov::Property<size_t> tree_depth{"tree_depth"};
 
-static constexpr ov::Property<bool> enable_thinking{"enable_thinking"};
-static constexpr ov::Property<int64_t> reasoning_budget_tokens{"reasoning_budget_tokens"};
-static constexpr ov::Property<int64_t> thinking_start_token_id{"thinking_start_token_id"};
-static constexpr ov::Property<int64_t> thinking_end_token_id{"thinking_end_token_id"};
+static constexpr ov::Property<ReasoningConfig> reasoning_config{"reasoning_config"};
 
 static constexpr ov::Property<StructuredOutputConfig> structured_output_config{"structured_output_config"};
 static constexpr ov::Property<std::string> regex{"regex"};
