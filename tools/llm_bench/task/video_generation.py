@@ -15,6 +15,7 @@ import llm_bench_utils.gen_output_data as gen_output_data
 
 from llm_bench_utils.hook_forward import StableDiffusionHook
 from llm_bench_utils.prompt_utils import get_video_gen_prompt
+from task.image_generation import read_image
 from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step, iteration_step
 
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
@@ -30,6 +31,7 @@ def collect_input_args(
     num_steps: int | None,
     num_frames: int | None,
     frame_rate: int | None,
+    image_as_ov_tensor: bool | None = None,
 ):
     input_args = {}
     if "width" in input_param or width is not None:
@@ -51,6 +53,9 @@ def collect_input_args(
         input_args["guidance_rescale"] = guidance_rescale
     if "negative_prompt" in input_param:
         input_args["negative_prompt"] = input_param["negative_prompt"]
+
+    if image_as_ov_tensor is not None and input_param.get("media"):
+        input_args["image"] = read_image(input_param["media"], ov_tensor=image_as_ov_tensor)
 
     return input_args
 
@@ -79,7 +84,7 @@ class TextToVideoOptimum(CommonPipeline):
 
     @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
-        return self.model(input_data, **kwargs).frames
+        return self.model(prompt=input_data, **kwargs).frames
 
     def get_input_tokens_num(self, prompt: str):
         input_text_list = prompt * self.batch_size
@@ -89,11 +94,13 @@ class TextToVideoOptimum(CommonPipeline):
 
     def print_batch_size_info(self, iter_num: int, input_args: dict):
         iter_prefix = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
-        out_str = (
-            f"{iter_prefix} Input params: Batch_size={self.batch_size}, "
-            f"steps={self.num_steps}, width={input_args['width']}, "
-            f"height={input_args['height']}, frame number={input_args['num_frames']}"
-        )
+        out_str = f"{iter_prefix} Input params: Batch_size={self.batch_size}, steps={self.num_steps}"
+        if input_args.get("width") is not None:
+            out_str += f", width={input_args['width']}"
+        if input_args.get("height") is not None:
+            out_str += f", height={input_args['height']}"
+        if input_args.get("num_frames") is not None:
+            out_str += f", frame number={input_args['num_frames']}"
         if input_args.get("guidance_scale"):
             out_str += f", guidance_scale={input_args['guidance_scale']}"
         if input_args.get("guidance_rescale"):
@@ -185,7 +192,13 @@ class TextToVideoOptimum(CommonPipeline):
         set_seed(self.seed)
 
         input_args = collect_input_args(
-            input_param, self.width, self.height, self.num_steps, self.num_frames, self.frame_rate
+            input_param,
+            self.width,
+            self.height,
+            self.num_steps,
+            self.num_frames,
+            self.frame_rate,
+            image_as_ov_tensor=self.genai,
         )
         input_token_size = self.get_input_tokens_num(input_param["prompt"])
         if input_param.get("negative_prompt"):
@@ -237,18 +250,20 @@ class TextToVideoGenAI(CommonPipeline):
         self.width = args.get("width")
 
     def generate(self, input_data: Any, **kwargs):
-        return self.model.generate(input_data, **kwargs)
+        return self.model.generate(prompt=input_data, **kwargs)
 
     def get_input_tokens_num(self, prompt: str):
         return self.tokenizer(prompt, return_tensors="pt").input_ids.numel()
 
     def print_batch_size_info(self, iter_num: int, input_args: dict):
         iter_prefix = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
-        out_str = (
-            f"{iter_prefix} Input params: Batch_size={self.batch_size}, "
-            f"steps={self.num_steps}, width={input_args['width']}, "
-            f"height={input_args['height']}, frame number={input_args['num_frames']}"
-        )
+        out_str = f"{iter_prefix} Input params: Batch_size={self.batch_size}, steps={self.num_steps}"
+        if input_args.get("width") is not None:
+            out_str += f", width={input_args['width']}"
+        if input_args.get("height") is not None:
+            out_str += f", height={input_args['height']}"
+        if input_args.get("num_frames") is not None:
+            out_str += f", frame number={input_args['num_frames']}"
         if input_args.get("guidance_scale"):
             out_str += f", guidance_scale={input_args['guidance_scale']}"
         if input_args.get("guidance_rescale"):
@@ -337,7 +352,13 @@ class TextToVideoGenAI(CommonPipeline):
         set_seed(self.seed)
 
         input_args = collect_input_args(
-            input_param, self.width, self.height, self.num_steps, self.num_frames, self.frame_rate
+            input_param,
+            self.width,
+            self.height,
+            self.num_steps,
+            self.num_frames,
+            self.frame_rate,
+            image_as_ov_tensor=self.genai,
         )
         input_token_size = self.get_input_tokens_num(input_param["prompt"])
         if input_param.get("negative_prompt"):
