@@ -14,6 +14,7 @@
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker_perf_metrics.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/genai/omni/text_source_base.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/properties.hpp"
@@ -48,8 +49,9 @@ struct OPENVINO_GENAI_EXPORTS TalkerResults {
  * The default implementation `Talker` (declared in this header) wraps the
  * existing Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
  *
- * Pure interface: no data members and no default implementations, so a backend is free to
- * store (or not store) a default speech config however it likes.
+ * No data members, so a backend is free to store (or not store) a default speech config however it
+ * likes. Every method is pure except the text-source generate() below, which defaults to draining
+ * the bridge and delegating, so existing backends keep compiling and gain streaming for free.
  *
  * @note This is a preview API and is subject to change.
  */
@@ -96,6 +98,32 @@ public:
     /// @brief Set the backend's stored default speech config.
     /// @throws when `config` fails OmniTalkerSpeechConfig validation.
     virtual void set_speech_config(const OmniTalkerSpeechConfig& config) = 0;
+
+    /// @brief Run speech generation against a live thinker -> talker bridge instead of a finished
+    ///        VLM result. OmniPipeline calls this when `GenerationConfig::text2audio_stream` is set,
+    ///        handing over the read end of the same object it gave the VLM as an OmniStreamerBase.
+    ///
+    /// The talker decides how much of the stream it needs before doing work — the bridge only
+    /// delivers steps in order and reports when the thinker is done.
+    ///
+    /// OmniPipeline calls this on a worker thread while the thinker runs on the caller's, so an
+    /// implementation may block on the source for as long as it likes without stalling the thinker.
+    /// A speech streamer passed here is therefore invoked from that worker thread.
+    ///
+    /// The default implementation reads the source to exhaustion, concatenates every step's tokens
+    /// and hidden states back into the layout the VLMDecodedResults overload expects, and forwards
+    /// to it. So it produces bit-identical output to the non-streaming path, and any TalkerBase
+    /// subclass supports streaming without writing code. Override to consume the stream
+    /// incrementally and start speaking before the thinker finishes.
+    ///
+    /// @param text_source Read end of the bridge; read() blocks until a step arrives or the thinker
+    ///                    ends. Must not be null.
+    /// @param talker_speech_config @see the VLMDecodedResults overload.
+    /// @param speech_streamer @see the VLMDecodedResults overload.
+    /// @note This is a preview API and is subject to change.
+    virtual TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                                  const OmniTalkerSpeechConfig& talker_speech_config,
+                                  const OmniSpeechStreamerVariant& speech_streamer = std::monostate{});
 
     /// @brief List names of speakers exposed by this talker.
     /// Returns an empty vector when the backend does not enumerate named speakers.
@@ -167,6 +195,17 @@ public:
 
     OmniTalkerSpeechConfig get_speech_config() const override;
     void set_speech_config(const OmniTalkerSpeechConfig& config) override;
+
+    /// @brief Consume the bridge incrementally instead of draining it first, so speech starts while
+    /// the thinker is still generating: the talker is prefilled as soon as the prompt and the
+    /// thinker's first token have arrived, and then pulls one token per codec step.
+    ///
+    /// Replaces TalkerBase's drain-everything default, and produces the same waveform it did — with a
+    /// fixed `rng_seed`, bit-identical to the VLMDecodedResults overload's for the same thinker
+    /// output. Only the timing changes.
+    TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                          const OmniTalkerSpeechConfig& talker_speech_config,
+                          const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
 
     std::vector<std::string> list_speakers() const override;
     ov::Tensor get_speaker_embedding(const std::string& name) const override;

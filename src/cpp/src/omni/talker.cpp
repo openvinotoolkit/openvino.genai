@@ -3,8 +3,12 @@
 
 #include "openvino/genai/omni/talker.hpp"
 
+#include <optional>
+#include <vector>
+
 #include "openvino/core/except.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
+#include "openvino/genai/omni/streamer_base.hpp"
 #include "omni/talker_speech_config_utils.hpp"
 #include "utils.hpp"
 #include "visual_language/qwen3_omni/speech_pipeline.hpp"
@@ -82,6 +86,41 @@ ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig&
 
 }  // namespace
 
+TalkerResults TalkerBase::generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                                   const OmniTalkerSpeechConfig& talker_speech_config,
+                                   const OmniSpeechStreamerVariant& speech_streamer) {
+    OPENVINO_ASSERT(text_source, "Talker: text source is null");
+
+    // Rebuild what the batch path would have handed over, then run the normal inference on it.
+    // Deliberately non-incremental: it makes the streaming path verifiable against the
+    // non-streaming one (same input to generate_speech => same waveform). A talker that wants to
+    // speak before the thinker finishes overrides this and consumes the stream as it arrives.
+    VLMDecodedResults accumulated;
+    accumulated.full_token_ids.resize(1);
+    accumulated.intermediate_hidden_states.resize(1);
+    auto& token_ids = accumulated.full_token_ids.front();
+    auto& hidden_states = accumulated.intermediate_hidden_states.front();
+
+    while (const std::optional<ov::AnyMap> step = text_source->read()) {
+        const auto tokens_it = step->find(omni_stream::tokens.name());
+        if (tokens_it != step->end()) {
+            const auto step_tokens = tokens_it->second.as<std::vector<int64_t>>();
+            token_ids.insert(token_ids.end(), step_tokens.begin(), step_tokens.end());
+        }
+        const auto hidden_states_it = step->find(omni_stream::hidden_states.name());
+        if (hidden_states_it != step->end()) {
+            // Already one [1, 1, hidden_size] tensor per token, which is what split_hidden_states
+            // in the overload below expects to end up with; appending keeps them in token order.
+            const auto step_hidden_states = hidden_states_it->second.as<std::vector<ov::Tensor>>();
+            hidden_states.insert(hidden_states.end(), step_hidden_states.begin(), step_hidden_states.end());
+        }
+    }
+
+    // texts / scores stay empty: the bridge carries token ids and hidden states, which is all
+    // generate_speech needs. OmniPipeline assembles the user-visible text from the VLM stage.
+    return generate(accumulated, talker_speech_config, speech_streamer);
+}
+
 class Talker::Impl {
 public:
     Impl(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap& properties) {
@@ -137,6 +176,15 @@ public:
                                          talker_speech_config);
     }
 
+    TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                          const OmniTalkerSpeechConfig& talker_speech_config,
+                          const OmniSpeechStreamerVariant& speech_streamer) {
+        // No accumulation here: the pipeline reads the bridge itself so it can prefill and start
+        // emitting codec frames while the thinker is still generating. Config resolution is the same
+        // as in the overload above.
+        return m_speech->generate_speech(text_source, speech_streamer, talker_speech_config);
+    }
+
     TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {
         auto resolved = resolve_talker_properties(m_speech_config, properties);
         return generate(vlm_result, resolved.config, resolved.speech_streamer);
@@ -182,6 +230,12 @@ TalkerResults Talker::generate(const VLMDecodedResults& vlm_result,
                                const OmniTalkerSpeechConfig& talker_speech_config,
                                const OmniSpeechStreamerVariant& speech_streamer) {
     return m_impl->generate(vlm_result, talker_speech_config, speech_streamer);
+}
+
+TalkerResults Talker::generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                               const OmniTalkerSpeechConfig& talker_speech_config,
+                               const OmniSpeechStreamerVariant& speech_streamer) {
+    return m_impl->generate(text_source, talker_speech_config, speech_streamer);
 }
 
 TalkerResults Talker::generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {

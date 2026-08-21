@@ -3,19 +3,99 @@
 
 #include "omni/pipeline_impl.hpp"
 
+#include <future>
+#include <memory>
 #include <utility>
 
 #include "openvino/core/except.hpp"
+#include "openvino/genai/omni/channel.hpp"
 
 namespace ov::genai {
 
 namespace {
+
+/// @brief Bridge the thinker and the talker when the caller opted into streaming. Null otherwise,
+/// which keeps the VLM on its batch path: the talker then consumes the finished VLMDecodedResults.
+std::shared_ptr<OmniChannel> make_channel_if_streaming(const GenerationConfig& text_config) {
+    return text_config.text2audio_stream ? std::make_shared<OmniChannel>() : nullptr;
+}
+
+/// @brief Owns the talker half of one generate() call and decides where it runs.
+///
+/// With a bridge, the talker starts right away on its own thread and reads the bridge while the
+/// thinker is still filling it; the thinker keeps the calling thread. finish() joins the two back
+/// together. Without a bridge there is nothing to overlap, so finish() runs the talker inline over
+/// the finished VLM result.
+///
+/// This does not make speech arrive sooner on its own: the default talker still drains the bridge
+/// to exhaustion before it infers anything, so it simply waits on another thread. What it buys is
+/// the thread a talker needs in order to start early — with the talker on the caller's thread, a
+/// TalkerBase that consumed the stream incrementally would have nowhere to run until the thinker
+/// was already done.
+///
+/// One visible consequence: when streaming, a speech streamer callback is invoked from the talker
+/// thread rather than the caller's. The text streamer keeps running on the caller's thread as
+/// before, so the two can now fire concurrently.
+class TalkerStage {
+public:
+    TalkerStage(const std::shared_ptr<TalkerBase>& talker,
+                std::shared_ptr<OmniChannel> channel,
+                const OmniTalkerSpeechConfig& talker_speech_config,
+                const OmniSpeechStreamerVariant& speech_streamer)
+        : m_talker{talker},
+          m_channel{std::move(channel)},
+          m_talker_speech_config{talker_speech_config},
+          m_speech_streamer{speech_streamer} {
+        if (!m_channel) {
+            return;
+        }
+        m_result = std::async(std::launch::async, [this] {
+            return m_talker->generate(m_channel, m_talker_speech_config, m_speech_streamer);
+        });
+    }
+
+    /// @brief Close the bridge, then wait for the talker thread (the future's destructor blocks,
+    /// and members die after this body). Ending here covers the paths that never reach finish():
+    /// a thinker that threw before it could close its own write end would otherwise leave the
+    /// talker blocked on a read that can never be satisfied, and the wait would deadlock. Ending
+    /// twice is harmless, and a reader still drains whatever was written before the end.
+    ///
+    /// The talker then runs a full inference over a truncated stream just to be discarded, which
+    /// is wasteful during unwinding but keeps the failure path simple: whatever it throws stays in
+    /// the future and never competes with the exception already in flight.
+    ~TalkerStage() {
+        if (m_channel) {
+            m_channel->end();
+        }
+    }
+
+    /// @brief Hand back the talker's output, waiting for its thread when streaming. Anything the
+    /// talker thread threw is rethrown here, on the caller's thread.
+    TalkerResults finish(const VLMDecodedResults& vlm_result) {
+        if (!m_channel) {
+            return m_talker->generate(vlm_result, m_talker_speech_config, m_speech_streamer);
+        }
+        return m_result.get();
+    }
+
+private:
+    std::shared_ptr<TalkerBase> m_talker;
+    std::shared_ptr<OmniChannel> m_channel;
+    // Both outlive the stage: it is a local of the generate() call that owns them, and finish()
+    // (or the destructor) joins the thread before that call returns.
+    const OmniTalkerSpeechConfig& m_talker_speech_config;
+    const OmniSpeechStreamerVariant& m_speech_streamer;
+    std::future<TalkerResults> m_result;
+};
 
 /// @brief Cross-config validation: when speech output is requested the thinker text decode
 /// must use a sampling mode the talker can consume — single hidden-state stream, no beam
 /// candidates, no speculative draft tokens.
 void enforce_text_config_compatible_with_audio(const GenerationConfig& text_config,
                                                const OmniTalkerSpeechConfig& talker_speech_config) {
+    OPENVINO_ASSERT(!text_config.text2audio_stream || talker_speech_config.return_audio,
+                    "OmniPipeline: text_config.text2audio_stream streams the thinker's output to the talker, "
+                    "so it requires talker_speech_config.return_audio == true");
     if (!talker_speech_config.return_audio) {
         return;
     }
@@ -69,9 +149,20 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
     if (talker_speech_config.return_audio) {
         GenerationConfig text_cfg = text_config;
         text_cfg.return_omni_outputs = true;
+        const std::shared_ptr<OmniChannel> channel = make_channel_if_streaming(text_cfg);
+        // Declared before the VLM runs: when streaming, this is what puts the talker on its own
+        // thread, and it has to be listening before the thinker starts writing.
+        TalkerStage talker_stage(m_talker, channel, talker_speech_config, speech_streamer);
         VLMDecodedResults vlm_result =
-            m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer);
-        TalkerResults talker_result = m_talker->generate(vlm_result, talker_speech_config, speech_streamer);
+            m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer, channel);
+        TalkerResults talker_result = talker_stage.finish(vlm_result);
+        // TODO: when `channel` is set, vlm_result.intermediate_hidden_states holds a second full
+        // copy of what already travelled through it — the CB backend accumulates every step on the
+        // sequence *and* forwards it. Clearing it here (and in the ChatHistory overload below)
+        // reclaims one copy once the field is no longer part of the streaming contract. The deeper
+        // fix is upstream: with a bridge attached the backend shouldn't accumulate at all, which
+        // means the forwarder in continuous_batching/pipeline_impl.cpp has to tap the per-step
+        // tensor directly instead of reading out of that same accumulation buffer.
         OmniDecodedResults omni_result;
         static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
         omni_result.speech_result = std::move(talker_result);
@@ -108,9 +199,12 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
         // Keep multimodal normalization inside the ChatHistory path. Applying the chat template
         // first and routing the resulting string through the prompt overload would place image
         // and audio tags outside the user message and change the Thinker output.
+        const std::shared_ptr<OmniChannel> channel = make_channel_if_streaming(text_cfg);
+        TalkerStage talker_stage(m_talker, channel, talker_speech_config, speech_streamer);
         VLMDecodedResults vlm_result =
-            m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer);
-        TalkerResults talker_result = m_talker->generate(vlm_result, talker_speech_config, speech_streamer);
+            m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer, channel);
+        // TODO: same duplicated hidden states as in the prompt overload above; see the note there.
+        TalkerResults talker_result = talker_stage.finish(vlm_result);
         OmniDecodedResults omni_result;
         static_cast<VLMDecodedResults&>(omni_result) = std::move(vlm_result);
         omni_result.speech_result = std::move(talker_result);

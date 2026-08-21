@@ -64,6 +64,30 @@ bool is_speech_streamer_active(const ov::genai::OmniSpeechStreamerVariant& strea
     return !std::holds_alternative<std::monostate>(streamer);
 }
 
+/// @brief Wrap a finished waveform (or nothing) into TalkerResults, stamping how long the call took.
+ov::genai::TalkerResults build_speech_result(ov::Tensor waveform,
+                                            std::chrono::steady_clock::time_point start_time) {
+    ov::genai::TalkerResults result;
+    if (waveform && waveform.get_size() > 0) {
+        result.perf_metrics.num_generated_samples = waveform.get_size();
+        result.waveforms.push_back(std::move(waveform));
+    }
+    const auto duration_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_time).count();
+    result.perf_metrics.generation_time_ms = static_cast<float>(duration_us) / 1000.0f;
+    return result;
+}
+
+/// @brief Give up before generating any codes: close the speech streamer, if one is listening, and
+/// hand back an empty but timed result. The caller logs why.
+ov::genai::TalkerResults abandon_speech(const ov::genai::OmniSpeechStreamerVariant& streamer,
+                                       std::chrono::steady_clock::time_point start_time) {
+    if (is_speech_streamer_active(streamer)) {
+        end_speech_streamer(streamer);
+    }
+    return build_speech_result(ov::Tensor{}, start_time);
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -340,6 +364,28 @@ int64_t Qwen3OmniSpeechPipeline::resolve_speaker_id(const std::string& speaker) 
                    "Ensure 'talker_config.speaker_id' is defined in config.json");
 }
 
+ov::Tensor Qwen3OmniSpeechPipeline::resolve_speaker_embedding(
+    const OmniTalkerSpeechConfig& talker_speech_config) const {
+    if (std::holds_alternative<ov::Tensor>(talker_speech_config.speaker)) {
+        const auto& tensor = std::get<ov::Tensor>(talker_speech_config.speaker);
+        const auto& shape = tensor.get_shape();
+        OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] == 1 &&
+                            shape[2] == m_config.talker_hidden_size,
+                        "speaker embedding must have shape [1, 1, ",
+                        m_config.talker_hidden_size,
+                        "], got ",
+                        shape);
+        return tensor;
+    }
+    const auto& speaker_name = std::get<std::string>(talker_speech_config.speaker);
+    return m_speaker_embed.at(resolve_speaker_id(speaker_name));
+}
+
+bool Qwen3OmniSpeechPipeline::is_multimodal_token(int64_t token_id) const {
+    return token_id == m_config.audio_token_id || token_id == m_config.image_token_id ||
+           token_id == m_config.video_token_id;
+}
+
 ov::Tensor Qwen3OmniSpeechPipeline::embed_thinker_token(int64_t token_id) {
     ov::Tensor input(ov::element::i64, {1, 1});
     input.data<int64_t>()[0] = token_id;
@@ -388,6 +434,10 @@ ov::Tensor Qwen3OmniSpeechPipeline::project_text(const ov::Tensor& hidden_state)
     ov::Tensor copy(result.get_element_type(), result.get_shape());
     result.copy_to(copy);
     return copy;
+}
+
+ov::Tensor Qwen3OmniSpeechPipeline::project_thinker_token(int64_t token_id) {
+    return project_text(embed_thinker_token(token_id));
 }
 
 ov::Tensor Qwen3OmniSpeechPipeline::project_hidden(const ov::Tensor& hidden_state) {
@@ -490,33 +540,47 @@ int64_t Qwen3OmniSpeechPipeline::sample_top_k(const float* logits,
     return static_cast<int64_t>(m_sample_topk_indices[dist(m_rng)]);
 }
 
-std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
-    const std::vector<int64_t>& full_token_ids,
-    const std::vector<ov::Tensor>& all_intermediate_hidden_states,
-    const ov::Tensor& speaker_embed) {
-    // Find <|im_start|> positions to identify segments
-    std::vector<size_t> im_start_positions;
-    for (size_t i = 0; i < full_token_ids.size(); i++) {
-        if (full_token_ids[i] == m_config.im_start_token_id) {
-            im_start_positions.push_back(i);
+std::optional<std::pair<size_t, size_t>> Qwen3OmniSpeechPipeline::find_last_assistant_segment(
+    const std::vector<int64_t>& tokens) const {
+    std::optional<size_t> seg_start;
+    for (size_t pos = tokens.size(); pos-- > 0;) {
+        if (tokens[pos] == m_config.im_start_token_id && pos + 1 < tokens.size() &&
+            tokens[pos + 1] == m_config.assistant_token_id) {
+            seg_start = pos;
+            break;
         }
     }
+    if (!seg_start) {
+        return std::nullopt;
+    }
+    size_t seg_end = tokens.size();
+    for (size_t pos = *seg_start + 1; pos < tokens.size(); pos++) {
+        if (tokens[pos] == m_config.im_start_token_id) {
+            seg_end = pos;
+            break;
+        }
+    }
+    return std::pair<size_t, size_t>{*seg_start, seg_end};
+}
 
-    GENAI_DEBUG("Speech: found %zu im_start segments, total_tokens=%zu, intermediate_hs=%zu",
-                im_start_positions.size(),
-                full_token_ids.size(),
-                all_intermediate_hidden_states.size());
+ov::Tensor Qwen3OmniSpeechPipeline::build_talker_prefix(const std::vector<int64_t>& tokens,
+                                                       const std::vector<ov::Tensor>& hidden_states,
+                                                       size_t seg_start,
+                                                       std::optional<int64_t> row8_token,
+                                                       const ov::Tensor& speaker_embed) {
+    OPENVINO_ASSERT(seg_start + 3 <= tokens.size(),
+                    "build_talker_prefix: the assistant segment needs its 3 header tokens, got ",
+                    tokens.size() - std::min(seg_start, tokens.size()));
 
-    auto hidden_size = m_config.talker_hidden_size;
+    const auto hidden_size = m_config.talker_hidden_size;
 
     // TTS special embeddings were pre-computed at pipeline construction (see ctor).
     const auto& tts_bos_embed = m_tts_bos_embed;
-    const auto& tts_eos_embed = m_tts_eos_embed;
     const auto& tts_pad_embed = m_tts_pad_embed;
 
     // Reuse pre-allocated member buffer (avoids heap allocation per call)
     m_talker_buf.clear();
-    m_talker_buf.reserve(full_token_ids.size() * hidden_size);
+    m_talker_buf.reserve((seg_start + 9) * hidden_size);
 
     // Append a projected tensor's data to the flat buffer
     auto append_tensor = [this, hidden_size](const ov::Tensor& t) {
@@ -535,134 +599,140 @@ std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
         }
     };
 
-    // Process each segment
-    int last_assistant_seg_idx = -1;
-    for (int seg = static_cast<int>(im_start_positions.size()) - 1; seg >= 0; seg--) {
-        auto pos = im_start_positions[seg];
-        if (pos + 1 < full_token_ids.size() && full_token_ids[pos + 1] == m_config.assistant_token_id) {
-            last_assistant_seg_idx = seg;
-            break;
+    // Every segment that closes before the assistant one. `user` is the only role that contributes
+    // rows: system segments are skipped, so are assistant segments other than the last, and a
+    // segment opened by anything else falls through without appending anything.
+    for (size_t pos = 0; pos < seg_start; pos++) {
+        if (tokens[pos] != m_config.im_start_token_id) {
+            continue;
         }
+        size_t seg_end = seg_start;
+        for (size_t next = pos + 1; next < seg_start; next++) {
+            if (tokens[next] == m_config.im_start_token_id) {
+                seg_end = next;
+                break;
+            }
+        }
+        if (pos + 1 >= tokens.size() || tokens[pos + 1] != m_config.user_token_id) {
+            continue;
+        }
+
+        // User segment: text tokens use word_embedding -> text_projection,
+        // multimodal tokens use LLM intermediate hidden states -> hidden_projection
+        size_t mm_count = 0, mm_with_hs = 0, mm_without_hs = 0;
+        for (size_t tok = pos; tok < seg_end; tok++) {
+            const bool is_multimodal = is_multimodal_token(tokens[tok]);
+
+            ov::Tensor projected;
+            if (is_multimodal && tok < hidden_states.size()) {
+                projected = project_hidden(hidden_states[tok]);
+                mm_with_hs++;
+            } else if (is_multimodal) {
+                // Multimodal token but no hidden state — fall back to word embedding
+                projected = project_thinker_token(tokens[tok]);
+                mm_without_hs++;
+            } else {
+                projected = project_thinker_token(tokens[tok]);
+            }
+            if (is_multimodal)
+                mm_count++;
+
+            append_tensor(projected);
+        }
+        GENAI_DEBUG("Speech: user seg [%zu, %zu): %zu tokens, %zu multimodal (%zu with HS, %zu without)",
+                    pos,
+                    seg_end,
+                    seg_end - pos,
+                    mm_count,
+                    mm_with_hs,
+                    mm_without_hs);
     }
 
-    // For simplicity in initial implementation: process user segments and last assistant segment
-    for (size_t seg = 0; seg < im_start_positions.size(); seg++) {
-        auto seg_start = im_start_positions[seg];
-        auto seg_end = (seg + 1 < im_start_positions.size()) ? im_start_positions[seg + 1] : full_token_ids.size();
+    // Last assistant segment: build input with codec tokens
+    // Positions in assistant segment (relative to seg_start):
+    // 0: <|im_start|>, 1: assistant, 2: \n, 3+: text tokens
 
-        if (seg_start + 1 >= full_token_ids.size())
-            continue;
-        auto role_token = full_token_ids[seg_start + 1];
-
-        // Skip system segments
-        if (role_token == m_config.system_token_id) {
-            continue;
-        }
-
-        // Skip non-last assistant segments
-        if (role_token == m_config.assistant_token_id && static_cast<int>(seg) != last_assistant_seg_idx) {
-            continue;
-        }
-
-        if (role_token == m_config.user_token_id) {
-            // User segment: text tokens use word_embedding -> text_projection,
-            // multimodal tokens use LLM intermediate hidden states -> hidden_projection
-            size_t mm_count = 0, mm_with_hs = 0, mm_without_hs = 0;
-            for (size_t pos = seg_start; pos < seg_end; pos++) {
-                bool is_multimodal =
-                    (full_token_ids[pos] == m_config.audio_token_id || full_token_ids[pos] == m_config.image_token_id ||
-                     full_token_ids[pos] == m_config.video_token_id);
-
-                ov::Tensor projected;
-                if (is_multimodal && pos < all_intermediate_hidden_states.size()) {
-                    projected = project_hidden(all_intermediate_hidden_states[pos]);
-                    mm_with_hs++;
-                } else if (is_multimodal) {
-                    // Multimodal token but no hidden state — fall back to word embedding
-                    auto word_embed = embed_thinker_token(full_token_ids[pos]);
-                    projected = project_text(word_embed);
-                    mm_without_hs++;
-                } else {
-                    auto word_embed = embed_thinker_token(full_token_ids[pos]);
-                    projected = project_text(word_embed);
-                }
-                if (is_multimodal)
-                    mm_count++;
-
-                append_tensor(projected);
-            }
-            GENAI_DEBUG("Speech: user seg [%zu, %zu): %zu tokens, %zu multimodal (%zu with HS, %zu without)",
-                        seg_start,
-                        seg_end,
-                        seg_end - seg_start,
-                        mm_count,
-                        mm_with_hs,
-                        mm_without_hs);
-        } else if (role_token == m_config.assistant_token_id) {
-            // Last assistant segment: build input with codec tokens
-            // Positions in assistant segment (relative to seg_start):
-            // 0: <|im_start|>, 1: assistant, 2: \n, 3+: text tokens
-
-            // Project all assistant positions: word_embedding -> text_projection
-            std::vector<ov::Tensor> assistant_projected;
-            for (size_t pos = seg_start; pos < seg_end; pos++) {
-                auto word_embed = embed_thinker_token(full_token_ids[pos]);
-                assistant_projected.push_back(project_text(word_embed));
-            }
-
-            if (assistant_projected.size() < 3)
-                continue;
-
-            // Build text_hidden + codec_hidden (element-wise addition)
-            // Positions 0-2: projected header tokens + zeros (no codec)
-            for (size_t i = 0; i < 3 && i < assistant_projected.size(); i++) {
-                append_tensor(assistant_projected[i]);
-            }
-
-            // Positions 3-6: tts_pad + codec token embeddings
-            add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_nothink_id));
-            add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_bos_id));
-            add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_eos_id));
-            add_embeddings(tts_pad_embed, speaker_embed);
-
-            // Position 7: tts_bos + codec_pad
-            add_embeddings(tts_bos_embed, m_codec_special_embed.at(m_config.codec_pad_id));
-
-            // Position 8: first text token + codec_bos
-            if (assistant_projected.size() > 3) {
-                add_embeddings(assistant_projected[3], m_codec_special_embed.at(m_config.codec_bos_id));
-            }
-
-            // Build trailing_text_hidden: remaining projected text tokens (positions 4+)
-            // plus tts_eos at the end — write directly into flat tensor
-            size_t trailing_start = 4;  // Skip im_start, assistant, \n, first_text
-            size_t trailing_len =
-                (assistant_projected.size() > trailing_start ? assistant_projected.size() - trailing_start : 0) +
-                1;  // +1 for tts_eos
-            ov::Tensor trailing_hidden(ov::element::f32, {1, trailing_len, hidden_size});
-            auto* trailing_ptr = trailing_hidden.data<float>();
-            size_t t_idx = 0;
-            for (size_t i = trailing_start; i < assistant_projected.size(); i++) {
-                std::memcpy(trailing_ptr + t_idx * hidden_size,
-                            assistant_projected[i].data<float>(),
-                            hidden_size * sizeof(float));
-                t_idx++;
-            }
-            std::memcpy(trailing_ptr + t_idx * hidden_size, tts_eos_embed.data<float>(), hidden_size * sizeof(float));
-
-            // Build the talker input tensor from flat buffer (already contiguous)
-            size_t total_len = m_talker_buf.size() / hidden_size;
-            ov::Tensor talker_input(ov::element::f32, {1, total_len, hidden_size});
-            std::memcpy(talker_input.data<float>(), m_talker_buf.data(), m_talker_buf.size() * sizeof(float));
-
-            return {talker_input, trailing_hidden};
-        }
+    // Positions 0-2: projected header tokens + zeros (no codec)
+    for (size_t i = 0; i < 3; i++) {
+        append_tensor(project_thinker_token(tokens[seg_start + i]));
     }
 
-    // Fallback: empty input (should not happen with valid ChatML)
-    ov::Tensor empty_input(ov::element::f32, {1, 0, hidden_size});
-    ov::Tensor empty_trailing(ov::element::f32, {1, 0, hidden_size});
-    return {empty_input, empty_trailing};
+    // Positions 3-6: tts_pad + codec token embeddings
+    add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_nothink_id));
+    add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_bos_id));
+    add_embeddings(tts_pad_embed, m_codec_special_embed.at(m_config.codec_think_eos_id));
+    add_embeddings(tts_pad_embed, speaker_embed);
+
+    // Position 7: tts_bos + codec_pad
+    add_embeddings(tts_bos_embed, m_codec_special_embed.at(m_config.codec_pad_id));
+
+    // Position 8: first text token + codec_bos. Absent when the assistant segment stops at its
+    // header — the thinker generated nothing, so there is no first text token to condition on.
+    if (row8_token) {
+        add_embeddings(project_thinker_token(*row8_token), m_codec_special_embed.at(m_config.codec_bos_id));
+    }
+
+    // Build the talker input tensor from flat buffer (already contiguous)
+    size_t total_len = m_talker_buf.size() / hidden_size;
+    ov::Tensor talker_input(ov::element::f32, {1, total_len, hidden_size});
+    std::memcpy(talker_input.data<float>(), m_talker_buf.data(), m_talker_buf.size() * sizeof(float));
+    return talker_input;
+}
+
+ov::Tensor Qwen3OmniSpeechPipeline::build_trailing(const std::vector<int64_t>& tokens,
+                                                  size_t seg_start,
+                                                  size_t seg_end) {
+    const auto hidden_size = m_config.talker_hidden_size;
+    const size_t trailing_start = 4;  // Skip im_start, assistant, \n, first_text
+    const size_t assistant_len = seg_end - seg_start;
+    const size_t trailing_len =
+        (assistant_len > trailing_start ? assistant_len - trailing_start : 0) + 1;  // +1 for tts_eos
+
+    ov::Tensor trailing_hidden(ov::element::f32, {1, trailing_len, hidden_size});
+    auto* trailing_ptr = trailing_hidden.data<float>();
+    size_t t_idx = 0;
+    for (size_t pos = seg_start + trailing_start; pos < seg_end; pos++) {
+        auto projected = project_thinker_token(tokens[pos]);
+        std::memcpy(trailing_ptr + t_idx * hidden_size, projected.data<float>(), hidden_size * sizeof(float));
+        t_idx++;
+    }
+    std::memcpy(trailing_ptr + t_idx * hidden_size, m_tts_eos_embed.data<float>(), hidden_size * sizeof(float));
+    return trailing_hidden;
+}
+
+std::pair<ov::Tensor, ov::Tensor> Qwen3OmniSpeechPipeline::build_talker_input(
+    const std::vector<int64_t>& full_token_ids,
+    const std::vector<ov::Tensor>& all_intermediate_hidden_states,
+    const ov::Tensor& speaker_embed) {
+    const auto hidden_size = m_config.talker_hidden_size;
+    auto nothing_to_say = [hidden_size]() {
+        // Empty input (should not happen with valid ChatML)
+        return std::pair<ov::Tensor, ov::Tensor>{ov::Tensor(ov::element::f32, {1, 0, hidden_size}),
+                                                 ov::Tensor(ov::element::f32, {1, 0, hidden_size})};
+    };
+
+    const auto segment = find_last_assistant_segment(full_token_ids);
+    if (!segment) {
+        GENAI_DEBUG("Speech: no assistant segment among %zu tokens", full_token_ids.size());
+        return nothing_to_say();
+    }
+    const auto [seg_start, seg_end] = *segment;
+    GENAI_DEBUG("Speech: assistant segment [%zu, %zu), total_tokens=%zu, intermediate_hs=%zu",
+                seg_start,
+                seg_end,
+                full_token_ids.size(),
+                all_intermediate_hidden_states.size());
+    if (seg_end - seg_start < 3) {
+        return nothing_to_say();
+    }
+
+    const std::optional<int64_t> row8_token =
+        seg_end - seg_start > 3 ? std::optional<int64_t>(full_token_ids[seg_start + 3]) : std::nullopt;
+
+    // Order matters only for the shared m_talker_buf scratch, which the prefix owns until it returns.
+    auto talker_input =
+        build_talker_prefix(full_token_ids, all_intermediate_hidden_states, seg_start, row8_token, speaker_embed);
+    return {std::move(talker_input), build_trailing(full_token_ids, seg_start, seg_end)};
 }
 
 std::pair<std::vector<int64_t>, ov::Tensor> Qwen3OmniSpeechPipeline::predict_codes(
@@ -770,22 +840,282 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
     return result;
 }
 
+/// @brief Pulls the thinker -> talker bridge into absolutely-indexed arrays, blocking only when
+/// asked for something that has not been written yet.
+///
+/// Both arrays are indexed by absolute position across the whole stream, exactly as the batch path
+/// indexes `full_token_ids` and `intermediate_hidden_states`, so the two paths agree on what row 8
+/// or trailing row t is. They end at different lengths on purpose: a hidden state is what predicted
+/// the *next* token, so the last generated token never gets one (see OmniStreamerBase).
+///
+/// Note what is *not* tracked: where the prompt stops and generation starts. The bridge does not mark
+/// it — the first write carries every prompt token and may already carry the first generated one — and
+/// nothing here needs it. Everything is expressed as a position inside the assistant segment instead.
+///
+/// A stop string that the thinker rewinds after writing cannot be taken back off the bridge, so the
+/// talker may speak a token the caller's text does not show. The same is true of the drain-everything
+/// default in TalkerBase; fixing it belongs to the bridge, not here.
+class Qwen3OmniSpeechPipeline::ThinkerStream {
+public:
+    explicit ThinkerStream(const std::shared_ptr<OmniTextSourceBase>& source) : m_source(source) {
+        OPENVINO_ASSERT(m_source, "Speech: thinker stream source is null");
+    }
+
+    /// @brief Block until at least `count` tokens have arrived.
+    /// @return false when the thinker finished before producing that many — final, so the caller can
+    ///         stop waiting and pad instead.
+    bool ensure_tokens(size_t count) {
+        while (m_tokens.size() < count && pump()) {
+        }
+        return m_tokens.size() >= count;
+    }
+
+    /// @brief Block until at least `count` hidden states have arrived. @see ensure_tokens.
+    bool ensure_hidden_states(size_t count) {
+        OPENVINO_ASSERT(m_collect_hidden_states,
+                        "ThinkerStream: hidden states were already released; nothing waits for them twice");
+        while (m_hidden_states.size() < count && pump()) {
+        }
+        return m_hidden_states.size() >= count;
+    }
+
+    const std::vector<int64_t>& tokens() const {
+        return m_tokens;
+    }
+
+    const std::vector<ov::Tensor>& hidden_states() const {
+        return m_hidden_states;
+    }
+
+    bool ended() const {
+        return m_ended;
+    }
+
+    /// @brief Drop the hidden states and stop collecting more. Only the talker prefix reads them, and
+    /// only at prompt positions, so everything the rest of the run needs is already projected by the
+    /// time this is called — holding the tail of a long generation would be pure memory growth.
+    void release_hidden_states() {
+        m_collect_hidden_states = false;
+        m_hidden_states.clear();
+        m_hidden_states.shrink_to_fit();
+    }
+
+private:
+    /// @brief Take one step off the bridge. The single read() call site: an abort/error signal on the
+    /// channel, once there is one, is handled here and nowhere else.
+    /// @return false once the stream is over.
+    bool pump() {
+        if (m_ended) {
+            return false;
+        }
+        const std::optional<ov::AnyMap> step = m_source->read();
+        if (!step) {
+            m_ended = true;
+            return false;
+        }
+        const auto tokens_it = step->find(omni_stream::tokens.name());
+        if (tokens_it != step->end()) {
+            const auto step_tokens = tokens_it->second.as<std::vector<int64_t>>();
+            m_tokens.insert(m_tokens.end(), step_tokens.begin(), step_tokens.end());
+        }
+        if (m_collect_hidden_states) {
+            const auto hidden_states_it = step->find(omni_stream::hidden_states.name());
+            if (hidden_states_it != step->end()) {
+                // Already one [1, 1, hidden_size] tensor per token; appending keeps them in token
+                // order. Ref-counted handles, so this does not copy.
+                const auto step_hidden_states = hidden_states_it->second.as<std::vector<ov::Tensor>>();
+                m_hidden_states.insert(m_hidden_states.end(), step_hidden_states.begin(), step_hidden_states.end());
+            }
+        }
+        return true;
+    }
+
+    std::shared_ptr<OmniTextSourceBase> m_source;
+    std::vector<int64_t> m_tokens;
+    std::vector<ov::Tensor> m_hidden_states;
+    bool m_collect_hidden_states = true;
+    bool m_ended = false;
+};
+
+/// @brief Trailing rows straight out of the tensor build_trailing() precomputed.
+class Qwen3OmniSpeechPipeline::TensorTrailingSupply : public Qwen3OmniSpeechPipeline::TrailingSupply {
+public:
+    TensorTrailingSupply(const ov::Tensor& trailing, const ov::Tensor& tts_pad_embed)
+        : m_trailing{trailing},
+          m_len{trailing.get_shape()[1]},
+          m_hidden_size{trailing.get_shape()[2]},
+          m_pad{tts_pad_embed.data<const float>()} {}
+
+    const float* row(size_t t) override {
+        return t < m_len ? m_trailing.data<const float>() + t * m_hidden_size : m_pad;
+    }
+
+private:
+    ov::Tensor m_trailing;
+    size_t m_len;
+    size_t m_hidden_size;
+    const float* m_pad;
+};
+
+/// @brief Trailing rows projected on demand, one thinker token per decode step.
+///
+/// Waits for the token when it has not arrived yet: padding a step whose real token was merely late
+/// would shift every later row against the codes the talker has already committed to, and the
+/// waveform would differ from the batch path's. So the talker runs exactly as far ahead of the
+/// thinker as the text allows, and no further.
+///
+/// Projecting per step costs one small embedding lookup plus one matmul — negligible beside the
+/// talker step it feeds, and it saves buffering every projection.
+class Qwen3OmniSpeechPipeline::StreamingTrailingSupply : public Qwen3OmniSpeechPipeline::TrailingSupply {
+public:
+    StreamingTrailingSupply(Qwen3OmniSpeechPipeline& pipeline, ThinkerStream& stream, size_t seg_start)
+        : m_pipeline{pipeline}, m_stream{stream}, m_seg_start{seg_start} {}
+
+    const float* row(size_t t) override {
+        // Decode step t consumes assistant-segment position t + 4: 0-2 are the header and 3 is the
+        // prefix's last row, which is build_trailing()'s trailing_start.
+        const size_t pos = m_seg_start + 4 + t;
+        if (m_stream.ensure_tokens(pos + 1)) {
+            m_row = m_pipeline.project_thinker_token(m_stream.tokens()[pos]);
+            return m_row.data<const float>();
+        }
+
+        // The thinker is done and the text is spent. tts_eos closes the trailing where the batch path
+        // puts it — at trailing_len - 1 — and every step past that is padded. Derived from
+        // trailing_len rather than from the number of generated tokens so that a thinker which
+        // produced nothing at all still gets tts_eos at step 0, as `max(G, 1)` gives it there.
+        const size_t assistant_len = m_stream.tokens().size() - m_seg_start;
+        const size_t trailing_len = (assistant_len > 4 ? assistant_len - 4 : 0) + 1;
+        return t == trailing_len - 1 ? m_pipeline.m_tts_eos_embed.data<const float>()
+                                     : m_pipeline.m_tts_pad_embed.data<const float>();
+    }
+
+private:
+    Qwen3OmniSpeechPipeline& m_pipeline;
+    ThinkerStream& m_stream;
+    size_t m_seg_start;
+    // Owns the row handed out by the last row() call. The decode loop consumes it before asking for
+    // the next one.
+    ov::Tensor m_row;
+};
+
 TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t>& full_token_ids,
                                                        const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                                        const OmniSpeechStreamerVariant& audio_streamer,
                                                        const OmniTalkerSpeechConfig& talker_speech_config) {
     // Stamp start_time for the speech-side perf record.
     const auto speech_start_time = std::chrono::steady_clock::now();
-    auto build_result = [&](ov::Tensor waveform) -> TalkerResults {
-        TalkerResults result;
-        if (waveform && waveform.get_size() > 0) {
-            result.perf_metrics.num_generated_samples = waveform.get_size();
-            result.waveforms.push_back(std::move(waveform));
-        }
-        const auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - speech_start_time).count();
-        result.perf_metrics.generation_time_ms = static_cast<float>(duration_us) / 1000.0f;
-        return result;
+
+    OPENVINO_ASSERT(talker_speech_config.audio_chunk_frames >= 1,
+                    "audio_chunk_frames must be >= 1 (got ", talker_speech_config.audio_chunk_frames, ")");
+
+    if (!m_talker_available) {
+        GENAI_WARN("Speech: talker not available");
+        return abandon_speech(audio_streamer, speech_start_time);
+    }
+
+    GENAI_DEBUG("Speech: tokens=%zu, intermediate=%zu",
+                full_token_ids.size(),
+                all_intermediate_hidden_states.size());
+
+    auto [talker_input, trailing_text_hidden] =
+        build_talker_input(full_token_ids, all_intermediate_hidden_states, resolve_speaker_embedding(talker_speech_config));
+
+    if (talker_input.get_shape()[1] == 0) {
+        GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");
+        return abandon_speech(audio_streamer, speech_start_time);
+    }
+
+    GENAI_DEBUG("Speech: trailing=[1, %zu, ...]", trailing_text_hidden.get_shape()[1]);
+
+    TensorTrailingSupply trailing(trailing_text_hidden, m_tts_pad_embed);
+    return run_talker(talker_input, trailing, audio_streamer, talker_speech_config, speech_start_time);
+}
+
+TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                                                       const OmniSpeechStreamerVariant& audio_streamer,
+                                                       const OmniTalkerSpeechConfig& talker_speech_config) {
+    // Stamp start_time for the speech-side perf record.
+    const auto speech_start_time = std::chrono::steady_clock::now();
+
+    OPENVINO_ASSERT(text_source, "Speech: text source is null");
+    OPENVINO_ASSERT(talker_speech_config.audio_chunk_frames >= 1,
+                    "audio_chunk_frames must be >= 1 (got ", talker_speech_config.audio_chunk_frames, ")");
+
+    if (!m_talker_available) {
+        GENAI_WARN("Speech: talker not available");
+        return abandon_speech(audio_streamer, speech_start_time);
+    }
+
+    ThinkerStream stream(text_source);
+
+    // The first write carries the whole prompt, so one step is enough to anchor the segment the
+    // talker speaks. An <|im_start|>assistant that the thinker *generates* does not re-anchor it,
+    // where the batch path would: pathological input, and re-anchoring would mean discarding a
+    // prefill and everything already spoken.
+    if (!stream.ensure_tokens(1)) {
+        GENAI_WARN("Speech: thinker stream carried no tokens, cannot generate speech");
+        return abandon_speech(audio_streamer, speech_start_time);
+    }
+    const auto segment = find_last_assistant_segment(stream.tokens());
+    if (!segment) {
+        GENAI_WARN("Speech: no assistant segment in the thinker prompt, cannot generate speech");
+        return abandon_speech(audio_streamer, speech_start_time);
+    }
+    const size_t seg_start = segment->first;
+
+    // The three header rows are the least the talker can be prefilled on. This only blocks when the
+    // prompt was cut off inside the header, which generated tokens can still complete — hence the
+    // wait rather than an immediate exit.
+    if (!stream.ensure_tokens(seg_start + 3)) {
+        GENAI_WARN("Speech: assistant segment shorter than 3 tokens, cannot generate speech");
+        return abandon_speech(audio_streamer, speech_start_time);
+    }
+
+    // Multimodal prompt tokens are projected from thinker hidden states, indexed by absolute
+    // position; every such position is below seg_start. A chunked prefill spreads those states over
+    // several writes, so wait for them instead of falling back to word embeddings on a state that is
+    // merely late. Skipped entirely when the prompt has no multimodal tokens, so a text-only prompt
+    // never waits — not even on a thinker that reports no hidden states at all.
+    const auto& prompt_tokens = stream.tokens();
+    const bool prompt_has_multimodal =
+        std::any_of(prompt_tokens.begin(), prompt_tokens.begin() + seg_start, [this](int64_t token_id) {
+            return is_multimodal_token(token_id);
+        });
+    if (prompt_has_multimodal) {
+        stream.ensure_hidden_states(seg_start);
+    }
+
+    // Row 8 is the thinker's first generated token. This is the one place the talker waits for the
+    // thinker to actually say something; from here on it stays one token ahead of what it speaks.
+    // A thinker that produced nothing leaves it unset, and the prefix is 8 rows instead of 9.
+    const std::optional<int64_t> row8_token = stream.ensure_tokens(seg_start + 4)
+                                                  ? std::optional<int64_t>(stream.tokens()[seg_start + 3])
+                                                  : std::nullopt;
+
+    auto talker_input = build_talker_prefix(stream.tokens(),
+                                           stream.hidden_states(),
+                                           seg_start,
+                                           row8_token,
+                                           resolve_speaker_embedding(talker_speech_config));
+    stream.release_hidden_states();
+
+    GENAI_DEBUG("Speech: streaming prefix from assistant segment at %zu, %zu tokens so far, row8=%s",
+                seg_start,
+                stream.tokens().size(),
+                row8_token ? "yes" : "no");
+
+    StreamingTrailingSupply trailing(*this, stream, seg_start);
+    return run_talker(talker_input, trailing, audio_streamer, talker_speech_config, speech_start_time);
+}
+
+TalkerResults Qwen3OmniSpeechPipeline::run_talker(const ov::Tensor& talker_input,
+                                                  TrailingSupply& trailing,
+                                                  const OmniSpeechStreamerVariant& audio_streamer,
+                                                  const OmniTalkerSpeechConfig& talker_speech_config,
+                                                  std::chrono::steady_clock::time_point speech_start_time) {
+    auto build_result = [speech_start_time](ov::Tensor waveform) -> TalkerResults {
+        return build_speech_result(std::move(waveform), speech_start_time);
     };
 
     // Resolve sampling overrides up front: caller-supplied std::optional<...> takes precedence
@@ -798,58 +1128,18 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     const size_t cp_top_k_resolved = talker_speech_config.cp_top_k.value_or(m_config.cp_top_k);
 
     const size_t chunk_frames = talker_speech_config.audio_chunk_frames;
-    OPENVINO_ASSERT(chunk_frames >= 1, "audio_chunk_frames must be >= 1 (got ", chunk_frames, ")");
-    bool streaming = is_speech_streamer_active(audio_streamer);
-
-    if (!m_talker_available) {
-        GENAI_WARN("Speech: talker not available");
-        if (streaming)
-            end_speech_streamer(audio_streamer);
-        return build_result(ov::Tensor{});
-    }
+    const bool streaming = is_speech_streamer_active(audio_streamer);
 
     // Reseed at every entry so output depends only on inputs + seed, not prior call history.
     // Single shared stream across talker first-code sampling and all CodePredictor steps — one
     // seed fully reproduces the generated audio. Matches the reference torch.Generator contract.
+    // Nothing above this point draws from it: building the prefix only runs embeddings and
+    // projections, so the streaming path's extra waiting cannot perturb the sampling stream.
     m_rng.seed(static_cast<std::mt19937::result_type>(talker_speech_config.rng_seed));
 
-    GENAI_DEBUG("Speech: tokens=%zu, intermediate=%zu",
-                full_token_ids.size(),
-                all_intermediate_hidden_states.size());
-
-    // Resolve speaker embedding from the variant: Tensor path takes the embedding directly;
-    // string path looks up the named speaker in precomputed embeddings.
-    ov::Tensor speaker_embed_to_use;
-    if (std::holds_alternative<ov::Tensor>(talker_speech_config.speaker)) {
-        const auto& tensor = std::get<ov::Tensor>(talker_speech_config.speaker);
-        const auto& shape = tensor.get_shape();
-        OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] == 1 &&
-                            shape[2] == m_config.talker_hidden_size,
-                        "speaker embedding must have shape [1, 1, ",
-                        m_config.talker_hidden_size,
-                        "], got ",
-                        shape);
-        speaker_embed_to_use = tensor;
-    } else {
-        const auto& speaker_name = std::get<std::string>(talker_speech_config.speaker);
-        int64_t speaker_codec_id = resolve_speaker_id(speaker_name);
-        speaker_embed_to_use = m_speaker_embed.at(speaker_codec_id);
-    }
-
-    auto [talker_input, trailing_text_hidden] =
-        build_talker_input(full_token_ids, all_intermediate_hidden_states, speaker_embed_to_use);
-
-    if (talker_input.get_shape()[1] == 0) {
-        GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");
-        if (streaming)
-            end_speech_streamer(audio_streamer);
-        return build_result(ov::Tensor{});
-    }
-
-    GENAI_DEBUG("Speech: talker_input=[1, %zu, %zu], trailing=[1, %zu, ...], streaming=%s, chunk_frames=%zu",
+    GENAI_DEBUG("Speech: talker_input=[1, %zu, %zu], streaming=%s, chunk_frames=%zu",
                 talker_input.get_shape()[1],
                 talker_input.get_shape()[2],
-                trailing_text_hidden.get_shape()[1],
                 streaming ? "true" : "false",
                 chunk_frames);
 
@@ -899,14 +1189,9 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     size_t chunk_cursor = 0;
     std::vector<ov::Tensor> streamed_chunks;
 
-    auto trailing_len = trailing_text_hidden.get_shape()[1];
-    size_t trailing_idx = 0;
     auto history_len = input_len;
     auto num_quantizers = m_config.num_code_groups;
     bool early_stop = false;
-
-    // Reuse the pre-computed tts_pad embedding (talker space) for per-step padding below.
-    const auto& tts_pad_proj = m_tts_pad_embed;
 
     // Pre-allocate codes stacking buffer at max possible size, then use set_shape per call
     m_stack_codes_buf = ov::Tensor(ov::element::i64, {1, num_quantizers, talker_max_tokens});
@@ -1005,17 +1290,12 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
             next_data[i] = cp_data[i];
         }
 
-        if (trailing_idx < trailing_len) {
-            const auto* trail_data = trailing_text_hidden.data<float>() + trailing_idx * hidden_size;
-            for (size_t i = 0; i < hidden_size; i++) {
-                next_data[i] += trail_data[i];
-            }
-            trailing_idx++;
-        } else {
-            auto* pad_data = tts_pad_proj.data<float>();
-            for (size_t i = 0; i < hidden_size; i++) {
-                next_data[i] += pad_data[i];
-            }
+        // One text row per step, in lockstep with `step`: the loop takes exactly one row per
+        // iteration and never skips this point (both breaks above leave the function). The supply
+        // pads itself past the end of the text, so there is nothing to bound here.
+        const auto* trail_data = trailing.row(step);
+        for (size_t i = 0; i < hidden_size; i++) {
+            next_data[i] += trail_data[i];
         }
 
         // F2: Reuse pre-allocated attention mask with set_shape

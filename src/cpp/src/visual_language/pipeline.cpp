@@ -1093,6 +1093,19 @@ VLMDecodedResults VLMPipeline::generate(
 
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::Tensor>& audios,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer,
+    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+) {
+    return m_pimpl->generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
     const ov::AnyMap& config_map
 ) {
     return m_pimpl->generate(prompt, config_map);
@@ -1136,6 +1149,19 @@ VLMDecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const ChatHistory& history,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const std::vector<ov::Tensor>& audios,
+    const std::vector<VideoMetadata>& videos_metadata,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer,
+    const std::shared_ptr<OmniStreamerBase>& omni_streamer
+) {
+    return m_pimpl->generate(history, images, videos, audios, videos_metadata, generation_config, streamer, omni_streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
