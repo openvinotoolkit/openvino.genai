@@ -29,7 +29,7 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "eos_token_id", eos_token_id);
     read_json_param(data, "max_new_tokens", max_new_tokens);
     read_json_param(data, "max_length", max_length);
-    // note that ignore_eos is not present in HF GenerationConfig
+    // note that ignore_eos is not present in HF GenerationConfig   
     read_json_param(data, "ignore_eos", ignore_eos);
     read_json_param(data, "min_new_tokens", min_new_tokens);
     read_json_param(data, "stop_strings", stop_strings);
@@ -96,12 +96,6 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     // tree search
     read_json_param(data, "branching_factor", branching_factor);
     read_json_param(data, "tree_depth", tree_depth);
-
-    // thinking / reasoning
-    read_json_param(data, "enable_thinking", enable_thinking);
-    read_json_param(data, "reasoning_budget_tokens", reasoning_budget_tokens);
-    read_json_param(data, "thinking_start_token_id", thinking_start_token_id);
-    read_json_param(data, "thinking_end_token_id", thinking_end_token_id);
 
     // append EOS to stop_token_ids
     if (eos_token_id != -1)
@@ -175,11 +169,8 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "branching_factor", branching_factor);
     read_anymap_param(properties, "tree_depth", tree_depth);
 
-    // thinking / reasoning
-    read_anymap_param(properties, "enable_thinking", enable_thinking);
-    read_anymap_param(properties, "reasoning_budget_tokens", reasoning_budget_tokens);
-    read_anymap_param(properties, "thinking_start_token_id", thinking_start_token_id);
-    read_anymap_param(properties, "thinking_end_token_id", thinking_end_token_id);
+    // Thinking / reasoning control
+    read_anymap_param(properties, "reasoning_config", reasoning_config);
 }
 
 
@@ -262,6 +253,18 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "backend", backend);
 }
 
+ReasoningConfig::ReasoningConfig(const ov::AnyMap& properties) {
+    update_config(properties);
+}
+
+void ReasoningConfig::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "budget", budget);
+    read_anymap_param(properties, "start_token_id", start_token_id);
+    read_anymap_param(properties, "end_token_id", end_token_id);
+}
+
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     // max_new_tokens has priority over max_length, only if max_new_tokens was not specified use max_length
     if (max_new_tokens != SIZE_MAX) {
@@ -303,28 +306,20 @@ bool GenerationConfig::is_prompt_lookup() const {
 void GenerationConfig::validate() const {
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
 
-    // Thinking / reasoning
-    OPENVINO_ASSERT(reasoning_budget_tokens >= -1,
-        "reasoning_budget_tokens must be -1 (disabled) or a non-negative value, but got ",
-        reasoning_budget_tokens);
-    if (!enable_thinking && (thinking_start_token_id >= 0 || thinking_end_token_id >= 0)) {
-        OPENVINO_ASSERT(thinking_end_token_id >= 0,
-            "thinking_end_token_id must be set when enable_thinking is false "
-            "and thinking_start_token_id is set.");
-        OPENVINO_ASSERT(thinking_start_token_id >= 0,
-            "thinking_start_token_id must be set when enable_thinking is false "
-            "and thinking_end_token_id is set.");
+    // Thinking / Reasoning validation
+    if (reasoning_config.has_value()) {
+        const auto& rc = *reasoning_config;
+        // budget must be -1 (disabled) or non-negative
+        OPENVINO_ASSERT(rc.budget >= -1,
+            "reasoning_config.budget must be -1 (disabled) or a non-negative value, but got ",
+            rc.budget);
+        // If budget >= 0 (enforcement enabled), both start and end token IDs must be set
+        if (rc.budget >= 0) {
+            OPENVINO_ASSERT(rc.start_token_id >= 0 && rc.end_token_id >= 0,
+                "reasoning_config.start_token_id and end_token_id must both be set "
+                "when reasoning_config.budget is enabled (>= 0).");
+        }
     }
-    if (reasoning_budget_tokens >= 0) {
-        OPENVINO_ASSERT(thinking_start_token_id >= 0 && thinking_end_token_id >= 0,
-            "thinking_start_token_id and thinking_end_token_id must both be set "
-            "when reasoning_budget_tokens is enabled (>= 0).");
-    }
-
-    // Stop conditions
-
-    OPENVINO_ASSERT(eos_token_id == -1 || stop_token_ids.find(eos_token_id) != stop_token_ids.end(),
-        "'stop_token_ids' must contain 'eos_token_id'. Please, call 'set_eos_token_id' with 'eos_token_id' value");
 
     auto stop_token_ids_it = std::find_if(stop_token_ids.begin(), stop_token_ids.end(), [] (int64_t stop_token_id) -> bool {
         return stop_token_id < 0;

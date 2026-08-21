@@ -1574,6 +1574,29 @@ class FluxTransformer2DModel:
         ...
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
+class ReasoningConfig:
+    """
+    
+        Configuration for thinking/reasoning control in models that emit
+        <think>/</think> tags (e.g. Qwen3, DeepSeek).
+
+        Reasoning parameters:
+        budget:          Max tokens allowed in the thinking block before forcing </think>.
+                         0 = disable thinking (force immediately), N = limit, -1 = unlimited.
+        start_token_id:  Token ID of the <think> tag.
+        end_token_id:    Token ID of the </think> tag.
+    """
+    budget: int
+    end_token_id: int
+    start_token_id: int
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        ...
+    def __repr__(self) -> str:
+        ...
+
 class GenerationConfig:
     """
     
@@ -1634,6 +1657,7 @@ class GenerationConfig:
     echo: bool
     ignore_eos: bool
     include_stop_str_in_output: bool
+    reasoning_config: openvino_genai.py_openvino_genai.ReasoningConfig | None
     stop_criteria: StopCriteria
     structured_output_config: openvino_genai.py_openvino_genai.StructuredOutputConfig | None
     @typing.overload

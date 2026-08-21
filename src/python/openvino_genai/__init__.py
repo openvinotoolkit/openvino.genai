@@ -57,6 +57,7 @@ from .py_openvino_genai import Adapter, AdapterConfig
 # Generation config
 from .py_openvino_genai import (
     GenerationConfig,
+    ReasoningConfig,
     StructuralTagItem,
     StructuralTagsConfig,
     StructuredOutputConfig,

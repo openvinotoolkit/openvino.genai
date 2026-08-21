@@ -17,6 +17,7 @@ using ov::genai::StopCriteria;
 using ov::genai::StructuralTagItem;
 using ov::genai::StructuralTagsConfig;
 using ov::genai::StructuredOutputConfig;
+using ov::genai::ReasoningConfig;
 using ov::genai::GenerationConfig;
 
 namespace {
@@ -28,6 +29,17 @@ auto stop_criteria_docstring =  R"(
         "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
         "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
         "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.
+)";
+
+auto reasoning_config_docstring = R"(
+    Configuration for thinking/reasoning control in models that emit
+    <think>/</think> tags (e.g. Qwen3, DeepSeek).
+
+    Reasoning parameters:
+    budget:          Max tokens allowed in the thinking block before forcing </think>.
+                     0 = disable thinking (force immediately), N = limit, -1 = unlimited.
+    start_token_id:  Token ID of the <think> tag.
+    end_token_id:    Token ID of the </think> tag.
 )";
 
 auto structured_output_config_docstring = R"(
@@ -194,11 +206,9 @@ char generation_config_docstring[] = R"(
     do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
     num_return_sequences: the number of sequences to generate from a single prompt.
 
-    Thinking / Reasoning control:
-    enable_thinking:         whether to allow thinking/reasoning in model output.
-    reasoning_budget_tokens: max tokens allowed in thinking block before forcing </think> (-1 = unlimited / no budget enforcement, 0 = immediate).
-    thinking_start_token_id: token ID for the thinking start tag (e.g. <think>).
-    thinking_end_token_id:   token ID for the thinking end tag (e.g. </think>).
+    Thinking / reasoning control:
+    reasoning_config: ReasoningConfig for thinking/reasoning control.
+                      budget=0 disables thinking, N limits it, -1 leaves it unlimited.
 
     Tree search parameters:
     branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
@@ -424,6 +434,21 @@ void init_generation_config(py::module_& m) {
         );
 
 
+    // ReasoningConfig binding
+    auto reasoning_config = py::class_<ReasoningConfig>(m, "ReasoningConfig", reasoning_config_docstring)
+        .def(py::init<>())
+        .def(py::init([](py::kwargs kwargs) {
+            return ReasoningConfig(pyutils::kwargs_to_any_map(kwargs));
+        }))
+        .def_readwrite("budget", &ReasoningConfig::budget, "Max tokens allowed in the thinking block before forcing </think> (0 = disable thinking, N = limit, -1 = unlimited)")
+        .def_readwrite("start_token_id", &ReasoningConfig::start_token_id, "Token ID of the <think> tag")
+        .def_readwrite("end_token_id", &ReasoningConfig::end_token_id, "Token ID of the </think> tag")
+        .def("__repr__", [](const ReasoningConfig& self) {
+            return "ReasoningConfig(budget=" + std::to_string(self.budget) +
+                   ", start_token_id=" + std::to_string(self.start_token_id) +
+                   ", end_token_id=" + std::to_string(self.end_token_id) + ")";
+        });
+
     // Binding for GenerationConfig
     py::class_<GenerationConfig>(m, "GenerationConfig", generation_config_docstring)
         .def(py::init<std::filesystem::path>(), py::arg("json_path"), "path where generation_config.json is stored")
@@ -459,10 +484,7 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("max_ngram_size", &GenerationConfig::max_ngram_size)
         .def_readwrite("branching_factor", &GenerationConfig::branching_factor, "Number of branches (top-k) at each level of the candidate tree")
         .def_readwrite("tree_depth", &GenerationConfig::tree_depth, "Lookahead depth of the candidate tree")
-        .def_readwrite("enable_thinking", &GenerationConfig::enable_thinking, "Whether to allow thinking/reasoning in model output")
-        .def_readwrite("reasoning_budget_tokens", &GenerationConfig::reasoning_budget_tokens, "Max tokens allowed in thinking block before forcing </think> (-1 = unlimited / no budget enforcement, 0 = immediate)")
-        .def_readwrite("thinking_start_token_id", &GenerationConfig::thinking_start_token_id, "Token ID for the thinking start tag (e.g. <think>)")
-        .def_readwrite("thinking_end_token_id", &GenerationConfig::thinking_end_token_id, "Token ID for the thinking end tag (e.g. </think>)")
+        .def_readwrite("reasoning_config", &GenerationConfig::reasoning_config, "Thinking/reasoning control configuration (ReasoningConfig)")
         .def_readwrite("include_stop_str_in_output", &GenerationConfig::include_stop_str_in_output)
         .def_readwrite("stop_token_ids", &GenerationConfig::stop_token_ids)
         .def_readwrite("structured_output_config", &GenerationConfig::structured_output_config)

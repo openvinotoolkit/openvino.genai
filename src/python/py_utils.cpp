@@ -503,6 +503,8 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs) {
             params.insert(map.begin(), map.end());
         } else if (py::isinstance<ov::genai::StructuredOutputConfig>(value)) {
             params[key] = py::cast<ov::genai::StructuredOutputConfig>(value);
+        } else if (py::isinstance<ov::genai::ReasoningConfig>(value)) {
+            params[key] = py::cast<ov::genai::ReasoningConfig>(value);
         } else if (value.is_none() && key == "taylorseer_config") {
             params[key] = ov::Any{};
         } else {
