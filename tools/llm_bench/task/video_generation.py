@@ -56,7 +56,7 @@ def collect_input_args(
     if "negative_prompt" in input_param:
         input_args["negative_prompt"] = input_param["negative_prompt"]
 
-    input_args["max_sequence_length"] = 256
+    input_args["max_sequence_length"] = 128
     return input_args
 
 
