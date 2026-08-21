@@ -135,6 +135,10 @@ std::pair<ov::Tensor, std::string> FunASR::build_input_ids(const size_t num_audi
 ASRGenerationConfig FunASR::resolve_generation_config(
     const std::optional<ASRGenerationConfig>& generation_config) const {
     ASRGenerationConfig config = generation_config.value_or(m_generation_config);
+    if (config.stop_token_ids.empty()) {
+        config.stop_token_ids = m_generation_config.stop_token_ids;
+    }
+
     if (config.eos_token_id == -1) {
         config.set_eos_token_id(m_generation_config.eos_token_id);
     }

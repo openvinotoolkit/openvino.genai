@@ -3,7 +3,6 @@ import importlib.util
 import pytest
 
 
-# todo for tests: install pip install -U git+https://github.com/openvino-agent/optimum-intel.git@b841dde559e306a0535f55a5cd4432239ca18c09
 def skip_if_fun_asr_package_is_unavailable():
     if importlib.util.find_spec("funasr") is None:
         pytest.skip("The 'funasr' package is required to export FunASR models.")

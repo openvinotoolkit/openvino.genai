@@ -21,7 +21,7 @@
 - name: ASR (Fun-ASR)
   cmd: |-
     # optimum intel master commit with Fun-ASR support
-    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@b841dde559e306a0535f55a5cd4432239ca18c09"
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@e1de5beecfd0c3ae6047ea22cea4a4cad4307aff"
     python -m pip install transformers==4.57.6 funasr==1.4.1
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
   timeout: 20
