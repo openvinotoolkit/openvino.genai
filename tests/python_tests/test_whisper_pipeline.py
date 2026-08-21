@@ -1078,3 +1078,388 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test, pipeline
 
     assert expected == result_handler.decode(genai_pipe.get_tokenizer())
     result_handler.reset()
+
+
+#
+# Batched (multi-audio) generation.
+#
+# WhisperPipeline returns one WhisperDecodedResults per audio; ASRPipeline returns a single ASRDecodedResults whose
+# vector fields hold one entry per audio. The accessors below normalize only that difference.
+#
+
+
+def assert_batch_result_shape(batched, pipeline_type: PipelineType, expected_size: int):
+    if pipeline_type == PipelineType.ASR:
+        assert not isinstance(batched, list)
+        assert len(batched.texts) == expected_size
+        assert len(batched.scores) == expected_size
+        assert len(batched.languages) == expected_size
+        return
+
+    assert isinstance(batched, list)
+    assert len(batched) == expected_size
+    for result in batched:
+        assert len(result.texts) == 1
+        assert len(result.scores) == 1
+
+
+def get_batch_texts(batched, pipeline_type: PipelineType) -> list[str]:
+    if pipeline_type == PipelineType.ASR:
+        return list(batched.texts)
+    return [result.texts[0] for result in batched]
+
+
+def get_batch_languages(batched, pipeline_type: PipelineType) -> list[str]:
+    if pipeline_type == PipelineType.ASR:
+        return list(batched.languages)
+    return [result.language for result in batched]
+
+
+def get_batch_perf_metrics(batched, pipeline_type: PipelineType):
+    # all rows share the aggregate metrics of the one batched execution
+    return batched.perf_metrics if pipeline_type == PipelineType.ASR else batched[0].perf_metrics
+
+
+# Only the combinations that add distinct coverage, not the full model x pipeline x sample-pair cross product.
+BATCH_REFERENCE_CASES = [
+    (("openai/whisper-tiny", PipelineType.WHISPER), (0, 1)),
+    # reversed: catches a row-0 assumption
+    (("openai/whisper-tiny", PipelineType.WHISPER), (1, 0)),
+    # unequal transcript lengths: the early finisher must not absorb filler-row tokens
+    (("openai/whisper-tiny", PipelineType.WHISPER), (1, 2)),
+    # ASR result mapping
+    (("openai/whisper-tiny", PipelineType.ASR), (0, 1)),
+    # non-multilingual start-of-transcript path
+    (("distil-whisper/distil-small.en", PipelineType.ASR), (0, 1)),
+]
+
+
+def get_batch_reference_case_params():
+    return [
+        pytest.param(
+            model_pipeline_pair,
+            sample_ids,
+            id=f"{get_model_pipeline_pair_id(model_pipeline_pair)}_samples_{sample_ids[0]}_{sample_ids[1]}",
+        )
+        for model_pipeline_pair, sample_ids in BATCH_REFERENCE_CASES
+    ]
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture,sample_ids", get_batch_reference_case_params(), indirect=["pipelines_fixture"]
+)
+def test_batch_matches_single_audio_references(pipelines_fixture, sample_ids):
+    """A batch must reproduce, row by row and in input order, what each audio produces on its own."""
+    _, genai_pipe, _, pipeline_type = pipelines_fixture
+
+    samples = [get_audio_dataset(long_form=False)[sample_id] for sample_id in sample_ids]
+
+    references = [genai_pipe.generate(sample, max_new_tokens=100) for sample in samples]
+    reference_texts = [reference.texts[0] for reference in references]
+    reference_languages = [
+        reference.languages[0] if hasattr(reference, "languages") else reference.language for reference in references
+    ]
+    # a batch collapsed onto one audio would pass the per-row comparison if both audios transcribed alike
+    assert reference_texts[0] != reference_texts[1]
+
+    batched = genai_pipe.generate(samples, max_new_tokens=100)
+
+    assert_batch_result_shape(batched, pipeline_type, len(samples))
+    assert get_batch_texts(batched, pipeline_type) == reference_texts
+    assert get_batch_languages(batched, pipeline_type) == reference_languages
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_batch_of_one_delegates_to_single_audio(model_descr, sample_from_dataset, pipeline_type):
+    """generate([audio]) must delegate to the single-audio path and behave exactly like generate(audio)."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+
+    single = genai_pipe.generate(sample_from_dataset, max_new_tokens=100)
+    batched = genai_pipe.generate([sample_from_dataset], max_new_tokens=100)
+
+    single_language = single.languages[0] if hasattr(single, "languages") else single.language
+
+    assert_batch_result_shape(batched, pipeline_type, 1)
+    assert get_batch_texts(batched, pipeline_type) == [single.texts[0]]
+    assert get_batch_languages(batched, pipeline_type) == [single_language]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+def test_batch_is_genuinely_batched(model_descr, pipeline_type):
+    """B=2 must run one batched encoder inference and one shared decoder loop, not one run per audio."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+    samples = get_audio_dataset(long_form=False)[:2]
+
+    reference_steps = []
+    for sample in samples:
+        reference_metrics = get_raw_metrics(genai_pipe.generate(sample, max_new_tokens=100).perf_metrics, pipeline_type)
+        reference_steps.append(len(reference_metrics.decode_inference_durations))
+
+    batched = genai_pipe.generate(samples, max_new_tokens=100)
+    raw_metrics = get_raw_metrics(get_batch_perf_metrics(batched, pipeline_type), pipeline_type)
+
+    assert len(raw_metrics.encode_inference_durations) == 1
+    # features are still extracted per audio
+    assert len(raw_metrics.features_extraction_durations) == 2
+
+    # a shared loop runs as long as the slowest row, never the sum of both: a sequential facade would hit the sum
+    batched_steps = len(raw_metrics.decode_inference_durations)
+    assert batched_steps >= max(reference_steps)
+    assert batched_steps < sum(reference_steps)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+def test_batch_language_autodetect_is_per_row(model_descr, pipeline_type):
+    """Automatic language detection must run independently for every row of the batch."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+    french_audio = get_multilingual_audio_dataset("fr")[0]
+    german_audio = get_multilingual_audio_dataset("de")[0]
+
+    forward = genai_pipe.generate([french_audio, german_audio], max_new_tokens=30)
+    assert_batch_result_shape(forward, pipeline_type, 2)
+    assert get_batch_languages(forward, pipeline_type) == ["fr", "de"]
+
+    # reversed: detecting row 0 and reusing it for the whole batch would survive the forward order alone
+    reversed_ = genai_pipe.generate([german_audio, french_audio], max_new_tokens=30)
+    assert_batch_result_shape(reversed_, pipeline_type, 2)
+    assert get_batch_languages(reversed_, pipeline_type) == ["de", "fr"]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+def test_batch_forced_language(model_descr, pipeline_type):
+    """A configured language is applied consistently to every row of the batch."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+    samples = get_audio_dataset(long_form=False)[:2]
+
+    reference = genai_pipe.generate(samples[0], max_new_tokens=100, language="en")
+    batched = genai_pipe.generate(samples, max_new_tokens=100, language="en")
+
+    assert_batch_result_shape(batched, pipeline_type, 2)
+    assert get_batch_languages(batched, pipeline_type) == ["en", "en"]
+    assert get_batch_texts(batched, pipeline_type)[0] == reference.texts[0]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_batch_of_one_still_accepts_multinomial_sampling(model_descr, sample_from_dataset, pipeline_type):
+    """The greedy-only batch guard must apply after the B == 1 delegation, not before it."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+
+    config = genai_pipe.get_generation_config()
+    config.max_new_tokens = 10
+    config.do_sample = True
+    config.top_k = 5
+
+    batched = genai_pipe.generate([sample_from_dataset], config)
+
+    assert_batch_result_shape(batched, pipeline_type, 1)
+    assert get_batch_texts(batched, pipeline_type)[0]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
+def test_batch_of_one_still_accepts_beam_search(model_descr, sample_from_dataset, pipeline_type):
+    """The greedy-only batch guard must apply after the B == 1 delegation, not before it."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+
+    config = genai_pipe.get_generation_config()
+    config.max_new_tokens = 10
+    config.num_beams = 2
+    config.num_return_sequences = 1
+
+    single = genai_pipe.generate(sample_from_dataset, config)
+    batched = genai_pipe.generate([sample_from_dataset], config)
+
+    assert_batch_result_shape(batched, pipeline_type, 1)
+    assert get_batch_texts(batched, pipeline_type)[0]
+    # beam search is deterministic, so delegation must reproduce the single-audio transcript exactly
+    assert get_batch_texts(batched, pipeline_type) == [single.texts[0]]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_batch_of_one_still_accepts_streamer(model_descr, sample_from_dataset, pipeline_type):
+    """The streaming batch guard must apply after the B == 1 delegation, not before it."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+
+    streamed = []
+
+    def streamer(subword):
+        streamed.append(subword)
+        return ov_genai.StreamingStatus.RUNNING
+
+    batched = genai_pipe.generate([sample_from_dataset], max_new_tokens=10, streamer=streamer)
+
+    assert_batch_result_shape(batched, pipeline_type, 1)
+    assert streamed
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_batch_python_overload_dispatch(model_descr, sample_from_dataset):
+    """Which pybind overload a Python argument selects."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=PipelineType.WHISPER)
+
+    # Flat input selects the single-audio overload; nested input selects the batch overload.
+    assert not isinstance(genai_pipe.generate(sample_from_dataset, max_new_tokens=10), list)
+    assert not isinstance(genai_pipe.generate(sample_from_dataset.tolist(), max_new_tokens=10), list)
+
+    assert isinstance(genai_pipe.generate([sample_from_dataset], max_new_tokens=10), list)
+    assert isinstance(genai_pipe.generate([sample_from_dataset.tolist()], max_new_tokens=10), list)
+
+    # [] binds to the flat single-audio overload, not to the C++ empty-batch overload
+    with pytest.raises(RuntimeError, match="raw_speech too short"):
+        genai_pipe.generate([], max_new_tokens=10)
+
+
+# Generation config that batch size > 1 rejects, with the message substring identifying the reason.
+BATCH_UNSUPPORTED_CONFIGS = [
+    pytest.param({"return_timestamps": True}, "not supported for batched generation", id="return_timestamps"),
+    pytest.param(
+        # 'alignment_heads' is required for word-timestamp config validation to reach the batch guard
+        {"word_timestamps": True, "alignment_heads": [[0, 0]]},
+        "not supported for batched generation",
+        id="word_timestamps",
+    ),
+    pytest.param({"num_beams": 2, "num_return_sequences": 1}, "greedy decoding only", id="beam_search"),
+    pytest.param({"do_sample": True, "top_k": 5}, "greedy decoding only", id="multinomial_sampling"),
+]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("config_overrides,expected_message", BATCH_UNSUPPORTED_CONFIGS)
+def test_batch_rejects_unsupported_config(model_descr, config_overrides, expected_message, pipeline_type):
+    """Initial restrictions on batch size > 1 must raise, never be silently downgraded to sequential runs."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+    samples = get_audio_dataset(long_form=False)[:2]
+
+    # start from the pipeline's own config to keep model specific token ids
+    config = genai_pipe.get_generation_config()
+    config.max_new_tokens = 10
+    for name, value in config_overrides.items():
+        setattr(config, name, value)
+
+    with pytest.raises(RuntimeError, match=expected_message):
+        genai_pipe.generate(samples, config)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+def test_batch_rejects_streamer(model_descr, pipeline_type):
+    """Streaming is rejected for true batches in the initial batching implementation."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+    samples = get_audio_dataset(long_form=False)[:2]
+
+    def streamer(subword):
+        return ov_genai.StreamingStatus.RUNNING
+
+    with pytest.raises(RuntimeError, match="Streaming is only supported"):
+        genai_pipe.generate(samples, max_new_tokens=10, streamer=streamer)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+def test_batch_rejects_auto_device(model_descr, pipeline_type):
+    """Batching is CPU/GPU only, and the device guard must sit after the B == 1 delegation."""
+    _, path, _, _ = read_asr_model(model_descr, pipeline_type=pipeline_type)
+    genai_pipe = get_pipeline_cls(pipeline_type)(path, "AUTO", ENABLE_MMAP=False)
+    samples = get_audio_dataset(long_form=False)[:2]
+
+    with pytest.raises(RuntimeError, match="supported on CPU and GPU only"):
+        genai_pipe.generate(samples, max_new_tokens=10)
+
+    # a single audio on a meta device keeps working: the guard must not move above the delegation
+    single = genai_pipe.generate([samples[0]], max_new_tokens=10)
+    assert_batch_result_shape(single, pipeline_type, 1)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"long_form": True, "sample_id": 0}], indirect=True)
+def test_batch_rejects_long_form(model_descr, sample_from_dataset, pipeline_type):
+    """Batching is short-form only: a long-form row must be rejected, never silently truncated."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+    short_sample = get_audio_dataset(long_form=False)[0]
+
+    assert len(sample_from_dataset) > 30 * 16000
+
+    with pytest.raises(RuntimeError, match="short-form audio only"):
+        genai_pipe.generate([short_sample, sample_from_dataset], max_new_tokens=10)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"long_form": True, "sample_id": 0}], indirect=True)
+def test_batch_of_one_still_accepts_long_form(model_descr, sample_from_dataset, pipeline_type):
+    """The short-form batch guard must apply after the B == 1 delegation, not before it."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=pipeline_type)
+
+    assert len(sample_from_dataset) > 30 * 16000
+
+    single = genai_pipe.generate(sample_from_dataset, max_new_tokens=100)
+    batched = genai_pipe.generate([sample_from_dataset], max_new_tokens=100)
+
+    assert_batch_result_shape(batched, pipeline_type, 1)
+    assert get_batch_texts(batched, pipeline_type)[0]
+    # the long-form path must still run in full, not be truncated to the first short-form window
+    assert get_batch_texts(batched, pipeline_type) == [single.texts[0]]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_asr_batch_of_one_preserves_chunks_nesting(model_descr, sample_from_dataset):
+    """ASRDecodedResults.chunks must keep one outer entry per audio for a nested batch of one."""
+    _, _, _, genai_pipe = read_asr_model(model_descr, pipeline_type=PipelineType.ASR)
+
+    single = genai_pipe.generate(sample_from_dataset, max_new_tokens=100, return_timestamps=True)
+    nested = genai_pipe.generate([sample_from_dataset], max_new_tokens=100, return_timestamps=True)
+
+    assert single.chunks is not None
+    assert nested.chunks is not None
+    assert len(single.chunks) == 1
+    assert len(nested.chunks) == 1
+    assert [chunk.text for chunk in nested.chunks[0]] == [chunk.text for chunk in single.chunks[0]]
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
+def test_batch_of_one_still_accepts_word_timestamps(model_descr, sample_from_dataset, pipeline_type):
+    """The word-timestamp batch guard must apply after the B == 1 delegation, not before it."""
+    genai_pipe = read_asr_model(model_descr, word_timestamps=True, pipeline_type=pipeline_type)[3]
+
+    generate_kwargs = {"max_new_tokens": 100, "return_timestamps": True, "word_timestamps": True}
+    single = genai_pipe.generate(sample_from_dataset, **generate_kwargs)
+    nested = genai_pipe.generate([sample_from_dataset], **generate_kwargs)
+
+    if pipeline_type == PipelineType.ASR:
+        # one outer entry per audio, exactly as the flat single-audio call already produces
+        assert len(nested.words) == 1
+        single_words, nested_words = single.words[0], nested.words[0]
+    else:
+        assert len(nested) == 1
+        single_words, nested_words = single.words, nested[0].words
+
+    def to_comparable(words):
+        return [
+            (get_word_text(word, pipeline_type), round(word.start_ts, 3), round(word.end_ts, 3), list(word.token_ids))
+            for word in words
+        ]
+
+    assert len(nested_words) > 0
+    assert to_comparable(nested_words) == to_comparable(single_words)
+
+
+@pytest.mark.parametrize(
+    "pipelines_fixture",
+    get_model_pipeline_pair_params([(QWEN3_ASR_MODEL_ID, PipelineType.ASR)]),
+    indirect=True,
+)
+def test_qwen3_asr_rejects_batch(pipelines_fixture):
+    """Qwen3-ASR has no batched inference path, so it must reject B > 1 instead of looping sequentially."""
+    _, genai_pipe, _, _ = pipelines_fixture
+
+    sample_a, sample_b = get_audio_dataset(long_form=False)[:2]
+
+    nested = genai_pipe.generate([sample_a], max_new_tokens=10)
+    assert len(nested.texts) == 1
+
+    with pytest.raises(RuntimeError, match="does not support batched audio input"):
+        genai_pipe.generate([sample_a, sample_b], max_new_tokens=10)

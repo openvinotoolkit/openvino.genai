@@ -34,23 +34,33 @@ namespace common_utils = ov::genai::common_bindings::utils;
 namespace {
 
 auto asr_generate_docstring = R"(
-    High level generate that receives raw speech as a vector of floats and returns decoded output.
+    High level generate that receives either a single raw speech input or a batch of independent raw speech inputs,
+    and returns decoded output.
 
-    :param audio_inputs: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
-    :type audio_inputs: list[float]
+    :param audio_inputs: either a single audio as a list of floats, or a batch of independent audios as a list of
+                         lists of floats. Each audio is required to be normalized to near [-1, 1] range and have
+                         16k Hz sampling rate.
+    :type audio_inputs: list[float] or list[list[float]]
 
-    :param generation_config: generation_config
+    :param generation_config: generation_config, shared by every audio of the batch
     :type generation_config: ASRGenerationConfig
 
-    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
-                     Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
-    :type : Callable[[str], bool], ov.genai.StreamerBase
+    :param streamer: streamer either as a lambda returning a `StreamingStatus` (or an equivalent int, or `None` to
+                     keep generating) that signals whether generation should continue, be stopped or be cancelled.
+                     Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only,
+                     and only for a single audio
+    :type streamer: Callable[[str], StreamingStatus | int | None], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to ASRGenerationConfig fields.
     :type : dict
 
-    :return: return results in decoded form
+    :return: return results in decoded form. A single ASRDecodedResults is returned in both cases: its vector fields
+             (texts, scores, languages, and chunks/words when present) hold one entry per input audio, in input
+             order, so index i corresponds to audio_inputs[i].
     :rtype: ASRDecodedResults
+
+    Batched inference is model dependent. Whisper supports native batched generation for the supported configurations;
+    Qwen3-ASR does not currently support batch sizes greater than one.
 )";
 
 auto asr_decoded_results_docstring = R"(
@@ -359,7 +369,8 @@ void init_asr_pipeline(py::module_& m) {
                 return call_asr_common_generate(pipe, audio_inputs, generation_config, streamer, kwargs);
             },
             py::arg("audio_inputs"),
-            "List of floats representing raw speech audio. "
+            "Either a list of floats representing a single raw speech audio, or a list of such lists representing "
+            "a batch of independent audios. "
             "Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.",
             py::arg("generation_config") = std::nullopt,
             "generation_config",
