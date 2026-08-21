@@ -56,6 +56,47 @@ public:
     // - unset: default to espeak-ng G2P fallback.
     std::optional<std::filesystem::path> phonemize_fallback_model_dir;
 
+    // ---------------------------------------------------------------------
+    // Qwen3-TTS-specific parameters
+    // ---------------------------------------------------------------------
+
+    // Optional predefined speaker name for CustomVoice variants.
+    std::string speaker;
+
+    // Optional instruction text that controls speaking style.
+    std::string instruct;
+
+    // Qwen prompt assembly mode.
+    // - true: non-streaming prompt assembly (default).
+    // - false: streaming-style prompt assembly.
+    bool non_streaming_mode = true;
+
+    // Whether to sample residual code groups via subtalker (code predictor).
+    bool subtalker_dosample = true;
+
+    // Top-k for subtalker sampling.
+    uint32_t subtalker_top_k = 50;
+
+    // Top-p for subtalker sampling.
+    float subtalker_top_p = 1.0f;
+
+    // Temperature for subtalker sampling.
+    float subtalker_temperature = 0.9f;
+
+    // Qwen3 Base voice-clone reference transcript for ICL mode.
+    std::string voice_clone_ref_text;
+
+    // Qwen3 Base voice-clone reference audio waveform for internal prompt extraction.
+    // Expected tensor shape: [T], [1, T], or [1, 1, T].
+    // Expected element type: f32.
+    // Expected sample rate: 24000 Hz.
+    // OV GenAI does not resample or decode files for this property.
+    ov::Tensor voice_clone_ref_audio;
+
+    // Qwen3 Base voice-clone reference codec ids for ICL mode.
+    // Expected shape: [T, G] or [1, T, G].
+    ov::Tensor voice_clone_ref_codec_ids;
+
     void update_generation_config(const ov::AnyMap& config_map = {}) override;
 
     template <typename... Properties>
@@ -77,6 +118,18 @@ static constexpr ov::Property<float> speed{"speed"};
 static constexpr ov::Property<std::string> speech_language{"language"};
 static constexpr ov::Property<uint32_t> max_phoneme_length{"max_phoneme_length"};
 static constexpr ov::Property<std::filesystem::path> phonemize_fallback_model_dir{"phonemize_fallback_model_dir"};
+
+static constexpr ov::Property<std::string> speaker{"speaker"};
+static constexpr ov::Property<std::string> instruct{"instruct"};
+static constexpr ov::Property<bool> non_streaming_mode{"non_streaming_mode"};
+static constexpr ov::Property<bool> subtalker_dosample{"subtalker_dosample"};
+static constexpr ov::Property<uint32_t> subtalker_top_k{"subtalker_top_k"};
+static constexpr ov::Property<float> subtalker_top_p{"subtalker_top_p"};
+static constexpr ov::Property<float> subtalker_temperature{"subtalker_temperature"};
+
+static constexpr ov::Property<std::string> voice_clone_ref_text{"voice_clone_ref_text"};
+static constexpr ov::Property<ov::Tensor> voice_clone_ref_audio{"voice_clone_ref_audio"};
+static constexpr ov::Property<ov::Tensor> voice_clone_ref_codec_ids{"voice_clone_ref_codec_ids"};
 
 }  // namespace genai
 }  // namespace ov
