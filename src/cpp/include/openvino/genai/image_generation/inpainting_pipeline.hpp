@@ -22,6 +22,8 @@
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
 #include "openvino/genai/image_generation/sd3_transformer_2d_model.hpp"
 #include "openvino/genai/image_generation/flux_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/flux2_transformer_2d_model.hpp"
+#include "openvino/genai/image_generation/qwen3_text_encoder.hpp"
 
 namespace ov {
 namespace genai {
