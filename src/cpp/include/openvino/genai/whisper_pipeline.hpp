@@ -184,6 +184,45 @@ public:
     }
     WhisperDecodedResults generate(const RawSpeechInput& raw_speech_input, const ov::AnyMap& config_map);
 
+    /**
+     * @brief Generates transcriptions for a batch of independent raw speech inputs.
+     *
+     * Results preserve input order. A single-element batch uses the existing single-audio behavior.
+     * For batch sizes greater than one: short-form and long-form audio, greedy decoding, CPU/GPU,
+     * segment-level timestamps (`return_timestamps`) and per-input language detection are supported;
+     * beam search, sampling (`do_sample`), streaming, word timestamps, and non-CPU/GPU devices are not.
+     * Unsupported configurations are rejected.
+     *
+     * Performance metrics describe the aggregate batched execution and are shared by all returned results.
+     * They are not per-audio metrics.
+     *
+     * @param raw_speech_inputs Independent raw speech inputs, each normalized to near [-1, 1] with a 16 kHz
+     * sampling rate.
+     * @param generation_config Optional generation configuration shared by all inputs.
+     * @param streamer Optional streamer, supported only for a single-element batch.
+     * @return One WhisperDecodedResults per input, in input order.
+     */
+    std::vector<WhisperDecodedResults> generate(const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                                OptionalWhisperGenerationConfig generation_config = std::nullopt,
+                                                StreamerVariant streamer = std::monostate());
+    /**
+     * @brief Batched generate overload accepting OpenVINO properties.
+     *
+     * Performance metrics describe the aggregate batched execution and are shared by all returned results.
+     *
+     * @param raw_speech_inputs Independent raw speech inputs.
+     * @param properties Generation properties shared by all inputs.
+     * @return One WhisperDecodedResults per input, in input order.
+     */
+    template <typename... Properties>
+    util::EnableIfAllStringAny<std::vector<WhisperDecodedResults>, Properties...> generate(
+        const std::vector<RawSpeechInput>& raw_speech_inputs,
+        Properties&&... properties) {
+        return generate(raw_speech_inputs, AnyMap{std::forward<Properties>(properties)...});
+    }
+    std::vector<WhisperDecodedResults> generate(const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                                const ov::AnyMap& config_map);
+
     ov::genai::Tokenizer get_tokenizer();
     WhisperGenerationConfig get_generation_config() const;
     void set_generation_config(const WhisperGenerationConfig& config);

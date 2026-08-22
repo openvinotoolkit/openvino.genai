@@ -48,5 +48,20 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        Sampler& sampler,
                                        Tokenizer& tokenizer);
 
+/**
+ * Runs native batched (B > 1) Whisper generation over the shared scheduler and decoder loop, supporting
+ * short-form and long-form audio with greedy decoding. Returns one result per input in input order.
+ * Performance metrics describe the aggregate batch execution.
+ */
+std::vector<WhisperGenerateResult> whisper_generate_batch(const ov::genai::WhisperGenerationConfig& config,
+                                                          const ov::genai::WhisperConfig& model_config,
+                                                          const WhisperContextTokens& context_tokens,
+                                                          const std::vector<RawSpeechInput>& raw_speeches,
+                                                          ov::InferRequest& encoder,
+                                                          std::shared_ptr<WhisperDecoder> decoder,
+                                                          WhisperFeatureExtractor& feature_extractor,
+                                                          Sampler& sampler,
+                                                          Tokenizer& tokenizer);
+
 }  // namespace genai
 }  // namespace ov

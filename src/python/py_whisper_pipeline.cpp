@@ -46,15 +46,48 @@ auto whisper_generate_docstring = R"(
     :param generation_config: generation_config
     :type generation_config: WhisperGenerationConfig or a dict
 
-    :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
+    :param streamer: streamer either as a lambda returning a `StreamingStatus` (or an equivalent int, or `None` to
+                     keep generating) that signals whether generation should continue, be stopped or be cancelled.
                      Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
-    :type : Callable[[str], bool], ov.genai.StreamerBase
+    :type streamer: Callable[[str], StreamingStatus | int | None], ov.genai.StreamerBase
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
     :type : dict
 
     :return: return results in decoded form
     :rtype: WhisperDecodedResults
+)";
+
+auto whisper_batch_generate_docstring = R"(
+    High level generate that receives a batch of independent raw speech inputs and returns one decoded output per
+    input. Audios are processed using native batched Whisper generation rather than sequential per-audio calls,
+    using the model's first (batch) dimension rather than looping over the inputs.
+
+    :param raw_speech_input: inputs in the form of a list of independent raw speech inputs, each a list of floats.
+                             Each one is required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
+    :type raw_speech_input: list[list[float]]
+
+    :param generation_config: generation_config, shared by every audio of the batch
+    :type generation_config: WhisperGenerationConfig or a dict
+
+    :param streamer: streamer either as a lambda returning a `StreamingStatus` (or an equivalent int, or `None` to
+                     keep generating) that signals whether generation should continue, be stopped or be cancelled.
+                     Only supported when a single audio is passed, rejected for batch size > 1
+    :type streamer: Callable[[str], StreamingStatus | int | None], ov.genai.StreamerBase
+
+    :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
+    :type : dict
+
+    :return: one result per input audio, in input order: result[i] corresponds to raw_speech_input[i]
+    :rtype: list[WhisperDecodedResults]
+
+    Performance metrics describe the aggregate batched execution and are shared by all returned results, so
+    `result[i].perf_metrics` is not a per-audio measurement.
+
+    Batch size > 1 supports short-form and long-form audio, greedy decoding, CPU/GPU, return_timestamps, and
+    per-row language detection. It does not support beam search, sampling (do_sample), streaming, word
+    timestamps, or non-CPU/GPU devices; unsupported combinations raise instead of being processed sequentially.
+    A batch of size 1 uses the existing single-audio generation path and returns a one-element list.
 )";
 
 auto whisper_decoded_results_docstring = R"(
@@ -273,6 +306,24 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
     return py::cast(res);
 }
 
+py::object call_whisper_batch_generate(WhisperPipeline& pipe,
+                                       const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                       const OptionalWhisperGenerationConfig& config,
+                                       const pyutils::PyBindStreamerVariant& py_streamer,
+                                       const py::kwargs& kwargs) {
+    OptionalWhisperGenerationConfig base_config = config.has_value() ? config : pipe.get_generation_config();
+
+    auto updated_config = update_whisper_config_from_kwargs(base_config, kwargs);
+
+    ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
+    std::vector<ov::genai::WhisperDecodedResults> res;
+    {
+        py::gil_scoped_release rel;
+        res = pipe.generate(raw_speech_inputs, updated_config, streamer);
+    }
+    return py::cast(res);
+}
+
 }  // namespace
 
 void init_whisper_pipeline(py::module_& m) {
@@ -324,7 +375,9 @@ void init_whisper_pipeline(py::module_& m) {
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
-        .def("get_word_level_timestamps_processing_duration", &WhisperPerfMetrics::get_word_level_timestamps_processing_duration)
+        .def(
+            "get_word_level_timestamps_processing_duration",
+            &WhisperPerfMetrics::get_word_level_timestamps_processing_duration)
         .def("get_encode_inference_duration", &WhisperPerfMetrics::get_encode_inference_duration)
         .def("get_decode_inference_duration", &WhisperPerfMetrics::get_decode_inference_duration)
         .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
@@ -402,6 +455,28 @@ void init_whisper_pipeline(py::module_& m) {
             py::arg("streamer") = std::monostate(),
             "streamer",
             (whisper_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str())
+
+        // Registered after the single-audio overload so that a flat sequence of floats keeps binding to it, while
+        // a sequence of sequences selects batched generation.
+        .def(
+            "generate",
+            [](WhisperPipeline& pipe,
+               const std::vector<RawSpeechInput>& raw_speech_inputs,
+               const OptionalWhisperGenerationConfig& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer,
+               const py::kwargs& kwargs) -> py::typing::List<ov::genai::WhisperDecodedResults> {
+                return call_whisper_batch_generate(pipe, raw_speech_inputs, generation_config, streamer, kwargs);
+            },
+            py::arg("raw_speech_input"),
+            "List of independent raw speech audios, each a list of floats. "
+            "Each one is required to be normalized to near [-1, 1] range and have 16k Hz sampling rate. "
+            "All audios are transcribed with a single batched encoder and decoder inference loop. "
+            "Returns one result per input audio, in input order.",
+            py::arg("generation_config") = std::nullopt,
+            "generation_config, shared by every audio of the batch",
+            py::arg("streamer") = std::monostate(),
+            "streamer, only supported when a single audio is passed",
+            (whisper_batch_generate_docstring + std::string(" \n ") + whisper_generation_config_docstring).c_str())
 
         .def("get_tokenizer", &WhisperPipeline::get_tokenizer)
         .def("get_generation_config", &WhisperPipeline::get_generation_config, py::return_value_policy::copy)

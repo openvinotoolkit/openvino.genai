@@ -210,6 +210,77 @@ ASR models can automatically detect the language of the input audio, or you can 
     </TabItemJS>
 </LanguageTabs>
 
+### Batched Inference
+
+Several independent audios can be transcribed in one call using native batched Whisper inference rather than processing each audio sequentially.
+
+#### Using `ASRPipeline`
+
+`ASRPipeline.generate()` accepts either a single audio or a list of independent audios:
+
+```python
+pipe = ov_genai.ASRPipeline(model_path, "CPU")
+
+audio_0 = read_wav("speech_sample.wav")
+audio_1 = read_wav("french_sample.wav")
+
+audios = [audio_0, audio_1]
+result = pipe.generate(audios, max_new_tokens=100)
+
+for text, language in zip(result.texts, result.languages):
+    print(language, text)
+```
+
+A batched call returns a single `ASRDecodedResults`. Its per-audio vector fields are indexed by input audio, so index `i` corresponds to input audio `i`:
+
+- `texts[i]`
+- `scores[i]`
+- `languages[i]`
+- `chunks[i]` / `words[i]`, when present
+
+#### Using `WhisperPipeline`
+
+`WhisperPipeline.generate()` provides a dedicated batched overload:
+
+```python
+pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+results = pipe.generate([audio_0, audio_1], max_new_tokens=100)
+
+for result in results:
+    print(result.language, result.texts[0])
+```
+
+`WhisperPipeline.generate([...])` returns `list[WhisperDecodedResults]` with one result per input audio, preserving input order.
+
+#### Limitations for Batch Sizes Greater Than One
+
+Batches of more than one audio support short-form and long-form audio, greedy decoding, `return_timestamps`, and independent per-row language detection. The following restrictions apply:
+
+- **Devices**: supported on `CPU` and `GPU` only.
+- **Greedy decoding only**: `num_beams` must be `1` and `do_sample` must be `false`.
+- **No streaming**.
+- **No word timestamps**: `word_timestamps` is not supported.
+- **Model support**: Qwen3-ASR does not support batch sizes greater than one.
+
+:::note
+Unsupported combinations raise an error rather than silently falling back to sequential per-audio processing.
+:::
+
+#### Single-Audio Batches
+
+A batch containing exactly one audio delegates to the normal single-audio path.
+Existing single-audio functionality therefore remains available where it is normally supported, including beam search, multinomial sampling, long-form transcription, timestamps, word timestamps, and streaming.
+
+The return type still follows the batched overload, however: `WhisperPipeline.generate([audio])` returns a one-element list rather than a single `WhisperDecodedResults`.
+
+#### Performance Metrics
+
+Performance metrics describe the aggregate batched execution.
+
+For `WhisperPipeline`, each returned result contains the same aggregate batch metrics, so `results[i].perf_metrics` is not a per-audio measurement.
+For `ASRPipeline`, its single `perf_metrics` object describes the whole batched call.
+
 ### Whisper-specific Features
 
 :::info
