@@ -205,11 +205,11 @@ py::object call_vlm_generate(
 
     // ── Auto-detect thinking token IDs (VLM path 1) ──
     // Triggered when reasoning_config is set but start_token_id is not.
-    // Encodes  thinking and  response via the tokenizer to get the correct IDs.
+    // Encodes <think> and </think> via the tokenizer to get the correct IDs.
     // Conditions:
     //   1. reasoning_config is set
     //   2. start_token_id is unset (still at default -1)
-    //   3. Both  thinking and  response encode as single tokens
+    //   3. Both <think> and </think> encode as single tokens
     // Silently skips on failure (e.g. tokenizer doesn't support these special tokens).
     if (updated_config.reasoning_config.has_value() && updated_config.reasoning_config->start_token_id < 0) {
         try {
