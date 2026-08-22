@@ -319,6 +319,12 @@ void GenerationConfig::validate() const {
                 "reasoning_config.start_token_id and end_token_id must both be set "
                 "when reasoning_config.budget is enabled (>= 0).");
         }
+        // Mutually exclusive with structured output: the grammar transformer and the
+        // thinking-budget FORCING would starve each other (a forced </think> may be
+        // rejected by the grammar, leaving every candidate masked).
+        OPENVINO_ASSERT(!structured_output_config.has_value(),
+            "reasoning_config and structured_output_config cannot be used together: "
+            "the thinking budget FORCING would conflict with the structured output grammar.");
     }
 
     // Stop conditions
