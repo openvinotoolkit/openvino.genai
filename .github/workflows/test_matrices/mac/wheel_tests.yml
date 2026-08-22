@@ -2,8 +2,10 @@
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: ASR
   # TODO: skip some tests temporary until https://github.com/huggingface/datasets/issues/7647 dataset is fixed
+  # TEMPORARY (PR #4311 macOS 14 CI Concat-exception investigation): restricted to the three multi-batch
+  # tests with GENAI_WHISPER_SHAPE_TRACE=1. Revert to the full-file command before merging.
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"
+    GENAI_WHISPER_SHAPE_TRACE=1 python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5" -k "test_batch_of_one_delegates_to_single_audio or test_batch_long_form_shrinking_active_set or test_batch_width_transitions_reuse_one_pipeline"
   timeout: 120
   components:
     - automatic_speech_recognition

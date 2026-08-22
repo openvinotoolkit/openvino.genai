@@ -210,6 +210,77 @@ Language handling depends on the model architecture. Models with language identi
     </TabItemJS>
 </LanguageTabs>
 
+### Batched Inference
+
+Whisper can transcribe multiple independent audio inputs in one call.
+
+#### Using `ASRPipeline`
+
+`ASRPipeline.generate()` accepts either a single audio input or a batch of independent inputs:
+
+```python
+pipe = ov_genai.ASRPipeline(model_path, "CPU")
+
+audio_0 = read_wav("speech_sample.wav")
+audio_1 = read_wav("french_sample.wav")
+
+result = pipe.generate([audio_0, audio_1], max_new_tokens=100)
+
+for text, language in zip(result.texts, result.languages):
+    print(language, text)
+```
+
+A batched call returns one `ASRDecodedResults` object. Its vector fields preserve input order:
+
+- `texts[i]`
+- `scores[i]`
+- `languages[i]`
+- `chunks[i]` and `words[i]`, when present
+
+#### Using `WhisperPipeline`
+
+`WhisperPipeline.generate()` provides a batched overload:
+
+```python
+pipe = ov_genai.WhisperPipeline(model_path, "CPU")
+
+results = pipe.generate([audio_0, audio_1], max_new_tokens=100)
+
+for result in results:
+    print(result.language, result.texts[0])
+```
+
+The batched overload returns one `WhisperDecodedResults` per input, in input order.
+
+#### Limitations for Batch Sizes Greater Than One
+
+For batch sizes greater than one, Whisper supports short-form and long-form audio, greedy decoding,
+`return_timestamps`, and per-input language detection. The following restrictions apply:
+
+- **Devices**: only `CPU` and `GPU` are supported.
+- **Greedy decoding only**: `num_beams` must be `1` and `do_sample` must be `false`.
+- **No streaming**.
+- **No word timestamps**: `word_timestamps` is not supported.
+- **Model support**: Qwen3-ASR and FunASR do not support batch sizes greater than one.
+
+:::note
+Unsupported configurations raise an error instead of falling back to sequential generation.
+:::
+
+#### Single-Audio Batches
+
+A single-element batch delegates to scalar generation and therefore retains the normal single-audio behavior.
+
+The batched overload still returns a one-element list: `WhisperPipeline.generate([audio])` returns a list
+containing one `WhisperDecodedResults`, not a single `WhisperDecodedResults`.
+
+#### Performance Metrics
+
+Performance metrics describe the entire batched call, not individual inputs.
+
+For `WhisperPipeline`, every returned result contains a copy of the same aggregate metrics.
+For `ASRPipeline`, the single `perf_metrics` object contains the aggregate metrics.
+
 ### Whisper-specific Features
 
 :::info

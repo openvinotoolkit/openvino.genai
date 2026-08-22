@@ -4,6 +4,7 @@
 #pragma once
 
 #include <map>
+#include <sstream>
 #include <string>
 
 #include <openvino/openvino.hpp>
@@ -44,6 +45,31 @@ int64_t get_or_throw_token_id_by_language(const std::map<std::string, int64_t>& 
 
 // "<|en|>" -> "en"
 std::string to_unescaped_language(const std::string& language);
+
+// Accepts CPU/GPU device strings, including indexed forms such as GPU.0; rejects meta-devices.
+bool is_whisper_batching_supported_device(const std::string& device);
+
+// TEMPORARY DIAGNOSTIC (macOS 14 CI Concat-exception investigation). Gated by GENAI_WHISPER_SHAPE_TRACE=1.
+// Logs shapes and lifecycle metadata only: never tokens, logits, transcript text, or tensor values.
+// noexcept and allocation-free: it is called bare as an `if` condition on the inference path,
+// including immediately before start_async(), so it must never throw.
+bool whisper_shape_trace_enabled() noexcept;
+void whisper_shape_trace_write(const std::string& message);
+
+// Swallow-only: no diagnostic helper call occurs outside the guard, so a tracing failure can
+// never pre-empt inference or replace a genuine exception. Emission is best-effort.
+template <typename... Args>
+void whisper_shape_trace(Args&&... args) {
+    try {
+        if (!whisper_shape_trace_enabled()) {
+            return;
+        }
+        std::ostringstream oss;
+        (oss << ... << args);
+        whisper_shape_trace_write(oss.str());
+    } catch (...) {
+    }
+}
 
 }  // namespace utils
 }  // namespace genai

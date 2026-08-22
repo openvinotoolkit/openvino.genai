@@ -18,14 +18,21 @@ public:
                                                      const ov::PartialShape& lhs_shape,
                                                      const bool decompose_cross_attention_spda_ops);
 
-    std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state,
-                                              const WhisperGenerationConfig& config);
+    /**
+     * Detects one language per encoder row in a single decoder inference.
+     * Result i corresponds to row i of `encoder_hidden_state`.
+     */
+    std::pair<std::vector<int64_t>, float> detect_languages(const Tensor& encoder_hidden_state,
+                                                            const WhisperGenerationConfig& config);
 
     virtual void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) = 0;
 
     virtual Tensor wait() = 0;
 
     virtual void reset_state() = 0;
+
+    // Starts a new cohort round before any decoder inference.
+    virtual void start_new_round() = 0;
 
     virtual ov::Tensor create_host_tensor(const element::Type element_type, const Shape& shape);
 

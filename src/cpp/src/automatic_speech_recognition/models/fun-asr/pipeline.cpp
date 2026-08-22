@@ -62,6 +62,13 @@ ASRDecodedResults FunASR::generate(const AudioInputs& audio_inputs,
             [](const std::vector<float>& input) -> const std::vector<float>& {
                 return input;
             },
+            [](const std::vector<std::vector<float>>& inputs) -> const std::vector<float>& {
+                OPENVINO_ASSERT(inputs.size() == 1,
+                                "FunASR does not support batched audio input. Got ",
+                                inputs.size(),
+                                " audio inputs.");
+                return inputs.front();
+            },
         },
         audio_inputs);
 

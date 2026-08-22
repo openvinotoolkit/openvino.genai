@@ -4,6 +4,8 @@
 #include "whisper/whisper_utils.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <iostream>
 
 namespace {
 
@@ -136,6 +138,24 @@ std::string to_unescaped_language(const std::string& language) {
                                 }),
                  result.end());
     return result;
+}
+
+bool is_whisper_batching_supported_device(const std::string& device) {
+    const std::string device_name = device.substr(0, device.find('.'));
+    return device_name == "CPU" || device_name == "GPU";
+}
+
+bool whisper_shape_trace_enabled() noexcept {
+    // Allocation-free exact comparison: no std::string, no stream, nothing that can throw.
+    static const bool enabled = [] {
+        const char* value = std::getenv("GENAI_WHISPER_SHAPE_TRACE");
+        return value != nullptr && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+}
+
+void whisper_shape_trace_write(const std::string& message) {
+    std::cerr << "[WSHAPE] " << message << std::endl;
 }
 
 }  // namespace utils

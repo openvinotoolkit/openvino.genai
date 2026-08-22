@@ -22,6 +22,8 @@ public:
 
     void reset_state() override;
 
+    void start_new_round() override;
+
     ov::Tensor create_host_tensor(const element::Type element_type, const Shape& shape) override;
 
     std::vector<Tensor> get_alignments_heads_qks(
@@ -33,5 +35,11 @@ private:
     void _set_cache_position_tensor(const size_t seq_len);
 
     bool m_decompose_cross_attention_spda_ops = false;
+
+    bool m_recreate_request_per_round = true;
+
+    // TEMPORARY DIAGNOSTIC (macOS 14 CI Concat-exception investigation, GENAI_WHISPER_SHAPE_TRACE=1).
+    // Monotonically increasing id of the current m_request, bumped every time create_infer_request() runs.
+    int64_t m_request_epoch = -1;
 };
 }  // namespace ov::genai

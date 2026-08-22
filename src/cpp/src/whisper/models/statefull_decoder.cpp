@@ -3,12 +3,14 @@
 
 #include "statefull_decoder.hpp"
 
+#include <sstream>
 #include <utility>
 
 #include "openvino/op/softmax.hpp"
 #include "openvino/pass/manager.hpp"
 #include "utils.hpp"
 #include "whisper/alignment_heads.hpp"
+#include "whisper/whisper_utils.hpp"
 #include "whisper/word_level_timestamps.hpp"
 
 namespace {
@@ -19,6 +21,34 @@ void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov:
     std::map<std::string, ov::PartialShape> name_to_shape{{"encoder_hidden_states", new_shape}};
     model->reshape(name_to_shape);
 }
+
+// TEMPORARY DIAGNOSTIC (macOS 14 CI Concat-exception investigation, GENAI_WHISPER_SHAPE_TRACE=1).
+// Read-only: query_state()/get_state() only, never set_state().
+// Never throws: this is evaluated as an argument to the trace call, before that call is entered,
+// so it cannot rely on the trace helper's guard. A failure yields a marker that is textually
+// distinct from an empty list, because "[]" is itself a meaningful observation here.
+std::string describe_variable_states(ov::InferRequest& request) {
+    try {
+        std::ostringstream oss;
+        oss << "[";
+        bool first = true;
+        for (auto& state : request.query_state()) {
+            if (!first) {
+                oss << ", ";
+            }
+            first = false;
+            try {
+                oss << state.get_name() << ":" << state.get_state().get_shape();
+            } catch (...) {
+                oss << "<state-unreadable>";
+            }
+        }
+        oss << "]";
+        return oss.str();
+    } catch (...) {
+        return "<states-unavailable>";
+    }
+}
 }  // namespace
 
 namespace ov::genai {
@@ -27,7 +57,8 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const ov::AnyMap& properties,
                                                  const ov::PartialShape& lhs_shape,
                                                  const bool decompose_cross_attention_spda)
-    : m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
+    : m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda),
+      m_recreate_request_per_round(device != "NPU") {
     ov::Core core = utils::singleton_core();
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, std::as_const(properties));
@@ -55,6 +86,8 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request = compiled_model.create_infer_request();
+    m_request_epoch = 0;
+    utils::whisper_shape_trace("REQUEST_CREATED site=constructor epoch=", m_request_epoch);
 }
 
 void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
@@ -71,7 +104,27 @@ void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("beam_idx", beam_idx);
 
-    m_request.start_async();
+    if (utils::whisper_shape_trace_enabled()) {
+        utils::whisper_shape_trace("PRE_INFER_DECODER epoch=",
+                                   m_request_epoch,
+                                   " input_ids_shape=",
+                                   input_ids.get_shape(),
+                                   " beam_idx_shape=",
+                                   beam_idx.get_shape(),
+                                   " encoder_hidden_states_shape=",
+                                   encoder_hidden_state.get_shape(),
+                                   " states=",
+                                   describe_variable_states(m_request));
+    }
+
+    utils::whisper_shape_trace("PRE_START_ASYNC epoch=", m_request_epoch);
+    try {
+        m_request.start_async();
+    } catch (...) {
+        utils::whisper_shape_trace("EXCEPTION site=start_async epoch=", m_request_epoch);
+        throw;
+    }
+    utils::whisper_shape_trace("POST_START_ASYNC epoch=", m_request_epoch);
 };
 
 void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
@@ -90,7 +143,14 @@ void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
 };
 
 Tensor WhisperStatefullDecoder::wait() {
-    m_request.wait();
+    utils::whisper_shape_trace("PRE_WAIT epoch=", m_request_epoch);
+    try {
+        m_request.wait();
+    } catch (...) {
+        utils::whisper_shape_trace("EXCEPTION site=wait epoch=", m_request_epoch);
+        throw;
+    }
+    utils::whisper_shape_trace("POST_WAIT epoch=", m_request_epoch);
     return m_request.get_tensor("logits");
 }
 
@@ -103,6 +163,29 @@ void WhisperStatefullDecoder::reset_state() {
     Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
     encoder_hidden_states_shape[0] = 0;
     m_request.set_tensor("encoder_hidden_states", create_host_tensor(ov::element::f32, encoder_hidden_states_shape));
+
+    if (utils::whisper_shape_trace_enabled()) {
+        utils::whisper_shape_trace("RESET_STATE_DONE epoch=", m_request_epoch, " states=", describe_variable_states(m_request));
+    }
+};
+
+void WhisperStatefullDecoder::start_new_round() {
+    const int64_t old_epoch = m_request_epoch;
+    // Some plugins retain stale decoder-state batch shapes after reset_state().
+    if (m_recreate_request_per_round) {
+        m_request = m_request.get_compiled_model().create_infer_request();
+        m_request_epoch++;
+    }
+    if (utils::whisper_shape_trace_enabled()) {
+        utils::whisper_shape_trace("START_NEW_ROUND old_epoch=",
+                                   old_epoch,
+                                   " new_epoch=",
+                                   m_request_epoch,
+                                   " recreated=",
+                                   m_recreate_request_per_round,
+                                   " states=",
+                                   describe_variable_states(m_request));
+    }
 };
 
 ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
