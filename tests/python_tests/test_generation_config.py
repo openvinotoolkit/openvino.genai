@@ -1,7 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, ReasoningConfig, WhisperGenerationConfig
+from openvino_genai import GenerationConfig, ReasoningConfig, StructuredOutputConfig, WhisperGenerationConfig
 import json
 import math
 import os
@@ -122,6 +122,8 @@ invalid_configs = [
     dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=10)), # budget >= 0 requires both token ids
     dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=10, start_token_id=151667)), # missing end_token_id
     dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=-2)), # invalid negative value
+    dict(max_new_tokens=1, reasoning_config=ReasoningConfig(budget=0, start_token_id=151667, end_token_id=151668),
+         structured_output_config=StructuredOutputConfig(json_schema='{"type": "object"}')),  # mutually exclusive with reasoning_config
     # TODO: add tests for invalid properties
 ]
 @pytest.mark.parametrize("generation_config_kwargs", invalid_configs)
