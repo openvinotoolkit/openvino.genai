@@ -51,3 +51,6 @@ std::tuple<std::map<std::string, GGUFMetaData>,
 load_gguf(const std::string& file);
 
 GGUFLoad get_gguf_data(const std::string& file);
+
+// Load only GGUF metadata KV pairs, skipping weight tensors.
+std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::string& file);

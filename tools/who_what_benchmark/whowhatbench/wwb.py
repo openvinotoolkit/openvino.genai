@@ -557,9 +557,21 @@ def load_tokenizer(args):
                     args.tokenizer, trust_remote_code=False, **kwargs
                 )
             except Exception:
-                tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=True, **kwargs
-                )
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=True, **kwargs)
+                except Exception:
+                    # For a GenAI .gguf target the pipeline carries its own tokenizer built from
+                    # the gguf, so an external HF tokenizer is optional. transformers can't read
+                    # every gguf tokenizer (e.g. gemma's), so degrade gracefully instead of failing.
+                    if args.genai and args.gguf_file:
+                        logger.warning(
+                            "Could not load an external tokenizer for %s (gguf-file %s); "
+                            "relying on the GenAI pipeline's built-in gguf tokenizer.",
+                            args.tokenizer,
+                            args.gguf_file,
+                        )
+                    else:
+                        raise
     elif args.base_model is not None:
         try:
             tokenizer = AutoTokenizer.from_pretrained(

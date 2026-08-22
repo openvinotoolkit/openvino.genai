@@ -89,9 +89,9 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        # Workaround for ScatterNDUpdate exception.
-        # The ticket for tracking: CVS-192302
-        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
+        # Pinned past the OpenVINO GGUF frontend's merge (needed by ov::genai's GGUF support)
+        # and past the ScatterNDUpdate fix (CVS-192302, openvinotoolkit/openvino#37125).
+        revision: ed58b4fb054d7eed02628e5a53e63e2cdf6121f7
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request

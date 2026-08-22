@@ -163,6 +163,26 @@
   components:
     - WWB
 
+# GGUF accuracy: WWB compares GenAI loading a .gguf through the OpenVINO GGUF frontend
+# against llama.cpp running the same file, so a conversion regression (wrong layer wiring,
+# bad KV-cache precision, broken tokenizer) shows up as a similarity drop rather than
+# silently producing plausible-looking text.
+#
+# The suite self-skips unless WWB_GGUF_TESTS=1 because it downloads real models; `-m
+# gguf_small` further restricts it to the sub-1 GB fixtures (llama / qwen2 / qwen3 /
+# hunyuan-dense), the ones that fit a CI runner's disk and time budget. The larger
+# architecture fixtures stay an opt-in local run.
+#
+# The job name must start with "WWB" -- that is what gates the llama-cpp-python install
+# step, and llama.cpp is the reference side of this comparison.
+- name: WWB tests (GGUF)
+  cmd: |-
+    WWB_GGUF_TESTS=1 python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_text_gguf.py -m gguf_small
+  timeout: 120
+  components:
+    - GGUF
+    - WWB
+
 - name: EAGLE3 speculative decoding tests
   cmd: |-
     python -m pip install transformers==4.57.6

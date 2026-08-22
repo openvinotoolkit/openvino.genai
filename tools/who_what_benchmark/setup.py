@@ -68,5 +68,10 @@ setup(
             "transformers==4.57.6",
             "optimum-intel[nncf] @ https://github.com/huggingface/optimum-intel/archive/a8c4734741e766ef95d7f1a7d1e29a1d4ba2ab8f.tar.gz",
         ],
+        # llama.cpp reference oracle for the opt-in GGUF accuracy tests (test_cli_text_gguf.py,
+        # WWB_GGUF_TESTS=1). Extra, not install_requires: builds llama.cpp from source.
+        "gguf": [
+            "llama-cpp-python>=0.3.0",
+        ],
     },
 )
