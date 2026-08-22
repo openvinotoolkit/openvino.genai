@@ -29,7 +29,7 @@ GenerationConfig::GenerationConfig(const std::filesystem::path& json_path) {
     read_json_param(data, "eos_token_id", eos_token_id);
     read_json_param(data, "max_new_tokens", max_new_tokens);
     read_json_param(data, "max_length", max_length);
-    // note that ignore_eos is not present in HF GenerationConfig   
+    // note that ignore_eos is not present in HF GenerationConfig
     read_json_param(data, "ignore_eos", ignore_eos);
     read_json_param(data, "min_new_tokens", min_new_tokens);
     read_json_param(data, "stop_strings", stop_strings);
@@ -354,7 +354,7 @@ void GenerationConfig::validate() const {
 
     // Sampling strategies
 
-    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()), 
+    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()),
         "'num_return_sequences' can be more than 1 only in case of beam search or multinomial sampling, but got ", num_return_sequences);
 
     // generic penalties, but not supported by beam search currently
