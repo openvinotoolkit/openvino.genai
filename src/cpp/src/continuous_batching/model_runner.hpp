@@ -568,8 +568,14 @@ public:
                 
                 std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
                 
+                // Under PagedAttention all tokens live in the batch dimension, so every
+                // per-token input is tokens-first: inputs_embeds is {total_num_tokens,
+                // hidden_size}, position_ids is {total_num_tokens} and per_layer_inputs is
+                // {total_num_tokens, 1, ...}. visual_pos_masks must follow the same layout,
+                // otherwise the DeepStack index_put_ in the language model derives its
+                // scatter indices against the wrong axis.
                 visual_pos_masks = _get_or_resize_tensor(m_cached_visual_pos_masks, "visual_pos_masks",
-                    {1, total_num_tokens}, ov::element::boolean);
+                    {total_num_tokens, 1}, ov::element::boolean);
 
                 visual_pos_masks_data = visual_pos_masks.data<bool>();
                 std::fill_n(visual_pos_masks_data, total_num_tokens, false);

@@ -933,6 +933,31 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
 
 
+def test_deepstack_visual_pos_masks_layout_pa(cat_tensor: openvino.Tensor):
+    """DeepStack visual_pos_masks must use the tokens-first PagedAttention layout.
+
+    Regression guard: the mask used to be allocated as {1, total_num_tokens},
+    which is the stateful (batch, seq) layout, while every other PagedAttention
+    input is tokens-first ({total_num_tokens, hidden_size} for inputs_embeds,
+    {total_num_tokens} for position_ids, {total_num_tokens, 1, ...} for
+    per_layer_inputs). With the wrong layout the DeepStack index_put_ inside the
+    language model derives its scatter indices against the wrong axis.
+    """
+    models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen3-vl")
+    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+
+    generation_config = get_greedy()
+    generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
+
+    results = cb_pipe.generate(
+        [PROMPTS[0]],
+        images=[[cat_tensor]],
+        generation_config=[generation_config],
+    )
+
+    assert results[0].texts[0]
+
+
 @pytest.mark.parametrize(
     "config",
     [
