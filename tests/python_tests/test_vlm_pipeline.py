@@ -933,6 +933,9 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
 
 
+@pytest.mark.transformers_lower_v5(
+    reason="Qwen3-VL export is only supported with transformers < 5.0 in this test suite"
+)
 def test_deepstack_visual_pos_masks_layout_pa(cat_tensor: openvino.Tensor):
     """DeepStack visual_pos_masks must use the tokens-first PagedAttention layout.
 
