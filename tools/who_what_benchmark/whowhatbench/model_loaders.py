@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
-import json
 import logging
 import torch
 import os
@@ -27,10 +26,7 @@ from .reranking_evaluator import (
 )
 from .utils import (
     OMNI_MODEL_TYPES,
-    FUNASR_TOKENIZER_SUBFOLDER,
-    NATIVE_ASR_MODEL_TYPES,
     apply_peft_adapters,
-    get_model_type,
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
     disable_diffusers_model_progress_bar,
@@ -1095,50 +1091,15 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     return SpeechT5Wrapper(model, processor, None)
 
 
-def load_funasr_model(model_id, model_type, device="CPU", ov_config=None, use_hf=False, use_genai=False, language=""):
-    from .speech_recognition_evaluator import (
-        FunASRGenAITranscriber,
-        FunASROptimumTranscriber,
-        FunASRSourceTranscriber,
-    )
-
-    if use_hf:
-        logger.info("Using FunASR API")
-        return FunASRSourceTranscriber(model_id, language)
-
-    if use_genai:
-        logger.info("Using OpenVINO GenAI ASRPipeline API")
-        import openvino_genai
-
-        pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
-        return FunASRGenAITranscriber(pipeline, language)
-
-    logger.info("Using Optimum API")
-    from optimum.intel.openvino import OVModelForSpeechSeq2Seq
-
-    model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
-    subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
-    tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
-    return FunASROptimumTranscriber(model, tokenizer, language)
-
-
 def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     language = kwargs.pop("speech_language", "") or ""
+    from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
 
-    model_type = get_model_type(model_id)
-    if model_type is None:
-        raise ValueError(f"Cannot determine the speech recognition model type for '{model_id}'")
-    if model_type in NATIVE_ASR_MODEL_TYPES:
-        return load_funasr_model(model_id, model_type, device, ov_config, use_hf, use_genai, language or "en")
-
-    from .speech_recognition_evaluator import GenAIMultimodalTranscriber, MultimodalTranscriber
-
-    language = language or "English"
-    kwargs["model_type"] = "visual-text"
-    model = load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
+    if use_hf:
+        return ASRHFTranscriber.create(model_id, device, ov_config, language, **kwargs)
     if use_genai:
-        return GenAIMultimodalTranscriber(model, language)
-    return MultimodalTranscriber(model, model_id, language)
+        return ASRGenAITranscriber.create(model_id, device, ov_config, language, **kwargs)
+    return ASROptimumTranscriber.create(model_id, device, ov_config, language, **kwargs)
 
 
 def load_model(

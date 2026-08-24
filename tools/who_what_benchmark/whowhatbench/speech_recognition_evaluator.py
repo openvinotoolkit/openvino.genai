@@ -3,6 +3,7 @@
 
 import contextlib
 import io
+import logging
 import os
 from typing import Any, Union
 
@@ -11,8 +12,19 @@ import pandas as pd
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
-from .utils import no_double_bos, AUDIO_SAMPLING_RATE
+from .utils import (
+    no_double_bos,
+    AUDIO_SAMPLING_RATE,
+    get_model_type,
+)
 from .whowhat_metrics import TranscriptSimilarity
+
+logger = logging.getLogger(__name__)
+
+FUNASR_TOKENIZER_SUBFOLDER = (
+    "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
+)
+NATIVE_ASR_MODEL_TYPES = {"funasr", "fun_asr"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
 # Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
@@ -158,6 +170,63 @@ class FunASRGenAITranscriber:
             generation_kwargs["language"] = self.language
         result = self.pipeline.generate(np.asarray(audio, dtype=np.float32).tolist(), **generation_kwargs)
         return result.texts[0].strip()
+
+
+def _get_asr_model_type(model_id: str) -> str:
+    model_type = get_model_type(model_id)
+    if model_type is None:
+        raise ValueError(f"Cannot determine the speech recognition model type for '{model_id}'")
+    return model_type
+
+
+def _load_multimodal_model(model_id, device, ov_config, use_hf, use_genai, **kwargs):
+    from .model_loaders import load_visual_text_model
+
+    kwargs["model_type"] = "visual-text"
+    return load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
+
+
+class ASRHFTranscriber:
+    @staticmethod
+    def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
+        if _get_asr_model_type(model_id) in NATIVE_ASR_MODEL_TYPES:
+            logger.info("Using FunASR API")
+            return FunASRSourceTranscriber(model_id, language or "en")
+
+        model = _load_multimodal_model(model_id, device, ov_config, True, False, **kwargs)
+        return MultimodalTranscriber(model, model_id, language or "English")
+
+
+class ASRGenAITranscriber:
+    @staticmethod
+    def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
+        if _get_asr_model_type(model_id) in NATIVE_ASR_MODEL_TYPES:
+            logger.info("Using OpenVINO GenAI ASRPipeline API")
+            import openvino_genai
+
+            pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
+            return FunASRGenAITranscriber(pipeline, language or "en")
+
+        model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
+        return GenAIMultimodalTranscriber(model, language or "English")
+
+
+class ASROptimumTranscriber:
+    @staticmethod
+    def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
+        model_type = _get_asr_model_type(model_id)
+        if model_type in NATIVE_ASR_MODEL_TYPES:
+            logger.info("Using Optimum API")
+            from optimum.intel.openvino import OVModelForSpeechSeq2Seq
+            from transformers import AutoTokenizer
+
+            model = OVModelForSpeechSeq2Seq.from_pretrained(model_id, device=device, ov_config=ov_config)
+            subfolder = FUNASR_TOKENIZER_SUBFOLDER if model_type == "funasr" else ""
+            tokenizer = AutoTokenizer.from_pretrained(str(model_id), subfolder=subfolder)
+            return FunASROptimumTranscriber(model, tokenizer, language or "en")
+
+        model = _load_multimodal_model(model_id, device, ov_config, False, False, **kwargs)
+        return MultimodalTranscriber(model, model_id, language or "English")
 
 
 @register_evaluator("speech-recognition")

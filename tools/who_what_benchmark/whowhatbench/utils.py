@@ -399,11 +399,6 @@ def disable_diffusers_model_progress_bar(model):
 AUDIO_SAMPLING_RATE = 16000
 DEFAULT_NUM_SAMPLES = 24
 
-FUNASR_TOKENIZER_SUBFOLDER = (
-    "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
-)
-NATIVE_ASR_MODEL_TYPES = {"funasr", "fun_asr"}
-
 
 def to_mono_16k(audio, sampling_rate):
     """Downmix to mono and resample to 16 kHz float32."""
