@@ -947,7 +947,10 @@ bool requires_sdpa(const std::filesystem::path& models_dir) {
     // Force models to use SDPA backend by default until PA is supported. Example:
     // auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     // vlm_config.model_type == VLMModelType::GEMMA3;
-    return false;
+    // Molmo2 relies on token_type_ids-driven bidirectional image attention that is only wired
+    // through the SDPA generation path, so it must not use the Paged Attention backend.
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    return vlm_config.model_type == VLMModelType::MOLMO2;
 }
 
 VLMPipeline::VLMPipeline(

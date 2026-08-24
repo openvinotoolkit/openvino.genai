@@ -55,6 +55,24 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
     // Setting gemma4 config params
     read_json_param(parsed, "pooling_kernel_size", pooling_kernel_size);
     read_json_param(parsed, "max_soft_tokens", max_soft_tokens);
+
+    // Setting molmo2 config params
+    read_json_param(parsed, "max_crops", molmo2_max_crops);
+    read_json_param(parsed, "image_use_col_tokens", molmo2_image_use_col_tokens);
+    read_json_param(parsed, "use_single_crop_start_token", molmo2_use_single_crop_start_token);
+    if (parsed.contains("overlap_margins") && parsed.at("overlap_margins").is_array() &&
+        parsed.at("overlap_margins").size() == 2) {
+        molmo2_overlap_margin_left = parsed.at("overlap_margins").at(0).get<size_t>();
+        molmo2_overlap_margin_right = parsed.at("overlap_margins").at(1).get<size_t>();
+    }
+    if (parsed.contains("pooling_size") && parsed.at("pooling_size").is_array() &&
+        parsed.at("pooling_size").size() == 2) {
+        molmo2_pooling_h = parsed.at("pooling_size").at(0).get<size_t>();
+        molmo2_pooling_w = parsed.at("pooling_size").at(1).get<size_t>();
+    }
+    if (parsed.contains("use_single_crop_col_tokens") && !parsed.at("use_single_crop_col_tokens").is_null()) {
+        molmo2_use_single_crop_col_tokens = parsed.at("use_single_crop_col_tokens").get<bool>() ? 1 : 0;
+    }
 }
 
 ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_path)

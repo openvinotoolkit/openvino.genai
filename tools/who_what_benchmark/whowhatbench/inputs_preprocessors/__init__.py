@@ -9,10 +9,12 @@ from .qwen3 import Qwen3VLInputsPreprocessor, Qwen3_5VLInputsPreprocessor, Qwen3
 from .gemma3 import Gemma3InputsPreprocessor
 from .gemma4 import Gemma4InputsPreprocessor, Gemma4UnifiedInputsPreprocessor, Gemma3nInputsPreprocessor
 from .muse_glimmer import MuseGlimmerInputsPreprocessor
+from .molmo2 import Molmo2InputsPreprocessor
 from .vlm_inputs_preprocessor import VLMInputsPreprocessor
 
 MODEL_TYPE_TO_CLS_MAPPING = {
     "muse_glimmer": MuseGlimmerInputsPreprocessor,
+    "molmo2": Molmo2InputsPreprocessor,
     "qwen3_vl": Qwen3VLInputsPreprocessor,
     "qwen3_5_moe": Qwen3_5VLInputsPreprocessor,
     "qwen3_5": Qwen3_5VLInputsPreprocessor,
