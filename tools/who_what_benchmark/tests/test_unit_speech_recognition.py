@@ -9,8 +9,6 @@ import pandas as pd
 import pytest
 import torch
 
-import whowhatbench.speech_recognition_evaluator as asr
-from whowhatbench.model_loaders import load_speech_recognition_model
 from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
 from whowhatbench.speech_recognition_evaluator import (
