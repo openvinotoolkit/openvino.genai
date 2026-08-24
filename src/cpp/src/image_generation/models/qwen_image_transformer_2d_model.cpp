@@ -3,7 +3,6 @@
 
 #include "openvino/genai/image_generation/qwen_image_transformer_2d_model.hpp"
 
-#include <algorithm>
 #include <fstream>
 
 #include "json_utils.hpp"
@@ -22,9 +21,8 @@ size_t get_qwen_image_vae_scale_factor(const std::filesystem::path& vae_config_p
 
     OPENVINO_ASSERT(data.contains("temperal_downsample"),
                     "QwenImage VAE config must contain 'temperal_downsample'");
-    std::vector<bool> temperal_downsample = data["temperal_downsample"].get<std::vector<bool>>();
-    const size_t num_true = std::count(temperal_downsample.begin(), temperal_downsample.end(), true);
-    return static_cast<size_t>(std::pow(2, num_true));
+    const std::vector<bool> temperal_downsample = data["temperal_downsample"].get<std::vector<bool>>();
+    return static_cast<size_t>(std::pow(2, temperal_downsample.size()));
 }
 
 }  // namespace
