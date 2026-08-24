@@ -27,6 +27,15 @@ from utils.ov_genai_pipelines import (
 )
 from data.models import GGUF_MODEL_LIST
 
+# ov::genai::gguf_reader values (see llm_pipeline.hpp): the OpenVINO GGUF frontend (default) and
+# the pre-frontend, hand-written reader kept as a temporary fallback. Every architecture in
+# GGUF_MODEL_LIST (llama, qwen2) is within the legacy reader's supported scope, so it is exercised
+# here alongside the frontend to catch behavior differences between the two while both exist.
+GGUF_READERS = (
+    pytest.param("FRONTEND", id="frontend"),
+    pytest.param("LEGACY", id="legacy"),
+)
+
 
 @dataclass(frozen=True)
 class ModelInfo:
@@ -57,11 +66,13 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
 
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_pipelines_with_gguf_generate(
     model_gguf: ModelInfo,
     pipeline_type: PipelineType,
+    gguf_reader: str,
 ):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
@@ -100,6 +111,7 @@ def test_pipelines_with_gguf_generate(
         gguf_full_path,
         pipeline_type=pipeline_type,
         dynamic_quantization_group_size=dynamic_quantization_group_size,
+        gguf_reader=gguf_reader,
     )
     encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     del ov_pipe_gguf
@@ -110,6 +122,7 @@ def test_pipelines_with_gguf_generate(
 
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.parametrize(
     "prompt",
@@ -125,12 +138,12 @@ def test_pipelines_with_gguf_generate(
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-@pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725")
 def test_full_gguf_pipeline(
     model_gguf: ModelInfo,
     pipeline_type: PipelineType,
     enable_save_ov_model: bool,
     prompt: str,
+    gguf_reader: str,
 ):
     gguf_model_id = model_gguf.gguf_model_id
     gguf_full_path = model_gguf.gguf_full_path
@@ -166,7 +179,13 @@ def test_full_gguf_pipeline(
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
 
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
+    ov_pipe_gguf = create_ov_pipeline(
+        gguf_full_path,
+        pipeline_type=pipeline_type,
+        enable_save_ov_model=enable_save_ov_model,
+        dynamic_quantization_group_size=dynamic_quantization_group_size,
+        gguf_reader=gguf_reader,
+    )
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
@@ -178,6 +197,8 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
+        # The saved IR is reloaded as a plain OpenVINO model, not a .gguf -- gguf_reader has no
+        # effect on this path since it's stripped by read_model() regardless of the source format.
         ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
