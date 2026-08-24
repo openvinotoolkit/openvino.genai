@@ -10,6 +10,7 @@
 
 #include "openvino/runtime/tensor.hpp"
 #include "continuous_batching/cache/i_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_disk_layout.hpp"
 #include "logger.hpp"
 #include "utils.hpp"
 namespace ov::genai {
@@ -284,66 +285,84 @@ public:
         return m_value_cache[decoder_layer_id];
     }
 
+    /**
+     * @brief Byte layout of one physical block across all layers, used as the single source of truth
+     * for offload slot sizes and offsets.
+     * Unlike get_block_size_in_bytes(), this accounts for sub-byte packing of u4/i4 caches.
+     */
+    KVCacheDiskLayout get_block_layout() const {
+        std::vector<size_t> key_block_sizes(m_num_layers), value_block_sizes(m_num_layers);
+        for (size_t layer = 0; layer < m_num_layers; ++layer) {
+            key_block_sizes[layer] = get_block_byte_size(m_key_shapes[layer], m_key_precisions[layer]);
+            value_block_sizes[layer] = get_block_byte_size(m_value_shapes[layer], m_value_precisions[layer]);
+        }
+        return KVCacheDiskLayout(key_block_sizes, value_block_sizes);
+    }
+
     std::vector<uint8_t> read_block(size_t block_id) const {
         OPENVINO_ASSERT(!m_context, "KV cache block read currently supports CPU tensors only");
         OPENVINO_ASSERT(block_id < m_num_allocated_kv_blocks, "Invalid KV cache block ID ", block_id);
 
-        std::vector<uint8_t> block_data;
-        block_data.reserve(m_block_size_in_bytes);
+        const KVCacheDiskLayout layout = get_block_layout();
+        std::vector<uint8_t> block_data(layout.get_slot_size());
         for (size_t layer = 0; layer < m_num_layers; ++layer) {
-            append_tensor_block(block_data, m_key_cache[layer], block_id);
-            append_tensor_block(block_data, m_value_cache[layer], block_id);
+            const auto key_segment = layout.get_key_segment(layer);
+            const auto value_segment = layout.get_value_segment(layer);
+            copy_block_from_tensor(block_data.data() + key_segment.offset, m_key_cache[layer], block_id, key_segment.size);
+            copy_block_from_tensor(block_data.data() + value_segment.offset, m_value_cache[layer], block_id, value_segment.size);
         }
-        OPENVINO_ASSERT(block_data.size() == m_block_size_in_bytes,
-                        "Unexpected KV cache block byte size");
         return block_data;
     }
 
     void write_block(size_t block_id, const std::vector<uint8_t>& block_data) {
         OPENVINO_ASSERT(!m_context, "KV cache block write currently supports CPU tensors only");
         OPENVINO_ASSERT(block_id < m_num_allocated_kv_blocks, "Invalid KV cache block ID ", block_id);
-        OPENVINO_ASSERT(block_data.size() == m_block_size_in_bytes,
-                        "Unexpected KV cache block byte size");
 
-        size_t offset = 0;
+        const KVCacheDiskLayout layout = get_block_layout();
+        OPENVINO_ASSERT(block_data.size() == layout.get_slot_size(),
+                        "Unexpected KV cache block byte size: got ", block_data.size(),
+                        ", expected ", layout.get_slot_size());
+
         for (size_t layer = 0; layer < m_num_layers; ++layer) {
-            write_tensor_block(m_key_cache[layer], block_id, block_data, offset);
-            offset += get_tensor_block_byte_size(m_key_cache[layer]);
-            write_tensor_block(m_value_cache[layer], block_id, block_data, offset);
-            offset += get_tensor_block_byte_size(m_value_cache[layer]);
+            const auto key_segment = layout.get_key_segment(layer);
+            const auto value_segment = layout.get_value_segment(layer);
+            copy_block_to_tensor(m_key_cache[layer], block_id, block_data.data() + key_segment.offset, key_segment.size);
+            copy_block_to_tensor(m_value_cache[layer], block_id, block_data.data() + value_segment.offset, value_segment.size);
         }
     }
 
 private:
-    static size_t get_tensor_block_byte_size(const ov::Tensor& tensor) {
-        const auto shape = tensor.get_shape();
-        size_t elements = 1;
-        for (size_t dimension = 1; dimension < shape.size(); ++dimension) {
-            elements *= shape[dimension];
+    static size_t get_block_byte_size(const ov::PartialShape& cache_shape, const ov::element::Type& precision) {
+        const size_t elements = cache_shape[1].get_length() * cache_shape[2].get_length() * cache_shape[3].get_length();
+        if (precision.bitwidth() < 8) {
+            OPENVINO_ASSERT((elements * precision.bitwidth()) % 8 == 0,
+                            "Sub-byte KV cache block is not byte-aligned and cannot be offloaded");
+            return elements * precision.bitwidth() / 8;
         }
-        if (tensor.get_element_type() == ov::element::u4 || tensor.get_element_type() == ov::element::i4) {
-            return (elements + 1) / 2;
-        }
-        return elements * tensor.get_element_type().size();
+        return elements * precision.size();
     }
 
-    static void append_tensor_block(std::vector<uint8_t>& destination,
-                                    const ov::Tensor& tensor,
-                                    size_t block_id) {
-        const size_t block_size = get_tensor_block_byte_size(tensor);
-        const size_t block_stride = tensor.get_byte_size() / tensor.get_shape()[0];
-        const auto* source = reinterpret_cast<const uint8_t*>(tensor.data()) + block_id * block_stride;
-        destination.insert(destination.end(), source, source + block_size);
+    static void assert_block_stride(const ov::Tensor& tensor, size_t block_bytes) {
+        OPENVINO_ASSERT(tensor.get_byte_size() == block_bytes * tensor.get_shape()[0],
+                        "KV cache tensor byte size does not match the per-block layout");
     }
 
-    static void write_tensor_block(ov::Tensor& tensor,
-                                   size_t block_id,
-                                   const std::vector<uint8_t>& source,
-                                   size_t source_offset) {
-        const size_t block_size = get_tensor_block_byte_size(tensor);
-        const size_t block_stride = tensor.get_byte_size() / tensor.get_shape()[0];
-        auto* destination = reinterpret_cast<uint8_t*>(tensor.data()) + block_id * block_stride;
-        std::memcpy(destination, source.data() + source_offset, block_size);
+    static void copy_block_from_tensor(uint8_t* destination,
+                                       const ov::Tensor& tensor,
+                                       size_t block_id,
+                                       size_t block_bytes) {
+        assert_block_stride(tensor, block_bytes);
+        const auto* source = static_cast<const uint8_t*>(tensor.data()) + block_id * block_bytes;
+        std::memcpy(destination, source, block_bytes);
+    }
+
+    static void copy_block_to_tensor(ov::Tensor& tensor,
+                                     size_t block_id,
+                                     const uint8_t* source,
+                                     size_t block_bytes) {
+        assert_block_stride(tensor, block_bytes);
+        auto* destination = static_cast<uint8_t*>(tensor.data()) + block_id * block_bytes;
+        std::memcpy(destination, source, block_bytes);
     }
 
 public:

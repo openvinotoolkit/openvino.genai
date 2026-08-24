@@ -116,7 +116,10 @@ TEST(TestCacheManager, test_cpu_block_round_trip) {
     auto cache_manager = std::make_shared<KVCacheManager>(request);
     cache_manager->allocate_cache_if_needed(num_blocks);
 
-    std::vector<uint8_t> expected(cache_manager->get_block_size_in_bytes());
+    const auto layout = cache_manager->get_block_layout();
+    ASSERT_EQ(layout.get_num_layers(), num_layers);
+
+    std::vector<uint8_t> expected(layout.get_slot_size());
     for (size_t i = 0; i < expected.size(); ++i) {
         expected[i] = static_cast<uint8_t>(i);
     }
@@ -124,6 +127,26 @@ TEST(TestCacheManager, test_cpu_block_round_trip) {
     cache_manager->write_block(1, expected);
     EXPECT_EQ(cache_manager->read_block(1), expected);
     EXPECT_NE(cache_manager->read_block(0), expected);
+}
+
+TEST(TestCacheManager, test_block_layout_matches_allocated_tensors) {
+    ov::Core core;
+    constexpr size_t num_layers = 2;
+    constexpr size_t num_blocks = 4;
+    ov::InferRequest request = core.compile_model(get_dummy_model(core, num_layers)).create_infer_request();
+    auto cache_manager = std::make_shared<KVCacheManager>(request);
+    cache_manager->allocate_cache_if_needed(num_blocks);
+
+    const auto layout = cache_manager->get_block_layout();
+    size_t expected_slot_size = 0;
+    for (size_t layer = 0; layer < num_layers; ++layer) {
+        const auto key_block_bytes = cache_manager->get_key_cache(layer).get_byte_size() / num_blocks;
+        const auto value_block_bytes = cache_manager->get_value_cache(layer).get_byte_size() / num_blocks;
+        EXPECT_EQ(layout.get_key_segment(layer).size, key_block_bytes);
+        EXPECT_EQ(layout.get_value_segment(layer).size, value_block_bytes);
+        expected_slot_size += key_block_bytes + value_block_bytes;
+    }
+    EXPECT_EQ(layout.get_slot_size(), expected_slot_size);
 }
 
 TEST(TestCacheManager, test_disk_layout_is_layer_key_value_ordered) {

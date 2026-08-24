@@ -1242,6 +1242,8 @@ public:
      * Frees specific blocks layer-wise from a given sequence.
      * @param seq_id Sequence identifier for the blocks to be freed from.
      * @param logical_block_index_sets_to_free Sets (one for each layer) of logical block indices to be freed from this sequence.
+     * @return The freed block sets, captured before any of them was released. The blocks are not pinned, so their
+     * contents stay valid only until the allocator hands them out again.
      */
     std::vector<BlocksPerLayer> free_blocks_from_sequence(size_t seq_id, const std::vector<std::set<size_t>>& logical_block_index_sets_to_free) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
@@ -1267,7 +1269,7 @@ public:
         std::vector<BlocksPerLayer> captured_blocks;
         captured_blocks.reserve(num_blocks_to_free);
 
-        // free blocks at the allocator level
+        // capture every block set before any of them is freed, so callers observe pre-free physical blocks
         for (size_t block_idx = 0; block_idx < num_blocks_to_free; block_idx++) {
             BlocksPerLayer per_layer_cache_blocks_to_free;
             per_layer_cache_blocks_to_free.reserve(presumed_num_layers);
@@ -1281,7 +1283,11 @@ public:
                 auto block = per_layer_block_table[logical_block_idx];
                 per_layer_cache_blocks_to_free.push_back(block);
             }
-            captured_blocks.push_back(per_layer_cache_blocks_to_free);
+            captured_blocks.push_back(std::move(per_layer_cache_blocks_to_free));
+        }
+
+        // free blocks at the allocator level
+        for (const auto& per_layer_cache_blocks_to_free : captured_blocks) {
             free_cached_blocks(per_layer_cache_blocks_to_free);
         }
 
