@@ -572,7 +572,9 @@ public:
                 // per-token inputs are "tokens-first": inputs_embeds is {total_num_tokens, hidden_size},
                 // per_layer_inputs is {total_num_tokens, 1, ...}, and visual_pos_masks must be {total_num_tokens, 1}.
                 // Note: position_ids may be {total_num_tokens} or {N, total_num_tokens} for M-RoPE models.
-                // Otherwise the DeepStack index_put_ in the language model derives its
+                // With a stateful (batch, seq) mask here, the language model's DeepStack index_put_
+                // derives scatter indices against the wrong axis and the request fails with an
+                // out-of-bounds error.
                 visual_pos_masks = _get_or_resize_tensor(m_cached_visual_pos_masks, "visual_pos_masks",
                     {total_num_tokens, 1}, ov::element::boolean);
 

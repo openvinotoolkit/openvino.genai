@@ -947,7 +947,12 @@ def test_deepstack_visual_pos_masks_layout_pa(cat_tensor: openvino.Tensor):
     language model derives its scatter indices against the wrong axis.
     """
     models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen3-vl")
-    cb_pipe = ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+    cb_pipe = ContinuousBatchingPipeline(
+        models_path,
+        SchedulerConfig(),
+        "CPU",
+        properties={"ATTENTION_BACKEND": "PA"},
+    )
 
     generation_config = get_greedy()
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
