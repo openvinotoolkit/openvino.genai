@@ -72,8 +72,9 @@ private:
     // Single-token step against the static all-heads code predictor. Manages the
     // host-side explicit KV cache and absolute-position counter internally; pass
     // reset_state=true at the start of each per-frame code-group prediction.
-    // Returns the stacked all-heads logits [num_heads, 1, 1, vocab].
-    ov::Tensor infer_predictor(const ov::Tensor& inputs_embeds, bool reset_state);
+    // Returns stacked logits [num_heads,1,1,vocab] for legacy static predictor,
+    // or [1,T,vocab] for stateful predictor.
+    ov::Tensor infer_predictor(const ov::Tensor& inputs_embeds, bool reset_state, int64_t step = 0);
     // Slice one MTP head (0-based, = code_group-1) out of stacked all-heads logits
     // into a [1, 1, vocab] tensor for sample_token_from_logits.
     ov::Tensor select_predictor_head(const ov::Tensor& all_logits, size_t head) const;
@@ -143,6 +144,7 @@ private:
     ov::InferRequest m_talker_text_projection;
     bool m_text_projection_baked = false;  // true when projection is folded into text embedding rows
     ov::InferRequest m_talker_code_predictor;
+    bool m_predictor_stateful = false;  // true for openvino_code_predictor_model.xml (updated_optimum layout)
     ov::InferRequest m_talker_code_predictor_embedding;
 
     // Static all-heads code predictor state. The loaded predictor IR must expose
