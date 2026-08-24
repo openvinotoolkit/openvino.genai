@@ -11,10 +11,8 @@ import pandas as pd
 from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
-from .utils import no_double_bos
+from .utils import no_double_bos, AUDIO_SAMPLING_RATE
 from .whowhat_metrics import WordSimilarity
-
-AUDIO_SAMPLING_RATE = 16000
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
 # Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
@@ -108,6 +106,7 @@ class FunASRSourceTranscriber:
                 hub="hf",
                 device="cpu",
                 disable_update=True,
+                trust_remote_code=True,
             )
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
@@ -181,6 +180,8 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
             self.gt_data = self._generate_data(base_model, gen_answer_fn)
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
+            if num_samples is not None:
+                self.gt_data = self.gt_data.iloc[:num_samples]
 
     def get_generation_fn(self):
         return self.generation_fn

@@ -4,7 +4,6 @@
 import importlib.util
 import platform
 import re
-import subprocess  # nosec B404
 import sys
 
 import pytest
@@ -57,7 +56,7 @@ def test_asr_gemma4_hf(tmp_path, asr_ground_truth):
     hf_similarity = get_similarity_score(run_wwb(["--target-model", VLM_MODEL, *common, "--hf", "--output", tmp_path]))
     reproduced = get_similarity_score(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
-    assert 0.0 <= hf_similarity <= 1.0
+    assert hf_similarity == 1.0
     assert reproduced == hf_similarity
 
 
@@ -76,7 +75,7 @@ def test_asr_gemma4_optimum_genai(tmp_path, asr_ground_truth):
     )
     reproduced = get_similarity_score(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
-    assert 0.0 <= optimum_similarity <= 1.0 and 0.0 <= genai_similarity <= 1.0
+    assert optimum_similarity >= 0.90 and genai_similarity >= 0.90
     assert reproduced == genai_similarity
 
 
@@ -106,7 +105,7 @@ def test_asr_funasr_optimum(tmp_path, funasr_ground_truth):
     optimum_similarity = get_similarity_score(run_wwb(["--target-model", model_path, *common, "--output", tmp_path]))
     reproduced = get_similarity_score(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
-    assert 0.0 <= optimum_similarity <= 1.0
+    assert optimum_similarity >= 0.90
     assert reproduced == optimum_similarity
 
 
@@ -115,15 +114,10 @@ def test_asr_funasr_genai(tmp_path, funasr_ground_truth):
     common = [*_common_args(funasr_ground_truth), "--speech-language", FUNASR_LANGUAGE, "--max_new_tokens", "16"]
 
     model_path = convert_model(FUNASR_MODEL)
-    try:
-        output = run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path])
-    except subprocess.CalledProcessError as error:
-        if "Unsupported 'fun_asr' ASR model type" not in error.output:
-            raise
-        pytest.skip("OpenVINO GenAI build lacks FunASR support")
-
-    genai_similarity = get_similarity_score(output)
+    genai_similarity = get_similarity_score(
+        run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path])
+    )
     reproduced = get_similarity_score(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
-    assert 0.0 <= genai_similarity <= 1.0
+    assert genai_similarity >= 0.90
     assert reproduced == genai_similarity

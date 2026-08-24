@@ -394,3 +394,93 @@ def parquet_generate_tables(self, files, *args, **kwargs):
 def disable_diffusers_model_progress_bar(model):
     if hasattr(model, "set_progress_bar_config"):
         model.set_progress_bar_config(disable=True)
+
+
+AUDIO_SAMPLING_RATE = 16000
+DEFAULT_NUM_SAMPLES = 24
+
+FUNASR_TOKENIZER_SUBFOLDER = (
+    "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
+)
+NATIVE_ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+
+
+def to_mono_16k(audio, sampling_rate):
+    """Downmix to mono and resample to 16 kHz float32."""
+    from math import gcd
+    from scipy.signal import resample_poly
+
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    if sampling_rate != AUDIO_SAMPLING_RATE:
+        common = gcd(int(sampling_rate), AUDIO_SAMPLING_RATE)
+        audio = resample_poly(audio, AUDIO_SAMPLING_RATE // common, int(sampling_rate) // common)
+    return np.asarray(audio, dtype=np.float32)
+
+
+def load_audio_dataset(args):
+    """Stream an ASR dataset as columns: id and 16 kHz mono float32 waveform."""
+    import io
+    import soundfile as sf
+    from datasets import Audio, load_dataset
+
+    dataset = args.dataset or "google/fleurs,en_us"
+    split = args.split if args.split is not None else "validation"
+    if "," in dataset:
+        path, name = dataset.split(",", 1)
+    else:
+        path, name = dataset, None
+    audio_field = args.dataset_field if args.dataset_field not in (None, "text") else "audio"
+    num_samples = args.num_samples if args.num_samples is not None else DEFAULT_NUM_SAMPLES
+
+    data = load_dataset(path=path, name=name, split=split, streaming=True)
+    # datasets>=5 needs torchcodec to decode Audio; decode with soundfile instead.
+    data = data.cast_column(audio_field, Audio(decode=False))
+    data = data.take(num_samples)
+
+    audios, ids = [], []
+    for idx, row in enumerate(data):
+        raw = row[audio_field]
+        if raw.get("bytes"):
+            audio, sampling_rate = sf.read(io.BytesIO(raw["bytes"]), dtype="float32")
+        else:
+            audio, sampling_rate = sf.read(raw["path"], dtype="float32")
+        audios.append(to_mono_16k(audio, sampling_rate))
+        ids.append(os.path.basename(raw["path"]) if raw.get("path") else str(idx))
+
+    return {"prompts": ids, "audio": audios}
+
+
+def _read_model_json(model_id, filename):
+    model_path = Path(model_id)
+    if model_path.is_dir():
+        json_path = model_path / filename
+        if not json_path.is_file():
+            return None
+    else:
+        from huggingface_hub import hf_hub_download
+
+        try:
+            json_path = hf_hub_download(repo_id=str(model_id), filename=filename)
+        except Exception:
+            return None
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as json_file:
+            return json.load(json_file)
+    except Exception:
+        return None
+
+
+def get_model_type(model_id):
+    config = _read_model_json(model_id, "config.json")
+    if isinstance(config, dict) and config.get("model_type"):
+        return config["model_type"]
+
+    metadata = _read_model_json(model_id, "configuration.json")
+    if isinstance(metadata, dict):
+        model = metadata.get("model")
+        if isinstance(model, dict) and model.get("type"):
+            return model["type"]
+
+    return None

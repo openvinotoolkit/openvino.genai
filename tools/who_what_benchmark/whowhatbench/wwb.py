@@ -21,8 +21,7 @@ from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.speech_recognition_evaluator import AUDIO_SAMPLING_RATE
-from whowhatbench.utils import get_json_config
+from whowhatbench.utils import get_json_config, load_audio_dataset
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -184,8 +183,9 @@ def parse_args():
     parser.add_argument(
         "--dataset-field",
         type=str,
-        default="text",
+        default=None,
         help="The name of field in dataset for prompts. For example question or context in squad."
+        " Defaults to 'text' for prompt-based tasks and to the audio column for speech-recognition."
         " Will be used only if dataset is defined.",
     )
     parser.add_argument(
@@ -526,6 +526,9 @@ def check_args(args):
     if args.llamacpp_chat and not args.llamacpp:
         raise ValueError("--llamacpp-chat requires --llamacpp")
 
+    if args.dataset_field is None and args.model_type != "speech-recognition":
+        args.dataset_field = "text"
+
 
 def load_prompts(args):
     if args.dataset is None:
@@ -545,55 +548,6 @@ def load_prompts(args):
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
     return res
-
-
-DEFAULT_NUM_SAMPLES = 24
-
-
-def to_mono_16k(audio, sampling_rate):
-    """Downmix to mono and resample to 16 kHz float32."""
-    from math import gcd
-    from scipy.signal import resample_poly
-
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
-    if sampling_rate != AUDIO_SAMPLING_RATE:
-        common = gcd(int(sampling_rate), AUDIO_SAMPLING_RATE)
-        audio = resample_poly(audio, AUDIO_SAMPLING_RATE // common, int(sampling_rate) // common)
-    return np.asarray(audio, dtype=np.float32)
-
-
-def load_audio_dataset(args):
-    """Stream an ASR dataset as columns: id and 16 kHz mono float32 waveform."""
-    import io
-    import soundfile as sf
-    from datasets import Audio
-
-    dataset = args.dataset or "google/fleurs,en_us"
-    split = args.split if args.split is not None else "validation"
-    if "," in dataset:
-        path, name = dataset.split(",", 1)
-    else:
-        path, name = dataset, None
-    audio_field = args.dataset_field if args.dataset_field != "text" else "audio"
-    num_samples = args.num_samples if args.num_samples is not None else DEFAULT_NUM_SAMPLES
-
-    data = load_dataset(path=path, name=name, split=split, streaming=True)
-    # datasets>=5 needs torchcodec to decode Audio; decode with soundfile instead.
-    data = data.cast_column(audio_field, Audio(decode=False))
-    data = data.take(num_samples)
-
-    audios, ids = [], []
-    for idx, row in enumerate(data):
-        raw = row[audio_field]
-        if raw.get("bytes"):
-            audio, sampling_rate = sf.read(io.BytesIO(raw["bytes"]), dtype="float32")
-        else:
-            audio, sampling_rate = sf.read(raw["path"], dtype="float32")
-        audios.append(to_mono_16k(audio, sampling_rate))
-        ids.append(os.path.basename(raw["path"]) if raw.get("path") else str(idx))
-
-    return {"prompts": ids, "audio": audios}
 
 
 def load_tokenizer(args):

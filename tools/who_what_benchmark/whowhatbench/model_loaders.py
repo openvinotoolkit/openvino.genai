@@ -27,7 +27,10 @@ from .reranking_evaluator import (
 )
 from .utils import (
     OMNI_MODEL_TYPES,
+    FUNASR_TOKENIZER_SUBFOLDER,
+    NATIVE_ASR_MODEL_TYPES,
     apply_peft_adapters,
+    get_model_type,
     mock_torch_cuda_is_available,
     mock_AwqQuantizer_validate_environment,
     disable_diffusers_model_progress_bar,
@@ -1092,47 +1095,6 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     return SpeechT5Wrapper(model, processor, None)
 
 
-FUNASR_TOKENIZER_SUBFOLDER = (
-    "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
-)
-NATIVE_ASR_MODEL_TYPES = {"funasr", "fun_asr"}
-
-
-def _read_model_json(model_id, filename):
-    model_path = Path(model_id)
-    if model_path.is_dir():
-        json_path = model_path / filename
-        if not json_path.is_file():
-            return None
-    else:
-        from huggingface_hub import hf_hub_download
-
-        try:
-            json_path = hf_hub_download(repo_id=str(model_id), filename=filename)
-        except Exception:
-            return None
-
-    try:
-        with open(json_path, "r", encoding="utf-8") as json_file:
-            return json.load(json_file)
-    except Exception:
-        return None
-
-
-def get_model_type(model_id):
-    config = _read_model_json(model_id, "config.json")
-    if isinstance(config, dict) and config.get("model_type"):
-        return config["model_type"]
-
-    metadata = _read_model_json(model_id, "configuration.json")
-    if isinstance(metadata, dict):
-        model = metadata.get("model")
-        if isinstance(model, dict) and model.get("type"):
-            return model["type"]
-
-    return None
-
-
 def load_funasr_model(model_id, model_type, device="CPU", ov_config=None, use_hf=False, use_genai=False, language=""):
     from .speech_recognition_evaluator import (
         FunASRGenAITranscriber,
@@ -1173,6 +1135,8 @@ def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf
     language = kwargs.pop("speech_language", "") or ""
 
     model_type = get_model_type(model_id)
+    if model_type is None:
+        raise ValueError(f"Cannot determine the speech recognition model type for '{model_id}'")
     if model_type in NATIVE_ASR_MODEL_TYPES:
         return load_funasr_model(model_id, model_type, device, ov_config, use_hf, use_genai, language or "en")
 
