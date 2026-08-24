@@ -257,8 +257,14 @@ public:
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
-        custom_generation_config.height = custom_generation_config.height == 0 ? 512 : custom_generation_config.height;
-        custom_generation_config.width = custom_generation_config.width == 0 ? 512 : custom_generation_config.width;
+        if (custom_generation_config.height <= 0) {
+            custom_generation_config.height =
+                static_cast<int64_t>(m_transformer->get_config().sample_size * vae_scale_factor);
+        }
+        if (custom_generation_config.width <= 0) {
+            custom_generation_config.width =
+                static_cast<int64_t>(m_transformer->get_config().sample_size * vae_scale_factor);
+        }
 
         if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE) {
             OPENVINO_ASSERT(initial_image, "Initial image is required for image to image pipeline");
