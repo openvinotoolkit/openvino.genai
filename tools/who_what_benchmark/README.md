@@ -274,8 +274,9 @@ The speech-generation evaluator reports these metrics:
 [FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512), and with
 audio-capable multimodal models (audio VLMs), for example Gemma-4.
 
-The metric is `similarity = max(0, 1 - WER)` between the normalized target and `--base-model`
-transcripts, where 1 is a perfect match and 0 is completely different.
+The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
+transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
+(CER) when `--speech-language` is `zh`, `ja`, `Chinese`, or `Japanese`, and word error rate (WER) otherwise.
 
 #### FunASR
 
@@ -297,8 +298,6 @@ wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recogni
 and `ja`). WWB defaults to `en`.
 
 > **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
-> **NOTE**: WER counts whitespace-separated words, so for Chinese and Japanese an audio sample is a single
-> word and its similarity degenerates to 0.0 or 1.0.
 
 #### Audio VLMs
 

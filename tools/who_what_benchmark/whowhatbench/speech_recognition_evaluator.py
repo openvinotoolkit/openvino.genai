@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from .registry import register_evaluator, BaseEvaluator
 from .utils import no_double_bos, AUDIO_SAMPLING_RATE
-from .whowhat_metrics import WordSimilarity
+from .whowhat_metrics import TranscriptSimilarity
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
 # Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
@@ -170,6 +170,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
         max_new_tokens: int = 256,
         num_samples: int = None,
         gen_answer_fn=None,
+        speech_language: str = "",
     ) -> None:
         if base_model is None and gt_data is None:
             raise ValueError("Speech recognition pipeline for evaluation or ground truth data must be defined")
@@ -178,7 +179,7 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
         self.max_new_tokens = max_new_tokens
         self.num_samples = num_samples
         self.generation_fn = gen_answer_fn
-        self.similarity = WordSimilarity()
+        self.similarity = TranscriptSimilarity(speech_language)
         self.last_cmp = None
 
         if base_model:

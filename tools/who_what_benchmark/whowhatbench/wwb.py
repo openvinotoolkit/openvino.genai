@@ -1252,6 +1252,7 @@ def create_evaluator(base_model, args):
                 test_data=load_audio_dataset(args) if needs_audio else None,
                 max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
+                speech_language=args.speech_language,
             )
         else:
             raise ValueError(f"Unsupported task: {task}")

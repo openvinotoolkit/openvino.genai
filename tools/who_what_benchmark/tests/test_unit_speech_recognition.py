@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 import torch
 
-from whowhatbench.whowhat_metrics import WordSimilarity
+from whowhatbench.whowhat_metrics import TranscriptSimilarity
 from whowhatbench.utils import to_mono_16k
 from whowhatbench.speech_recognition_evaluator import (
     FunASROptimumTranscriber,
@@ -28,17 +28,20 @@ def _csv(tmp_path, name, prompts, answers):
 
 
 @pytest.mark.parametrize(
-    "references, hypotheses, corpus, per_prompt",
+    "language, references, hypotheses, corpus, per_prompt",
     [
         # 1 insertion over 6 reference words: corpus similarity is 5/6, not the 0.75 sample mean.
-        (["the quick brown fox", "hello world"], ["the quick brown fox", "hello there world"], 5 / 6, [1.0, 0.5]),
-        (["hello world"], ["hello world"], 1.0, [1.0]),
+        ("en", ["the quick brown fox", "hello world"], ["the quick brown fox", "hello there world"], 5 / 6, [1.0, 0.5]),
+        ("en", ["hello world"], ["hello world"], 1.0, [1.0]),
         # 3 insertions over 1 reference word: 1 - WER is clamped to 0.
-        (["hello"], ["hello spurious extra words"], 0.0, [0.0]),
+        ("en", ["hello"], ["hello spurious extra words"], 0.0, [0.0]),
+        # 1 substitution over 8 reference characters: corpus similarity is 7/8.
+        ("zh", ["今天天气很好", "你好"], ["今天天气真好", "你好"], 7 / 8, [5 / 6, 1.0]),
+        ("Japanese", ["あいうえお", "かきく"], ["あいうえか", "かきく"], 7 / 8, [4 / 5, 1.0]),
     ],
 )
-def test_word_similarity(references, hypotheses, corpus, per_prompt):
-    aggregate, per_sample = WordSimilarity().evaluate(_frame(references), _frame(hypotheses))
+def test_transcript_similarity(language, references, hypotheses, corpus, per_prompt):
+    aggregate, per_sample = TranscriptSimilarity(language).evaluate(_frame(references), _frame(hypotheses))
     assert per_sample == {"similarity": per_prompt}
     assert math.isclose(aggregate["similarity"], corpus)
 
@@ -53,6 +56,15 @@ def test_score_reports_similarity(tmp_path):
     assert per_prompt["similarity"].tolist() == [1.0, 0.5]
     assert math.isclose(aggregate["similarity"].iloc[0], 5 / 6)
     assert [example["prompt"] for example in evaluator.worst_examples(top_k=1)] == ["b"]
+
+
+def test_score_uses_character_similarity_for_chinese(tmp_path):
+    gt = _csv(tmp_path, "gt.csv", ["a"], ["今天天气很好"])
+    target = _csv(tmp_path, "target.csv", ["a"], ["今天天气真好"])
+    evaluator = SpeechRecognitionEvaluator(gt_data=gt, speech_language="Chinese")
+
+    _, aggregate = evaluator.score(target)
+    assert math.isclose(aggregate["similarity"].iloc[0], 5 / 6)
 
 
 @pytest.mark.parametrize(
