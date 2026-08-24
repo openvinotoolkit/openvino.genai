@@ -125,6 +125,8 @@ def print_metrics(
             f'acceptance rate: {sd_metric["acceptance_rate"]:.2f}%, '
             f'miss rate: {sd_metric["miss_rate"]:.2f}%'
         )
+        if sd_metric["draft_to_main_inference_duration_ratio"] is not None:
+            sd_str += f', draft to main inference duration ratio: {sd_metric["draft_to_main_inference_duration_ratio"]:.2f}'
         log.info(sd_str)
         print_sd_per_model_metrics(prefix, 'main model', sd_metric["main_model"])
         print_sd_per_model_metrics(prefix, 'draft model', sd_metric["draft_model"])

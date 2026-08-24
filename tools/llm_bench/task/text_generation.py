@@ -478,6 +478,7 @@ def get_sd_metrics(extended_perf_metrics, model):
         "miss_rate": (draft_processed_tokens - num_accepted) / draft_processed_tokens * 100 if draft_processed_tokens > 0 else 0.0,
         "draft_candidate_tokens": None,
         "rejected_tokens": None,
+        "draft_to_main_inference_duration_ratio": None,
         "main_model": main_model,
         "draft_model": draft_model,
     }
@@ -485,6 +486,9 @@ def get_sd_metrics(extended_perf_metrics, model):
     candidate_tokens = get_sd_candidate_tokens(extended_perf_metrics, draft_key)
     if candidate_tokens is not None:
         sd_metric.update(candidate_tokens)
+    ratio = get_sd_value(extended_perf_metrics, "get_draft_to_main_inference_duration_ratio")
+    if ratio is not None:
+        sd_metric["draft_to_main_inference_duration_ratio"] = ratio
     return sd_metric
 
 
