@@ -17,10 +17,8 @@ PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
 
 
-# number of draft tokens processed by each model already reported, see get_sd_token_numbers()
-sd_prev_draft_processed = {}
-# last raw metrics entry of each model already reported, see get_sd_token_numbers()
-sd_prev_raw_durations = {}
+# counter values of each model already reported, see get_sd_token_numbers()
+sd_prev_counters = {}
 
 
 def get_sd_token_numbers(answer, model):
@@ -32,21 +30,37 @@ def get_sd_token_numbers(answer, model):
     # some backends accumulate the metrics over generate() calls of the same pipeline, others reset them,
     # so the already reported iterations are detected by the draft model latencies to know which case it is
     durations = draft_model_metrics.raw_metrics.m_durations
-    prev_count, prev_marker = sd_prev_raw_durations.get(id(model), (0, None))
+    prev_count, prev_marker = sd_prev_counters.get((id(model), 'durations'), (0, None))
     is_accumulated = 0 < prev_count <= len(durations) and durations[prev_count - 1] == prev_marker
-    sd_prev_raw_durations[id(model)] = (len(durations), durations[-1] if len(durations) > 0 else None)
+    sd_prev_counters[(id(model), 'durations')] = (len(durations), durations[-1] if len(durations) > 0 else None)
+
+    def get_delta(name, total):
+        prev = sd_prev_counters.get((id(model), name), 0) if is_accumulated else 0
+        sd_prev_counters[(id(model), name)] = total
+        return total - prev
+
     # get_num_draft_processed_tokens() is the draft model specific alias of get_num_generated_tokens()
-    total_draft_processed = draft_model_metrics.get_num_generated_tokens()
-    prev_draft_processed = sd_prev_draft_processed.get(id(model), 0) if is_accumulated else 0
-    draft_processed_tokens = total_draft_processed - prev_draft_processed
-    sd_prev_draft_processed[id(model)] = total_draft_processed
+    draft_processed_tokens = get_delta('processed', draft_model_metrics.get_num_generated_tokens())
+    num_accepted = get_delta('accepted', extended_perf_metrics.get_num_accepted_tokens())
     # a negative value means the counters got out of sync, so the per prompt value is unknown
-    if draft_processed_tokens < 0:
+    if draft_processed_tokens < 0 or num_accepted < 0:
         return None
-    return {
+    token_numbers = {
         "draft_processed_tokens": draft_processed_tokens,
-        "num_accepted": extended_perf_metrics.get_num_accepted_tokens(),
+        "num_accepted": num_accepted,
     }
+    # the candidate token metrics are not reported by every pipeline
+    if hasattr(extended_perf_metrics, "get_num_draft_tokens"):
+        candidates = get_delta('candidates', extended_perf_metrics.get_num_draft_tokens())
+        try:
+            rejected = get_delta('rejected', extended_perf_metrics.get_num_rejected_tokens())
+        except RuntimeError:
+            # get_num_rejected_tokens() asserts that the accepted tokens do not exceed the candidate ones
+            return token_numbers
+        if candidates >= 0 and rejected >= 0:
+            token_numbers["draft_candidate_tokens"] = candidates
+            token_numbers["rejected_tokens"] = rejected
+    return token_numbers
 
 
 @register_evaluator("text")
@@ -285,7 +299,8 @@ class TextEvaluator(BaseEvaluator):
         df["language"] = self.language
         df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
         if any(sd_token_numbers):
-            df["draft_processed_tokens"] = [sd["draft_processed_tokens"] if sd else None for sd in sd_token_numbers]
-            df["num_accepted"] = [sd["num_accepted"] if sd else None for sd in sd_token_numbers]
+            for column in ("draft_processed_tokens", "draft_candidate_tokens", "num_accepted", "rejected_tokens"):
+                if any(sd and column in sd for sd in sd_token_numbers):
+                    df[column] = [sd.get(column) if sd else None for sd in sd_token_numbers]
 
         return df
