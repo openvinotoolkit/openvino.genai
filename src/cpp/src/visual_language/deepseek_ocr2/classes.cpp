@@ -12,18 +12,11 @@
 #include "openvino/core/type/float16.hpp"
 #include "utils.hpp"
 #include "visual_language/clip.hpp"
+#include "visual_language/processor_config.hpp"
 
 namespace ov::genai {
 
 namespace {
-
-constexpr int kBaseImageSize = 1024;
-constexpr int kTileImageSize = 768;
-constexpr int kMinTileBlocks = 2;
-constexpr int kMaxTileBlocks = 6;
-constexpr uint8_t kPadValue = 127;
-constexpr float kNormMean = 0.5f;
-constexpr float kNormStd = 0.5f;
 
 const std::string NATIVE_TAG = "<image>";
 
@@ -117,7 +110,9 @@ std::pair<std::vector<clip_image_u8>, std::pair<int, int>> dynamic_preprocess(co
     return {std::move(processed_images), target_aspect_ratio};
 }
 
-clip_image_f32 preprocess_image(const clip_image_u8& image) {
+clip_image_f32 preprocess_image(const clip_image_u8& image,
+                                const std::array<float, 3>& mean,
+                                const std::array<float, 3>& std) {
     const size_t width = static_cast<size_t>(image.nx);
     const size_t height = static_cast<size_t>(image.ny);
 
@@ -132,7 +127,7 @@ clip_image_f32 preprocess_image(const clip_image_u8& image) {
                 const uint8_t pixel = image.buf[3 * (y * width + x) + channel];
                 const size_t index = (y * width + x) + channel * width * height;
                 const float value = static_cast<float>(pixel) / 255.0f;
-                result.buf[index] = (value - kNormMean) / kNormStd;
+                result.buf[index] = (value - mean[channel]) / std[channel];
             }
         }
     }
@@ -142,7 +137,7 @@ clip_image_f32 preprocess_image(const clip_image_u8& image) {
 
 clip_image_u8 resize_and_pad_image_pil_contain(const clip_image_u8& image,
                                                 const std::pair<int, int>& target_resolution,
-                                                uint8_t pad_value) {
+                                                const std::array<uint8_t, 3>& pad_values) {
     const int target_width = target_resolution.first;
     const int target_height = target_resolution.second;
 
@@ -159,7 +154,7 @@ clip_image_u8 resize_and_pad_image_pil_contain(const clip_image_u8& image,
     clip_image_u8 padded_image;
     padded_image.nx = target_width;
     padded_image.ny = target_height;
-    padded_image.buf.resize(3 * target_width * target_height, pad_value);
+    padded_image.buf.resize(3 * target_width * target_height);
 
     const int pad_x = (target_width - new_width) / 2;
     const int pad_y = (target_height - new_height) / 2;
@@ -174,13 +169,49 @@ clip_image_u8 resize_and_pad_image_pil_contain(const clip_image_u8& image,
         }
     }
 
+    // Fill only border regions that are outside the centered resized image.
+    auto fill_pad_pixel = [&padded_image, &pad_values, target_width](int x, int y) {
+        const int dst_index = 3 * (y * target_width + x);
+        padded_image.buf[dst_index] = pad_values[0];
+        padded_image.buf[dst_index + 1] = pad_values[1];
+        padded_image.buf[dst_index + 2] = pad_values[2];
+    };
+
+    // top padding
+    for (int y = 0; y < pad_y; ++y) {
+        for (int x = 0; x < target_width; ++x) {
+            fill_pad_pixel(x, y);
+        }
+    }
+
+    // bottom padding
+    const int bottom_start = pad_y + new_height;
+    for (int y = bottom_start; y < target_height; ++y) {
+        for (int x = 0; x < target_width; ++x) {
+            fill_pad_pixel(x, y);
+        }
+    }
+
+    // left and right padding
+    for (int y = pad_y; y < bottom_start; ++y) {
+        for (int x = 0; x < pad_x; ++x) {
+            fill_pad_pixel(x, y);
+        }
+        const int right_start = pad_x + new_width;
+        for (int x = right_start; x < target_width; ++x) {
+            fill_pad_pixel(x, y);
+        }
+    }
+
     return padded_image;
 }
 
-ov::Tensor to_batch_tensor(const std::vector<clip_image_u8>& images) {
+ov::Tensor to_batch_tensor(const std::vector<clip_image_u8>& images,
+                            const std::array<float, 3>& mean,
+                            const std::array<float, 3>& std) {
     OPENVINO_ASSERT(!images.empty(), "Cannot create a batch tensor from an empty image list");
 
-    const clip_image_f32 first_processed = preprocess_image(images.front());
+    const clip_image_f32 first_processed = preprocess_image(images.front(), mean, std);
     const size_t channels = 3;
     const size_t height = static_cast<size_t>(first_processed.ny);
     const size_t width = static_cast<size_t>(first_processed.nx);
@@ -192,7 +223,7 @@ ov::Tensor to_batch_tensor(const std::vector<clip_image_u8>& images) {
     size_t offset = first_processed.buf.size();
 
     for (size_t idx = 1; idx < images.size(); ++idx) {
-        const clip_image_f32 processed = preprocess_image(images[idx]);
+        const clip_image_f32 processed = preprocess_image(images[idx], mean, std);
         OPENVINO_ASSERT(static_cast<size_t>(processed.nx) == width && static_cast<size_t>(processed.ny) == height,
                         "Inconsistent tile tensor shape during DeepSeek-OCR-2 preprocessing");
         std::copy_n(processed.buf.data(), processed.buf.size(), batch_data + offset);
@@ -275,18 +306,8 @@ ov::Tensor build_merged_visual_features(const ov::Tensor& global_features,
 
 VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const std::filesystem::path& model_dir,
                                                      const std::string& device,
-                                                     const ov::AnyMap properties) {
-    auto compiled_global = utils::singleton_core().compile_model(
-        model_dir / "openvino_vision_embeddings_model.xml",
-        device,
-        utils::get_model_properties(properties, "vision_embeddings", device));
-
-    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_global.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_global]() -> ov::InferRequest {
-            return compiled_global.create_infer_request();
-        });
-
+                                                     const ov::AnyMap properties)
+    : VisionEncoder(model_dir, device, properties) {
     auto compiled_tiles = utils::singleton_core().compile_model(
         model_dir / "openvino_vision_embeddings_tiles_model.xml",
         device,
@@ -304,20 +325,8 @@ VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const std::filesystem::path
 VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const ModelsMap& models_map,
                                                      const std::filesystem::path& config_dir_path,
                                                      const std::string& device,
-                                                     const ov::AnyMap properties) {
-    const auto& [global_model, global_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
-    auto compiled_global = utils::singleton_core().compile_model(
-        global_model,
-        global_weights,
-        device,
-        utils::get_model_properties(properties, "vision_embeddings", device));
-
-    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_global.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_global]() -> ov::InferRequest {
-            return compiled_global.create_infer_request();
-        });
-
+                                                     const ov::AnyMap properties)
+    : VisionEncoder(models_map, config_dir_path, device, properties) {
     const auto& [tiles_model, tiles_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings_tiles");
     auto compiled_tiles = utils::singleton_core().compile_model(
         tiles_model,
@@ -335,24 +344,32 @@ VisionEncoderDeepseekOCR2::VisionEncoderDeepseekOCR2(const ModelsMap& models_map
 }
 
 EncodedImage VisionEncoderDeepseekOCR2::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
-    (void)config_map;
+    const ProcessorConfig proc = ProcessorConfig::from_any_map(config_map, m_processor_config);
+    const int base_image_height = static_cast<int>(proc.size_height);
+    const int base_image_width = static_cast<int>(proc.size_width);
+    const int tile_image_size = static_cast<int>(proc.tile_size);
+    const int min_tile_blocks = static_cast<int>(proc.min_patches);
+    const int max_tile_blocks = static_cast<int>(proc.max_patches);
+    const std::array<uint8_t, 3>& pad_values = proc.background_color;
+
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     std::vector<clip_image_u8> tile_images;
-    if (input_image.nx > kTileImageSize || input_image.ny > kTileImageSize) {
-        auto [tiles, tile_ratio] = dynamic_preprocess(input_image, kTileImageSize, kMinTileBlocks, kMaxTileBlocks);
+    if (input_image.nx > tile_image_size || input_image.ny > tile_image_size) {
+        auto [tiles, tile_ratio] = dynamic_preprocess(input_image, tile_image_size, min_tile_blocks, max_tile_blocks);
         if (tile_ratio.first > 1 || tile_ratio.second > 1) {
             tile_images = std::move(tiles);
         }
     }
 
-    const clip_image_u8 global_view = resize_and_pad_image_pil_contain(input_image, {kBaseImageSize, kBaseImageSize}, kPadValue);
-    const ov::Tensor global_tensor = to_batch_tensor({global_view});
+    const clip_image_u8 global_view =
+        resize_and_pad_image_pil_contain(input_image, {base_image_width, base_image_height}, pad_values);
+    const ov::Tensor global_tensor = to_batch_tensor({global_view}, proc.image_mean, proc.image_std);
     const ov::Tensor global_features = infer_and_copy(m_ireq_queue_vision_encoder.get(), global_tensor);
 
     std::optional<ov::Tensor> tile_features;
     if (!tile_images.empty()) {
-        const ov::Tensor tile_tensor = to_batch_tensor(tile_images);
+        const ov::Tensor tile_tensor = to_batch_tensor(tile_images, proc.image_mean, proc.image_std);
         tile_features = infer_and_copy(m_ireq_queue_vision_encoder_tiles.get(), tile_tensor);
     }
 
@@ -361,7 +378,7 @@ EncodedImage VisionEncoderDeepseekOCR2::encode(const ov::Tensor& image, const ov
     EncodedImage encoded_image;
     encoded_image.resized_source = std::move(merged_features);
     encoded_image.num_image_tokens = encoded_image.resized_source.get_shape().at(1);
-    encoded_image.resized_source_size = ImageSize{static_cast<size_t>(kBaseImageSize), static_cast<size_t>(kBaseImageSize)};
+    encoded_image.resized_source_size = ImageSize{static_cast<size_t>(base_image_height), static_cast<size_t>(base_image_width)};
     encoded_image.original_image_size = ImageSize{static_cast<size_t>(input_image.ny), static_cast<size_t>(input_image.nx)};
     return encoded_image;
 }
