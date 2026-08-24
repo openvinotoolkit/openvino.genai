@@ -417,7 +417,18 @@ void init_omni_pipeline(py::module_& m) {
 
     // Deferred from the TalkerBase registration so OmniTalkerSpeechConfig and TalkerResults render
     // as Python types in the signature rather than raw C++ names.
-    talker_base.def("generate", &TalkerBase::generate,
+    talker_base.def("generate",
+                    [](TalkerBase& self,
+                       const VLMDecodedResults& vlm_result,
+                       const OmniTalkerSpeechConfig& talker_speech_config,
+                       const ov::genai::OmniSpeechStreamerVariant& speech_streamer) {
+                        ov::genai::TalkerResults res;
+                        {
+                            py::gil_scoped_release rel;
+                            res = self.generate(vlm_result, talker_speech_config, speech_streamer);
+                        }
+                        return res;
+                    },
                     py::arg("vlm_result"),
                     py::arg("talker_speech_config"),
                     py::arg("speech_streamer") = std::monostate{},

@@ -14,25 +14,53 @@ The pybind variant alias OmniSpeechStreamerVariant is intentionally not in
 the smoke import — variant aliases are not re-exported in __init__.py per the
 existing AudioStreamerVariant convention.
 
-This file covers the parts of the surface that can be exercised without loading
-a multi-GB Qwen3-Omni checkpoint: imports, config defaults, field round-trips,
-and dependency injection of user-defined VLMPipelineBase / TalkerBase children.
-The DI tests drive the real C++ OmniPipeline composition path against Python-
-defined mocks — no model weights required — so they exercise virtual dispatch,
-the text vs speech branching, and the constructor capability guards end to end.
+Two tiers, following the other pipeline suites:
 
-Cross-config validation that requires a real loaded pipeline (actual audio
-decode, speaker embeddings from a checkpoint, etc.) lives in the nightly
-real-model suites.
+1. Model-free tests — imports, config defaults, field round-trips, and dependency
+   injection of user-defined VLMPipelineBase / TalkerBase children. The DI tests
+   drive the real C++ OmniPipeline composition path against Python-defined mocks,
+   exercising virtual dispatch, the text vs speech branching, and the constructor
+   capability guards end to end.
+
+2. Real-model tests against `optimum-intel-internal-testing/tiny-random-qwen3-omni`,
+   covering the path-based constructor, text-only and speech generation, the
+   ChatHistory overload, and the speaker APIs.
+
+The real-model tier currently skips: the tiny checkpoint is a full omni model
+(talker_config, code2wav_config, enable_audio_output), but exporting it needs
+support that the pinned dependencies do not have yet. With transformers==5.0.0 the
+export raises `AttributeError: 'Qwen3OmniMoeTalkerCodePredictorConfig' object has no
+attribute 'use_sliding_window'` — the same failure `test_vlm_pipeline.py`'s
+`test_qwen3_omni_vision_preprocess_modes_equivalence` xfails on. Beyond that, the
+pinned optimum-intel exports no talker/code2wav submodels at all, so `Talker` has
+nothing to load. `omni_model_path` detects both cases and skips with the reason;
+the tests activate on their own once either dependency catches up.
 """
 
 from __future__ import annotations
+
+import logging
+from pathlib import Path
 
 import numpy as np
 import openvino as ov
 import pytest
 
 import openvino_genai as ov_genai
+from utils.constants import get_ov_cache_converted_models_dir
+
+logger = logging.getLogger(__name__)
+
+pytestmark = pytest.mark.omni
+
+OMNI_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+
+# Written by the Talker export; without them OmniPipeline's path ctor cannot build the speech stage.
+TALKER_ARTIFACTS = (
+    "openvino_talker_model.xml",
+    "openvino_code_predictor_model.xml",
+    "openvino_code2wav_model.xml",
+)
 
 
 class TestOmniPipelineImports:
@@ -207,21 +235,29 @@ class RecordingVLM(ov_genai.VLMPipelineBase):
         super().__init__()
         self.generate_calls = 0
         self.last_prompt: str | None = None
+        self.last_images: list[ov.Tensor] = []
+        self.last_videos: list[ov.Tensor] = []
+        self.last_audios: list[ov.Tensor] = []
+        self.last_videos_metadata: list[ov_genai.VideoMetadata] = []
         self._audio_output = audio_output
         self._hidden_states = hidden_states
 
     def generate(  # noqa: ANN001, PLR0913
         self,
         prompt,
-        images=[],  # noqa: B006
-        videos=[],  # noqa: B006
-        audios=[],  # noqa: B006
-        videos_metadata=[],  # noqa: B006
+        images=None,
+        videos=None,
+        audios=None,
+        videos_metadata=None,
         generation_config=None,
         streamer=None,
     ) -> ov_genai.VLMDecodedResults:
         self.generate_calls += 1
         self.last_prompt = prompt
+        self.last_images = list(images or [])
+        self.last_videos = list(videos or [])
+        self.last_audios = list(audios or [])
+        self.last_videos_metadata = list(videos_metadata or [])
         return ov_genai.VLMDecodedResults()
 
     def get_tokenizer(self):  # noqa: ANN201
@@ -270,6 +306,18 @@ class TestCustomVLMSubclass:
         vlm = RecordingVLM(audio_output=False, hidden_states=False)
         assert vlm.is_audio_output_enabled() is False
         assert vlm.supports_hidden_states_collection() is False
+
+    def test_generate_receives_isolated_arguments_per_call(self) -> None:
+        """A caller mutating the sequences one call received must not affect the next call."""
+        vlm = RecordingVLM()
+        vlm.generate("first")
+        vlm.last_images.append(ov.Tensor(np.zeros((1, 1, 4), dtype=np.float32)))
+
+        vlm.generate("second")
+
+        assert list(vlm.last_images) == [], (
+            "generate() leaked argument state between calls — a shared mutable default was reused."
+        )
 
 
 class TestOmniPipelineDependencyInjection:
@@ -320,3 +368,155 @@ class TestOmniPipelineDependencyInjection:
         vlm = RecordingVLM(hidden_states=False)
         with pytest.raises(RuntimeError, match="supports_hidden_states_collection"):
             ov_genai.OmniPipeline(vlm, RecordingTalker())
+
+
+def _export_tiny_omni_model(target_dir: Path) -> None:
+    """Export the tiny Qwen3-Omni checkpoint to OpenVINO IR under ``target_dir``."""
+    import openvino
+    import openvino_tokenizers
+    import transformers
+    from huggingface_hub import snapshot_download
+    from optimum.intel import OVModelForVisualCausalLM
+    from utils.network import retry_request
+
+    model_cached = snapshot_download(OMNI_MODEL_ID)  # required to avoid HF rate limits
+    align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
+    processor = retry_request(
+        lambda: transformers.AutoProcessor.from_pretrained(model_cached, **align_with_optimum_cli)
+    )
+    model = retry_request(
+        lambda: OVModelForVisualCausalLM.from_pretrained(model_cached, compile=False, device="CPU", export=True)
+    )
+
+    tokenizer = processor.tokenizer
+    if tokenizer.chat_template is None:
+        tokenizer.chat_template = processor.chat_template
+    tokenizer.save_pretrained(target_dir)
+    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
+    openvino.save_model(ov_tokenizer, target_dir / "openvino_tokenizer.xml")
+    openvino.save_model(ov_detokenizer, target_dir / "openvino_detokenizer.xml")
+
+    processor.save_pretrained(target_dir)
+    model.save_pretrained(target_dir)
+
+
+@pytest.fixture(scope="module")
+def omni_model_path() -> Path:
+    """Path to an exported tiny Qwen3-Omni model, or skip when the pinned deps cannot produce one.
+
+    Two distinct gaps are reported separately so a future failure points at the right dependency:
+    the export itself raising, and the export succeeding without any talker submodels. Only the
+    known transformers 5.0.x config bug is turned into a skip — any other export failure propagates
+    so a real regression cannot hide behind a skipped test.
+    """
+    from optimum.utils.import_utils import is_transformers_version
+    from utils.atomic_download import AtomicDownloadManager
+
+    model_dir = get_ov_cache_converted_models_dir() / OMNI_MODEL_ID.replace("/", "_")
+    manager = AtomicDownloadManager(model_dir)
+
+    if not manager.is_complete() and not (model_dir / "openvino_language_model.xml").exists():
+        try:
+            manager.execute(_export_tiny_omni_model)
+        except AttributeError as error:
+            # Transformers 5.0 generated this config with an uninitialized use_sliding_window
+            # reference, and the optimum-intel revision pinned by CI predates its workaround.
+            # Same failure test_vlm_pipeline.py's Qwen3-Omni preprocessing test xfails on.
+            message = str(error)
+            if not (
+                is_transformers_version(">=", "5.0")
+                and is_transformers_version("<", "5.1")
+                and "Qwen3OmniMoeTalkerCodePredictorConfig" in message
+                and "use_sliding_window" in message
+            ):
+                raise
+            logger.info("Tiny Qwen3-Omni export hit the known transformers 5.0.x config bug: %s", message)
+            pytest.skip(f"Cannot export {OMNI_MODEL_ID} with the pinned dependencies: AttributeError: {message}")
+
+    missing = [name for name in TALKER_ARTIFACTS if not (model_dir / name).exists()]
+    if missing:
+        pytest.skip(
+            f"{OMNI_MODEL_ID} exported without the talker stage (missing {', '.join(missing)}); "
+            "the pinned optimum-intel has no Qwen3-Omni talker/code2wav export support."
+        )
+
+    return model_dir
+
+
+class TestOmniPipelineRealModel:
+    """OmniPipeline driven by an exported tiny Qwen3-Omni checkpoint.
+
+    Covers what the mock-based DI tests cannot: the path-based constructor, the real
+    thinker/talker composition, and the speaker APIs backed by actual model data.
+    """
+
+    @staticmethod
+    def _text_config(max_new_tokens: int = 10) -> ov_genai.GenerationConfig:
+        config = ov_genai.GenerationConfig()
+        config.max_new_tokens = max_new_tokens
+        config.do_sample = False
+        return config
+
+    @staticmethod
+    def _talker_config(return_audio: bool) -> ov_genai.OmniTalkerSpeechConfig:
+        config = ov_genai.OmniTalkerSpeechConfig()
+        config.return_audio = return_audio
+        return config
+
+    def test_constructs_from_path(self, omni_model_path: Path) -> None:
+        """The path-based ctor builds both stages from a single model directory."""
+        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
+        assert pipe.get_vlm() is not None, "path ctor must build a VLM stage"
+        assert pipe.get_talker() is not None, "path ctor must build a talker stage"
+
+    def test_generate_text_only(self, omni_model_path: Path) -> None:
+        """With return_audio=False the pipeline decodes text and emits no waveform."""
+        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
+        result = pipe.generate(
+            "Describe this.",
+            text_config=self._text_config(),
+            talker_speech_config=self._talker_config(return_audio=False),
+        )
+
+        assert isinstance(result, ov_genai.OmniDecodedResults)
+        assert len(result.texts) == 1, "greedy decode must produce exactly one sequence"
+        assert result.speech_result.waveforms == [], "return_audio=False must not produce waveforms"
+
+    def test_generate_with_speech(self, omni_model_path: Path) -> None:
+        """With return_audio=True the talker produces a finite, non-empty waveform."""
+        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
+        result = pipe.generate(
+            "Describe this.",
+            text_config=self._text_config(),
+            talker_speech_config=self._talker_config(return_audio=True),
+        )
+
+        assert len(result.speech_result.waveforms) == 1, "return_audio=True must produce one waveform"
+        waveform = np.array(result.speech_result.waveforms[0].data, dtype=np.float32).reshape(-1)
+        assert waveform.size > 0, "waveform must not be empty"
+        assert np.isfinite(waveform).all(), "waveform must contain no NaN or Inf"
+
+    def test_generate_from_chat_history(self, omni_model_path: Path) -> None:
+        """The ChatHistory overload accepts structured turns and leaves the caller's history intact."""
+        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
+        history = ov_genai.ChatHistory()
+        history.append({"role": "user", "content": "Describe this."})
+        messages_before = history.get_messages()
+
+        result = pipe.generate(
+            history,
+            text_config=self._text_config(),
+            talker_speech_config=self._talker_config(return_audio=False),
+        )
+
+        assert len(result.texts) == 1
+        assert history.get_messages() == messages_before, "ChatHistory messages should not be mutated after generate."
+
+    def test_speaker_apis(self, omni_model_path: Path) -> None:
+        """list_speakers() reports the checkpoint's voices and each resolves to an embedding."""
+        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
+        speakers = pipe.get_talker().list_speakers()
+
+        assert speakers, "the checkpoint declares speakers, so list_speakers() must not be empty"
+        embedding = pipe.get_talker().get_speaker_embedding(speakers[0])
+        assert embedding.get_size() > 0, f"speaker {speakers[0]!r} must resolve to a non-empty embedding"
