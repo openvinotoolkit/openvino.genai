@@ -23,6 +23,8 @@ import {
   LLMPipelineProperties,
   WhisperGenerationConfig,
   WhisperPipelineProperties,
+  ASRGenerationConfig,
+  ASRPipelineProperties,
   SpeechGenerationConfig,
   ImageGenerationConfig,
   ImageGenerationCallback,
@@ -37,10 +39,12 @@ import {
   VLMPerfMetrics,
   PerfMetrics,
   WhisperPerfMetrics,
+  ASRPerfMetrics,
   ImageGenerationPerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
 import type {
+  ASRDecodedResultChunk,
   WhisperDecodedResultChunk,
   WhisperWordTiming,
   OmniSpeechResult,
@@ -190,6 +194,35 @@ export interface WhisperPipeline {
   getTokenizer(): ITokenizer;
   getGenerationConfig(): Partial<WhisperGenerationConfig>;
   setGenerationConfig(config: WhisperGenerationConfig): void;
+}
+
+export interface ASRPipeline {
+  new (): ASRPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: ASRPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    rawSpeech: Float32Array | number[],
+    generationConfig: ASRGenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        languages: string[];
+        perfMetrics: ASRPerfMetrics;
+        chunks?: ASRDecodedResultChunk[][];
+        words?: ASRDecodedResultChunk[][];
+      },
+    ) => void,
+  ): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): Partial<ASRGenerationConfig>;
+  setGenerationConfig(config: ASRGenerationConfig): void;
 }
 
 export interface VLMPipeline {
@@ -355,6 +388,7 @@ interface OpenVINOGenAIAddon {
   VLMPipeline: VLMPipeline;
   OmniPipeline: OmniPipeline;
   WhisperPipeline: WhisperPipeline;
+  ASRPipeline: ASRPipeline;
   Text2ImagePipeline: Text2ImagePipeline;
   Image2ImagePipeline: Image2ImagePipeline;
   InpaintingPipeline: InpaintingPipeline;
@@ -394,6 +428,7 @@ export const {
   VLMPipeline,
   OmniPipeline,
   WhisperPipeline,
+  ASRPipeline,
   Text2ImagePipeline,
   Image2ImagePipeline,
   InpaintingPipeline,

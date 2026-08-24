@@ -13,6 +13,7 @@ struct AddonData {
     Napi::FunctionReference omni_pipeline;
     Napi::FunctionReference text_rerank_pipeline;
     Napi::FunctionReference whisper_pipeline;
+    Napi::FunctionReference asr_pipeline;
     Napi::FunctionReference text2image_pipeline;
     Napi::FunctionReference image2image_pipeline;
     Napi::FunctionReference inpainting_pipeline;
@@ -20,6 +21,7 @@ struct AddonData {
     Napi::FunctionReference perf_metrics;
     Napi::FunctionReference vlm_perf_metrics;
     Napi::FunctionReference whisper_perf_metrics;
+    Napi::FunctionReference asr_perf_metrics;
     Napi::FunctionReference text2speech_pipeline;
     Napi::FunctionReference text2speech_perf_metrics;
     Napi::FunctionReference text2image_perf_metrics;

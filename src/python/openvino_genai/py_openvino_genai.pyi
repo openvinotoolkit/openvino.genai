@@ -38,7 +38,9 @@ class ASRDecodedResults:
         Parameters:
         texts:              vector of resulting sequences.
         scores:             scores for each sequence.
-        languages:          detected languages for the input audio(s), e.g. ["en"].
+        languages:          language associated with each transcription. Each entry contains the detected language when
+                            supported, or the requested language when generation forces one. An entry is empty when no
+                            language was requested and the model does not support language identification, as with Fun-ASR.
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
@@ -72,7 +74,7 @@ class ASRGenerationConfig(GenerationConfig):
     
         :param language: Language to use for generation.
                          In the form of `en`, `<|en|>` for Whisper models. Can be set for multilingual models only.
-                         In the form of English for Qwen3-ASR models.
+                         In the form of English for Qwen3-ASR and Fun-ASR models.
         :type language: Optional[str]
     
         :param return_timestamps: Whether to return segment-level timestamps.
@@ -312,7 +314,7 @@ class ASRPipeline:
         
             :param language: Language to use for generation.
                              In the form of `en`, `<|en|>` for Whisper models. Can be set for multilingual models only.
-                             In the form of English for Qwen3-ASR models.
+                             In the form of English for Qwen3-ASR and Fun-ASR models.
             :type language: Optional[str]
         
             :param return_timestamps: Whether to return segment-level timestamps.
@@ -2119,6 +2121,8 @@ class Image2ImagePipeline:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        ...
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
@@ -2393,6 +2397,8 @@ class InpaintingPipeline:
                         kwargs: Device properties.
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
+        ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
         ...
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, mask_image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
@@ -2959,7 +2965,12 @@ class OmniTalkerSpeechConfig:
         :type speaker: str | openvino.Tensor
     
         :param audio_chunk_frames: Number of codec frames accumulated before streaming each
-            audio chunk. Must be >= 1. Each frame is 80ms of audio at 24 kHz (1920 samples).
+            audio chunk. Must be >= 1. At steady state each frame decodes to 1920 samples (80ms at
+            24 kHz), but the code2wav vocoder trims its convolutional warmup from the first frame of
+            every decode call, so a chunk of N frames yields 1920*N - 555 samples, not 1920*N. This
+            is a property of the vocoder graph, not a miscount. Larger chunks amortize the fixed
+            warmup cost; very small chunks (e.g. 1) also risk audible seams between independently
+            decoded chunks in streaming mode.
         :type audio_chunk_frames: int
     
         :param max_new_tokens: Cap on talker AR steps. Independent of
@@ -2977,11 +2988,10 @@ class OmniTalkerSpeechConfig:
         :type talker_top_k: int | None
         :type talker_repetition_penalty: float | None
     
-        :param cp_temperature, cp_top_k, cp_repetition_penalty: CodePredictor sampling
+        :param cp_temperature, cp_top_k: CodePredictor sampling
             overrides. Same semantics as talker_*.
         :type cp_temperature: float | None
         :type cp_top_k: int | None
-        :type cp_repetition_penalty: float | None
     """
     return_audio: bool
     @typing.overload
@@ -2997,12 +3007,6 @@ class OmniTalkerSpeechConfig:
         ...
     @audio_chunk_frames.setter
     def audio_chunk_frames(self, arg0: typing.SupportsInt) -> None:
-        ...
-    @property
-    def cp_repetition_penalty(self) -> float | None:
-        ...
-    @cp_repetition_penalty.setter
-    def cp_repetition_penalty(self, arg0: typing.SupportsFloat | None) -> None:
         ...
     @property
     def cp_temperature(self) -> float | None:
@@ -4492,6 +4496,7 @@ class Talker(TalkerBase):
             openvino_code2wav_model.xml, plus the talker text-embedding and projection
             submodels and config.json.
     """
+    @typing.overload
     def __init__(self, model_dir: os.PathLike | str | bytes, device: str, **kwargs) -> None:
         """
                         Talker constructor.
@@ -4499,18 +4504,39 @@ class Talker(TalkerBase):
                         device (str): Device to run inference on (e.g., CPU, GPU).
                         kwargs: Device properties.
         """
+    @typing.overload
+    def __init__(self, models_map: collections.abc.Mapping[str, tuple[str, openvino._pyopenvino.Tensor]], config: OmniTalkerSpeechConfig, config_dir_path: os.PathLike | str | bytes, device_mapping: collections.abc.Mapping[str, str], **kwargs) -> None:
+        """
+                        Talker constructor from in-memory model IRs (blob deployment / per-submodel device placement).
+                        models_map (dict[str, tuple[str, openvino.Tensor]]): Keys: text_embeddings, talker,
+                            talker_text_embeddings, talker_projections, code_predictor, code2wav.
+                        config (OmniTalkerSpeechConfig): Stored default speech config.
+                        config_dir_path (os.PathLike): Folder with config.json and optional generation_config.json.
+                        device_mapping (dict[str, str]): Submodel name -> device; entries absent from this map
+                            fall back to CPU, while submodels absent from models_map stay unavailable.
+                        kwargs: Device properties.
+        """
 class TalkerBase:
     """
     Abstract speech-output backend for OmniPipeline.
     
-            Subclass to plug a custom talker into OmniPipeline. The default implementation
-            is Talker. Subclasses must override generate(), list_speakers(), and
+            Pure interface with no storage of its own. Subclass to plug a custom talker into
+            OmniPipeline; the default implementation is Talker. Subclasses must override
+            generate(), get_speech_config(), set_speech_config(), list_speakers(), and
             get_speaker_embedding().
     """
     def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
         ...
+    def get_speech_config(self) -> OmniTalkerSpeechConfig:
+        """
+        Return the backend's stored default OmniTalkerSpeechConfig.
+        """
     def list_speakers(self) -> list[str]:
         ...
+    def set_speech_config(self, config: OmniTalkerSpeechConfig) -> None:
+        """
+        Set the backend's stored default OmniTalkerSpeechConfig (validated).
+        """
 class TalkerPerfMetrics:
     """
     Performance metrics for Talker speech generation.
@@ -5392,18 +5418,36 @@ class VLMPerfMetrics(PerfMetrics):
         :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
         :type get_prepare_embeddings_duration: MeanStdPair
     
+        :param get_vision_encoding_duration: Returns mean and standard deviation of vision encoding duration in milliseconds
+        :type get_vision_encoding_duration: MeanStdPair
+    
+        :param get_audio_encoding_duration: Returns mean and standard deviation of audio encoding duration in milliseconds
+        :type get_audio_encoding_duration: MeanStdPair
+    
+        :param get_text_embedding_duration: Returns mean and standard deviation of text embedding duration in milliseconds
+        :type get_text_embedding_duration: MeanStdPair
+    
+        :param get_total_image_slice_count: Total number of image slices produced for the request.
+        :type get_total_image_slice_count: int
+    
         :param vlm_raw_metrics: VLM specific raw metrics
         :type VLMRawPerfMetrics:
     """
     def __init__(self) -> None:
         ...
+    def get_audio_encoding_duration(self) -> MeanStdPair:
+        ...
     def get_prepare_embeddings_duration(self) -> MeanStdPair:
+        ...
+    def get_text_embedding_duration(self) -> MeanStdPair:
         ...
     def get_total_image_slice_count(self) -> int:
         """
         Returns the total number of image slices processed for the request.
         An input image without explicit slicing metadata counts as one slice.
         """
+    def get_vision_encoding_duration(self) -> MeanStdPair:
+        ...
     @property
     def vlm_raw_metrics(self) -> VLMRawPerfMetrics:
         ...
@@ -5461,7 +5505,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5500,7 +5545,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5539,7 +5585,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5578,7 +5625,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5609,7 +5657,7 @@ class VLMPipeline(VLMPipelineBase):
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Ignored when audio_streamer is not provided.
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -5643,7 +5691,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5682,7 +5731,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5721,7 +5771,8 @@ class VLMPipeline(VLMPipelineBase):
                 Lambda receives ov.Tensor [1, 1, N_samples] and returns StreamingStatus (or bool/None).
             :type audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None], ov.genai.OmniSpeechStreamerBase
         
-            :param audio_chunk_frames: number of codec frames per streaming chunk (default 1 = ~80ms). Must be >= 1.
+            :param audio_chunk_frames: number of codec frames per streaming chunk (default 4 = ~297ms). Must be >= 1.
+                Smaller values lower time-to-first-audio but risk running slower than real time (1 frame is ~1.36x on GPU).
                 Ignored when audio_streamer is not provided.
             :type audio_chunk_frames: int
         
@@ -5752,7 +5803,7 @@ class VLMPipeline(VLMPipelineBase):
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,
             audio_streamer: Callable[[ov.Tensor], StreamingStatus | bool | None] or OmniSpeechStreamerBase - callback to receive audio chunks during speech generation,
-            audio_chunk_frames: int - number of codec frames per streaming chunk (default 1, must be >= 1). Ignored when audio_streamer is not provided.
+            audio_chunk_frames: int - number of codec frames per streaming chunk (default 4, must be >= 1). Ignored when audio_streamer is not provided.
         
             :return: return results in decoded form
             :rtype: VLMDecodedResults
@@ -5778,14 +5829,35 @@ class VLMRawPerfMetrics:
     
         :param prepare_embeddings_durations: Durations of embeddings preparation.
         :type prepare_embeddings_durations: list[MicroSeconds]
+    
+        :param vision_encoding_durations: Durations of vision encoding.
+        :type vision_encoding_durations: list[MicroSeconds]
+    
+        :param audio_encoding_durations: Durations of audio encoding.
+        :type audio_encoding_durations: list[MicroSeconds]
+    
+        :param text_embedding_durations: Durations of text embedding.
+        :type text_embedding_durations: list[MicroSeconds]
+    
+        :param per_image_slice_counts: Number of image slices processed for each input image.
+        :type per_image_slice_counts: list[int]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def audio_encoding_durations(self) -> list[float]:
         ...
     @property
     def per_image_slice_counts(self) -> list[int]:
         ...
     @property
     def prepare_embeddings_durations(self) -> list[float]:
+        ...
+    @property
+    def text_embedding_durations(self) -> list[float]:
+        ...
+    @property
+    def vision_encoding_durations(self) -> list[float]:
         ...
 class VideoGenerationConfig:
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None

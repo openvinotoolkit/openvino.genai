@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/vlm_chat_context.hpp"
+#include "continuous_batching/timer.hpp"
 
 namespace ov::genai {
 
@@ -40,7 +41,10 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
     std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos);
     
+    ManualTimer vision_encoding_timer("Vision Encoding");
+    vision_encoding_timer.start();
     encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata);
+    vision_encoding_timer.end();
     
     fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices);
     
@@ -70,6 +74,8 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     result.vision_counts = m_history_state->build_vision_counts();
     
     result.needs_kv_cache_reset = m_initial_messages_metadata_count == 0 || history_modified;
+
+    result.vision_encoding_duration = vision_encoding_timer.get_duration_microsec();
     
     return result;
 }
