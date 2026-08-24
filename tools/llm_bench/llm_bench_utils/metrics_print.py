@@ -116,7 +116,7 @@ def print_metrics(
         )
     if sd_metric:
         log.info(
-            f'{prefix} Speculative decoding: draft tokens generated: {sd_metric["num_draft_generated"]}, '
+            f'{prefix} Speculative decoding: draft tokens processed: {sd_metric["draft_processed_tokens"]}, '
             f'accepted by main model: {sd_metric["num_accepted"]}, '
             f'acceptance rate: {sd_metric["acceptance_rate"]:.2f}%, '
             f'miss rate: {sd_metric["miss_rate"]:.2f}%',

@@ -17,8 +17,8 @@ PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
 
 
-# number of draft tokens of each model already reported, see get_sd_token_numbers()
-sd_prev_draft_generated = {}
+# number of draft tokens processed by each model already reported, see get_sd_token_numbers()
+sd_prev_draft_processed = {}
 # last raw metrics entry of each model already reported, see get_sd_token_numbers()
 sd_prev_raw_durations = {}
 
@@ -35,15 +35,16 @@ def get_sd_token_numbers(answer, model):
     prev_count, prev_marker = sd_prev_raw_durations.get(id(model), (0, None))
     is_accumulated = 0 < prev_count <= len(durations) and durations[prev_count - 1] == prev_marker
     sd_prev_raw_durations[id(model)] = (len(durations), durations[-1] if len(durations) > 0 else None)
-    total_draft_generated = draft_model_metrics.get_num_generated_tokens()
-    prev_draft_generated = sd_prev_draft_generated.get(id(model), 0) if is_accumulated else 0
-    num_draft_generated = total_draft_generated - prev_draft_generated
-    sd_prev_draft_generated[id(model)] = total_draft_generated
+    # get_num_draft_processed_tokens() is the draft model specific alias of get_num_generated_tokens()
+    total_draft_processed = draft_model_metrics.get_num_generated_tokens()
+    prev_draft_processed = sd_prev_draft_processed.get(id(model), 0) if is_accumulated else 0
+    draft_processed_tokens = total_draft_processed - prev_draft_processed
+    sd_prev_draft_processed[id(model)] = total_draft_processed
     # a negative value means the counters got out of sync, so the per prompt value is unknown
-    if num_draft_generated < 0:
+    if draft_processed_tokens < 0:
         return None
     return {
-        "num_draft_generated": num_draft_generated,
+        "draft_processed_tokens": draft_processed_tokens,
         "num_accepted": extended_perf_metrics.get_num_accepted_tokens(),
     }
 
@@ -284,7 +285,7 @@ class TextEvaluator(BaseEvaluator):
         df["language"] = self.language
         df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
         if any(sd_token_numbers):
-            df["num_draft_generated"] = [sd["num_draft_generated"] if sd else None for sd in sd_token_numbers]
+            df["draft_processed_tokens"] = [sd["draft_processed_tokens"] if sd else None for sd in sd_token_numbers]
             df["num_accepted"] = [sd["num_accepted"] if sd else None for sd in sd_token_numbers]
 
         return df

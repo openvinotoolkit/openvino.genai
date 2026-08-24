@@ -395,8 +395,8 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
     return generated_tokens, perf_metrics, extended_perf_metrics, end - start
 
 
-# number of draft tokens of each model already reported, see get_sd_metrics()
-sd_prev_draft_generated = {}
+# number of draft tokens processed by each model already reported, see get_sd_metrics()
+sd_prev_draft_processed = {}
 # raw metrics entries of each model already reported, see get_sd_raw_slices()
 sd_prev_raw_entries = {}
 # whether the raw metrics of each model turned out to be accumulated, see get_sd_raw_slices()
@@ -457,19 +457,20 @@ def get_sd_metrics(extended_perf_metrics, model):
     draft_model = get_sd_per_model_metrics(extended_perf_metrics.draft_model_metrics, draft_key)
     # the counters of the backends accumulating the raw metrics are accumulated as well, while
     # num_accepted_tokens is always reported per generate() call, so the per call value is taken as a delta
-    total_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
-    prev_draft_generated = sd_prev_draft_generated.get(draft_key, 0) if sd_raw_accumulated.get(draft_key) else 0
-    num_draft_generated = total_draft_generated - prev_draft_generated
-    sd_prev_draft_generated[draft_key] = total_draft_generated
+    # get_num_draft_processed_tokens() is the draft model specific alias of get_num_generated_tokens()
+    total_draft_processed = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+    prev_draft_processed = sd_prev_draft_processed.get(draft_key, 0) if sd_raw_accumulated.get(draft_key) else 0
+    draft_processed_tokens = total_draft_processed - prev_draft_processed
+    sd_prev_draft_processed[draft_key] = total_draft_processed
     num_accepted = extended_perf_metrics.get_num_accepted_tokens()
     # a negative value means the counters got out of sync, so the per call value is unknown
-    if num_draft_generated < 0:
+    if draft_processed_tokens < 0:
         return None
     return {
-        "num_draft_generated": num_draft_generated,
+        "draft_processed_tokens": draft_processed_tokens,
         "num_accepted": num_accepted,
-        "acceptance_rate": num_accepted / num_draft_generated * 100 if num_draft_generated > 0 else 0.0,
-        "miss_rate": (num_draft_generated - num_accepted) / num_draft_generated * 100 if num_draft_generated > 0 else 0.0,
+        "acceptance_rate": num_accepted / draft_processed_tokens * 100 if draft_processed_tokens > 0 else 0.0,
+        "miss_rate": (draft_processed_tokens - num_accepted) / draft_processed_tokens * 100 if draft_processed_tokens > 0 else 0.0,
         "main_model": main_model,
         "draft_model": draft_model,
     }
