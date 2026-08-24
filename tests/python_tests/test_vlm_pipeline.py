@@ -940,10 +940,12 @@ def test_deepstack_visual_pos_masks_layout_pa(cat_tensor: openvino.Tensor):
     """DeepStack visual_pos_masks must use the tokens-first PagedAttention layout.
 
     Regression guard: the mask used to be allocated as {1, total_num_tokens},
-    which is the stateful (batch, seq) layout, while every other PagedAttention
-    input is tokens-first ({total_num_tokens, hidden_size} for inputs_embeds,
-    {total_num_tokens} for position_ids, {total_num_tokens, 1, ...} for
-    per_layer_inputs). With the wrong layout the DeepStack index_put_ inside the
+    which is the stateful (batch, seq) layout, while the PagedAttention inputs
+    that are token-flattened use tokens-first layouts ({total_num_tokens,
+    hidden_size} for inputs_embeds and {total_num_tokens, 1, ...} for
+    per_layer_inputs). M-RoPE position_ids may be {total_num_tokens} or
+    {N, total_num_tokens}; this test does not constrain that model-specific
+    layout. With the wrong mask layout the DeepStack index_put_ inside the
     language model derives its scatter indices against the wrong axis.
     """
     models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen3-vl")
