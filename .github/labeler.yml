@@ -43,6 +43,10 @@
 - 'src/cpp/src/lm_encoding.cpp'
 - 'src/python/py_vlm_pipeline.cpp'
 - 'tests/python_tests/test_vlm_pipeline.py'
+- 'src/cpp/include/openvino/genai/omni/**/*'
+- 'src/cpp/src/omni/**/*'
+- 'src/python/py_omni_pipeline.cpp'
+- 'tests/python_tests/test_omni_pipeline.py'
 
 'category: RAG':
 - 'src/cpp/include/openvino/genai/rag/**/*'
