@@ -179,6 +179,7 @@
 - name: Qwen3.5 MTP speculative decoding tests
   cmd: |-
     python -m pip install -U "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@qwen35_mtp"
+    pip install transformers==5.2.0
     python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
   timeout: 90
   components:
