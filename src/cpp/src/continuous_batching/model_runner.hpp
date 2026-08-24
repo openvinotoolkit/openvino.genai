@@ -579,7 +579,7 @@ public:
                     {total_num_tokens, 1}, ov::element::boolean);
 
                 visual_pos_masks_data = visual_pos_masks.data<bool>();
-                std::fill_n(visual_pos_masks_data, total_num_tokens, false);
+                std::fill_n(visual_pos_masks_data, visual_pos_masks.get_size(), false);
             }
 
             if (per_layer_inputs_context.has_per_layer_inputs) {
