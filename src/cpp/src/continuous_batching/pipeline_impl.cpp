@@ -409,7 +409,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reserve_linear_attenti
         const auto& params = sequence_group->get_sampling_parameters();
         num_live_sequences += sequence_group->num_running_seqs();
         if (params.is_prompt_lookup() || params.is_assisting_generation()) {
-            max_num_assistant_tokens = std::max(max_num_assistant_tokens, params.num_assistant_tokens);
+            max_num_assistant_tokens = std::max(max_num_assistant_tokens, params.num_assistant_tokens.value_or(0));
             num_verifying_sequences += sequence_group->num_running_seqs();
         }
     }

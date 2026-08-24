@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import gc
 import pytest
 import math
 import sys
@@ -19,7 +20,15 @@ from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_tex
 from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
+from utils.atomic_download import AtomicDownloadManager
+from utils.constants import get_ov_cache_converted_models_dir
+from utils.hugging_face import (
+    OVConvertedModelSchema,
+    download_and_convert_model,
+    export_with_optimum_cli,
+    run_hugging_face,
+    sanitize_model_id,
+)
 from utils.ov_genai_pipelines import (
     create_ov_pipeline,
     create_ov_cb_pipeline,
@@ -776,6 +785,75 @@ dynamic_split_fuse_prompt_cases = [
     (["Why is the Sun yellow?"], 5),
     (["Why is the Sun yellow?", "What's OpenVINO?", "Tell me something about Canada.", "Why is the grass green?"], 20),
 ]
+
+
+@pytest.fixture(scope="module")
+def qwen35_mtp_model_path() -> Path:
+    model_id = "Qwen/Qwen3.5-0.8B"
+    model_path = get_ov_cache_converted_models_dir() / f"{sanitize_model_id(model_id)}_image-text-to-text"
+    manager = AtomicDownloadManager(model_path)
+    manager.execute(
+        lambda temp_path: export_with_optimum_cli(
+            model_id,
+            "image-text-to-text",
+            temp_path,
+            trust_remote_code=False,
+        )
+    )
+    return model_path
+
+
+def test_qwen35_mtp_matches_main_only(qwen35_mtp_model_path: Path):
+    main_only_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+    )
+    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, num_assistant_tokens=3)
+    prompt = "OpenVINO is"
+
+    main_only_result = main_only_pipe.generate([prompt], [generation_config])
+    main_only_texts = main_only_result[0].m_generation_ids
+    del main_only_result
+    del main_only_pipe
+    gc.collect()
+
+    mtp_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+    )
+    mtp_result = mtp_pipe.generate([prompt], [generation_config])
+
+    assert mtp_result[0].m_generation_ids == main_only_texts
+
+
+def test_qwen35_mtp_extended_perf_metrics(qwen35_mtp_model_path: Path):
+    mtp_pipe = create_ov_cb_pipeline(
+        qwen35_mtp_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+    )
+    generation_config = GenerationConfig(
+        do_sample=False,
+        max_new_tokens=20,
+        ignore_eos=True,
+        num_assistant_tokens=3,
+    )
+
+    def generate_and_collect_metrics():
+        result = mtp_pipe.generate(["OpenVINO is"], [generation_config])[0]
+        metrics = result.extended_perf_metrics
+
+        assert metrics is not None
+        assert metrics.draft_model_metrics is not None
+        num_draft_generated = metrics.draft_model_metrics.get_num_generated_tokens()
+        num_draft_tokens = metrics.get_num_draft_tokens()
+        num_accepted = metrics.get_num_accepted_tokens()
+        assert num_draft_generated > 0
+        assert num_draft_generated <= generation_config.max_new_tokens * generation_config.num_assistant_tokens
+        assert num_draft_tokens > 0
+        assert 0 < num_accepted <= num_draft_tokens
+
+    generate_and_collect_metrics()
+    generate_and_collect_metrics()
 
 
 @pytest.mark.parametrize(
