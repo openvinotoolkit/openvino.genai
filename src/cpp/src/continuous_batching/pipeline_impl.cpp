@@ -746,7 +746,23 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
-        if (request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
+        const bool is_finished = request->has_finished();
+        const bool is_stopped = request->handle_stopped();
+        const bool is_cancelled = request->handle_cancelled();
+
+        if (is_finished || is_stopped || is_cancelled) {
+            if (!is_finished && (is_stopped || is_cancelled)) {
+                auto perf_metrics = request->get_perf_metrics();
+                perf_metrics.load_time = m_load_time_ms;
+                request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+                request->push_empty_outputs();
+            } else if (is_finished) {
+                auto perf_metrics = request->get_perf_metrics();
+                perf_metrics.load_time = m_load_time_ms;
+                request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+                request->notify_handle_final();
+            }
+
             for (const auto& sequence : request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());
@@ -782,7 +798,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const S
     }
     // stopped/cancelled requests may not be among the scheduled ones
     for (auto& request : m_requests) {
-        if (!request->has_finished() && (request->handle_stopped() || request->handle_cancelled())) {
+        const bool is_finished = request->has_finished();
+        const bool is_stopped = request->handle_stopped();
+        const bool is_cancelled = request->handle_cancelled();
+
+        if (!is_finished && (is_stopped || is_cancelled)) {
             auto perf_metrics = request->get_perf_metrics();
             perf_metrics.load_time = m_load_time_ms;
             request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));

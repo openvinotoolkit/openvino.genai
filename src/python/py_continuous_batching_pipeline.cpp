@@ -336,8 +336,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("can_read", &GenerationHandleImpl::can_read)
         .def("stop", &GenerationHandleImpl::stop, py::arg_v("finish_reason", GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
         .def("cancel", &GenerationHandleImpl::cancel)
-        .def("read", &GenerationHandleImpl::read)
-        .def("read_all", &GenerationHandleImpl::read_all)
+        .def("read", &GenerationHandleImpl::read, py::call_guard<py::gil_scoped_release>())
+        .def("read_all", &GenerationHandleImpl::read_all, py::call_guard<py::gil_scoped_release>())
         .def("get_perf_metrics", &GenerationHandleImpl::get_perf_metrics)
         .def("get_vlm_perf_metrics", &GenerationHandleImpl::get_vlm_perf_metrics);
 
