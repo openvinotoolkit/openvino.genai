@@ -751,16 +751,15 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
         const bool is_cancelled = request->handle_cancelled();
 
         if (is_finished || is_stopped || is_cancelled) {
-            if (!is_finished && (is_stopped || is_cancelled)) {
+            if (!request->notified_terminal()) {
                 auto perf_metrics = request->get_perf_metrics();
                 perf_metrics.load_time = m_load_time_ms;
                 request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
-                request->push_empty_outputs();
-            } else if (is_finished) {
-                auto perf_metrics = request->get_perf_metrics();
-                perf_metrics.load_time = m_load_time_ms;
-                request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
-                request->notify_handle_final();
+                if (is_finished) {
+                    request->notify_handle_final();
+                } else {
+                    request->notify_handle_stopped_or_cancelled();
+                }
             }
 
             for (const auto& sequence : request->get_sequences()) {
@@ -802,11 +801,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const S
         const bool is_stopped = request->handle_stopped();
         const bool is_cancelled = request->handle_cancelled();
 
-        if (!is_finished && (is_stopped || is_cancelled)) {
+        if (!is_finished && (is_stopped || is_cancelled) && !request->notified_terminal()) {
             auto perf_metrics = request->get_perf_metrics();
             perf_metrics.load_time = m_load_time_ms;
             request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
-            request->push_empty_outputs();
+            request->notify_handle_stopped_or_cancelled();
         }
     }
 }

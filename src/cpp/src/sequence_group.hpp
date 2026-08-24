@@ -437,6 +437,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     size_t m_output_seq_len = 0;
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
+    bool m_terminal_notification_sent = false;
     TimePoint m_start_time = std::chrono::steady_clock::now();
     PerfMetrics m_perf_metrics;
 
@@ -1064,7 +1065,16 @@ public:
             stream_output();
     }
 
+    // True once a terminal notification (final push + unblocking terminator) has reached the handle,
+    // however it was triggered (finished / OOM / echo-only / externally stopped / cancelled).
+    bool notified_terminal() const {
+        return m_terminal_notification_sent;
+    }
+
     void notify_handle_oom() {
+        if (m_terminal_notification_sent)
+            return;
+        m_terminal_notification_sent = true;
         stream_output();
         set_generation_status(GenerationStatus::IGNORED);
         push_empty_outputs();  // unblock any reader blocked in read() before the status change
@@ -1072,14 +1082,28 @@ public:
 
     // Push the final output for a finished group; must be called after set_perf_metrics() to close the metrics race.
     void notify_handle_final() {
+        if (m_terminal_notification_sent)
+            return;
         OPENVINO_ASSERT(has_finished());
+        m_terminal_notification_sent = true;
         stream_output();
         set_generation_status(GenerationStatus::FINISHED);
         push_empty_outputs();  // unblock any reader blocked in read() before the status change
     }
 
+    // Unblocks a reader stuck in read()/read_all() for a request stopped/cancelled by the user
+    // outside of the sampling loop (no new tokens are produced for this transition).
+    void notify_handle_stopped_or_cancelled() {
+        if (m_terminal_notification_sent)
+            return;
+        m_terminal_notification_sent = true;
+        push_empty_outputs();
+    }
+
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
+        if (m_terminal_notification_sent)
+            return;
         // Called after metrics are updated; m_num_processed_tokens does not yet include
         // recently forwarded tokens, so it is our starting position.
         // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
@@ -1100,6 +1124,7 @@ public:
         outputs.emplace(0, output);
         m_generation_stream->push(std::move(outputs));
         if (last_token_position == get_prompt_len()) {
+            m_terminal_notification_sent = true;
             set_generation_status(GenerationStatus::FINISHED);
             push_empty_outputs();  // unblock any reader blocked in read() before the status change
         }
