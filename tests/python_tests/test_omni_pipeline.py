@@ -33,13 +33,16 @@ export raises `AttributeError: 'Qwen3OmniMoeTalkerCodePredictorConfig' object ha
 attribute 'use_sliding_window'` — the same failure `test_vlm_pipeline.py`'s
 `test_qwen3_omni_vision_preprocess_modes_equivalence` xfails on. Beyond that, the
 pinned optimum-intel exports no talker/code2wav submodels at all, so `Talker` has
-nothing to load. `omni_model_path` detects both cases and skips with the reason;
-the tests activate on their own once either dependency catches up.
+nothing to load. `omni_model_path` detects both cases — plus transformers older than
+4.57, which cannot export Qwen3-Omni at all — and skips with the reason; the tests
+activate on their own once either dependency catches up.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -204,10 +207,16 @@ class RecordingTalker(ov_genai.TalkerBase):
     def __init__(self, speakers: list[str] | None = None) -> None:
         super().__init__()
         self.generate_calls = 0
+        self.last_return_audio: bool | None = None
         self._speakers = speakers if speakers is not None else ["default_voice"]
         self._speech_config = ov_genai.OmniTalkerSpeechConfig()
 
-    def generate(self, vlm_result, talker_speech_config, speech_streamer=None) -> ov_genai.TalkerResults:  # noqa: ANN001
+    def generate(
+        self,
+        vlm_result: ov_genai.VLMDecodedResults,
+        talker_speech_config: ov_genai.OmniTalkerSpeechConfig,
+        speech_streamer: ov_genai.OmniSpeechStreamerBase | None = None,
+    ) -> ov_genai.TalkerResults:
         self.generate_calls += 1
         self.last_return_audio = talker_speech_config.return_audio
         return ov_genai.TalkerResults()
@@ -234,7 +243,7 @@ class RecordingVLM(ov_genai.VLMPipelineBase):
     def __init__(self, audio_output: bool = True, hidden_states: bool = True) -> None:
         super().__init__()
         self.generate_calls = 0
-        self.last_prompt: str | None = None
+        self.last_prompt: str | ov_genai.ChatHistory | None = None
         self.last_images: list[ov.Tensor] = []
         self.last_videos: list[ov.Tensor] = []
         self.last_audios: list[ov.Tensor] = []
@@ -242,15 +251,15 @@ class RecordingVLM(ov_genai.VLMPipelineBase):
         self._audio_output = audio_output
         self._hidden_states = hidden_states
 
-    def generate(  # noqa: ANN001, PLR0913
+    def generate(  # noqa: PLR0913
         self,
-        prompt,
-        images=None,
-        videos=None,
-        audios=None,
-        videos_metadata=None,
-        generation_config=None,
-        streamer=None,
+        prompt: str | ov_genai.ChatHistory,
+        images: list[ov.Tensor] | None = None,
+        videos: list[ov.Tensor] | None = None,
+        audios: list[ov.Tensor] | None = None,
+        videos_metadata: list[ov_genai.VideoMetadata] | None = None,
+        generation_config: ov_genai.GenerationConfig | None = None,
+        streamer: ov_genai.StreamerBase | Callable[[str], bool] | None = None,
     ) -> ov_genai.VLMDecodedResults:
         self.generate_calls += 1
         self.last_prompt = prompt
@@ -260,7 +269,7 @@ class RecordingVLM(ov_genai.VLMPipelineBase):
         self.last_videos_metadata = list(videos_metadata or [])
         return ov_genai.VLMDecodedResults()
 
-    def get_tokenizer(self):  # noqa: ANN201
+    def get_tokenizer(self) -> ov_genai.Tokenizer:
         raise RuntimeError("RecordingVLM.get_tokenizer() is not needed for the prompt-based path")
 
     def set_chat_template(self, chat_template: str) -> None:
@@ -307,55 +316,86 @@ class TestCustomVLMSubclass:
         assert vlm.is_audio_output_enabled() is False
         assert vlm.supports_hidden_states_collection() is False
 
-    def test_generate_receives_isolated_arguments_per_call(self) -> None:
-        """A caller mutating the sequences one call received must not affect the next call."""
-        vlm = RecordingVLM()
-        vlm.generate("first")
-        vlm.last_images.append(ov.Tensor(np.zeros((1, 1, 4), dtype=np.float32)))
 
-        vlm.generate("second")
+@dataclass(frozen=True)
+class InjectedOmni:
+    """The DI pipeline together with the mocks it was built from, so tests can read the recorded calls."""
 
-        assert list(vlm.last_images) == [], (
-            "generate() leaked argument state between calls — a shared mutable default was reused."
-        )
+    pipeline: ov_genai.OmniPipeline
+    vlm: RecordingVLM
+    talker: RecordingTalker
+
+
+@pytest.fixture
+def injected_omni() -> InjectedOmni:
+    """Function-scoped on purpose: the mocks carry per-test call counters that must start at zero."""
+    vlm, talker = RecordingVLM(), RecordingTalker()
+    return InjectedOmni(ov_genai.OmniPipeline(vlm, talker), vlm, talker)
+
+
+def _talker_speech_config(return_audio: bool) -> ov_genai.OmniTalkerSpeechConfig:
+    config = ov_genai.OmniTalkerSpeechConfig()
+    config.return_audio = return_audio
+    return config
 
 
 class TestOmniPipelineDependencyInjection:
     """OmniPipeline(vlm, talker) accepts user-defined children and orchestrates them via C++."""
 
-    def test_construct_from_python_children(self) -> None:
+    def test_construct_from_python_children(self, injected_omni: InjectedOmni) -> None:
         """The DI constructor accepts a Python-defined VLM and Talker and hands them back verbatim."""
-        vlm, talker = RecordingVLM(), RecordingTalker()
-        pipe = ov_genai.OmniPipeline(vlm, talker)
-        assert pipe.get_vlm() is vlm, "get_vlm() must return the exact injected instance"
-        assert pipe.get_talker() is talker, "get_talker() must return the exact injected instance"
+        assert injected_omni.pipeline.get_vlm() is injected_omni.vlm, (
+            "get_vlm() must return the exact injected instance"
+        )
+        assert injected_omni.pipeline.get_talker() is injected_omni.talker, (
+            "get_talker() must return the exact injected instance"
+        )
 
-    def test_speech_path_invokes_both_stages(self) -> None:
+    def test_speech_path_invokes_both_stages(self, injected_omni: InjectedOmni) -> None:
         """With return_audio=True, generate() drives the VLM then the talker via virtual dispatch."""
-        vlm, talker = RecordingVLM(), RecordingTalker()
-        pipe = ov_genai.OmniPipeline(vlm, talker)
-
-        talker_config = ov_genai.OmniTalkerSpeechConfig()
-        talker_config.return_audio = True
-        result = pipe.generate("describe this", talker_speech_config=talker_config)
+        result = injected_omni.pipeline.generate(
+            "describe this", talker_speech_config=_talker_speech_config(return_audio=True)
+        )
 
         assert isinstance(result, ov_genai.OmniDecodedResults)
-        assert vlm.generate_calls == 1, "the injected VLM must be driven exactly once"
-        assert talker.generate_calls == 1, "the injected talker must be driven exactly once"
-        assert vlm.last_prompt == "describe this", "the prompt must reach the Python VLM unchanged"
-        assert talker.last_return_audio is True
+        assert injected_omni.vlm.generate_calls == 1, "the injected VLM must be driven exactly once"
+        assert injected_omni.talker.generate_calls == 1, "the injected talker must be driven exactly once"
+        assert injected_omni.vlm.last_prompt == "describe this", "the prompt must reach the Python VLM unchanged"
+        assert injected_omni.talker.last_return_audio is True
 
-    def test_text_only_path_skips_talker(self) -> None:
+    def test_text_only_path_skips_talker(self, injected_omni: InjectedOmni) -> None:
         """With return_audio=False, the talker must not be invoked at all."""
-        vlm, talker = RecordingVLM(), RecordingTalker()
-        pipe = ov_genai.OmniPipeline(vlm, talker)
+        injected_omni.pipeline.generate("just text", talker_speech_config=_talker_speech_config(return_audio=False))
 
-        talker_config = ov_genai.OmniTalkerSpeechConfig()
-        talker_config.return_audio = False
-        pipe.generate("just text", talker_speech_config=talker_config)
+        assert injected_omni.vlm.generate_calls == 1
+        assert injected_omni.talker.generate_calls == 0, "text-only generation must short-circuit the talker"
 
-        assert vlm.generate_calls == 1
-        assert talker.generate_calls == 0, "text-only generation must short-circuit the talker"
+    def test_media_arguments_do_not_leak_between_calls(self, injected_omni: InjectedOmni) -> None:
+        """Media passed to one generate() call must not reappear in the next call that omits it.
+
+        The binding declares images/videos/audios/videos_metadata with empty-list defaults, which
+        pybind11 materializes once per overload; a call that omits them must still see an empty
+        sequence rather than whatever the previous call supplied.
+        """
+        media = ov.Tensor(np.zeros((1, 4, 4, 3), dtype=np.uint8))
+        text_only = _talker_speech_config(return_audio=False)
+        injected_omni.pipeline.generate(
+            "with media",
+            images=[media],
+            videos=[media],
+            videos_metadata=[ov_genai.VideoMetadata()],
+            audios=[media],
+            talker_speech_config=text_only,
+        )
+        assert len(injected_omni.vlm.last_images) == 1, "the first call must reach the VLM with its media"
+
+        injected_omni.pipeline.generate("without media", talker_speech_config=text_only)
+
+        assert injected_omni.vlm.generate_calls == 2
+        assert len(injected_omni.vlm.last_images) == 0, "images leaked from the previous generate() call"
+        assert len(injected_omni.vlm.last_videos) == 0, "videos leaked from the previous generate() call"
+        assert len(injected_omni.vlm.last_audios) == 0, "audios leaked from the previous generate() call"
+        assert len(injected_omni.vlm.last_videos_metadata) == 0, "videos_metadata leaked from the previous call"
 
     def test_rejects_model_without_audio_output(self) -> None:
         """The constructor must reject a VLM whose is_audio_output_enabled() reports False."""
@@ -382,10 +422,18 @@ def _export_tiny_omni_model(target_dir: Path) -> None:
     model_cached = snapshot_download(OMNI_MODEL_ID)  # required to avoid HF rate limits
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
     processor = retry_request(
-        lambda: transformers.AutoProcessor.from_pretrained(model_cached, **align_with_optimum_cli)
+        lambda: transformers.AutoProcessor.from_pretrained(
+            model_cached,
+            trust_remote_code=True,
+            **align_with_optimum_cli,
+        )
     )
+    # No trust_remote_code here: test_vlm_pipeline.py grants it per model, and Qwen3-Omni is not on
+    # that list — the architecture is native to transformers >= 4.57, so the export needs no custom code.
     model = retry_request(
-        lambda: OVModelForVisualCausalLM.from_pretrained(model_cached, compile=False, device="CPU", export=True)
+        lambda: OVModelForVisualCausalLM.from_pretrained(
+            model_cached, compile=False, device="CPU", export=True, load_in_8bit=False
+        )
     )
 
     tokenizer = processor.tokenizer
@@ -404,13 +452,22 @@ def _export_tiny_omni_model(target_dir: Path) -> None:
 def omni_model_path() -> Path:
     """Path to an exported tiny Qwen3-Omni model, or skip when the pinned deps cannot produce one.
 
-    Two distinct gaps are reported separately so a future failure points at the right dependency:
-    the export itself raising, and the export succeeding without any talker submodels. Only the
-    known transformers 5.0.x config bug is turned into a skip — any other export failure propagates
-    so a real regression cannot hide behind a skipped test.
+    Three distinct gaps are reported separately so a future failure points at the right dependency:
+    a transformers version that cannot export Qwen3-Omni at all (checked before any download), the
+    export itself raising, and the export succeeding without any talker submodels. Only the known
+    transformers 5.0.x config bug is turned into a skip — any other export failure propagates so a
+    real regression cannot hide behind a skipped test.
     """
     from optimum.utils.import_utils import is_transformers_version
     from utils.atomic_download import AtomicDownloadManager
+
+    # Same gate as test_vlm_pipeline.py's _maybe_skip_unsupported_model_export, applied before the
+    # snapshot download so an unsupported environment costs nothing.
+    if is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Qwen3-Omni. "
+            "Minimum required is 4.57.0."
+        )
 
     model_dir = get_ov_cache_converted_models_dir() / OMNI_MODEL_ID.replace("/", "_")
     manager = AtomicDownloadManager(model_dir)
@@ -443,6 +500,24 @@ def omni_model_path() -> Path:
     return model_dir
 
 
+@pytest.fixture(scope="module")
+def omni_pipe(omni_model_path: Path) -> ov_genai.OmniPipeline:
+    """Pipeline built once per module — loading the model per test dominates the suite runtime.
+
+    Reused across the real-model tests the way test_vlm_pipeline.py reuses ov_pipe_model. Safe to
+    share: none of these tests enters chat mode or mutates the stored configs, so no state carries
+    between them.
+    """
+    return ov_genai.OmniPipeline(str(omni_model_path), "CPU")
+
+
+def _text_config(max_new_tokens: int = 10) -> ov_genai.GenerationConfig:
+    config = ov_genai.GenerationConfig()
+    config.max_new_tokens = max_new_tokens
+    config.do_sample = False
+    return config
+
+
 class TestOmniPipelineRealModel:
     """OmniPipeline driven by an exported tiny Qwen3-Omni checkpoint.
 
@@ -450,45 +525,29 @@ class TestOmniPipelineRealModel:
     thinker/talker composition, and the speaker APIs backed by actual model data.
     """
 
-    @staticmethod
-    def _text_config(max_new_tokens: int = 10) -> ov_genai.GenerationConfig:
-        config = ov_genai.GenerationConfig()
-        config.max_new_tokens = max_new_tokens
-        config.do_sample = False
-        return config
-
-    @staticmethod
-    def _talker_config(return_audio: bool) -> ov_genai.OmniTalkerSpeechConfig:
-        config = ov_genai.OmniTalkerSpeechConfig()
-        config.return_audio = return_audio
-        return config
-
-    def test_constructs_from_path(self, omni_model_path: Path) -> None:
+    def test_constructs_from_path(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """The path-based ctor builds both stages from a single model directory."""
-        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
-        assert pipe.get_vlm() is not None, "path ctor must build a VLM stage"
-        assert pipe.get_talker() is not None, "path ctor must build a talker stage"
+        assert omni_pipe.get_vlm() is not None, "path ctor must build a VLM stage"
+        assert omni_pipe.get_talker() is not None, "path ctor must build a talker stage"
 
-    def test_generate_text_only(self, omni_model_path: Path) -> None:
+    def test_generate_text_only(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """With return_audio=False the pipeline decodes text and emits no waveform."""
-        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
-        result = pipe.generate(
+        result = omni_pipe.generate(
             "Describe this.",
-            text_config=self._text_config(),
-            talker_speech_config=self._talker_config(return_audio=False),
+            text_config=_text_config(),
+            talker_speech_config=_talker_speech_config(return_audio=False),
         )
 
         assert isinstance(result, ov_genai.OmniDecodedResults)
         assert len(result.texts) == 1, "greedy decode must produce exactly one sequence"
         assert result.speech_result.waveforms == [], "return_audio=False must not produce waveforms"
 
-    def test_generate_with_speech(self, omni_model_path: Path) -> None:
+    def test_generate_with_speech(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """With return_audio=True the talker produces a finite, non-empty waveform."""
-        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
-        result = pipe.generate(
+        result = omni_pipe.generate(
             "Describe this.",
-            text_config=self._text_config(),
-            talker_speech_config=self._talker_config(return_audio=True),
+            text_config=_text_config(),
+            talker_speech_config=_talker_speech_config(return_audio=True),
         )
 
         assert len(result.speech_result.waveforms) == 1, "return_audio=True must produce one waveform"
@@ -496,27 +555,25 @@ class TestOmniPipelineRealModel:
         assert waveform.size > 0, "waveform must not be empty"
         assert np.isfinite(waveform).all(), "waveform must contain no NaN or Inf"
 
-    def test_generate_from_chat_history(self, omni_model_path: Path) -> None:
+    def test_generate_from_chat_history(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """The ChatHistory overload accepts structured turns and leaves the caller's history intact."""
-        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
         history = ov_genai.ChatHistory()
         history.append({"role": "user", "content": "Describe this."})
         messages_before = history.get_messages()
 
-        result = pipe.generate(
+        result = omni_pipe.generate(
             history,
-            text_config=self._text_config(),
-            talker_speech_config=self._talker_config(return_audio=False),
+            text_config=_text_config(),
+            talker_speech_config=_talker_speech_config(return_audio=False),
         )
 
         assert len(result.texts) == 1
         assert history.get_messages() == messages_before, "ChatHistory messages should not be mutated after generate."
 
-    def test_speaker_apis(self, omni_model_path: Path) -> None:
+    def test_speaker_apis(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """list_speakers() reports the checkpoint's voices and each resolves to an embedding."""
-        pipe = ov_genai.OmniPipeline(str(omni_model_path), "CPU")
-        speakers = pipe.get_talker().list_speakers()
+        speakers = omni_pipe.get_talker().list_speakers()
 
         assert speakers, "the checkpoint declares speakers, so list_speakers() must not be empty"
-        embedding = pipe.get_talker().get_speaker_embedding(speakers[0])
+        embedding = omni_pipe.get_talker().get_speaker_embedding(speakers[0])
         assert embedding.get_size() > 0, f"speaker {speakers[0]!r} must resolve to a non-empty embedding"
