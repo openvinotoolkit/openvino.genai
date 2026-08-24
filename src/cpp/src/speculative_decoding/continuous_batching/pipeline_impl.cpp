@@ -18,7 +18,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
     if (m_generation_config.assistant_confidence_threshold == 0.f) {
-        if (m_generation_config.num_assistant_tokens == 0) {
+        if (!m_generation_config.num_assistant_tokens.has_value()) {
             m_generation_config.num_assistant_tokens = default_num_assistant_tokens;
         }
     }
@@ -655,7 +655,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {
                 request->pause_generation(true);
-            } else if (sampling_params.num_assistant_tokens <= generated_tokens_cnt && sampling_params.assistant_confidence_threshold == 0.f) {
+            } else if (sampling_params.assistant_confidence_threshold == 0.f &&
+                       sampling_params.num_assistant_tokens.has_value() &&
+                       sampling_params.num_assistant_tokens.value() > 0 &&
+                       sampling_params.num_assistant_tokens.value() <= generated_tokens_cnt) {
                 request->pause_generation(true);
             } else if (request->get_max_new_tokens() == 0) {
                 request->pause_generation(true);
