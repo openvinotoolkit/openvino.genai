@@ -31,6 +31,7 @@
 
 namespace {
 
+// *OLD* IRs (TODO: eventually remove these once port to optimum-intel PR is done)
 constexpr const char* TALKER_LANGUAGE_NAME = "openvino_talker_language_model.xml";
 constexpr const char* TALKER_EMBEDDING_NAME = "openvino_talker_embedding_model.xml";
 constexpr const char* TALKER_TEXT_EMBEDDING_NAME = "openvino_talker_text_embedding_model.xml";
@@ -40,6 +41,17 @@ constexpr const char* TALKER_CODE_PREDICTOR_EMBEDDING_NAME = "openvino_talker_co
 constexpr const char* SPEECH_TOKENIZER_DECODER_NAME = "openvino_speech_tokenizer_decoder_model.xml";
 constexpr const char* SPEAKER_ENCODER_NAME = "openvino_speaker_encoder_model.xml";
 constexpr const char* SPEECH_TOKENIZER_ENCODER_NAME = "openvino_speech_tokenizer_encoder_model.xml";
+constexpr const char* CODEC_ENCODER_BAKED_NAME = "openvino_codec_encoder.xml";
+
+// NEW* IRs (from optimum-intel export)
+constexpr const char* TEXT_EMBEDDINGS_BAKED_NAME = "openvino_text_embeddings.xml";  // projection baked into rows (updated_optimum layout)
+                                                                                    // Equal to fused openvino_talker_text_embedding_model.xml +
+                                                                                    // openvino_talker_text_projection_model.xml
+constexpr const char* CODEC_DECODER_BAKED_NAME = "openvino_codec_decoder.xml";     // [B,Q,T] layout, waveform output (updated_optimum layout)
+constexpr const char* SPEAKER_ENCODER_BAKED_NAME = "openvino_speaker_encoder.xml";
+constexpr const char* CODE_PREDICTOR_EMBEDDINGS_BAKED_NAME = "openvino_code_predictor_embeddings.xml";  // uses 'step' input name (updated_optimum layout)
+constexpr const char* TALKER_EMBEDDINGS_BAKED_NAME = "openvino_talker_embeddings.xml";
+constexpr const char* TALKER_BAKED_NAME = "openvino_talker_model.xml";  // 4D float attention_mask, last_hidden_state output (updated_optimum layout)
 
 constexpr int64_t DECODER_TRACE_LEN = 256;
 constexpr int64_t DECODER_CHUNK_SIZE = 231;
@@ -437,23 +449,36 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             m_perf_device["talker_prefill"] = device_of(m_talker, "NPU");
             m_perf_device["talker_generate"] = m_perf_device["talker_prefill"];
         } else {
-            m_talker =
-                compile_request(models_path / TALKER_LANGUAGE_NAME, "qwen3_tts talker", talker_device, talker_properties);
+            const auto talker_baked_path = models_path / TALKER_BAKED_NAME;
+            const auto talker_path = std::filesystem::exists(talker_baked_path)
+                ? talker_baked_path
+                : models_path / TALKER_LANGUAGE_NAME;
+            m_talker_baked = std::filesystem::exists(talker_baked_path);
+            m_talker = compile_request(talker_path, "qwen3_tts talker", talker_device, talker_properties);
             m_perf_device["talker_prefill"] = device_of(m_talker, talker_device);
             m_perf_device["talker_generate"] = m_perf_device["talker_prefill"];
         }
     }
 
-    m_talker_embedding =
-        compile_for(models_path / TALKER_EMBEDDING_NAME, "qwen3_tts talker embedding", roles::TALKER_EMBEDDING);
+    m_talker_embedding = compile_for(
+        std::filesystem::exists(models_path / TALKER_EMBEDDINGS_BAKED_NAME)
+            ? models_path / TALKER_EMBEDDINGS_BAKED_NAME
+            : models_path / TALKER_EMBEDDING_NAME,
+        "qwen3_tts talker embedding", roles::TALKER_EMBEDDING);
     m_perf_device["talker_embedding"] = device_of(m_talker_embedding, default_device_for_role(device, m_is_npu, roles::TALKER_EMBEDDING));
-    m_talker_text_embedding =
-        compile_for(models_path / TALKER_TEXT_EMBEDDING_NAME, "qwen3_tts text embedding", roles::TALKER_TEXT_EMBEDDING);
+    if (std::filesystem::exists(models_path / TEXT_EMBEDDINGS_BAKED_NAME)) {
+        m_talker_text_embedding =
+            compile_for(models_path / TEXT_EMBEDDINGS_BAKED_NAME, "qwen3_tts text embeddings (baked)", roles::TALKER_TEXT_EMBEDDING);
+        m_text_projection_baked = true;
+    } else {
+        m_talker_text_embedding =
+            compile_for(models_path / TALKER_TEXT_EMBEDDING_NAME, "qwen3_tts text embedding", roles::TALKER_TEXT_EMBEDDING);
+        m_talker_text_projection = compile_for(models_path / TALKER_TEXT_PROJECTION_NAME,
+                                               "qwen3_tts text projection",
+                                               roles::TALKER_TEXT_PROJECTION);
+        m_perf_device["text_projection"] = device_of(m_talker_text_projection, default_device_for_role(device, m_is_npu, roles::TALKER_TEXT_PROJECTION));
+    }
     m_perf_device["talker_text_embedding"] = device_of(m_talker_text_embedding, default_device_for_role(device, m_is_npu, roles::TALKER_TEXT_EMBEDDING));
-    m_talker_text_projection = compile_for(models_path / TALKER_TEXT_PROJECTION_NAME,
-                                           "qwen3_tts text projection",
-                                           roles::TALKER_TEXT_PROJECTION);
-    m_perf_device["text_projection"] = device_of(m_talker_text_projection, default_device_for_role(device, m_is_npu, roles::TALKER_TEXT_PROJECTION));
     {
         auto [predictor_device, predictor_properties] =
             resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::CODE_PREDICTOR);
@@ -501,9 +526,12 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
                            "predictor (convert.py / qwen_3_tts_helper.py: static_code_predictor=True).");
         }
     }
-    m_talker_code_predictor_embedding = compile_for(models_path / TALKER_CODE_PREDICTOR_EMBEDDING_NAME,
-                                                    "qwen3_tts code predictor embedding",
-                                                    roles::CODE_PREDICTOR_EMBEDDING);
+    const bool pred_emb_baked = std::filesystem::exists(models_path / CODE_PREDICTOR_EMBEDDINGS_BAKED_NAME);
+    m_talker_code_predictor_embedding = compile_for(
+        pred_emb_baked ? models_path / CODE_PREDICTOR_EMBEDDINGS_BAKED_NAME
+                       : models_path / TALKER_CODE_PREDICTOR_EMBEDDING_NAME,
+        "qwen3_tts code predictor embedding",
+        roles::CODE_PREDICTOR_EMBEDDING);
     m_perf_device["code_predictor_embedding"] =
         device_of(m_talker_code_predictor_embedding, default_device_for_role(device, m_is_npu, roles::CODE_PREDICTOR_EMBEDDING));
 
@@ -517,7 +545,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     m_pred_emb_ids = ov::Tensor(ov::element::i64, ov::Shape{1, 1});
     m_pred_emb_step = ov::Tensor(ov::element::i64, ov::Shape{});
     m_talker_code_predictor_embedding.set_tensor("input_ids", m_pred_emb_ids);
-    m_talker_code_predictor_embedding.set_tensor("generation_steps", m_pred_emb_step);
+    m_talker_code_predictor_embedding.set_tensor(pred_emb_baked ? "step" : "generation_steps", m_pred_emb_step);
     {
         // The speech-tokenizer decoder is always fed fixed-size [1, DECODER_TRACE_LEN,
         // num_quantizers] code chunks (decode_speech_tokenizer zero-pads shorter
@@ -526,12 +554,17 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         // as exported.
         auto [decoder_device, decoder_properties] =
             resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::SPEECH_TOKENIZER_DECODER);
-        const auto decoder_path = models_path / "speech_tokenizer" / SPEECH_TOKENIZER_DECODER_NAME;
+        const auto codec_decoder_baked_path = models_path / CODEC_DECODER_BAKED_NAME;
+        const auto decoder_path = std::filesystem::exists(codec_decoder_baked_path)
+            ? codec_decoder_baked_path
+            : models_path / "speech_tokenizer" / SPEECH_TOKENIZER_DECODER_NAME;
+        m_codec_decoder_baked = std::filesystem::exists(codec_decoder_baked_path);
         if (decoder_device.find("NPU") != std::string::npos) {
             auto decoder_model = ov::genai::utils::singleton_core().read_model(decoder_path);
-            const ov::PartialShape static_codes{1,
-                                                static_cast<int64_t>(DECODER_TRACE_LEN),
-                                                static_cast<int64_t>(m_decoder_num_quantizers)};
+            // New layout [B,Q,T]; old layout [B,T,Q].
+            const ov::PartialShape static_codes = m_codec_decoder_baked
+                ? ov::PartialShape{1, static_cast<int64_t>(m_decoder_num_quantizers), static_cast<int64_t>(DECODER_TRACE_LEN)}
+                : ov::PartialShape{1, static_cast<int64_t>(DECODER_TRACE_LEN), static_cast<int64_t>(m_decoder_num_quantizers)};
             std::cout << "Reshaping speech-tokenizer decoder to static shape " << static_codes << std::endl;
             decoder_model->reshape({{"audio_codes", static_codes}});
             m_speech_tokenizer_decoder = compile_request(decoder_model,
@@ -550,7 +583,9 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         }
     }
 
-    const auto speaker_encoder_path = models_path / SPEAKER_ENCODER_NAME;
+    const auto speaker_encoder_path = std::filesystem::exists(models_path / SPEAKER_ENCODER_BAKED_NAME)
+        ? models_path / SPEAKER_ENCODER_BAKED_NAME
+        : models_path / SPEAKER_ENCODER_NAME;
     if (std::filesystem::exists(speaker_encoder_path)) {
         m_speaker_encoder = compile_for(speaker_encoder_path, "qwen3_tts speaker encoder", roles::SPEAKER_ENCODER);
         m_perf_device["speaker_encoder"] = device_of(m_speaker_encoder, default_device_for_role(device, m_is_npu, roles::SPEAKER_ENCODER));
@@ -562,7 +597,10 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         m_has_qwen3_mel_preprocess = true;
     }
 
-    const auto speech_tokenizer_encoder_path = models_path / "speech_tokenizer" / SPEECH_TOKENIZER_ENCODER_NAME;
+    const auto speech_tokenizer_encoder_path =
+        std::filesystem::exists(models_path / CODEC_ENCODER_BAKED_NAME)
+            ? models_path / CODEC_ENCODER_BAKED_NAME
+            : models_path / "speech_tokenizer" / SPEECH_TOKENIZER_ENCODER_NAME;
     if (std::filesystem::exists(speech_tokenizer_encoder_path)) {
         m_speech_tokenizer_encoder = compile_for(speech_tokenizer_encoder_path,
                                                  "qwen3_tts speech tokenizer encoder",
@@ -735,7 +773,7 @@ std::vector<float> Qwen3TTSImpl::normalize_ref_audio_waveform(const ov::Tensor& 
 
 ov::Tensor Qwen3TTSImpl::extract_qwen3_speaker_embedding_from_audio(const ov::Tensor& ref_audio) const {
     OPENVINO_ASSERT(m_has_speaker_encoder,
-                    "voice_clone_ref_audio requires 'openvino_speaker_encoder_model.xml' in the model directory");
+                    "voice_clone_ref_audio requires 'openvino_speaker_encoder.xml' or 'openvino_speaker_encoder_model.xml' in the model directory");
     OPENVINO_ASSERT(m_has_qwen3_mel_preprocess,
                     "voice_clone_ref_audio requires internal mel preprocessing model initialization");
     OPENVINO_ASSERT(m_speaker_encoder_sample_rate == 24000,
@@ -873,6 +911,9 @@ ov::Tensor Qwen3TTSImpl::infer_embedding_seq(ov::InferRequest& request, const st
 }
 
 ov::Tensor Qwen3TTSImpl::infer_text_projection(const ov::Tensor& hidden_states) {
+    if (m_text_projection_baked) {
+        return clone_tensor(hidden_states);
+    }
     m_talker_text_projection.set_input_tensor(hidden_states);
     run_and_time([&]{ m_talker_text_projection.infer(); }, "text_projection", m_perf_ms, m_perf_calls);
     auto out = clone_tensor(m_talker_text_projection.get_output_tensor(0));
@@ -920,7 +961,7 @@ ov::Tensor Qwen3TTSImpl::infer_talker_hidden(const ov::Tensor& inputs_embeds,
                                              const ov::Tensor& position_ids,
                                              bool reset_state) {
     infer_talker(inputs_embeds, attention_mask, position_ids, reset_state);
-    return clone_tensor(m_talker.get_tensor("hidden_states"));
+    return clone_tensor(m_talker.get_tensor(m_talker_baked ? "last_hidden_state" : "hidden_states"));
 }
 
 // Read fixed dimensions from the static all-heads code predictor IR and
@@ -1405,12 +1446,15 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
     Text2SpeechDecodedResults result;
     result.output_sample_rate = m_output_sample_rate;
 
-    auto prefill_mask = make_attention_mask(talker_prefill.get_shape()[1]);
+    auto prefill_mask = m_talker_baked
+        ? make_causal_attention_mask_4d(talker_prefill.get_shape()[1])
+        : make_attention_mask(talker_prefill.get_shape()[1]);
     auto prefill_pos = make_position_ids_prefill(talker_prefill.get_shape()[1]);
     auto logits = infer_talker(talker_prefill, prefill_mask, prefill_pos, true);
     // Hold the talker's own hidden_states output (no clone). We only read its last
     // row into past_hidden below, which happens before the next m_talker.infer().
-    auto hidden_states = m_talker.get_tensor("hidden_states");
+    const char* hidden_out_name = m_talker_baked ? "last_hidden_state" : "hidden_states";
+    auto hidden_states = m_talker.get_tensor(hidden_out_name);
 
     std::vector<int64_t> generated_main;
     std::vector<int64_t> all_codes;
@@ -1473,10 +1517,12 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
             }
         }
 
-        auto attn = make_attention_mask(absolute_pos + 1);
+        auto attn = m_talker_baked
+            ? make_decode_attention_mask_4d(absolute_pos + 1)
+            : make_attention_mask(absolute_pos + 1);
         auto pos = make_position_ids_decode(absolute_pos);
         logits = infer_talker(token_embed, attn, pos, false);
-        hidden_states = m_talker.get_tensor("hidden_states");
+        hidden_states = m_talker.get_tensor(hidden_out_name);
         ++absolute_pos;
     }
 
@@ -1496,6 +1542,24 @@ Text2SpeechDecodedResults Qwen3TTSImpl::decode_from_prefill(const ov::Tensor& ta
 ov::Tensor Qwen3TTSImpl::make_attention_mask(size_t length) {
     ov::Tensor mask(ov::element::i64, ov::Shape{1, length});
     std::fill_n(mask.data<int64_t>(), length, static_cast<int64_t>(1));
+    return mask;
+}
+
+ov::Tensor Qwen3TTSImpl::make_causal_attention_mask_4d(size_t length) {
+    ov::Tensor mask(ov::element::f32, ov::Shape{1, 1, length, length});
+    float* data = mask.data<float>();
+    const float neg_inf = -std::numeric_limits<float>::infinity();
+    for (size_t q = 0; q < length; ++q) {
+        for (size_t k = 0; k < length; ++k) {
+            data[q * length + k] = (k <= q) ? 0.0f : neg_inf;
+        }
+    }
+    return mask;
+}
+
+ov::Tensor Qwen3TTSImpl::make_decode_attention_mask_4d(size_t kv_len) {
+    ov::Tensor mask(ov::element::f32, ov::Shape{1, 1, 1, kv_len});
+    std::fill_n(mask.data<float>(), kv_len, 0.0f);
     return mask;
 }
 
@@ -1558,24 +1622,42 @@ std::vector<float> Qwen3TTSImpl::decode_speech_tokenizer(const std::vector<int64
         const size_t chunk_start = start - ctx;
         const size_t chunk_len = end - chunk_start;
 
-        std::vector<int64_t> chunk_codes(chunk_len * m_decoder_num_quantizers);
         const size_t src_offset = chunk_start * m_decoder_num_quantizers;
-        std::copy_n(codes.begin() + static_cast<std::ptrdiff_t>(src_offset),
-                    chunk_codes.size(),
-                    chunk_codes.begin());
+        const size_t padded_len = static_cast<size_t>(DECODER_TRACE_LEN);
+        ov::Tensor audio_codes;
 
-        if (chunk_len < static_cast<size_t>(DECODER_TRACE_LEN)) {
-            chunk_codes.resize(static_cast<size_t>(DECODER_TRACE_LEN) * m_decoder_num_quantizers, 0);
+        if (m_codec_decoder_baked) {
+            // New layout [B,Q,T]: always allocate and transpose from frame-major source.
+            audio_codes = ov::Tensor(ov::element::i64, ov::Shape{1, m_decoder_num_quantizers, padded_len});
+            int64_t* dst = audio_codes.data<int64_t>();
+            std::fill_n(dst, m_decoder_num_quantizers * padded_len, int64_t{0});
+            const int64_t* src = codes.data() + src_offset;
+            for (size_t t = 0; t < chunk_len; ++t) {
+                for (size_t q = 0; q < m_decoder_num_quantizers; ++q) {
+                    dst[q * padded_len + t] = src[t * m_decoder_num_quantizers + q];
+                }
+            }
+        } else if (chunk_len == padded_len) {
+            // Old layout [B,T,Q], exact fit — wrap source slice directly, no copy.
+            audio_codes = ov::Tensor(ov::element::i64,
+                                     ov::Shape{1, padded_len, m_decoder_num_quantizers},
+                                     const_cast<int64_t*>(codes.data() + src_offset));
+        } else {
+            // Old layout [B,T,Q], short chunk — allocate tensor, copy content, zero-pad tail.
+            audio_codes = ov::Tensor(ov::element::i64, ov::Shape{1, padded_len, m_decoder_num_quantizers});
+            int64_t* dst = audio_codes.data<int64_t>();
+            std::copy_n(codes.begin() + static_cast<std::ptrdiff_t>(src_offset),
+                        chunk_len * m_decoder_num_quantizers,
+                        dst);
+            std::fill_n(dst + chunk_len * m_decoder_num_quantizers,
+                        (padded_len - chunk_len) * m_decoder_num_quantizers,
+                        int64_t{0});
         }
-
-        ov::Tensor audio_codes(ov::element::i64,
-                               ov::Shape{1, chunk_codes.size() / m_decoder_num_quantizers, m_decoder_num_quantizers});
-        std::copy(chunk_codes.begin(), chunk_codes.end(), audio_codes.data<int64_t>());
 
         m_speech_tokenizer_decoder.set_tensor("audio_codes", audio_codes);
         run_and_time([&]{ m_speech_tokenizer_decoder.infer(); }, "speech_tokenizer_decoder", m_perf_ms, m_perf_calls);
 
-        const auto out = m_speech_tokenizer_decoder.get_tensor("audio_values");
+        const auto out = m_speech_tokenizer_decoder.get_tensor(m_codec_decoder_baked ? "waveform" : "audio_values");
         OPENVINO_ASSERT(out.get_element_type() == ov::element::f32,
                         "Speech tokenizer decoder output is expected to be f32");
 

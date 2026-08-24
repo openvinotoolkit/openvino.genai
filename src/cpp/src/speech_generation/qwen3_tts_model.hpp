@@ -109,6 +109,8 @@ private:
                                                   const std::vector<bool>& suppress_tokens);
 
     ov::Tensor make_attention_mask(size_t length);
+    ov::Tensor make_causal_attention_mask_4d(size_t length);
+    ov::Tensor make_decode_attention_mask_4d(size_t kv_len);
     ov::Tensor make_position_ids_prefill(size_t length);
     ov::Tensor make_position_ids_decode(size_t absolute_position);
     ov::Tensor make_predictor_position_ids(size_t start_position, size_t length);
@@ -135,9 +137,11 @@ private:
     size_t m_talker_hidden_size = 1024;  // talker hidden_size; predictor inputs_embeds width
 
     ov::InferRequest m_talker;
+    bool m_talker_baked = false;  // true when using 4D float attention_mask and last_hidden_state output (updated_optimum layout)
     ov::InferRequest m_talker_embedding;
     ov::InferRequest m_talker_text_embedding;
     ov::InferRequest m_talker_text_projection;
+    bool m_text_projection_baked = false;  // true when projection is folded into text embedding rows
     ov::InferRequest m_talker_code_predictor;
     ov::InferRequest m_talker_code_predictor_embedding;
 
@@ -161,6 +165,7 @@ private:
     ov::Tensor m_pred_emb_ids;  // token ids input, reused across calls
     ov::Tensor m_pred_emb_step;  // generation_steps input, reused across calls
     ov::InferRequest m_speech_tokenizer_decoder;
+    bool m_codec_decoder_baked = false;  // true when using [B,Q,T] layout with waveform output (updated_optimum layout)
     ov::InferRequest m_qwen3_mel_preprocess;
     ov::InferRequest m_speaker_encoder;
     ov::InferRequest m_speech_tokenizer_encoder;
