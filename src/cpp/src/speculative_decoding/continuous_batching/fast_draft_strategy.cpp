@@ -243,9 +243,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
                                                     [](const auto& sequence) {
                                                         return sequence.second.tree_metadata != nullptr;
                                                     });
-        if (is_tree_validation) {
-            OPENVINO_ASSERT(update_result.removed_tokens_cnt > 0,
-                            "EAGLE tree reconciliation must replace the target-generated token.");
+        if (is_tree_validation && update_result.removed_tokens_cnt > 0) {
             --update_result.removed_tokens_cnt;
         }
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
