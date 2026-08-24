@@ -311,8 +311,7 @@ public:
                 float* positive_noise_pred_data = positive_noise_pred.data<float>();
                 const float* negative_noise_pred_data = negative_noise_pred.data<const float>();
                 for (size_t i = 0; i < positive_noise_pred.get_size(); ++i) {
-                    positive_noise_pred_data[i] += custom_generation_config.guidance_scale *
-                                                   (positive_noise_pred_data[i] - negative_noise_pred_data[i]);
+                     positive_noise_pred_data[i] = negative_noise_pred_data[i] + custom_generation_config.guidance_scale * (positive_noise_pred_data[i] - negative_noise_pred_data[i]);
                 }
                 noise_pred = positive_noise_pred;
             }
@@ -366,12 +365,12 @@ public:
 
 protected:
     void initialize_generation_config(const std::string& class_name) override {
-        m_generation_config.max_sequence_length = 128;
+        m_generation_config.max_sequence_length = 512;
         m_generation_config.num_images_per_prompt = 1;
-        m_generation_config.height = 512;
-        m_generation_config.width = 512;
-        m_generation_config.num_inference_steps = 4;
-        m_generation_config.guidance_scale = 0.0f;
+        m_generation_config.height = 1024;
+        m_generation_config.width = 1024;
+        m_generation_config.num_inference_steps = 50;
+        m_generation_config.guidance_scale = 5.0f;
         m_generation_config.strength = m_pipeline_type == PipelineType::IMAGE_2_IMAGE ? 0.6f : 1.0f;
     }
 
