@@ -115,12 +115,17 @@ def print_metrics(
             f'max KV cache usage: {cb_metric["max_cache_usage"]:.2f}%',
         )
     if sd_metric:
-        log.info(
-            f'{prefix} Speculative decoding: draft tokens processed: {sd_metric["draft_processed_tokens"]}, '
-            f'accepted by main model: {sd_metric["num_accepted"]}, '
+        sd_str = f'{prefix} Speculative decoding: draft tokens processed: {sd_metric["draft_processed_tokens"]}, '
+        if sd_metric["draft_candidate_tokens"] is not None:
+            sd_str += f'draft candidate tokens: {sd_metric["draft_candidate_tokens"]}, '
+        sd_str += f'accepted by main model: {sd_metric["num_accepted"]}, '
+        if sd_metric["rejected_tokens"] is not None:
+            sd_str += f'rejected by main model: {sd_metric["rejected_tokens"]}, '
+        sd_str += (
             f'acceptance rate: {sd_metric["acceptance_rate"]:.2f}%, '
-            f'miss rate: {sd_metric["miss_rate"]:.2f}%',
+            f'miss rate: {sd_metric["miss_rate"]:.2f}%'
         )
+        log.info(sd_str)
         print_sd_per_model_metrics(prefix, 'main model', sd_metric["main_model"])
         print_sd_per_model_metrics(prefix, 'draft model', sd_metric["draft_model"])
     if stable_diffusion is not None:

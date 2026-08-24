@@ -395,8 +395,8 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
     return generated_tokens, perf_metrics, extended_perf_metrics, end - start
 
 
-# number of draft tokens processed by each model already reported, see get_sd_metrics()
-sd_prev_draft_processed = {}
+# counter values of each model already reported, see get_sd_counter_delta()
+sd_prev_counters = {}
 # raw metrics entries of each model already reported, see get_sd_raw_slices()
 sd_prev_raw_entries = {}
 # whether the raw metrics of each model turned out to be accumulated, see get_sd_raw_slices()
@@ -448,6 +448,14 @@ def get_sd_per_model_metrics(model_metrics, key):
     }
 
 
+def get_sd_counter_delta(key, name, total):
+    # the counters of the backends accumulating the raw metrics are accumulated as well, so the per
+    # generate() call value is taken as a delta, while the resetting ones already report it per call
+    prev = sd_prev_counters.get((key, name), 0) if sd_raw_accumulated.get(key) else 0
+    sd_prev_counters[(key, name)] = total
+    return total - prev
+
+
 def get_sd_metrics(extended_perf_metrics, model):
     # SDPerModelsPerfMetrics is set as extended_perf_metrics only for speculative decoding pipelines
     if not hasattr(extended_perf_metrics, "get_num_accepted_tokens"):
@@ -455,24 +463,47 @@ def get_sd_metrics(extended_perf_metrics, model):
     draft_key = f'{id(model)}_draft'
     main_model = get_sd_per_model_metrics(extended_perf_metrics.main_model_metrics, f'{id(model)}_main')
     draft_model = get_sd_per_model_metrics(extended_perf_metrics.draft_model_metrics, draft_key)
-    # the counters of the backends accumulating the raw metrics are accumulated as well, while
-    # num_accepted_tokens is always reported per generate() call, so the per call value is taken as a delta
     # get_num_draft_processed_tokens() is the draft model specific alias of get_num_generated_tokens()
-    total_draft_processed = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
-    prev_draft_processed = sd_prev_draft_processed.get(draft_key, 0) if sd_raw_accumulated.get(draft_key) else 0
-    draft_processed_tokens = total_draft_processed - prev_draft_processed
-    sd_prev_draft_processed[draft_key] = total_draft_processed
-    num_accepted = extended_perf_metrics.get_num_accepted_tokens()
-    # a negative value means the counters got out of sync, so the per call value is unknown
-    if draft_processed_tokens < 0:
+    draft_processed_tokens = get_sd_counter_delta(
+        draft_key, 'processed', extended_perf_metrics.draft_model_metrics.get_num_generated_tokens(),
+    )
+    num_accepted = get_sd_counter_delta(draft_key, 'accepted', extended_perf_metrics.get_num_accepted_tokens())
+    # more accepted than processed tokens means the counters got out of sync, so the values are unknown
+    if draft_processed_tokens < 0 or not 0 <= num_accepted <= draft_processed_tokens:
         return None
-    return {
+    sd_metric = {
         "draft_processed_tokens": draft_processed_tokens,
         "num_accepted": num_accepted,
         "acceptance_rate": num_accepted / draft_processed_tokens * 100 if draft_processed_tokens > 0 else 0.0,
         "miss_rate": (draft_processed_tokens - num_accepted) / draft_processed_tokens * 100 if draft_processed_tokens > 0 else 0.0,
+        "draft_candidate_tokens": None,
+        "rejected_tokens": None,
         "main_model": main_model,
         "draft_model": draft_model,
+    }
+    # the candidate token metrics are not reported by every pipeline and were added after the per model ones
+    candidate_tokens = get_sd_candidate_tokens(extended_perf_metrics, draft_key)
+    if candidate_tokens is not None:
+        sd_metric.update(candidate_tokens)
+    return sd_metric
+
+
+def get_sd_candidate_tokens(extended_perf_metrics, draft_key):
+    if not hasattr(extended_perf_metrics, "get_num_draft_tokens"):
+        return None
+    candidates = get_sd_counter_delta(draft_key, 'candidates', extended_perf_metrics.get_num_draft_tokens())
+    try:
+        rejected = get_sd_counter_delta(draft_key, 'rejected', extended_perf_metrics.get_num_rejected_tokens())
+    except RuntimeError:
+        # get_num_rejected_tokens() asserts that the accepted tokens do not exceed the candidate ones
+        return None
+    if candidates < 0 or rejected < 0:
+        return None
+    return {
+        "draft_candidate_tokens": candidates,
+        "rejected_tokens": rejected,
+        "acceptance_rate": (candidates - rejected) / candidates * 100 if candidates > 0 else 0.0,
+        "miss_rate": rejected / candidates * 100 if candidates > 0 else 0.0,
     }
 
 
