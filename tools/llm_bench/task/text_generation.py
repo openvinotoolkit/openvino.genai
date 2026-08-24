@@ -488,6 +488,14 @@ def get_sd_metrics(extended_perf_metrics, model):
     return sd_metric
 
 
+def get_sd_value(extended_perf_metrics, getter):
+    # NaN is reported when the value cannot be calculated, for example without any candidate token
+    if not hasattr(extended_perf_metrics, getter):
+        return None
+    value = getattr(extended_perf_metrics, getter)()
+    return value if value == value else None
+
+
 def get_sd_candidate_tokens(extended_perf_metrics, draft_key):
     if not hasattr(extended_perf_metrics, "get_num_draft_tokens"):
         return None
@@ -499,12 +507,21 @@ def get_sd_candidate_tokens(extended_perf_metrics, draft_key):
         return None
     if candidates < 0 or rejected < 0:
         return None
-    return {
+    metrics = {
         "draft_candidate_tokens": candidates,
         "rejected_tokens": rejected,
-        "acceptance_rate": (candidates - rejected) / candidates * 100 if candidates > 0 else 0.0,
         "miss_rate": rejected / candidates * 100 if candidates > 0 else 0.0,
     }
+    # get_draft_acceptance_rate() is reported in the [0, 1] range over every generate() call, so it
+    # matches the per call token numbers only as long as the counters are not accumulated
+    acceptance_rate = None
+    if not sd_raw_accumulated.get(draft_key):
+        acceptance_rate = get_sd_value(extended_perf_metrics, "get_draft_acceptance_rate")
+    if acceptance_rate is not None:
+        metrics["acceptance_rate"] = acceptance_rate * 100
+    else:
+        metrics["acceptance_rate"] = (candidates - rejected) / candidates * 100 if candidates > 0 else 0.0
+    return metrics
 
 
 # ===== GenAI Utils =====
