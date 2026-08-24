@@ -127,14 +127,14 @@ pytestmark = pytest.mark.skipif(
 
 
 def _download_gguf(repo_id, gguf):
-    """Fetch the .gguf into the shared converted-models cache; return (dir, full_path).
+    """Fetch the .gguf into the shared converted-models cache; return its directory.
 
     The GGUF tokenizer for both backends is built from the file itself, so a single local
     copy serves both the llama.cpp reference and the GenAI target.
     """
     dest = get_ov_cache_converted_models_dir() / ("gguf_" + repo_id.replace("/", "_"))
     download_hf_files_to_cache(repo_id, dest, [gguf])
-    return str(dest), str(dest / gguf)
+    return str(dest)
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segfault on macOS")
@@ -145,15 +145,18 @@ def test_text_gguf_genai_vs_llamacpp(arch, hf_id, gguf, tmp_path):
     the OpenVINO frontend. Assert their generations are similar."""
     pytest.importorskip("llama_cpp", reason="llama-cpp-python is required for the reference")
 
-    gguf_dir, gguf_path = _download_gguf(hf_id, gguf)
+    gguf_dir = _download_gguf(hf_id, gguf)
     gt_data = tmp_path / "gt.csv"
 
     # 1) Ground truth from llama.cpp running the .gguf directly; --tokenizer points at the hub
     #    repo so WWB can build a tokenizer for its own prompt bookkeeping.
+    # --base-model must be the directory: --gguf-file is joined onto it (same convention as the
+    # --genai run below), not the full file path -- load_text_llamacpp_pipeline joins the two
+    # itself and a full path here would append the filename twice.
     run_wwb(
         [
             "--base-model",
-            gguf_path,
+            gguf_dir,
             "--gt-data",
             gt_data,
             "--tokenizer",
