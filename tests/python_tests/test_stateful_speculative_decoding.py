@@ -544,3 +544,107 @@ def test_eagle3_perf_metrics(
     draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
     assert target_iterations > 0 and target_iterations <= generation_config.max_new_tokens
     assert draft_iterations > 0, "Draft model had no iterations"
+
+
+@pytest.mark.parametrize("target_model,draft_model,prompt", [eagle3_models_and_input[0]])
+def test_eagle3_num_assistant_tokens_zero(target_model, draft_model, prompt):
+    """Verify that num_assistant_tokens=0 bypasses the Stateful Eagle3 draft model."""
+    target_model_schema = download_and_convert_model(target_model)
+    target_model_path = target_model_schema.models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    npu_config = get_npu_llm_properties_for_test()
+    ov_draft_model = ov_genai.draft_model(draft_model_path, "NPU", **npu_config)
+    sd_pipe = ov_genai.LLMPipeline(target_model_path, "NPU", **npu_config, draft_model=ov_draft_model)
+    cb_pipe = ov_genai.LLMPipeline(target_model_path, "NPU", **npu_config)
+
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=30,
+        ignore_eos=True,
+        num_assistant_tokens=0,
+    )
+    sd_results = sd_pipe.generate([prompt], generation_config)
+    cb_results = cb_pipe.generate([prompt], generation_config)
+    extended_perf_metrics = sd_results.extended_perf_metrics
+
+    assert extended_perf_metrics is not None
+    assert extended_perf_metrics.main_model_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics is not None
+    assert extended_perf_metrics.main_model_metrics.get_num_generated_tokens() > 0
+    assert extended_perf_metrics.draft_model_metrics.get_num_generated_tokens() == 0
+    assert extended_perf_metrics.get_num_accepted_tokens() == 0
+
+    sd_generation_results = convert_decoded_results_to_generation_result(sd_results, 1, 1, False)
+    cb_generation_results = convert_decoded_results_to_generation_result(cb_results, 1, 1, False)
+    compare_generation_results([prompt], cb_generation_results, sd_generation_results, generation_config)
+
+
+@pytest.mark.parametrize("target_model,draft_model,prompt", [eagle3_models_and_input[0]])
+def test_eagle3_switch_from_speculative_to_zero_assistant_tokens(target_model, draft_model, prompt):
+    """Verify that Stateful Eagle3 can switch from speculative to target-only generation."""
+    target_model_path = download_and_convert_model(target_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    npu_config = get_npu_llm_properties_for_test()
+    ov_draft_model = ov_genai.draft_model(draft_model_path, "NPU", **npu_config)
+    sd_pipe = ov_genai.LLMPipeline(target_model_path, "NPU", **npu_config, draft_model=ov_draft_model)
+    cb_pipe = ov_genai.LLMPipeline(target_model_path, "NPU", **npu_config)
+
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=30,
+        ignore_eos=True,
+        num_assistant_tokens=4,
+    )
+    speculative_results = sd_pipe.generate([prompt], generation_config)
+    speculative_metrics = speculative_results.extended_perf_metrics
+    assert speculative_metrics is not None
+    assert speculative_metrics.draft_model_metrics.get_num_generated_tokens() > 0
+
+    generation_config.num_assistant_tokens = 0
+    zero_assistant_results = sd_pipe.generate([prompt], generation_config)
+
+    cb_results = cb_pipe.generate([prompt], generation_config)
+    zero_assistant_generation_results = convert_decoded_results_to_generation_result(
+        zero_assistant_results, 1, 1, False
+    )
+    cb_generation_results = convert_decoded_results_to_generation_result(cb_results, 1, 1, False)
+    compare_generation_results([prompt], cb_generation_results, zero_assistant_generation_results, generation_config)
+
+
+@pytest.mark.parametrize("target_model,draft_model,prompt", [eagle3_models_and_input[0]])
+def test_eagle3_switch_from_zero_to_speculative(target_model, draft_model, prompt):
+    """Verify that Stateful Eagle3 can switch from main-only to speculative generation."""
+    target_model_path = download_and_convert_model(target_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    npu_config = get_npu_llm_properties_for_test()
+    ov_draft_model = ov_genai.draft_model(draft_model_path, "NPU", **npu_config)
+    sd_pipe = ov_genai.LLMPipeline(target_model_path, "NPU", **npu_config, draft_model=ov_draft_model)
+    cb_pipe = ov_genai.LLMPipeline(target_model_path, "NPU", **npu_config)
+
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=30,
+        ignore_eos=True,
+        num_assistant_tokens=0,
+    )
+    initial_main_only_results = sd_pipe.generate([prompt], generation_config)
+    initial_cb_results = cb_pipe.generate([prompt], generation_config)
+    initial_main_only_generation_results = convert_decoded_results_to_generation_result(
+        initial_main_only_results,
+        1,
+        1,
+        False,
+    )
+    initial_cb_generation_results = convert_decoded_results_to_generation_result(initial_cb_results, 1, 1, False)
+    compare_generation_results(
+        [prompt], initial_cb_generation_results, initial_main_only_generation_results, generation_config
+    )
+
+    generation_config.num_assistant_tokens = 4
+    speculative_results = sd_pipe.generate([prompt], generation_config)
+    speculative_metrics = speculative_results.extended_perf_metrics
+    assert speculative_metrics is not None
+    assert speculative_metrics.draft_model_metrics.get_num_generated_tokens() > 0

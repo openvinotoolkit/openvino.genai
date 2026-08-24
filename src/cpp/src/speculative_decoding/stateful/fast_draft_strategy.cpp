@@ -383,7 +383,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(const ov::genai::
 
     // Specifying number candidates to generate
     ensure_num_assistant_tokens_is_set(m_generation_config);
-    m_candidates_num = m_generation_config.num_assistant_tokens;
+    m_candidates_num = m_generation_config.num_assistant_tokens.value();
     // We set the upper limit for candidates number as two times the number requested
     // by user.
     m_max_candidates_num = m_candidates_num * 2;
@@ -403,7 +403,7 @@ GenerationConfig StatefulSpeculativeLLMPipeline::resolve_generation_config(Optio
 
     // Apply Fast Draft specific validations
     ensure_num_assistant_tokens_is_set(config);
-    m_candidates_num = config.num_assistant_tokens;
+    m_candidates_num = config.num_assistant_tokens.value();
     // We set the upper limit for candidates number as two times the number
     // requested by user.
     m_max_candidates_num = m_candidates_num * 2;
@@ -678,7 +678,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
 
     // If not chat conversation, then reset all states.
     if (!m_is_chat_active) {
-        m_candidates_num = config.num_assistant_tokens;
+        m_candidates_num = config.num_assistant_tokens.value();
         m_draft_request->reset_state();
         m_main_request->reset_state();
     }

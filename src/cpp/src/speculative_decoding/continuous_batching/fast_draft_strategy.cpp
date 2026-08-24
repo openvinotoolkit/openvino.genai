@@ -316,7 +316,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                                   ov::Tensor& main_in,
                                   ov::Tensor& draft_in) {
         if (main_cfg.assistant_confidence_threshold == 0.f) {
-            if (main_cfg.num_assistant_tokens == 0) {
+            if (!main_cfg.num_assistant_tokens.has_value() || main_cfg.num_assistant_tokens.value() == 0) {
                 main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             }
         }
@@ -360,7 +360,7 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::is_requests_empty() {
 std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingImpl::get_awaiting_requests() {
     auto main_awaiting_requests = m_main_pipeline->get_awaiting_requests();
     auto draft_awaiting_requests = m_draft_pipeline->get_awaiting_requests();
-    OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
+    validate_awaiting_requests(main_awaiting_requests, draft_awaiting_requests);
     return main_awaiting_requests;
 }
 

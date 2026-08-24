@@ -80,6 +80,8 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 protected:
     void align_request_pair_processed_prefix(uint64_t request_id) override;
+    void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+                                    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const override;
     void update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
     ov::Tensor create_draft_input(const ov::Tensor& original_input);
     // Creates draft model input by removing the first token from the original input sequence.
