@@ -43,16 +43,16 @@ constexpr const char* SPEAKER_ENCODER_NAME = "openvino_speaker_encoder_model.xml
 constexpr const char* SPEECH_TOKENIZER_ENCODER_NAME = "openvino_speech_tokenizer_encoder_model.xml";
 
 // NEW* IRs (from optimum-intel export)
-constexpr const char* TEXT_EMBEDDINGS_BAKED_NAME = "openvino_text_embeddings.xml";  // projection baked into rows (updated_optimum layout)
+constexpr const char* TEXT_EMBEDDINGS_UPDATED_NAME = "openvino_text_embeddings.xml";  // projection baked into rows (updated_optimum layout)
                                                                                     // Equal to fused openvino_talker_text_embedding_model.xml +
                                                                                     // openvino_talker_text_projection_model.xml
-constexpr const char* CODEC_DECODER_BAKED_NAME = "openvino_codec_decoder.xml";     // [B,Q,T] layout, waveform output (updated_optimum layout)
-constexpr const char* SPEAKER_ENCODER_BAKED_NAME = "openvino_speaker_encoder.xml";
-constexpr const char* CODE_PREDICTOR_EMBEDDINGS_BAKED_NAME = "openvino_code_predictor_embeddings.xml";  // uses 'step' input name (updated_optimum layout)
-constexpr const char* TALKER_EMBEDDINGS_BAKED_NAME = "openvino_talker_embeddings.xml";
-constexpr const char* TALKER_BAKED_NAME = "openvino_talker_model.xml";  // 4D float attention_mask, last_hidden_state output (updated_optimum layout)
-constexpr const char* CODE_PREDICTOR_BAKED_NAME = "openvino_code_predictor_model.xml";
-constexpr const char* CODEC_ENCODER_BAKED_NAME = "openvino_codec_encoder.xml";
+constexpr const char* CODEC_DECODER_UPDATED_NAME = "openvino_codec_decoder.xml";     // [B,Q,T] layout, waveform output (updated_optimum layout)
+constexpr const char* SPEAKER_ENCODER_UPDATED_NAME = "openvino_speaker_encoder.xml";
+constexpr const char* CODE_PREDICTOR_EMBEDDINGS_UPDATED_NAME = "openvino_code_predictor_embeddings.xml";  // uses 'step' input name (updated_optimum layout)
+constexpr const char* TALKER_EMBEDDINGS_UPDATED_NAME = "openvino_talker_embeddings.xml";
+constexpr const char* TALKER_UPDATED_NAME = "openvino_talker_model.xml";  // 4D float attention_mask, last_hidden_state output (updated_optimum layout)
+constexpr const char* CODE_PREDICTOR_UPDATED_NAME = "openvino_code_predictor_model.xml";
+constexpr const char* CODEC_ENCODER_UPDATED_NAME = "openvino_codec_encoder.xml";
 
 constexpr int64_t DECODER_TRACE_LEN = 256;
 constexpr int64_t DECODER_CHUNK_SIZE = 231;
@@ -450,7 +450,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             m_perf_device["talker_prefill"] = device_of(m_talker, "NPU");
             m_perf_device["talker_generate"] = m_perf_device["talker_prefill"];
         } else {
-            const auto talker_baked_path = models_path / TALKER_BAKED_NAME;
+            const auto talker_baked_path = models_path / TALKER_UPDATED_NAME;
             const auto talker_path = std::filesystem::exists(talker_baked_path)
                 ? talker_baked_path
                 : models_path / TALKER_LANGUAGE_NAME;
@@ -462,14 +462,14 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     }
 
     m_talker_embedding = compile_for(
-        std::filesystem::exists(models_path / TALKER_EMBEDDINGS_BAKED_NAME)
-            ? models_path / TALKER_EMBEDDINGS_BAKED_NAME
+        std::filesystem::exists(models_path / TALKER_EMBEDDINGS_UPDATED_NAME)
+            ? models_path / TALKER_EMBEDDINGS_UPDATED_NAME
             : models_path / TALKER_EMBEDDING_NAME,
         "qwen3_tts talker embedding", roles::TALKER_EMBEDDING);
     m_perf_device["talker_embedding"] = device_of(m_talker_embedding, default_device_for_role(device, m_is_npu, roles::TALKER_EMBEDDING));
-    if (std::filesystem::exists(models_path / TEXT_EMBEDDINGS_BAKED_NAME)) {
+    if (std::filesystem::exists(models_path / TEXT_EMBEDDINGS_UPDATED_NAME)) {
         m_talker_text_embedding =
-            compile_for(models_path / TEXT_EMBEDDINGS_BAKED_NAME, "qwen3_tts text embeddings (baked)", roles::TALKER_TEXT_EMBEDDING);
+            compile_for(models_path / TEXT_EMBEDDINGS_UPDATED_NAME, "qwen3_tts text embeddings (baked)", roles::TALKER_TEXT_EMBEDDING);
         m_text_projection_baked = true;
     } else {
         m_talker_text_embedding =
@@ -484,7 +484,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         auto [predictor_device, predictor_properties] =
             resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::CODE_PREDICTOR);
 
-        const auto predictor_baked_path = models_path / CODE_PREDICTOR_BAKED_NAME;
+        const auto predictor_baked_path = models_path / CODE_PREDICTOR_UPDATED_NAME;
         if (std::filesystem::exists(predictor_baked_path)) {
             auto predictor_model = ov::genai::utils::singleton_core().read_model(predictor_baked_path);
             m_talker_code_predictor = compile_request(predictor_model,
@@ -531,9 +531,9 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             std::cout << "Qwen3-TTS: using legacy static code predictor: " << (models_path / TALKER_CODE_PREDICTOR_NAME) << std::endl;
         }
     }
-    const bool pred_emb_baked = std::filesystem::exists(models_path / CODE_PREDICTOR_EMBEDDINGS_BAKED_NAME);
+    const bool pred_emb_baked = std::filesystem::exists(models_path / CODE_PREDICTOR_EMBEDDINGS_UPDATED_NAME);
     m_talker_code_predictor_embedding = compile_for(
-        pred_emb_baked ? models_path / CODE_PREDICTOR_EMBEDDINGS_BAKED_NAME
+        pred_emb_baked ? models_path / CODE_PREDICTOR_EMBEDDINGS_UPDATED_NAME
                        : models_path / TALKER_CODE_PREDICTOR_EMBEDDING_NAME,
         "qwen3_tts code predictor embedding",
         roles::CODE_PREDICTOR_EMBEDDING);
@@ -559,7 +559,7 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         // as exported.
         auto [decoder_device, decoder_properties] =
             resolve_component_target(device, m_is_npu, device_properties, base_properties, roles::SPEECH_TOKENIZER_DECODER);
-        const auto codec_decoder_baked_path = models_path / CODEC_DECODER_BAKED_NAME;
+        const auto codec_decoder_baked_path = models_path / CODEC_DECODER_UPDATED_NAME;
         const auto decoder_path = std::filesystem::exists(codec_decoder_baked_path)
             ? codec_decoder_baked_path
             : models_path / "speech_tokenizer" / SPEECH_TOKENIZER_DECODER_NAME;
@@ -588,8 +588,8 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
         }
     }
 
-    const auto speaker_encoder_path = std::filesystem::exists(models_path / SPEAKER_ENCODER_BAKED_NAME)
-        ? models_path / SPEAKER_ENCODER_BAKED_NAME
+    const auto speaker_encoder_path = std::filesystem::exists(models_path / SPEAKER_ENCODER_UPDATED_NAME)
+        ? models_path / SPEAKER_ENCODER_UPDATED_NAME
         : models_path / SPEAKER_ENCODER_NAME;
     if (std::filesystem::exists(speaker_encoder_path)) {
         m_speaker_encoder = compile_for(speaker_encoder_path, "qwen3_tts speaker encoder", roles::SPEAKER_ENCODER);
@@ -603,8 +603,8 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
     }
 
     const auto speech_tokenizer_encoder_path =
-        std::filesystem::exists(models_path / CODEC_ENCODER_BAKED_NAME)
-            ? models_path / CODEC_ENCODER_BAKED_NAME
+        std::filesystem::exists(models_path / CODEC_ENCODER_UPDATED_NAME)
+            ? models_path / CODEC_ENCODER_UPDATED_NAME
             : models_path / "speech_tokenizer" / SPEECH_TOKENIZER_ENCODER_NAME;
     if (std::filesystem::exists(speech_tokenizer_encoder_path)) {
         m_speech_tokenizer_encoder = compile_for(speech_tokenizer_encoder_path,
