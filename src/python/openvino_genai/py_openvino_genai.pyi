@@ -38,7 +38,9 @@ class ASRDecodedResults:
         Parameters:
         texts:              vector of resulting sequences.
         scores:             scores for each sequence.
-        languages:          detected languages for the input audio(s), e.g. ["en"].
+        languages:          language associated with each transcription. Each entry contains the detected language when
+                            supported, or the requested language when generation forces one. An entry is empty when no
+                            language was requested and the model does not support language identification, as with Fun-ASR.
         perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
         chunks:             optional chunks of resulting sequences with timestamps
         words:              optional chunks of resulting words with timestamps
@@ -72,7 +74,7 @@ class ASRGenerationConfig(GenerationConfig):
     
         :param language: Language to use for generation.
                          In the form of `en`, `<|en|>` for Whisper models. Can be set for multilingual models only.
-                         In the form of English for Qwen3-ASR models.
+                         In the form of English for Qwen3-ASR and Fun-ASR models.
         :type language: Optional[str]
     
         :param return_timestamps: Whether to return segment-level timestamps.
@@ -312,7 +314,7 @@ class ASRPipeline:
         
             :param language: Language to use for generation.
                              In the form of `en`, `<|en|>` for Whisper models. Can be set for multilingual models only.
-                             In the form of English for Qwen3-ASR models.
+                             In the form of English for Qwen3-ASR and Fun-ASR models.
             :type language: Optional[str]
         
             :param return_timestamps: Whether to return segment-level timestamps.
@@ -5416,18 +5418,36 @@ class VLMPerfMetrics(PerfMetrics):
         :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
         :type get_prepare_embeddings_duration: MeanStdPair
     
+        :param get_vision_encoding_duration: Returns mean and standard deviation of vision encoding duration in milliseconds
+        :type get_vision_encoding_duration: MeanStdPair
+    
+        :param get_audio_encoding_duration: Returns mean and standard deviation of audio encoding duration in milliseconds
+        :type get_audio_encoding_duration: MeanStdPair
+    
+        :param get_text_embedding_duration: Returns mean and standard deviation of text embedding duration in milliseconds
+        :type get_text_embedding_duration: MeanStdPair
+    
+        :param get_total_image_slice_count: Total number of image slices produced for the request.
+        :type get_total_image_slice_count: int
+    
         :param vlm_raw_metrics: VLM specific raw metrics
         :type VLMRawPerfMetrics:
     """
     def __init__(self) -> None:
         ...
+    def get_audio_encoding_duration(self) -> MeanStdPair:
+        ...
     def get_prepare_embeddings_duration(self) -> MeanStdPair:
+        ...
+    def get_text_embedding_duration(self) -> MeanStdPair:
         ...
     def get_total_image_slice_count(self) -> int:
         """
         Returns the total number of image slices processed for the request.
         An input image without explicit slicing metadata counts as one slice.
         """
+    def get_vision_encoding_duration(self) -> MeanStdPair:
+        ...
     @property
     def vlm_raw_metrics(self) -> VLMRawPerfMetrics:
         ...
@@ -5809,14 +5829,35 @@ class VLMRawPerfMetrics:
     
         :param prepare_embeddings_durations: Durations of embeddings preparation.
         :type prepare_embeddings_durations: list[MicroSeconds]
+    
+        :param vision_encoding_durations: Durations of vision encoding.
+        :type vision_encoding_durations: list[MicroSeconds]
+    
+        :param audio_encoding_durations: Durations of audio encoding.
+        :type audio_encoding_durations: list[MicroSeconds]
+    
+        :param text_embedding_durations: Durations of text embedding.
+        :type text_embedding_durations: list[MicroSeconds]
+    
+        :param per_image_slice_counts: Number of image slices processed for each input image.
+        :type per_image_slice_counts: list[int]
     """
     def __init__(self) -> None:
+        ...
+    @property
+    def audio_encoding_durations(self) -> list[float]:
         ...
     @property
     def per_image_slice_counts(self) -> list[int]:
         ...
     @property
     def prepare_embeddings_durations(self) -> list[float]:
+        ...
+    @property
+    def text_embedding_durations(self) -> list[float]:
+        ...
+    @property
+    def vision_encoding_durations(self) -> list[float]:
         ...
 class VideoGenerationConfig:
     adapters: openvino_genai.py_openvino_genai.AdapterConfig | None

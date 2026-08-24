@@ -85,18 +85,18 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         } else {
             m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
         }
-    } else if (draft_model_descr.model != nullptr && dflash_rt_info.dflash_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "DFlash speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
-    } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
+    } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
-        m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        if (dflash_rt_info.dflash_mode) {
+            m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
+        } else {
+            m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        }
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -148,18 +148,18 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(const std::shared_ptr<ov:
         } else {
             m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
         }
-    } else if (draft_model_descr.model != nullptr && dflash_rt_info.dflash_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "DFlash speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
-    } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
+    } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
-        m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        if (dflash_rt_info.dflash_mode) {
+            m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
+        } else {
+            m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        }
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -206,18 +206,18 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(draft_model_descr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
-    } else if (draft_model_descr.model != nullptr && dflash_rt_info.dflash_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "DFlash speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
-    } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
+    } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
-        m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        if (dflash_rt_info.dflash_mode) {
+            m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
+        } else {
+            m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        }
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -256,12 +256,13 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_descr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         m_impl = std::make_shared<PromptLookupImpl>(language_model, tokenizer, scheduler_config, device, properties_without_draft_model_without_gguf, generation_config);
-    } else if (draft_model_descr.model != nullptr && dflash_rt_info.dflash_mode) {
+    } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
-    } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
-        auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
-        m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        if (dflash_rt_info.dflash_mode) {
+            m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
+        } else {
+            m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        }
     } else if (draft_model_descr.model != nullptr) {
         auto main_model_descr = ov::genai::ModelDesc(language_model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<SpeculativeDecodingImpl>(main_model_descr, draft_model_descr);
@@ -310,18 +311,18 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(draft_model_descr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
-    } else if (draft_model_descr.model != nullptr && dflash_rt_info.dflash_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "DFlash speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
-        m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
-    } else if (draft_model_descr.model != nullptr && eagle_rt_info.eagle3_mode) {
+    } else if (draft_model_descr.model != nullptr && (dflash_rt_info.dflash_mode || eagle_rt_info.eagle3_mode)) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model, scheduler_config, generation_config);
         } else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         }
-        m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        if (dflash_rt_info.dflash_mode) {
+            m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
+        } else {
+            m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_descr, eagle_rt_info.hidden_layers_list);
+        }
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
@@ -379,8 +380,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
     } else if (draft_model_descr.model != nullptr && dflash_rt_info.dflash_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "DFlash speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
@@ -437,8 +442,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
         m_impl = std::make_shared<PromptLookupImpl>(model, tokenizer, scheduler_config, device, properties_without_draft_model, generation_config);
     } else if (draft_model_descr.model != nullptr && dflash_rt_info.dflash_mode) {
-        OPENVINO_ASSERT(embedder == nullptr, "DFlash speculative decoding is not supported for models with embeddings");
-        auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        ov::genai::ModelDesc main_model_descr;
+        if (embedder) {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, std::move(embedder), device, properties_without_draft_model, scheduler_config, generation_config);
+        } else {
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
+        }
         m_impl = std::make_shared<DFlashDecodingImpl>(main_model_descr, draft_model_descr, dflash_rt_info);
     } else if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");

@@ -32,7 +32,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     use_genai = input_param["use_genai"]
     use_case = args["use_case"]
 
-    default_language = "English" if use_case.model_type in ["qwen3-asr"] else "<|en|>"
+    default_language = "English" if use_case.model_type in ["qwen3-asr", "fun-asr"] else "<|en|>"
     speech_language = input_param["speech_param"].get("language", default_language)
     ret_timestamps = input_param["speech_param"].get("timestamp", True)
     max_gen_tokens = args["infer_count"]

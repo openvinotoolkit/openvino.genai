@@ -568,7 +568,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     encode_vision_token_ids();
 
