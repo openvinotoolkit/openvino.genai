@@ -9,6 +9,7 @@
 #include <pybind11/functional.h>
 
 #include "openvino/genai/cache_eviction.hpp"
+#include "openvino/genai/cache_offload.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/sparse_attention.hpp"
 #include "tokenizer/tokenizers_path.hpp"
@@ -21,6 +22,7 @@ namespace pyutils = ov::genai::pybind::utils;
 using ov::genai::AggregationMode;
 using ov::genai::SparseAttentionMode;
 using ov::genai::CacheEvictionConfig;
+using ov::genai::CacheOffloadConfig;
 using ov::genai::SparseAttentionConfig;
 using ov::genai::ContinuousBatchingPipeline;
 using ov::genai::GenerationResult;
@@ -103,6 +105,26 @@ auto sparse_attention_config_docstring = R"(
      place.  Directly influences the overhead portion of the importance score computations - if full (dense) attention takes
      M time to be calculated, then the importance score calculation would be taking `M / xattention_stride` time as overhead.
     :type xattention_stride: int
+)";
+auto cache_offload_config_docstring = R"(
+    Configuration of the KV cache disk offload backend.
+
+    Offloaded blocks are rediscovered through the prefix-cache block hash, so offload requires
+    SchedulerConfig.enable_prefix_caching and is currently not supported together with
+    SchedulerConfig.use_cache_eviction.
+
+    Parameters:
+    :param path: existing directory to place the offload file in. When empty, the system temporary directory is used.
+    :type path: str
+
+    :param capacity_bytes: upper bound of the offload file size in bytes. The usable slot count is derived from this.
+    :type capacity_bytes: int
+
+    :param buffer_slots: number of staging buffers reserved for transfers.
+    :type buffer_slots: int
+
+    :param use_page_cache: whether the offload file may go through the OS page cache. Direct I/O is not implemented yet.
+    :type use_page_cache: bool
 )";
 auto scheduler_config_docstring = R"(
     SchedulerConfig to construct ContinuousBatchingPipeline
@@ -440,6 +462,20 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readwrite("xattention_stride", &SparseAttentionConfig::xattention_stride)
             .def("to_string", &SparseAttentionConfig::to_string);
 
+    py::class_<CacheOffloadConfig>(m, "CacheOffloadConfig", cache_offload_config_docstring)
+            .def(py::init<>())
+            .def(py::init([](const std::string& path, size_t capacity_bytes, size_t buffer_slots, bool use_page_cache) {
+                return CacheOffloadConfig{path, capacity_bytes, buffer_slots, use_page_cache}; }),
+                 py::arg("path") = std::string{},
+                 py::arg("capacity_bytes") = 0,
+                 py::arg("buffer_slots") = 2,
+                 py::arg("use_page_cache") = true)
+            .def_readwrite("path", &CacheOffloadConfig::path)
+            .def_readwrite("capacity_bytes", &CacheOffloadConfig::capacity_bytes)
+            .def_readwrite("buffer_slots", &CacheOffloadConfig::buffer_slots)
+            .def_readwrite("use_page_cache", &CacheOffloadConfig::use_page_cache)
+            .def("to_string", &CacheOffloadConfig::to_string);
+
     py::class_<SchedulerConfig>(m, "SchedulerConfig", scheduler_config_docstring)
         .def(py::init<>())
         .def_readwrite("max_num_batched_tokens", &SchedulerConfig::max_num_batched_tokens)
@@ -454,6 +490,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("cache_eviction_config", &SchedulerConfig::cache_eviction_config)
         .def_readwrite("use_sparse_attention", &SchedulerConfig::use_sparse_attention)
         .def_readwrite("sparse_attention_config", &SchedulerConfig::sparse_attention_config)
+        .def_readwrite("use_cache_offload", &SchedulerConfig::use_cache_offload)
+        .def_readwrite("cache_offload_config", &SchedulerConfig::cache_offload_config)
         .def("to_string", &SchedulerConfig::to_string);
 
     py::class_<PipelineMetrics>(m, "PipelineMetrics", pipeline_metrics_docstring)

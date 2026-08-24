@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "openvino/genai/cache_eviction.hpp"
+#include "openvino/genai/cache_offload.hpp"
 #include "openvino/genai/sparse_attention.hpp"
 
 namespace ov::genai {
@@ -88,6 +89,16 @@ struct SchedulerConfig {
      */
     SparseAttentionConfig sparse_attention_config;
 
+    /**
+     * Whether to offload KV cache blocks that are about to be dropped from the in-memory prefix cache
+     * to a local disk file, so that a later request with the same prefix can restore them.
+     * Requires `enable_prefix_caching` and is currently not supported together with `use_cache_eviction`.
+     */
+    bool use_cache_offload = false;
+    /** Configuration struct for the KV cache disk offload. Has effect only if `use_cache_offload` is `true`.
+     */
+    CacheOffloadConfig cache_offload_config;
+
     std::size_t get_cache_interval(std::size_t kv_block_size) const {
         const std::size_t effective_cache_interval_multiplier =
             cache_interval_multiplier.value_or(DEFAULT_LINEAR_ATTENTION_CACHE_INTERVAL_MULTIPLIER);
@@ -103,6 +114,14 @@ struct SchedulerConfig {
     void validate() const {
         OPENVINO_ASSERT(!enable_prefix_caching || !cache_interval_multiplier.has_value() || cache_interval_multiplier.value() > 0,
                 "SchedulerConfig cache_interval_multiplier must be greater than 0 when prefix caching is enabled");
+        // Offloaded blocks are only rediscoverable through the prefix-cache block hash, and the disk slot layout
+        // assumes the single shared block table that is used when cache eviction is off.
+        OPENVINO_ASSERT(!use_cache_offload || enable_prefix_caching,
+                "SchedulerConfig use_cache_offload requires enable_prefix_caching to be enabled");
+        OPENVINO_ASSERT(!use_cache_offload || !use_cache_eviction,
+                "SchedulerConfig use_cache_offload is not supported together with use_cache_eviction");
+        OPENVINO_ASSERT(!use_cache_offload || cache_offload_config.capacity_bytes > 0,
+                "SchedulerConfig cache_offload_config.capacity_bytes must be greater than 0 when use_cache_offload is enabled");
     }
 
     bool operator==(const SchedulerConfig& other) const {
@@ -110,7 +129,8 @@ struct SchedulerConfig {
                cache_size == other.cache_size && num_linear_attention_blocks == other.num_linear_attention_blocks &&
                dynamic_split_fuse == other.dynamic_split_fuse && use_cache_eviction == other.use_cache_eviction &&
                max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching &&
-               cache_interval_multiplier == other.cache_interval_multiplier;
+               cache_interval_multiplier == other.cache_interval_multiplier &&
+               use_cache_offload == other.use_cache_offload && cache_offload_config == other.cache_offload_config;
     }
 
     /**
@@ -142,6 +162,10 @@ struct SchedulerConfig {
         oss << "  use_sparse_attention: " << std::boolalpha << use_sparse_attention << "\n";
         if (use_sparse_attention) {
             oss << sparse_attention_config.to_string() << "\n";
+        }
+        oss << "  use_cache_offload: " << std::boolalpha << use_cache_offload << "\n";
+        if (use_cache_offload) {
+            oss << cache_offload_config.to_string() << "\n";
         }
         oss << " }";
         return oss.str();
