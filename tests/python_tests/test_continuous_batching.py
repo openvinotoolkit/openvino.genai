@@ -1192,12 +1192,10 @@ def test_cb_perf_metrics_available_after_concurrent_read(model_facebook_opt_125m
 
             return reader
 
-        t = threading.Thread(target=make_reader(handle, errors), daemon=True)
+        t = threading.Thread(target=make_reader(handle, errors))
         t.start()
-        step_idx = 0
         while cb_pipe.has_non_finished_requests():
             cb_pipe.step()
-            step_idx += 1
         t.join()
         assert not errors, f"Iteration {i}: get_perf_metrics() raised: {errors[0]}"
 
