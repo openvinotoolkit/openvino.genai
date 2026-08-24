@@ -1122,15 +1122,6 @@ def load_funasr_model(model_id, model_type, device="CPU", ov_config=None, use_hf
     return FunASROptimumTranscriber(model, tokenizer, language)
 
 
-def _load_audio_vlm_processor(model_id):
-    from transformers import AutoProcessor
-
-    try:
-        return AutoProcessor.from_pretrained(model_id, trust_remote_code=False)
-    except Exception:
-        return AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-
-
 def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
     language = kwargs.pop("speech_language", "") or ""
 
@@ -1147,7 +1138,7 @@ def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf
     model = load_visual_text_model(model_id, device, ov_config, use_hf, use_genai, **kwargs)
     if use_genai:
         return GenAIMultimodalTranscriber(model, language)
-    return MultimodalTranscriber(model, _load_audio_vlm_processor(model_id), language)
+    return MultimodalTranscriber(model, model_id, language)
 
 
 def load_model(

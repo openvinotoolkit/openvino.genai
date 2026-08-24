@@ -37,9 +37,14 @@ def _silenced_output():
 
 
 class MultimodalTranscriber:
-    def __init__(self, model: Any, processor: Any, language: str = "") -> None:
+    def __init__(self, model: Any, model_id: str, language: str = "") -> None:
+        from transformers import AutoProcessor
+
         self.model = model
-        self.processor = processor
+        try:
+            self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=False)
+        except Exception:
+            self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         self.instruction = asr_instruction(language)
 
     def transcribe(self, audio, max_new_tokens: int) -> str:
@@ -186,29 +191,23 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
     def get_generation_fn(self):
         return self.generation_fn
 
-    @staticmethod
-    def _transcribe(model, audio, max_new_tokens):
-        transcribe = getattr(model, "transcribe", None)
-        if transcribe is None:
-            raise TypeError(
-                f"{type(model).__name__} does not provide 'transcribe(audio, max_new_tokens)'. Speech recognition "
-                "expects a transcriber returned by load_speech_recognition_model(), or an explicit gen_answer_fn."
-            )
-        return transcribe(audio, max_new_tokens)
-
     def _generate_data(self, model, gen_answer_fn=None):
-        gen_answer_fn = gen_answer_fn or self._transcribe
-
         if not isinstance(self.test_data, dict):
             raise ValueError("Speech recognition requires audio test data (provide --dataset).")
         data = pd.DataFrame.from_dict(self.test_data)
         if self.num_samples is not None:
             data = data.iloc[: self.num_samples]
 
-        answers = [
-            gen_answer_fn(model, audio, self.max_new_tokens)
-            for audio in tqdm(data["audio"].values, desc="Evaluate pipeline")
-        ]
+        if gen_answer_fn is None:
+            answers = [
+                model.transcribe(audio, self.max_new_tokens)
+                for audio in tqdm(data["audio"].values, desc="Evaluate pipeline")
+            ]
+        else:
+            answers = [
+                gen_answer_fn(model, audio, self.max_new_tokens)
+                for audio in tqdm(data["audio"].values, desc="Evaluate pipeline")
+            ]
         return pd.DataFrame({"prompts": list(data["prompts"].values), "answers": answers})
 
     def score(self, model_or_data, gen_answer_fn=None, output_dir=None, verbose=False, **kwargs):
