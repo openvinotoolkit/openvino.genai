@@ -35,6 +35,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
+        {"molmo2", VLMModelType::MOLMO2},
     };
 
     auto it = model_types_map.find(value);
@@ -86,7 +87,18 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // gemma4
     read_json_param(parsed, "text_config.hidden_size_per_layer_input", hidden_size_per_layer_input);
-    // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean
+    // molmo2 (allenai/MolmoWeb-4B): image special token ids are stored at the top level of config.json
+    if (model_type == VLMModelType::MOLMO2) {
+        read_json_param(parsed, "text_config.hidden_size", hidden_size);
+        read_json_param(parsed, "image_patch_id", molmo2_image_patch_id);
+        read_json_param(parsed, "image_col_id", molmo2_image_col_id);
+        read_json_param(parsed, "image_start_token_id", molmo2_image_start_token_id);
+        read_json_param(parsed, "image_end_token_id", molmo2_image_end_token_id);
+        read_json_param(parsed, "low_res_image_start_token_id", molmo2_low_res_image_start_token_id);
+        read_json_param(parsed, "image_low_res_id", molmo2_image_low_res_id);
+        read_json_param(parsed, "frame_start_token_id", molmo2_frame_start_token_id);
+        read_json_param(parsed, "frame_end_token_id", molmo2_frame_end_token_id);
+    }    // For gemma3 `text_config.use_bidirectional_attention` can be absent or boolean
     if (parsed.contains("text_config") && parsed.at("text_config").contains("use_bidirectional_attention") &&
         parsed.at("text_config").at("use_bidirectional_attention").is_string()) {
         read_json_param(parsed, "text_config.use_bidirectional_attention", use_bidirectional_attention);

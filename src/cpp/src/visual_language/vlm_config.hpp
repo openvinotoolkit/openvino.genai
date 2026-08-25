@@ -33,6 +33,7 @@ enum class VLMModelType {
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
     MUSE_GLIMMER,
+    MOLMO2,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -163,6 +164,26 @@ public:
     int64_t video_token_id = -1;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
+
+    // ---- Molmo2 (allenai/MolmoWeb-4B) specific config ----
+    /// @brief Image special token strings inserted into the prompt during normalization.
+    /// The image processor expands the "<|image|>" placeholder into a run of these tokens
+    /// (low-resolution section followed by high-resolution section).
+    std::string molmo2_im_start = "<im_start>";
+    std::string molmo2_im_end = "<im_end>";
+    std::string molmo2_im_patch = "<im_patch>";
+    std::string molmo2_im_col = "<im_col>";
+    std::string molmo2_low_res_im_start = "<low_res_im_start>";
+    /// @brief Image special token ids (read from config.json). Vision embeddings are added at
+    /// `molmo2_image_patch_id` positions; all image special token ids receive token_type_ids == 1.
+    int64_t molmo2_image_patch_id = 151938;      // <im_patch> (== image_high_res_id)
+    int64_t molmo2_image_col_id = 151939;        // <im_col>
+    int64_t molmo2_image_start_token_id = 151936;// <im_start>
+    int64_t molmo2_image_end_token_id = 151937;  // <im_end>
+    int64_t molmo2_low_res_image_start_token_id = 151940;// <low_res_im_start>
+    int64_t molmo2_image_low_res_id = 151942;    // <im_low>
+    int64_t molmo2_frame_start_token_id = 151943;// <frame_start>
+    int64_t molmo2_frame_end_token_id = 151944;  // <frame_end>
 
     /// @brief Default constructor.
     VLMConfig() = default;

@@ -168,12 +168,14 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_MOLMO2 = "optimum-intel-internal-testing/tiny-random-molmo2"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
     # minicpmv, internvl_chat architectures are deprecating support for transformers >= v5 by optimum-intel
     # gemma3, llava-next, llava fails with error: "Eltwise shape infer input shapes dim index: 1 mismatch", CVS-186059
     # MiniCPM-o-2_6 maximum supported version of transformers is 4.51.3
+    # molmo2 (allenai/MolmoWeb-4B) remote code requires transformers >= 4.57, < 4.58
     MODEL_IDS = [
         "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
         "optimum-intel-internal-testing/tiny-random-internvl2",
@@ -181,6 +183,7 @@ if is_transformers_version("<", "5.0"):
         "optimum-intel-internal-testing/tiny-random-llava-next",
         "optimum-intel-internal-testing/tiny-random-gemma3",
         MODEL_GEMMA3N,
+        MODEL_MOLMO2,
         "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
         *VIDEO_MODEL_IDS,
     ]
@@ -218,6 +221,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
+    MODEL_MOLMO2: lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -325,6 +329,12 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     if model_id == "optimum-intel-internal-testing/tiny-random-muse-glimmer" and is_transformers_version("<", "5.15.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
+        )
+    if model_id == MODEL_MOLMO2 and (
+        is_transformers_version("<", "4.57.0") or is_transformers_version(">=", "4.58.0")
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Molmo2. Required is >= 4.57.0 and < 4.58.0."
         )
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
@@ -444,6 +454,7 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+                    MODEL_MOLMO2,
                     VIDEOCHAT_FLASH_QWEN_MODEL_ID,
                 },
             )

@@ -523,6 +523,53 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+
+    # Support a local dataset file (CSV) so that evaluation does not depend on a
+    # remote dataset loader that may time out or be unavailable. This is generic:
+    # any task can point --dataset at a local CSV. For visual tasks the CSV may
+    # additionally carry ``images`` and/or ``videos`` columns; image paths are
+    # resolved deterministically relative to the CSV location and loaded into
+    # PIL images so the evaluator receives ready-to-use inputs.
+    if os.path.isfile(args.dataset) and args.dataset.lower().endswith(".csv"):
+        data = pd.read_csv(args.dataset)
+        if args.dataset_field in data.columns:
+            prompts_col = args.dataset_field
+        elif "prompts" in data.columns:
+            prompts_col = "prompts"
+        else:
+            raise ValueError(
+                f"Local dataset CSV '{args.dataset}' must contain a '{args.dataset_field}' "
+                "or 'prompts' column with prompts."
+            )
+
+        res = {"prompts": list(data[prompts_col])}
+
+        base_dir = os.path.dirname(os.path.abspath(args.dataset))
+
+        def _resolve_image(value):
+            if value is None or (isinstance(value, float) and pd.isna(value)):
+                return None
+            if not isinstance(value, str) or value.strip() == "":
+                return None
+            path = value if os.path.isabs(value) else os.path.join(base_dir, value)
+            return Image.open(path).convert("RGB")
+
+        if "images" in data.columns:
+            res["images"] = [_resolve_image(v) for v in data["images"]]
+        if "videos" in data.columns:
+            res["videos"] = [
+                None if (v is None or (isinstance(v, float) and pd.isna(v))) else v
+                for v in data["videos"]
+            ]
+
+        # Keep image/video columns aligned with prompts for the visual evaluator.
+        if "images" in res or "videos" in res:
+            n = len(res["prompts"])
+            res.setdefault("images", [None] * n)
+            res.setdefault("videos", [None] * n)
+
+        return res
+
     split = "validation"
     if args.split is not None:
         split = args.split
