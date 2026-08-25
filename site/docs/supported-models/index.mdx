@@ -104,6 +104,17 @@ The model requires `transformers==5.2` for the export with `optimum-cli`.
 #### nanoLLaVA {#nanollava-notes}
 
 The model requires `transformers>=4.48` for the export with `optimum-cli`.
+
+#### molmo2 {#molmo2-notes}
+
+1. `allenai/MolmoWeb-4B` was tested against `transformers==4.57.3`. Newer `transformers` versions
+   (e.g. `5.x`) remove the `"default"` RoPE init function the model's `trust_remote_code`
+   relies on; a compatibility shim is required to export the model with `optimum-cli` on newer
+   `transformers`.
+2. The current export does not populate `token_type_ids` for image tokens, so image-token
+   attention is causal rather than fully bidirectional as in the original PyTorch model. This is
+   a known limitation inherited from the Optimum-Intel export and does not prevent correct,
+   on-topic generation in practice.
 :::
 
 ## Speech Recognition Models

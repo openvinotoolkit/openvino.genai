@@ -33,6 +33,7 @@ enum class VLMModelType {
     VIDEOCHAT_FLASH_QWEN,
     QWEN3_OMNI,
     MUSE_GLIMMER,
+    MOLMO2,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -163,6 +164,19 @@ public:
     int64_t video_token_id = -1;
     // Speaker name-to-codec-token mapping
     std::map<std::string, int64_t> speaker_ids;
+
+    // Molmo2 specific config params (reuses `image_token` field above, "<|image|>", as its
+    // universal image placeholder in text).
+    /// @brief Token id denoting a single high-resolution image patch (additive merge target).
+    int64_t image_patch_id = -1;
+    /// @brief Token id denoting a row separator between image patch tokens.
+    int64_t image_col_id = -1;
+    /// @brief Token id denoting start of a (high-resolution) image section.
+    int64_t image_start_token_id = -1;
+    /// @brief Token id denoting end of an image section.
+    int64_t image_end_token_id = -1;
+    /// @brief Token id denoting start of the low-resolution (global thumbnail) image section.
+    int64_t low_res_image_start_token_id = -1;
 
     /// @brief Default constructor.
     VLMConfig() = default;

@@ -69,6 +69,14 @@ public:
     size_t temporal_patch_size = 2;
     size_t merge_size = 2;
 
+    // molmo2 specific config params (multi-crop tiling + pooling)
+    /// @brief Maximum number of high-resolution crops per image.
+    size_t max_crops = 8;
+    /// @brief Overlap margins [left, right], in patches, shared between adjacent crops.
+    std::array<size_t, 2> overlap_margins{4, 4};
+    /// @brief Pooling window size [height, width] applied to ViT patch features.
+    std::array<size_t, 2> pooling_size{2, 2};
+
     /// @brief Default constructor
     ProcessorConfig() = default;
 

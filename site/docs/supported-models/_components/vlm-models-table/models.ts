@@ -272,4 +272,16 @@ export const VLM_MODELS: VLMModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Molmo2ForConditionalGeneration',
+    models: [
+      {
+        name: 'molmo2',
+        links: [
+          'https://huggingface.co/allenai/MolmoWeb-4B',
+        ],
+        notesLink: '#molmo2-notes',
+      },
+    ],
+  },
 ];
