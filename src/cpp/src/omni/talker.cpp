@@ -4,7 +4,6 @@
 #include "openvino/genai/omni/talker.hpp"
 
 #include "openvino/core/except.hpp"
-#include "openvino/genai/omni/pipeline.hpp"
 #include "omni/talker_speech_config_utils.hpp"
 #include "utils.hpp"
 #include "visual_language/qwen3_omni/speech_pipeline.hpp"
@@ -34,50 +33,6 @@ std::vector<ov::Tensor> split_hidden_states(const std::vector<ov::Tensor>& per_s
         }
     }
     return per_token;
-}
-
-/// @brief Resolve a talker property-bag into a typed config plus optional streamer.
-/// Starts from `base` (the caller's default), overlays recognized `properties`, and rejects
-/// unknown keys so typos surface immediately instead of being silently dropped.
-struct ResolvedTalkerProperties {
-    OmniTalkerSpeechConfig config;
-    OmniSpeechStreamerVariant speech_streamer;
-};
-
-std::string join_recognized_keys() {
-    std::string joined = "speech_streamer, talker_speech_config";
-    for (const auto& key : omni_talker_speech_config_keys()) {
-        joined += ", ";
-        joined += key;
-    }
-    return joined;
-}
-
-ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig& base, const ov::AnyMap& properties) {
-    ResolvedTalkerProperties out{base, std::monostate{}};
-    ov::AnyMap leftover;
-    for (const auto& [key, value] : properties) {
-        if (key == ov::genai::speech_streamer.name()) {
-            out.speech_streamer = value.as<OmniSpeechStreamerVariant>();
-        } else if (key == ov::genai::talker_speech_config.name()) {
-            out.config = value.as<OmniTalkerSpeechConfig>();
-        } else {
-            OPENVINO_ASSERT(is_omni_talker_speech_config_key(key),
-                            "Talker::generate: unrecognized property '",
-                            key,
-                            "'. Recognized keys: ",
-                            join_recognized_keys(),
-                            ".");
-            leftover.emplace(key, value);
-        }
-    }
-    if (!leftover.empty()) {
-        update_omni_talker_speech_config(out.config, leftover);
-    }
-    // Values supplied via properties bypass set_speech_config(), so this is the only guard
-    // on the AnyMap path.
-    validate_omni_talker_speech_config(out.config);
-    return out;
 }
 
 }  // namespace

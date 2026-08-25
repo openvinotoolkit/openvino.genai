@@ -15,6 +15,8 @@
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/visual_language/video_metadata.hpp"
 #include "tokenizer/tokenizers_path.hpp"
+#include "utils.hpp"
+#include "visual_language/multimodal_inputs.hpp"
 #include "py_utils.hpp"
 #include "bindings_utils.hpp"
 
@@ -26,7 +28,7 @@ namespace {
 
 // Trampoline enabling Python subclasses of VLMPipelineBase (injected via the OmniPipeline DI ctor).
 // C++ has many generate overloads but Python has one name: the videos_metadata-aware overloads map
-// to the Python "generate", the narrower ones forward to them, and the AnyMap overloads throw.
+// to the Python "generate" and every other overload — narrow, or property-bag — reduces to them.
 class PyVLMPipelineBase : public ov::genai::VLMPipelineBase {
 public:
     using ov::genai::VLMPipelineBase::VLMPipelineBase;
@@ -101,16 +103,27 @@ public:
         return generate(history, images, videos, {}, {}, generation_config, streamer);
     }
 
-    ov::genai::VLMDecodedResults generate(const std::string&, const ov::AnyMap&) override {
-        OPENVINO_THROW("VLMPipelineBase: the property-bag generate(prompt, config_map) overload is not supported "
-                       "for Python-defined subclasses. Override the "
-                       "generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer) method.");
+    ov::genai::VLMDecodedResults generate(const std::string& prompt, const ov::AnyMap& config_map) override {
+        const auto inputs = unpack_config_map(config_map);
+        return generate(prompt,
+                        inputs.images.value_or(std::vector<ov::Tensor>{}),
+                        inputs.videos.value_or(std::vector<ov::Tensor>{}),
+                        inputs.audios.value_or(std::vector<ov::Tensor>{}),
+                        inputs.videos_metadata.value_or(std::vector<ov::genai::VideoMetadata>{}),
+                        resolve_generation_config(config_map),
+                        ov::genai::utils::get_streamer_from_map(config_map));
     }
 
-    ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory&, const ov::AnyMap&) override {
-        OPENVINO_THROW("VLMPipelineBase: the property-bag generate(history, config_map) overload is not supported "
-                       "for Python-defined subclasses. Override the "
-                       "generate(history, images, videos, audios, videos_metadata, generation_config, streamer) method.");
+    ov::genai::VLMDecodedResults generate(const ov::genai::ChatHistory& history,
+                                          const ov::AnyMap& config_map) override {
+        const auto inputs = unpack_config_map(config_map);
+        return generate(history,
+                        inputs.images.value_or(std::vector<ov::Tensor>{}),
+                        inputs.videos.value_or(std::vector<ov::Tensor>{}),
+                        inputs.audios.value_or(std::vector<ov::Tensor>{}),
+                        inputs.videos_metadata.value_or(std::vector<ov::genai::VideoMetadata>{}),
+                        resolve_generation_config(config_map),
+                        ov::genai::utils::get_streamer_from_map(config_map));
     }
 
     ov::genai::Tokenizer get_tokenizer() const override {
@@ -141,6 +154,23 @@ public:
     bool is_audio_output_enabled() const override {
         py::gil_scoped_acquire acquire;
         PYBIND11_OVERRIDE_PURE(bool, ov::genai::VLMPipelineBase, is_audio_output_enabled);
+    }
+
+private:
+    static ov::genai::MultimodalInputs unpack_config_map(const ov::AnyMap& config_map) {
+        OPENVINO_ASSERT(config_map.find(ov::genai::utils::AUDIO_STREAMER_ARG_NAME) == config_map.end(),
+                        "VLMPipelineBase: '",
+                        ov::genai::utils::AUDIO_STREAMER_ARG_NAME,
+                        "' is only consumed by the built-in Qwen3-Omni speech path and cannot be forwarded to a "
+                        "Python-defined subclass.");
+        return ov::genai::extract_multimodal_inputs(config_map);
+    }
+
+    ov::genai::GenerationConfig resolve_generation_config(const ov::AnyMap& config_map) {
+        const auto provided = ov::genai::utils::get_config_from_map(config_map);
+        auto config = provided.has_value() ? *provided : get_generation_config();
+        config.update_generation_config(config_map);
+        return config;
     }
 };
 
@@ -489,6 +519,26 @@ An input image without explicit slicing metadata counts as one slice.)")
              py::arg("generation_config") = ov::genai::GenerationConfig{},
              py::arg("streamer") = std::monostate{},
              "Generate a VLM response. prompt may be a str or a ChatHistory. Override in a subclass.")
+        .def("generate",
+             [](ov::genai::VLMPipelineBase& self,
+                const std::variant<std::string, ov::genai::ChatHistory>& prompt,
+                const py::kwargs& kwargs) -> ov::genai::VLMDecodedResults {
+                 const ov::AnyMap config_map = pyutils::kwargs_to_any_map(kwargs);
+                 ov::genai::VLMDecodedResults res;
+                 {
+                     py::gil_scoped_release rel;
+                     if (const auto* prompt_str = std::get_if<std::string>(&prompt)) {
+                         res = self.generate(*prompt_str, config_map);
+                     } else {
+                         res = self.generate(std::get<ov::genai::ChatHistory>(prompt), config_map);
+                     }
+                 }
+                 return res;
+             },
+             py::arg("prompt"),
+             "Generate a VLM response from a property bag: images, videos, audios, videos_metadata, "
+             "generation_config, streamer, or any GenerationConfig field as a keyword argument. "
+             "Reduces to the typed generate() the subclass overrides.")
         .def("get_tokenizer", &ov::genai::VLMPipelineBase::get_tokenizer)
         .def("set_chat_template", &ov::genai::VLMPipelineBase::set_chat_template, py::arg("chat_template"))
         .def("get_generation_config", &ov::genai::VLMPipelineBase::get_generation_config)
