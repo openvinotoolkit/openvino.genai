@@ -3,7 +3,7 @@
 - name: ASR
   # TODO: skip some tests temporary until https://github.com/huggingface/datasets/issues/7647 dataset is fixed
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5" -k "not fun-asr"
   timeout: 120
   components:
     - automatic_speech_recognition

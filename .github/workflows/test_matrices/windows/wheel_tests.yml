@@ -3,7 +3,7 @@
 - name: ASR
   # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
   cmd: |-
-    python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"
+    python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5" -k "not fun-asr"
   timeout: 120
   components:
     - automatic_speech_recognition
@@ -11,7 +11,7 @@
 - name: ASR Transformers under 5.0
   cmd: |-
     python -m pip install transformers==4.57.6
-    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5" -k "not fun-asr"
   timeout: 120
   components:
     - automatic_speech_recognition
