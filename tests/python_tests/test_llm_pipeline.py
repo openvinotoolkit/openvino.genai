@@ -1081,7 +1081,7 @@ def test_perf_metrics(
 
     num_input_tokens = perf_metrics.get_num_input_tokens()
     assert 0 < num_input_tokens <= len(prompt)
-    assert perf_metrics.get_num_cached_tokens() == 0
+    assert perf_metrics.get_num_prefix_cache_hit_tokens() == 0
 
     mean_ttft, std_ttft = perf_metrics.get_ttft()
     assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)

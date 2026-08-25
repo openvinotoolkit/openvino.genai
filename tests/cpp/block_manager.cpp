@@ -504,11 +504,11 @@ TEST(TestBlockManager, PrefixCachingLatestOnlyRestoreKeepsLatestBlockWithLogical
     EXPECT_EQ(older_checkpoint->get_references_count(), 1);
     EXPECT_EQ(latest_checkpoint->get_references_count(), 1);
     EXPECT_EQ(consumer_group->get_num_processed_tokens(), tokens.size() - 1);
-    consumer_group->set_num_cached_tokens_for_metrics(consumer_group->get_num_processed_tokens());
+    consumer_group->set_num_prefix_cache_hit_tokens(consumer_group->get_num_processed_tokens());
 
     consumer_seq->append_token(8, 0.9f);
     consumer_group->update_processed_tokens_num(tokens.size());
-    EXPECT_EQ(consumer_group->get_perf_metrics().get_num_cached_tokens(), tokens.size() - 1);
+    EXPECT_EQ(consumer_group->get_num_prefix_cache_hit_tokens(), tokens.size() - 1);
     consumer_group->schedule_tokens(1);
     block_manager.append_slots(consumer_group);
     EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 3);

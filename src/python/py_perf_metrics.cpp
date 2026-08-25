@@ -101,8 +101,8 @@ auto perf_metrics_docstring = R"(
     :param get_num_input_tokens: Returns the number of tokens in the input prompt.
     :type get_num_input_tokens: int
 
-    :param get_num_cached_tokens: Returns the number of input tokens restored from the prefix cache.
-    :type get_num_cached_tokens: int
+    :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
+    :type get_num_prefix_cache_hit_tokens: int
 
     :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
     :type get_ttft: MeanStdPair
@@ -265,7 +265,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_grammar_compile_time", &PerfMetrics::get_grammar_compile_time)
         .def("get_num_generated_tokens", &PerfMetrics::get_num_generated_tokens)
         .def("get_num_input_tokens", &PerfMetrics::get_num_input_tokens)
-        .def("get_num_cached_tokens", &PerfMetrics::get_num_cached_tokens)
+        .def("get_num_prefix_cache_hit_tokens", &PerfMetrics::get_num_prefix_cache_hit_tokens)
         .def("get_ttft", &PerfMetrics::get_ttft)
         .def("get_tpot", &PerfMetrics::get_tpot)
         .def("get_ipot", &PerfMetrics::get_ipot)
@@ -285,7 +285,7 @@ void init_perf_metrics(py::module_& m) {
         .def("get_load_time", &ExtendedPerfMetrics::get_load_time)
         .def("get_num_generated_tokens", &ExtendedPerfMetrics::get_num_generated_tokens)
         .def("get_num_input_tokens", &ExtendedPerfMetrics::get_num_input_tokens)
-        .def("get_num_cached_tokens", &ExtendedPerfMetrics::get_num_cached_tokens)
+        .def("get_num_prefix_cache_hit_tokens", &ExtendedPerfMetrics::get_num_prefix_cache_hit_tokens)
         .def("get_ttft", &ExtendedPerfMetrics::get_ttft)
         .def("get_tpot", &ExtendedPerfMetrics::get_tpot)
         .def("get_ipot", &ExtendedPerfMetrics::get_ipot)
