@@ -839,12 +839,17 @@ TalkerResults Qwen3OmniSpeechPipeline::generate_speech(const std::vector<int64_t
     auto [talker_input, trailing_text_hidden] =
         build_talker_input(full_token_ids, all_intermediate_hidden_states, speaker_embed_to_use);
 
-    if (talker_input.get_shape()[1] == 0) {
-        GENAI_WARN("Speech: build_talker_input returned empty, cannot generate speech");
-        if (streaming)
-            end_speech_streamer(audio_streamer);
-        return build_result(ov::Tensor{});
+    // Close the streamer before the assert below so a streaming consumer is not left waiting.
+    if (talker_input.get_shape()[1] == 0 && streaming) {
+        end_speech_streamer(audio_streamer);
     }
+    OPENVINO_ASSERT(talker_input.get_shape()[1] != 0,
+                    "Speech generation produced no talker input: none of the ",
+                    full_token_ids.size(),
+                    " thinker tokens matched im_start_token_id=",
+                    m_config.im_start_token_id,
+                    ", so the conversation could not be segmented. The role token ids in the model's "
+                    "config.json must be the ids its tokenizer actually emits.");
 
     GENAI_DEBUG("Speech: talker_input=[1, %zu, %zu], trailing=[1, %zu, ...], streaming=%s, chunk_frames=%zu",
                 talker_input.get_shape()[1],
