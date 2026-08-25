@@ -436,6 +436,49 @@ class TestImageGenerationWithBlobTensorModels:
 
 
 class TestFlux2KleinImageGeneration:
+    def _create_flux2_klein_components(self, model_dir, include_vae_encoder=False):
+        from pathlib import Path
+
+        model_path = Path(model_dir)
+        text_encoder = ov_genai.Qwen3TextEncoder(model_path / "text_encoder")
+        transformer = ov_genai.Flux2Transformer2DModel(model_path / "transformer")
+        if include_vae_encoder:
+            vae = ov_genai.AutoencoderKL(model_path / "vae_encoder", model_path / "vae_decoder")
+        else:
+            vae = ov_genai.AutoencoderKL(model_path / "vae_decoder")
+        scheduler = ov_genai.Scheduler.from_config(model_path / "scheduler" / "scheduler_config.json")
+
+        text_encoder.compile("CPU")
+        transformer.compile("CPU")
+        vae.compile("CPU")
+
+        return model_path, scheduler, text_encoder, transformer, vae
+
+    def _create_flux2_klein_text2image_from_components(self, model_dir):
+        model_path, scheduler, text_encoder, transformer, vae = self._create_flux2_klein_components(model_dir)
+
+        return ov_genai.Text2ImagePipeline.flux2_klein(
+            scheduler=scheduler,
+            models_path=model_path,
+            text_encoder=text_encoder,
+            transformer=transformer,
+            vae=vae,
+        )
+
+    def _create_flux2_klein_image2image_from_components(self, model_dir):
+        model_path, scheduler, text_encoder, transformer, vae = self._create_flux2_klein_components(
+            model_dir,
+            include_vae_encoder=True,
+        )
+
+        return ov_genai.Image2ImagePipeline.flux2_klein(
+            scheduler=scheduler,
+            models_path=model_path,
+            text_encoder=text_encoder,
+            transformer=transformer,
+            vae=vae,
+        )
+
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
     def test_flux2_klein_text2image(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
@@ -450,8 +493,42 @@ class TestFlux2KleinImageGeneration:
         assert image is not None
 
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_text2image_from_components(self, image_generation_model):
+        pipe = self._create_flux2_klein_text2image_from_components(image_generation_model)
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
     def test_flux2_klein_text2image_with_callback(self, image_generation_model):
         pipe = ov_genai.Text2ImagePipeline(image_generation_model, "CPU")
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        image = pipe.generate(
+            "test prompt",
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            callback=callback,
+        )
+
+        assert len(callback_calls) > 0, "Callback should be called at least once"
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_text2image_from_components_with_callback(self, image_generation_model):
+        pipe = self._create_flux2_klein_text2image_from_components(image_generation_model)
 
         callback_calls = []
 
@@ -488,8 +565,50 @@ class TestFlux2KleinImageGeneration:
         assert image is not None
 
     @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_image2image_from_components(self, image_generation_model):
+        pipe = self._create_flux2_klein_image2image_from_components(image_generation_model)
+
+        input_image = get_random_image()
+
+        image = pipe.generate(
+            "test prompt",
+            input_image,
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+        )
+
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
     def test_flux2_klein_image2image_with_callback(self, image_generation_model):
         pipe = ov_genai.Image2ImagePipeline(image_generation_model, "CPU")
+
+        callback_calls = []
+
+        def callback(step, num_steps, latent):
+            callback_calls.append((step, num_steps))
+            return False
+
+        input_image = get_random_image()
+
+        image = pipe.generate(
+            "test prompt",
+            input_image,
+            strength=0.8,
+            width=64,
+            height=64,
+            num_inference_steps=2,
+            callback=callback,
+        )
+
+        assert len(callback_calls) > 0, "Callback should be called at least once"
+        assert image is not None
+
+    @pytest.mark.parametrize("image_generation_model", [FLUX2_KLEIN_MODEL_ID], indirect=True)
+    def test_flux2_klein_image2image_from_components_with_callback(self, image_generation_model):
+        pipe = self._create_flux2_klein_image2image_from_components(image_generation_model)
 
         callback_calls = []
 
