@@ -35,6 +35,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"qwen3_omni", VLMModelType::QWEN3_OMNI},
         {"qwen3_omni_moe", VLMModelType::QWEN3_OMNI},
         {"muse_glimmer", VLMModelType::MUSE_GLIMMER},
+        {"molmo2", VLMModelType::MOLMO2},
     };
 
     auto it = model_types_map.find(value);
@@ -123,6 +124,16 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
                 speaker_ids[key] = val.get<int64_t>();
             }
         }
+    }
+
+    // Molmo2
+    if (model_type == VLMModelType::MOLMO2) {
+        read_json_param(parsed, "image_patch_id", image_patch_id);
+        read_json_param(parsed, "image_col_id", image_col_id);
+        read_json_param(parsed, "image_start_token_id", image_start_token_id);
+        read_json_param(parsed, "image_end_token_id", image_end_token_id);
+        read_json_param(parsed, "low_res_image_start_token_id", low_res_image_start_token_id);
+        read_json_param(parsed, "text_config.hidden_size", hidden_size);
     }
 }
 

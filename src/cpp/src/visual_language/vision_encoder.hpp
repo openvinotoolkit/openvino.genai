@@ -54,7 +54,12 @@ struct EncodedImage {
 
     /// @brief Patches grid after llava_next preprocessing.
     /// Format: [num_patches_height, num_patches_width]
+    /// Used also by Molmo2 for the high-resolution crop-mosaic pooled token grid.
     std::pair<int, int> patches_grid;
+
+    /// @brief Low-resolution (global thumbnail) pooled token grid [height, width].
+    /// Used only by Molmo2, paired with `patches_grid` (high-resolution grid).
+    std::pair<int, int> low_res_patches_grid;
     
     /// @brief Original size of the image
     ImageSize original_image_size;
