@@ -90,6 +90,8 @@
 
 - name: Omni
   cmd: |-
+    python -m pip install transformers==5.1
+    python -m pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@6898d97242498b7dc4367a12555e4f7e52b01d16
     python -m pytest -v ./tests/python_tests/test_omni_pipeline.py --override-ini cache_dir=/mount/caches/pytest/
   timeout: 90
   components:

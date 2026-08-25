@@ -41,6 +41,14 @@
 #   components:
 #     - continuous_batching
 
+- name: Omni (API)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_omni_pipeline.py -k "not TestOmniPipelineRealModel"
+  timeout: 40
+  components:
+    - visual_language
+    - speech_generation
+
 - name: GGUF Reader tests
   cmd: |-
     python -m pytest -v ./tests/python_tests/test_gguf_reader.py

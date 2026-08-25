@@ -4645,9 +4645,23 @@ class TalkerBase:
     """
     def __init__(self) -> None:
         ...
+    @typing.overload
     def generate(self, vlm_result: VLMDecodedResults, talker_speech_config: OmniTalkerSpeechConfig, speech_streamer: collections.abc.Callable[[openvino._pyopenvino.Tensor], StreamingStatus] | openvino_genai.py_openvino_genai.OmniSpeechStreamerBase | None = None) -> TalkerResults:
         """
         Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.
+        """
+    @typing.overload
+    def generate(self, vlm_result: VLMDecodedResults, **kwargs) -> TalkerResults:
+        """
+                                Run speech generation against a VLM result, configured by keyword arguments.
+        
+                                Property-bag form of generate(). Recognized kwargs are the OmniTalkerSpeechConfig
+                                fields (return_audio, speaker, speaker_embedding, audio_chunk_frames,
+                                max_new_tokens, rng_seed, talker_temperature, talker_top_k,
+                                talker_repetition_penalty, cp_temperature, cp_top_k), plus speech_streamer.
+                                Unrecognized keys raise. Fields not given fall back to get_speech_config().
+        
+                                :return: TalkerResults
         """
     def get_speaker_embedding(self, name: str) -> openvino._pyopenvino.Tensor:
         ...
@@ -5953,9 +5967,15 @@ class VLMPipelineBase:
     """
     def __init__(self) -> None:
         ...
+    @typing.overload
     def generate(self, prompt: str | openvino_genai.py_openvino_genai.ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], audios: collections.abc.Sequence[openvino._pyopenvino.Tensor] = [], videos_metadata: collections.abc.Sequence[VideoMetadata] = [], generation_config: GenerationConfig = ..., streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> VLMDecodedResults:
         """
         Generate a VLM response. prompt may be a str or a ChatHistory. Override in a subclass.
+        """
+    @typing.overload
+    def generate(self, prompt: str | openvino_genai.py_openvino_genai.ChatHistory, **kwargs) -> VLMDecodedResults:
+        """
+        Generate a VLM response from a property bag: images, videos, audios, videos_metadata, generation_config, streamer, or any GenerationConfig field as a keyword argument. Reduces to the typed generate() the subclass overrides.
         """
     def get_generation_config(self) -> GenerationConfig:
         ...

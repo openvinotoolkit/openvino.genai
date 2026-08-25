@@ -21,6 +21,7 @@
 #include "openvino/genai/generation_config.hpp"
 
 #include "openvino/genai/streamer_base.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov {
 namespace genai {
@@ -113,10 +114,10 @@ Config from_config_json_if_exists(const std::filesystem::path& models_path, cons
     return std::filesystem::exists(config_file_path) ? Config{config_file_path} : Config{};
 }
 
-ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
+OPENVINO_GENAI_EXPORTS ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map);
 ov::genai::OmniSpeechStreamerVariant get_audio_streamer_from_map(const ov::AnyMap& config_map);
 
-ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
+OPENVINO_GENAI_EXPORTS ov::genai::OptionalGenerationConfig get_config_from_map(const ov::AnyMap& config_map);
 
 bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 

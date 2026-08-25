@@ -173,12 +173,11 @@ public:
                                speech_streamer);
     }
 
-    // OmniPipeline only ever calls the typed overload above, and the property-bag form would need
-    // the internal config-parsing helpers that these bindings deliberately don't include.
-    ov::genai::TalkerResults generate(const VLMDecodedResults&, const ov::AnyMap&) override {
-        OPENVINO_THROW(
-            "Python TalkerBase subclasses implement generate(vlm_result, talker_speech_config, speech_streamer). "
-            "The property-bag generate(vlm_result, properties) overload is not available from Python.");
+    // Reduce the property bag the same way Talker does, then dispatch through the typed
+    // override, so a Python backend answers both C++ overloads with one Python method.
+    ov::genai::TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) override {
+        auto resolved = ov::genai::resolve_talker_properties(get_speech_config(), properties);
+        return generate(vlm_result, resolved.config, resolved.speech_streamer);
     }
 
     OmniTalkerSpeechConfig get_speech_config() const override {
@@ -433,6 +432,29 @@ void init_omni_pipeline(py::module_& m) {
                     py::arg("talker_speech_config"),
                     py::arg("speech_streamer") = std::monostate{},
                     "Run speech generation against a VLM result. Override in a subclass. Returns TalkerResults.");
+
+    talker_base.def("generate",
+                    [](TalkerBase& self, const VLMDecodedResults& vlm_result, const py::kwargs& kwargs) {
+                        const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
+                        ov::genai::TalkerResults res;
+                        {
+                            py::gil_scoped_release rel;
+                            res = self.generate(vlm_result, properties);
+                        }
+                        return res;
+                    },
+                    py::arg("vlm_result"),
+                    R"(
+                        Run speech generation against a VLM result, configured by keyword arguments.
+
+                        Property-bag form of generate(). Recognized kwargs are the OmniTalkerSpeechConfig
+                        fields (return_audio, speaker, speaker_embedding, audio_chunk_frames,
+                        max_new_tokens, rng_seed, talker_temperature, talker_top_k,
+                        talker_repetition_penalty, cp_temperature, cp_top_k), plus speech_streamer.
+                        Unrecognized keys raise. Fields not given fall back to get_speech_config().
+
+                        :return: TalkerResults
+                    )");
 
     py::class_<OmniDecodedResults, VLMDecodedResults>(m, "OmniDecodedResults",
         R"(Omni-specific decoded results including speech outputs.
