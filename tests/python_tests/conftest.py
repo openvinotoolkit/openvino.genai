@@ -84,32 +84,6 @@ IMAGE_GEN_MODELS = {
 DEFAULT_IMAGE_GEN_MODEL_ID = "tiny-random-latent-consistency"
 
 
-OPTIMUM_INTEL_MASTER = "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@main"
-MODELS_REQUIRING_OPTIMUM_MASTER = {"tiny-random-qwenimage"}
-
-
-def _install_package(package: str) -> None:
-    import sys
-
-    logger.info(f"Installing: {package}")
-    subprocess.run(  # nosec B603
-        [sys.executable, "-m", "pip", "install", "--no-deps", package],
-        check=True,
-        encoding="utf-8",
-        text=True,
-        capture_output=True,
-    )
-
-
-def _get_optimum_intel_requirement() -> str:
-    """Read the pinned optimum-intel spec from requirements.txt."""
-    req_path = Path(__file__).parent / "requirements.txt"
-    for line in req_path.read_text().splitlines():
-        if "optimum-intel" in line and not line.strip().startswith("#"):
-            return line.strip()
-    return "optimum-intel"
-
-
 @pytest.fixture(scope="module")
 def image_generation_model(request):
     model_id = getattr(request, "param", DEFAULT_IMAGE_GEN_MODEL_ID)
@@ -119,12 +93,7 @@ def image_generation_model(request):
 
     manager = AtomicDownloadManager(model_path)
 
-    use_optimum_master = model_id in MODELS_REQUIRING_OPTIMUM_MASTER
-
     def convert_model(temp_path: Path) -> None:
-        if use_optimum_master:
-            _install_package(OPTIMUM_INTEL_MASTER)
-
         command = [
             "optimum-cli",
             "export",
@@ -137,12 +106,7 @@ def image_generation_model(request):
             str(temp_path),
         ]
         logger.info(f"Conversion command: {' '.join(command)}")
-        try:
-            retry_request(lambda: subprocess.run(command, check=True, encoding="utf-8", text=True, capture_output=True))
-        finally:
-            if use_optimum_master:
-                pinned = _get_optimum_intel_requirement()
-                _install_package(pinned)
+        retry_request(lambda: subprocess.run(command, check=True, encoding="utf-8", text=True, capture_output=True))
 
     try:
         manager.execute(convert_model)
