@@ -34,8 +34,16 @@ def record_rerun_to_db(
     try:
         cursor = conn.cursor()
 
-        # Ensure the category column exists so pre-existing deployments keep working.
-        cursor.execute(sql.SQL("ALTER TABLE rerunner_stats ADD COLUMN IF NOT EXISTS category TEXT"))
+        # Only alter the table when the category column is actually missing so pre-existing
+        # deployments keep working without paying the ALTER TABLE cost on every rerun.
+        cursor.execute(
+            sql.SQL("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'rerunner_stats' AND column_name = 'category'
+            """)
+        )
+        if cursor.fetchone() is None:
+            cursor.execute(sql.SQL("ALTER TABLE rerunner_stats ADD COLUMN category TEXT"))
 
         insert_query = sql.SQL("""
             INSERT INTO rerunner_stats (repository_full_name, run_id, ticket_number, rerun_at, rerunner_run_id, error_text, category)
