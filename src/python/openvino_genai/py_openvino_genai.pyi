@@ -1371,6 +1371,7 @@ class ExtendedPerfMetrics:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Number of input tokens reused from the prefix cache
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
     
@@ -1385,6 +1386,9 @@ class ExtendedPerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
+
+        :param get_num_cached_tokens: Returns the number of input tokens restored from the prefix cache.
+        :type get_num_cached_tokens: int
     
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
@@ -1444,6 +1448,8 @@ class ExtendedPerfMetrics:
     def get_load_time(self) -> float:
         ...
     def get_num_generated_tokens(self) -> int:
+        ...
+    def get_num_cached_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
         ...
@@ -3093,6 +3099,7 @@ class PerfMetrics:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Number of input tokens reused from the prefix cache
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
     
@@ -3107,6 +3114,9 @@ class PerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
+
+        :param get_num_cached_tokens: Returns the number of input tokens restored from the prefix cache.
+        :type get_num_cached_tokens: int
     
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
@@ -3170,6 +3180,8 @@ class PerfMetrics:
     def get_load_time(self) -> float:
         ...
     def get_num_generated_tokens(self) -> int:
+        ...
+    def get_num_cached_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
         ...

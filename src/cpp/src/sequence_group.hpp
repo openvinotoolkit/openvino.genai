@@ -911,6 +911,10 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
+    void set_num_cached_tokens_for_metrics(size_t num_cached_tokens) {
+        m_perf_metrics.num_cached_tokens = num_cached_tokens;
+    }
+
     void update_perf_metrics(MicroSeconds inference_duration,
                              MicroSeconds sampling_duration,
                              size_t batch_size,

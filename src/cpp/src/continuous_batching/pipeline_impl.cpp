@@ -341,6 +341,7 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
     }
+    sequence_group->set_num_cached_tokens_for_metrics(sequence_group->get_num_processed_tokens());
 
     {
         std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
@@ -853,6 +854,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         perf_metrics.raw_metrics.generate_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
         perf_metrics.num_input_tokens = request->get_prompt_len();
+        perf_metrics.num_cached_tokens = request->get_perf_metrics().get_num_cached_tokens();
         perf_metrics.evaluate_statistics(start_time);
 
         result.perf_metrics = perf_metrics;
