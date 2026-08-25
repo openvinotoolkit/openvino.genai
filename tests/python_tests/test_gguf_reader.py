@@ -216,6 +216,7 @@ def test_full_gguf_pipeline(
     assert res_string_input_1 == res_string_input_2
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize(
     "model_ids",
     [
@@ -228,7 +229,7 @@ def test_full_gguf_pipeline(
 )
 @pytest.mark.xfail(sys.platform == "darwin", reason="CVS-172335")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
+def test_full_gguf_qwen3_pipeline(pipeline_type, gguf_reader, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
     gguf_model_id = model_ids["gguf_model_id"]
@@ -247,7 +248,7 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, gguf_reader=gguf_reader)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
@@ -295,6 +296,7 @@ def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
     path.write_bytes(blob)
 
 
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize(
     "tensor_type,last_dim",
     [
@@ -307,7 +309,7 @@ def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
     ],
     ids=["q4_k_last_dim_32", "q6_k_last_dim_16"],
 )
-def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_dim):
+def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_dim, gguf_reader):
     # Regression test for the K-quant heap-buffer-overflow: a crafted GGUF whose
     # K-quant tensor has a last dim that is a multiple of the sub-block size but
     # not of 256 must be rejected at load time rather than overflowing the heap.
@@ -318,4 +320,4 @@ def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_di
     _write_minimal_gguf(gguf_path, tensor_type, last_dim)
 
     with pytest.raises(RuntimeError, match="multiple of.*256"):
-        ov_genai.LLMPipeline(str(gguf_path), "CPU")
+        ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER=gguf_reader)

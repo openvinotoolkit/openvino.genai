@@ -180,6 +180,9 @@ def test_text_gguf_genai_vs_llamacpp(arch, hf_id, gguf, tmp_path):
     assert len(data["prompts"].values) == NUM_SAMPLES
 
     # 2) Target = GenAI loading the same .gguf through the frontend; compare to ground truth.
+    # GGUF_READER defaults to the legacy reader (llama/qwen2/qwen3 only; see llm_pipeline.hpp),
+    # so force the frontend explicitly -- this test is about the frontend's whole architecture
+    # range, most of which the legacy reader can't load at all.
     output = run_wwb(
         [
             "--target-model",
@@ -199,6 +202,8 @@ def test_text_gguf_genai_vs_llamacpp(arch, hf_id, gguf, tmp_path):
             "--short-prompt",
             "--omit-chat-template",
             "--genai",
+            "--ov-config",
+            '{"GGUF_READER": "FRONTEND"}',
         ]
     )
 
