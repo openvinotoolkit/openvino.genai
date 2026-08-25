@@ -155,6 +155,13 @@ def test_full_gguf_pipeline(
     if gguf_model_id == "sammysun0711/tiny-random-deepseek-distill-qwen-gguf" and "<|endoftext|>" in prompt:
         pytest.skip(reason="Prompts to test special tokens for this model fail on HF side")
 
+    if enable_save_ov_model and gguf_reader == "FRONTEND" and pipeline_type == PipelineType.PAGED_ATTENTION:
+        # enable_save_ov_model reloads the saved IR as a plain OpenVINO model (no .gguf
+        # extension), so the SDPA-only fallback in LLMPipeline no longer applies and this
+        # actually exercises PagedAttention on a GGUF-frontend graph. That crashes until
+        # SDPAToPagedAttention is fixed upstream: openvinotoolkit/openvino#37606.
+        pytest.skip(reason="GGUF frontend graph is rejected by SDPAToPagedAttention; needs openvinotoolkit/openvino#37606")
+
     # TODO: remove explicit switch-off of bos token
     hf_tokenizer.add_bos_token = False
 
