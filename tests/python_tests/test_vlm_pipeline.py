@@ -493,6 +493,17 @@ def _get_ov_model(model_id: str) -> str:
         else:
             processor.audio_tokenizer = None
 
+        # DeepSeek-OCR-2 tiny-random currently may miss preprocessor_config.json
+        # So override processor with AutoImageProcessor in this case.
+        if model_id == MODEL_DEEPSEEK_OCR2:
+            try:
+                processor = transformers.AutoImageProcessor.from_pretrained(
+                    model_cached,
+                    trust_remote_code=True,
+                )
+            except (OSError, ValueError):
+                pass
+
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
