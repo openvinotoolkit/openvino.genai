@@ -253,12 +253,16 @@ StatefulGemma4MTPLLMPipeline::StatefulGemma4MTPLLMPipeline(const ModelDesc& targ
                     "Target and draft models do not match the Gemma4 MTP OpenVINO IR contract.");
     OPENVINO_ASSERT(target_model_desc.device != "NPU" && draft_model_desc.device != "NPU",
                     "Gemma4 MTP stateful speculative decoding currently supports CPU/GPU only.");
+    
+    utils::patch_chat_template_multiline_strings(m_tokenizer);
 
-    if (m_generation_config.num_assistant_tokens == 0 && draft_model_desc.generation_config.num_assistant_tokens > 0) {
+    if ((!m_generation_config.num_assistant_tokens.has_value() || m_generation_config.num_assistant_tokens.value() == 0) &&
+        draft_model_desc.generation_config.num_assistant_tokens.has_value() &&
+        draft_model_desc.generation_config.num_assistant_tokens.value() > 0) {
         m_generation_config.num_assistant_tokens = draft_model_desc.generation_config.num_assistant_tokens;
     }
     ensure_num_assistant_tokens_is_set(m_generation_config);
-    m_num_assistant_tokens = m_generation_config.num_assistant_tokens;
+    m_num_assistant_tokens = m_generation_config.num_assistant_tokens.value();
 
     auto assistant_desc = draft_model_desc;
     if (assistant_desc.device.empty()) {
@@ -278,11 +282,11 @@ StatefulGemma4MTPLLMPipeline::~StatefulGemma4MTPLLMPipeline() {
 
 GenerationConfig StatefulGemma4MTPLLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
-    if (config.num_assistant_tokens == 0) {
+    if (!config.num_assistant_tokens.has_value() || config.num_assistant_tokens.value() == 0) {
         config.num_assistant_tokens = m_generation_config.num_assistant_tokens;
     }
     ensure_num_assistant_tokens_is_set(config);
-    m_num_assistant_tokens = config.num_assistant_tokens;
+    m_num_assistant_tokens = config.num_assistant_tokens.value();
     return config;
 }
 

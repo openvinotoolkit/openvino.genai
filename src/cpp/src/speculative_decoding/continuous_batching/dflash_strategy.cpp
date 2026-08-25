@@ -339,14 +339,15 @@ ContinuousBatchingPipeline::DFlashDecodingImpl::DFlashDecodingImpl(
     m_tokenizer = main_model_desc.tokenizer;
     auto main_generation_config = main_model_desc.generation_config;
     dflash_cb::ensure_num_assistant_tokens_is_set(main_generation_config);
-    OPENVINO_ASSERT(main_model_desc.scheduler_config.max_num_batched_tokens >= main_generation_config.num_assistant_tokens + 1,
+    OPENVINO_ASSERT(main_model_desc.scheduler_config.max_num_batched_tokens >=
+                        main_generation_config.num_assistant_tokens.value() + 1,
                     "DFlash CB/PA requires max_num_batched_tokens >= num_assistant_tokens + 1 while it is limited ",
                     "to one active request and one running sequence.");
     m_generation_config = main_generation_config;
     auto target_scheduler_config = main_model_desc.scheduler_config;
     target_scheduler_config.num_linear_attention_blocks =
         dflash_cb::adjusted_linear_attention_block_count(target_scheduler_config.num_linear_attention_blocks,
-                                                         main_generation_config.num_assistant_tokens,
+                                                         main_generation_config.num_assistant_tokens.value(),
                                                          target_has_linear_attention);
     auto draft_model_desc_for_runner = draft_model_desc;
     if (draft_model_desc_for_runner.device.empty()) {
@@ -406,7 +407,7 @@ GenerationConfig ContinuousBatchingPipeline::DFlashDecodingImpl::make_draft_gene
         draft_config.structured_output_config.reset();
         draft_config.parsers.clear();
     }
-    draft_config.max_new_tokens = config.max_new_tokens + config.num_assistant_tokens;
+    draft_config.max_new_tokens = config.max_new_tokens + config.num_assistant_tokens.value();
     draft_config.num_assistant_tokens = 0;
     return draft_config;
 }
@@ -570,7 +571,7 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         }
 
         const size_t draft_count =
-            dflash_cb::draft_candidate_count(state.generation_config.num_assistant_tokens,
+            dflash_cb::draft_candidate_count(state.generation_config.num_assistant_tokens.value(),
                                             generated_len,
                                             state.generation_config.max_new_tokens);
         const size_t validation_count =
@@ -691,6 +692,14 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::step() {
         m_sd_metrics.update_generated_len(num_generated_tokens);
     }
 
+    if (main_generated_requests.empty()) {
+        drop_finished_request_states();
+        if (utils::env_setup_for_print_debug_info()) {
+            m_sd_metrics.print(true);
+            m_sd_metrics.clean_up();
+        }
+    }
+
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_main(
@@ -718,6 +727,8 @@ void ContinuousBatchingPipeline::DFlashDecodingImpl::update_draft_states_from_ma
 }
 
 void ContinuousBatchingPipeline::DFlashDecodingImpl::drop_requests() {
+    std::lock_guard<std::mutex> lock{m_draft_generations_mutex};
+
     for (auto& [_, state] : m_request_states) {
         if (m_main_pipeline) {
             m_main_pipeline->release_linear_attention_checkpoints_for_sequence(state.target_la_checkpoint_sequence_id);
@@ -771,8 +782,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_perf_metrics.main_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_perf_metrics.draft_model_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
-    m_sd_metrics.clean_up();
-    m_request_states.clear();
     auto start_time = std::chrono::steady_clock::now();
 
     auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
@@ -863,7 +872,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
         results.push_back(std::move(result));
     }
 
-    m_request_states.clear();
     OPENVINO_ASSERT(results.size() == input_ids.size());
     return results;
 }

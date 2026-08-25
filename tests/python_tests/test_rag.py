@@ -310,9 +310,7 @@ def test_embedding_pipeline_prompt_api_reaches_cpp(emb_model):
     assert batch_result.embeddings.shape[0] == 2
     assert batch_result.embeddings.shape[1] == result.embeddings.shape[1]
 
-    with pytest.raises(
-        RuntimeError, match="TextEmbeddingPipeline fallback is active and does not support image/video input"
-    ):
+    with pytest.raises(RuntimeError, match="This model does not support image/video input"):
         pipeline.embed("What is OpenVINO?", images=[ov.Tensor(np.zeros((1, 1, 1, 1), dtype=np.float32))])
 
 

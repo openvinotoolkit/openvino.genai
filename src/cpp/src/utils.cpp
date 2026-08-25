@@ -8,6 +8,7 @@
 #include <variant>
 #include <fstream>
 #include <memory>
+#include <regex>
 
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
@@ -1202,6 +1203,13 @@ ov::genai::GenerationConfig get_multinomial_config() {
     multinomial_config.min_new_tokens = 15;
     multinomial_config.max_new_tokens = 30;
     return multinomial_config;
+}
+
+void patch_chat_template_multiline_strings(Tokenizer& tokenizer) {
+    std::string chat_template = tokenizer.get_chat_template();
+    const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
+    chat_template = std::regex_replace(chat_template, multiline_string_concatenation, "");
+    tokenizer.set_chat_template(chat_template);
 }
 
 }  // namespace utils
