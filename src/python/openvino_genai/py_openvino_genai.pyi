@@ -1785,10 +1785,10 @@ class GenerationConfig:
     def no_repeat_ngram_size(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
-    def num_assistant_tokens(self) -> int:
+    def num_assistant_tokens(self) -> int | None:
         ...
     @num_assistant_tokens.setter
-    def num_assistant_tokens(self, arg0: typing.SupportsInt) -> None:
+    def num_assistant_tokens(self, arg0: typing.SupportsInt | None) -> None:
         ...
     @property
     def num_beam_groups(self) -> int:
