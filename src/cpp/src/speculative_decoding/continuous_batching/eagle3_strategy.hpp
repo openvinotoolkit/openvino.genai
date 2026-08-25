@@ -80,6 +80,8 @@ public:
                                  const ov::genai::GenerationConfig& sampling_params) override;
 protected:
     void align_request_pair_processed_prefix(uint64_t request_id) override;
+    void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+                                    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const override;
     void update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
     ov::Tensor create_draft_input(const ov::Tensor& original_input);
     // Creates draft model input by removing the first token from the original input sequence.
@@ -87,7 +89,6 @@ protected:
     // the wrapper for executing kv cache update model in eagle3 pipeline
     std::shared_ptr<KVUpdateWrapper> m_kv_update_wrapper;
     ov::Tensor create_draft_input_embeddings(const ov::Tensor& original_input_embeddings);
-    static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     static ov::Tensor trim_first_token_sequence_tensor(const ov::Tensor& tensor, const char* tensor_name);
 };
 }
