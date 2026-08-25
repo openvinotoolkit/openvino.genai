@@ -26,7 +26,7 @@ def output_comments(result, use_case, writer):
         )
         comment_list.append("2nd_avg_latency: Text/Code generation models: Other tokens (exclude first token) latency")
         comment_list.append(
-            "1st_infer_latency: Text/Code generation models: First inference latency (ms). "
+            "1st_infer_latency: Text/Code generation models: First inference latency i.e. prefill time (ms). "
             "For Text generation in chat mode it is normalized by input_size (ms/input_token)."
         )
         comment_list.append(

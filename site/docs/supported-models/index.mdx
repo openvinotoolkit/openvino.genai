@@ -126,6 +126,13 @@ Qwen3-ASR models require the `qwen-asr` package for export with `optimum-cli`:
 ```bash
 pip install qwen-asr
 ```
+
+Fun-ASR models require the `funasr` package and trusted remote code during export:
+
+```bash
+pip install funasr
+optimum-cli export openvino --trust-remote-code -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-nano
+```
 :::
 
 ## Speech Generation Models

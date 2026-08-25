@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include <thread>
 
 #include "openvino/genai/text_streamer.hpp"
@@ -24,6 +25,21 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
 
     return shape_lhs == shape_rhs && lhs.get_eos_token_id() == rhs.get_eos_token_id() &&
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
+}
+
+int64_t ContinuousBatchingPipeline::SpeculativeDecodingImpl::compute_rope_delta(const ov::Tensor& position_ids) {
+    const ov::Shape shape = position_ids.get_shape();
+    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
+                    "Expected position_ids rank 2 or 3 when computing rope_delta.");
+
+    const size_t seq_axis = shape.size() == 3 ? 2 : 1;
+    OPENVINO_ASSERT(shape[seq_axis] > 0, "position_ids sequence length must be greater than 0.");
+    OPENVINO_ASSERT(position_ids.get_element_type() == ov::element::i64,
+                    "Expected position_ids element type i64 when computing rope_delta.");
+
+    const int64_t* data = position_ids.data<const int64_t>();
+    const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
+    return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
 }
 
 std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig>
@@ -288,7 +304,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                                   ov::Tensor& main_in,
                                   ov::Tensor& draft_in) {
         if (main_cfg.assistant_confidence_threshold == 0.f) {
-            if (main_cfg.num_assistant_tokens == 0) {
+            if (!main_cfg.num_assistant_tokens.has_value() || main_cfg.num_assistant_tokens.value() == 0) {
                 main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             }
         }
@@ -332,7 +348,7 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::is_requests_empty() {
 std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingImpl::get_awaiting_requests() {
     auto main_awaiting_requests = m_main_pipeline->get_awaiting_requests();
     auto draft_awaiting_requests = m_draft_pipeline->get_awaiting_requests();
-    OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
+    validate_awaiting_requests(main_awaiting_requests, draft_awaiting_requests);
     return main_awaiting_requests;
 }
 
