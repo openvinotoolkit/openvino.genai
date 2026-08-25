@@ -93,7 +93,18 @@ Qwen3TextEncoder& Qwen3TextEncoder::compile(const std::string& device, const ov:
     return *this;
 }
 
-ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::string& neg_prompt, const bool do_classifier_free_guidance, const int& max_sequence_length) {
+ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt,
+                                   const std::string& neg_prompt,
+                                   const bool do_classifier_free_guidance,
+                                   const int& max_sequence_length) {
+    return infer(pos_prompt, neg_prompt, do_classifier_free_guidance, max_sequence_length, {});
+}
+
+ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt,
+                                   const std::string& neg_prompt,
+                                   const bool do_classifier_free_guidance,
+                                   const int& max_sequence_length,
+                                   const std::vector<size_t>& hidden_states_layers) {
     OPENVINO_ASSERT(m_request, "Qwen3 text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const size_t text_embedding_batch_size = do_classifier_free_guidance ? 2 : 1;
@@ -149,7 +160,9 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.infer();
 
-    if (m_config.hidden_states_layers.empty()) {
+    const std::vector<size_t>& selected_hidden_states_layers =
+        hidden_states_layers.empty() ? m_config.hidden_states_layers : hidden_states_layers;
+    if (selected_hidden_states_layers.empty()) {
         for (const ov::Output<const ov::Node>& output : m_request.get_compiled_model().outputs()) {
             const std::unordered_set<std::string>& output_names = output.get_names();
             if (output_names.count("last_hidden_state") == 0) {
@@ -190,7 +203,7 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
     }
 
     // Gather hidden states from selected layers and concatenate along channel dimension
-    const size_t num_layers = m_config.hidden_states_layers.size();
+    const size_t num_layers = selected_hidden_states_layers.size();
     const size_t hidden_size = m_config.hidden_size;
     const size_t output_dim = num_layers * hidden_size;
 
@@ -199,7 +212,7 @@ ov::Tensor Qwen3TextEncoder::infer(const std::string& pos_prompt, const std::str
     float* result_data = result.data<float>();
 
     for (size_t layer_idx = 0; layer_idx < num_layers; ++layer_idx) {
-        const size_t layer_num = m_config.hidden_states_layers[layer_idx];
+        const size_t layer_num = selected_hidden_states_layers[layer_idx];
         const std::string output_name = "hidden_states." + std::to_string(layer_num);
 
         ov::Tensor hidden_state = m_request.get_tensor(output_name);
