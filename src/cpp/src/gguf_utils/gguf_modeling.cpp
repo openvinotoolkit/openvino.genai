@@ -164,7 +164,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                         model_arch,
                         "'. Set the ov::genai::gguf_reader property to '",
                         ov::genai::FRONTEND_GGUF_READER,
-                        "' (the default) to use the GGUF frontend.");
+                        "' to use the GGUF frontend.");
         auto legacy_model = create_language_model(config, consts, qtypes);
         if (enable_save_ov_model) {
             std::filesystem::path gguf_model_path(model_path);

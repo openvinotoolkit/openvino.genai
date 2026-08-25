@@ -27,19 +27,20 @@ hf download <model> --local-dir <output_folder>
 
 To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
 
-GGUF files are converted by the OpenVINO GGUF frontend, which covers a wide range of architectures.
-For anything it does not accept, convert the model to the IR format with the `optimum-intel` tool.
+GGUF files are converted with a hand-written reader that handles just `llama`, `qwen2` and
+`qwen3`, and ignores part of the file's metadata (for example `rope_freqs.weight`, so llama-3
+RoPE scaling is not applied and accuracy suffers). For anything it does not accept, convert the
+model to the IR format with the `optimum-intel` tool.
 
-GGUF models run on the SDPA attention backend; continuous batching / PagedAttention is not
-supported for them, and a `scheduler_config` passed alongside one is ignored.
+An OpenVINO GGUF frontend covering a wider range of architectures is also available, but is not
+the default reader yet: continuous batching / PagedAttention on its converted graph needs an
+OpenVINO-side fix first. Until then, GGUF models run on the SDPA attention backend, and a
+`scheduler_config` passed alongside one is ignored.
 
 > [!NOTE]
 > The `GGUF_READER` property selects which reader converts the file. It defaults to
-> `"FRONTEND"`; passing `ov::genai::gguf_reader("LEGACY")` (C++) or `GGUF_READER="LEGACY"`
-> (Python) uses the older, pre-frontend reader instead. That exists only as a temporary
-> fallback and will be removed together with that code: it handles just `llama`, `qwen2` and
-> `qwen3`, and it ignores part of the file's metadata (for example `rope_freqs.weight`, so
-> llama-3 RoPE scaling is not applied and accuracy suffers).
+> `"LEGACY"`, the hand-written reader described above; passing `ov::genai::gguf_reader("FRONTEND")`
+> (C++) or `GGUF_READER="FRONTEND"` (Python) uses the OpenVINO GGUF frontend instead.
 
 ## Sample Descriptions
 ### Common information

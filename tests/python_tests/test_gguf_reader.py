@@ -27,10 +27,11 @@ from utils.ov_genai_pipelines import (
 )
 from data.models import GGUF_MODEL_LIST
 
-# ov::genai::gguf_reader values (see llm_pipeline.hpp): the OpenVINO GGUF frontend (default) and
-# the pre-frontend, hand-written reader kept as a temporary fallback. Every architecture in
-# GGUF_MODEL_LIST (llama, qwen2) is within the legacy reader's supported scope, so it is exercised
-# here alongside the frontend to catch behavior differences between the two while both exist.
+# ov::genai::gguf_reader values (see llm_pipeline.hpp): the OpenVINO GGUF frontend and the
+# pre-frontend, hand-written reader (currently the default; see llm_pipeline.hpp for why). Every
+# architecture in GGUF_MODEL_LIST (llama, qwen2) is within the legacy reader's supported scope, so
+# it is exercised here alongside the frontend to catch behavior differences between the two while
+# both exist.
 GGUF_READERS = (
     pytest.param("FRONTEND", id="frontend"),
     pytest.param("LEGACY", id="legacy"),

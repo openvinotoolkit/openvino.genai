@@ -150,8 +150,8 @@ struct GGUFProperties {
     ov::AnyMap rest;
     /// ov::genai::enable_save_ov_model: serialize the converted model next to the .gguf.
     bool enable_save_ov_model = false;
-    /// ov::genai::gguf_reader: FRONTEND_GGUF_READER (default) or LEGACY_GGUF_READER.
-    std::string reader = FRONTEND_GGUF_READER;
+    /// ov::genai::gguf_reader: FRONTEND_GGUF_READER or LEGACY_GGUF_READER (default, for now).
+    std::string reader = LEGACY_GGUF_READER;
 
     bool use_legacy_reader() const {
         return reader == LEGACY_GGUF_READER;
