@@ -183,6 +183,20 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
      * @param duration steady clock duration
      */
     static float get_microsec(std::chrono::steady_clock::duration duration);
+
+    /**
+     * @brief Emplace duration into the vector of microseconds.
+     *
+     * @param target_durations Vector of microseconds to store the duration.
+     * @param start_time Start time of the duration.
+     * @param end_time End time of the duration (default: now).
+     */
+    static void emplace_duration(
+        std::vector<MicroSeconds>& target_durations,
+        const TimePoint& start_time,
+        const TimePoint& end_time = std::chrono::steady_clock::now()
+    );
+
     PerfMetrics operator+(const PerfMetrics& metrics) const;
     PerfMetrics& operator+=(const PerfMetrics& right);
 

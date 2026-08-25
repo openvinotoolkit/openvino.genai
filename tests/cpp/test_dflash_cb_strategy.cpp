@@ -381,6 +381,15 @@ TEST(DFlashCBDraftInputs, BuildsAttentionMaskForFullDraftContext) {
     ASSERT_EQ(int64_tensor_values(attention_mask), (std::vector<int64_t>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
 }
 
+TEST(DFlashCBVlmPromptIds, BuildsPlaceholderPromptIds) {
+    ASSERT_EQ(ov::genai::dflash_cb::build_placeholder_prompt_ids(3, 42), (std::vector<int64_t>{42, 42, 42}));
+}
+
+TEST(DFlashCBVlmPromptIds, RejectsInvalidPromptLengthAndPlaceholderId) {
+    EXPECT_THROW(ov::genai::dflash_cb::build_placeholder_prompt_ids(0, 42), ov::Exception);
+    EXPECT_THROW(ov::genai::dflash_cb::build_placeholder_prompt_ids(1, -1), ov::Exception);
+}
+
 TEST(DFlashCBGenerationConfig, DefaultsAssistantTokensToFive) {
     ov::genai::GenerationConfig config;
 
@@ -396,6 +405,35 @@ TEST(DFlashCBGenerationConfig, PreservesExplicitAssistantTokens) {
     ov::genai::dflash_cb::ensure_num_assistant_tokens_is_set(config);
 
     ASSERT_EQ(config.num_assistant_tokens, 2);
+}
+
+TEST(DFlashCBGenerationConfig, AcceptsSupportedVlmOptions) {
+    ov::genai::GenerationConfig config;
+
+    EXPECT_NO_THROW(ov::genai::dflash_cb::ensure_vlm_generation_config(config));
+}
+
+TEST(DFlashCBGenerationConfig, RejectsUnsupportedVlmOptions) {
+    {
+        ov::genai::GenerationConfig config;
+        config.pruning_ratio = 1;
+        EXPECT_THROW(ov::genai::dflash_cb::ensure_vlm_generation_config(config), ov::Exception);
+    }
+    {
+        ov::genai::GenerationConfig config;
+        config.echo = true;
+        EXPECT_THROW(ov::genai::dflash_cb::ensure_vlm_generation_config(config), ov::Exception);
+    }
+    {
+        ov::genai::GenerationConfig config;
+        config.logprobs = 1;
+        EXPECT_THROW(ov::genai::dflash_cb::ensure_vlm_generation_config(config), ov::Exception);
+    }
+    {
+        ov::genai::GenerationConfig config;
+        config.return_omni_outputs = true;
+        EXPECT_THROW(ov::genai::dflash_cb::ensure_vlm_generation_config(config), ov::Exception);
+    }
 }
 
 TEST(DFlashCBLinearAttentionCheckpointing, ComputesRequiredBlockCount) {

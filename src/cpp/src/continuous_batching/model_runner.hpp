@@ -740,8 +740,12 @@ public:
                                            ") exceeds tree_position_ids.size() (", tree_pos_ids.size(),
                                            "); position_ids_idx=", position_ids_idx,
                                            ", seq_id=", sequence->get_id());
-                            size_t tree_pos_id = tree_pos_ids[token_id];
-                            position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
+                            int64_t tree_pos_id = tree_pos_ids[token_id];
+                            OPENVINO_ASSERT(tree_pos_id >= 0,
+                                            "tree_position_ids[", token_id, "] must be non-negative, got ", tree_pos_id,
+                                            "; position_ids_idx=", position_ids_idx,
+                                            ", seq_id=", sequence->get_id());
+                            position_ids_data[position_ids_idx] = static_cast<int64_t>(group_position_id) + tree_pos_id;
                         } else {
                             position_ids_data[position_ids_idx] = position_id;
                         }
@@ -749,7 +753,28 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
+                        const auto& tree_pos_ids = sequence->get_tree_metadata().tree_position_ids;
+                        const auto& position_ids_list = sequence->get_position_ids_list();
+                        size_t effective_position_id = position_id;
+                        if (_is_hs_export_only() && !tree_pos_ids.empty()) {
+                            OPENVINO_ASSERT(num_scheduled_tokens <= tree_pos_ids.size(),
+                                           "num_scheduled_tokens (", num_scheduled_tokens,
+                                           ") exceeds tree_position_ids.size() (", tree_pos_ids.size(),
+                                           "); position_ids_idx=", position_ids_idx,
+                                           ", seq_id=", sequence->get_id());
+                            int64_t tree_pos_id = tree_pos_ids[token_id];
+                            OPENVINO_ASSERT(tree_pos_id >= 0,
+                                            "tree_position_ids[", token_id, "] must be non-negative, got ", tree_pos_id,
+                                            "; position_ids_idx=", position_ids_idx,
+                                            ", seq_id=", sequence->get_id());
+                            effective_position_id = group_position_id + static_cast<size_t>(tree_pos_id);
+                            OPENVINO_ASSERT(effective_position_id < position_ids_list.size(),
+                                            "effective_position_id (", effective_position_id,
+                                            ") is out of range for position_ids_list (size=", position_ids_list.size(),
+                                            "); position_ids_idx=", position_ids_idx,
+                                            ", seq_id=", sequence->get_id());
+                        }
+                        const auto& position_ids_elem = position_ids_list[effective_position_id];
                         const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
 
                         ov::Tensor dst_roi(position_ids, begin, end);
