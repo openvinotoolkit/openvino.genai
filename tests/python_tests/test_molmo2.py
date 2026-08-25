@@ -91,39 +91,45 @@ pytestmark = pytest.mark.skipif(
 def _build_shrunk_config(src_config: dict) -> dict:
     cfg = json.loads(json.dumps(src_config))  # deep copy
 
-    cfg["text_config"].update({
-        "hidden_size": 64,
-        "intermediate_size": 128,
-        "num_hidden_layers": 2,
-        "num_attention_heads": 4,
-        "num_key_value_heads": 2,
-        "head_dim": 16,
-        "max_position_embeddings": 512,
-    })
+    cfg["text_config"].update(
+        {
+            "hidden_size": 64,
+            "intermediate_size": 128,
+            "num_hidden_layers": 2,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 2,
+            "head_dim": 16,
+            "max_position_embeddings": 512,
+        }
+    )
 
-    cfg["vit_config"].update({
-        "hidden_size": 32,
-        "intermediate_size": 64,
-        "num_hidden_layers": 2,
-        "num_attention_heads": 4,
-        "num_key_value_heads": 4,
-        "head_dim": 8,
-        "image_default_input_size": [TINY_IMAGE_SIZE, TINY_IMAGE_SIZE],
-        "image_num_pos": TINY_IMAGE_NUM_POS,
-    })
+    cfg["vit_config"].update(
+        {
+            "hidden_size": 32,
+            "intermediate_size": 64,
+            "num_hidden_layers": 2,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 4,
+            "head_dim": 8,
+            "image_default_input_size": [TINY_IMAGE_SIZE, TINY_IMAGE_SIZE],
+            "image_num_pos": TINY_IMAGE_NUM_POS,
+        }
+    )
 
     # adapter_config's vit_layers indexes into the vision tower's hidden_states
     # list (embeddings + num_hidden_layers entries). With vit num_hidden_layers=2
     # that list has 3 entries, so only -1/-2/-3 are valid indices.
-    cfg["adapter_config"].update({
-        "hidden_size": 32,
-        "text_hidden_size": 64,
-        "head_dim": 8,
-        "num_attention_heads": 4,
-        "num_key_value_heads": 4,
-        "intermediate_size": 64,
-        "vit_layers": [-1, -2],
-    })
+    cfg["adapter_config"].update(
+        {
+            "hidden_size": 32,
+            "text_hidden_size": 64,
+            "head_dim": 8,
+            "num_attention_heads": 4,
+            "num_key_value_heads": 4,
+            "intermediate_size": 64,
+            "vit_layers": [-1, -2],
+        }
+    )
     return cfg
 
 
@@ -145,7 +151,9 @@ def _apply_rope_compat_shim() -> None:
         partial_rotary_factor = getattr(config, "partial_rotary_factor", 1.0)
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         dim = int(head_dim * partial_rotary_factor)
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / dim))
+        inv_freq = 1.0 / (
+            base ** (torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / dim)
+        )
         return inv_freq, 1.0  # attention_factor=1.0, i.e. no post-scaling
 
     if "default" not in ROPE_INIT_FUNCTIONS:
@@ -200,12 +208,18 @@ def tiny_molmo2_ov_model(tmp_path_factory) -> Path:
     old_argv = sys.argv
     try:
         sys.argv = [
-            "optimum-cli", "export", "openvino",
-            "--model", str(src_dir),
-            "--task", "image-text-to-text",
-            "--framework", "pt",
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            str(src_dir),
+            "--task",
+            "image-text-to-text",
+            "--framework",
+            "pt",
             "--trust-remote-code",
-            "--weight-format", "fp16",
+            "--weight-format",
+            "fp16",
             str(ov_dir),
         ]
         optimum_cli_main()
