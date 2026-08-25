@@ -31,8 +31,6 @@ timm==1.0.28
 decord==0.6.0; platform_system != "Darwin"
 # For speech generation and recognition evaluation
 jiwer>=3.0.0,<=4.0.0
-# For FunASR source-model evaluation
-funasr==1.4.2
 # For speech generation evaluation
 pywhispercpp>=1.4.1,<1.6.0
 speechbrain>=1.0.0,<=1.1.0
