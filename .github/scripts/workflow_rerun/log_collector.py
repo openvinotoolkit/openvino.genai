@@ -26,16 +26,17 @@ def _download_logs_archive(run: WorkflowRun, log_archive_path: Path, session: re
             # PyGitHub does not expose the "/repos/{owner}/{repo}/actions/runs/{run_id}/logs" endpoint so we have to use requests
             LOGGER.info(f"DOWNLOADING LOGS FOR RUN ID {run.id} (ATTEMPT {attempt}/{LOG_DOWNLOAD_MAX_ATTEMPTS})")
             LOGGER.debug(f"Downloading logs from {run.logs_url}")
-            response = session.get(
+            with session.get(
                 url=run.logs_url,
                 headers={"Authorization": f"Bearer {GITHUB_TOKEN}"},
                 stream=True,
                 timeout=LOG_DOWNLOAD_TIMEOUT_SECONDS,
-            )
-            response.raise_for_status()
-            with open(file=log_archive_path, mode="wb") as log_archive:
-                for chunk in response.iter_content(chunk_size=LOG_DOWNLOAD_CHUNK_SIZE_BYTES):
-                    log_archive.write(chunk)
+            ) as response:
+                response.raise_for_status()
+                with open(file=log_archive_path, mode="wb") as log_archive:
+                    for chunk in response.iter_content(chunk_size=LOG_DOWNLOAD_CHUNK_SIZE_BYTES):
+                        if chunk:
+                            log_archive.write(chunk)
             return
         except requests.exceptions.RequestException as error:
             LOGGER.warning(
