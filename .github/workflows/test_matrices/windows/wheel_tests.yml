@@ -119,7 +119,7 @@
 
 - name: API tests
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not qwen35_mtp and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
   timeout: 60
   components:
     - continuous_batching
@@ -172,6 +172,15 @@
     python -m pip install git+https://github.com/openvino-agent/optimum-intel.git@support_mtp
     python -m pip install transformers==5.8.0
     python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "gemma4_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: Qwen3.5 MTP speculative decoding tests
+  cmd: |-
+    python -m pip install -U "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@qwen35_mtp"
+    pip install transformers==5.2.0
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
   timeout: 90
   components:
     - speculative_decoding
