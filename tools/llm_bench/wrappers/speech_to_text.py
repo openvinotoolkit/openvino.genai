@@ -6,43 +6,10 @@ import re
 import time
 
 
-class FunASROptimumPipeline:
-    SAMPLE_RATE = 16000
-
-    def __init__(self, model, tokenizer):
-        self.model = model
-        self.tokenizer = tokenizer
-
-    def __call__(self, sample, **kwargs):
-        generate_kwargs = kwargs.get("generate_kwargs", {})
-        language = generate_kwargs.get("language", "中文")
-        max_new_tokens = generate_kwargs.get("max_new_tokens", 1000)
-
-        start = time.perf_counter()
-        inputs = self.model.preprocess_input(sample, sampling_rate=self.SAMPLE_RATE, language=language)
-        preprocess_time = time.perf_counter() - start
-
-        start = time.perf_counter()
-        output_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
-        generation_time = time.perf_counter() - start
-
-        start = time.perf_counter()
-        prompt_length = inputs["decoder_input_ids"].shape[1]
-        text = self.tokenizer.batch_decode(output_ids[:, prompt_length:], skip_special_tokens=True)[0]
-        detokenization_time = time.perf_counter() - start
-        return {
-            "text": text,
-            "perf_metrics": {
-                "preprocess_time": preprocess_time * 1000,
-                "generation_time": generation_time,
-                "detokenization_time": detokenization_time * 1000,
-            },
-        }
-
-
 class Qwen3ASROptimumPipeline:
     SAMPLE_RATE = 16000
     EOS_TOKEN_IDS = [151643, 151645]
+    DEFAULT_MAX_NEW_TOKENS = 1000
 
     def __init__(self, model, processor):
         self.model = model
@@ -66,7 +33,7 @@ class Qwen3ASROptimumPipeline:
         return inputs, end - start, language
 
     def generate(self, sample, **kwargs):
-        max_new_tokens = kwargs.get("max_new_tokens", 1000)
+        max_new_tokens = kwargs.get("max_new_tokens", self.DEFAULT_MAX_NEW_TOKENS)
         generate_kwargs = kwargs.get("generate_kwargs", {})
         max_new_tokens = generate_kwargs.get("max_new_tokens", max_new_tokens)
 
@@ -128,6 +95,7 @@ class Qwen3ASROptimumPipeline:
 
 class FunASROptimumPipeline:
     SAMPLE_RATE = 16000
+    DEFAULT_MAX_NEW_TOKENS = 1000
 
     def __init__(self, model, tokenizer):
         self.model = model
@@ -143,7 +111,7 @@ class FunASROptimumPipeline:
     def generate(self, sample, **kwargs):
         import torch
 
-        max_new_tokens = kwargs.get("max_new_tokens", 1000)
+        max_new_tokens = kwargs.get("max_new_tokens", self.DEFAULT_MAX_NEW_TOKENS)
         generate_kwargs = kwargs.get("generate_kwargs", {})
         max_new_tokens = generate_kwargs.get("max_new_tokens", max_new_tokens)
         language = generate_kwargs.get("language") or kwargs.get("language")

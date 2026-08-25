@@ -604,16 +604,7 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, p
     import openvino_genai as ov_genai
 
     ov_config = kwargs["config"]
-    use_case = kwargs["use_case"]
-    if hasattr(ov_genai, "ASRPipeline"):
-        pipeline_class = ov_genai.ASRPipeline
-    elif use_case.model_type == "fun-asr":
-        raise RuntimeError(
-            "FunASR GenAI benchmarking requires openvino_genai.ASRPipeline, which is not available in the "
-            "installed openvino_genai build. Please upgrade openvino_genai to a build that provides ASRPipeline."
-        )
-    else:
-        pipeline_class = ov_genai.WhisperPipeline
+    pipeline_class = ov_genai.ASRPipeline
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
@@ -648,14 +639,11 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     # but Transformers does not recognize this architecture.
     Qwen3ASROptimumPipeline.init_model(use_case.model_type)
 
-    if is_funasr:
-        processor = AutoTokenizer.from_pretrained(model_path)
-    else:
-        try:
-            processor = AutoProcessor.from_pretrained(model_path)
-        except Exception:
-            processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-            trust_remote_code = True
+    try:
+        processor = use_case.processor_cls.from_pretrained(model_path)
+    except Exception:
+        processor = use_case.processor_cls.from_pretrained(model_path, trust_remote_code=True)
+        trust_remote_code = True
 
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
@@ -667,14 +655,6 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
         return create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs)
 
     log.info("Selected Optimum Intel for benchmarking")
-    if is_funasr:
-        try:
-            import optimum.intel.openvino.modeling_funasr  # noqa: F401
-        except ImportError as exc:
-            raise RuntimeError(
-                "FunASR Optimum benchmarking requires an optimum-intel build with FunASR support "
-                "(optimum.intel.openvino.modeling_funasr). Please upgrade optimum-intel."
-            ) from exc
     load_kwargs = {
         "device": device,
         "ov_config": kwargs["config"],

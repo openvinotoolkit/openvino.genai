@@ -26,14 +26,6 @@ def _funasr_export_supported():
     )
 
 
-def _genai_asr_pipeline_available():
-    try:
-        import openvino_genai
-
-        return hasattr(openvino_genai, "ASRPipeline")
-    except Exception:
-        return False
-
 image_generation_prompt = \
    "side profile centered painted portrait, Gandhi rolling a blunt, "\
    "Gloomhaven, matte painting concept art, art nouveau, "\
@@ -497,6 +489,7 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
     @pytest.mark.samples
+    @pytest.mark.funasr
     @pytest.mark.skipif(
         not _funasr_export_supported(),
         reason="requires the funasr package and FunASR export support in optimum-intel",
@@ -505,13 +498,7 @@ class TestBenchmarkLLM:
         "sample_args",
         [
             ["-d", "cpu", "-n", "1", "-ic", "4", "--optimum", "--speech_language", "en"],
-            pytest.param(
-                ["-d", "cpu", "-n", "1", "-ic", "4", "--speech_language", "en"],
-                marks=pytest.mark.skipif(
-                    not _genai_asr_pipeline_available(),
-                    reason="OpenVINO GenAI build lacks ASRPipeline required for FunASR GenAI benchmarking",
-                ),
-            ),
+            ["-d", "cpu", "-n", "1", "-ic", "4", "--speech_language", "en"],
         ],
     )
     @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])

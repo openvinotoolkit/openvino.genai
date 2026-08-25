@@ -16,7 +16,6 @@ import llm_bench_utils.parse_json_data as parse_json_data
 from llm_bench_utils.hook_forward_asr import ASRHook
 
 FW_UTILS = {"pt": pt_utils, "ov": ov_utils}
-asr_hook = ASRHook()
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 1000
 DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
@@ -247,8 +246,10 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     mem_consumption.update_marker("model")
     pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(model_path, device, mem_consumption, **args)
     active_asr_hook = None
-    if framework == "ov" and use_genai is False and asr_hook.attach(pipe):
-        active_asr_hook = asr_hook
+    if framework == "ov" and use_genai is False:
+        asr_hook = ASRHook()
+        if asr_hook.attach(pipe):
+            active_asr_hook = asr_hook
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
     input_param = {
