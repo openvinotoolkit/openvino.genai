@@ -21,7 +21,9 @@
 #include "continuous_batching/cache/i_cache_manager.hpp"
 #include "continuous_batching/cache/block_manager.hpp"
 #include "continuous_batching/cache/kv_cache_manager.hpp"
+#include "continuous_batching/cache/kv_cache_offload_cache.hpp"
 #include "continuous_batching/cache/linear_attention_cache_manager.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 
@@ -40,6 +42,11 @@ namespace ov::genai {
 class CacheOrchestrator {
 public:
     CacheOrchestrator() = default;
+
+    ~CacheOrchestrator() {
+        // The offload cache is registered as an observer on the KV block manager, so detach before either is gone.
+        detach_kv_offload_cache();
+    }
 
     /**
      * @brief Detect model cache types, create managers and block managers, normalize config,
@@ -84,7 +91,35 @@ public:
 
         OPENVINO_ASSERT(orchestrator->has_registered_types(), "No supported cache types detected in the model");
 
+        if (config.use_cache_offload) {
+            orchestrator->enable_kv_cache_offload(config.cache_offload_config, allocation_device);
+        }
+
         return orchestrator;
+    }
+
+    /**
+     * @brief Creates the disk offload cache for KV blocks and attaches it to the KV block manager.
+     */
+    void enable_kv_cache_offload(const CacheOffloadConfig& offload_config, const std::string& device) {
+        auto cache_mgr_it = m_cache_managers.find(CacheType::KV_CACHE);
+        OPENVINO_ASSERT(cache_mgr_it != m_cache_managers.end(),
+                        "KV cache offload requires a model with KV cache inputs");
+
+        auto& kv_manager = static_cast<KVCacheManager&>(*cache_mgr_it->second);
+        auto backend = std::make_unique<KVCacheOffloadManager>(kv_manager.get_block_layout(), offload_config, device);
+        GENAI_INFO("[KV_TRACE] kv_cache_offload file=%s slot_bytes=%zu slots=%zu",
+                   backend->get_file_path().string().c_str(),
+                   backend->get_slot_size(),
+                   backend->get_num_slots());
+
+        m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager, std::move(backend));
+        m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
+    }
+
+    /// @return The KV disk offload cache, or nullptr when offload is disabled.
+    KVCacheOffloadCache* get_kv_offload_cache() const {
+        return m_kv_offload_cache.get();
     }
 
     /**
@@ -917,8 +952,20 @@ private:
 
     std::map<CacheType, std::unique_ptr<ICacheManager>> m_cache_managers;
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
+    std::unique_ptr<KVCacheOffloadCache> m_kv_offload_cache;
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
+
+    void detach_kv_offload_cache() {
+        if (m_kv_offload_cache == nullptr) {
+            return;
+        }
+        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        if (it != m_block_managers.end()) {
+            it->second->set_overwritten_block_observer(nullptr);
+        }
+        m_kv_offload_cache.reset();
+    }
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,

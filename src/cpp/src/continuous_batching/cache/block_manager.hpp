@@ -77,6 +77,24 @@ public:
 using BlocksPerLayer = std::vector<CacheBlock::Ptr>;
 
 /**
+ * @brief Notified right before prefix-cache block contents are handed out to be overwritten.
+ *
+ * Implemented by the KV cache offload subsystem, which persists the contents while they are still
+ * intact. Callbacks run under the block manager's cache lock, so implementations must not call back
+ * into the block manager.
+ */
+class IOverwrittenBlockObserver {
+public:
+    virtual ~IOverwrittenBlockObserver() = default;
+
+    /**
+     * @param hash The prefix hash the block contents were computed for.
+     * @param blocks The blocks still holding those contents, one per block-table layer.
+     */
+    virtual void on_blocks_overwritten(size_t hash, const BlocksPerLayer& blocks) = 0;
+};
+
+/**
  * @brief Allows to store and retrieve KV-cache blocks based on their content- and position-based hash.
  * Blocks with the same prefix in the generated sequence will have the same hash. Blocks within this store
  * are not owned by any sequence (but had been once) and may be either selected for overwriting, if the allocator
@@ -85,12 +103,20 @@ using BlocksPerLayer = std::vector<CacheBlock::Ptr>;
 class OverwritableBlocksHashStore {
     std::map<size_t, BlocksPerLayer> m_blocks;
     size_t m_num_layers;
+    IOverwrittenBlockObserver* m_observer = nullptr;
     public:
     /**
      * Constructs the BlockHashStore.
      * @param num_layers The number of separate attention layers with KV caches in the LLM associated with the pipeline.
      */
     explicit OverwritableBlocksHashStore(size_t num_layers = 1) : m_num_layers(num_layers) { OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero"); }
+
+    /**
+     * @brief Sets the observer notified before block contents are overwritten. Pass nullptr to detach.
+     */
+    void set_overwritten_block_observer(IOverwrittenBlockObserver* observer) {
+        m_observer = observer;
+    }
 
     /**
      * Registers allocated KV cache blocks as overwritable. The blocks must not be owned by any sequence.
@@ -145,13 +171,18 @@ class OverwritableBlocksHashStore {
             return {};
         }
         auto hash_and_blocks_for_all_layers = std::min_element(std::begin(m_blocks), std::end(m_blocks), [](const auto& lhs, const auto& rhs) -> bool { return lhs.second[0]->get_timestamp() < rhs.second[0]->get_timestamp(); });
+        const size_t overwritten_hash = hash_and_blocks_for_all_layers->first;
         auto blocks_for_all_layers = hash_and_blocks_for_all_layers->second;
+        // Last point at which these blocks still hold the contents computed for `overwritten_hash`.
+        if (m_observer != nullptr) {
+            m_observer->on_blocks_overwritten(overwritten_hash, blocks_for_all_layers);
+        }
         auto timestamp = std::chrono::steady_clock::now();
         for (auto& block_ptr : blocks_for_all_layers) {
             block_ptr->set_timestamp(timestamp);
             block_ptr->increment();
         }
-        m_blocks.erase(hash_and_blocks_for_all_layers->first);
+        m_blocks.erase(overwritten_hash);
         return blocks_for_all_layers;
     }
 
@@ -261,6 +292,13 @@ public:
         } else {
             m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
         }
+    }
+
+    /**
+     * @brief Sets the observer notified before cached block contents are overwritten. Pass nullptr to detach.
+     */
+    void set_overwritten_block_observer(IOverwrittenBlockObserver* observer) {
+        m_overwriteable_blocks.set_overwritten_block_observer(observer);
     }
 
     ~BlockAllocator() {
@@ -685,6 +723,16 @@ public:
                       leaked_tables,
                       static_cast<unsigned long long>(first_leaked_seq_id));
         }
+    }
+
+    /**
+     * @brief Sets the observer notified before cached block contents are overwritten. Pass nullptr to detach.
+     *
+     * The observer is invoked while this manager's cache lock is held.
+     */
+    void set_overwritten_block_observer(IOverwrittenBlockObserver* observer) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        m_allocator.set_overwritten_block_observer(observer);
     }
 
     /**
