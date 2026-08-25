@@ -238,6 +238,14 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     auto main_generated_requests = m_main_pipeline->get_generated_requests();
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
+        const bool is_tree_validation = std::any_of(checked_sequence.second.begin(),
+                                                    checked_sequence.second.end(),
+                                                    [](const auto& sequence) {
+                                                        return sequence.second.tree_metadata != nullptr;
+                                                    });
+        if (is_tree_validation && update_result.removed_tokens_cnt > 0) {
+            --update_result.removed_tokens_cnt;
+        }
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
     }
     m_draft_pipeline->sync_generated_embeddings();
@@ -253,10 +261,14 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
         auto updated_seq_info = update_sequence_info[request_id];
         m_sd_metrics.update_draft_generated_len(request_id, updated_seq_info.inserted_tokens_cnt);
 
-        // several prompt phase
-        if (updated_seq_info.inserted_tokens_cnt == 0 || main_generated_requests.empty()) {
+        // Prompt phase or draft-only update without main-model validation.
+        if (updated_seq_info.inserted_tokens_cnt == 0 || !main_generated_requests.count(request_id)) {
             continue;
         }
+        OPENVINO_ASSERT(updated_seq_info.inserted_tokens_cnt >= updated_seq_info.removed_tokens_cnt,
+                        "Speculative decoding removed more draft tokens than were inserted.");
+        m_perf_metrics.num_draft_tokens += updated_seq_info.inserted_tokens_cnt;
+        m_perf_metrics.num_accepted_tokens += updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt;
         float acceptance_rate = 1 - static_cast<float>(updated_seq_info.removed_tokens_cnt) / updated_seq_info.inserted_tokens_cnt;
         m_sd_metrics.update_acceptance_rate(request_id, acceptance_rate * 100);
         m_sd_metrics.update_draft_accepted_tokens(request_id, (updated_seq_info.inserted_tokens_cnt - updated_seq_info.removed_tokens_cnt));
