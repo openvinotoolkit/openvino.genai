@@ -104,6 +104,8 @@ from .py_openvino_genai import (
     CLIPTextModel,
     CLIPTextModelWithProjection,
     Qwen3TextEncoder,
+    Qwen2_5_VLForConditionalGeneration,
+    QwenImageTransformer2DModel,
     T5EncoderModel,
     UNet2DConditionModel,
     Flux2Transformer2DModel,
