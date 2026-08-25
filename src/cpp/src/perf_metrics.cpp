@@ -119,6 +119,14 @@ float PerfMetrics::get_microsec(std::chrono::steady_clock::duration duration) {
     return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 }
 
+void PerfMetrics::emplace_duration(
+    std::vector<MicroSeconds>& target_durations,
+    const TimePoint& start_time,
+    const TimePoint& end_time
+) {
+    target_durations.emplace_back(get_microsec(end_time - start_time));
+}
+
 void PerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     if (m_evaluated){
         return;

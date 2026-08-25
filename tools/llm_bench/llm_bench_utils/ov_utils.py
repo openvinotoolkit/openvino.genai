@@ -24,7 +24,7 @@ from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
 from openvino_genai import StreamingStatus
-from wrappers.speech_to_text import Qwen3ASROptimumPipeline, FunASROptimumPipeline
+from wrappers.speech_to_text import FunASROptimumPipeline, Qwen3ASROptimumPipeline
 
 
 def build_ov_tokenizer(hf_tokenizer):

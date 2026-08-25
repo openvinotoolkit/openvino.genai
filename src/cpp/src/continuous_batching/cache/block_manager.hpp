@@ -1518,17 +1518,18 @@ public:
     }
 
     void clear() {
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         // KV-cache should not be cleared if prefix caching is enabled
         OPENVINO_ASSERT(m_enable_prefix_caching == false);
+
+        // Block tables should be cleared when generation is finished
+        OPENVINO_ASSERT(m_block_table.empty());
 
         m_temporary_block_table.clear();
         m_allocator.clear();
         m_prefix_hash_to_cached_blocks.clear();
         m_cached_content_length_ref_counts.clear();
         m_cached_hash_to_content_length.clear();
-
-        // Block tables should be cleared when generation is finished
-        OPENVINO_ASSERT(m_block_table.empty());
     }
 
 private:
