@@ -21,7 +21,7 @@ from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.utils import fix_phi3_v_eos_token_id
 from whowhatbench.chat_visualtext_evaluator import VisualTextChatInput
-from whowhatbench.utils import get_json_config, load_audio_dataset
+from whowhatbench.utils import get_json_config, load_audio_dataset, resolve_json_dataset_path, read_json_dataset
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -110,6 +110,15 @@ def parse_args():
         " The flag is ignored for VLMs because they depend on the chat template to merge images and text.",
     )
     parser.add_argument(
+        "--chat-template-source",
+        type=str,
+        default=None,
+        help=(
+            "Optional per-model chat template override for text-agent/visual-text-agent. "
+            "Supports: local .jinja file path, direct http(s) URL, or HuggingFace model id/tokenizer source."
+        ),
+    )
+    parser.add_argument(
         "--gt-data",
         default=None,
         help=(
@@ -128,11 +137,13 @@ def parse_args():
         type=str,
         choices=[
             "text",
+            "text-agent",
             "text-chat",
             "text-to-image",
             "text-to-video",
             "speech-generation",
             "visual-text",
+            "visual-text-agent",
             "visual-text-chat",
             "visual-text-only",
             "visual-video-text",
@@ -147,8 +158,10 @@ def parse_args():
         default="text",
         help="Indicates the model type:\n"
         "text - for causal text generation, \n"
+        "text-agent - for agent-style JSON messages/tools datasets, \n"
         "text-chat - for causal text generation in chat mode, \n"
         "visual-text - for Visual Language Models with image inputs, \n"
+        "visual-text-agent - for agent-style JSON messages/tools datasets evaluated with VLM backends, \n"
         "visual-text-chat - for Visual Language Models with image inputs in chat mode, \n"
         "visual-text-only - for validating Visual Language Models with text-only prompts (no images/video), \n"
         "visual-video-text - for Visual Language Models with video inputs, \n"
@@ -176,24 +189,27 @@ def parse_args():
         "--dataset",
         type=str,
         default=None,
-        help="Name of the dataset with prompts. The interface for dataset is load_dataset from datasets library."
-        " Please provide this argument in format path,name (for example wikitext,wikitext-2-v1)."
-        " If omitted, task-specific default dataset will be used.",
+        help="Dataset source. For non-agent model types, this is passed to datasets.load_dataset "
+        "as path,name (for example wikitext,wikitext-2-v1) and must follow Hugging Face datasets semantics. "
+        "For text-agent and visual-text-agent, this should be a local .json/.jsonl file with "
+        "messages/tools records. If not provided, built-in defaults are used.",
     )
     parser.add_argument(
         "--dataset-field",
         type=str,
         default=None,
-        help="The name of field in dataset for prompts. For example question or context in squad."
-        " Defaults to 'text' for prompt-based tasks and to the audio column for speech-recognition."
-        " Will be used only if dataset is defined.",
+        help="Field name used as prompts for non-agent datasets loaded via datasets.load_dataset "
+        "(for example question or context in squad). Defaults to 'text' for prompt-based tasks "
+        "and to the audio column for speech-recognition. Will be used only if dataset is defined. "
+        "Ignored for text-agent/visual-text-agent JSON datasets.",
     )
     parser.add_argument(
         "--split",
         type=str,
         default=None,
-        help="Split of prompts from dataset (for example train, validation, train[:32])."
-        " Will be used only if dataset is defined.",
+        help="Dataset split for non-agent datasets (for example train, validation, train[:32]). "
+        "Will be used only if dataset is defined. "
+        "Ignored for text-agent/visual-text-agent local JSON/JSONL datasets.",
     )
     parser.add_argument(
         "--output",
@@ -533,21 +549,48 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
-    split = "validation"
+
+    dataset_split = "validation"
     if args.split is not None:
-        split = args.split
-    if "," in args.dataset:
-        path_name = args.dataset.split(",")
-        path = path_name[0]
-        name = path_name[1]
-    else:
-        path = args.dataset
+        dataset_split = args.split
+
+    path, separator, name = args.dataset.partition(",")
+    candidate_path = Path(path).expanduser()
+    is_json_dataset_file = path.lower().endswith((".json", ".jsonl"))
+    looks_like_local_path = (
+        candidate_path.is_absolute() or path.startswith(("./", "../", "~/")) or candidate_path.exists()
+    )
+    if is_json_dataset_file and looks_like_local_path:
+        raise ValueError(
+            "--dataset points to a local .json/.jsonl file, which is supported only for "
+            "--model-type text-agent or --model-type visual-text-agent. "
+            "For non-agent model types, pass a Hugging Face dataset id/path[,name] instead."
+        )
+    if not separator:
         name = None
-    data = load_dataset(path=path, name=name, split=split)
+    data = load_dataset(path=path, name=name, split=dataset_split)
 
     res = data[args.dataset_field]
-    res = {"prompts": list(res)}
-    return res
+    prompts = {"prompts": list(res)}
+    logger.info("Prompts source path %s name %s split %s: count=%d", path, name, dataset_split, len(res))
+    return prompts
+
+
+def load_agent_dataset(args):
+    if args.dataset is not None:
+        resolved_path = resolve_json_dataset_path(args.dataset)
+        logger.info("Text-agent dataset selected from --dataset: %s", resolved_path)
+    else:
+        dataset_name = "agent_short.jsonl" if args.short_prompt else "agent_long.jsonl"
+        resolved_path = resolve_json_dataset_path(dataset_name)
+        logger.info(
+            "Text-agent dataset selected by default (%s): %s",
+            "--short-prompt" if args.short_prompt else "default/--long-prompt",
+            resolved_path,
+        )
+
+    data = read_json_dataset(resolved_path)
+    return data
 
 
 def load_tokenizer(args):
@@ -1016,7 +1059,13 @@ def create_evaluator(base_model, args):
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
-        prompts = load_prompts(args) if task != "speech-recognition" else None
+        prompts = None
+
+        def get_prompts():
+            nonlocal prompts
+            if prompts is None:
+                prompts = load_prompts(args) if task != "speech-recognition" else None
+            return prompts
 
         if task == "text":
             tokenizer = load_tokenizer(args) if not args.llamacpp else None
@@ -1037,7 +1086,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 tokenizer=tokenizer,
                 similarity_model_id=args.data_encoder,
                 max_new_tokens=args.max_new_tokens,
@@ -1056,11 +1105,34 @@ def create_evaluator(base_model, args):
                 ),
                 generation_config_extra=args.generation_config_extra,
             )
+        elif task == "text-agent" or task == "visual-text-agent":
+            tokenizer = load_tokenizer(args)
+            dataset_records = load_agent_dataset(args)
+
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=dataset_records,
+                tokenizer=tokenizer,
+                similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
+                num_samples=args.num_samples,
+                gen_answer_fn=None,
+                empty_adapters=args.empty_adapters,
+                num_assistant_tokens=(int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None
+                    else 0.0
+                ),
+                is_genai_backend=args.genai,
+                chat_template_source=args.chat_template_source,
+            )
         elif task == "text-to-image":
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 resolution=(args.image_size, args.image_size),
                 num_inference_steps=args.num_inference_steps,
@@ -1073,7 +1145,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 num_frames=args.video_frames_num,
@@ -1086,7 +1158,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 gen_speech_fn=genai_gen_speech if args.genai else None,
                 speaker_embedding_file_path=args.speaker_embeddings,
@@ -1105,7 +1177,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 tokenizer=tokenizer,
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
@@ -1126,7 +1198,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 gen_image_fn=genai_gen_image2image if args.genai else None,
@@ -1137,7 +1209,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 num_inference_steps=args.num_inference_steps,
                 gen_image_fn=genai_gen_inpainting if args.genai else None,
@@ -1157,7 +1229,7 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 tokenizer=tokenizer,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 gen_embeds_fn=genai_gen_embedding if args.genai else None,
                 pooling_type=args.embeds_pooling_type,
@@ -1171,7 +1243,7 @@ def create_evaluator(base_model, args):
                 base_model=base_model,
                 tokenizer=load_tokenizer(args),
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 num_samples=args.num_samples,
                 gen_rerank_fn=genai_gen_reranking if args.genai else None
             )
@@ -1193,7 +1265,7 @@ def create_evaluator(base_model, args):
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
-                test_data=prompts,
+                test_data=get_prompts(),
                 tokenizer=tokenizer,
                 similarity_model_id=args.data_encoder,
                 num_samples=args.num_samples,
@@ -1303,7 +1375,7 @@ def print_image_results(evaluator):
         logger.info(
             "======================================================================================================="
         )
-        logger.info(f"Top-{i+1} example:")
+        logger.info(f"Top-{i + 1} example:")
         logger.info(f"\n{e}")
 
 
@@ -1316,7 +1388,7 @@ def print_embeds_results(evaluator):
         logger.info(
             "======================================================================================================="
         )
-        logger.info(f"Top-{i+1} example:")
+        logger.info(f"Top-{i + 1} example:")
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
         logger.info("## Source:\n%s\n", e["source_model"])
@@ -1332,7 +1404,7 @@ def print_rag_results(evaluator):
         logger.info(
             "======================================================================================================="
         )
-        logger.info(f"Top-{i+1} example:")
+        logger.info(f"Top-{i + 1} example:")
         logger.info("## Query:\n%s\n", e["query"])
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
@@ -1582,8 +1654,10 @@ def main():
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type in [
             "text",
+            "text-agent",
             "text-chat",
             "visual-text",
+            "visual-text-agent",
             "visual-video-text",
             "visual-text-chat",
             "speech-recognition",

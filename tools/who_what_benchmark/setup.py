@@ -45,7 +45,7 @@ setup(
     packages=find_packages(),
     install_requires=required,
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
-    package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json"]},
+    package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json", "prompts/*.jsonl"]},
     extras_require={
         "funasr": ["funasr==1.4.2"],
         "minicpm-o-2_6": [
