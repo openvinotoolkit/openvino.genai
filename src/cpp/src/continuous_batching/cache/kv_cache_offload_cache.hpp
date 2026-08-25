@@ -27,12 +27,13 @@ namespace ov::genai {
  * Offload is best effort: a failed store is reported through the statistics and never propagates to
  * the caller, since losing a cache entry only costs recomputation.
  */
-class KVCacheOffloadCache : public IOverwrittenBlockObserver {
+class KVCacheOffloadCache : public IOverwrittenBlockObserver, public IExternalPrefixSource {
 public:
     struct Statistics {
         std::size_t num_stored = 0;
         std::size_t num_replaced = 0;
         std::size_t num_already_present = 0;
+        std::size_t num_loaded = 0;
         std::size_t num_failed = 0;
     };
 
@@ -40,7 +41,9 @@ public:
 
     void on_blocks_overwritten(std::size_t hash, const BlocksPerLayer& blocks) override;
 
-    bool contains(std::size_t hash) const;
+    bool contains(std::size_t hash) const override;
+
+    bool load_into(std::size_t hash, std::size_t block_index) override;
 
     /**
      * @brief Reads the stored contents for @p hash.
@@ -70,6 +73,7 @@ private:
     std::unordered_map<std::size_t, Entry> m_entries;
     // Front is the oldest entry and the first to be replaced when the file is full.
     std::list<std::size_t> m_insertion_order;
+    std::vector<uint8_t> m_staging;
     Statistics m_statistics;
     mutable std::mutex m_mutex;
 };

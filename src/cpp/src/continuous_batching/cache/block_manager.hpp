@@ -95,6 +95,24 @@ public:
 };
 
 /**
+ * @brief Supplies prefix-cache block contents that are no longer held in memory.
+ *
+ * Implemented by the KV cache offload subsystem to bring previously persisted blocks back.
+ */
+class IExternalPrefixSource {
+public:
+    virtual ~IExternalPrefixSource() = default;
+
+    virtual bool contains(size_t hash) const = 0;
+
+    /**
+     * @brief Fills a physical cache block with the contents stored for @p hash.
+     * @return false if the contents are unavailable, in which case the block is left untouched.
+     */
+    virtual bool load_into(size_t hash, size_t block_index) = 0;
+};
+
+/**
  * @brief Allows to store and retrieve KV-cache blocks based on their content- and position-based hash.
  * Blocks with the same prefix in the generated sequence will have the same hash. Blocks within this store
  * are not owned by any sequence (but had been once) and may be either selected for overwriting, if the allocator
@@ -1579,6 +1597,59 @@ public:
 
         const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         return restore_cached_blocks_unlocked(group, plan);
+    }
+
+    /**
+     * @brief Brings prompt prefix blocks back into the in-memory cache from an external source.
+     *
+     * Restored blocks are left unowned, so a subsequent prefix restore claims them the same way it claims
+     * blocks that never left memory. Stops at the first prompt block the source cannot supply, because a
+     * restore chain has to be contiguous to be usable.
+     *
+     * @return The number of blocks brought back into memory.
+     */
+    size_t warm_prefix_cache(SequenceGroup::Ptr group, IExternalPrefixSource& source) {
+        if (!m_enable_prefix_caching) {
+            return 0;
+        }
+
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const auto sequences = group->get_not_finished_sequences();
+        if (sequences.size() != 1) {
+            return 0;
+        }
+        const auto& sequence = sequences[0];
+        const size_t prompt_len = group->get_prompt_len();
+
+        size_t num_restored = 0;
+        for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
+            const auto hash = sequence->get_hash(content_len, m_block_size);
+            if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks)) {
+                continue;
+            }
+            if (!source.contains(hash) || !m_allocator.can_allocate_blocks(1)) {
+                break;
+            }
+
+            auto blocks = allocate_cached_block(hash, content_len);
+            OPENVINO_ASSERT(!blocks.empty(), "Failed to allocate a block for prefix cache warm-up");
+            if (!source.load_into(hash, static_cast<size_t>(blocks[0]->get_index()))) {
+                // A partially filled block must never become visible under its hash.
+                m_prefix_hash_to_cached_blocks.erase(hash);
+                unregister_cached_hash(hash);
+                m_allocator.free_uncached(blocks);
+                break;
+            }
+
+            // Drop ownership so that the regular restore path can claim the block by hash.
+            free_cached_blocks(blocks);
+            ++num_restored;
+        }
+
+        GENAI_INFO("[KV_TRACE] prefix_warm_from_disk seq=%llu blocks=%zu",
+                   static_cast<unsigned long long>(sequence->get_id()),
+                   num_restored);
+        return num_restored;
     }
 
     void clear() {

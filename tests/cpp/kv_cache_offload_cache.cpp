@@ -228,3 +228,75 @@ TEST(TestKVCacheOffloadCache, DetachedObserverStopsStoring) {
 
     block_manager.free_sequence(pressure->get_running_sequences().at(0)->get_id());
 }
+
+TEST(TestKVCacheOffloadCache, LoadsStoredContentsIntoAnotherBlock) {
+    CacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    const auto expected = fixture.fill_block(0, /*seed=*/23);
+    offload_cache->on_blocks_overwritten(/*hash=*/77, make_block_set(0));
+    fixture.fill_block(2, /*seed=*/0);
+
+    ASSERT_TRUE(offload_cache->load_into(/*hash=*/77, /*block_index=*/2));
+
+    EXPECT_EQ(fixture.cache_manager->read_block(2), expected);
+    EXPECT_EQ(offload_cache->get_statistics().num_loaded, 1);
+}
+
+TEST(TestKVCacheOffloadCache, LoadReportsMissForUnknownHash) {
+    CacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 1);
+    const auto untouched = fixture.fill_block(1, /*seed=*/9);
+
+    EXPECT_FALSE(offload_cache->load_into(/*hash=*/12345, /*block_index=*/1));
+    EXPECT_EQ(fixture.cache_manager->read_block(1), untouched);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresBlocksFromDisk) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/2);
+    auto offload_cache = make_offload_cache(fixture, 2);
+
+    BlockManager block_manager(/*num_blocks=*/2, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer = make_group(tokens, /*request_id=*/5);
+    producer->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer);
+    producer->finish_iteration();
+    block_manager.free_sequence(producer->get_running_sequences().at(0)->get_id());
+
+    // Evict the cached prefix from memory, which pushes its contents to disk.
+    const std::vector<int64_t> pressure_tokens = {30, 31, 32, 33, 34, 35, 36, 37};
+    auto pressure = make_group(pressure_tokens, /*request_id=*/6);
+    pressure->schedule_tokens(pressure_tokens.size());
+    block_manager.append_slots(pressure);
+    const auto pressure_seq_id = pressure->get_running_sequences().at(0)->get_id();
+    ASSERT_GT(offload_cache->get_num_entries(), 0);
+    block_manager.free_sequence(pressure_seq_id);
+
+    auto consumer = make_group(tokens, /*request_id=*/7);
+    const size_t num_warmed = block_manager.warm_prefix_cache(consumer, *offload_cache);
+
+    EXPECT_GT(num_warmed, 0);
+    EXPECT_EQ(offload_cache->get_statistics().num_loaded, num_warmed);
+    // The warmed blocks are unowned, so the regular restore path can now claim them.
+    EXPECT_TRUE(block_manager.restore_cached_blocks(consumer));
+    EXPECT_GT(consumer->get_num_processed_tokens(), 0);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+    block_manager.free_sequence(consumer->get_running_sequences().at(0)->get_id());
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheIsNoOpWithoutEntries) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/2);
+    auto offload_cache = make_offload_cache(fixture, 2);
+
+    BlockManager block_manager(/*num_blocks=*/2, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto consumer = make_group(tokens, /*request_id=*/8);
+
+    EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), 0);
+    EXPECT_EQ(block_manager.num_free_blocks(), 2);
+}

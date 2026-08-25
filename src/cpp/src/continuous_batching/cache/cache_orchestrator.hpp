@@ -274,6 +274,11 @@ public:
         }
 
         auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
+        // Refill the in-memory prefix cache from disk first, so the restore below sees those blocks as cached.
+        if (m_kv_offload_cache != nullptr && kv_it != m_block_managers.end()) {
+            kv_it->second->warm_prefix_cache(sequence_group, *m_kv_offload_cache);
+        }
+
         auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
             auto& kv_block_mgr = *kv_it->second;

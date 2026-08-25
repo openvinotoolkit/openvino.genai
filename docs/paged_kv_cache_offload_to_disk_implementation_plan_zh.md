@@ -222,24 +222,30 @@ OverwritableBlocksHashStore::get_lru_block_to_overwrite()
 
 实现上建议给 `BlockManager` 增加 offload 回调或观察接口，而不是在 `BlockAllocator` 内部直接做 I/O；`BlockAllocator` 应继续只管块的所有权。
 
-### Phase 3：接入 disk prefix restore
+### Phase 3：接入 disk prefix restore（已完成）
 
-当前 `CacheOrchestrator::restore_cached_blocks()` 会直接调用 block manager 恢复并更新 processed tokens。需要拆出或扩展为：
+实际实现未采用把磁盘做成第三个 restore source 的方案，而是用等价但风险更低的**回填**：先把磁盘内容装回内存 prefix cache，再让现有恢复逻辑照常按 hash 认领。
 
 ```text
-plan_prefix_restore()   // 只查 active/memory/disk，不发布 disk block
-allocate_restore_blocks()
-load_disk_blocks()
-commit_prefix_restore() // load 成功后更新 block table 和 processed tokens
+BlockManager::warm_prefix_cache(group, source)
+  -> 逐块走 prompt 的 hash 链
+  -> 已在内存：跳过
+  -> 不在内存但在磁盘：分配 block、同步读入、释放为无主
+  -> 磁盘也没有或容量不足：停止（恢复链必须连续）
+restore_cached_blocks()  // 一行未改
 ```
 
-必须注意调用位置和线程：`restore_cached_blocks()` 是在 `ContinuousBatchingImpl::add_request()` 里调用的，运行在**调用方线程**，与 `step()` 并发，并且发生在请求进入 `m_awaiting_requests` 之前。因此：
+这样 `get_full_prefix_restore_plan()` 和 `restore_cached_blocks_unlocked()` 完全不需要改动，所有现有不变量原样保留。
 
-- 不能在这里同步做大块磁盘 I/O，否则会直接阻塞用户的 `add_request()` 调用。
-- 在这里分配 destination block 会与 `step()` 中的分配竞争 allocator，必须走 `BlockManager` 已有的 `m_cached_blocks_map_mutex` 保护路径。
-- 推荐做法：`add_request()` 只生成 restore plan 并记录到 `SequenceGroup`，真正的 allocate + load + commit 放到 `step()` 中 `schedule()` 之后、`ModelRunner::forward()` 之前执行。
+关键正确性约束：装载失败时绝不能发布半填充块。必须先从 `m_prefix_hash_to_cached_blocks` 移除该 hash 并走 `free_uncached()` 直接回自由池，不能用 `free_cached_blocks()`，否则会把未初始化内容按 hash 注册进可覆写存储，后续命中就会读到垃圾数据。
 
-失败处理为释放 destination、使 disk entry 失效，并将该 prefix 当作 miss 重新调度，不能用未初始化 block 继续 forward。
+### Phase 3 落点的已知取舍
+
+本阶段仍把回填挂在 `CacheOrchestrator::restore_cached_blocks()` 内，即 `add_request()` 路径，因此磁盘读取发生在调用方线程、且持有 block manager 锁。
+
+原本计划把它移到 `step()`，但核对代码发现 `ContinuousBatchingForSpeculativeDecodingImpl::_pull_awaiting_requests()` 被重写为空实现，把恢复挂在那里会对该子类静默失效，反而丢失现有的内存 prefix caching。在同步 v1 下保持单一恢复点、对所有 pipeline 子类行为一致更重要。
+
+Phase 5 引入后台 I/O 时再把读取迁出调用方线程，届时需要同时处理 speculative decoding 子类的请求拉取路径。
 
 ### Phase 4：fork、copy-on-write、取消和清理
 
@@ -332,7 +338,8 @@ linear attention cache、speculative decoding 的 draft pipeline 和 visual-lang
 | physical block 已被复用 | 捕获 block-set 后立即 pin，在释放路径内部完成 |
 | slot 大小取错导致数据截断 | slot 大小和 offset 统一来自 `KVCacheDiskLayout`，不使用 `get_block_size_in_bytes()` |
 | disk load 后 table 提前发布 | 采用 plan/load/commit 三阶段，forward 前强制 wait |
-| 在 `add_request()` 里做阻塞 I/O | 该函数跑在调用方线程；只生成 plan，load 放到 `step()` |
+| 在 `add_request()` 里做阻塞 I/O | 同步 v1 接受该开销以保证子类行为一致；Phase 5 随后台 I/O 一起迁出 |
+| 回填时发布了半填充块 | 装载失败走 `free_uncached()` 并移除 hash，绝不进可覆写存储 |
 | GPU RemoteTensor 不可直接读 host | CPU first；GPU 使用显式 staging 和 plugin 同步测试 |
 | hash/index 与 I/O 不一致 | store 完成后才 publish；generation 防止旧 event 覆盖新 entry |
 | 文件被误当持久化 cache | run-specific 文件，版本/模型校验不作为第一版跨运行协议 |

@@ -83,6 +83,26 @@ bool KVCacheOffloadCache::contains(std::size_t hash) const {
     return m_entries.find(hash) != m_entries.end();
 }
 
+bool KVCacheOffloadCache::load_into(std::size_t hash, std::size_t block_index) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_entries.find(hash);
+    if (it == m_entries.end()) {
+        return false;
+    }
+
+    try {
+        m_backend->read_slot(it->second.slot_id, m_staging);
+        m_cache_manager.write_block(block_index, m_staging);
+    } catch (const std::exception& error) {
+        GENAI_WARN("KV cache offload load failed for hash %zu: %s", hash, error.what());
+        ++m_statistics.num_failed;
+        return false;
+    }
+
+    ++m_statistics.num_loaded;
+    return true;
+}
+
 bool KVCacheOffloadCache::read(std::size_t hash, std::vector<uint8_t>& block_data) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(hash);
