@@ -206,7 +206,6 @@ class BlockAllocator {
     size_t m_num_layers;
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
-
 public:
     struct CacheBlockAllocationResult {
         BlocksPerLayer blocks;
@@ -621,6 +620,7 @@ class BlockManager {
     size_t m_block_size;
     size_t m_num_layers;
     size_t m_fixed_blocks_per_sequence = 0;  /// When > 0, each sequence gets exactly this many blocks.
+    size_t m_max_total_blocks = 0;  /// When > 0, the pool may never grow beyond this many blocks.
     bool m_restore_latest_prefix_block_only = false;
     // TODO: caching time can probably be improved if we use the prefix tree
     std::map<uint64_t, BlocksPerLayer> m_prefix_hash_to_cached_blocks;
@@ -659,15 +659,21 @@ public:
      *        When 0 (default), blocks grow with context length.
      * @param restore_latest_prefix_block_only When true, prefix-cache restore keeps only the latest matching
      *        block and tracks its logical block-table offset. Used for linear-attention state cache.
+     * @param max_total_blocks Hard pool-size ceiling, or 0 for unbounded growth.
      */
     BlockManager(int num_blocks, bool enable_prefix_caching, size_t block_size, size_t num_layers = 1,
-                 size_t fixed_blocks_per_sequence = 0, bool restore_latest_prefix_block_only = false)
+                 size_t fixed_blocks_per_sequence = 0, bool restore_latest_prefix_block_only = false,
+                 size_t max_total_blocks = 0)
         : m_allocator(num_blocks, enable_prefix_caching, num_layers), m_enable_prefix_caching(enable_prefix_caching), m_block_size(block_size),
         m_num_layers(num_layers), m_fixed_blocks_per_sequence(fixed_blocks_per_sequence),
+        m_max_total_blocks(max_total_blocks),
         m_restore_latest_prefix_block_only(restore_latest_prefix_block_only) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
         OPENVINO_ASSERT(!restore_latest_prefix_block_only || enable_prefix_caching,
                         "Latest prefix block restore requires prefix caching to be enabled");
+        OPENVINO_ASSERT(max_total_blocks == 0 || static_cast<size_t>(num_blocks) <= max_total_blocks,
+                        "Block pool is constructed with ", num_blocks,
+                        " blocks, which already exceeds its own ceiling of ", max_total_blocks, " blocks");
     }
 
     ~BlockManager() {
@@ -904,10 +910,11 @@ public:
     /**
      * Grows the block pool to accommodate at least the given number of additional tokens.
      * @param num_tokens Number of additional tokens to accommodate.
+     * @return Whether the pool actually grew.
      */
-    void grow_capacity_by_tokens(size_t num_tokens) {
+    bool grow_capacity_by_tokens(size_t num_tokens) {
         size_t additional_blocks = (num_tokens + m_block_size - 1) / m_block_size;
-        increase_block_count(get_total_block_count() + additional_blocks);
+        return increase_block_count_up_to(get_total_block_count() + additional_blocks);
     }
 
     /**
@@ -928,7 +935,7 @@ public:
             required_blocks += blocks_per_sequence * num_sequences;
         }
         if (required_blocks > get_total_block_count()) {
-            increase_block_count(required_blocks);
+            increase_block_count_up_to(required_blocks);
         }
     }
 
@@ -948,27 +955,73 @@ public:
         return m_allocator.num_free_blocks(0); // relying on the invariant that all layers have identical number of blocks
     }
 
+    /// @return Number of blocks currently taken out of the pool.
+    size_t get_num_blocks_in_use() const {
+        return get_total_block_count() - num_free_blocks();
+    }
+
+    /// @return Number of sequences currently holding temporary blocks.
+    size_t get_num_sequences_with_temporary_blocks() {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        return m_temporary_block_table.size();
+    }
+
+    /// @return Whether the sequence currently holds temporary (borrowed) blocks.
+    bool has_temporary_blocks(uint64_t seq_id) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        return m_temporary_block_table.count(seq_id) > 0;
+    }
+
+    /// @return Whether reserve_temporary_blocks(seq_id, num_blocks) would succeed.
+    bool can_reserve_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        if (m_block_table.count(seq_id) == 0 || m_num_layers != 1) {
+            return false;
+        }
+        // Avoid operator[] so this predicate does not create an empty reservation.
+        const auto temporary_it = m_temporary_block_table.find(seq_id);
+        if (temporary_it != m_temporary_block_table.end() && !temporary_it->second.empty()) {
+            return false;
+        }
+        return can_allocate_blocks(num_blocks);
+    }
+
     std::vector<int> reserve_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(m_block_table.count(seq_id) > 0,
                         "Cannot reserve temporary cache blocks for unknown sequence ", seq_id);
         OPENVINO_ASSERT(m_num_layers == 1,
                         "Temporary cache checkpoint reservation expects a shared one-layer block table");
-        OPENVINO_ASSERT(m_temporary_block_table[seq_id].empty(),
+        const auto existing_temporary_it = m_temporary_block_table.find(seq_id);
+        OPENVINO_ASSERT(existing_temporary_it == m_temporary_block_table.end() ||
+                            existing_temporary_it->second.empty(),
                         "Temporary cache blocks are already reserved for sequence ", seq_id);
         OPENVINO_ASSERT(can_allocate_blocks(num_blocks),
                         "Not enough cache blocks to reserve ", num_blocks,
                         " temporary checkpoints for sequence ", seq_id);
 
-        auto& temporary_blocks = m_temporary_block_table[seq_id];
+        std::vector<BlocksPerLayer> temporary_blocks;
         temporary_blocks.reserve(num_blocks);
         std::vector<int> block_indices;
         block_indices.reserve(num_blocks);
-        for (size_t idx = 0; idx < num_blocks; ++idx) {
-            BlocksPerLayer blocks = m_allocator.allocate_uncached_block();
-            OPENVINO_ASSERT(!blocks.empty(), "Temporary cache block allocation returned no blocks");
-            block_indices.push_back(blocks.front()->get_index());
-            temporary_blocks.push_back(std::move(blocks));
+        try {
+            for (size_t idx = 0; idx < num_blocks; ++idx) {
+                BlocksPerLayer blocks = m_allocator.allocate_uncached_block();
+                OPENVINO_ASSERT(!blocks.empty(), "Temporary cache block allocation returned no blocks");
+                const int block_index = blocks.front()->get_index();
+                temporary_blocks.push_back(std::move(blocks));
+                block_indices.push_back(block_index);
+            }
+            if (existing_temporary_it == m_temporary_block_table.end()) {
+                m_temporary_block_table.emplace(seq_id, std::move(temporary_blocks));
+            } else {
+                existing_temporary_it->second = std::move(temporary_blocks);
+            }
+        } catch (...) {
+            for (const auto& blocks : temporary_blocks) {
+                m_allocator.free_uncached(blocks);
+            }
+            throw;
         }
         return block_indices;
     }
@@ -985,7 +1038,9 @@ public:
         m_temporary_block_table.erase(it);
     }
 
-    void promote_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
+    /// Promotes a one-based temporary slot and frees the old committed row and losing temporaries.
+    /// @return Physical index of the promoted block.
+    size_t promote_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
         std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         OPENVINO_ASSERT(checkpoint_slot > 0,
                         "Checkpoint slot is one-based and must be greater than zero");
@@ -1025,6 +1080,12 @@ public:
             m_allocator.free_uncached(temporary_blocks[idx]);
         }
         m_temporary_block_table.erase(temporary_it);
+
+        const int promoted_index = selected_blocks.front()->get_index();
+        OPENVINO_ASSERT(promoted_index >= 0,
+                        "Promoted temporary cache block for sequence ", seq_id,
+                        " has a negative physical index: ", promoted_index);
+        return static_cast<size_t>(promoted_index);
     }
 
     /**
@@ -1124,10 +1185,39 @@ public:
     }
 
     /**
+     * @return The hard ceiling on this pool's block count, or 0 when the pool may grow without bound.
+     */
+    size_t get_max_total_block_count() const {
+        return m_max_total_blocks;
+    }
+
+    /// @return Whether the configured ceiling permits @p num_blocks.
+    bool can_increase_block_count_to(size_t num_blocks) const {
+        return m_max_total_blocks == 0 || num_blocks <= m_max_total_blocks;
+    }
+
+    /// @brief Grows towards @p num_blocks, clamped to the configured ceiling.
+    /// @return Whether the pool actually grew.
+    bool increase_block_count_up_to(size_t num_blocks) {
+        const size_t target = m_max_total_blocks > 0 ? std::min(num_blocks, m_max_total_blocks) : num_blocks;
+        if (target <= get_total_block_count()) {
+            return false;
+        }
+        increase_block_count(target);
+        return true;
+    }
+
+    /**
      * Increases the number of blocks.
      * @param num_blocks The new number of blocks.
      */
     void increase_block_count(size_t num_blocks) {
+        OPENVINO_ASSERT(can_increase_block_count_to(num_blocks),
+                        "Cache block pool cannot grow to ", num_blocks,
+                        " blocks: the configured budget allows at most ", m_max_total_blocks,
+                        " blocks (currently ", get_total_block_count(),
+                        "). Raise the configured block count or cache_size, or lower the concurrency "
+                        "that requires the growth.");
         m_allocator.increase_block_count(num_blocks);
     }
 
@@ -1518,17 +1608,18 @@ public:
     }
 
     void clear() {
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
         // KV-cache should not be cleared if prefix caching is enabled
         OPENVINO_ASSERT(m_enable_prefix_caching == false);
+
+        // Block tables should be cleared when generation is finished
+        OPENVINO_ASSERT(m_block_table.empty());
 
         m_temporary_block_table.clear();
         m_allocator.clear();
         m_prefix_hash_to_cached_blocks.clear();
         m_cached_content_length_ref_counts.clear();
         m_cached_hash_to_content_length.clear();
-
-        // Block tables should be cleared when generation is finished
-        OPENVINO_ASSERT(m_block_table.empty());
     }
 
 private:

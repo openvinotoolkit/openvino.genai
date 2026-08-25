@@ -78,7 +78,7 @@ install(TARGETS benchmark_vlm
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
-add_executable(video_to_text_chat video_to_text_chat.cpp)
+add_executable(video_to_text_chat video_to_text_chat.cpp load_video.cpp)
 target_include_directories(video_to_text_chat PRIVATE "${CMAKE_BINARY_DIR}")
 ov_genai_link_opencv(video_to_text_chat core imgproc videoio imgcodecs)
 target_link_libraries(video_to_text_chat PRIVATE openvino::genai cxxopts::cxxopts)

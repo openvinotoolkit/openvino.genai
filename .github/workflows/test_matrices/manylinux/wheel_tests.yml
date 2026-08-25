@@ -13,7 +13,17 @@
     # optimum intel master commit with Qwen3-ASR support
     python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4"
     python -m pip install transformers==4.57.6 qwen-asr==0.0.6
-    python -m pytest -s -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
+- name: ASR (Fun-ASR)
+  cmd: |-
+    # optimum intel master commit with Fun-ASR support
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@e1de5beecfd0c3ae6047ea22cea4a4cad4307aff"
+    python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
   timeout: 20
   components:
     - automatic_speech_recognition
@@ -114,7 +124,7 @@
 
 - name: API tests
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not qwen35_mtp and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
   timeout: 60
   components:
     - continuous_batching
@@ -167,6 +177,15 @@
     python -m pip install git+https://github.com/openvino-agent/optimum-intel.git@support_mtp
     python -m pip install transformers==5.8.0
     python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "gemma4_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: Qwen3.5 MTP speculative decoding tests
+  cmd: |-
+    python -m pip install -U "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@qwen35_mtp"
+    pip install transformers==5.2.0
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
   timeout: 90
   components:
     - speculative_decoding

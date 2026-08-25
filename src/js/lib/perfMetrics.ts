@@ -41,6 +41,14 @@ export type RawMetrics = {
 export type VLMRawMetrics = {
   /** Durations for embedding preparation in milliseconds. */
   prepareEmbeddingsDurations: number[];
+  /** Durations for vision encoding in milliseconds. */
+  visionEncodingDurations: number[];
+  /** Durations for audio encoding in milliseconds. */
+  audioEncodingDurations: number[];
+  /** Durations for text embedding in milliseconds. */
+  textEmbeddingDurations: number[];
+  /** Number of image slices produced for each input image */
+  perImageSliceCounts: number[];
 };
 
 /** Structure with raw performance metrics for Whisper generation. */
@@ -49,6 +57,18 @@ export type WhisperRawMetrics = {
   featuresExtractionDurations: number[];
   /** Durations for word-level timestamps processing in milliseconds. */
   wordLevelTimestampsProcessingDurations: number[];
+};
+
+/** Structure with raw performance metrics for ASR generation. */
+export type ASRRawMetrics = {
+  /** Durations for features extraction in milliseconds. */
+  featuresExtractionDurations: number[];
+  /** Durations for word-level timestamps processing in milliseconds. */
+  wordLevelTimestampsProcessingDurations: number[];
+  /** Durations for encoder inference in milliseconds. */
+  encodeInferenceDurations: number[];
+  /** Durations for decoder inference in milliseconds. */
+  decodeInferenceDurations: number[];
 };
 
 /**
@@ -116,6 +136,19 @@ export interface PerfMetrics {
 export interface VLMPerfMetrics extends PerfMetrics {
   /** Returns the mean and standard deviation of embeddings preparation duration in milliseconds. */
   getPrepareEmbeddingsDuration(): MeanStdPair;
+
+  /** Returns the mean and standard deviation of vision encoding duration in milliseconds. */
+  getVisionEncodingDuration(): MeanStdPair;
+
+  /** Returns the mean and standard deviation of audio encoding duration in milliseconds. */
+  getAudioEncodingDuration(): MeanStdPair;
+
+  /** Returns the mean and standard deviation of text embedding duration in milliseconds. */
+  getTextEmbeddingDuration(): MeanStdPair;
+
+  /** Returns the total number of image slices produced for the request. */
+  getTotalImageSliceCount(): number;
+
   /** VLM specific raw metrics */
   vlmRawMetrics: VLMRawMetrics;
 
@@ -144,6 +177,33 @@ export interface WhisperPerfMetrics extends PerfMetrics {
    * @returns The current WhisperPerfMetrics instance.
    */
   add(other: WhisperPerfMetrics): this;
+}
+
+/**
+ * Holds performance metrics for each ASR generate call.
+ *
+ * ASRPerfMetrics extends PerfMetrics with speech-recognition-specific metrics:
+ *  - Features extraction duration, ms
+ *  - Word-level timestamps processing duration, ms
+ *  - Encoder inference duration, ms
+ *  - Decoder inference duration, ms
+ */
+export interface ASRPerfMetrics extends PerfMetrics {
+  /** Returns the mean and standard deviation of features extraction duration in milliseconds. */
+  getFeaturesExtractionDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of word-level timestamps processing duration in milliseconds. */
+  getWordLevelTimestampsProcessingDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of encoder inference duration in milliseconds. */
+  getEncodeInferenceDuration(): MeanStdPair;
+  /** Returns the mean and standard deviation of decoder inference duration in milliseconds. */
+  getDecodeInferenceDuration(): MeanStdPair;
+  /** ASR-specific raw metrics */
+  asrRawMetrics: ASRRawMetrics;
+
+  /** Adds the metrics from another ASRPerfMetrics object to this one.
+   * @returns The current ASRPerfMetrics instance.
+   */
+  add(other: ASRPerfMetrics): this;
 }
 
 /**
