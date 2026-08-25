@@ -24,9 +24,14 @@ Two tiers, following the other pipeline suites:
 
 2. Real-model tests against `optimum-intel-internal-testing/tiny-random-qwen3-omni`,
    covering the path-based constructor, text-only and speech generation, the
-   ChatHistory overload, and the speaker APIs.
+   ChatHistory overload, generation-config sensitivity, ModelsMap/path equivalence,
+   multimodal inputs, and the speaker APIs.
 
-The real-model tier needs newer dependencies than tests/python_tests/requirements.txt
+3. Full-model tests marked `real_models`, pointed at a complete Qwen3-Omni export by
+   OMNI_REAL_MODEL_PATH. The tiny checkpoint cannot synthesize speech at all, so the
+   tests that need a real waveform live here and are deselected by default.
+
+The tiny-checkpoint tier needs newer dependencies than tests/python_tests/requirements.txt
 pins, so the CI matrix entries install them per job: transformers 5.0.0 reads an unset
 `use_sliding_window` in `Qwen3OmniMoeTalkerCodePredictorConfig.__init__` and the export
 dies with an `AttributeError` (fixed in 5.1.0), and optimum-intel only grew the
@@ -38,6 +43,7 @@ suite against the repo-wide pins degrades to the model-free tier instead of fail
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +68,9 @@ pytestmark = pytest.mark.omni
 
 OMNI_MODEL_ID = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
 
+# Points at a full Qwen3-Omni OpenVINO export for the speech tests the tiny checkpoint cannot host.
+OMNI_REAL_MODEL_ENV = "OMNI_REAL_MODEL_PATH"
+
 # Written by the Talker export; without them OmniPipeline's path ctor cannot build the speech stage.
 TALKER_ARTIFACTS = (
     "openvino_talker_model.xml",
@@ -83,10 +92,11 @@ SPEAKER_EMBEDDING_SCALE = -8.0
 
 NO_WAVEFORM_XFAIL_REASON = (
     "tiny-random-qwen3-omni's talker role token ids are outside its tokenizer's range (im_start 151644, "
-    "user 872, assistant 77091, against a max id of 769), so build_talker_input finds no segments, "
-    "returns empty, and generate() yields zero waveforms without ever reaching code2wav. Same "
-    "checkpoint limitation test_tools_llm_benchmark.py xfails its omni text_to_speech cases on, for "
-    "both --optimum and --genai."
+    "user 872, assistant 77091, against a max id of 769), so build_talker_input finds no segments and "
+    "speech generation raises before reaching code2wav — see "
+    "test_speech_generation_rejects_unmatched_role_tokens, which locks that error in. Same checkpoint "
+    "limitation test_tools_llm_benchmark.py xfails its omni text_to_speech cases on, for both "
+    "--optimum and --genai."
 )
 
 VIDEO_INPUT_XFAIL_REASON = (
@@ -719,6 +729,26 @@ def _generate_speech(pipe: ov_genai.OmniPipeline, speaker: str | ov.Tensor) -> n
     return _single_waveform(result)
 
 
+@pytest.fixture(scope="module")
+def real_omni_pipe() -> ov_genai.OmniPipeline:
+    """Pipeline over a full Qwen3-Omni export, for tests the tiny checkpoint cannot host.
+
+    Pointed at by OMNI_REAL_MODEL_PATH rather than a models/ list file: those hold HF ids consumed by
+    the LLM suites' indirect fixture, which cannot express a pre-exported VLM+talker directory. Tests
+    using this are also marked real_models, so pytest.ini's default addopts deselect them; the skip
+    below only matters when somebody opts in without setting the variable.
+    """
+    raw_path = os.environ.get(OMNI_REAL_MODEL_ENV)
+    if not raw_path:
+        pytest.skip(f"set {OMNI_REAL_MODEL_ENV} to a full Qwen3-Omni OpenVINO export to run this")
+
+    model_dir = Path(raw_path)
+    if not (model_dir / "openvino_talker_model.xml").exists():
+        pytest.skip(f"{OMNI_REAL_MODEL_ENV}={model_dir} has no talker export")
+
+    return ov_genai.OmniPipeline(model_dir, "CPU")
+
+
 def _load_models_map(model_dir: Path) -> dict[str, tuple[str, ov.Tensor]]:
     """Read every exported IR in ``model_dir`` into the ModelsMap form the blob ctors accept.
 
@@ -926,6 +956,27 @@ class TestOmniPipelineRealModel:
 
         _single_waveform(result)
 
+    def test_speech_generation_rejects_unmatched_role_tokens(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+        """A checkpoint whose role token ids never appear in its token stream must raise, not go quiet.
+
+        Speech used to warn and hand back an empty waveform list here, so a misconfigured checkpoint
+        looked like a model that simply had nothing to say. The caller asked for audio; failing to
+        segment the conversation is a configuration error and has to surface as one.
+
+        This is the inverse of test_generate_with_speech: that one asserts the audio a healthy
+        checkpoint owes us and xfails here, this one pins the diagnosis we give for a broken one.
+        """
+        with pytest.raises(RuntimeError, match="im_start_token_id") as excinfo:
+            omni_pipe.generate(
+                "Describe this.",
+                text_config=_text_config(),
+                talker_speech_config=_talker_speech_config(return_audio=True),
+            )
+
+        message = str(excinfo.value)
+        assert "no talker input" in message, f"the error must say what failed, got: {message}"
+        assert "config.json" in message, f"the error must point at the fix, got: {message}"
+
     def test_generate_from_chat_history(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """The ChatHistory overload accepts structured turns and leaves the caller's history intact."""
         history = ov_genai.ChatHistory()
@@ -1006,8 +1057,8 @@ class TestOmniPipelineRealModel:
         embedding = omni_pipe.get_talker().get_speaker_embedding(speakers[0])
         assert embedding.get_size() > 0, f"speaker {speakers[0]!r} must resolve to a non-empty embedding"
 
-    @pytest.mark.skip(reason=NO_WAVEFORM_XFAIL_REASON)
-    def test_altering_speaker_embedding_changes_speech(self, omni_pipe: ov_genai.OmniPipeline) -> None:
+    @pytest.mark.real_models
+    def test_altering_speaker_embedding_changes_speech(self, real_omni_pipe: ov_genai.OmniPipeline) -> None:
         """A modified speaker embedding yields different speech; an unmodified one reproduces it exactly.
 
         OmniTalkerSpeechConfig.speaker is a variant of name-or-tensor, and the tensor branch bypasses
@@ -1015,7 +1066,11 @@ class TestOmniPipelineRealModel:
         greedy path, so all three runs pin the same rng_seed. The control run proves the pipeline is
         reproducible under that seed, which is what lets the third run attribute its difference to the
         embedding rather than to sampling noise.
+
+        Needs a full checkpoint: the tiny one cannot synthesize at all, so there is no waveform to
+        compare. See NO_WAVEFORM_XFAIL_REASON.
         """
+        omni_pipe = real_omni_pipe
         talker = omni_pipe.get_talker()
         speakers = talker.list_speakers()
         assert speakers, "the checkpoint declares speakers, so list_speakers() must not be empty"
@@ -1037,12 +1092,16 @@ class TestOmniPipelineRealModel:
             f"({perturbed.size} samples), so the embedding is not reaching the talker"
         )
 
-    @pytest.mark.skip(reason=NO_WAVEFORM_XFAIL_REASON)
-    def test_distinct_speakers_produce_distinct_speech(self, omni_pipe: ov_genai.OmniPipeline) -> None:
-        """Two different named speakers must not render the same audio for the same text and seed."""
+    @pytest.mark.real_models
+    def test_distinct_speakers_produce_distinct_speech(self, real_omni_pipe: ov_genai.OmniPipeline) -> None:
+        """Two different named speakers must not render the same audio for the same text and seed.
+
+        Needs a full checkpoint, for the same reason as the embedding test above.
+        """
+        omni_pipe = real_omni_pipe
         speakers = omni_pipe.get_talker().list_speakers()
         if len(speakers) < 2:
-            pytest.skip(f"{OMNI_MODEL_ID} declares a single speaker ({speakers}); nothing to compare")
+            pytest.skip(f"the checkpoint declares a single speaker ({speakers}); nothing to compare")
 
         first = _generate_speech(omni_pipe, speaker=speakers[0])
         second = _generate_speech(omni_pipe, speaker=speakers[1])
