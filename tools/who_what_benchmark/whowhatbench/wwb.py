@@ -523,6 +523,12 @@ def check_args(args):
 def load_prompts(args):
     if args.dataset is None:
         return None
+    # Support a local CSV dataset with columns: prompts, images, videos.
+    # This keeps the interface generic (no model-specific handling) and avoids
+    # depending on remote datasets that may be unavailable or slow. Image/video
+    # paths are resolved relative to the CSV location so runs are reproducible.
+    if os.path.isfile(args.dataset):
+        return load_local_dataset(args.dataset)
     split = "validation"
     if args.split is not None:
         split = args.split
@@ -537,6 +543,41 @@ def load_prompts(args):
 
     res = data[args.dataset_field]
     res = {"prompts": list(res)}
+    return res
+
+
+def load_local_dataset(csv_path):
+    csv_path = os.path.abspath(csv_path)
+    base_dir = os.path.dirname(csv_path)
+    df = pd.read_csv(csv_path, keep_default_na=False)
+
+    if "prompts" not in df.columns:
+        raise ValueError(
+            f"Local dataset '{csv_path}' must contain a 'prompts' column. Found columns: {list(df.columns)}"
+        )
+
+    def resolve_path(value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        if value == "":
+            return None
+        if not os.path.isabs(value):
+            value = os.path.join(base_dir, value)
+        return value
+
+    res = {"prompts": list(df["prompts"])}
+
+    if "images" in df.columns:
+        images = []
+        for value in df["images"]:
+            path = resolve_path(value)
+            images.append(Image.open(path).convert("RGB") if path is not None else None)
+        res["images"] = images
+
+    if "videos" in df.columns:
+        res["videos"] = [resolve_path(value) for value in df["videos"]]
+
     return res
 
 
