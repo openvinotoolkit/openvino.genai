@@ -424,6 +424,10 @@ ov::Tensor InputsEmbedderDeepseekOCR2::apply_chat_template_tokenize(const std::s
 NormalizedPrompt InputsEmbedderDeepseekOCR2::normalize_prompt(const std::string& prompt,
                                                               size_t base_id,
                                                               const std::vector<EncodedImage>& images) const {
+    OPENVINO_ASSERT(images.size() == 1,
+                    "DeepSeek-OCR-2 accepts exactly one image per request, but got ",
+                    images.size());
+
     std::string prompt_with_tag = prompt;
     if (!images.empty() &&
         prompt.find(NATIVE_TAG) == std::string::npos &&
@@ -463,6 +467,10 @@ ov::Tensor InputsEmbedderDeepseekOCR2::get_inputs_embeds(const std::string& unif
                                                          ov::genai::VLMPerfMetrics& metrics,
                                                          bool recalculate_merged_embeddings,
                                                          const std::vector<size_t>& images_sequence) {
+    OPENVINO_ASSERT(images.size() == 1,
+                    "DeepSeek-OCR-2 accepts exactly one image per request, but got ",
+                    images.size());
+
     (void)recalculate_merged_embeddings;
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
@@ -475,11 +483,24 @@ ov::Tensor InputsEmbedderDeepseekOCR2::get_inputs_embeds(const std::string& unif
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
-    if (images.empty()) {
-        ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-        return inputs_embeds;
+    size_t total_visual_tokens = 0;
+    for (const ov::Tensor& image_embed : image_embeds) {
+        const ov::Shape& embed_shape = image_embed.get_shape();
+        OPENVINO_ASSERT(embed_shape.size() == 3,
+                        "Unexpected DeepSeek-OCR-2 image embedding shape rank: ",
+                        embed_shape.size());
+        total_visual_tokens += embed_shape.at(1);
     }
+
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const size_t placeholder_tokens = static_cast<size_t>(
+        std::count(input_ids_data,
+                   input_ids_data + input_ids.get_size(),
+                   m_image_token_id));
+    OPENVINO_ASSERT(placeholder_tokens == total_visual_tokens,
+                    "DeepSeek-OCR-2 image placeholder token count (", placeholder_tokens,
+                    ") does not match visual embedding token count (", total_visual_tokens,
+                    ")");
 
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, m_image_token_id);
 }

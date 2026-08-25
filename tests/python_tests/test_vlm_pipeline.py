@@ -807,7 +807,7 @@ SINGLE_IMAGE_ONLY_MODELS = {
 )
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
-    if ov_pipe_model.model_id in SINGLE_IMAGE_ONLY_MODELS and len(test_images) > 1:
+    if ov_pipe_model.model_id in SINGLE_IMAGE_ONLY_MODELS and len(test_images) != 1:
         pytest.skip("Model supports single image input only")
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
