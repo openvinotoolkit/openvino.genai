@@ -10,7 +10,7 @@
 - 即将失去内存副本的完整 KV block 写入临时磁盘文件。
 - 后续 prefix 命中时，从磁盘恢复到新的设备 physical block，再交给 `ModelRunner`。
 - scheduler 只做 block/transfer 决策，不执行文件 I/O。
-- 首个可交付版本只支持 CPU device、同步 store/load、page cache I/O。
+- 首个可交付版本只支持 CPU device、page cache I/O；落盘在后台线程完成，读取保持同步。
 
 第一版的强制前提（不满足时直接拒绝启用 offload）：
 
@@ -272,17 +272,33 @@ Phase 5 引入后台 I/O 时再把读取迁出调用方线程，届时需要同�
 1. 内存侧：`num_free_blocks()` 把可覆写块计入可用，且 `OverwritableBlocksHashStore::add()` 不刷新时间戳。从自由池取出的块保留其构造时间戳，因此刚回填的块一进存储就是最旧的，会被下一次 `get_lru_block_to_overwrite()` 立刻顶掉。修复：回填期间持有整条链（含已在内存中的块），走完再统一释放。
 2. 磁盘侧：回填时挤占内存块会触发落盘，而磁盘已满时落盘会回收最旧条目 —— 可能正是该链尚未读取的条目。修复：`KVCacheOffloadCache::ScopedReclamationPause` 在回填期间禁止条目替换。有空槽时照常落盘，需要回收时跳过。
 
-### Phase 5：后台 I/O 与 GPU 支持
+### Phase 5：后台 I/O 与 GPU 支持（后台 store 已完成，GPU 未做）
 
-在 CPU 同步链路稳定后再实现：
+已交付的部分是**异步落盘**：
 
-- 独立 store/load 队列，load 优先级高于 store。
-- 单调 event ID 和异常传播。
-- staging buffer pool 和有限 buffer slots。
-- GPU `RemoteTensor` 的显式 host staging copy 及完成同步。
-- 性能优化：批量 I/O、预取、pinned host memory、可选 direct I/O。
+```text
+on_blocks_overwritten()
+  -> 同步把 block 内容拷进暂存缓冲   // 块随后立刻被交出去覆写，这一步必须同步
+  -> 入队，返回
+后台线程
+  -> write_slot()
+  -> 写成功后才发布 hash -> slot
+```
 
-GPU 版本必须先用实际 plugin 验证 `InferRequest::infer()`、`RemoteTensor::copy_to/copy_from()` 和 host readback 的 happens-before，不能由普通 CPU `ov::Tensor` 的语义推断。
+关键取舍：
+
+- 待写条目**对读取可见**。`contains()` / `load_into()` / `read()` 会先查队列，命中时直接用暂存副本，因此异步对调用方透明，也不需要为了正确性而 flush。
+- 暂存池由 `cache_offload_config.buffer_slots` 限定。池满时**跳过**该次落盘并计入 `num_dropped_no_buffer`，而不是阻塞分配路径 —— 与既有的 best-effort 语义一致。
+- 队列项直到发布才出队，读取因此不会在“已出队、未发布”的窗口里漏掉它。
+- slot 在入队时就获取，所以容量统计始终准确；但未发布条目不参与 `reclaim_oldest_slot()`，因为回收的依据是已发布索引。
+- 析构时置停并 join，队列中未写完的条目直接放弃 —— 文件本来就会被删除。
+
+未做的部分及原因：
+
+- **GPU**：`KVCacheManager::read_block()` / `write_block()` 目前显式拒绝 remote tensor，而 `copy_blocks()` 对 remote tensor 直接返回。要支持 GPU 必须先用真实 plugin 确认 `InferRequest::infer()`、`RemoteTensor::copy_to/copy_from()` 与 host readback 之间的 happens-before，不能由 CPU `ov::Tensor` 的语义推断。这需要端到端 GPU 运行来验证 KV 内容正确性，属于独立立项。
+- **独立 load 队列 / 预取**：load 位于恢复的关键路径上，必须在 `restore_cached_blocks()` 返回前完成，异步化收益有限且会引入 plan/commit 拆分。
+- **event ID**：没有外部完成通知的需求，队列本身已足够表达状态。
+- **`O_DIRECT`、批量 I/O、pinned host memory**：性能优化，需先有 GPU 与真实负载数据支撑。
 
 ## 6. 测试方案
 

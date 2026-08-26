@@ -113,7 +113,9 @@ public:
                    backend->get_slot_size(),
                    backend->get_num_slots());
 
-        m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager, std::move(backend));
+        m_kv_offload_cache = std::make_unique<KVCacheOffloadCache>(kv_manager,
+                                                                   std::move(backend),
+                                                                   offload_config.buffer_slots);
         m_block_managers.at(CacheType::KV_CACHE)->set_overwritten_block_observer(m_kv_offload_cache.get());
     }
 

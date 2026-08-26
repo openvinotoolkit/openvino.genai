@@ -58,7 +58,7 @@ std::unique_ptr<KVCacheOffloadCache> make_offload_cache(CacheFixture& fixture, s
     auto backend = std::make_unique<KVCacheOffloadManager>(fixture.cache_manager->get_block_layout(),
                                                            make_offload_config(fixture, num_slots),
                                                            "CPU");
-    return std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager, std::move(backend));
+    return std::make_unique<KVCacheOffloadCache>(*fixture.cache_manager, std::move(backend), /*max_queued_stores=*/8);
 }
 
 BlocksPerLayer make_block_set(int physical_block_id) {
@@ -79,6 +79,7 @@ TEST(TestKVCacheOffloadCache, StoresBlockContentsOnOverwrite) {
     const auto expected = fixture.fill_block(1, /*seed=*/7);
 
     offload_cache->on_blocks_overwritten(/*hash=*/42, make_block_set(1));
+    offload_cache->flush();
 
     EXPECT_TRUE(offload_cache->contains(42));
     EXPECT_EQ(offload_cache->get_num_entries(), 1);
@@ -97,6 +98,7 @@ TEST(TestKVCacheOffloadCache, KeepsFirstCopyOfKnownHash) {
 
     fixture.fill_block(1, /*seed=*/200);
     offload_cache->on_blocks_overwritten(/*hash=*/5, make_block_set(1));
+    offload_cache->flush();
 
     EXPECT_EQ(offload_cache->get_num_entries(), 1);
     EXPECT_EQ(offload_cache->get_statistics().num_stored, 1);
@@ -115,6 +117,7 @@ TEST(TestKVCacheOffloadCache, KeepsDistinctHashesInSeparateSlots) {
 
     offload_cache->on_blocks_overwritten(/*hash=*/1, make_block_set(0));
     offload_cache->on_blocks_overwritten(/*hash=*/2, make_block_set(1));
+    offload_cache->flush();
 
     ASSERT_EQ(offload_cache->get_num_entries(), 2);
     std::vector<uint8_t> restored;
@@ -129,10 +132,12 @@ TEST(TestKVCacheOffloadCache, ReplacesOldestEntryWhenFileIsFull) {
     auto offload_cache = make_offload_cache(fixture, 1);
     fixture.fill_block(0, /*seed=*/1);
     offload_cache->on_blocks_overwritten(/*hash=*/100, make_block_set(0));
+    offload_cache->flush();
     ASSERT_EQ(offload_cache->get_num_free_slots(), 0);
 
     const auto newer = fixture.fill_block(1, /*seed=*/60);
     offload_cache->on_blocks_overwritten(/*hash=*/200, make_block_set(1));
+    offload_cache->flush();
 
     EXPECT_EQ(offload_cache->get_num_entries(), 1);
     EXPECT_FALSE(offload_cache->contains(100));
@@ -195,6 +200,7 @@ TEST(TestKVCacheOffloadCache, BlockManagerStoresEvictedPrefixBlock) {
     auto pressure = make_group(pressure_tokens, /*request_id=*/2);
     pressure->schedule_tokens(pressure_tokens.size());
     block_manager.append_slots(pressure);
+    offload_cache->flush();
 
     EXPECT_GT(offload_cache->get_num_entries(), 0);
     EXPECT_EQ(offload_cache->get_statistics().num_stored, offload_cache->get_num_entries());
@@ -223,6 +229,7 @@ TEST(TestKVCacheOffloadCache, DetachedObserverStopsStoring) {
     auto pressure = make_group(pressure_tokens, /*request_id=*/4);
     pressure->schedule_tokens(pressure_tokens.size());
     block_manager.append_slots(pressure);
+    offload_cache->flush();
 
     EXPECT_EQ(offload_cache->get_num_entries(), 0);
 
@@ -234,6 +241,7 @@ TEST(TestKVCacheOffloadCache, LoadsStoredContentsIntoAnotherBlock) {
     auto offload_cache = make_offload_cache(fixture, 2);
     const auto expected = fixture.fill_block(0, /*seed=*/23);
     offload_cache->on_blocks_overwritten(/*hash=*/77, make_block_set(0));
+    offload_cache->flush();
     fixture.fill_block(2, /*seed=*/0);
 
     ASSERT_TRUE(offload_cache->load_into(/*hash=*/77, /*block_index=*/2));
@@ -272,6 +280,7 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresBlocksFromDisk) {
     pressure->schedule_tokens(pressure_tokens.size());
     block_manager.append_slots(pressure);
     const auto pressure_seq_id = pressure->get_running_sequences().at(0)->get_id();
+    offload_cache->flush();
     ASSERT_GT(offload_cache->get_num_entries(), 0);
     block_manager.free_sequence(pressure_seq_id);
 
@@ -327,6 +336,7 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheKeepsChainWhenNoBlockIsUnused) {
     block_manager.append_slots(other);
     other->finish_iteration();
     block_manager.free_sequence(other->get_running_sequences().at(0)->get_id());
+    offload_cache->flush();
     ASSERT_EQ(offload_cache->get_num_entries(), 2);
 
     auto consumer = make_group(wanted_tokens, /*request_id=*/11);
@@ -370,12 +380,33 @@ TEST(TestKVCacheOffloadCache, StoresBlocksFreedByPartialRelease) {
     auto other = make_group(other_tokens, /*request_id=*/13);
     other->schedule_tokens(other_tokens.size());
     block_manager.append_slots(other);
+    offload_cache->flush();
 
     EXPECT_GT(offload_cache->get_num_entries(), 0);
 
     block_manager.set_overwritten_block_observer(nullptr);
     block_manager.free_sequence(seq_id);
     block_manager.free_sequence(other->get_running_sequences().at(0)->get_id());
+}
+
+TEST(TestKVCacheOffloadCache, ServesStoredBlockWhileTheWriteIsStillQueued) {
+    CacheFixture fixture;
+    auto offload_cache = make_offload_cache(fixture, 2);
+    const auto expected = fixture.fill_block(0, /*seed=*/31);
+
+    // The store hands off to a background writer, yet the contents must be readable right away.
+    offload_cache->on_blocks_overwritten(/*hash=*/64, make_block_set(0));
+    EXPECT_TRUE(offload_cache->contains(64));
+
+    fixture.fill_block(3, /*seed=*/0);
+    ASSERT_TRUE(offload_cache->load_into(/*hash=*/64, /*block_index=*/3));
+    EXPECT_EQ(fixture.cache_manager->read_block(3), expected);
+
+    offload_cache->flush();
+    EXPECT_EQ(offload_cache->get_num_entries(), 1);
+    std::vector<uint8_t> restored;
+    ASSERT_TRUE(offload_cache->read(64, restored));
+    EXPECT_EQ(restored, expected);
 }
 
 TEST(TestKVCacheOffloadCache, HandlesCopyOnWriteOfSharedBlock) {
@@ -409,6 +440,7 @@ TEST(TestKVCacheOffloadCache, HandlesCopyOnWriteOfSharedBlock) {
     EXPECT_TRUE(first_copy_map.count(shared_block_idx));
     EXPECT_TRUE(second_copy_map.empty());
     // Copy-on-write must not publish anything to disk, since no cached contents were overwritten.
+    offload_cache->flush();
     EXPECT_EQ(offload_cache->get_num_entries(), 0);
 
     block_manager.set_overwritten_block_observer(nullptr);
