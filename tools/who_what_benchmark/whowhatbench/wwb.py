@@ -1102,6 +1102,7 @@ def create_evaluator(base_model, args):
                 max_new_tokens=args.max_new_tokens,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
+                config=config,
                 crop_question=crop_question,
                 task_type=task,
                 frames_num=args.video_frames_num,
