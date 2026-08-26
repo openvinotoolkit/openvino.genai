@@ -79,6 +79,7 @@ IMAGE_GEN_MODELS = {
     "tiny-random-sd3": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
     "tiny-random-flux.2-klein": "optimum-intel-internal-testing/tiny-random-flux.2-klein",
     "tiny-random-qwenimage": "optimum-intel-internal-testing/tiny-random-qwen-image",
+    "tiny-random-z-image-turbo": "snake7gun/tiny-random-z-image-turbo",
 }
 
 DEFAULT_IMAGE_GEN_MODEL_ID = "tiny-random-latent-consistency"
