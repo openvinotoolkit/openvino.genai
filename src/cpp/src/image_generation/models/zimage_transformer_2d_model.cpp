@@ -12,6 +12,13 @@
 namespace ov {
 namespace genai {
 
+constexpr size_t ZIMAGE_SEQUENCE_MULTIPLE = 32;
+constexpr size_t ZIMAGE_PATCH_SIZE = 2;
+
+size_t round_sequence_length(const size_t length) {
+    return length + (ZIMAGE_SEQUENCE_MULTIPLE - length % ZIMAGE_SEQUENCE_MULTIPLE) % ZIMAGE_SEQUENCE_MULTIPLE;
+}
+
 size_t get_vae_scale_factor(const std::filesystem::path& vae_config_path);
 
 ZImageTransformer2DModel::Config::Config(const std::filesystem::path& config_path) {
@@ -102,6 +109,12 @@ ZImageTransformer2DModel& ZImageTransformer2DModel::reshape(int batch_size,
             };
         } else if (input_name == "encoder_hidden_states") {
             name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
+        } else if (input_name == "encoder_attention_mask") {
+            name_to_shape[input_name] = {batch_size, tokenizer_model_max_length};
+        } else if (input_name == "txt_ids") {
+            name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, 3};
+        } else if (input_name == "img_ids") {
+            name_to_shape[input_name] = {batch_size, -1, 3};
         }
     }
 
@@ -140,10 +153,54 @@ void ZImageTransformer2DModel::set_adapters(const std::optional<AdapterConfig>& 
 
 ov::Tensor ZImageTransformer2DModel::step(ov::Tensor sample, ov::Tensor timestep, ov::Tensor encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
-    
+
+    const ov::Shape& encoder_shape = encoder_hidden_states.get_shape();
+    const size_t batch_size = encoder_shape[0], max_caption_length = encoder_shape[1], embedding_size = encoder_shape[2];
+    const size_t image_height = sample.get_shape()[2] / ZIMAGE_PATCH_SIZE;
+    const size_t image_width = sample.get_shape()[3] / ZIMAGE_PATCH_SIZE;
+    const size_t image_length = image_height * image_width;
+    const size_t padded_image_length = round_sequence_length(image_length);
+
+    ov::Tensor encoder_attention_mask(ov::element::f32, {batch_size, max_caption_length});
+    ov::Tensor txt_ids(ov::element::i32, {batch_size, max_caption_length, 3});
+    ov::Tensor img_ids(ov::element::i32, {batch_size, padded_image_length, 3});
+    std::fill_n(encoder_attention_mask.data<float>(), encoder_attention_mask.get_size(),
+                std::numeric_limits<float>::lowest());
+    std::fill_n(txt_ids.data<int32_t>(), txt_ids.get_size(), 0);
+    std::fill_n(img_ids.data<int32_t>(), img_ids.get_size(), 0);
+
+    const float* embeddings = encoder_hidden_states.data<const float>();
+    float* attention_mask = encoder_attention_mask.data<float>();
+    int32_t* text_positions = txt_ids.data<int32_t>();
+    int32_t* image_positions = img_ids.data<int32_t>();
+
+    for (size_t batch = 0; batch < batch_size; ++batch) {
+        size_t caption_length = max_caption_length;
+        while (caption_length > 0 &&
+               std::all_of(embeddings + (batch * max_caption_length + caption_length - 1) * embedding_size,
+                           embeddings + (batch * max_caption_length + caption_length) * embedding_size,
+                           [](const float value) { return value == 0.0f; })) {
+            --caption_length;
+        }
+        const size_t rounded_caption_length = std::min(round_sequence_length(caption_length), max_caption_length);
+        std::fill_n(attention_mask + batch * max_caption_length, caption_length, 0.0f);
+        for (size_t token = 0; token < rounded_caption_length; ++token) {
+            text_positions[(batch * max_caption_length + token) * 3] = static_cast<int32_t>(token + 1);
+        }
+        for (size_t token = 0; token < image_length; ++token) {
+            int32_t* position = image_positions + (batch * padded_image_length + token) * 3;
+            position[0] = static_cast<int32_t>(rounded_caption_length + 1);
+            position[1] = static_cast<int32_t>(token / image_width);
+            position[2] = static_cast<int32_t>(token % image_width);
+        }
+    }
+
     m_request.set_tensor("hidden_states", sample);
     m_request.set_tensor("timestep", timestep);
     m_request.set_tensor("encoder_hidden_states", encoder_hidden_states);
+    m_request.set_tensor("encoder_attention_mask", encoder_attention_mask);
+    m_request.set_tensor("txt_ids", txt_ids);
+    m_request.set_tensor("img_ids", img_ids);
     
     m_request.infer();
     
