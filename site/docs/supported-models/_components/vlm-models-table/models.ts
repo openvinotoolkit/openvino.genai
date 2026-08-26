@@ -111,6 +111,15 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'MuseGlimmerForConditionalGeneration',
+    models: [
+      {
+        name: 'Muse-Glimmer',
+        links: ['https://huggingface.co/meta-models/Muse-Glimmer-30B'],
+      },
+    ],
+  },
+  {
     architecture: 'Phi3VForCausalLM',
     models: [
       {
@@ -208,6 +217,16 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen3.6-35B-A3B',
         ],
         notesLink: '#qwen3_5-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'DeepseekOCR2ForCausalLM',
+    models: [
+      {
+        name: 'DeepSeek-OCR-2',
+        links: ['https://huggingface.co/deepseek-community/DeepSeek-OCR-2'],
+        notesLink: '#deepseek-ocr-2-notes',
       },
     ],
   },

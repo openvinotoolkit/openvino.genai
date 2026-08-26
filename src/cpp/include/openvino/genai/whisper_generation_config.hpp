@@ -45,7 +45,7 @@ public:
 
     bool is_multilingual = true;
 
-    // Language token to use for generation in the form of <|en|>.
+    // Language to use for generation. In the form of `en`, `<|en|>`.
     // You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
     // Can be set for multilingual models only.
     std::optional<std::string> language = std::nullopt;

@@ -568,7 +568,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     encode_vision_token_ids();
 
@@ -676,15 +676,11 @@ const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma4::get_lm_
 }
 
 void InputsEmbedderGemma4::patch_chat_template() {
-    std::string patched_chat_template = m_tokenizer.get_chat_template();
     // minja does not support Python-style implicit concatenation of adjacent multiline string literals:
     //     "first "
     //     "second"
     // Normalize the pair to "first second" before parsing.
-    const std::regex multiline_string_concatenation{R"("[ \t]*\r?\n[ \t]*")"};
-    patched_chat_template = std::regex_replace(patched_chat_template, multiline_string_concatenation, "");
-
-    m_tokenizer.set_chat_template(patched_chat_template);
+    utils::patch_chat_template_multiline_strings(m_tokenizer);
 }
 
 }  // namespace ov::genai

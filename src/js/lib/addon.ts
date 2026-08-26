@@ -23,6 +23,8 @@ import {
   LLMPipelineProperties,
   WhisperGenerationConfig,
   WhisperPipelineProperties,
+  ASRGenerationConfig,
+  ASRPipelineProperties,
   SpeechGenerationConfig,
   ImageGenerationConfig,
   ImageGenerationCallback,
@@ -35,10 +37,12 @@ import {
   VLMPerfMetrics,
   PerfMetrics,
   WhisperPerfMetrics,
+  ASRPerfMetrics,
   ImageGenerationPerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
 import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
+import type { ASRDecodedResultChunk } from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -186,6 +190,35 @@ export interface WhisperPipeline {
   setGenerationConfig(config: WhisperGenerationConfig): void;
 }
 
+export interface ASRPipeline {
+  new (): ASRPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: ASRPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    rawSpeech: Float32Array | number[],
+    generationConfig: ASRGenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        languages: string[];
+        perfMetrics: ASRPerfMetrics;
+        chunks?: ASRDecodedResultChunk[][];
+        words?: ASRDecodedResultChunk[][];
+      },
+    ) => void,
+  ): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): Partial<ASRGenerationConfig>;
+  setGenerationConfig(config: ASRGenerationConfig): void;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -312,6 +345,7 @@ interface OpenVINOGenAIAddon {
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   WhisperPipeline: WhisperPipeline;
+  ASRPipeline: ASRPipeline;
   Text2ImagePipeline: Text2ImagePipeline;
   Image2ImagePipeline: Image2ImagePipeline;
   InpaintingPipeline: InpaintingPipeline;
@@ -350,6 +384,7 @@ export const {
   LLMPipeline,
   VLMPipeline,
   WhisperPipeline,
+  ASRPipeline,
   Text2ImagePipeline,
   Image2ImagePipeline,
   InpaintingPipeline,

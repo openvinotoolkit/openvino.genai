@@ -1,10 +1,6 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-if (MSVC)
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
 find_package(OpenVINOGenAI REQUIRED
     PATHS
         "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
@@ -82,7 +78,7 @@ install(TARGETS benchmark_vlm
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
-add_executable(video_to_text_chat video_to_text_chat.cpp)
+add_executable(video_to_text_chat video_to_text_chat.cpp load_video.cpp)
 target_include_directories(video_to_text_chat PRIVATE "${CMAKE_BINARY_DIR}")
 ov_genai_link_opencv(video_to_text_chat core imgproc videoio imgcodecs)
 target_link_libraries(video_to_text_chat PRIVATE openvino::genai cxxopts::cxxopts)

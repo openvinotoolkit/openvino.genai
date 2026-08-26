@@ -1,7 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino-tokenizers[transformers]~=2026.4.0.0.dev
-https://github.com/huggingface/optimum-intel/archive/140e49a68718ab0025a3b5f02864b9ca9f009558.tar.gz#egg=optimum-intel
+https://github.com/huggingface/optimum-intel/archive/4f1a926025ac7e5236c8661ab868640ce8076998.tar.gz#egg=optimum-intel
 einops==0.8.2  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.39.0 # For image generation pipelines
