@@ -392,8 +392,9 @@ InputsEmbedderDeepseekOCR2::InputsEmbedderDeepseekOCR2(const VLMConfig& vlm_conf
     if (m_vlm_config.image_token_id >= 0) {
         m_image_token_id = m_vlm_config.image_token_id;
     } else {
-        ov::Tensor encoded_image_token = m_tokenizer.encode(NATIVE_TAG, ov::genai::add_special_tokens(false)).input_ids;
-        m_image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+        OPENVINO_ASSERT(encoded_image_token.get_size() == 1,
+                        "DeepSeek-OCR-2 <image> must encode to exactly one token");
+        m_image_token_id = encoded_image_token.data<int64_t>()[0];
     }
 }
 
