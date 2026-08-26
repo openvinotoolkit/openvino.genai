@@ -176,7 +176,8 @@ def run_text_to_speech_generation_genai(
     )
 
     if is_kokoro_model:
-        additional_args["language"] = args.get("speech_language", "")
+        if (language := args.get("speech_language")) is not None:
+            additional_args["language"] = language
 
     start = time.perf_counter()
     generation_result = model.generate(input_text_list, **additional_args)

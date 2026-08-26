@@ -499,7 +499,7 @@ def get_argparser():
     parser.add_argument(
         "--speech_language",
         type=str,
-        default="",
+        default=None,
         help="Speech language for text-to-speech models. For Kokoro this can be one of en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, zh",
     )
     parser.add_argument(
