@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <memory>
+#include <vector>
+
 #include "openvino/runtime/core.hpp"
 
 std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers);
