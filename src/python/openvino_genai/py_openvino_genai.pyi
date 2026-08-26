@@ -1386,7 +1386,7 @@ class ExtendedPerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
-
+    
         :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
         :type get_num_prefix_cache_hit_tokens: int
     
@@ -3114,7 +3114,7 @@ class PerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
-
+    
         :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
         :type get_num_prefix_cache_hit_tokens: int
     
