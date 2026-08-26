@@ -104,7 +104,7 @@ class ChatIterationResult:
 
 class ChatGenerationAdapter(ABC):
     @abstractmethod
-    def run_chat_iteration(self, prompt: str, prefix: str, bench_hook: object) -> ChatIterationResult:
+    def run_chat_iteration(self, prompt: str, prefix: str, *args, **kwargs) -> ChatIterationResult:
         pass
 
     @abstractmethod

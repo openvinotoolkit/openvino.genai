@@ -40,7 +40,7 @@ def run_visual_language_generation_optimum(
     # ===== Prepare Input Data =====
     decim_frames = args["video_frames"]
     prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, False)
-    save_input_data_to_file(prompts[0], args, model_precision, prompt_index, num, proc_id)
+    save_input_data_to_file(prompts, args, model_precision, prompt_index, num, proc_id)
 
     prefix = "[warm-up]" if num == 0 else "[{}]".format(num)
     log.info(f"{prefix}[P{prompt_index}] Input image nums: {len(images)}")
@@ -183,7 +183,7 @@ def run_visual_language_generation_genai(
     # ===== Prepare Input Data =====
     decim_frames = args["video_frames"]
     prompts, images, videos, audios = extract_prompt_data(inputs, decim_frames, True)
-    save_input_data_to_file(prompts[0], args, model_precision, prompt_index, num, proc_id)
+    save_input_data_to_file(prompts, args, model_precision, prompt_index, num, proc_id)
 
     mem_consumption.start(num)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']

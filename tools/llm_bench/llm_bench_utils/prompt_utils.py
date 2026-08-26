@@ -145,7 +145,8 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
 
         if input_data.get("audio") is not None:
             func_load_audio = load_audio_genai if genai_flag else load_audio_optimum
-            audios.append(func_load_audio(str(input_data["audio"])))
+            for audio_item in _normalize_to_list(input_data.get("audio")):
+                audios.append(func_load_audio(str(audio_item)))
         prompts.append(input_data.get("prompt", ""))
     return prompts, images, videos, audios
 

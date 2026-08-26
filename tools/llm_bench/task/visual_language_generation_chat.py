@@ -10,11 +10,13 @@ import datetime
 import logging as log
 import numpy as np
 
-from llm_bench_utils.prompt_utils import get_vlm_prompt
+import llm_bench_utils.ov_utils
+import llm_bench_utils.pt_utils
 import llm_bench_utils.output_file
-import llm_bench_utils.metrics_print as metrics_print
-import llm_bench_utils.gen_output_data as gen_output_data
 import llm_bench_utils.model_utils as model_utils
+import llm_bench_utils.metrics_print as metrics_print
+from llm_bench_utils.prompt_utils import get_vlm_prompt
+import llm_bench_utils.gen_output_data as gen_output_data
 from llm_bench_utils.prompt_utils import extract_prompt_data
 from task.text_generation_chat import (
     get_kv_axes_pos,
@@ -72,6 +74,8 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
         self.processor = processor
         self.config = config
         self.args = args
+
+        self.i = -1
 
         self.crop_question = (
             "internvl" in config.model_type
@@ -179,16 +183,16 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
             prefix_len = 0
             self.past_key_values = None
 
-        generate_kwargs = {}
+        additional_kwargs = {}
         if self.past_key_values is not None:
             preprocess_inputs = self.inputs_processor.align_inputs_with_cache(
                 self.model, preprocess_inputs, full_input_ids, prefix_len
             )
-            generate_kwargs = self.configure_past_key_values_for_generation(full_input_ids, prefix_len)
+            additional_kwargs = self.configure_past_key_values_for_generation(full_input_ids, prefix_len)
 
         model_type = self.config.model_type
         if model_type not in ["phi4mm"]:
-            generate_kwargs["tokenizer"] = self.tokenizer
+            additional_kwargs["tokenizer"] = self.tokenizer
 
         # ===== Generation =====
         log.info("%s Text generation start: %s", prefix, datetime.datetime.now().isoformat())
@@ -201,6 +205,7 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
             return_dict_in_generate=True,
             use_cache=True,
             **self.generation_args,
+            **additional_kwargs,
         )
         end = time.perf_counter()
         log.info("%s Text generation end: %s", prefix, datetime.datetime.now().isoformat())
@@ -212,9 +217,12 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
             result = result[1]
 
         tokens = result.sequences
-        if self.crop_question:
-            input_ids_len = full_input_ids.shape[-1]
-            tokens = tokens[:, input_ids_len:]
+        input_ids_len = full_input_ids.shape[-1]
+        if tokens.shape[1] >= input_ids_len:
+            generated_tokens = tokens[0].tolist()
+            prompt_tokens = full_input_ids[0].tolist()
+            if generated_tokens[:input_ids_len] == prompt_tokens:
+                tokens = tokens[:, input_ids_len:]
 
         new_past_key_values = getattr(result, "past_key_values", None) if result is not None else None
         if new_past_key_values is not None and not self.full_chat:
@@ -230,7 +238,7 @@ class OptimumVLMGenerationChatAdapter(OptimumTextGenerationChatAdapter):
 
         input_token_size = full_input_ids[0].numel()
         num_new_token_input_size = input_token_size - prefix_len
-        generated_token_size = len(tokens)
+        generated_token_size = len(tokens[0])
 
         if generated_token_size > self.max_gen_tokens:
             log.error("Output token size is over max output token size!")
@@ -368,7 +376,7 @@ class GenAIVLMGenerationChatAdapter(GenAITextGenerationChatAdapter):
 
 
 # ===== Common Utils =====
-def get_chat_input_data(input_text: list, args: dict):
+def get_chat_input_data(input_text: list | dict, args: dict):
     # if prompts are set as list, let's use it
     # if prompt is set as single string, let's create chat where prompt will repeat chat_iter times
     input_data = input_text
@@ -507,8 +515,6 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     mem_consumption.activate_cooldown("after model compilation")
     model, processor_config, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
-    iter_data_list = []
-    md5_list = {num: {} for num in range(num_iters + 1)}
     input_chat_list = get_vlm_prompt(args)
 
     iter_data_list = []
