@@ -47,7 +47,7 @@ def delete_rt_info(configs: list[tuple], temp_path):
                     except KeyError:
                         pass
         # save_model reads lazily loaded constants from the original BIN, so writing to the same path invalidates them.
-        # Lazy constant loading was introduced in https://github.com/openvinotoolkit/openvino/pull/35457.:w
+        # Lazy constant loading was introduced in https://github.com/openvinotoolkit/openvino/pull/35457.
         with TemporaryDirectory(dir=temp_path) as temporary_dir:
             temporary_model_path = Path(temporary_dir) / model_path.name
             openvino.save_model(tokenizer, temporary_model_path)
