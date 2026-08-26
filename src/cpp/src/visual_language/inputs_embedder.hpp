@@ -402,6 +402,7 @@ private:
     friend class InputsEmbedderGemma3;
     friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
+    friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
 };
