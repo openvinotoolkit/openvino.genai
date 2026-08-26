@@ -67,6 +67,7 @@ public:
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const override;
+
 };
 
 } // namespace ov::genai
