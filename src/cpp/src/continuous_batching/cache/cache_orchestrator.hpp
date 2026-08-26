@@ -276,6 +276,7 @@ public:
         auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
         // Refill the in-memory prefix cache from disk first, so the restore below sees those blocks as cached.
         if (m_kv_offload_cache != nullptr && kv_it != m_block_managers.end()) {
+            KVCacheOffloadCache::ScopedReclamationPause keep_entries(*m_kv_offload_cache);
             kv_it->second->warm_prefix_cache(sequence_group, *m_kv_offload_cache);
         }
 

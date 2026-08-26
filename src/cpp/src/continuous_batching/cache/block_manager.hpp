@@ -1622,9 +1622,13 @@ public:
         const size_t prompt_len = group->get_prompt_len();
 
         size_t num_restored = 0;
+        // Hold every chain block until the walk is over. A warmed block keeps the timestamp it was created
+        // with, so releasing it immediately would make it the very next block the allocator overwrites.
+        std::vector<BlocksPerLayer> chain;
         for (size_t content_len = m_block_size; content_len <= prompt_len; content_len += m_block_size) {
             const auto hash = sequence->get_hash(content_len, m_block_size);
             if (m_allocator.has_cached_block(hash, m_prefix_hash_to_cached_blocks)) {
+                chain.push_back(m_allocator.get_cached_block(hash, m_prefix_hash_to_cached_blocks));
                 continue;
             }
             if (!source.contains(hash) || !m_allocator.can_allocate_blocks(1)) {
@@ -1641,9 +1645,13 @@ public:
                 break;
             }
 
-            // Drop ownership so that the regular restore path can claim the block by hash.
-            free_cached_blocks(blocks);
+            chain.push_back(std::move(blocks));
             ++num_restored;
+        }
+
+        // Drop ownership so that the regular restore path can claim the chain by hash.
+        for (const auto& blocks : chain) {
+            free_cached_blocks(blocks);
         }
 
         GENAI_INFO("[KV_TRACE] prefix_warm_from_disk seq=%llu blocks=%zu",

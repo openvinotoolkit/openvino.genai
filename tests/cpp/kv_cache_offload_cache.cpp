@@ -276,7 +276,11 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheRestoresBlocksFromDisk) {
     block_manager.free_sequence(pressure_seq_id);
 
     auto consumer = make_group(tokens, /*request_id=*/7);
-    const size_t num_warmed = block_manager.warm_prefix_cache(consumer, *offload_cache);
+    size_t num_warmed = 0;
+    {
+        KVCacheOffloadCache::ScopedReclamationPause keep_entries(*offload_cache);
+        num_warmed = block_manager.warm_prefix_cache(consumer, *offload_cache);
+    }
 
     EXPECT_GT(num_warmed, 0);
     EXPECT_EQ(offload_cache->get_statistics().num_loaded, num_warmed);
@@ -299,4 +303,115 @@ TEST(TestKVCacheOffloadCache, WarmPrefixCacheIsNoOpWithoutEntries) {
 
     EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), 0);
     EXPECT_EQ(block_manager.num_free_blocks(), 2);
+}
+
+TEST(TestKVCacheOffloadCache, WarmPrefixCacheKeepsChainWhenNoBlockIsUnused) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/2);
+    auto offload_cache = make_offload_cache(fixture, 4);
+
+    BlockManager block_manager(/*num_blocks=*/2, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    const std::vector<int64_t> wanted_tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto producer = make_group(wanted_tokens, /*request_id=*/9);
+    producer->schedule_tokens(wanted_tokens.size());
+    block_manager.append_slots(producer);
+    producer->finish_iteration();
+    block_manager.free_sequence(producer->get_running_sequences().at(0)->get_id());
+
+    // Push both blocks of the wanted prefix to disk and leave the cache full of unrelated blocks.
+    const std::vector<int64_t> other_tokens = {40, 41, 42, 43, 44, 45, 46, 47};
+    auto other = make_group(other_tokens, /*request_id=*/10);
+    other->schedule_tokens(other_tokens.size());
+    block_manager.append_slots(other);
+    other->finish_iteration();
+    block_manager.free_sequence(other->get_running_sequences().at(0)->get_id());
+    ASSERT_EQ(offload_cache->get_num_entries(), 2);
+
+    auto consumer = make_group(wanted_tokens, /*request_id=*/11);
+    // Both chain blocks have to survive warming even though every block has to be taken from the cache.
+    {
+        KVCacheOffloadCache::ScopedReclamationPause keep_entries(*offload_cache);
+        EXPECT_EQ(block_manager.warm_prefix_cache(consumer, *offload_cache), 2);
+    }
+    ASSERT_TRUE(block_manager.restore_cached_blocks(consumer));
+
+    const auto consumer_seq_id = consumer->get_running_sequences().at(0)->get_id();
+    EXPECT_EQ(block_manager.get_block_table(consumer_seq_id, 0).size(), 2);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+    block_manager.free_sequence(consumer_seq_id);
+}
+
+TEST(TestKVCacheOffloadCache, StoresBlocksFreedByPartialRelease) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/4);
+    auto offload_cache = make_offload_cache(fixture, 4);
+
+    BlockManager block_manager(/*num_blocks=*/4, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5, 6, 7};
+    auto preempted = make_group(tokens, /*request_id=*/12);
+    preempted->schedule_tokens(tokens.size());
+    block_manager.append_slots(preempted);
+    preempted->finish_iteration();
+
+    const auto seq_id = preempted->get_running_sequences().at(0)->get_id();
+    ASSERT_EQ(block_manager.get_block_table(seq_id, 0).size(), 2);
+
+    // Preemption releases blocks from the tail of the sequence.
+    block_manager.free_sequence_partially(seq_id, 1);
+    EXPECT_EQ(block_manager.get_block_table(seq_id, 0).size(), 1);
+
+    // Fill the cache so the released block is overwritten and therefore offloaded.
+    const std::vector<int64_t> other_tokens = {50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61};
+    auto other = make_group(other_tokens, /*request_id=*/13);
+    other->schedule_tokens(other_tokens.size());
+    block_manager.append_slots(other);
+
+    EXPECT_GT(offload_cache->get_num_entries(), 0);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+    block_manager.free_sequence(seq_id);
+    block_manager.free_sequence(other->get_running_sequences().at(0)->get_id());
+}
+
+TEST(TestKVCacheOffloadCache, HandlesCopyOnWriteOfSharedBlock) {
+    constexpr size_t block_size = 4;
+    CacheFixture fixture(/*num_blocks=*/8);
+    auto offload_cache = make_offload_cache(fixture, 8);
+
+    BlockManager block_manager(/*num_blocks=*/8, /*enable_prefix_caching=*/true, block_size, /*num_layers=*/1);
+    block_manager.set_overwritten_block_observer(offload_cache.get());
+
+    // The trailing block stays incomplete, so consumers sharing it have to split it on the next token.
+    const std::vector<int64_t> tokens = {0, 1, 2, 3, 4, 5};
+    auto producer = make_group(tokens, /*request_id=*/14);
+    producer->schedule_tokens(tokens.size());
+    block_manager.append_slots(producer);
+    producer->finish_iteration();
+    const auto producer_seq_id = producer->get_running_sequences().at(0)->get_id();
+    const auto shared_block_idx = block_manager.get_block_table(producer_seq_id, 0).at(1)->get_index();
+    block_manager.free_sequence(producer_seq_id);
+
+    auto first = make_group(tokens, /*request_id=*/15);
+    auto second = make_group(tokens, /*request_id=*/16);
+    ASSERT_TRUE(block_manager.restore_cached_blocks(first));
+    ASSERT_TRUE(block_manager.restore_cached_blocks(second));
+
+    first->schedule_tokens(1);
+    second->schedule_tokens(1);
+    const auto first_copy_map = block_manager.append_slots(first);
+    const auto second_copy_map = block_manager.append_slots(second);
+
+    EXPECT_TRUE(first_copy_map.count(shared_block_idx));
+    EXPECT_TRUE(second_copy_map.empty());
+    // Copy-on-write must not publish anything to disk, since no cached contents were overwritten.
+    EXPECT_EQ(offload_cache->get_num_entries(), 0);
+
+    block_manager.set_overwritten_block_observer(nullptr);
+    block_manager.free_sequence(first->get_running_sequences().at(0)->get_id());
+    block_manager.free_sequence(second->get_running_sequences().at(0)->get_id());
 }

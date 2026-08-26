@@ -254,6 +254,24 @@ Phase 5 引入后台 I/O 时再把读取迁出调用方线程，届时需要同�
 3. pipeline 析构和异常路径统一调用 `flush/reset`，保证没有后台任务访问已销毁的 tensor 或文件。注意 `BlockManager::clear()` 开头就断言 `m_enable_prefix_caching == false`，而 offload 要求 prefix caching 必须打开，所以 offload 的清理不能挂在 `clear()` 上，需要独立的释放入口。
 4. 同一 hash 的新 generation 发布时，旧 slot 延迟回收，避免旧 load 完成后覆盖新 index。
 
+### Phase 4：fork、copy-on-write、取消和清理（已完成）
+
+同步落盘的设计让本阶段原定的多数条目不再适用。逐条核实结果：
+
+| 原条目 | 核实结果 |
+| --- | --- |
+| `copy_blocks()` 遇到 disk source | 不存在。磁盘块总是先经 `warm_prefix_cache()` 装回真实设备块，block table 中不会出现磁盘来源 |
+| 取消 / preemption 时延迟释放 in-flight | 不存在。写在块交出前完成，读在 `warm_prefix_cache()` 返回前完成，没有 in-flight 窗口 |
+| 清理不能挂在 `clear()` 上 | 无需处理。`clear_cache()` 被 `!enable_prefix_caching` 守卫，与 offload 互斥 |
+| 同一 hash 新旧 generation | 不存在。同步写且内容按 hash 寻址，没有陈旧窗口 |
+
+同时确认 COW 路径中 `free_cached_blocks()` 之后的 `set_hash()` 位于非 COW 分支，块仍被序列持有、不在可覆写存储中，因此 store 的键与块 hash 不会脱同步。
+
+本阶段实际修复的是两处**回填自我拆台**：
+
+1. 内存侧：`num_free_blocks()` 把可覆写块计入可用，且 `OverwritableBlocksHashStore::add()` 不刷新时间戳。从自由池取出的块保留其构造时间戳，因此刚回填的块一进存储就是最旧的，会被下一次 `get_lru_block_to_overwrite()` 立刻顶掉。修复：回填期间持有整条链（含已在内存中的块），走完再统一释放。
+2. 磁盘侧：回填时挤占内存块会触发落盘，而磁盘已满时落盘会回收最旧条目 —— 可能正是该链尚未读取的条目。修复：`KVCacheOffloadCache::ScopedReclamationPause` 在回填期间禁止条目替换。有空槽时照常落盘，需要回收时跳过。
+
 ### Phase 5：后台 I/O 与 GPU 支持
 
 在 CPU 同步链路稳定后再实现：

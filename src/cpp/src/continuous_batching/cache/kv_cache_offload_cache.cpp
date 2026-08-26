@@ -39,6 +39,10 @@ void KVCacheOffloadCache::on_blocks_overwritten(std::size_t hash, const BlocksPe
     std::optional<std::size_t> slot_id = m_backend->acquire_slot();
     bool reclaimed = false;
     if (!slot_id.has_value()) {
+        if (m_reclamation_paused) {
+            ++m_statistics.num_failed;
+            return;
+        }
         slot_id = reclaim_oldest_slot();
         reclaimed = slot_id.has_value();
     }
@@ -63,6 +67,16 @@ void KVCacheOffloadCache::on_blocks_overwritten(std::size_t hash, const BlocksPe
     if (reclaimed) {
         ++m_statistics.num_replaced;
     }
+}
+
+KVCacheOffloadCache::ScopedReclamationPause::ScopedReclamationPause(KVCacheOffloadCache& cache) : m_cache(cache) {
+    std::lock_guard<std::mutex> lock(m_cache.m_mutex);
+    m_cache.m_reclamation_paused = true;
+}
+
+KVCacheOffloadCache::ScopedReclamationPause::~ScopedReclamationPause() {
+    std::lock_guard<std::mutex> lock(m_cache.m_mutex);
+    m_cache.m_reclamation_paused = false;
 }
 
 std::optional<std::size_t> KVCacheOffloadCache::reclaim_oldest_slot() {

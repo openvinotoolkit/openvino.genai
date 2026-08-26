@@ -37,6 +37,24 @@ public:
         std::size_t num_failed = 0;
     };
 
+    /**
+     * @brief Keeps existing entries from being replaced for as long as it exists.
+     *
+     * Warming a prefix chain evicts memory blocks in order to host that very chain, so persisting them
+     * must not be allowed to reclaim a slot the chain still has to read back.
+     */
+    class ScopedReclamationPause {
+    public:
+        explicit ScopedReclamationPause(KVCacheOffloadCache& cache);
+        ~ScopedReclamationPause();
+
+        ScopedReclamationPause(const ScopedReclamationPause&) = delete;
+        ScopedReclamationPause& operator=(const ScopedReclamationPause&) = delete;
+
+    private:
+        KVCacheOffloadCache& m_cache;
+    };
+
     KVCacheOffloadCache(KVCacheManager& cache_manager, std::unique_ptr<KVCacheOffloadManager> backend);
 
     void on_blocks_overwritten(std::size_t hash, const BlocksPerLayer& blocks) override;
@@ -75,6 +93,7 @@ private:
     std::list<std::size_t> m_insertion_order;
     std::vector<uint8_t> m_staging;
     Statistics m_statistics;
+    bool m_reclamation_paused = false;
     mutable std::mutex m_mutex;
 };
 
