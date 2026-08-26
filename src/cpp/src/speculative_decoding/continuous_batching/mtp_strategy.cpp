@@ -191,16 +191,12 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
     GenerateStrategy strategy;
-    strategy.prepare_request = [this](size_t,
-                                      const ov::Tensor& in_embeds,
-                                      GenerationConfig& main_cfg,
-                                      GenerationConfig& draft_cfg,
-                                      ov::Tensor& main_in,
-                                      ov::Tensor& draft_in) {
+    strategy.prepare_request = [](size_t,
+                                  const ov::Tensor& in_embeds,
+                                  GenerationConfig& main_cfg,
+                                  ov::Tensor& main_in) {
         (void)main_cfg;
-        (void)draft_cfg;
         main_in = in_embeds;
-        draft_in = create_draft_input_embeds(in_embeds);
     };
 
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
