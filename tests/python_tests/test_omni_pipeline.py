@@ -31,13 +31,13 @@ Three tiers, following the other pipeline suites:
    OMNI_REAL_MODEL_PATH. The tiny checkpoint cannot synthesize speech at all, so the
    tests that need a real waveform live here and are deselected by default.
 
-The tiny-checkpoint tier needs newer dependencies than tests/python_tests/requirements.txt
-pins, so the CI matrix entries install them per job: transformers 5.0.0 reads an unset
-`use_sliding_window` in `Qwen3OmniMoeTalkerCodePredictorConfig.__init__` and the export
-dies with an `AttributeError` (fixed in 5.1.0), and optimum-intel only grew the
-talker/code2wav export in huggingface/optimum-intel#1700, after the pinned revision.
-`omni_model_path` still detects both gaps and skips with the reason, so running the
-suite against the repo-wide pins degrades to the model-free tier instead of failing.
+The tiny-checkpoint tier needs a newer transformers than tests/python_tests/requirements.txt
+pins, so the CI matrix entries install one per job: transformers 5.0.0 reads an unset
+`use_sliding_window` in `Qwen3OmniMoeTalkerCodePredictorConfig.__init__` and the export dies
+with an `AttributeError`, fixed in 5.1.0. The pinned optimum-intel already carries the
+talker/code2wav export from huggingface/optimum-intel#1700. `omni_model_path` still detects
+both gaps and skips with the reason, so running the suite against the repo-wide pins degrades
+to the model-free tier instead of failing.
 """
 
 from __future__ import annotations
@@ -644,8 +644,8 @@ def omni_model_path() -> Path:
     if missing:
         pytest.skip(
             f"{OMNI_MODEL_ID} exported without the talker stage (missing {', '.join(missing)}); "
-            "requirements.txt pins an optimum-intel predating huggingface/optimum-intel#1700, which added "
-            "the talker/code2wav export. The CI matrix entries install a revision that has it."
+            "the installed optimum-intel exported no talker stage; huggingface/optimum-intel#1700 is what "
+            "added it, so a revision predating that one cannot produce these files."
         )
 
     return model_dir
