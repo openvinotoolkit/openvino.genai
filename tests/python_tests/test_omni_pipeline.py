@@ -14,7 +14,7 @@ The pybind variant alias OmniSpeechStreamerVariant is intentionally not in
 the smoke import — variant aliases are not re-exported in __init__.py per the
 existing AudioStreamerVariant convention.
 
-Two tiers, following the other pipeline suites:
+Three tiers, following the other pipeline suites:
 
 1. Model-free tests — imports, config defaults, field round-trips, and dependency
    injection of user-defined VLMPipelineBase / TalkerBase children. The DI tests
@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -88,6 +88,8 @@ SPEECH_PROMPT = "Say hello."
 TALKER_RNG_SEED = 1234
 TALKER_MAX_NEW_TOKENS = 8
 
+OPTIMUM_COMPARE_TOKENS = 6
+
 SPEAKER_EMBEDDING_SCALE = -8.0
 
 NO_WAVEFORM_XFAIL_REASON = (
@@ -105,6 +107,15 @@ VIDEO_INPUT_XFAIL_REASON = (
     "patch dim is 2*3*14*14=1176 against an encoder built for 1536 and the infer request fails "
     "shape.compatible(). Setting that one value to 16 makes video work on this checkpoint, and real "
     "Qwen3-Omni models already ship 16 — the encoder and the video path itself are fine."
+)
+
+OPTIMUM_IMAGE_XFAIL_REASON = (
+    "GenAI and optimum agree exactly on generated token ids for a text-only prompt but diverge once an "
+    "image is attached, while still agreeing on the 57-token input length — so they build the same "
+    "sequence and merge different image embeddings into it. Undetermined whether that is a real "
+    "preprocessing difference or this checkpoint's random weights making the greedy argmax flip on "
+    "numerical noise: it cannot be arbitrated locally, because optimum only recognizes model_type "
+    "qwen3_omni_moe and every full Qwen3-Omni export at hand is dense qwen3_omni."
 )
 
 AUDIO_INPUT_XFAIL_REASON = (
@@ -749,6 +760,73 @@ def real_omni_pipe() -> ov_genai.OmniPipeline:
     return ov_genai.OmniPipeline(model_dir, "CPU")
 
 
+class _CapturingStreamer(ov_genai.StreamerBase):
+    """Records the raw token ids GenAI generates.
+
+    Decoded text is useless as a comparison target on this checkpoint: its tokenizer covers ids
+    0-769 while the model head emits the full Qwen vocab, so every generated id falls outside the
+    tokenizer and renders as ''. Ids sidestep the broken tokenizer entirely.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.token_ids: list[int] = []
+
+    def write(self, token: int | Sequence[int]) -> ov_genai.StreamingStatus:
+        if isinstance(token, (list, tuple)):
+            self.token_ids.extend(int(one) for one in token)
+        else:
+            self.token_ids.append(int(token))
+        return ov_genai.StreamingStatus.RUNNING
+
+    def end(self) -> None:
+        pass
+
+
+def _genai_generated_ids(pipe: ov_genai.OmniPipeline, prompt: str, image: np.ndarray | None) -> list[int]:
+    """Token ids the thinker generates, harvested through a streamer."""
+    streamer = _CapturingStreamer()
+    pipe.generate(
+        prompt,
+        images=[ov.Tensor(image)] if image is not None else [],
+        text_config=_text_config(max_new_tokens=OPTIMUM_COMPARE_TOKENS),
+        talker_speech_config=_talker_speech_config(return_audio=False),
+        streamer=streamer,
+    )
+    return streamer.token_ids
+
+
+@dataclass(frozen=True)
+class OptimumReference:
+    """optimum-intel model plus the processor that builds its inputs."""
+
+    model: OVModelForVisualCausalLM
+    processor: transformers.ProcessorMixin
+
+
+def _optimum_generated_ids(reference: OptimumReference, prompt: str, image: np.ndarray | None) -> list[int]:
+    """Token ids optimum-intel generates for the same prompt, sliced off its echoed input."""
+    model = reference.model
+    inputs = model.preprocess_inputs(
+        text=prompt, image=image, processor=reference.processor, tokenizer=None, config=model.config
+    )
+    output_ids = model.generate(**inputs, max_new_tokens=OPTIMUM_COMPARE_TOKENS, do_sample=False)
+    input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
+    return [out[len(inp) :].tolist() for inp, out in zip(input_ids, output_ids)][0]
+
+
+@pytest.fixture(scope="module")
+def optimum_reference(omni_model_path: Path) -> OptimumReference:
+    """optimum-intel over the same export, as a reference implementation.
+
+    Module-scoped: this is a second full model load on top of omni_pipe.
+    """
+    return OptimumReference(
+        model=OVModelForVisualCausalLM.from_pretrained(omni_model_path, export=False),
+        processor=transformers.AutoProcessor.from_pretrained(omni_model_path, trust_remote_code=True),
+    )
+
+
 def _load_models_map(model_dir: Path) -> dict[str, tuple[str, ov.Tensor]]:
     """Read every exported IR in ``model_dir`` into the ModelsMap form the blob ctors accept.
 
@@ -955,6 +1033,42 @@ class TestOmniPipelineRealModel:
         )
 
         _single_waveform(result)
+
+    def test_matches_optimum_text(self, omni_pipe: ov_genai.OmniPipeline, optimum_reference: OptimumReference) -> None:
+        """Greedy decode must produce the same token ids as optimum-intel for a text-only prompt.
+
+        Compared on ids rather than decoded text because this checkpoint's tokenizer only covers ids
+        0-769 while the model head emits the full Qwen vocab, so both stacks decode to '' and a text
+        comparison could not fail. Ids are what the two implementations actually disagree about.
+        """
+        prompt = "Describe."
+
+        optimum_ids = _optimum_generated_ids(optimum_reference, prompt, None)
+        genai_ids = _genai_generated_ids(omni_pipe, prompt, None)
+
+        assert genai_ids, "the streamer must observe generated tokens"
+        assert genai_ids == optimum_ids, (
+            f"GenAI generated {genai_ids}, optimum generated {optimum_ids} for the same greedy prompt"
+        )
+
+    @pytest.mark.xfail(reason=OPTIMUM_IMAGE_XFAIL_REASON, strict=True)
+    def test_matches_optimum_image(
+        self, omni_pipe: ov_genai.OmniPipeline, optimum_reference: OptimumReference, omni_image: ov.Tensor
+    ) -> None:
+        """The same comparison with an image attached.
+
+        Both stacks agree on the input length, so any divergence here is in the image embeddings
+        rather than in how the prompt is built.
+        """
+        prompt = "Describe this image."
+        image = np.array(omni_image.data, dtype=np.uint8).reshape(omni_image.shape)
+
+        optimum_ids = _optimum_generated_ids(optimum_reference, prompt, image)
+        genai_ids = _genai_generated_ids(omni_pipe, prompt, image)
+
+        assert genai_ids == optimum_ids, (
+            f"GenAI generated {genai_ids}, optimum generated {optimum_ids} for the same image prompt"
+        )
 
     def test_speech_generation_rejects_unmatched_role_tokens(self, omni_pipe: ov_genai.OmniPipeline) -> None:
         """A checkpoint whose role token ids never appear in its token stream must raise, not go quiet.
