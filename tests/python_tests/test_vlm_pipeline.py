@@ -334,13 +334,9 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
-    if model_id in [MODEL_GEMMA3N] and (
-        is_transformers_version("<", "4.57.0")
-        or is_transformers_version(">=", "5.0.0")
-        or is_optimum_version("<", "2.0.0")
-    ):
+    if model_id in [MODEL_GEMMA3N] and (is_transformers_version("<", "5.0.0") or is_optimum_version("<", "2.0.0")):
         pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is >= 4.57.0 and < 5.0.0. Supported optimum version is >= 2.0.0."
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.0.0. Supported optimum version is >= 2.0.0."
         )
 
     if model_id in [
@@ -489,6 +485,9 @@ def _get_ov_model(model_id: str) -> str:
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
+QWEN3_VL_SDPA_XFAIL_REASON = (
+    "qwen3-vl vision embeddings count does not match image pad tokens in prompt with SDPA backend"
+)
 
 
 @pytest.fixture(scope="module")
@@ -508,7 +507,20 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
+    if "qwen3-vl" in ov_model and ov_backend == "SDPA":
+        pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
+
     models_path = _get_ov_model(ov_model)
+
+    pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
+    if "qwen3.5" in ov_model and ov_backend == "PA" and ov_prompt_lookup:
+        # qwen3.5 is a hybrid (linear-attention) model. Prompt lookup on the PA backend engages the
+        # linear-attention verifier, which does not yet support prefix caching. VLMPipeline enables
+        # prefix caching by default (latency-oriented scheduler config), so pass an explicit config
+        # with it disabled instead of relying on the default.
+        scheduler_config = SchedulerConfig()
+        scheduler_config.enable_prefix_caching = False
+        pipeline_properties["scheduler_config"] = scheduler_config
 
     vision_preprocess_env_set = False
     key = "VISION_PREPROCESS"
@@ -519,7 +531,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
             vision_preprocess_env_set = True
 
     try:
-        pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend, prompt_lookup=ov_prompt_lookup)
+        pipeline = VLMPipeline(models_path, "CPU", **pipeline_properties)
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)

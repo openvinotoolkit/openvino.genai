@@ -222,6 +222,30 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
     }
 }
 
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_awaiting_requests(
+    const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
+    size_t expected_draft_requests = 0;
+
+    for (const auto& request : main_awaiting_requests) {
+        OPENVINO_ASSERT(request, "Eagle3 main awaiting request pointer is null.");
+
+        const auto& sampling_params = request->get_sampling_parameters();
+        const bool is_main_only =
+            sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0;
+        if (!is_main_only) {
+            ++expected_draft_requests;
+        }
+    }
+
+    OPENVINO_ASSERT(draft_awaiting_requests.size() == expected_draft_requests,
+                    "Eagle3 awaiting request mismatch: draft queue size is ",
+                    draft_awaiting_requests.size(),
+                    ", but expected ",
+                    expected_draft_requests,
+                    " (number of main requests with speculative decoding enabled).");
+}
+
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
     auto shape = original_input_embeddings.get_shape();
 
@@ -269,6 +293,16 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        // No speculative draft for this request: run only the main model.
+        return m_main_pipeline->add_request(request_id,
+                                            input_ids,
+                                            sampling_params,
+                                            token_type_ids,
+                                            prompt_ids,
+                                            lm_extra_inputs);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -324,6 +358,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -353,7 +392,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                       ov::Tensor& main_in) {
         OPENVINO_ASSERT(main_cfg.assistant_confidence_threshold == 0.f,
                         "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
-        if (main_cfg.num_assistant_tokens == 0) {
+        if (!main_cfg.num_assistant_tokens.has_value()) {
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
         }
         main_in = in_ids;

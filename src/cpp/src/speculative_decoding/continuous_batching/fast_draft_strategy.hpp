@@ -184,6 +184,10 @@ protected:
     static int64_t compute_rope_delta(const ov::Tensor& position_ids);
     void drop_requests();
     virtual void align_request_pair_processed_prefix(uint64_t) {}
+    virtual void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+                                            const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
+        OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
+    }
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig> init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
