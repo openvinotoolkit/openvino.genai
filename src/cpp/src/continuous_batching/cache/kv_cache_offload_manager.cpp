@@ -79,7 +79,9 @@ void close_file(int fd) {
 }  // namespace
 
 bool KVCacheOffloadManager::is_supported_device(const std::string& device) {
-    return device.find("CPU") != std::string::npos;
+    // Device caches are staged through host tensors, so anything the KV cache manager can copy a block
+    // out of works; NPU keeps its cache outside of this manager and is therefore excluded.
+    return device.find("CPU") != std::string::npos || device.find("GPU") != std::string::npos;
 }
 
 KVCacheOffloadManager::KVCacheOffloadManager(const KVCacheDiskLayout& layout,
@@ -87,7 +89,7 @@ KVCacheOffloadManager::KVCacheOffloadManager(const KVCacheDiskLayout& layout,
                                              const std::string& device)
     : m_layout(layout) {
     OPENVINO_ASSERT(is_supported_device(device),
-                    "KV cache disk offload is currently implemented for CPU only, but the inference device is '",
+                    "KV cache disk offload is implemented for CPU and GPU, but the inference device is '",
                     device,
                     "'");
     OPENVINO_ASSERT(config.use_page_cache,

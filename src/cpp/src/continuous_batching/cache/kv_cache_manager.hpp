@@ -300,7 +300,6 @@ public:
     }
 
     std::vector<uint8_t> read_block(size_t block_id) const {
-        OPENVINO_ASSERT(!m_context, "KV cache block read currently supports CPU tensors only");
         OPENVINO_ASSERT(block_id < m_num_allocated_kv_blocks, "Invalid KV cache block ID ", block_id);
 
         const KVCacheDiskLayout layout = get_block_layout();
@@ -315,7 +314,6 @@ public:
     }
 
     void write_block(size_t block_id, const std::vector<uint8_t>& block_data) {
-        OPENVINO_ASSERT(!m_context, "KV cache block write currently supports CPU tensors only");
         OPENVINO_ASSERT(block_id < m_num_allocated_kv_blocks, "Invalid KV cache block ID ", block_id);
 
         const KVCacheDiskLayout layout = get_block_layout();
@@ -347,11 +345,34 @@ private:
                         "KV cache tensor byte size does not match the per-block layout");
     }
 
+    /// @return The shape of a single block, i.e. the cache shape with the block axis collapsed.
+    static ov::Shape get_single_block_shape(const ov::Tensor& tensor) {
+        ov::Shape shape = tensor.get_shape();
+        shape[0] = 1;
+        return shape;
+    }
+
+    static ov::RemoteTensor make_block_roi(const ov::Tensor& tensor, size_t block_id) {
+        const ov::Shape shape = tensor.get_shape();
+        ov::Coordinate begin(shape.size(), 0);
+        ov::Coordinate end(shape.begin(), shape.end());
+        begin[0] = block_id;
+        end[0] = block_id + 1;
+        return ov::RemoteTensor(tensor.as<ov::RemoteTensor>(), begin, end);
+    }
+
     static void copy_block_from_tensor(uint8_t* destination,
                                        const ov::Tensor& tensor,
                                        size_t block_id,
                                        size_t block_bytes) {
         assert_block_stride(tensor, block_bytes);
+        if (tensor.is<ov::RemoteTensor>()) {
+            // Device memory exposes no host pointer, so the block is staged through a host tensor.
+            ov::Tensor host_block(tensor.get_element_type(), get_single_block_shape(tensor));
+            make_block_roi(tensor, block_id).copy_to(host_block);
+            std::memcpy(destination, host_block.data(), block_bytes);
+            return;
+        }
         const auto* source = static_cast<const uint8_t*>(tensor.data()) + block_id * block_bytes;
         std::memcpy(destination, source, block_bytes);
     }
@@ -361,6 +382,12 @@ private:
                                      const uint8_t* source,
                                      size_t block_bytes) {
         assert_block_stride(tensor, block_bytes);
+        if (tensor.is<ov::RemoteTensor>()) {
+            ov::Tensor host_block(tensor.get_element_type(), get_single_block_shape(tensor));
+            std::memcpy(host_block.data(), source, block_bytes);
+            make_block_roi(tensor, block_id).copy_from(host_block);
+            return;
+        }
         auto* destination = static_cast<uint8_t*>(tensor.data()) + block_id * block_bytes;
         std::memcpy(destination, source, block_bytes);
     }

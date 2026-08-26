@@ -134,10 +134,11 @@ TEST(TestKVCacheOffloadManager, RejectsCapacitySmallerThanOneBlock) {
 
 TEST(TestKVCacheOffloadManager, RejectsUnsupportedDeviceAndDirectIO) {
     EXPECT_TRUE(KVCacheOffloadManager::is_supported_device("CPU"));
-    EXPECT_FALSE(KVCacheOffloadManager::is_supported_device("GPU"));
+    EXPECT_TRUE(KVCacheOffloadManager::is_supported_device("GPU"));
+    EXPECT_TRUE(KVCacheOffloadManager::is_supported_device("GPU.0"));
     EXPECT_FALSE(KVCacheOffloadManager::is_supported_device("NPU"));
 
-    EXPECT_THROW(KVCacheOffloadManager(make_layout(), make_config(1), "GPU.0"), ov::Exception);
+    EXPECT_THROW(KVCacheOffloadManager(make_layout(), make_config(1), "NPU"), ov::Exception);
 
     CacheOffloadConfig direct_io = make_config(1);
     direct_io.use_page_cache = false;
