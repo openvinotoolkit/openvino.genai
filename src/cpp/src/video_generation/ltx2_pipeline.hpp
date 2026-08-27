@@ -18,7 +18,7 @@
 #include "generation_config_utils.hpp"
 #include "video_generation/models/autoencoder_kl_ltx2_audio.hpp"
 #include "video_generation/models/autoencoder_kl_ltx2_video.hpp"
-#include "video_generation/models/gemma_text_encoder.hpp"
+#include "video_generation/models/gemma3_text_encoder.hpp"
 #include "video_generation/models/ltx2_text_connectors.hpp"
 #include "video_generation/models/ltx2_video_transformer_3d_model.hpp"
 #include "video_generation/models/ltx2_vocoder.hpp"
@@ -113,7 +113,7 @@ class LTX2Pipeline : public VideoPipeline {
     std::shared_ptr<IScheduler> m_video_scheduler;
     std::shared_ptr<IScheduler> m_audio_scheduler;
     FlowMatchEulerDiscreteScheduler::Config m_scheduler_config;
-    std::shared_ptr<GemmaTextEncoder> m_text_encoder;
+    std::shared_ptr<Gemma3TextEncoder> m_text_encoder;
     std::shared_ptr<LTX2TextConnectors> m_connectors;
     std::shared_ptr<LTX2VideoTransformer3DModel> m_transformer;
     std::shared_ptr<AutoencoderKLLTX2Video> m_vae;
@@ -145,7 +145,7 @@ class LTX2Pipeline : public VideoPipeline {
                         "Width have to be divisible by 32 but got ",
                         generation_config.width);
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 1024,
-                        "Gemma's 'max_sequence_length' must be less or equal to 1024");
+                        "Gemma3's 'max_sequence_length' must be less or equal to 1024");
         OPENVINO_ASSERT(!generation_config.taylorseer_config,
                         "TaylorSeer is not supported for LTX2 pipelines");
         OPENVINO_ASSERT(!generation_config.adapters, "LoRA adapters are not supported for LTX2 pipelines");
@@ -166,7 +166,7 @@ class LTX2Pipeline : public VideoPipeline {
                                const VideoGenerationConfig& generation_config,
                                bool do_classifier_free_guidance) {
         auto infer_start = std::chrono::steady_clock::now();
-        GemmaTextEncoder::EncodeResult encoded = m_text_encoder->infer(positive_prompt,
+        Gemma3TextEncoder::EncodeResult encoded = m_text_encoder->infer(positive_prompt,
                                                                        negative_prompt,
                                                                        do_classifier_free_guidance,
                                                                        generation_config.max_sequence_length);
@@ -344,7 +344,7 @@ public:
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "Gemma3ForConditionalGeneration") {
-            m_text_encoder = std::make_shared<GemmaTextEncoder>(root_dir / "text_encoder");
+            m_text_encoder = std::make_shared<Gemma3TextEncoder>(root_dir / "text_encoder");
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
@@ -423,7 +423,7 @@ public:
     }
 
     void rebuild_models() {
-        m_text_encoder = std::make_shared<GemmaTextEncoder>(m_models_dir / "text_encoder");
+        m_text_encoder = std::make_shared<Gemma3TextEncoder>(m_models_dir / "text_encoder");
         m_connectors = std::make_shared<LTX2TextConnectors>(m_models_dir / "connectors");
         m_transformer = std::make_shared<LTX2VideoTransformer3DModel>(m_models_dir / "transformer");
         m_vae = std::make_shared<AutoencoderKLLTX2Video>(m_models_dir / "vae_decoder");

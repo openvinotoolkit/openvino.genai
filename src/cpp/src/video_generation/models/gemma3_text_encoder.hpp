@@ -14,24 +14,24 @@
 
 namespace ov::genai {
 
-class GemmaTextEncoder {
+class Gemma3TextEncoder {
 public:
     struct EncodeResult {
         ov::Tensor prompt_embeds;
         ov::Tensor attention_mask;
     };
 
-    explicit GemmaTextEncoder(const std::filesystem::path& root_dir);
+    explicit Gemma3TextEncoder(const std::filesystem::path& root_dir);
 
-    GemmaTextEncoder(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties = {});
+    Gemma3TextEncoder(const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties = {});
 
-    GemmaTextEncoder(const GemmaTextEncoder&);
+    Gemma3TextEncoder(const Gemma3TextEncoder&);
 
-    std::shared_ptr<GemmaTextEncoder> clone();
+    std::shared_ptr<Gemma3TextEncoder> clone();
 
-    GemmaTextEncoder& reshape(int batch_size, int max_sequence_length);
+    Gemma3TextEncoder& reshape(int batch_size, int max_sequence_length);
 
-    GemmaTextEncoder& compile(const std::string& device, const ov::AnyMap& properties = {});
+    Gemma3TextEncoder& compile(const std::string& device, const ov::AnyMap& properties = {});
 
     EncodeResult infer(const std::string& pos_prompt,
                        const std::string& neg_prompt,
