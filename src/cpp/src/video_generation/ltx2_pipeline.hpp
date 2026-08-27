@@ -16,12 +16,12 @@
 #include "image_generation/threaded_callback.hpp"
 #include "logger.hpp"
 #include "generation_config_utils.hpp"
-#include "video_generation/models/autoencoder_kl_ltx2_audio.hpp"
-#include "video_generation/models/autoencoder_kl_ltx2_video.hpp"
-#include "video_generation/models/gemma3_text_encoder.hpp"
-#include "video_generation/models/ltx2_text_connectors.hpp"
-#include "video_generation/models/ltx2_video_transformer_3d_model.hpp"
-#include "video_generation/models/ltx2_vocoder.hpp"
+#include "openvino/genai/image_generation/gemma3_text_encoder.hpp"
+#include "openvino/genai/video_generation/autoencoder_kl_ltx2_audio.hpp"
+#include "openvino/genai/video_generation/autoencoder_kl_ltx2_video.hpp"
+#include "openvino/genai/video_generation/ltx2_text_connectors.hpp"
+#include "openvino/genai/video_generation/ltx2_video_transformer_3d_model.hpp"
+#include "openvino/genai/video_generation/ltx2_vocoder.hpp"
 #include "video_generation/video_generation_utils.hpp"
 #include "video_generation/video_pipeline.hpp"
 
@@ -166,16 +166,16 @@ class LTX2Pipeline : public VideoPipeline {
                                const VideoGenerationConfig& generation_config,
                                bool do_classifier_free_guidance) {
         auto infer_start = std::chrono::steady_clock::now();
-        Gemma3TextEncoder::EncodeResult encoded = m_text_encoder->infer(positive_prompt,
-                                                                       negative_prompt,
-                                                                       do_classifier_free_guidance,
-                                                                       generation_config.max_sequence_length);
+        ov::Tensor prompt_embeds = m_text_encoder->infer(positive_prompt,
+                                                         negative_prompt,
+                                                         do_classifier_free_guidance,
+                                                         generation_config.max_sequence_length);
         auto infer_end = std::chrono::steady_clock::now();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
 
-        ov::Tensor prompt_embeds = repeat_per_video(encoded.prompt_embeds, generation_config.num_videos_per_prompt);
-        ov::Tensor prompt_attention_mask =
-            repeat_per_video(encoded.attention_mask, generation_config.num_videos_per_prompt);
+        ov::Tensor prompt_attention_mask = m_text_encoder->get_prompt_attention_mask();
+        prompt_embeds = repeat_per_video(prompt_embeds, generation_config.num_videos_per_prompt);
+        prompt_attention_mask = repeat_per_video(prompt_attention_mask, generation_config.num_videos_per_prompt);
 
         infer_start = std::chrono::steady_clock::now();
         LTX2TextConnectors::Output connected = m_connectors->infer(prompt_embeds, prompt_attention_mask);
@@ -406,11 +406,11 @@ public:
         cloned->m_audio_scheduler = video_generation_utils::cast_scheduler(
             Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
         cloned->m_text_encoder = m_text_encoder->clone();
-        cloned->m_connectors = m_connectors->clone();
-        cloned->m_transformer = m_transformer->clone();
-        cloned->m_vae = m_vae->clone();
-        cloned->m_audio_vae = m_audio_vae->clone();
-        cloned->m_vocoder = m_vocoder->clone();
+        cloned->m_connectors = std::make_shared<LTX2TextConnectors>(m_connectors->clone());
+        cloned->m_transformer = std::make_shared<LTX2VideoTransformer3DModel>(m_transformer->clone());
+        cloned->m_vae = std::make_shared<AutoencoderKLLTX2Video>(m_vae->clone());
+        cloned->m_audio_vae = std::make_shared<AutoencoderKLLTX2Audio>(m_audio_vae->clone());
+        cloned->m_vocoder = std::make_shared<LTX2Vocoder>(m_vocoder->clone());
         return cloned;
     }
 

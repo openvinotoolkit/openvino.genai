@@ -9,13 +9,15 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/infer_request.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 
-class LTX2VideoTransformer3DModel {
+class OPENVINO_GENAI_EXPORTS LTX2VideoTransformer3DModel {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 128;
         size_t audio_in_channels = 128;
         size_t patch_size = 1;
@@ -35,19 +37,35 @@ public:
                                 const std::string& device,
                                 const ov::AnyMap& properties = {});
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    LTX2VideoTransformer3DModel(const std::filesystem::path& root_dir,
+                                const std::string& device,
+                                Properties&&... properties)
+        : LTX2VideoTransformer3DModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+
     LTX2VideoTransformer3DModel(const LTX2VideoTransformer3DModel&);
 
-    std::shared_ptr<LTX2VideoTransformer3DModel> clone();
+    LTX2VideoTransformer3DModel clone();
 
     const Config& get_config() const;
 
     LTX2VideoTransformer3DModel& compile(const std::string& device, const ov::AnyMap& properties = {});
 
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<LTX2VideoTransformer3DModel&, Properties...> compile(const std::string& device,
+                                                                                        Properties&&... properties) {
+        return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
     void set_hidden_states(const std::string& tensor_name, const ov::Tensor& tensor);
 
-    /// Builds the 'timestep' input matching the compiled model rank (rank-1 [B] or rank-2 [B, S])
-    /// and runs joint video + audio denoising.
-    std::pair<ov::Tensor, ov::Tensor> infer(const ov::Tensor& video_latent, const ov::Tensor& audio_latent, float timestep);
+    /// @brief Builds the 'timestep' input matching the compiled model and runs joint video + audio denoising.
+    /// Legacy exports take a rank-1 [B] timestep, current ones a rank-2 [B, S] per-token timestep.
+    /// @returns A pair of video and audio velocity predictions
+    std::pair<ov::Tensor, ov::Tensor> infer(const ov::Tensor& video_latent,
+                                            const ov::Tensor& audio_latent,
+                                            float timestep);
 
     LTX2VideoTransformer3DModel& reshape(int64_t batch_size,
                                          int64_t num_frames,
@@ -57,6 +75,9 @@ public:
 
     size_t get_expected_batch_size() const;
     size_t get_request_input_batch();
+
+    /// @brief Rank of the compiled model's 'timestep' input: 1 for legacy [B] exports,
+    /// 2 for [B, S] per-token conditioning.
     size_t get_timestep_rank();
 
 private:
@@ -64,7 +85,7 @@ private:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     size_t m_expected_batch_size = 0;
-    int64_t m_spatial_compression_ratio, m_temporal_compression_ratio;
+    int64_t m_spatial_compression_ratio, m_temporal_compression_ratio; // calculated based on vae config, needed for reshape
 };
 
 }  // namespace ov::genai

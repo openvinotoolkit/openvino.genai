@@ -9,13 +9,15 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/infer_request.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 
-class AutoencoderKLLTX2Audio {
+class OPENVINO_GENAI_EXPORTS AutoencoderKLLTX2Audio {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t latent_channels = 8;
         int64_t mel_bins = 64;
         int64_t sample_rate = 16000;
@@ -34,16 +36,30 @@ public:
                            const std::string& device,
                            const ov::AnyMap& properties = {});
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    AutoencoderKLLTX2Audio(const std::filesystem::path& decoder_path,
+                           const std::string& device,
+                           Properties&&... properties)
+        : AutoencoderKLLTX2Audio(decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+
     AutoencoderKLLTX2Audio(const AutoencoderKLLTX2Audio&);
 
-    std::shared_ptr<AutoencoderKLLTX2Audio> clone();
+    AutoencoderKLLTX2Audio clone();
 
     const Config& get_config() const;
 
     AutoencoderKLLTX2Audio& compile(const std::string& device, const ov::AnyMap& properties = {});
 
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<AutoencoderKLLTX2Audio&, Properties...> compile(const std::string& device,
+                                                                                   Properties&&... properties) {
+        return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
+
     AutoencoderKLLTX2Audio& reshape(int64_t batch_size, int64_t audio_num_frames);
 
+    /// @brief Decodes audio latents [B, C, L, M] to a mel spectrogram
     ov::Tensor decode(const ov::Tensor& latent);
 
 private:

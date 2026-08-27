@@ -1,7 +1,7 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "video_generation/models/ltx2_video_transformer_3d_model.hpp"
+#include "openvino/genai/video_generation/ltx2_video_transformer_3d_model.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -85,16 +85,16 @@ LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const std::filesystem::
 
 LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const LTX2VideoTransformer3DModel&) = default;
 
-std::shared_ptr<LTX2VideoTransformer3DModel> LTX2VideoTransformer3DModel::clone() {
+LTX2VideoTransformer3DModel LTX2VideoTransformer3DModel::clone() {
     OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request),
                     "LTX2VideoTransformer3DModel must have exactly one of m_model or m_request initialized");
 
-    std::shared_ptr<LTX2VideoTransformer3DModel> cloned = std::make_shared<LTX2VideoTransformer3DModel>(*this);
+    LTX2VideoTransformer3DModel cloned = *this;
 
     if (m_model) {
-        cloned->m_model = m_model->clone();
+        cloned.m_model = m_model->clone();
     } else {
-        cloned->m_request = m_request.get_compiled_model().create_infer_request();
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
     }
 
     return cloned;
