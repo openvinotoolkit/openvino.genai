@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 FUNASR_TOKENIZER_SUBFOLDER = (
     "Qwen3-0.6B"  # Source layout: https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512/tree/main/Qwen3-0.6B
 )
-NATIVE_ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+ASR_MODEL_TYPES = {"funasr", "fun_asr"}
+AUDIO_VLM_MODEL_TYPES = {"gemma4", "gemma4_unified"}
 
 DEFAULT_ASR_INSTRUCTION = "Transcribe this audio."
 # Language specific prompt https://huggingface.co/google/gemma-4-12B#6-audio
@@ -189,7 +190,7 @@ def _load_multimodal_model(model_id, device, ov_config, use_hf, use_genai, **kwa
 class ASRHFTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
-        if _get_asr_model_type(model_id) in NATIVE_ASR_MODEL_TYPES:
+        if _get_asr_model_type(model_id) in ASR_MODEL_TYPES:
             logger.info("Using FunASR API")
             return FunASRSourceTranscriber(model_id, language or "en")
 
@@ -200,12 +201,15 @@ class ASRHFTranscriber:
 class ASRGenAITranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
-        if _get_asr_model_type(model_id) in NATIVE_ASR_MODEL_TYPES:
+        model_type = _get_asr_model_type(model_id)
+        if model_type in ASR_MODEL_TYPES:
             logger.info("Using OpenVINO GenAI ASRPipeline API")
             import openvino_genai
 
             pipeline = openvino_genai.ASRPipeline(str(model_id), device.upper(), **(ov_config or {}))
             return FunASRGenAITranscriber(pipeline, language or "en")
+        if model_type in AUDIO_VLM_MODEL_TYPES:
+            raise ValueError("Gemma4 audio input is not yet supported by the OpenVINO GenAI backend")
 
         model = _load_multimodal_model(model_id, device, ov_config, False, True, **kwargs)
         return GenAIMultimodalTranscriber(model, language or "English")
@@ -215,7 +219,7 @@ class ASROptimumTranscriber:
     @staticmethod
     def create(model_id, device="CPU", ov_config=None, language="", **kwargs):
         model_type = _get_asr_model_type(model_id)
-        if model_type in NATIVE_ASR_MODEL_TYPES:
+        if model_type in ASR_MODEL_TYPES:
             logger.info("Using Optimum API")
             from optimum.intel.openvino import OVModelForSpeechSeq2Seq
             from transformers import AutoTokenizer
