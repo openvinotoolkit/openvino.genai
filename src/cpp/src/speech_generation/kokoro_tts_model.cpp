@@ -999,16 +999,30 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
 
     const auto& vocab = m_runtime->vocab();
     const uint32_t context_length = m_runtime->context_length();
+    const size_t max_input_phoneme_length = std::min<size_t>(
+        generation_config.max_phoneme_length,
+        context_length > 2 ? static_cast<size_t>(context_length - 2) : static_cast<size_t>(0));
+    OPENVINO_ASSERT(max_input_phoneme_length > 0,
+                    "Kokoro context length must be greater than 2 to include BOS/EOS and at least one token");
 
     for (const auto& phoneme_chunks : all_phoneme_chunks) {
         std::vector<float> merged_audio;
 
         for (const auto& phonemes : phoneme_chunks) {
+            std::string capped_phonemes = phonemes;
+            const size_t uncapped_phoneme_length = utf8_codepoint_length(capped_phonemes);
+            if (uncapped_phoneme_length > max_input_phoneme_length) {
+                GENAI_WARN("Kokoro phoneme chunk length %zu exceeds limit %zu. Truncating to fit model input.",
+                           uncapped_phoneme_length,
+                           max_input_phoneme_length);
+                capped_phonemes = truncate_utf8_codepoints(capped_phonemes, max_input_phoneme_length);
+            }
+
             std::vector<int64_t> token_ids;
-            token_ids.reserve(phonemes.size() + 2);
+            token_ids.reserve(capped_phonemes.size() + 2);
             token_ids.push_back(0);
 
-            const auto codepoints = from_utf8(phonemes);
+            const auto codepoints = from_utf8(capped_phonemes);
             for (char32_t cp : codepoints) {
                 const std::string key = to_utf8(cp);
                 auto it = vocab.find(key);
