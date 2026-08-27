@@ -285,14 +285,16 @@ class SpeechRecognitionEvaluator(BaseEvaluator):
             predictions = pd.read_csv(model_or_data, keep_default_na=False)
         else:
             predictions = self._generate_data(model_or_data, gen_answer_fn)
+        if self.num_samples is not None:
+            predictions = predictions.iloc[: self.num_samples]
+        elif len(self.gt_data) != len(predictions):
+            raise ValueError(
+                f"Ground truth ({len(self.gt_data)} rows) and predictions ({len(predictions)} rows) differ in length"
+            )
         self.predictions = predictions
 
         self._validate_columns(self.gt_data, "Ground truth")
         self._validate_columns(predictions, "Prediction")
-        if len(self.gt_data) != len(predictions):
-            raise ValueError(
-                f"Ground truth ({len(self.gt_data)} rows) and predictions ({len(predictions)} rows) differ in length"
-            )
         if not (self.gt_data["prompts"].astype(str).values == predictions["prompts"].astype(str).values).all():
             raise ValueError("Ground truth and prediction audio ids ('prompts') do not match")
 
