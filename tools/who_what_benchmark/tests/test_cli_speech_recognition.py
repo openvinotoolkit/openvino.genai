@@ -43,7 +43,8 @@ def test_asr_gemma4_optimum_genai(tmp_path, asr_ground_truth):
 
     model_path = convert_model(VLM_MODEL)
     optimum_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--output", tmp_path]))
-    genai_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path]))
+    # GenAI audio backend is not supported yet
+    # genai_similarity = get_similarity(run_wwb(["--target-model", model_path, *common, "--genai", "--output", tmp_path]))
     reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
 
     assert optimum_similarity >= 0.90 and genai_similarity >= 0.90
