@@ -17,7 +17,6 @@ from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 convert_draft_model = convert_model
 download_mask_image = download_test_content
 
-
 image_generation_prompt = \
    "side profile centered painted portrait, Gandhi rolling a blunt, "\
    "Gloomhaven, matte painting concept art, art nouveau, "\
@@ -469,31 +468,6 @@ class TestBenchmarkLLM:
     def test_python_tool_llm_benchmark_optimum_asr(self, convert_model, download_test_content, media_file, sample_args):
         media_path = Path(download_test_content) / media_file
         # Run Python benchmark
-        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
-        benchmark_py_command = [
-            sys.executable,
-            benchmark_script,
-            "-m",
-            convert_model,
-            "--media",
-            media_path,
-        ] + sample_args
-        run_sample(benchmark_py_command)
-
-    @pytest.mark.samples
-    @pytest.mark.funasr
-    @pytest.mark.parametrize(
-        "sample_args",
-        [
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--optimum", "--speech_language", "en"],
-            ["-d", "cpu", "-n", "1", "-ic", "4", "--speech_language", "en"],
-        ],
-    )
-    @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
-    @pytest.mark.parametrize("convert_model", ["tiny-random-fun-asr"], indirect=True)
-    @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
-    def test_python_tool_llm_benchmark_funasr(self, convert_model, download_test_content, media_file, sample_args):
-        media_path = Path(download_test_content) / media_file
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
             sys.executable,

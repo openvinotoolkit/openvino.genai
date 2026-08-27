@@ -41,7 +41,7 @@ class ASRHook:
         self.tm_infer_list.insert(0, first_infer_latency)
         return self.tm_infer_list
 
-    def get_asr_latency(self):
+    def get_whisper_latency(self):
         self.latency_list.clear()
         for data in self.time_data:
             latency_data = {}
@@ -81,8 +81,8 @@ class ASRHook:
                 )
             self.latency_list.append(latency_data)
 
-    def print_asr_latency(self, iter, prompt_idx):
-        self.get_asr_latency()
+    def print_whisper_latency(self, iter, prompt_idx):
+        self.get_whisper_latency()
         out = ""
         for idx, data in enumerate(self.latency_list):
             title = f"[ INFO ] [{iter}][P{prompt_idx}][L{idx}]"
@@ -121,25 +121,6 @@ class ASRHook:
             self.greedy_hook.clear_time_list()
             self.greedy_hook.clear_time_infer_list()
             self.greedy_hook.clear_time_sample_list()
-
-    def attach(self, pipe):
-        model = getattr(pipe, "model", None)
-        encoder = getattr(model, "encoder", None)
-        if not (
-            callable(getattr(encoder, "forward", None))
-            and callable(getattr(encoder, "request", None))
-            and callable(getattr(model, "generate", None))
-        ):
-            logger.warning(
-                "ASR latency hooks are not compatible with this pipeline; per-token latency will be unavailable."
-            )
-            return False
-
-        self.new_text_encoder(pipe)
-        self.new_text_encoder_request(pipe)
-        self.new_generate(pipe)
-        self.new_text_sample(pipe)
-        return True
 
     def new_text_encoder(self, pipe):
         old_text_encoder = pipe.model.encoder.forward

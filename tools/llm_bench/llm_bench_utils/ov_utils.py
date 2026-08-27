@@ -604,7 +604,7 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, p
     import openvino_genai as ov_genai
 
     ov_config = kwargs["config"]
-    pipeline_class = ov_genai.ASRPipeline
+    pipeline_class = ov_genai.ASRPipeline if hasattr(ov_genai, "ASRPipeline") else ov_genai.WhisperPipeline
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
     start = time.perf_counter()
@@ -631,7 +631,6 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
 
     use_case = kwargs['use_case']
     model_class = use_case.ov_cls
-    is_funasr = use_case.model_type == "fun-asr"
     trust_remote_code = False
 
     # run to avoid fail:
@@ -639,11 +638,15 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     # but Transformers does not recognize this architecture.
     Qwen3ASROptimumPipeline.init_model(use_case.model_type)
 
-    try:
-        processor = use_case.processor_cls.from_pretrained(model_path)
-    except Exception:
-        processor = use_case.processor_cls.from_pretrained(model_path, trust_remote_code=True)
+    if use_case.model_type == "fun-asr":
+        processor = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
+    else:
+        try:
+            processor = AutoProcessor.from_pretrained(model_path)
+        except Exception:
+            processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+            trust_remote_code = True
 
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
@@ -683,7 +686,7 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
 
     if use_case.model_type == "qwen3-asr":
         pipe = Qwen3ASROptimumPipeline(model=ov_model, processor=processor)
-    elif is_funasr:
+    elif use_case.model_type == "fun-asr":
         pipe = FunASROptimumPipeline(model=ov_model, tokenizer=processor)
     elif use_case.model_type == "whisper":
         pipe = pipeline(

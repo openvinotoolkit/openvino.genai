@@ -44,7 +44,6 @@ class UseCase:
     ov_cls: type | None = None
     pt_cls: type | None = AutoModel
     tokenizer_cls: type = AutoTokenizer
-    processor_cls: type = AutoProcessor
 
 
 @dataclass
@@ -191,8 +190,7 @@ USE_CASES = {
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "speech_to_text": [
-        UseCaseSpeech2Text(["whisper", "qwen3-asr"]),
-        UseCaseSpeech2Text(["fun-asr"], processor_cls=AutoTokenizer),
+        UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr"]),
         UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "image_cls": [UseCaseImageCls(["vit"])],
