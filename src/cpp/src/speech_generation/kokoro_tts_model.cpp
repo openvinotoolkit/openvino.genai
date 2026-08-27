@@ -1009,20 +1009,19 @@ Text2SpeechDecodedResults KokoroTTSImpl::synthesize_from_phoneme_chunks(
         std::vector<float> merged_audio;
 
         for (const auto& phonemes : phoneme_chunks) {
-            std::string capped_phonemes = phonemes;
-            const size_t uncapped_phoneme_length = utf8_codepoint_length(capped_phonemes);
+            auto codepoints = from_utf8(phonemes);
+            const size_t uncapped_phoneme_length = codepoints.size();
             if (uncapped_phoneme_length > max_input_phoneme_length) {
                 GENAI_WARN("Kokoro phoneme chunk length %zu exceeds limit %zu. Truncating to fit model input.",
                            uncapped_phoneme_length,
                            max_input_phoneme_length);
-                capped_phonemes = truncate_utf8_codepoints(capped_phonemes, max_input_phoneme_length);
+                codepoints.resize(max_input_phoneme_length);
             }
 
             std::vector<int64_t> token_ids;
-            token_ids.reserve(capped_phonemes.size() + 2);
+            token_ids.reserve(codepoints.size() + 2);
             token_ids.push_back(0);
 
-            const auto codepoints = from_utf8(capped_phonemes);
             for (char32_t cp : codepoints) {
                 const std::string key = to_utf8(cp);
                 auto it = vocab.find(key);
