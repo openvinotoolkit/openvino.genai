@@ -16,7 +16,7 @@ class TestImage2Video:
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("tiny-random-ltx-video-i2v", PROMPT),
+            pytest.param("tiny-random-ltx-video", PROMPT),
         ],
         indirect=["convert_model"],
     )

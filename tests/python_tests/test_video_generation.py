@@ -13,12 +13,6 @@ import openvino_genai as ov_genai
 from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
-from conftest import (
-    MODELS_REQUIRING_OPTIMUM_MASTER,
-    OPTIMUM_INTEL_MASTER,
-    _get_optimum_intel_requirement,
-    _install_package,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -28,20 +22,12 @@ MODEL_NAME = "optimum-intel-internal-testing/tiny-random-ltx-video"
 
 @pytest.fixture(scope="module")
 def video_generation_model() -> str:
-    use_optimum_master = MODEL_ID in MODELS_REQUIRING_OPTIMUM_MASTER
-
     models_dir = get_ov_cache_converted_models_dir()
     model_path = Path(models_dir) / MODEL_ID / MODEL_NAME
-    # Avoid colliding with a stale pinned (rank-1 timestep) export at the same path.
-    if use_optimum_master:
-        model_path = model_path.parent / f"{model_path.name}-optimum-master"
 
     manager = AtomicDownloadManager(model_path)
 
     def convert_model(temp_path: Path) -> None:
-        if use_optimum_master:
-            _install_package(OPTIMUM_INTEL_MASTER)
-
         command = [
             "optimum-cli",
             "export",
@@ -52,11 +38,7 @@ def video_generation_model() -> str:
             str(temp_path),
         ]
         logger.info(f"Conversion command: {' '.join(command)}")
-        try:
-            retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
-        finally:
-            if use_optimum_master:
-                _install_package(_get_optimum_intel_requirement())
+        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
 
     try:
         manager.execute(convert_model)

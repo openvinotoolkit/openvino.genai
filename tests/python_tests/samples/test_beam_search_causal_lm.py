@@ -7,6 +7,7 @@ from optimum.intel.utils.import_utils import is_transformers_version
 
 from conftest import logger, SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_JS_DIR, MODELS
 from test_utils import run_sample
+from utils.constants import group_beam_search_generate_kwargs
 
 BEAM_SEARCH_MODEL_LIST = []
 if is_transformers_version("<", "5.0"):
@@ -136,8 +137,8 @@ class TestBeamSearchCausalLM:
                 "no_repeat_ngram_size": 9**9,
                 "do_sample": False,
             }
-            if is_transformers_version(">=", "5.0"):
-                generate_args["trust_remote_code"] = True
+            if is_transformers_version(">=", "4.51"):
+                generate_args.update(group_beam_search_generate_kwargs())
             for beam in transformers.LlamaForCausalLM.from_pretrained(model["name"], local_files_only=True).generate(
                 **tokenized, **generate_args
             ):

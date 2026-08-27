@@ -191,6 +191,7 @@ def analyze_args(args):
     model_args["video_frames"] = args.video_frames
     model_args["pruning_ratio"] = args.pruning_ratio
     model_args["relevance_weight"] = args.relevance_weight
+    model_args["num_prefill_tokens"] = args.num_prefill_tokens
     optimum = args.optimum
 
     if optimum and args.genai:
@@ -363,7 +364,10 @@ def resolve_media_file_path(file_path, prompt_file_path):
     if not file_path:
         return file_path
     if not (file_path.startswith("http://") or file_path.startswith("https://")):
-        return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
+        media_file_path = Path(file_path)
+        if media_file_path.is_absolute():
+            return str(media_file_path.resolve())
+        return str((Path(prompt_file_path).parent / media_file_path).resolve())
     return file_path
 
 

@@ -25,38 +25,10 @@ from utils.atomic_download import AtomicDownloadManager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# archive instead of git+, the git clone fails in the samples CI container
-OPTIMUM_INTEL_MASTER = "https://github.com/huggingface/optimum-intel/archive/refs/heads/main.tar.gz#egg=optimum-intel"
-
-
-def _install_package(package: str) -> None:
-    import sys
-
-    logger.info(f"Installing: {package}")
-    subprocess.run(  # nosec B603
-        [sys.executable, "-m", "pip", "install", "--no-deps", package],
-        check=True,
-        encoding="utf-8",
-        text=True,
-        capture_output=True,
-    )
-
-
-def _get_optimum_intel_requirement() -> str:
-    """Read the pinned optimum-intel spec from samples/export-requirements.txt."""
-    req_path = Path(__file__).parents[3] / "samples" / "export-requirements.txt"
-    for line in req_path.read_text().splitlines():
-        if "optimum-intel" in line and not line.strip().startswith("#"):
-            return line.strip()
-    return "optimum-intel"
-
-
 # Dictionary containing model configurations.
 # Each key is a model identifier, and the value is a dictionary with:
 # - "name": the model's name or path
 # - "convert_args": a list of arguments for the conversion command
-# - "requires_optimum_master": optional, convert with optimum-intel main instead of the pin
 MODELS: Dict[str, Dict[str, Any]] = {
     "TinyLlama-1.1B-Chat-v1.0": {
         "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
@@ -213,13 +185,6 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
         "convert_args": ["--trust-remote-code"],
     },
-    # Image-to-video needs the rank-2 per-token timestep, which LTX-Video only exports with
-    # optimum-intel newer than the pin in samples/export-requirements.txt.
-    "tiny-random-ltx-video-i2v": {
-        "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
-        "convert_args": ["--trust-remote-code"],
-        "requires_optimum_master": True,
-    },
     "tiny-random-flux": {
         "name": "optimum-intel-internal-testing/tiny-random-flux",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
@@ -359,34 +324,30 @@ def optimum_cli_convert(model, model_path):
     sub_env = os.environ.copy()
     model_name = model["name"]
     model_args = model["convert_args"]
-    use_optimum_master = model.get("requires_optimum_master", False)
     dest_path = Path(model_path)
-
+    
     manager = AtomicDownloadManager(dest_path)
-
+    
     def convert_to_temp(temp_path: Path) -> None:
-        if use_optimum_master:
-            _install_package(OPTIMUM_INTEL_MASTER)
-
-        command = ["optimum-cli", "export", "openvino", "--model", model_name, str(temp_path)]
+        command = [
+            "optimum-cli", "export", "openvino",
+            "--model", model_name, 
+            str(temp_path)
+        ]
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        try:
-            retry_request(
-                lambda: subprocess.run(
-                    command,
-                    check=True,
-                    text=True,
-                    encoding="utf-8",
-                    env=sub_env,
-                    stderr=subprocess.STDOUT,
-                    stdout=subprocess.PIPE,
-                )
+        retry_request(
+            lambda: subprocess.run(
+                command,
+                check=True,
+                text=True,
+                encoding="utf-8",
+                env=sub_env,
+                stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE,
             )
-        finally:
-            if use_optimum_master:
-                _install_package(_get_optimum_intel_requirement())
+        )
 
     try:
         manager.execute(convert_to_temp)

@@ -71,6 +71,9 @@ public:
                                                   : get_available_memory(allocation_device, num_cache_tensors);
         const size_t cache_interval = get_linear_attention_cache_interval(kv_mgr.get(), la_mgr.get(), config);
 
+        // Only an explicitly requested count is a hard ceiling.
+        const size_t requested_num_la_blocks = config.num_linear_attention_blocks;
+
         auto [num_kv_blocks, num_la_blocks] = normalize_block_counts(kv_mgr.get(), la_mgr.get(), config, cache_interval, total_available_memory);
         config.num_kv_blocks = num_kv_blocks;
         config.num_linear_attention_blocks = num_la_blocks;
@@ -79,7 +82,8 @@ public:
             orchestrator->register_kv_cache(std::move(kv_mgr), config);
         }
         if (la_mgr) {
-            orchestrator->register_linear_attention_cache(std::move(la_mgr), config, cache_interval);
+            orchestrator->register_linear_attention_cache(std::move(la_mgr), config, cache_interval,
+                                                          requested_num_la_blocks);
         }
 
         OPENVINO_ASSERT(orchestrator->has_registered_types(), "No supported cache types detected in the model");
@@ -150,7 +154,7 @@ public:
     // -----------------------------------------------------------------------
 
     const std::vector<BlocksPerLayer>& get_kv_block_tables(uint64_t seq_id) const {
-        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        const auto it = m_block_managers.find(CacheType::KV_CACHE);
         OPENVINO_ASSERT(it != m_block_managers.end(), "No KV cache registered");
         return it->second->get_block_tables(seq_id);
     }
@@ -228,6 +232,12 @@ public:
     }
 
     void fork_sequence(uint64_t parent_id, uint64_t child_id) {
+        if (has_linear_attention_cache()) {
+            // Promotion cannot safely replace a row shared by a mid-verification fork.
+            OPENVINO_ASSERT(!m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->has_temporary_blocks(parent_id),
+                            "Forking a sequence that holds borrowed speculative linear-attention rows is not "
+                            "supported; parent sequence ", parent_id);
+        }
         for (auto& [type, block_mgr] : m_block_managers) {
             block_mgr->fork_sequence(parent_id, child_id);
         }
@@ -238,8 +248,8 @@ public:
             return;
         }
 
-        auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
-        auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        const auto kv_it = m_block_managers.find(CacheType::KV_CACHE);
+        const auto la_it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
         if (kv_it != m_block_managers.end() && la_it != m_block_managers.end()) {
             auto& kv_block_mgr = *kv_it->second;
             auto& la_block_mgr = *la_it->second;
@@ -315,7 +325,7 @@ public:
     void free_blocks_from_sequence(size_t seq_id,
                                    const std::vector<std::set<size_t>>& per_layer_logical_block_indices,
                                    CacheType cache_type) {
-        auto it = m_block_managers.find(cache_type);
+        const auto it = m_block_managers.find(cache_type);
         OPENVINO_ASSERT(it != m_block_managers.end(), "Cache type not registered");
         it->second->free_blocks_from_sequence(seq_id, per_layer_logical_block_indices);
     }
@@ -341,7 +351,7 @@ public:
 
     /// @return Number of KV cache blocks currently allocated for the given sequence group or 0 if model does not have KV cache.
     size_t get_num_kv_logical_blocks(SequenceGroup::CPtr seq_group) const {
-        auto it = m_block_managers.find(CacheType::KV_CACHE);
+        const auto it = m_block_managers.find(CacheType::KV_CACHE);
         return it != m_block_managers.end() ? it->second->get_num_logical_blocks(seq_group) : 0;
     }
 
@@ -526,8 +536,7 @@ public:
         bool grew_capacity = false;
         for (auto& [type, block_mgr] : m_block_managers) {
             if (!block_mgr->is_fixed_size_per_sequence()) {
-                block_mgr->grow_capacity_by_tokens(num_tokens);
-                grew_capacity = true;
+                grew_capacity = block_mgr->grow_capacity_by_tokens(num_tokens) || grew_capacity;
             }
         }
         return grew_capacity;
@@ -556,10 +565,20 @@ public:
         for (auto& [type, block_mgr] : m_block_managers) {
             if (block_mgr->is_fixed_size_per_sequence()) {
                 const size_t additional_blocks = num_seqs * block_mgr->get_fixed_blocks_per_sequence();
-                block_mgr->increase_block_count(
+                block_mgr->increase_block_count_up_to(
                     block_mgr->get_total_block_count() + additional_blocks);
             }
         }
+    }
+
+    /// @brief Grows the shared non-prefix LA pool, clamped to its configured ceiling.
+    /// @return Whether the pool was grown.
+    bool ensure_linear_attention_pool_blocks(size_t num_blocks) {
+        const auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (it == m_block_managers.end() || !it->second->is_fixed_size_per_sequence()) {
+            return false;
+        }
+        return it->second->increase_block_count_up_to(num_blocks);
     }
 
     /**
@@ -577,9 +596,8 @@ public:
             const size_t required_blocks = block_mgr->required_blocks_count(seq_group);
             const size_t free_blocks = block_mgr->num_free_blocks();
             if (required_blocks > free_blocks) {
-                block_mgr->increase_block_count(
-                    block_mgr->get_total_block_count() + required_blocks - free_blocks);
-                grew_capacity = true;
+                grew_capacity = block_mgr->increase_block_count_up_to(
+                    block_mgr->get_total_block_count() + required_blocks - free_blocks) || grew_capacity;
             }
         }
         return grew_capacity;
@@ -650,15 +668,26 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_tables(seq_id)[0];
     }
 
+    /// @return Whether a temporary LA reservation would succeed.
+    bool can_reserve_linear_attention_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
+        if (!has_linear_attention_cache() || num_blocks == 0) {
+            return false;
+        }
+        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->can_reserve_temporary_blocks(seq_id, num_blocks);
+    }
+
     std::vector<int> reserve_linear_attention_temporary_blocks(uint64_t seq_id, size_t num_blocks) {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
         OPENVINO_ASSERT(num_blocks > 0, "Cannot reserve zero linear attention checkpoint blocks");
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->reserve_temporary_blocks(seq_id, num_blocks);
     }
 
-    void promote_linear_attention_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
+    /// @return Physical block index that became the sequence's committed linear-attention row.
+    size_t promote_linear_attention_temporary_block(uint64_t seq_id, size_t checkpoint_slot) {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->promote_temporary_block(seq_id, checkpoint_slot);
+        const size_t promoted_index =
+            m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->promote_temporary_block(seq_id, checkpoint_slot);
+        return promoted_index;
     }
 
     void release_linear_attention_temporary_blocks(uint64_t seq_id) {
@@ -673,9 +702,32 @@ public:
         return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->get_block_table_logical_start(seq_id);
     }
 
+    /// Samples the linear-attention pool-size high-water mark after scheduling allocations complete.
+    void sample_linear_attention_pool_blocks_high_water() {
+        const auto it = m_block_managers.find(CacheType::LINEAR_ATTENTION_CACHE);
+        if (it == m_block_managers.end()) {
+            return;
+        }
+        m_linear_attention_pool_blocks_high_water =
+            std::max(m_linear_attention_pool_blocks_high_water, it->second->get_total_block_count());
+    }
+
+    /// @return High-water mark of total allocated LA blocks, including free blocks.
+    size_t get_linear_attention_pool_blocks_high_water() const {
+        return m_linear_attention_pool_blocks_high_water;
+    }
+
+    /// @return Physical block index of the sequence's committed linear-attention state row.
+    size_t get_linear_attention_live_block(uint64_t seq_id) const {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
+        OPENVINO_ASSERT(!owned.empty(), "Linear attention block table empty for sequence ", seq_id);
+        return owned.front()->get_index();
+    }
+
     /// @return Number of KV attention layers only (excluding other cache types).
     size_t get_num_kv_layers() const {
-        auto it = m_cache_managers.find(CacheType::KV_CACHE);
+        const auto it = m_cache_managers.find(CacheType::KV_CACHE);
         return it != m_cache_managers.end() ? it->second->get_num_layers() : 0;
     }
 
@@ -887,11 +939,17 @@ private:
 
     /**
      * @brief Create a BlockManager for linear attention cache and register it with this orchestrator.
+     *
+     * @param requested_num_la_blocks Explicit pool ceiling before normalization, or 0 if unspecified.
      */
     void register_linear_attention_cache(std::unique_ptr<LinearAttentionCacheManager> la_manager,
                                          const SchedulerConfig& config,
-                                         size_t cache_interval) {
+                                         size_t cache_interval,
+                                         size_t requested_num_la_blocks = 0) {
         std::unique_ptr<BlockManager> la_block_manager;
+        // Prefix-cached LA grows with context length and is not capped here.
+        const size_t max_total_la_blocks =
+            config.enable_prefix_caching ? 0 : requested_num_la_blocks;
         if (config.enable_prefix_caching) {
             OPENVINO_ASSERT(cache_interval > 0,
                             "Internal error: linear attention cache interval must be greater than 0 when prefix caching is enabled");
@@ -903,12 +961,15 @@ private:
                 0,
                 true);
         } else {
+            // One committed row per sequence; speculative scratch is borrowed per step.
             la_block_manager = std::make_unique<BlockManager>(
                 config.num_linear_attention_blocks,
                 false,
                 1,
                 1,
-                1);
+                /*fixed_blocks_per_sequence=*/1,
+                /*restore_latest_prefix_block_only=*/false,
+                max_total_la_blocks);
         }
 
         // Linear-attention state tensors are per physical layer/group, but share one logical block table.
@@ -919,6 +980,9 @@ private:
     std::map<CacheType, std::unique_ptr<BlockManager>> m_block_managers;
     bool m_use_per_layer_kv_block_indices = false;
     std::map<CacheType, std::set<size_t>> m_pending_zero_blocks;
+
+    // Linear-attention pool footprint high-water mark.
+    size_t m_linear_attention_pool_blocks_high_water = 0;
 
     void queue_linear_attention_initial_state_zero(CacheType type,
                                                    BlockManager& block_mgr,
