@@ -1,7 +1,7 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "video_generation/models/ltx2_vocoder.hpp"
+#include "openvino/genai/video_generation/ltx2_vocoder.hpp"
 
 #include <fstream>
 
@@ -29,16 +29,16 @@ LTX2Vocoder::LTX2Vocoder(const std::filesystem::path& root_dir, const std::strin
 
 LTX2Vocoder::LTX2Vocoder(const LTX2Vocoder&) = default;
 
-std::shared_ptr<LTX2Vocoder> LTX2Vocoder::clone() {
+LTX2Vocoder LTX2Vocoder::clone() {
     OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request),
                     "LTX2Vocoder must have exactly one of m_model or m_request initialized");
 
-    std::shared_ptr<LTX2Vocoder> cloned = std::make_shared<LTX2Vocoder>(*this);
+    LTX2Vocoder cloned = *this;
 
     if (m_model) {
-        cloned->m_model = m_model->clone();
+        cloned.m_model = m_model->clone();
     } else {
-        cloned->m_request = m_request.get_compiled_model().create_infer_request();
+        cloned.m_request = m_request.get_compiled_model().create_infer_request();
     }
 
     return cloned;

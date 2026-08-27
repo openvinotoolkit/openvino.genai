@@ -1,7 +1,7 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "video_generation/models/autoencoder_kl_ltx2_audio.hpp"
+#include "openvino/genai/video_generation/autoencoder_kl_ltx2_audio.hpp"
 
 #include <fstream>
 
@@ -41,16 +41,16 @@ AutoencoderKLLTX2Audio::AutoencoderKLLTX2Audio(const std::filesystem::path& deco
 
 AutoencoderKLLTX2Audio::AutoencoderKLLTX2Audio(const AutoencoderKLLTX2Audio&) = default;
 
-std::shared_ptr<AutoencoderKLLTX2Audio> AutoencoderKLLTX2Audio::clone() {
+AutoencoderKLLTX2Audio AutoencoderKLLTX2Audio::clone() {
     OPENVINO_ASSERT((m_decoder_model != nullptr) ^ static_cast<bool>(m_decoder_request),
                     "AutoencoderKLLTX2Audio must have exactly one of m_decoder_model or m_decoder_request initialized");
 
-    std::shared_ptr<AutoencoderKLLTX2Audio> cloned = std::make_shared<AutoencoderKLLTX2Audio>(*this);
+    AutoencoderKLLTX2Audio cloned = *this;
 
     if (m_decoder_model) {
-        cloned->m_decoder_model = m_decoder_model->clone();
+        cloned.m_decoder_model = m_decoder_model->clone();
     } else {
-        cloned->m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
+        cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
     }
 
     return cloned;

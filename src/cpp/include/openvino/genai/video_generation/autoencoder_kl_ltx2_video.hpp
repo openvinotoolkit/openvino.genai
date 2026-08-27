@@ -9,13 +9,15 @@
 
 #include "openvino/core/any.hpp"
 #include "openvino/runtime/infer_request.hpp"
+#include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
+#include "openvino/genai/visibility.hpp"
 
 namespace ov::genai {
 
-class AutoencoderKLLTX2Video {
+class OPENVINO_GENAI_EXPORTS AutoencoderKLLTX2Video {
 public:
-    struct Config {
+    struct OPENVINO_GENAI_EXPORTS Config {
         size_t latent_channels = 128;
         float scaling_factor = 1.0f;
         int64_t spatial_compression_ratio = 32;
@@ -35,13 +37,26 @@ public:
                            const std::string& device,
                            const ov::AnyMap& properties = {});
 
+    template <typename... Properties,
+              typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    AutoencoderKLLTX2Video(const std::filesystem::path& vae_decoder_path,
+                           const std::string& device,
+                           Properties&&... properties)
+        : AutoencoderKLLTX2Video(vae_decoder_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
+
     AutoencoderKLLTX2Video(const AutoencoderKLLTX2Video&);
 
-    std::shared_ptr<AutoencoderKLLTX2Video> clone();
+    AutoencoderKLLTX2Video clone();
 
     const Config& get_config() const;
 
     AutoencoderKLLTX2Video& compile(const std::string& device, const ov::AnyMap& properties = {});
+
+    template <typename... Properties>
+    ov::util::EnableIfAllStringAny<AutoencoderKLLTX2Video&, Properties...> compile(const std::string& device,
+                                                                                   Properties&&... properties) {
+        return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
+    }
 
     AutoencoderKLLTX2Video& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 

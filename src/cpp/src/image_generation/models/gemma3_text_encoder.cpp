@@ -1,10 +1,10 @@
-// Copyright (C) 2025-2026 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "video_generation/models/gemma3_text_encoder.hpp"
+#include "openvino/genai/image_generation/gemma3_text_encoder.hpp"
 
 #include <algorithm>
-#include <cstring>
+#include <map>
 
 #include "utils.hpp"
 
@@ -43,8 +43,8 @@ Gemma3TextEncoder::Gemma3TextEncoder(const std::filesystem::path& root_dir)
 }
 
 Gemma3TextEncoder::Gemma3TextEncoder(const std::filesystem::path& root_dir,
-                                   const std::string& device,
-                                   const ov::AnyMap& properties)
+                                     const std::string& device,
+                                     const ov::AnyMap& properties)
     : Gemma3TextEncoder(root_dir) {
     compile(device, properties);
 }
@@ -88,15 +88,16 @@ Gemma3TextEncoder& Gemma3TextEncoder::compile(const std::string& device, const o
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Gemma3 text encoder model");
     m_request = compiled_model.create_infer_request();
     m_hidden_state_names = collect_hidden_state_names(compiled_model.outputs());
+    // release the original model
     m_model.reset();
 
     return *this;
 }
 
-Gemma3TextEncoder::EncodeResult Gemma3TextEncoder::infer(const std::string& pos_prompt,
-                                                       const std::string& neg_prompt,
-                                                       const bool do_classifier_free_guidance,
-                                                       const int max_sequence_length) {
+ov::Tensor Gemma3TextEncoder::infer(const std::string& pos_prompt,
+                                    const std::string& neg_prompt,
+                                    const bool do_classifier_free_guidance,
+                                    const int max_sequence_length) {
     OPENVINO_ASSERT(m_request, "Gemma3 text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const size_t batch_size = do_classifier_free_guidance ? 2 : 1;
@@ -112,7 +113,7 @@ Gemma3TextEncoder::EncodeResult Gemma3TextEncoder::infer(const std::string& pos_
     ov::Tensor input_ids(input_type, {batch_size, seq_len});
     ov::Tensor attention_mask(input_type, {batch_size, seq_len});
 
-    // Left padding matching the reference Gemma tokenization
+    // Gemma3 expects left padding
     auto tokenize_prompt = [&](const std::string& prompt, size_t batch_idx) {
         std::string stripped = prompt;
         stripped.erase(0, stripped.find_first_not_of(" \t\n\r"));
@@ -164,14 +165,18 @@ Gemma3TextEncoder::EncodeResult Gemma3TextEncoder::infer(const std::string& pos_
         }
     }
 
-    ov::Tensor mask_f32(ov::element::f32, {batch_size, seq_len});
+    m_prompt_attention_mask = ov::Tensor(ov::element::f32, {batch_size, seq_len});
     const int64_t* mask_src = attention_mask.data<const int64_t>();
-    float* mask_dst = mask_f32.data<float>();
-    for (size_t i = 0; i < mask_f32.get_size(); ++i) {
+    float* mask_dst = m_prompt_attention_mask.data<float>();
+    for (size_t i = 0; i < m_prompt_attention_mask.get_size(); ++i) {
         mask_dst[i] = static_cast<float>(mask_src[i]);
     }
 
-    return {prompt_embeds, mask_f32};
+    return prompt_embeds;
+}
+
+ov::Tensor Gemma3TextEncoder::get_prompt_attention_mask() const {
+    return m_prompt_attention_mask;
 }
 
 }  // namespace genai
