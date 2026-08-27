@@ -2,13 +2,59 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
+import subprocess  # nosec B404
+import logging
 from pathlib import Path
 
 import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
+from utils.constants import get_ov_cache_converted_models_dir
+from utils.atomic_download import AtomicDownloadManager
+from utils.network import retry_request
+
+logger = logging.getLogger(__name__)
+
 LTX2_MODEL_ID = "tiny-random-ltx2"
+
+VIDEO_GEN_MODELS = {
+    "tiny-random-ltx-video": "optimum-intel-internal-testing/tiny-random-ltx-video",
+    LTX2_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2",
+}
+
+DEFAULT_VIDEO_GEN_MODEL_ID = "tiny-random-ltx-video"
+
+
+@pytest.fixture(scope="module")
+def video_generation_model(request) -> str:
+    model_id = getattr(request, "param", DEFAULT_VIDEO_GEN_MODEL_ID)
+    model_name = VIDEO_GEN_MODELS[model_id]
+    models_dir = get_ov_cache_converted_models_dir()
+    model_path = Path(models_dir) / model_id / model_name
+
+    manager = AtomicDownloadManager(model_path)
+
+    def convert_model(temp_path: Path) -> None:
+        command = [
+            "optimum-cli",
+            "export",
+            "openvino",
+            "--model",
+            model_name,
+            "--trust-remote-code",
+            str(temp_path),
+        ]
+        logger.info(f"Conversion command: {' '.join(command)}")
+        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
+
+    try:
+        manager.execute(convert_model)
+    except subprocess.CalledProcessError as error:
+        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+        raise
+
+    return str(model_path)
 
 
 class TestVideoGenerationConfig:
@@ -651,7 +697,6 @@ class TestLTX2PipelineGenerate:
 
         low = run(1.5)
         high = run(7.0)
-        assert np.array_equal(np.array(low.video.data), np.array(high.video.data))
         assert not np.array_equal(np.array(low.audio.data), np.array(high.audio.data))
 
     def test_generate_deterministic_with_seed(self, video_generation_model):

@@ -118,45 +118,6 @@ def image_generation_model(request):
     return str(model_path)
 
 
-VIDEO_GEN_MODELS = {
-    "tiny-random-ltx-video": "optimum-intel-internal-testing/tiny-random-ltx-video",
-    "tiny-random-ltx2": "optimum-intel-internal-testing/tiny-random-ltx2",
-}
-
-DEFAULT_VIDEO_GEN_MODEL_ID = "tiny-random-ltx-video"
-
-
-@pytest.fixture(scope="module")
-def video_generation_model(request):
-    model_id = getattr(request, "param", DEFAULT_VIDEO_GEN_MODEL_ID)
-    model_name = VIDEO_GEN_MODELS[model_id]
-    models_dir = get_ov_cache_converted_models_dir()
-    model_path = Path(models_dir) / model_id / model_name
-
-    manager = AtomicDownloadManager(model_path)
-
-    def convert_model(temp_path: Path) -> None:
-        command = [
-            "optimum-cli",
-            "export",
-            "openvino",
-            "--model",
-            model_name,
-            "--trust-remote-code",
-            str(temp_path),
-        ]
-        logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, encoding="utf-8", text=True, capture_output=True))
-
-    try:
-        manager.execute(convert_model)
-    except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Stdout:\n{error.stdout}\nStderr:\n{error.stderr}")
-        raise
-
-    return str(model_path)
-
-
 @pytest.fixture(scope="module", autouse=True)
 def run_gc_after_test():
     """
