@@ -414,8 +414,8 @@ def parse_args():
         "--speech-language",
         type=str,
         default="",
-        help="Speech-generation language code. This is currently used only for Kokoro. "
-        "If omitted, the default language used is 'en-us'.",
+        help="Speech-generation language. For Qwen3 this can be values such as English, Chinese, or Auto. "
+        "For Kokoro this can be values such as en-us, en-gb, es, fr-fr, hi, it, pt-br, ja, or zh.",
     )
     parser.add_argument(
         "--speech-voice",
@@ -424,6 +424,24 @@ def parse_args():
         help="Speech-generation voice name (for example, af_heart for Kokoro or Ethan for Qwen3-Omni). \n"
         "For SpeechT5, please use --speaker_embeddings parameter to specify the voice. "
         "If omitted, WWB uses the model-specific default speaker/voice.",
+    )
+    parser.add_argument(
+        "--speech-instruct",
+        type=str,
+        default="",
+        help="Optional natural-language style instruction for Qwen3 CustomVoice and VoiceDesign.",
+    )
+    parser.add_argument(
+        "--speech-ref-audio",
+        type=str,
+        default="",
+        help="Optional reference wav path for Qwen3 Base voice-clone generation.",
+    )
+    parser.add_argument(
+        "--speech-ref-text",
+        type=str,
+        default="",
+        help="Optional reference transcript text for Qwen3 Base voice-clone generation.",
     )
     parser.add_argument(
         "--tts-eval-whisper-model",
@@ -501,6 +519,12 @@ def check_args(args):
         raise ValueError("'empty_adapters' mode is not supported for HF Transformers.")
     if args.speaker_embeddings is not None and not os.path.exists(args.speaker_embeddings):
         raise ValueError(f"Speaker embedding file does not exist: {args.speaker_embeddings}")
+    if (
+        args.speech_ref_audio is not None
+        and str(args.speech_ref_audio).strip() != ""
+        and not os.path.exists(args.speech_ref_audio)
+    ):
+        raise ValueError(f"Reference audio file does not exist: {args.speech_ref_audio}")
     if args.gt_data is not None and os.path.isdir(args.gt_data):
         raise ValueError(f"--gt-data must be a file path, not a directory: '{args.gt_data}'")
     if args.output is not None and os.path.isfile(args.output):
@@ -831,7 +855,17 @@ def _is_voice_pack_enabled_model(model):
     return voices_dir.is_dir()
 
 
-def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice=""):
+def genai_gen_speech(
+    model,
+    prompt,
+    speaker_embedding=None,
+    language="",
+    voice="",
+    instruct="",
+    max_new_tokens=None,
+    ref_audio="",
+    ref_text="",
+):
     from whowhatbench.speech_generation_evaluator import GenAIOmniSpeechWrapper
 
     if isinstance(model, GenAIOmniSpeechWrapper):
@@ -843,7 +877,24 @@ def genai_gen_speech(model, prompt, speaker_embedding=None, language="", voice="
 
         generation_properties = {}
         if isinstance(language, str) and language.strip():
-            generation_properties["language"] = language.strip().lower()
+            generation_properties["language"] = language.strip()
+
+        if isinstance(instruct, str) and instruct.strip():
+            generation_properties["instruct"] = instruct.strip()
+
+        if max_new_tokens is not None:
+            generation_properties["max_new_tokens"] = int(max_new_tokens)
+
+        selected_voice = voice.strip() if isinstance(voice, str) else ""
+        generation_properties["voice"] = selected_voice
+
+        selected_ref_text = ref_text.strip() if isinstance(ref_text, str) else ""
+        if selected_ref_text:
+            generation_properties["ref_text"] = selected_ref_text
+
+        selected_ref_audio = ref_audio.strip() if isinstance(ref_audio, str) else ""
+        if selected_ref_audio:
+            generation_properties["ref_audio"] = selected_ref_audio
 
         # Kokoro voice-pack exports select the voice by loading <model_dir>/voices/<voice>.bin
         # and forwarding it as the speaker embedding.
@@ -1084,6 +1135,10 @@ def create_evaluator(base_model, args):
                 vocoder_path=args.vocoder_path,
                 speech_language=args.speech_language,
                 speech_voice=args.speech_voice,
+                speech_instruct=args.speech_instruct,
+                speech_ref_audio=args.speech_ref_audio,
+                speech_ref_text=args.speech_ref_text,
+                max_new_tokens=args.max_new_tokens,
             )
         elif task == "visual-text" or task == "visual-video-text" or task == "visual-text-only":
             processor, config = load_processor(args)
