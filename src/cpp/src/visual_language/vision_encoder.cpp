@@ -27,6 +27,20 @@
 #include "visual_language/videochat_flash/classes.hpp"
 #include "visual_language/muse_glimmer/classes.hpp"
 
+namespace {
+
+ov::AnyMap get_gemma4_unified_vision_properties(const ov::AnyMap& properties, const std::string& device) {
+    ov::AnyMap vision_properties =
+        ov::genai::utils::get_model_properties(properties, "vision_embeddings", device);
+    if (device.find("GPU") != std::string::npos &&
+        vision_properties.find(ov::hint::inference_precision.name()) == vision_properties.end()) {
+        vision_properties[ov::hint::inference_precision.name()] = ov::element::f32;
+    }
+    return vision_properties;
+}
+
+}  // namespace
+
 namespace ov::genai {
 
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
@@ -144,7 +158,8 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
     } else if (model_type == VLMModelType::GEMMA4) {
         return std::make_shared<VisionEncoderGemma4>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA4_UNIFIED) {
-        return std::make_shared<VisionEncoderGemma4>(model_dir, device, properties);
+        return std::make_shared<VisionEncoderGemma4>(
+            model_dir, device, get_gemma4_unified_vision_properties(properties, device));
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
@@ -193,7 +208,11 @@ VisionEncoder::Ptr VisionEncoder::create(
     } else if (model_type == VLMModelType::GEMMA4) {
         return std::make_shared<VisionEncoderGemma4>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::GEMMA4_UNIFIED) {
-        return std::make_shared<VisionEncoderGemma4>(models_map, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderGemma4>(
+            models_map,
+            config_dir_path,
+            device,
+            get_gemma4_unified_vision_properties(device_config, device));
     } else if (model_type == VLMModelType::VIDEOCHAT_FLASH_QWEN) {
         return std::make_shared<VisionEncoderVideoChatFlashQwen>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MUSE_GLIMMER) {
