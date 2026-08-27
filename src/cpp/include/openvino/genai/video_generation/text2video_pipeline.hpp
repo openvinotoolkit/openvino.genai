@@ -14,6 +14,8 @@
 
 namespace ov::genai {
 
+class VideoPipeline;
+
 struct VideoGenerationPerfMetrics : public ImageGenerationPerfMetrics {};
 
 struct VideoGenerationResult {
@@ -49,18 +51,6 @@ public:
                        const std::string& device,
                        Properties&&... properties)
         : Text2VideoPipeline(models_path, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
-
-    /**
-     * Creates LTX pipeline from individual models
-     * @param scheduler A scheduler used to denoise final image
-     * @param t5_text_encoder A T5 text encoder model
-     * @param transformer A Transformer denoising model
-     * @param vae VAE auto encoder model
-     */
-    static Text2VideoPipeline ltx_video(std::shared_ptr<Scheduler> m_scheduler,
-                                        const T5EncoderModel& m_t5_text_encoder,
-                                        const LTXVideoTransformer3DModel& m_transformer,
-                                        const AutoencoderKLLTXVideo& m_vae);
 
     /**
      * Method to clone the pipeline to be used in parallel by another thread.
@@ -169,21 +159,12 @@ public:
      */
     VideoGenerationResult decode(const ov::Tensor& latent);
 
-    /**
-     * @brief Exports compiled models to a specified directory.
-     * @param export_path A path to a directory to export compiled models to
-     *
-     * See @ref ov::genai::blob_path property to load previously exported models and for more details.
-     */
-    void export_model(const std::filesystem::path& export_path);
-
     ~Text2VideoPipeline();
 
 private:
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
+    std::shared_ptr<VideoPipeline> m_impl;
 
-    explicit Text2VideoPipeline(std::unique_ptr<Impl> impl);
+    explicit Text2VideoPipeline(std::shared_ptr<VideoPipeline> impl);
 };
 
 }  // namespace ov::genai
