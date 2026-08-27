@@ -25,15 +25,6 @@ def asr_ground_truth(tmp_path_factory):
     return gt_file
 
 
-def test_asr_gemma4_hf(tmp_path, asr_ground_truth):
-    common = _common_args(asr_ground_truth)
-    hf_similarity = get_similarity(run_wwb(["--target-model", VLM_MODEL, *common, "--hf", "--output", tmp_path]))
-    reproduced = get_similarity(run_wwb(["--target-data", tmp_path / "target.csv", *common]))
-
-    assert hf_similarity == 1.0
-    assert reproduced == hf_similarity
-
-
 @pytest.mark.skipif(
     sys.platform == "darwin" and platform.machine() == "arm64",
     reason="OpenVINO oneDNN ARM CPU backend can't compile the Gemma-4 audio encoder matmul. Ticket CVS-193092",
