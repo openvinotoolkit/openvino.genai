@@ -209,6 +209,32 @@ inline ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
+// Converts between the numeric element types the exported IRs use for masks (f32/i64/i32)
+inline ov::Tensor convert_tensor(const ov::Tensor& tensor, const ov::element::Type& target_type) {
+    if (tensor.get_element_type() == target_type) {
+        return tensor;
+    }
+    ov::Tensor converted(target_type, tensor.get_shape());
+    auto copy_as = [&](auto* dst, const auto* src) {
+        for (size_t i = 0; i < tensor.get_size(); ++i) {
+            dst[i] = static_cast<std::remove_pointer_t<decltype(dst)>>(src[i]);
+        }
+    };
+    const auto& src_type = tensor.get_element_type();
+    if (src_type == ov::element::i64 && target_type == ov::element::f32) {
+        copy_as(converted.data<float>(), tensor.data<const int64_t>());
+    } else if (src_type == ov::element::f32 && target_type == ov::element::i64) {
+        copy_as(converted.data<int64_t>(), tensor.data<const float>());
+    } else if (src_type == ov::element::i64 && target_type == ov::element::i32) {
+        copy_as(converted.data<int32_t>(), tensor.data<const int64_t>());
+    } else if (src_type == ov::element::i32 && target_type == ov::element::i64) {
+        copy_as(converted.data<int64_t>(), tensor.data<const int32_t>());
+    } else {
+        OPENVINO_THROW("Unsupported tensor conversion from ", src_type, " to ", target_type);
+    }
+    return converted;
+}
+
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {

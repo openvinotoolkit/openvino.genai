@@ -38,7 +38,7 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     704,                     // width
     50,                      // num_inference_steps
     128,                     // max_sequence_length
-    0.0,                     // guidance_rescale
+    0.0f,                    // guidance_rescale
     161,                     // num_frames
     25.0f,                   // frame_rate
     std::nullopt             // taylorseer_config
