@@ -1,7 +1,7 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "video_generation/models/gemma_text_encoder.hpp"
+#include "video_generation/models/gemma3_text_encoder.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -37,25 +37,25 @@ std::vector<std::string> collect_hidden_state_names(const std::vector<ov::Output
 
 }  // namespace
 
-GemmaTextEncoder::GemmaTextEncoder(const std::filesystem::path& root_dir)
+Gemma3TextEncoder::Gemma3TextEncoder(const std::filesystem::path& root_dir)
     : m_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)) {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
 }
 
-GemmaTextEncoder::GemmaTextEncoder(const std::filesystem::path& root_dir,
+Gemma3TextEncoder::Gemma3TextEncoder(const std::filesystem::path& root_dir,
                                    const std::string& device,
                                    const ov::AnyMap& properties)
-    : GemmaTextEncoder(root_dir) {
+    : Gemma3TextEncoder(root_dir) {
     compile(device, properties);
 }
 
-GemmaTextEncoder::GemmaTextEncoder(const GemmaTextEncoder&) = default;
+Gemma3TextEncoder::Gemma3TextEncoder(const Gemma3TextEncoder&) = default;
 
-std::shared_ptr<GemmaTextEncoder> GemmaTextEncoder::clone() {
+std::shared_ptr<Gemma3TextEncoder> Gemma3TextEncoder::clone() {
     OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request),
-                    "GemmaTextEncoder must have exactly one of m_model or m_request initialized");
+                    "Gemma3TextEncoder must have exactly one of m_model or m_request initialized");
 
-    std::shared_ptr<GemmaTextEncoder> cloned = std::make_shared<GemmaTextEncoder>(*this);
+    std::shared_ptr<Gemma3TextEncoder> cloned = std::make_shared<Gemma3TextEncoder>(*this);
 
     if (m_model) {
         cloned->m_model = m_model->clone();
@@ -66,7 +66,7 @@ std::shared_ptr<GemmaTextEncoder> GemmaTextEncoder::clone() {
     return cloned;
 }
 
-GemmaTextEncoder& GemmaTextEncoder::reshape(const int batch_size, const int max_sequence_length) {
+Gemma3TextEncoder& Gemma3TextEncoder::reshape(const int batch_size, const int max_sequence_length) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
 
     std::map<std::string, ov::PartialShape> name_to_shape;
@@ -82,10 +82,10 @@ GemmaTextEncoder& GemmaTextEncoder::reshape(const int batch_size, const int max_
     return *this;
 }
 
-GemmaTextEncoder& GemmaTextEncoder::compile(const std::string& device, const ov::AnyMap& properties) {
+Gemma3TextEncoder& Gemma3TextEncoder::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "Gemma text encoder model");
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Gemma3 text encoder model");
     m_request = compiled_model.create_infer_request();
     m_hidden_state_names = collect_hidden_state_names(compiled_model.outputs());
     m_model.reset();
@@ -93,11 +93,11 @@ GemmaTextEncoder& GemmaTextEncoder::compile(const std::string& device, const ov:
     return *this;
 }
 
-GemmaTextEncoder::EncodeResult GemmaTextEncoder::infer(const std::string& pos_prompt,
+Gemma3TextEncoder::EncodeResult Gemma3TextEncoder::infer(const std::string& pos_prompt,
                                                        const std::string& neg_prompt,
                                                        const bool do_classifier_free_guidance,
                                                        const int max_sequence_length) {
-    OPENVINO_ASSERT(m_request, "Gemma text encoder model must be compiled first. Cannot infer non-compiled model");
+    OPENVINO_ASSERT(m_request, "Gemma3 text encoder model must be compiled first. Cannot infer non-compiled model");
 
     const size_t batch_size = do_classifier_free_guidance ? 2 : 1;
     const size_t seq_len = static_cast<size_t>(max_sequence_length);
