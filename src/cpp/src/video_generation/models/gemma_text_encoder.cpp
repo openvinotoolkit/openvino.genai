@@ -16,18 +16,22 @@ std::filesystem::path get_tokenizer_path_by_text_encoder(const std::filesystem::
 namespace {
 
 std::vector<std::string> collect_hidden_state_names(const std::vector<ov::Output<const ov::Node>>& outputs) {
-    std::vector<std::pair<int, std::string>> indexed;
+    // Compilation can merge the 'last_hidden_state' port with the final hidden-state port and
+    // duplicate its name, so dedupe by layer index
+    std::map<int, std::string> indexed;
     for (const auto& output : outputs) {
+        if (output.get_names().count("last_hidden_state")) {
+            continue;
+        }
         for (const std::string& name : output.get_names()) {
             const std::string prefix = "hidden_states.";
             if (name.rfind(prefix, 0) == 0) {
-                indexed.emplace_back(std::stoi(name.substr(prefix.size())), name);
+                indexed.emplace(std::stoi(name.substr(prefix.size())), name);
                 break;
             }
         }
     }
     OPENVINO_ASSERT(!indexed.empty(), "Text encoder model must expose 'hidden_states.N' outputs");
-    std::sort(indexed.begin(), indexed.end());
     std::vector<std::string> names;
     for (const auto& [idx, name] : indexed)
         names.push_back(name);
