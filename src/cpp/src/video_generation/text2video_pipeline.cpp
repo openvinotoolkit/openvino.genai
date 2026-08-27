@@ -6,26 +6,30 @@
 
 using namespace ov::genai;
 
-Text2VideoPipeline::Text2VideoPipeline(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {}
+Text2VideoPipeline::Text2VideoPipeline(std::shared_ptr<VideoPipeline> impl) : m_impl(std::move(impl)) {}
 
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path) {
-    const std::string class_name = get_class_name(model_path);
-    OPENVINO_ASSERT(class_name == "LTXPipeline",
-                    "Unsupported video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
-    m_impl = std::make_unique<Impl>(VideoPipelineType::TEXT_2_VIDEO, model_path);
+    const std::string class_name = video_generation_utils::get_class_name(model_path);
+    if (class_name == "LTXPipeline") {
+        m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::TEXT_2_VIDEO, model_path);
+    } else {
+        OPENVINO_THROW("Unsupported text to video generation pipeline '", class_name, "'");
+    }
 }
 
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& models_dir,
                                        const std::string& device,
                                        const AnyMap& properties) {
-    const std::string class_name = get_class_name(models_dir);
-    OPENVINO_ASSERT(class_name == "LTXPipeline",
-                    "Unsupported video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
-    m_impl = std::make_unique<Impl>(VideoPipelineType::TEXT_2_VIDEO, models_dir, device, properties);
+    const std::string class_name = video_generation_utils::get_class_name(models_dir);
+    if (class_name == "LTXPipeline") {
+        m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::TEXT_2_VIDEO, models_dir, device, properties);
+    } else {
+        OPENVINO_THROW("Unsupported text to video generation pipeline '", class_name, "'");
+    }
 }
 
 Text2VideoPipeline Text2VideoPipeline::clone() {
-    return Text2VideoPipeline(m_impl->clone<Impl>());
+    return Text2VideoPipeline(m_impl->clone());
 }
 
 VideoGenerationResult Text2VideoPipeline::generate(const std::string& positive_prompt, const ov::AnyMap& properties) {
@@ -33,13 +37,11 @@ VideoGenerationResult Text2VideoPipeline::generate(const std::string& positive_p
 }
 
 const VideoGenerationConfig& Text2VideoPipeline::get_generation_config() const {
-    return m_impl->m_generation_config;
+    return m_impl->get_generation_config();
 }
 
 void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& generation_config) {
-    utils::validate_generation_config(generation_config);
-    m_impl->m_generation_config = generation_config;
-    replace_defaults(m_impl->m_generation_config);
+    m_impl->set_generation_config(generation_config);
 }
 
 void Text2VideoPipeline::reshape(int64_t num_videos_per_prompt,
@@ -53,7 +55,7 @@ void Text2VideoPipeline::reshape(int64_t num_videos_per_prompt,
 
     // update config with the specified parameters, so that the user doesn't need to explicitly pass these as properties
     // to generate()
-    auto config = m_impl->m_generation_config;
+    auto config = m_impl->get_generation_config();
     config.num_videos_per_prompt = num_videos_per_prompt;
     config.num_frames = num_frames;
     config.height = height;

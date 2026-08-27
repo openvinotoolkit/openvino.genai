@@ -123,9 +123,8 @@ public:
     ~Image2VideoPipeline();
 
 private:
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
-    explicit Image2VideoPipeline(std::unique_ptr<Impl> impl);
+    std::shared_ptr<VideoPipeline> m_impl;
+    explicit Image2VideoPipeline(std::shared_ptr<VideoPipeline> impl);
 };
 
 }  // namespace ov::genai
