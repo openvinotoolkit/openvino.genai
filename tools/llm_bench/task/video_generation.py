@@ -82,7 +82,12 @@ class TextToVideoOptimum(CommonPipeline):
 
         self.time_collection_hook = time_collection_hook
 
-        self.rng = torch.Generator(device="cpu")
+        model_device = getattr(self.model, "device", None)
+        try:
+            rng_device = torch.device(model_device) if model_device is not None else torch.device("cpu")
+        except Exception:
+            rng_device = torch.device("cpu")
+        self.rng = torch.Generator(device=rng_device)
 
     @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
@@ -360,7 +365,7 @@ class TextToVideoGenAI(CommonPipeline):
 
         self.mem_consumption_meter.start(iter_num)
         generation_result = self.generate(
-            input_param["prompt"], generator=openvino_genai.TorchGenerator(self.seed), guidance_scale=1, **input_args
+            input_param["prompt"], generator=openvino_genai.TorchGenerator(self.seed), **input_args
         )
         memory_metrics = self.mem_consumption_meter.iter_stop_and_collect_data(iter_num, dict_format=False)
 
