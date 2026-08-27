@@ -397,6 +397,8 @@ def disable_diffusers_model_progress_bar(model):
 
 
 AUDIO_SAMPLING_RATE = 16000
+# The 24th FLEURS sample is a duplicate, while dataset shuffling is unstable across versions.
+# Keep 23 because the preceding samples are already sufficiently varied.
 DEFAULT_NUM_SAMPLES = 23
 
 
