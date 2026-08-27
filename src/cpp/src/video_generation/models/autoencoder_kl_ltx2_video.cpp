@@ -126,7 +126,12 @@ ov::Tensor AutoencoderKLLTX2Video::decode(const ov::Tensor& latent) {
 
     m_decoder_request.set_input_tensor(latent);
     m_decoder_request.infer();
-    return m_decoder_request.get_output_tensor();
+    // Copy to an owned tensor - get_output_tensor() aliases the infer request's
+    // internal buffer, which would be overwritten on the next decode() call.
+    ov::Tensor output = m_decoder_request.get_output_tensor();
+    ov::Tensor video(output.get_element_type(), output.get_shape());
+    output.copy_to(video);
+    return video;
 }
 
 void AutoencoderKLLTX2Video::merge_vae_video_post_processing() const {
