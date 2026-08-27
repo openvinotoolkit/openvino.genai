@@ -168,6 +168,7 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -189,6 +190,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
+        MODEL_DEEPSEEK_OCR2,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -209,6 +211,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
+    MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
@@ -284,6 +287,11 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-gemma4-moe",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
+    MODEL_DEEPSEEK_OCR2,
+}
+
+MODELS_WITHOUT_CHAT_TEMPLATE = {
+    MODEL_DEEPSEEK_OCR2,
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -334,13 +342,9 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
-    if model_id in [MODEL_GEMMA3N] and (
-        is_transformers_version("<", "4.57.0")
-        or is_transformers_version(">=", "5.0.0")
-        or is_optimum_version("<", "2.0.0")
-    ):
+    if model_id in [MODEL_GEMMA3N] and (is_transformers_version("<", "5.0.0") or is_optimum_version("<", "2.0.0")):
         pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is >= 4.57.0 and < 5.0.0. Supported optimum version is >= 2.0.0."
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.0.0. Supported optimum version is >= 2.0.0."
         )
 
     if model_id in [
@@ -348,6 +352,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     ] and is_transformers_version("<", "5.10.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.10.0."
+        )
+    if model_id == MODEL_DEEPSEEK_OCR2 and is_transformers_version("<", "5.11.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of DeepSeek-OCR-2. Minimum required is 5.11.0."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
@@ -481,6 +489,17 @@ def _get_ov_model(model_id: str) -> str:
         else:
             processor.audio_tokenizer = None
 
+        # DeepSeek-OCR-2 tiny-random currently may miss preprocessor_config.json
+        # So override processor with AutoImageProcessor in this case.
+        if model_id == MODEL_DEEPSEEK_OCR2:
+            try:
+                processor = transformers.AutoImageProcessor.from_pretrained(
+                    model_cached,
+                    trust_remote_code=True,
+                )
+            except (OSError, ValueError):
+                pass
+
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
@@ -489,6 +508,9 @@ def _get_ov_model(model_id: str) -> str:
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
+QWEN3_VL_SDPA_XFAIL_REASON = (
+    "qwen3-vl vision embeddings count does not match image pad tokens in prompt with SDPA backend"
+)
 
 
 @pytest.fixture(scope="module")
@@ -507,6 +529,9 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
+
+    if "qwen3-vl" in ov_model and ov_backend == "SDPA":
+        pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
 
     models_path = _get_ov_model(ov_model)
 
@@ -784,11 +809,18 @@ def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
 
+SINGLE_IMAGE_ONLY_MODELS = {
+    MODEL_DEEPSEEK_OCR2,
+}
+
+
 @pytest.mark.transformers_dependent(
     reason="minicpmv, internvl_chat, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
 )
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
+    if ov_pipe_model.model_id in SINGLE_IMAGE_ONLY_MODELS and len(test_images) != 1:
+        pytest.skip("Model supports single image input only")
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
     def streamer(word: str) -> bool:
@@ -1111,6 +1143,8 @@ def test_vlm_pipeline_chat(
     system_message: str,
     iteration_images: list[list[PIL.Image]],
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     ov_pipe = ov_pipe_model.pipeline
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -1153,6 +1187,8 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1598,6 +1634,8 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1730,6 +1768,8 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     ov_pipe_model: VlmModelInfo,
     image_sequence: list[openvino.Tensor],
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
 
@@ -2401,6 +2441,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
     # videochat_flash_qwen text-only cases
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
+    # deepseek-ocr-2 text-only cases
+    "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
