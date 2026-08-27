@@ -1,7 +1,6 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import importlib.util
 import os
 import pytest
 import sys
@@ -17,13 +16,6 @@ from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
-
-
-def _funasr_export_supported():
-    return (
-        importlib.util.find_spec("funasr") is not None
-        and importlib.util.find_spec("optimum.intel.openvino.modeling_funasr") is not None
-    )
 
 
 image_generation_prompt = \
@@ -490,10 +482,6 @@ class TestBenchmarkLLM:
 
     @pytest.mark.samples
     @pytest.mark.funasr
-    @pytest.mark.skipif(
-        not _funasr_export_supported(),
-        reason="requires the funasr package and FunASR export support in optimum-intel",
-    )
     @pytest.mark.parametrize(
         "sample_args",
         [
