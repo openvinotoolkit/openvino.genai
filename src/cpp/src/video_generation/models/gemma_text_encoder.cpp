@@ -20,9 +20,6 @@ std::vector<std::string> collect_hidden_state_names(const std::vector<ov::Output
     // duplicate its name, so dedupe by layer index
     std::map<int, std::string> indexed;
     for (const auto& output : outputs) {
-        if (output.get_names().count("last_hidden_state")) {
-            continue;
-        }
         for (const std::string& name : output.get_names()) {
             const std::string prefix = "hidden_states.";
             if (name.rfind(prefix, 0) == 0) {
