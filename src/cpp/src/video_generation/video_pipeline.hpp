@@ -46,6 +46,10 @@ public:
 
     virtual std::shared_ptr<VideoPipeline> clone() = 0;
 
+    virtual size_t get_audio_sample_rate() const {
+        return 0;
+    }
+
     const VideoGenerationConfig& get_generation_config() const {
         return m_generation_config;
     }
@@ -69,7 +73,6 @@ public:
 protected:
     using Ms = std::chrono::duration<float, std::ratio<1, 1000>>;
 
-    // Replace unset sentinel values with per-model defaults.
     virtual void replace_defaults(VideoGenerationConfig& generation_config) const = 0;
 
     VideoGenerationConfig m_generation_config;

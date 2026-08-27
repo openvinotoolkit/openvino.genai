@@ -21,6 +21,8 @@ struct VideoGenerationPerfMetrics : public ImageGenerationPerfMetrics {};
 struct VideoGenerationResult {
     ov::Tensor video;
     ov::genai::VideoGenerationPerfMetrics performance_stat;
+    /// f32 waveform [num_videos_per_prompt, num_channels, num_samples]; empty for models without audio
+    ov::Tensor audio;
 };
 
 class OPENVINO_GENAI_EXPORTS Text2VideoPipeline {
@@ -158,6 +160,11 @@ public:
      *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the generation run.
      */
     VideoGenerationResult decode(const ov::Tensor& latent);
+
+    /**
+     * Returns sampling rate in Hz of VideoGenerationResult::audio, or 0 for models without audio
+     */
+    size_t get_audio_sample_rate() const;
 
     ~Text2VideoPipeline();
 

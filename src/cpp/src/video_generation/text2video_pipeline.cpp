@@ -84,4 +84,8 @@ VideoGenerationResult Text2VideoPipeline::decode(const ov::Tensor& latent) {
     return m_impl->decode(latent);
 }
 
+size_t Text2VideoPipeline::get_audio_sample_rate() const {
+    return m_impl->get_audio_sample_rate();
+}
+
 Text2VideoPipeline::~Text2VideoPipeline() = default;

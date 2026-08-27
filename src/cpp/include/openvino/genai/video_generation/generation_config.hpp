@@ -66,6 +66,9 @@ struct VideoGenerationConfig {
 
     /// LoRA adapters applied during generation.
     std::optional<AdapterConfig> adapters = std::nullopt;
+
+    /// Guidance scale for the audio modality. Defaults to `guidance_scale` when unset.
+    std::optional<float> audio_guidance_scale = std::nullopt;
 };
 
 /**
@@ -91,6 +94,8 @@ static constexpr ov::Property<float> guidance_rescale{"guidance_rescale"};
 static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
+/// Guidance scale for the audio modality. Defaults to `guidance_scale` when unset.
+static constexpr ov::Property<float> audio_guidance_scale{"audio_guidance_scale"};
 
 /**
  * Function to pass 'VideoGenerationConfig' as property to 'generate()' call.
