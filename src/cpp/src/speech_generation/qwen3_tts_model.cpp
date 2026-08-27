@@ -439,7 +439,12 @@ Qwen3TTSImpl::Qwen3TTSImpl(const std::filesystem::path& models_path,
             npu_talker_properties.emplace("MAX_PROMPT_LEN", DEFAULT_MAX_PROMPT_LEN);
             npu_talker_properties.emplace("MIN_RESPONSE_LEN", DEFAULT_MIN_RESPONSE_LEN);
 
-            auto talker_model = ov::genai::utils::singleton_core().read_model(models_path / TALKER_LANGUAGE_NAME);
+            const auto talker_baked_path = models_path / TALKER_UPDATED_NAME;
+            const auto talker_path = std::filesystem::exists(talker_baked_path)
+                ? talker_baked_path
+                : models_path / TALKER_LANGUAGE_NAME;
+            m_talker_baked = std::filesystem::exists(talker_baked_path);
+            auto talker_model = ov::genai::utils::singleton_core().read_model(talker_path);
             const auto kv_pos = ov::genai::utils::get_kv_axes_pos(talker_model);
             ov::CompiledModel compiled;
             ov::genai::utils::KVDesc kv_desc;
