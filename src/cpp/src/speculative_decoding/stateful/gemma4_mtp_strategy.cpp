@@ -253,6 +253,8 @@ StatefulGemma4MTPLLMPipeline::StatefulGemma4MTPLLMPipeline(const ModelDesc& targ
                     "Target and draft models do not match the Gemma4 MTP OpenVINO IR contract.");
     OPENVINO_ASSERT(target_model_desc.device != "NPU" && draft_model_desc.device != "NPU",
                     "Gemma4 MTP stateful speculative decoding currently supports CPU/GPU only.");
+    
+    utils::patch_chat_template_multiline_strings(m_tokenizer);
 
     if ((!m_generation_config.num_assistant_tokens.has_value() || m_generation_config.num_assistant_tokens.value() == 0) &&
         draft_model_desc.generation_config.num_assistant_tokens.has_value() &&
@@ -506,6 +508,7 @@ EncodedResults StatefulGemma4MTPLLMPipeline::generate_tokens(const EncodedInputs
     m_sd_perf_metrics.num_input_tokens = m_prompt_length;
     m_sd_perf_metrics.load_time = m_load_time_ms;
     m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
+    m_sd_perf_metrics.num_draft_tokens = total_draft_generated;
     m_sd_perf_metrics.raw_metrics.generate_durations.clear();
     m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
 

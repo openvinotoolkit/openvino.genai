@@ -5,6 +5,8 @@ import openvino.properties.hint as hints
 import openvino.properties as props
 import openvino as ov
 import os
+import pytest
+import sys
 from importlib import metadata
 from datetime import datetime
 from transformers import GenerationConfig as HFGenerationConfig
@@ -19,6 +21,17 @@ def get_default_llm_properties():
     }
 
 
+def group_beam_search_generate_kwargs() -> dict:
+    from optimum.intel.utils.import_utils import is_transformers_version
+
+    # transformers 4.57 moved group beam search into a custom_generate Hub repo and builds the path of
+    # the sibling module it imports with the platform separator, so the fetch 404s on Windows
+    if sys.platform == "win32" and is_transformers_version(">=", "4.57") and is_transformers_version("<", "5.0"):
+        pytest.skip("HF reference for group beam search cannot be loaded on Windows with transformers 4.57")
+
+    return {"trust_remote_code": True}
+
+
 def extra_generate_kwargs(generation_config: HFGenerationConfig = None):
     from optimum.intel.utils.import_utils import is_transformers_version
     additional_args = {}
@@ -30,7 +43,7 @@ def extra_generate_kwargs(generation_config: HFGenerationConfig = None):
         and generation_config.num_beam_groups is not None
         and generation_config.num_beam_groups > 1
     ):
-        additional_args["trust_remote_code"] = True
+        additional_args.update(group_beam_search_generate_kwargs())
         additional_args["do_sample"] = False
 
     return additional_args
