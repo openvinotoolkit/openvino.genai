@@ -301,7 +301,7 @@ python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 
 ```
 
 **Some additional parameters:**
-- `--speech_language`: Transcription language for speech-to-text models (`en` for FunASR, `English` for Qwen3-ASR, `<|en|>` for Whisper). A per-entry `language` field in a JSON prompt file takes precedence over this argument.
+- `--speech_language`: Transcription language for speech-to-text models (`English` for FunASR and Qwen3-ASR, `<|en|>` for Whisper).
 
 > **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
 

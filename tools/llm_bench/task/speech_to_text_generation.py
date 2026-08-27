@@ -21,7 +21,7 @@ DEFAULT_OUTPUT_TOKEN_SIZE = 1000
 DEFAULT_WHISPER_OUTPUT_TOKEN_SIZE = 400
 DEFAULT_SPEECH_PROMPT = "Transcribe this audio."
 
-STT_DEFAULT_LANGUAGES = {"qwen3-asr": "English", "fun-asr": "en"}
+STT_DEFAULT_LANGUAGES = {"qwen3-asr": "English", "fun-asr": "English"}
 STT_FALLBACK_LANGUAGE = "<|en|>"
 
 

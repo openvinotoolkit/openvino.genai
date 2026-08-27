@@ -503,8 +503,7 @@ def get_argparser():
         help=(
             "Task text-to-speech: speech language. For Kokoro models this can be one of en-us, en-gb, es, fr-fr, "
             "hi, it, pt-br, ja, zh. "
-            "Task speech-to-text: transcription language. Defaults: en for FunASR, English for Qwen3-ASR, "
-            "<|en|> for Whisper. A per-entry JSON 'language' takes precedence over this argument."
+            "Task speech-to-text: transcription language. Defaults: English for FunASR and Qwen3-ASR, <|en|> for Whisper."
         ),
     )
     parser.add_argument(
