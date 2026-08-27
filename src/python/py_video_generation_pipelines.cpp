@@ -34,11 +34,13 @@ void init_video_generation_pipelines(py::module_& m) {
         .def_readwrite("num_inference_steps", &ov::genai::VideoGenerationConfig::num_inference_steps)
         .def_readwrite("max_sequence_length", &ov::genai::VideoGenerationConfig::max_sequence_length)
         .def_readwrite("taylorseer_config", &ov::genai::VideoGenerationConfig::taylorseer_config)
-        .def_readwrite("adapters", &ov::genai::VideoGenerationConfig::adapters);
+        .def_readwrite("adapters", &ov::genai::VideoGenerationConfig::adapters)
+        .def_readwrite("audio_guidance_scale", &ov::genai::VideoGenerationConfig::audio_guidance_scale);
 
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)
-        .def_readonly("perf_metrics", &ov::genai::VideoGenerationResult::performance_stat);
+        .def_readonly("perf_metrics", &ov::genai::VideoGenerationResult::performance_stat)
+        .def_readonly("audio", &ov::genai::VideoGenerationResult::audio);
 
     py::class_<ov::genai::Text2VideoPipeline>(m, "Text2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {
@@ -99,7 +101,8 @@ void init_video_generation_pipelines(py::module_& m) {
                 }
                 return result;
             },
-            py::arg("prompt"));
+            py::arg("prompt"))
+        .def("get_audio_sample_rate", &ov::genai::Text2VideoPipeline::get_audio_sample_rate);
 
     py::class_<ov::genai::Image2VideoPipeline>(m, "Image2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {
