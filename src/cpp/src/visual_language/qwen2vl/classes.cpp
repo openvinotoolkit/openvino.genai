@@ -643,7 +643,7 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
 
         auto image_mean = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_mean.size(), 1, 1}, a_image_mean.data());
         auto image_scale = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, a_image_scale.data());
-        model = patch_preprocess_into_model(model_org, image_mean, image_scale);
+        model = patch_preprocess_into_model(model, image_mean, image_scale);
     }
 
     auto compiled_model = utils::singleton_core().compile_model(
