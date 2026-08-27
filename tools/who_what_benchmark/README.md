@@ -280,6 +280,8 @@ transcripts, where 1 is a perfect match and 0 is completely different. WWB uses 
 #### FunASR
 
 ```sh
+pip install .[funasr]
+
 # Collect ground truth from the baseline funasr model
 wwb --base-model FunAudioLLM/Fun-ASR-Nano-2512 --gt-data gt.csv --model-type speech-recognition --hf
 

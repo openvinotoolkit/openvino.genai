@@ -397,7 +397,7 @@ def disable_diffusers_model_progress_bar(model):
 
 
 AUDIO_SAMPLING_RATE = 16000
-DEFAULT_NUM_SAMPLES = 24
+DEFAULT_NUM_SAMPLES = 23
 
 
 def to_mono_16k(audio, sampling_rate):
