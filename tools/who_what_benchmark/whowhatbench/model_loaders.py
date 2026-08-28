@@ -1091,6 +1091,17 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     return SpeechT5Wrapper(model, processor, None)
 
 
+def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    language = kwargs.pop("speech_language", "") or ""
+    from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
+
+    if use_hf:
+        return ASRHFTranscriber.create(model_id, device, ov_config, language, **kwargs)
+    if use_genai:
+        return ASRGenAITranscriber.create(model_id, device, ov_config, language, **kwargs)
+    return ASROptimumTranscriber.create(model_id, device, ov_config, language, **kwargs)
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -1124,5 +1135,7 @@ def load_model(
         return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "speech-generation":
         return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
+    elif model_type == "speech-recognition":
+        return load_speech_recognition_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
