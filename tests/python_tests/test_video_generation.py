@@ -118,6 +118,13 @@ class TestText2VideoPipelineGenerate:
         assert result is not None
         assert result.video is not None
 
+    def test_audio_guidance_scale_rejected(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="audio_guidance_scale"):
+            pipe.generate(
+                "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, audio_guidance_scale=5.0
+            )
+
     def test_generate_with_negative_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
         result = pipe.generate(
@@ -742,6 +749,11 @@ class TestLTX2PipelineGenerate:
         result = pipe.generate("test prompt", guidance_scale=1.0, num_videos_per_prompt=2, **LTX2_GEN_KWARGS)
         assert result.video.shape == [2, 9, 32, 32, 3]
         assert list(result.audio.shape)[0] == 2
+
+    def test_invalid_num_frames_rejected(self, video_generation_model):
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        with pytest.raises(RuntimeError, match="Number of frames"):
+            pipe.generate("test prompt", guidance_scale=1.0, height=32, width=32, num_frames=10, num_inference_steps=2)
 
     def test_taylorseer_rejected(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")

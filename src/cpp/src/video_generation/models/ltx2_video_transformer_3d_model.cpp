@@ -16,30 +16,6 @@ using namespace ov::genai;
 
 namespace {
 
-std::pair<int64_t, int64_t> get_vae_compression_ratio(const std::filesystem::path& config_path) {
-    std::ifstream file(config_path);
-    OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
-    nlohmann::json data = nlohmann::json::parse(file);
-
-    int64_t spatial_compression_ratio = 0, temporal_compression_ratio = 0;
-    utils::read_json_param(data, "spatial_compression_ratio", spatial_compression_ratio);
-    utils::read_json_param(data, "temporal_compression_ratio", temporal_compression_ratio);
-
-    if (spatial_compression_ratio == 0 || temporal_compression_ratio == 0) {
-        std::vector<bool> spatio_temporal_scaling;
-        int64_t patch_size, patch_size_t;
-        utils::read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
-        utils::read_json_param(data, "patch_size", patch_size);
-        utils::read_json_param(data, "patch_size_t", patch_size_t);
-        const auto compression_factor =
-            std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
-        spatial_compression_ratio = patch_size * compression_factor;
-        temporal_compression_ratio = patch_size_t * compression_factor;
-    }
-
-    return {spatial_compression_ratio, temporal_compression_ratio};
-}
-
 bool has_exact_input(const ov::CompiledModel& compiled_model, const std::string& name) {
     for (const auto& input : compiled_model.inputs()) {
         if (input.get_names().count(name)) {
@@ -72,8 +48,6 @@ LTX2VideoTransformer3DModel::Config::Config(const std::filesystem::path& config_
 LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
-    std::tie(m_spatial_compression_ratio, m_temporal_compression_ratio) =
-        get_vae_compression_ratio(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
 LTX2VideoTransformer3DModel::LTX2VideoTransformer3DModel(const std::filesystem::path& root_dir,
@@ -112,6 +86,8 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::compile(const std::str
     m_request = compiled_model.create_infer_request();
     const auto& input_shape = compiled_model.input("hidden_states").get_partial_shape();
     m_expected_batch_size = input_shape[0].is_static() ? input_shape[0].get_length() : 0;
+    m_timestep_rank = compiled_model.input("timestep").get_partial_shape().rank().get_length();
+    m_has_audio_timestep = has_exact_input(compiled_model, "audio_timestep");
     m_model.reset();
 
     return *this;
@@ -127,20 +103,9 @@ size_t LTX2VideoTransformer3DModel::get_expected_batch_size() const {
     return m_expected_batch_size;
 }
 
-size_t LTX2VideoTransformer3DModel::get_request_input_batch() {
-    if (!m_request) {
-        return 0;
-    }
-    const ov::Shape shape = m_request.get_tensor("hidden_states").get_shape();
-    if (shape.empty()) {
-        return 0;
-    }
-    return shape[0];
-}
-
 size_t LTX2VideoTransformer3DModel::get_timestep_rank() {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot query non-compiled model");
-    return m_request.get_compiled_model().input("timestep").get_partial_shape().rank().get_length();
+    return m_timestep_rank;
 }
 
 std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::Tensor& video_latent,
@@ -155,18 +120,17 @@ std::pair<ov::Tensor, ov::Tensor> LTX2VideoTransformer3DModel::infer(const ov::T
     OPENVINO_ASSERT(latent_shape.size() == 3, "Packed latents must be rank-3 [B, S, C], got rank ", latent_shape.size());
 
     // Legacy exports take a rank-1 [B] timestep, current ones a rank-2 [B, S] per-token timestep
-    const auto timestep_rank = get_timestep_rank();
-    OPENVINO_ASSERT(timestep_rank == 1 || timestep_rank == 2,
-                    "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", timestep_rank);
+    OPENVINO_ASSERT(m_timestep_rank == 1 || m_timestep_rank == 2,
+                    "LTX2 transformer expects a rank-1 or rank-2 'timestep' input, got rank ", m_timestep_rank);
     ov::Shape timestep_shape{latent_shape[0]};
-    if (timestep_rank == 2) {
+    if (m_timestep_rank == 2) {
         timestep_shape = {latent_shape[0], latent_shape[1]};
     }
     ov::Tensor timestep_tensor(ov::element::f32, timestep_shape);
     std::fill_n(timestep_tensor.data<float>(), timestep_tensor.get_size(), timestep);
     m_request.set_tensor("timestep", timestep_tensor);
 
-    if (has_exact_input(m_request.get_compiled_model(), "audio_timestep")) {
+    if (m_has_audio_timestep) {
         ov::Tensor audio_timestep(ov::element::f32, {audio_latent.get_shape()[0]});
         std::fill_n(audio_timestep.data<float>(), audio_timestep.get_size(), timestep);
         m_request.set_tensor("audio_timestep", audio_timestep);
@@ -187,9 +151,14 @@ LTX2VideoTransformer3DModel& LTX2VideoTransformer3DModel::reshape(int64_t batch_
     const int64_t patch_size = m_config.patch_size;
     const int64_t patch_size_t = m_config.patch_size_t;
 
-    const int64_t latent_num_frames = ((num_frames - 1) / m_temporal_compression_ratio + 1) / patch_size_t;
-    const int64_t latent_height = height / (m_spatial_compression_ratio * patch_size);
-    const int64_t latent_width = width / (m_spatial_compression_ratio * patch_size);
+    OPENVINO_ASSERT(m_config.vae_scale_factors.size() == 3,
+                    "'vae_scale_factors' must contain [temporal, height, width] ratios");
+    const int64_t temporal_compression_ratio = m_config.vae_scale_factors[0];
+    const int64_t spatial_compression_ratio = m_config.vae_scale_factors[1];
+
+    const int64_t latent_num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / patch_size_t;
+    const int64_t latent_height = height / (spatial_compression_ratio * patch_size);
+    const int64_t latent_width = width / (spatial_compression_ratio * patch_size);
     const int64_t video_sequence_length = latent_num_frames * latent_height * latent_width;
 
     std::map<std::string, ov::PartialShape> name_to_shape;

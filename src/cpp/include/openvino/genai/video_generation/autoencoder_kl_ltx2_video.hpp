@@ -25,8 +25,6 @@ public:
         bool timestep_conditioning = false;
         std::vector<float> latents_mean_data;
         std::vector<float> latents_std_data;
-        std::vector<float> audio_latents_mean_data;
-        std::vector<float> audio_latents_std_data;
 
         explicit Config(const std::filesystem::path& config_path);
     };

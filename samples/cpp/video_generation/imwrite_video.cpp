@@ -183,17 +183,6 @@ void save_video_with_audio(const std::string& filename,
         const size_t frame_bytes = H * W * C;
         const uint8_t* batch_ptr = video_data + b * F * frame_bytes;
 
-        std::vector<std::vector<uint8_t>> jpeg_frames(F);
-        uint32_t max_video_chunk = 0;
-        for (size_t f = 0; f < F; ++f) {
-            cv::Mat src(H, W, CV_8UC3, const_cast<uint8_t*>(batch_ptr + f * frame_bytes));
-            cv::Mat bgr;
-            cv::cvtColor(src, bgr, cv::COLOR_RGB2BGR);
-            if (!cv::imencode(".jpg", bgr, jpeg_frames[f], {cv::IMWRITE_JPEG_QUALITY, 95}))
-                throw std::runtime_error("Failed to encode video frame for: " + out);
-            max_video_chunk = std::max<uint32_t>(max_video_chunk, jpeg_frames[f].size());
-        }
-
         const float* audio_ptr = audio_data + b * AC * S;
         std::vector<int16_t> pcm(S * AC);
         for (size_t s = 0; s < S; ++s)
@@ -203,6 +192,7 @@ void save_video_with_audio(const std::string& filename,
         // Interleave one video chunk ("00dc") and one audio chunk ("01wb") per frame.
         std::vector<uint8_t> movi;
         std::vector<AviIndexEntry> index;
+        uint32_t max_video_chunk = 0;
         uint32_t max_audio_chunk = 0;
 
         auto append_movi_chunk = [&](const char (&id)[5], const uint8_t* data, uint32_t size) {
@@ -218,8 +208,15 @@ void save_video_with_audio(const std::string& filename,
                 movi.push_back(0);
         };
 
+        cv::Mat bgr;
+        std::vector<uint8_t> jpeg;
         for (size_t f = 0; f < F; ++f) {
-            append_movi_chunk("00dc", jpeg_frames[f].data(), static_cast<uint32_t>(jpeg_frames[f].size()));
+            cv::Mat src(H, W, CV_8UC3, const_cast<uint8_t*>(batch_ptr + f * frame_bytes));
+            cv::cvtColor(src, bgr, cv::COLOR_RGB2BGR);
+            if (!cv::imencode(".jpg", bgr, jpeg, {cv::IMWRITE_JPEG_QUALITY, 95}))
+                throw std::runtime_error("Failed to encode video frame for: " + out);
+            max_video_chunk = std::max<uint32_t>(max_video_chunk, jpeg.size());
+            append_movi_chunk("00dc", jpeg.data(), static_cast<uint32_t>(jpeg.size()));
 
             const size_t sample_begin = f * S / F, sample_end = (f + 1) * S / F;
             const uint32_t audio_bytes = static_cast<uint32_t>((sample_end - sample_begin) * block_align);

@@ -31,25 +31,30 @@ AutoencoderKLLTX2Video::Config::Config(const std::filesystem::path& config_path)
     read_json_param(data, "timestep_conditioning", timestep_conditioning);
     read_json_param(data, "latents_mean_data", latents_mean_data);
     read_json_param(data, "latents_std_data", latents_std_data);
-    read_json_param(data, "audio_latents_mean_data", audio_latents_mean_data);
-    read_json_param(data, "audio_latents_std_data", audio_latents_std_data);
 
     int64_t spatial = 0, temporal = 0;
     read_json_param(data, "spatial_compression_ratio", spatial);
     read_json_param(data, "temporal_compression_ratio", temporal);
     if (spatial == 0 || temporal == 0) {
         std::vector<bool> spatio_temporal_scaling;
-        int64_t patch_size, patch_size_t;
+        int64_t patch_size = 0, patch_size_t = 0;
         read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
         read_json_param(data, "patch_size", patch_size);
         read_json_param(data, "patch_size_t", patch_size_t);
-        const auto compression_factor =
-            std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
-        spatial = patch_size * compression_factor;
-        temporal = patch_size_t * compression_factor;
+        if (patch_size > 0 && patch_size_t > 0) {
+            const auto compression_factor =
+                std::pow(2, std::accumulate(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+            spatial = patch_size * compression_factor;
+            temporal = patch_size_t * compression_factor;
+        }
     }
-    spatial_compression_ratio = spatial;
-    temporal_compression_ratio = temporal;
+    // Keep the member defaults when the config carries neither the ratios nor the patch keys
+    if (spatial > 0) {
+        spatial_compression_ratio = spatial;
+    }
+    if (temporal > 0) {
+        temporal_compression_ratio = temporal;
+    }
 
     if (latents_mean_data.empty()) {
         latents_mean_data.assign(latent_channels, 0.0f);
@@ -124,13 +129,23 @@ AutoencoderKLLTX2Video& AutoencoderKLLTX2Video::reshape(int64_t batch_size,
 ov::Tensor AutoencoderKLLTX2Video::decode(const ov::Tensor& latent) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
 
+    // Write into an owned tensor - the request's internal buffer would be overwritten on the next decode() call
+    const auto& output = m_decoder_request.get_compiled_model().output(0);
+    ov::Shape video_shape;
+    if (output.get_partial_shape().is_static()) {
+        video_shape = output.get_shape();
+    } else {
+        const ov::Shape latent_shape = latent.get_shape();  // [B, C, F, H, W]
+        video_shape = {latent_shape[0],
+                       (latent_shape[2] - 1) * static_cast<size_t>(m_config.temporal_compression_ratio) + 1,
+                       latent_shape[3] * static_cast<size_t>(m_config.spatial_compression_ratio),
+                       latent_shape[4] * static_cast<size_t>(m_config.spatial_compression_ratio),
+                       3};
+    }
+    ov::Tensor video(output.get_element_type(), video_shape);
     m_decoder_request.set_input_tensor(latent);
+    m_decoder_request.set_output_tensor(video);
     m_decoder_request.infer();
-    // Copy to an owned tensor - get_output_tensor() aliases the infer request's
-    // internal buffer, which would be overwritten on the next decode() call.
-    ov::Tensor output = m_decoder_request.get_output_tensor();
-    ov::Tensor video(output.get_element_type(), output.get_shape());
-    output.copy_to(video);
     return video;
 }
 
