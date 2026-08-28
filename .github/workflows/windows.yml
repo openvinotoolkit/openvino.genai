@@ -575,7 +575,10 @@ jobs:
           merge-multiple: true
 
       - name: Extract Artifacts
-        run: Expand-Archive -Path ${{ env.OV_INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.OV_INSTALL_DIR }}
+        run: |
+          # Replace OpenVINO sample entry points with GenAI-specific ones.
+          Remove-Item ${{ env.OV_INSTALL_DIR }}/samples/cpp/CMakeLists.txt, ${{ env.OV_INSTALL_DIR }}/samples/c/CMakeLists.txt
+          Expand-Archive -Path ${{ env.OV_INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.OV_INSTALL_DIR }}
 
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
