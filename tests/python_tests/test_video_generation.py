@@ -16,14 +16,15 @@ from utils.network import retry_request
 
 logger = logging.getLogger(__name__)
 
+LTX_VIDEO_MODEL_ID = "tiny-random-ltx-video"
 LTX2_MODEL_ID = "tiny-random-ltx2"
 
 VIDEO_GEN_MODELS = {
-    "tiny-random-ltx-video": "optimum-intel-internal-testing/tiny-random-ltx-video",
+    LTX_VIDEO_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx-video",
     LTX2_MODEL_ID: "optimum-intel-internal-testing/tiny-random-ltx2",
 }
 
-DEFAULT_VIDEO_GEN_MODEL_ID = "tiny-random-ltx-video"
+DEFAULT_VIDEO_GEN_MODEL_ID = LTX_VIDEO_MODEL_ID
 
 
 @pytest.fixture(scope="module")
