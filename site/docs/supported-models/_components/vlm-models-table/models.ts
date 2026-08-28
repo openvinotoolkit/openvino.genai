@@ -221,6 +221,16 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'DeepseekOCR2ForCausalLM',
+    models: [
+      {
+        name: 'DeepSeek-OCR-2',
+        links: ['https://huggingface.co/deepseek-community/DeepSeek-OCR-2'],
+        notesLink: '#deepseek-ocr-2-notes',
+      },
+    ],
+  },
+  {
     architecture: 'Gemma3ForConditionalGeneration',
     models: [
       {

@@ -59,7 +59,7 @@
 
 - name: LLM with transformers under 5.0
   cmd: |-
-    python -m pip install transformers==4.55.4 diffusers==0.37.1
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
     python -m pytest -v ./tests/python_tests/test_llm_pipeline.py ./tests/python_tests/test_llm_pipeline_static.py ./tests/python_tests/test_structured_output.py ./tests/python_tests/test_image_generation.py ./tests/python_tests/test_image_generation_multi_call.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 90
   components:
@@ -124,7 +124,7 @@
 
 - name: API tests
   cmd: |-
-    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not qwen35_mtp and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
   timeout: 60
   components:
     - continuous_batching
@@ -181,8 +181,19 @@
   components:
     - speculative_decoding
 
+- name: Qwen3.5 MTP speculative decoding tests
+  cmd: |-
+    python -m pip install -U "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@qwen35_mtp"
+    pip install transformers==5.2.0
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
 - name: WWB tests (nanollava)
   cmd: |-
+    # optimum intel commit compatible with transformers 4.48
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@140e49a68718ab0025a3b5f02864b9ca9f009558#egg=optimum-intel"
     python -m pip install transformers==4.48.0 diffusers==0.35.2
     python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
   timeout: 90
@@ -267,6 +278,16 @@
   components:
     - visual_language
 
+- name: VLM (deepseek-ocr-2)
+  cmd: |-
+    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@e3929c8d145384df49faa843c22c143b37305201
+    python -m pip install transformers==5.11.0
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "deepseek-ocr-2"
+  timeout: 60
+  components:
+    - visual_language
+
 - name: ASR Transformers under 5.0
   cmd: |-
     python -m pip install transformers==4.57.6
@@ -277,7 +298,7 @@
 
 - name: VLM with transformers under 5.0
   cmd: |-
-    python -m pip install transformers==4.55.4 diffusers==0.37.1
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
     python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
   timeout: 90
   components:
@@ -285,7 +306,7 @@
 
 - name: API tests transformers under 5.0
   cmd: |-
-    python -m pip install transformers==4.55.4 diffusers==0.37.1
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
     python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
   timeout: 60
   components:
