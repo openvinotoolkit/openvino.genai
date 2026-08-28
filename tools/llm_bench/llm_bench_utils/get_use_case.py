@@ -32,6 +32,7 @@ DIFFUSERS_PIPELINE_TYPES = {
     "Flux2KleinPipeline",
     "LatentConsistencyModelPipeline",
     "QwenImagePipeline",
+    "ZImagePipeline",
 }
 
 

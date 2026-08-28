@@ -396,7 +396,7 @@ def print_average(
 
 
 def print_whisper_infer_latency(iter_str, whisper, prompt_idx=-1):
-    log.debug(f'{whisper.print_whisper_latency(iter_str, prompt_idx)}')
+    log.debug(f"{whisper.print_whisper_latency(iter_str, prompt_idx)}")
 
 
 def print_asr_genai_latency(iter_str, metrics, prompt_idx=-1):

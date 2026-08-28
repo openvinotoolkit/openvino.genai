@@ -10,6 +10,7 @@
 #include <set>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -267,9 +268,16 @@ public:
         for (auto& free_block : m_free_blocks_num) {
             const size_t free_and_overwritable_block_cnt = free_block + num_overwriteable_blocks();
             if (m_total_num_blocks != free_and_overwritable_block_cnt) {
-                GENAI_ERR("BlockAllocator leaked blocks. Expected num free blocks: %zu, actual: %zu",
-                          m_total_num_blocks,
-                          free_and_overwritable_block_cnt);
+                try {
+                    GENAI_ERR("BlockAllocator leaked blocks. Expected num free blocks: %zu, actual: %zu",
+                              m_total_num_blocks,
+                              free_and_overwritable_block_cnt);
+                } catch (...) {
+                    std::fprintf(stderr,
+                                 "BlockAllocator leaked blocks. Expected: %zu, actual: %zu\n",
+                                 m_total_num_blocks,
+                                 free_and_overwritable_block_cnt);
+                }
             }
         }
     }
@@ -681,9 +689,16 @@ public:
         const size_t leaked_tables = m_block_table.size();
         const uint64_t first_leaked_seq_id = leaked_tables > 0 ? m_block_table.begin()->first : 0;
         if (!m_block_table.empty()) {
-            GENAI_ERR("BlockManager leaked sequence block tables: %zu, first leaked sequence id: %llu",
-                      leaked_tables,
-                      static_cast<unsigned long long>(first_leaked_seq_id));
+            try {
+                GENAI_ERR("BlockManager leaked sequence block tables: %zu, first leaked sequence id: %llu",
+                          leaked_tables,
+                          static_cast<unsigned long long>(first_leaked_seq_id));
+            } catch (...) {
+                std::fprintf(stderr,
+                             "BlockManager leaked sequence block tables: %zu, first leaked sequence id: %llu\n",
+                             leaked_tables,
+                             static_cast<unsigned long long>(first_leaked_seq_id));
+            }
         }
     }
 
