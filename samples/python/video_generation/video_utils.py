@@ -1,6 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import struct
 
 import cv2
@@ -10,8 +11,8 @@ import numpy as np
 def _batch_filename(filename: str, batch_size: int, batch_idx: int, default_ext: str) -> str:
     if batch_size == 1:
         return filename
-    base, ext = filename.rsplit(".", 1) if "." in filename else (filename, default_ext)
-    return f"{base}_b{batch_idx}.{ext}"
+    base, ext = os.path.splitext(filename)
+    return f"{base}_b{batch_idx}{ext or '.' + default_ext}"
 
 
 def save_video(filename: str, video_tensor, fps: int = 25):
@@ -47,21 +48,13 @@ def save_video_with_audio(filename: str, video_tensor, audio_tensor, fps: float,
     for b in range(batch_size):
         output_path = _batch_filename(filename, batch_size, b, "avi")
 
-        jpeg_frames = []
-        for f in range(num_frames):
-            frame_bgr = cv2.cvtColor(video_data[b, f], cv2.COLOR_RGB2BGR)
-            ok, jpeg = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
-            if not ok:
-                raise RuntimeError(f"Failed to encode video frame for: {output_path}")
-            jpeg_frames.append(jpeg.tobytes())
-        max_video_chunk = max(len(jpeg) for jpeg in jpeg_frames)
-
         # [C, S] -> interleaved [S, C] 16-bit PCM
         pcm = (np.clip(audio_data[b].T, -1.0, 1.0) * 32767.0).astype(np.int16)
 
         # Interleave one video chunk ("00dc") and one audio chunk ("01wb") per frame.
         movi = bytearray()
         index = []
+        max_video_chunk = 0
         max_audio_chunk = 0
 
         def append_chunk(fourcc: bytes, data: bytes):
@@ -73,7 +66,12 @@ def save_video_with_audio(filename: str, video_tensor, audio_tensor, fps: float,
                 movi.append(0)
 
         for f in range(num_frames):
-            append_chunk(b"00dc", jpeg_frames[f])
+            frame_bgr = cv2.cvtColor(video_data[b, f], cv2.COLOR_RGB2BGR)
+            ok, jpeg = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            if not ok:
+                raise RuntimeError(f"Failed to encode video frame for: {output_path}")
+            max_video_chunk = max(max_video_chunk, len(jpeg))
+            append_chunk(b"00dc", jpeg.tobytes())
 
             sample_begin, sample_end = f * num_samples // num_frames, (f + 1) * num_samples // num_frames
             audio_bytes = pcm[sample_begin:sample_end].tobytes()

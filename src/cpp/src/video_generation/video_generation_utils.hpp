@@ -14,19 +14,13 @@
 
 #include <openvino/op/transpose.hpp>
 #include "openvino/op/add.hpp"
+#include "openvino/op/convert.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/multiply.hpp"
 
 #include "image_generation/schedulers/ischeduler.hpp"
 
 namespace ov::genai::video_generation_utils {
-
-inline std::string get_class_name(const std::filesystem::path& root_dir) {
-    const std::filesystem::path model_index_path = root_dir / "model_index.json";
-    std::ifstream file(model_index_path);
-    OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
-    return nlohmann::json::parse(file)["_class_name"].get<std::string>();
-}
 
 inline std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& scheduler) {
     auto casted = std::dynamic_pointer_cast<IScheduler>(std::move(scheduler));
@@ -129,9 +123,10 @@ inline ov::Tensor unpack_latents(const ov::Tensor& latents,
     OPENVINO_ASSERT(feature_dimensions % patch_volume == 0, "D must be divisible by patch_size_t * patch_size * patch_size");
     const size_t num_channels = feature_dimensions / patch_volume;
 
-    ov::Tensor reshaped{latents.get_element_type(), latents.get_shape()};
-    latents.copy_to(reshaped);
-    reshaped.set_shape({batch_size, num_frames, height, width, num_channels, patch_size_t, patch_size, patch_size});
+    // Zero-copy view: the Transpose below reads the input and writes to a separate output tensor
+    ov::Tensor reshaped(latents.get_element_type(),
+                        {batch_size, num_frames, height, width, num_channels, patch_size_t, patch_size, patch_size},
+                        latents.data());
 
     // permute(0, 4, 1, 5, 2, 6, 3, 7) -> [B, C, F//patch_size_t, patch_size_t, H//patch_size, patch_size, W//patch_size, patch_size]
     const std::array<int64_t, 8> order = {0, 4, 1, 5, 2, 6, 3, 7};
@@ -161,6 +156,19 @@ inline void reshape_to_1C111(ov::Tensor& t, size_t C) {
     OPENVINO_ASSERT(elems == C, "latents_mean/std must contain exactly C elements (got ", elems, ", expected ", C, ")");
 
     t.set_shape({1, C, 1, 1, 1});
+}
+
+inline void check_video_size(int64_t height, int64_t width, int64_t divisor) {
+    OPENVINO_ASSERT(height > 0, "Height must be positive");
+    OPENVINO_ASSERT(height % divisor == 0, "Height have to be divisible by ", divisor, " but got ", height);
+    OPENVINO_ASSERT(width > 0, "Width must be positive");
+    OPENVINO_ASSERT(width % divisor == 0, "Width have to be divisible by ", divisor, " but got ", width);
+}
+
+inline ov::Tensor make_i64_scalar(int64_t value) {
+    ov::Tensor scalar(ov::element::i64, {});
+    *scalar.data<int64_t>() = value;
+    return scalar;
 }
 
 inline ov::Tensor make_scalar(const ov::element::Type& et, float v) {
@@ -209,30 +217,14 @@ inline ov::Tensor denormalize_latents(const ov::Tensor& latents,
     return result[0];  // [B, C, F, H, W]
 }
 
-// Converts between the numeric element types the exported IRs use for masks (f32/i64/i32)
+// Converts between the numeric element types the exported IRs use for masks (e.g. f32/i64/i32)
 inline ov::Tensor convert_tensor(const ov::Tensor& tensor, const ov::element::Type& target_type) {
     if (tensor.get_element_type() == target_type) {
         return tensor;
     }
-    ov::Tensor converted(target_type, tensor.get_shape());
-    auto copy_as = [&](auto* dst, const auto* src) {
-        for (size_t i = 0; i < tensor.get_size(); ++i) {
-            dst[i] = static_cast<std::remove_pointer_t<decltype(dst)>>(src[i]);
-        }
-    };
-    const auto& src_type = tensor.get_element_type();
-    if (src_type == ov::element::i64 && target_type == ov::element::f32) {
-        copy_as(converted.data<float>(), tensor.data<const int64_t>());
-    } else if (src_type == ov::element::f32 && target_type == ov::element::i64) {
-        copy_as(converted.data<int64_t>(), tensor.data<const float>());
-    } else if (src_type == ov::element::i64 && target_type == ov::element::i32) {
-        copy_as(converted.data<int32_t>(), tensor.data<const int64_t>());
-    } else if (src_type == ov::element::i32 && target_type == ov::element::i64) {
-        copy_as(converted.data<int64_t>(), tensor.data<const int32_t>());
-    } else {
-        OPENVINO_THROW("Unsupported tensor conversion from ", src_type, " to ", target_type);
-    }
-    return converted;
+    std::vector<ov::Tensor> converted{ov::Tensor(target_type, tensor.get_shape())};
+    ov::op::v0::Convert{}.evaluate(converted, {tensor});
+    return converted[0];
 }
 
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {

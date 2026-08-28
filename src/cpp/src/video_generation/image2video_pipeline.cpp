@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/video_generation/image2video_pipeline.hpp"
+#include "json_utils.hpp"
 #include "video_generation/ltx_pipeline.hpp"
 
 using namespace ov::genai;
 
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& model_path) {
-    const std::string class_name = video_generation_utils::get_class_name(model_path);
+    const std::string class_name = utils::get_class_name(model_path);
     OPENVINO_ASSERT(class_name == "LTXPipeline",
                     "Unsupported image to video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
     OPENVINO_ASSERT(std::filesystem::exists(model_path / "vae_encoder"),
@@ -20,7 +21,7 @@ Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& model_path
 Image2VideoPipeline::Image2VideoPipeline(const std::filesystem::path& models_path,
                                           const std::string& device,
                                           const ov::AnyMap& properties) {
-    const std::string class_name = video_generation_utils::get_class_name(models_path);
+    const std::string class_name = utils::get_class_name(models_path);
     OPENVINO_ASSERT(class_name == "LTXPipeline",
                     "Unsupported image to video generation pipeline '", class_name, "'. Expected an LTX-Video model.");
     OPENVINO_ASSERT(std::filesystem::exists(models_path / "vae_encoder"),

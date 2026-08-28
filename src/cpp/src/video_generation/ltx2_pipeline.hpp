@@ -15,6 +15,7 @@
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/threaded_callback.hpp"
 #include "logger.hpp"
+#include "lora/helper.hpp"
 #include "generation_config_utils.hpp"
 #include "openvino/genai/image_generation/gemma3_text_encoder.hpp"
 #include "openvino/genai/video_generation/autoencoder_kl_ltx2_audio.hpp"
@@ -123,27 +124,18 @@ class LTX2Pipeline : public VideoPipeline {
     size_t m_latent_num_frames = 0;
     size_t m_latent_height = 0;
     size_t m_latent_width = 0;
-    // Batch size multiplier from the last reshape() call (0 = not set, 1 = no CFG, 2 = CFG enabled)
-    size_t m_reshape_batch_size_multiplier = 0;
-    // Batch size multiplier used when model was compiled (0 = not compiled, 1 = no CFG, 2 = CFG enabled)
-    size_t m_compiled_batch_size_multiplier = 0;
-    bool m_is_compiled = false;
     std::filesystem::path m_models_dir;
-    std::string m_text_encode_device;
-    std::string m_denoise_device;
-    std::string m_vae_device;
-    ov::AnyMap m_compile_properties;
 
     void check_inputs(const VideoGenerationConfig& generation_config) const {
         utils::validate_generation_config(generation_config);
-        OPENVINO_ASSERT(generation_config.height > 0, "Height must be positive");
-        OPENVINO_ASSERT(generation_config.height % 32 == 0,
-                        "Height have to be divisible by 32 but got ",
-                        generation_config.height);
-        OPENVINO_ASSERT(generation_config.width > 0, "Width must be positive");
-        OPENVINO_ASSERT(generation_config.width % 32 == 0,
-                        "Width have to be divisible by 32 but got ",
-                        generation_config.width);
+        video_generation_utils::check_video_size(generation_config.height,
+                                                 generation_config.width,
+                                                 m_vae->get_config().spatial_compression_ratio);
+        const auto temporal_ratio = m_vae->get_config().temporal_compression_ratio;
+        OPENVINO_ASSERT(generation_config.num_frames > 0 &&
+                            (generation_config.num_frames - 1) % temporal_ratio == 0,
+                        "Number of frames have to be divisible by ", temporal_ratio,
+                        " plus 1 (e.g. 9, 17, 25) but got ", generation_config.num_frames);
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 1024,
                         "Gemma3's 'max_sequence_length' must be less or equal to 1024");
         OPENVINO_ASSERT(!generation_config.taylorseer_config,
@@ -189,11 +181,7 @@ class LTX2Pipeline : public VideoPipeline {
     }
 
     void set_micro_conditions(size_t audio_num_frames, float frame_rate) {
-        auto make_i64_scalar = [](int64_t value) {
-            ov::Tensor scalar(ov::element::i64, {});
-            scalar.data<int64_t>()[0] = value;
-            return scalar;
-        };
+        using video_generation_utils::make_i64_scalar;
         m_transformer->set_hidden_states("num_frames", make_i64_scalar(m_latent_num_frames));
         m_transformer->set_hidden_states("height", make_i64_scalar(m_latent_height));
         m_transformer->set_hidden_states("width", make_i64_scalar(m_latent_width));
@@ -268,16 +256,6 @@ class LTX2Pipeline : public VideoPipeline {
         return coords;
     }
 
-    const std::vector<float>& audio_latents_mean() const {
-        return m_audio_vae->get_config().latents_mean_data.empty() ? m_vae->get_config().audio_latents_mean_data
-                                                                   : m_audio_vae->get_config().latents_mean_data;
-    }
-
-    const std::vector<float>& audio_latents_std() const {
-        return m_audio_vae->get_config().latents_std_data.empty() ? m_vae->get_config().audio_latents_std_data
-                                                                  : m_audio_vae->get_config().latents_std_data;
-    }
-
     ov::Tensor postprocess_latents(const ov::Tensor& latent) {
         OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
                         "Latent sizes must be > 0 (got num_frames=",
@@ -306,9 +284,10 @@ class LTX2Pipeline : public VideoPipeline {
     void denormalize_audio_latents(ov::Tensor& latents) const {
         const ov::Shape shape = latents.get_shape();
         const size_t packed_dim = shape[2];
-        const std::vector<float>& mean = audio_latents_mean();
-        const std::vector<float>& std_data = audio_latents_std();
+        const std::vector<float>& mean = m_audio_vae->get_config().latents_mean_data;
+        const std::vector<float>& std_data = m_audio_vae->get_config().latents_std_data;
         if (mean.empty() && std_data.empty()) {
+            GENAI_WARN("Audio VAE config carries no latents_mean/std - skipping audio latents denormalization");
             return;
         }
         OPENVINO_ASSERT(mean.size() == packed_dim && std_data.size() == packed_dim,
@@ -337,10 +316,8 @@ public:
 
         nlohmann::json data = nlohmann::json::parse(file);
 
-        m_video_scheduler = video_generation_utils::cast_scheduler(
-            Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
-        m_audio_scheduler = video_generation_utils::cast_scheduler(
-            Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
+        m_video_scheduler = std::make_shared<FlowMatchEulerDiscreteScheduler>(m_scheduler_config);
+        m_audio_scheduler = std::make_shared<FlowMatchEulerDiscreteScheduler>(m_scheduler_config);
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "Gemma3ForConditionalGeneration") {
@@ -401,10 +378,8 @@ public:
         OPENVINO_ASSERT(m_is_compiled, "Cannot clone an uncompiled LTX2Pipeline");
         auto cloned = std::make_shared<LTX2Pipeline>(*this);
         cloned->m_generation_config.generator.reset();
-        cloned->m_video_scheduler = video_generation_utils::cast_scheduler(
-            Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
-        cloned->m_audio_scheduler = video_generation_utils::cast_scheduler(
-            Scheduler::from_config(m_models_dir / "scheduler/scheduler_config.json"));
+        cloned->m_video_scheduler = std::make_shared<FlowMatchEulerDiscreteScheduler>(m_scheduler_config);
+        cloned->m_audio_scheduler = std::make_shared<FlowMatchEulerDiscreteScheduler>(m_scheduler_config);
         cloned->m_text_encoder = m_text_encoder->clone();
         cloned->m_connectors = std::make_shared<LTX2TextConnectors>(m_connectors->clone());
         cloned->m_transformer = std::make_shared<LTX2VideoTransformer3DModel>(m_transformer->clone());
@@ -422,16 +397,11 @@ public:
         return guidance_scale > 1.0;
     }
 
-    void rebuild_models() {
-        m_text_encoder = std::make_shared<Gemma3TextEncoder>(m_models_dir / "text_encoder");
-        m_connectors = std::make_shared<LTX2TextConnectors>(m_models_dir / "connectors");
-        m_transformer = std::make_shared<LTX2VideoTransformer3DModel>(m_models_dir / "transformer");
-        m_vae = std::make_shared<AutoencoderKLLTX2Video>(m_models_dir / "vae_decoder");
-        m_audio_vae = std::make_shared<AutoencoderKLLTX2Audio>(m_models_dir / "audio_vae_decoder");
-        m_vocoder = std::make_shared<LTX2Vocoder>(m_models_dir / "vocoder");
+    size_t get_transformer_expected_batch_size() const override {
+        return m_transformer->get_expected_batch_size();
     }
 
-    void reshape_models(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) {
+    void reshape_models(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) override {
         m_reshape_batch_size_multiplier = batch_size_multiplier;
         const size_t audio_num_frames = audio_num_frames_for(generation_config);
         m_text_encoder->reshape(batch_size_multiplier, generation_config.max_sequence_length);
@@ -449,63 +419,23 @@ public:
         m_vocoder->reshape(generation_config.num_videos_per_prompt);
     }
 
-    void reconfigure_for_guidance_scale(const VideoGenerationConfig& generation_config, size_t batch_size_multiplier) {
-        rebuild_models();
-        reshape_models(generation_config, batch_size_multiplier);
-        if (m_is_compiled) {
-            compile(m_text_encode_device, m_denoise_device, m_vae_device, m_compile_properties);
-        }
-    }
-
     VideoGenerationResult generate(const std::string& positive_prompt, const ov::AnyMap& properties) override {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
 
-        VideoGenerationConfig merged_generation_config = m_generation_config;
-        utils::update_generation_config(merged_generation_config, properties);
-        replace_defaults(merged_generation_config);
-        const float requested_guidance_scale = merged_generation_config.guidance_scale;
+        VideoGenerationConfig merged_generation_config = merge_generation_config(properties);
+        const float audio_guidance_scale =
+            merged_generation_config.audio_guidance_scale.value_or(merged_generation_config.guidance_scale);
 
-        size_t requested_batch_size_multiplier =
-            do_classifier_free_guidance(merged_generation_config.guidance_scale) ? 2 : 1;
-        if (m_is_compiled) {
-            const size_t expected_batch_size = m_transformer->get_expected_batch_size();
-            if (expected_batch_size > 0) {
-                OPENVINO_ASSERT(expected_batch_size % merged_generation_config.num_videos_per_prompt == 0,
-                                "Compiled batch size must be divisible by num_videos_per_prompt");
-                requested_batch_size_multiplier =
-                    expected_batch_size / merged_generation_config.num_videos_per_prompt;
-            } else if (m_compiled_batch_size_multiplier > 0) {
-                requested_batch_size_multiplier = m_compiled_batch_size_multiplier;
-            }
-            OPENVINO_ASSERT(!(requested_batch_size_multiplier > 1 && merged_generation_config.guidance_scale <= 1.0f),
-                            "guidance_scale <= 1 requested, but the compiled model expects CFG (batch size multiplier = ",
-                            requested_batch_size_multiplier, "). "
-                            "Either set guidance_scale > 1, or reshape/compile the model with guidance_scale <= 1.");
-        }
-        size_t batch_size_multiplier = std::max({requested_batch_size_multiplier,
-                                                  m_reshape_batch_size_multiplier,
-                                                  m_compiled_batch_size_multiplier});
-
-        if (!m_is_compiled) {
-            if (m_reshape_batch_size_multiplier == 0) {
-                m_reshape_batch_size_multiplier = batch_size_multiplier;
-            } else if (m_reshape_batch_size_multiplier < batch_size_multiplier) {
-                reconfigure_for_guidance_scale(merged_generation_config, batch_size_multiplier);
-            }
-        }
-
+        // Matches diffusers: CFG is enabled when either modality requests guidance
+        const bool cfg_requested =
+            do_classifier_free_guidance(merged_generation_config.guidance_scale) || audio_guidance_scale > 1.0f;
+        const size_t batch_size_multiplier = resolve_batch_size_multiplier(merged_generation_config, cfg_requested);
         const bool use_classifier_free_guidance = batch_size_multiplier > 1;
-        if (m_is_compiled && requested_guidance_scale > 1.0f && !use_classifier_free_guidance) {
-            GENAI_WARN("guidance_scale > 1 requested, but the compiled model batch size does not allow CFG. "
-                       "Run reshape/compile with guidance_scale > 1 to enable guidance.");
-        }
 
         check_inputs(merged_generation_config);
         OPENVINO_ASSERT(merged_generation_config.generator, "Generator must not be null");
 
-        const float audio_guidance_scale =
-            merged_generation_config.audio_guidance_scale.value_or(merged_generation_config.guidance_scale);
         const float guidance_rescale = *merged_generation_config.guidance_rescale;
 
         std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
@@ -524,7 +454,6 @@ public:
             (merged_generation_config.num_frames - 1) / m_vae->get_config().temporal_compression_ratio + 1;
         m_latent_height = merged_generation_config.height / m_vae->get_config().spatial_compression_ratio;
         m_latent_width = merged_generation_config.width / m_vae->get_config().spatial_compression_ratio;
-        const size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
 
         const size_t audio_num_frames = audio_num_frames_for(merged_generation_config);
         const size_t latent_mel_bins =
@@ -575,7 +504,8 @@ public:
         // x0-space classifier-free guidance (see LTX2Pipeline denoising loop in diffusers):
         // x0 = sample - v * sigma; guided = x0_pos + (gs - 1) * (x0_pos - x0_neg); v = (sample - guided) / sigma
         ov::Tensor x0_pos(ov::element::f32, {}), guided(ov::element::f32, {});
-        auto guided_velocity = [&](const ov::Tensor& pred, const ov::Tensor& sample, float gs, float sigma) {
+        auto guided_velocity =
+            [&](const ov::Tensor& pred, const ov::Tensor& sample, float gs, float sigma, ov::Tensor& velocity) {
             ov::Shape guided_shape = pred.get_shape();
             guided_shape[0] /= batch_size_multiplier;
             x0_pos.set_shape(guided_shape);
@@ -601,13 +531,14 @@ public:
                                                           guidance_rescale);
             }
 
-            ov::Tensor velocity(ov::element::f32, guided_shape);
+            velocity.set_shape(guided_shape);
             float* velocity_data = velocity.data<float>();
             for (size_t i = 0; i < elems; ++i) {
                 velocity_data[i] = (sample_data[i] - guided_data[i]) / sigma;
             }
             return velocity;
         };
+        ov::Tensor video_velocity_buffer(ov::element::f32, {}), audio_velocity_buffer(ov::element::f32, {});
 
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
@@ -630,10 +561,11 @@ public:
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
             ov::Tensor video_velocity = batch_size_multiplier > 1
-                ? guided_velocity(noise_pred_video, latent, merged_generation_config.guidance_scale, sigma)
+                ? guided_velocity(noise_pred_video, latent, merged_generation_config.guidance_scale, sigma,
+                                  video_velocity_buffer)
                 : noise_pred_video;
             ov::Tensor audio_velocity = batch_size_multiplier > 1
-                ? guided_velocity(noise_pred_audio, audio_latent, audio_guidance_scale, sigma)
+                ? guided_velocity(noise_pred_audio, audio_latent, audio_guidance_scale, sigma, audio_velocity_buffer)
                 : noise_pred_audio;
 
             auto video_step_result = m_video_scheduler->step(video_velocity,
@@ -655,7 +587,7 @@ public:
                 m_perf_metrics.generate_duration =
                     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
                         .count();
-                return {ov::Tensor(ov::element::u8, {}), m_perf_metrics, ov::Tensor()};
+                return {ov::Tensor(ov::element::u8, {}), m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
             }
 
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
@@ -699,7 +631,7 @@ public:
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
 
-        return VideoGenerationResult{video, m_perf_metrics, ov::Tensor()};
+        return VideoGenerationResult{video, m_perf_metrics, ov::Tensor(ov::element::f32, ov::Shape{0})};
     }
 
     void reshape(int64_t num_videos_per_prompt,
@@ -707,7 +639,7 @@ public:
                  int64_t height,
                  int64_t width,
                  float guidance_scale) override {
-        check_video_size(height, width);
+        video_generation_utils::check_video_size(height, width, m_vae->get_config().spatial_compression_ratio);
 
         VideoGenerationConfig reshaped_config = m_generation_config;
         reshaped_config.num_videos_per_prompt = num_videos_per_prompt;
@@ -723,16 +655,16 @@ public:
                  const std::string& denoise_device,
                  const std::string& vae_device,
                  const ov::AnyMap& properties) override {
-        m_text_encoder->compile(text_encode_device, properties);
-        m_connectors->compile(text_encode_device, properties);
-        m_transformer->compile(denoise_device, properties);
-        m_vae->compile(vae_device, properties);
-        m_audio_vae->compile(vae_device, properties);
-        m_vocoder->compile(vae_device, properties);
-        m_text_encode_device = text_encode_device;
-        m_denoise_device = denoise_device;
-        m_vae_device = vae_device;
-        m_compile_properties = properties;
+        std::optional<AdapterConfig> adapters;
+        auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
+        OPENVINO_ASSERT(!adapters || adapters->get_adapters().empty(),
+                        "LoRA adapters are not supported for LTX2 pipelines");
+        m_text_encoder->compile(text_encode_device, *filtered_properties);
+        m_connectors->compile(text_encode_device, *filtered_properties);
+        m_transformer->compile(denoise_device, *filtered_properties);
+        m_vae->compile(vae_device, *filtered_properties);
+        m_audio_vae->compile(vae_device, *filtered_properties);
+        m_vocoder->compile(vae_device, *filtered_properties);
         m_is_compiled = true;
         m_compiled_batch_size_multiplier = m_reshape_batch_size_multiplier;
     }
@@ -766,13 +698,6 @@ protected:
         }
     }
 
-private:
-    void check_video_size(const int height, const int width) const {
-        OPENVINO_ASSERT(height > 0, "Height must be positive");
-        OPENVINO_ASSERT(height % 32 == 0, "Height have to be divisible by 32 but got ", height);
-        OPENVINO_ASSERT(width > 0, "Width must be positive");
-        OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
-    }
 };
 
 }  // namespace ov::genai

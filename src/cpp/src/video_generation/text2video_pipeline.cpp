@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "json_utils.hpp"
 #include "video_generation/ltx2_pipeline.hpp"
 #include "video_generation/ltx_pipeline.hpp"
 
@@ -10,7 +11,7 @@ using namespace ov::genai;
 Text2VideoPipeline::Text2VideoPipeline(std::shared_ptr<VideoPipeline> impl) : m_impl(std::move(impl)) {}
 
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path) {
-    const std::string class_name = video_generation_utils::get_class_name(model_path);
+    const std::string class_name = utils::get_class_name(model_path);
     if (class_name == "LTXPipeline") {
         m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::TEXT_2_VIDEO, model_path);
     } else if (class_name == "LTX2Pipeline") {
@@ -23,7 +24,7 @@ Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& model_path) 
 Text2VideoPipeline::Text2VideoPipeline(const std::filesystem::path& models_dir,
                                        const std::string& device,
                                        const AnyMap& properties) {
-    const std::string class_name = video_generation_utils::get_class_name(models_dir);
+    const std::string class_name = utils::get_class_name(models_dir);
     if (class_name == "LTXPipeline") {
         m_impl = std::make_shared<LTXPipeline>(VideoPipelineType::TEXT_2_VIDEO, models_dir, device, properties);
     } else if (class_name == "LTX2Pipeline") {
