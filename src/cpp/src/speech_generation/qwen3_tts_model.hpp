@@ -145,6 +145,8 @@ private:
     bool m_text_projection_baked = false;  // true when projection is folded into text embedding rows
     ov::InferRequest m_talker_code_predictor;
     bool m_predictor_stateful = false;  // true for openvino_code_predictor_model.xml (updated_optimum layout)
+    bool m_predictor_new_static = false;  // true for updated predictor converted to stateless+static at runtime
+    bool m_predictor_has_beam_idx = false;
     ov::InferRequest m_talker_code_predictor_embedding;
 
     // Static all-heads code predictor state. The loaded predictor IR must expose
