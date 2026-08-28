@@ -94,8 +94,9 @@ std::string default_device_for_role(const std::string& base_device, bool is_npu,
         return base_device;
     }
 
-    // NPU can run talker, code predictor, and speech-tokenizer decoder.
-    if (role == roles::TALKER || role == roles::CODE_PREDICTOR || role == roles::SPEECH_TOKENIZER_DECODER) {
+    // NPU can run talker and speech-tokenizer decoder right now.
+    // TODO: Once NPU can handle the stateful code predictor model, add roles::CODE_PREDICTOR
+    if( role == roles::TALKER || role == roles::SPEECH_TOKENIZER_DECODER) {
         return base_device;
     }
 
