@@ -26,12 +26,16 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
         self,
         text: str,
         image: Optional[Union["Image", list["Image"]]] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
         processor: Optional[AutoImageProcessor] = None,
     ):
         if image is not None:
             image_token = getattr(processor, "image_token", "<|image|>")
             text = f"{image_token}{text}"
-        return processor(images=image, text=text, return_tensors="pt")
+        if video is not None:
+            video_token = getattr(processor, "video_token", "<|video|>")
+            text = f"{video_token}{text}"
+        return processor(text=text, images=image, videos=video, return_tensors="pt")
 
     def preprocess_inputs(
         self,
@@ -45,16 +49,18 @@ class Gemma4UnifiedInputsPreprocessor(VLMInputsPreprocessor):
     ):
         if processor is None:
             raise ValueError("Processor is required.")
-        if video is not None:
-            raise ValueError("Video input is not supported")
         if audio is not None:
             raise ValueError("Audio input is not supported")
 
         self.update_images(image)
         if getattr(processor, "chat_template", None) is None:
-            return self._preprocess_non_chat_template(text, self.images, processor)
+            return self._preprocess_non_chat_template(text, self.images, video, processor)
 
         content = []
+        if video is not None:
+            if not isinstance(video, list):
+                video = [video]
+            content.extend({"type": "video", "video": vid} for vid in video)
         if image is not None:
             if not isinstance(image, list):
                 image = [image]
@@ -108,6 +114,55 @@ class Gemma4InputsPreprocessor(Gemma3InputsPreprocessor):
                 inputs["pixel_values"] = inputs["pixel_values"][cached_image_num:]
                 if "image_position_ids" in inputs:
                     inputs["image_position_ids"] = inputs["image_position_ids"][cached_image_num:]
+
+        return inputs
+
+    def preprocess_inputs(
+        self,
+        text: str,
+        image: Optional[Union["Image", list["Image"]]] = None,
+        processor: Optional[AutoImageProcessor] = None,
+        tokenizer: Optional[PreTrainedTokenizer] = None,
+        config: Optional[PretrainedConfig] = None,
+        video: Optional[Union["VideoInput", list["VideoInput"]]] = None,
+        audio: Optional[np.ndarray] = None,
+    ):
+        if processor is None:
+            raise ValueError("Processor is required.")
+        if audio is not None:
+            raise ValueError("Audio input is not supported")
+
+        self.update_images(image)
+        content = []
+        if video is not None:
+            if not isinstance(video, list):
+                video = [video]
+            content.extend([{"type": "video"}] * len(video))
+
+        if image is not None:
+            if not isinstance(image, list):
+                image = [image]
+            content.extend([{"type": "image"}] * len(image))
+
+        content.append({"type": "text", "text": text})
+
+        if self.chat_mode:
+            self.chat_history.append({"role": "user", "content": content})
+            conversation = self.chat_history
+        else:
+            conversation = [{"role": "user", "content": content}]
+
+        text_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
+
+        # switch off add_bos_token if chat template already includes it
+        orig_add_bos_token = processor.tokenizer.add_bos_token
+        if getattr(processor.tokenizer, "chat_template", None) and "bos_token" in processor.tokenizer.chat_template:
+            processor.tokenizer.add_bos_token = False
+
+        inputs = processor(images=self.images, videos=video, text=text_prompt, return_tensors="pt")
+
+        # recover add_bos_token flag in tokenizer
+        processor.tokenizer.add_bos_token = orig_add_bos_token
 
         return inputs
 
