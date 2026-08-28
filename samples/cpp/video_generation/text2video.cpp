@@ -37,7 +37,10 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::guidance_scale(3)
     );
 
-    save_video("genai_video.avi", output.video, frame_rate);
+    if (size_t sample_rate = pipe.get_audio_sample_rate())
+        save_video_with_audio("genai_video.avi", output.video, output.audio, frame_rate, static_cast<uint32_t>(sample_rate));
+    else
+        save_video("genai_video.avi", output.video, frame_rate);
 
     std::cout << "\nPerformance metrics:\n"
               << "  Load time: " << output.performance_stat.get_load_time() << " ms\n"

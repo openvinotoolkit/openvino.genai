@@ -4,7 +4,7 @@
 
 import argparse
 import openvino_genai
-from video_utils import save_video
+from video_utils import save_video, save_video_with_audio
 
 
 def main():
@@ -35,7 +35,11 @@ def main():
         guidance_scale=3,
     )
 
-    save_video("genai_video.avi", output.video, frame_rate)
+    sample_rate = pipe.get_audio_sample_rate()
+    if sample_rate:
+        save_video_with_audio("genai_video.avi", output.video, output.audio, frame_rate, sample_rate)
+    else:
+        save_video("genai_video.avi", output.video, frame_rate)
 
     print(f"\nPerformance metrics:")
     print(f"  Load time: {output.perf_metrics.get_load_time():.2f} ms")
