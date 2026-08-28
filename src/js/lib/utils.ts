@@ -381,7 +381,7 @@ export type GenerationConfig = GenericGenerationConfig &
 
 /** Generation config for WhisperPipeline. Extends GenerationConfig with Whisper-specific options. */
 export type WhisperGenerationConfig = GenerationConfig & {
-  /** Language token for generation (e.g. "<|en|>"). For multilingual models only. */
+  /** Language for generation: a plain code (e.g. "en") or the wrapped token form (e.g. "<|en|>"). For multilingual models only. */
   language?: string;
   /** Task: "translate" or "transcribe". For multilingual models only. */
   task?: string;
@@ -461,6 +461,16 @@ export type WhisperGenerationConfig = GenerationConfig & {
   suppress_tokens?: Uint[];
 };
 
+/**
+ * Generation config for ASRPipeline. Extends the Whisper generation config with
+ * Qwen3-ASR-specific options. Whisper-specific fields are ignored by Qwen3-ASR models
+ * and vice versa.
+ */
+export type ASRGenerationConfig = WhisperGenerationConfig & {
+  /** Context passed as a previous transcription to steer spelling or style. Supported by Qwen3-ASR models only. */
+  context?: string;
+};
+
 /** Generation config for Text2SpeechPipeline. Extends GenerationConfig with speech-specific options. */
 export type SpeechGenerationConfig = GenerationConfig & {
   /** Minimum ratio of output length to input text length; prevents output that's too short. */
@@ -505,6 +515,10 @@ export type VLMPipelineProperties = {
 } & Record<string, unknown>;
 
 export type WhisperPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+} & Record<string, unknown>;
+
+export type ASRPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
 } & Record<string, unknown>;
 

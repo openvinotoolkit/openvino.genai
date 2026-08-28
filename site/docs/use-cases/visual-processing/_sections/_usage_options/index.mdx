@@ -28,6 +28,8 @@ The prompt can contain `<ov_genai_image_i>` with `i` replaced with an actual zer
 14. gemma-3-4b-it: `<start_of_image>`
 15. gemma3n: `<image_soft_token>`
 16. gemma4: `<|image|>`
+17. Muse Glimmer: `<|image|>`
+18. DeepSeek-OCR-2: `<image>`
 
 Model's native video tag can be used to refer to a video. These tags are:
 1. LLaVA-NeXT-Video: `<video>`
@@ -36,6 +38,7 @@ Model's native video tag can be used to refer to a video. These tags are:
 4. Qwen3-VL: `<|vision_start|><|video_pad|><|vision_end|>`
 5. VideoChat_Flash_Qwen: `<|image_i|>\n` - the index starts with one
 6. gemma4: `<|video|>`
+7. Muse Glimmer: `<|video|>`
 
 If the prompt doesn't contain image or video tags, but images or videos are provided, the tags are prepended to the prompt.
 

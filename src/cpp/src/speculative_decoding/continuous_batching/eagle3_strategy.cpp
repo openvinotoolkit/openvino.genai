@@ -6,7 +6,6 @@
 #include "eagle3_strategy.hpp"
 #include "openvino/pass/pa_kv_reorder_fusion.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
-#include "logger.hpp"
 
 namespace ov::genai {
 KVUpdateWrapper::KVUpdateWrapper(const ov::genai::ModelDesc& kv_model_desc) {
@@ -92,15 +91,12 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     ov::genai::ModelDesc kv_model_desc;
     kv_model_desc.model = kv_model;
     kv_model_desc.device = std::move(main_device);
-    // only kv cache information is needed for kv update model
-    if (main_model_desc.properties.count(ov::hint::kv_cache_precision.name()) > 0) {
-        kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
-    } else {
-        GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
-    }
 
-    auto kv_cache_precision =
-        m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
+    // Read the KV cache precision from the compiled main model's key_cache input port rather than
+    // the ov::hint::kv_cache_precision property: plugins may resolve the actual cache precision
+    // (e.g. CPU promoting to bf16 based on inference precision) independently of that hint, and the
+    // reorder model must match the precision of the tensors actually bound by the scheduler.
+    auto kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
     kv_model->set_rt_info(kv_cache_precision, "auxiliary_kv_cache_precision");
@@ -108,7 +104,13 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
         kv_cache_precision = ov::element::u8;
     }
     ov::pass::PaKVReorderFusion(kv_cache_precision).run_on_model(kv_model);
-    // add rt_info for real kv precision into kv_model
+    // Pass the resolved (post u4->u8) precision explicitly instead of forwarding the raw
+    // ov::hint::kv_cache_precision value from main_model_desc.properties: for u4 caches that raw
+    // value would still say "u4" while PaKVReorderFusion above already rewrote the key_cache./
+    // value_cache. parameters to u8, and some plugins (e.g. GPU) give an explicitly user-set
+    // kv_cache_precision property priority over the auxiliary_kv_cache_precision rt_info, which
+    // would reintroduce a precision mismatch between the property and the actual parameter type.
+    kv_model_desc.properties[ov::hint::kv_cache_precision.name()] = kv_cache_precision;
     m_kv_update_wrapper = std::make_shared<KVUpdateWrapper>(kv_model_desc);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
@@ -198,6 +200,30 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::align_request_pair_processe
     }
 }
 
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::validate_awaiting_requests(
+    const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
+    const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const {
+    size_t expected_draft_requests = 0;
+
+    for (const auto& request : main_awaiting_requests) {
+        OPENVINO_ASSERT(request, "Eagle3 main awaiting request pointer is null.");
+
+        const auto& sampling_params = request->get_sampling_parameters();
+        const bool is_main_only =
+            sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0;
+        if (!is_main_only) {
+            ++expected_draft_requests;
+        }
+    }
+
+    OPENVINO_ASSERT(draft_awaiting_requests.size() == expected_draft_requests,
+                    "Eagle3 awaiting request mismatch: draft queue size is ",
+                    draft_awaiting_requests.size(),
+                    ", but expected ",
+                    expected_draft_requests,
+                    " (number of main requests with speculative decoding enabled).");
+}
+
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_embeddings(const ov::Tensor& original_input_embeddings) {
     auto shape = original_input_embeddings.get_shape();
 
@@ -230,6 +256,16 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        // No speculative draft for this request: run only the main model.
+        return m_main_pipeline->add_request(request_id,
+                                            input_ids,
+                                            sampling_params,
+                                            token_type_ids,
+                                            prompt_ids,
+                                            lm_extra_inputs);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -280,6 +316,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
 
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
+
+    if (sampling_params.num_assistant_tokens.has_value() && sampling_params.num_assistant_tokens.value() == 0) {
+        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
+    }
+
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
@@ -311,7 +352,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                       ov::Tensor& draft_in) {
         OPENVINO_ASSERT(main_cfg.assistant_confidence_threshold == 0.f,
                         "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
-        if (main_cfg.num_assistant_tokens == 0) {
+        if (!main_cfg.num_assistant_tokens.has_value()) {
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         }
@@ -337,19 +378,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     };
 
     return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
-}
-
-int64_t ContinuousBatchingPipeline::Eagle3DecodingImpl::compute_rope_delta(const ov::Tensor& position_ids) {
-    const ov::Shape shape = position_ids.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 || shape.size() == 3,
-                    "Expected position_ids rank 2 or 3 when computing rope_delta.");
-
-    const size_t seq_axis = shape.size() == 3 ? 2 : 1;
-    OPENVINO_ASSERT(shape[seq_axis] > 0, "position_ids sequence length must be greater than 0.");
-
-    const int64_t* data = position_ids.data<const int64_t>();
-    const int64_t max_position_id = *std::max_element(data, data + position_ids.get_size());
-    return max_position_id + 1 - static_cast<int64_t>(shape[seq_axis]);
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_sequence_tensor(const ov::Tensor& tensor,
