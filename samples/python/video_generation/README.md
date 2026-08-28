@@ -30,6 +30,14 @@ optimum-cli export openvino --model Lightricks/LTX-Video --task text-to-video --
 
 > **Note:** For basic video generation without LoRA, `--weight-format int8` produces a smaller model.
 
+### For LTX-2 Text-to-Video
+
+```sh
+optimum-cli export openvino --model Lightricks/LTX-2 --trust-remote-code --weight-format fp16 ltx2_ov/FP16
+```
+
+> **Note:** LTX-2 combines a large video transformer with a Gemma3 text encoder, so export and inference require a significant amount of RAM. `--weight-format fp16` halves the exported model size compared to fp32.
+
 ### For Image-to-Video
 
 The image-to-video pipeline requires a model exported with optimum-intel from the `main` branch:
@@ -65,15 +73,17 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 ### Text to Video Sample (`text2video.py`)
 
 - **Description:**
-  Basic video generation using a text-to-video model. This sample demonstrates how to generate videos from text prompts using the OpenVINO GenAI Text2VideoPipeline. The LTX-Video model is recommended for this sample.
+  Basic video generation using a text-to-video model. This sample demonstrates how to generate videos from text prompts using the OpenVINO GenAI Text2VideoPipeline.
 
-  Recommended models: Lightricks/LTX-Video
+  Recommended models: Lightricks/LTX-Video, Lightricks/LTX-2
 
 - **Main Feature:** Generate videos from text descriptions with customizable parameters.
 
+- **Output:** `genai_video.avi` in the current directory. For models that generate audio (LTX-2), the audio track is included in the same file.
+
 - **Run Command:**
   ```bash
-  python text2video.py model_dir prompt [--device DEVICE] [--output OUTPUT]
+  python text2video.py model_dir prompt [num_frames]
   ```
 
   Example:
@@ -185,10 +195,10 @@ For more details about TaylorSeer, see the [diffusion caching documentation](../
 
 ## Troubleshooting
 
-### LTX-Video Model Constraints
+### LTX Model Constraints
 
 > [!NOTE]
-> The LTX-Video model works best on:
+> The LTX models work best on:
 > - Resolutions divisible by 32 (e.g., 480x704, 512x512, 720x1280)
 > - Number of frames divisible by 8 + 1 (e.g., 9, 17, 25, 33, 41, 49, 57, 65, 73, 81, 89, 97, 121, 161, 257)
 > - At least 2 inference steps (1 step may produce artifacts)
