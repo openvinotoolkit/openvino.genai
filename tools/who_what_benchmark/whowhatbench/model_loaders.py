@@ -99,6 +99,7 @@ def _add_genai_draft_model_config(ov_config, device, model_type, **kwargs):
         "visual-text",
         "visual-video-text",
         "visual-text-chat",
+        "visual-text-only",
     ):
         raise RuntimeError(f"Draft model is not supported for OpenVINO GenAI {model_type} pipelines on NPU in WWB")
 
@@ -136,6 +137,7 @@ class GenAIModelWrapper:
             "embedding",
             "text-reranking",
             "visual-text-chat",
+            "visual-text-only",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -238,7 +240,8 @@ def load_text_llamacpp_pipeline(model_dir, **kwargs):
     model_kwargs = {}
     if n_ctx is not None:
         model_kwargs["n_ctx"] = int(n_ctx)
-    model = Llama(model_dir, **model_kwargs)
+    model_path = os.path.join(model_dir, kwargs["gguf_file"]) if kwargs.get("gguf_file") else model_dir
+    model = Llama(model_path, **model_kwargs)
     return model
 
 
@@ -1143,6 +1146,17 @@ def load_speech_generation_model(model_id, device="CPU", ov_config=None, use_hf=
     return SpeechT5Wrapper(model, processor, None)
 
 
+def load_speech_recognition_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    language = kwargs.pop("speech_language", "") or ""
+    from .speech_recognition_evaluator import ASRGenAITranscriber, ASRHFTranscriber, ASROptimumTranscriber
+
+    if use_hf:
+        return ASRHFTranscriber.create(model_id, device, ov_config, language, **kwargs)
+    if use_genai:
+        return ASRGenAITranscriber.create(model_id, device, ov_config, language, **kwargs)
+    return ASROptimumTranscriber.create(model_id, device, ov_config, language, **kwargs)
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -1161,7 +1175,7 @@ def load_model(
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type == "visual-text" or model_type == "visual-video-text" or model_type == "visual-text-chat":
+    elif model_type in ["visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
@@ -1178,5 +1192,7 @@ def load_model(
         return load_image2video_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "speech-generation":
         return load_speech_generation_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
+    elif model_type == "speech-recognition":
+        return load_speech_recognition_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

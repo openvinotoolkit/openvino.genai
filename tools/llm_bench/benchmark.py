@@ -354,16 +354,21 @@ def get_argparser():
     parser.add_argument(
         "--streaming", action="store_true", help="Set whether to use streaming mode, only applicable to LLM."
     )
-    parser.add_argument("--num_steps", type=int, required=False, help="Number of inference steps for image generation")
+    parser.add_argument(
+        "--num_steps",
+        type=greater_than_zero,
+        required=False,
+        help="Number of inference steps for Image and Video Generation.",
+    )
     parser.add_argument(
         "--height",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Generated image height. Applicable only for Image and Video Generation.",
     )
     parser.add_argument(
         "--width",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Generated image width. Applicable only for Image and Video Generation.",
     )
@@ -380,7 +385,7 @@ def get_argparser():
     )
     parser.add_argument(
         "--num_frames",
-        type=int,
+        type=greater_than_zero,
         required=False,
         help="Number of frames in generated video. Applicable only for Video Generation.",
     )

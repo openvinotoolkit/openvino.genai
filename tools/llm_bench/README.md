@@ -294,9 +294,13 @@ python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wa
 
 # Qwen3-Omni speech recognition
 python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
+
+# FunASR speech recognition
+optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
+python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2
 ```
 
-> **Supported Speech to Text model types:** whisper, qwen3-asr, qwen3-omni
+> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
 
 
 ### Text Rerank models

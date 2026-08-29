@@ -87,7 +87,7 @@ function parseWavPcm16Mono(buffer) {
 }
 
 /**
- * Read WAV file and convert to 16kHz mono Float32Array for Whisper pipeline.
+ * Read WAV file and convert to 16kHz mono Float32Array for speech recognition pipelines.
  * @param {string} audioPath
  * @returns {Promise<Float32Array>}
  */

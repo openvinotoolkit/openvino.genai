@@ -175,7 +175,9 @@ class UseCaseTextToSpeech(UseCase):
 
 USE_CASES = {
     "image_gen": [
-        UseCaseImageGen(["stable-diffusion-", "ssd-", "tiny-sd", "small-sd", "lcm-", "sdxl", "dreamlike", "flux"])
+        UseCaseImageGen(
+            ["stable-diffusion-", "ssd-", "tiny-sd", "small-sd", "lcm-", "sdxl", "dreamlike", "flux", "z-image"]
+        )
     ],
     "video_gen": [UseCaseVideoGen(["ltx"])],
     "visual_text_gen": [
@@ -202,7 +204,7 @@ USE_CASES = {
         UseCaseVLM(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "speech_to_text": [
-        UseCaseSpeech2Text(["whisper", "qwen3-asr"]),
+        UseCaseSpeech2Text(["whisper", "qwen3-asr", "fun-asr"]),
         UseCaseSpeech2Text(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "image_cls": [UseCaseImageCls(["vit"])],

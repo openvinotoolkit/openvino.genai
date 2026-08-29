@@ -131,9 +131,27 @@ inline void ensure_num_assistant_tokens_is_set(GenerationConfig& config) {
                     "DFlash CB/PA only supports num_assistant_tokens; assistant_confidence_threshold must be 0.f.");
     OPENVINO_ASSERT(config.max_ngram_size == 0,
                     "DFlash CB/PA does not support prompt lookup decoding; max_ngram_size must be 0.");
-    if (config.num_assistant_tokens == 0) {
+    if (!config.num_assistant_tokens.has_value() || config.num_assistant_tokens.value() == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
+}
+
+inline void ensure_vlm_generation_config(const GenerationConfig& config) {
+    // Keep generic DFlash decoding behavior unchanged. These checks cover only
+    // VLM representation/output modes that cannot be expressed faithfully with
+    // row-aligned multimodal prompt IDs.
+    OPENVINO_ASSERT(config.pruning_ratio == 0,
+                    "DFlash VLM does not support visual token pruning.");
+    OPENVINO_ASSERT(!config.echo && config.logprobs == 0,
+                    "DFlash VLM does not support echo or prompt logprobs for row-aligned multimodal prompt IDs.");
+    OPENVINO_ASSERT(!config.return_omni_outputs,
+                    "DFlash VLM does not support Omni intermediate outputs.");
+}
+
+inline std::vector<int64_t> build_placeholder_prompt_ids(size_t prompt_length, int64_t placeholder_id) {
+    OPENVINO_ASSERT(prompt_length > 0, "DFlash VLM logical prompt length must be greater than 0.");
+    OPENVINO_ASSERT(placeholder_id >= 0, "DFlash VLM requires a valid placeholder token ID.");
+    return std::vector<int64_t>(prompt_length, placeholder_id);
 }
 
 inline size_t linear_attention_checkpoint_block_count(size_t num_assistant_tokens) {
@@ -216,13 +234,6 @@ inline ValidationAccounting validation_accounting(size_t draft_generated,
     const size_t produced_by_target = target_generated_len - generated_before_draft;
     const size_t accepted = produced_by_target > 0 ? std::min(draft_generated, produced_by_target - 1) : 0;
     return {accepted, draft_generated - accepted, true};
-}
-
-inline size_t linear_attention_checkpoint_slot_for_validation(const ValidationAccounting& accounting,
-                                                              bool validation_input_includes_seed_token) {
-    OPENVINO_ASSERT(accounting.target_extended,
-                    "Cannot select a linear attention checkpoint when target did not extend the sequence.");
-    return accounting.accepted + (validation_input_includes_seed_token ? 1 : 0);
 }
 
 }  // namespace ov::genai::dflash_cb

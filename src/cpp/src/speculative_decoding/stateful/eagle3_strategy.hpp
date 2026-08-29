@@ -291,6 +291,9 @@ private:
     /// @brief Builds inputs for TARGET_PREFILL: full prompt, causal, no tree mask.
     InputTensors build_prefill_inputs() const;
 
+    /// @brief Builds inputs for target-only generation: last generated token, causal, no tree mask.
+    InputTensors build_generate_inputs() const;
+
     /// @brief Builds inputs for TARGET_VALIDATION: N+1 tree candidates with tree attention mask.
     InputTensors build_validation_inputs() const;
 };
@@ -480,6 +483,7 @@ private:
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;
+    bool m_draft_enabled = true;
 
     std::shared_ptr<ov::op::v0::Constant>
         m_d2t_mapping;                     ///< Draft-to-target token mapping (extracted during graph transforms)
