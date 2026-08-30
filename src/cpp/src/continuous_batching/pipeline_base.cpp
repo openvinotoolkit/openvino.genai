@@ -330,7 +330,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
-    std::vector<ov::Tensor> original_prompt_ids_list;
+    std::vector<ov::Tensor> prompt_ids_list;
     std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
 
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
@@ -342,24 +342,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     // Set visual token pruning configuration
     m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight);
-
-    // Shared helpers for prompt-ID extraction used in both chat-conversation and multi-prompt branches.
-    // Cache-state size is captured pre-embedding so the new prompt-ids slice can be sent
-    // downstream for speech when needed.
-    auto prepare_prompt_ids = [&](const std::string& prompt, const GenerationConfig& params) -> size_t {
-        if (params.is_prompt_lookup()) {
-            original_prompt_ids_list.push_back(m_inputs_embedder->encode_prompt(prompt));
-        }
-        return m_inputs_embedder->get_cache_state().get_state().size();
-    };
-
-    auto extract_audio_prompt_ids = [&](const GenerationConfig& /*params*/, size_t cache_size_before) {
-        const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
-        const size_t new_tokens = cache_ids.size() - cache_size_before;
-        ov::Tensor prompt_ids_tensor(ov::element::i64, {1, new_tokens});
-        std::copy(cache_ids.begin() + cache_size_before, cache_ids.end(), prompt_ids_tensor.data<int64_t>());
-        original_prompt_ids_list.push_back(prompt_ids_tensor);
-    };
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
@@ -399,7 +381,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[0]);
+        const size_t cache_size_before = m_inputs_embedder->get_cache_state().get_state().size();
 
         if (m_inputs_embedder->has_token_type_ids()) {
             auto [embeds, tt_ids] =
@@ -424,7 +406,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                 m_history_vision_count));
         }
 
-        extract_audio_prompt_ids(sampling_params[0], cache_size_before);
+        prompt_ids_list.push_back(vlm_utils::extract_prompt_ids(
+            m_inputs_embedder->get_cache_state().get_state(),
+            cache_size_before,
+            input_embeds_list.back().get_shape()[1]));
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
@@ -461,7 +446,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             m_inputs_embedder->set_apply_chat_template_status(sampling_params[i].apply_chat_template);
 
-            size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
+            const size_t cache_size_before = m_inputs_embedder->get_cache_state().get_state().size();
 
             if (m_inputs_embedder->has_token_type_ids()) {
                 auto [embeds, tt_ids] =
@@ -484,7 +469,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                     video_sequence));
             }
 
-            extract_audio_prompt_ids(sampling_params[i], cache_size_before);
+            prompt_ids_list.push_back(vlm_utils::extract_prompt_ids(
+                m_inputs_embedder->get_cache_state().get_state(),
+                cache_size_before,
+                input_embeds_list.back().get_shape()[1]));
 
             position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
@@ -499,7 +487,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                     streamer,
                                                                     token_type_ids_list,
                                                                     position_ids_list,
-                                                                    original_prompt_ids_list,
+                                                                    prompt_ids_list,
                                                                     lm_extra_inputs_list);
     for (size_t i = 0; i < prompts.size(); i++) {
         utils::assert_request_was_scheduled(encoded_results[i].m_status, encoded_results[i].m_request_id);
@@ -644,18 +632,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
-    std::vector<ov::Tensor> original_prompt_ids_list;
+    std::vector<ov::Tensor> prompt_ids_list;
     std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
 
     std::vector<VLMPerfMetrics> vlm_perf_metrics(histories.size());
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
-    // Omni speech needs the exact prompt-token slice the Thinker consumed, but collecting it must
-    // not force ChatHistory through the string path (which would misplace multimodal tokens).
-    const bool capture_prompt_ids = std::any_of(sampling_params.begin(), sampling_params.end(),
-                                                 [](const GenerationConfig& params) {
-                                                     return params.return_omni_outputs;
-                                                 });
-
     std::vector<VLMChatContext> chat_contexts;
     chat_contexts.reserve(histories.size());
 
@@ -699,10 +680,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->set_apply_chat_template_status(false);
 
-        // Snapshot the embedder's token cache so the newly added prompt slice can be recovered
-        // after tokenization (used by the Omni Talker via original_prompt_ids_list).
-        const size_t cache_size_before =
-            capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
+        const size_t cache_size_before = m_inputs_embedder->get_cache_state().get_state().size();
 
         if (m_inputs_embedder->has_token_type_ids()) {
             auto [embeds, tt_ids] =
@@ -727,15 +705,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                 processed_chat_data.vision_counts));
         }
 
-        if (capture_prompt_ids) {
-            const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
-            OPENVINO_ASSERT(cache_ids.size() >= cache_size_before,
-                            "Inputs embedder token cache unexpectedly shrank while processing ChatHistory");
-            const size_t new_tokens = cache_ids.size() - cache_size_before;
-            ov::Tensor prompt_ids_tensor(ov::element::i64, {1, new_tokens});
-            std::copy(cache_ids.begin() + cache_size_before, cache_ids.end(), prompt_ids_tensor.data<int64_t>());
-            original_prompt_ids_list.push_back(std::move(prompt_ids_tensor));
-        }
+        prompt_ids_list.push_back(vlm_utils::extract_prompt_ids(
+            m_inputs_embedder->get_cache_state().get_state(),
+            cache_size_before,
+            input_embeds_list.back().get_shape()[1]));
 
         position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
 
@@ -749,7 +722,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                     streamer,
                                                                     token_type_ids_list,
                                                                     position_ids_list,
-                                                                    original_prompt_ids_list,
+                                                                    prompt_ids_list,
                                                                     lm_extra_inputs_list);
     std::vector<VLMDecodedResults> results;
     results.reserve(encoded_results.size());
@@ -830,7 +803,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
     std::optional<ov::Tensor> token_type_ids;
-    // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
     GenerationHandle handle;
     {
@@ -847,6 +819,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
 
         const auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
+
+        const size_t cache_size_before = m_inputs_embedder->get_cache_state().get_state().size();
 
         if (m_inputs_embedder->has_token_type_ids()) {
             std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
@@ -869,6 +843,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
                 video_sequence
             );
         }
+        prompt_ids = vlm_utils::extract_prompt_ids(m_inputs_embedder->get_cache_state().get_state(),
+                                                   cache_size_before,
+                                                   inputs.get_shape()[1]);
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
         handle = add_request(request_id,
                              inputs,

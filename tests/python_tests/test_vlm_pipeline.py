@@ -975,6 +975,26 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
 
 
+def test_vlm_prompt_ids_reach_sampler_for_chat_history_and_add_request(
+    ov_continuous_batching_pipe: ContinuousBatchingPipeline,
+):
+    prompt = "Unique sampler prompt sentinel 4368"
+    generation_config = get_greedy()
+    generation_config.max_new_tokens = 1
+    generation_config.echo = True
+
+    history = ChatHistory([{"role": "user", "content": prompt}])
+    history_result = ov_continuous_batching_pipe.generate([history], generation_config=[generation_config])[0]
+    assert prompt in history_result.texts[0]
+
+    handle = ov_continuous_batching_pipe.add_request(4368, prompt, generation_config=generation_config)
+    while handle.get_status() != GenerationStatus.FINISHED:
+        ov_continuous_batching_pipe.step()
+    add_request_result = handle.read_all()[0]
+    decoded_result = ov_continuous_batching_pipe.get_tokenizer().decode(add_request_result.generated_ids)
+    assert prompt in decoded_result
+
+
 @pytest.mark.parametrize(
     "config",
     [
