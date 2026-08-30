@@ -117,7 +117,7 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
 
 ### Reuse Shared Prompt Prefixes
 
-Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous batching backend, which uses PagedAttention. Set `enable_prefix_caching` explicitly to keep completed KV-cache blocks available for later requests to the same pipeline. Requests with the same tokenized prefix can then reuse those blocks, which may reduce prefill work and time to first token (TTFT) after the first request.
+Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous batching backend, which uses PagedAttention. Set `enable_prefix_caching` explicitly to keep completed KV-cache blocks available for later requests to the same pipeline. Requests whose resulting input-embedding prefix is identical can then reuse those blocks, which may reduce prefill work and time to first token (TTFT) after the first request. For multimodal requests, both the text and the corresponding visual inputs must match; matching tokenized text alone is not sufficient.
 
 <LanguageTabs>
     <TabItemPython>
