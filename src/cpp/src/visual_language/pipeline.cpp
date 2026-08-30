@@ -863,10 +863,6 @@ private:
         }
 
         utils::CacheState& cache_state = m_inputs_embedder->get_cache_state();
-        // Keep the token sequence that produced inputs_embeds before chat-cache trimming/reset.
-        // Linear/stateful backends may clear CacheState below even though the sampler still needs
-        // the prompt content for prompt-dependent logit transforms.
-        const std::vector<int64_t> prompt_token_ids = cache_state.get_state();
 
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {
@@ -892,9 +888,11 @@ private:
         const size_t history_size = m_language.get_tensor("attention_mask").get_shape().at(1) - cache_state.num_tokens_to_trim;
         const size_t inputs_embeds_size = inputs_embeds.get_shape().at(1);
 
-        ov::Tensor prompt_ids = vlm_utils::extract_prompt_ids(prompt_token_ids,
-                                                             0,
-                                                             history_size + inputs_embeds_size);
+        std::vector<int64_t> tokenized_history = cache_state.get_state();
+        ov::Tensor prompt_ids(ov::element::i64, { history_size + inputs_embeds_size });
+        OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
+        std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
+        std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
 
         // Update perf metrics with num_input_tokens
         perf_metrics.num_input_tokens = prompt_ids.get_size();

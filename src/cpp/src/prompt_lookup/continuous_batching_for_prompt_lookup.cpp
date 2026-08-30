@@ -52,7 +52,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
 
 void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates_for_prompt_lookup() {
     for (auto& request : m_requests) {
-        const auto prompt = request->get_prompt_ids();
+        const auto prompt = request->get_prompt_token_ids();
 
         size_t max_validation_len = 0;
         for (auto& running_sequence : request->get_running_sequences()) {

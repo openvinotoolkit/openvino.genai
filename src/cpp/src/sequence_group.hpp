@@ -3,9 +3,11 @@
 
 #pragma once
 
+#include <algorithm>
 #include <vector>
 #include <cassert>
 #include <chrono>
+#include <iterator>
 #include <set>
 #include <cstdlib>
 #include <string_view>
@@ -814,6 +816,17 @@ public:
         return m_prompt_ids;
     }
 
+    // Embedding prompts can use negative values as internal visual-row markers. They are
+    // required for row-aligned bookkeeping but are not vocabulary IDs for prompt-aware sampling.
+    TokenIds get_prompt_token_ids() const {
+        TokenIds prompt_token_ids;
+        prompt_token_ids.reserve(m_prompt_ids.size());
+        std::copy_if(m_prompt_ids.begin(), m_prompt_ids.end(), std::back_inserter(prompt_token_ids), [](int64_t id) {
+            return id >= 0;
+        });
+        return prompt_token_ids;
+    }
+
     const std::vector<std::vector<float>>& get_input_embeds() const {
         OPENVINO_ASSERT(m_sequence_group_type == SequenceGroupType::EMBEDDINGS);
         return m_input_embeds;
@@ -986,7 +999,8 @@ public:
             output.generated_ids = sequence->get_generated_ids();
             output.generated_log_probs = sequence->get_generated_log_probs();
             if (m_sampling_params.echo) {
-                output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
+                const auto prompt_token_ids = get_prompt_token_ids();
+                output.generated_ids.insert(output.generated_ids.begin(), prompt_token_ids.begin(), prompt_token_ids.end());
                 output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
             }
             output.score = m_sampling_params.is_beam_search() ? sequence->get_beam_search_score(m_sampling_params) : sequence->get_cumulative_log_prob();
@@ -1004,7 +1018,8 @@ public:
             // or is it ok to use padding?
             auto output = sequence->get_last_generation_output(token_cnt, m_stream_window_size);
             if (m_sampling_params.echo && !m_has_echoed) {
-                output.generated_ids.insert(output.generated_ids.begin(), m_prompt_ids.begin(), m_prompt_ids.end());
+                const auto prompt_token_ids = get_prompt_token_ids();
+                output.generated_ids.insert(output.generated_ids.begin(), prompt_token_ids.begin(), prompt_token_ids.end());
                 output.generated_log_probs.insert(output.generated_log_probs.begin(), m_prompt_log_probs.begin(), m_prompt_log_probs.end());
             }
             // Hidden states are complete only once the sequence finishes; ride them out on the
@@ -1069,8 +1084,21 @@ public:
         size_t last_token_position = get_context_len();
 
         GenerationOutput output;
-        output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
-        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_token_position, m_prompt_log_probs.begin() + last_token_position);
+        std::copy_if(m_prompt_ids.begin() + first_token_position,
+                     m_prompt_ids.begin() + last_token_position,
+                     std::back_inserter(output.generated_ids),
+                     [](int64_t id) {
+                         return id >= 0;
+                     });
+        const auto first_log_prob = std::count_if(m_prompt_ids.begin(),
+                                                  m_prompt_ids.begin() + first_token_position,
+                                                  [](int64_t id) {
+                                                      return id >= 0;
+                                                  });
+        const auto last_log_prob = first_log_prob + output.generated_ids.size();
+        OPENVINO_ASSERT(last_log_prob <= m_prompt_log_probs.size());
+        output.generated_log_probs = std::vector<float>(m_prompt_log_probs.begin() + first_log_prob,
+                                                        m_prompt_log_probs.begin() + last_log_prob);
         output.score = 0.0; // Should we accumulate prompt log probs here?
         output.finish_reason = GenerationFinishReason::NONE;
 

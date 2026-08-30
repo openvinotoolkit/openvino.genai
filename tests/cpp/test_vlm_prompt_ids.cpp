@@ -13,7 +13,7 @@ std::vector<int64_t> tensor_to_ids(const ov::Tensor& tensor) {
     return {tensor.data<const int64_t>(), tensor.data<const int64_t>() + tensor.get_size()};
 }
 
-TEST(VLMPromptIdsTest, ExtractsFullStatefulPromptInsteadOfPaddingCurrentTokens) {
+TEST(VLMPromptIdsTest, ExtractsFullPromptInsteadOfPaddingCurrentTokens) {
     const std::vector<int64_t> cache_ids{10, 20, 30, 40};
 
     const ov::Tensor prompt_ids = ov::genai::vlm_utils::extract_prompt_ids(cache_ids, 0, cache_ids.size());
@@ -21,8 +21,9 @@ TEST(VLMPromptIdsTest, ExtractsFullStatefulPromptInsteadOfPaddingCurrentTokens) 
     EXPECT_EQ(tensor_to_ids(prompt_ids), cache_ids);
 }
 
-TEST(VLMPromptIdsTest, EmbeddingsPromptReachesLogitProcessor) {
-    const std::vector<int64_t> cache_ids{10, 20, 7};
+TEST(VLMPromptIdsTest, EmbeddingsPromptReachesLogitProcessorWithoutVisualMarkers) {
+    const std::vector<int64_t> cache_ids{10, -1, 7};
+    const std::vector<int64_t> expected_prompt_ids{10, 7};
     const ov::Tensor prompt_ids = ov::genai::vlm_utils::extract_prompt_ids(cache_ids, 0, cache_ids.size());
     ov::Tensor input_embeds(ov::element::f32, {1, cache_ids.size(), 4});
 
@@ -38,12 +39,15 @@ TEST(VLMPromptIdsTest, EmbeddingsPromptReachesLogitProcessor) {
                                             std::nullopt,
                                             prompt_ids);
 
+    ASSERT_EQ(sequence_group.get_prompt_len(), cache_ids.size());
     ASSERT_EQ(sequence_group.get_prompt_ids(), cache_ids);
+    ASSERT_EQ(sequence_group.get_prompt_token_ids(), expected_prompt_ids);
     std::vector<float> raw_logits(32, 2.0f);
     ov::genai::Logits logits(raw_logits.data(), raw_logits.size());
-    ov::genai::LogitProcessor processor(config, sequence_group.get_prompt_ids());
+    ov::genai::LogitProcessor processor(config, sequence_group.get_prompt_token_ids());
     processor.apply(logits);
 
+    EXPECT_FLOAT_EQ(raw_logits[0], 2.0f);
     EXPECT_FLOAT_EQ(raw_logits[7], 1.0f);
     EXPECT_FLOAT_EQ(raw_logits[8], 2.0f);
 }

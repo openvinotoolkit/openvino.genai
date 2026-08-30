@@ -821,7 +821,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
             float score = cfg.is_beam_search() ? seq->get_beam_search_score(cfg) : seq->get_cumulative_log_prob();
             const auto& gen_ids = seq->get_generated_ids();
             if (cfg.echo) {
-                result.m_generation_ids[i] = request->get_prompt_ids();
+                result.m_generation_ids[i] = request->get_prompt_token_ids();
             }
             std::copy(gen_ids.begin(), gen_ids.end(), std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;

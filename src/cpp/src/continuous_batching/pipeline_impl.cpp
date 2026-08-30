@@ -819,7 +819,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         // Always collect intermediate hidden states when model outputs them.
         result.m_intermediate_hidden_states.resize(num_outputs);
         result.m_full_token_ids.resize(num_outputs);
-        const auto& prompt_ids = request->get_prompt_ids();
+        const auto prompt_token_ids = request->get_prompt_token_ids();
 
         for (size_t i = 0; i < num_outputs; ++i) {
             const auto& sequence = sequences[i];
@@ -828,7 +828,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
             const auto& generated_ids = sequence->get_generated_ids();
 
             if (sampling_params.echo)
-                result.m_generation_ids[i] = request->get_prompt_ids();
+                result.m_generation_ids[i] = prompt_token_ids;
             std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
             result.m_scores[i] = score;
             result.m_finish_reasons[i] = sequence->get_finish_reason();
@@ -841,8 +841,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
 
             // Full token ids for this sequence: prompt followed by its generated ids.
             auto& seq_full_ids = result.m_full_token_ids[i];
-            seq_full_ids.reserve(prompt_ids.size() + generated_ids.size());
-            seq_full_ids.insert(seq_full_ids.end(), prompt_ids.begin(), prompt_ids.end());
+            seq_full_ids.reserve(prompt_token_ids.size() + generated_ids.size());
+            seq_full_ids.insert(seq_full_ids.end(), prompt_token_ids.begin(), prompt_token_ids.end());
             seq_full_ids.insert(seq_full_ids.end(), generated_ids.begin(), generated_ids.end());
         }
 
@@ -1120,7 +1120,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
             exclude_last_logprob = 0;
 
         // if we start processing the prompt we add "fake" log prob for the first position (begin of sequence)
-        if (num_prompt_tokens_processed == 0)
+        if (num_prompt_tokens_processed == 0 && sequence_group->get_prompt_ids().front() >= 0)
             sequence_group->append_prompt_log_prob(1.0);
 
         for (int token_logits_offset = 0, token_id_offset = num_prompt_tokens_processed + 1;
@@ -1128,6 +1128,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
              token_logits_offset++, token_id_offset++) {
             const float* token_logits = (sequence_group_logits_data + token_logits_offset * vocab_size);
             int64_t token_id = sequence_group->get_prompt_ids()[token_id_offset];
+            if (token_id < 0) {
+                continue;
+            }
             float token_logit = token_logits[token_id];
 
             // find max value for log softmax

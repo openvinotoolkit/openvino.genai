@@ -983,6 +983,9 @@ def test_vlm_prompt_ids_reach_sampler_for_chat_history_and_add_request(
     generation_config.max_new_tokens = 1
     generation_config.echo = True
 
+    string_result = ov_continuous_batching_pipe.generate([prompt], generation_config=[generation_config])[0]
+    assert prompt in string_result.texts[0]
+
     history = ChatHistory([{"role": "user", "content": prompt}])
     history_result = ov_continuous_batching_pipe.generate([history], generation_config=[generation_config])[0]
     assert prompt in history_result.texts[0]
