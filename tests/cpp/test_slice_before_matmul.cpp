@@ -144,10 +144,9 @@ TEST(SliceBeforeMatmul, AllPatterns) {
     }
 }
 
-TEST(SliceBeforeMatmul, NonConstantTransposeOrderLeavesModelUntouched) {
+TEST(SliceBeforeMatmul, NonConstantTransposeOrderThrows) {
     auto model = make_matmul_dynamic_transpose_model(ov::PartialShape{1, -1, 64}, 64, 128);
-    ASSERT_NO_THROW(ov::genai::utils::apply_slice_before_matmul_transformation(model));
-    ASSERT_EQ(count_ops<ov::op::v8::Slice>(model), 0u);
+    ASSERT_THROW(ov::genai::utils::apply_slice_before_matmul_transformation(model), ov::Exception);
 }
 
 // Inference: sliced output matches the last token of non-transformed output
@@ -226,10 +225,9 @@ TEST(GatherBeforeMatmul, AllPatterns) {
     }
 }
 
-TEST(GatherBeforeMatmul, NonConstantTransposeOrderLeavesModelUntouched) {
+TEST(GatherBeforeMatmul, NonConstantTransposeOrderThrows) {
     auto model = make_matmul_dynamic_transpose_model(ov::PartialShape{1, -1, 64}, 64, 128);
-    ASSERT_NO_THROW(ov::genai::utils::apply_gather_before_matmul_transformation(model));
-    ASSERT_EQ(count_ops<ov::op::v8::Gather>(model), 0u);
+    ASSERT_THROW(ov::genai::utils::apply_gather_before_matmul_transformation(model), ov::Exception);
 }
 
 // Inference: gathered output for specific indices matches corresponding tokens in full output
