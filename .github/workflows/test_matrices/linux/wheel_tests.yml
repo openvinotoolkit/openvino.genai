@@ -18,8 +18,6 @@
 
 - name: ASR (Qwen3-ASR)
   cmd: |-
-    # optimum intel master commit with Qwen3-ASR support
-    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4"
     python -m pip install transformers==4.57.6 qwen-asr==0.0.6
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
   timeout: 20
@@ -28,8 +26,6 @@
 
 - name: ASR (Fun-ASR)
   cmd: |-
-    # optimum intel master commit with Fun-ASR support
-    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@e1de5beecfd0c3ae6047ea22cea4a4cad4307aff"
     python -m pip install transformers==4.57.6 funasr==1.4.1
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
   timeout: 20
@@ -131,9 +127,7 @@
     - text_streamer
 
 - name: Rag tests
-  # Pin optimum which supports qwen3-vl-embedding
   cmd: |-
-    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
     python -m pytest -v ./tests/python_tests/test_rag.py
   timeout: 35
   components:
@@ -141,7 +135,6 @@
 
 - name: WWB tests
   cmd: |-
-    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
     python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
   timeout: 120
   components:
@@ -158,7 +151,6 @@
 
 - name: WWB tests (image, VLM, video)
   cmd: |-
-    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
   timeout: 120
   components:
@@ -192,7 +184,6 @@
 - name: Qwen3.5 MTP speculative decoding tests
   cmd: |-
     python -m pip install -U "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@qwen35_mtp"
-    pip install transformers==5.2.0
     python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
   timeout: 90
   components:
@@ -244,7 +235,6 @@
 
 - name: VLM (qwen3.5)
   cmd: |-
-    python -m pip install transformers==5.2.0
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5"
   timeout: 60
   components:
@@ -253,7 +243,6 @@
 - name: VLM (gemma3n)
   cmd: |-
     python -m pip install transformers==4.57.0
-    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@09d4c961f7ccc99f445dd3418fb85b9a46547ce4
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma3n"
   timeout: 60
@@ -262,7 +251,6 @@
 
 - name: VLM (gemma4)
   cmd: |-
-    python -m pip install transformers==5.5.0
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4 and not gemma4-unified"
   timeout: 60
@@ -271,7 +259,6 @@
 
 - name: VLM (gemma4-unified)
   cmd: |-
-    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@3e159833682a192132094443b7ff8da3d7d46c42
     python -m pip install transformers==5.10.0
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4-unified"
@@ -281,7 +268,6 @@
 
 - name: VLM (deepseek-ocr-2)
   cmd: |-
-    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@e3929c8d145384df49faa843c22c143b37305201
     python -m pip install transformers==5.11.0
     pip show transformers optimum-intel openvino_tokenizers openvino_genai
     python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "deepseek-ocr-2"
