@@ -18,6 +18,7 @@ from llm_bench_utils.tts_utils import (
     get_tts_sample_rate,
     kokoro_preprocess_once,
     kokoro_generate_from_preprocessed,
+    normalize_kokoro_lang_code,
     resolve_kokoro_speaker_embedding,
     resolve_omni_generation_settings,
 )
@@ -176,7 +177,7 @@ def run_text_to_speech_generation_genai(
     )
 
     if is_kokoro_model:
-        additional_args["language"] = args.get("speech_language", "")
+        additional_args["language"] = normalize_kokoro_lang_code(args.get("speech_language", ""))
 
     start = time.perf_counter()
     generation_result = model.generate(input_text_list, **additional_args)
