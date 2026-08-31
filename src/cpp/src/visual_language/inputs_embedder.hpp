@@ -309,7 +309,10 @@ private:
 
         void cache_draft_inputs_embeds(const ov::Tensor& text_embeds) {
             OPENVINO_ASSERT(text_embeds && text_embeds.get_size() > 0, "Cannot cache an empty draft embeddings tensor");
-            m_draft_inputs_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
+            if (!m_draft_inputs_embeds || m_draft_inputs_embeds.get_element_type() != text_embeds.get_element_type() ||
+                m_draft_inputs_embeds.get_shape() != text_embeds.get_shape()) {
+                m_draft_inputs_embeds = ov::Tensor(text_embeds.get_element_type(), text_embeds.get_shape());
+            }
             text_embeds.copy_to(m_draft_inputs_embeds);
         }
 
