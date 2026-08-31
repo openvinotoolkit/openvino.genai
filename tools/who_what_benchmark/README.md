@@ -106,7 +106,7 @@ wwb --target-model qwen2-vl-7b-Instruct --gt-data qwen_video_test/gt.csv --model
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
 # Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-type text-to-image --hf
+wwb --base-model SimianLuo/LCM_Dreamshaper_v7 --gt-data lcm_test/gt.csv --model-type text-to-image --hf
 # Compute the metric
 # Target images will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-image --genai
@@ -265,8 +265,40 @@ The speech-generation evaluator reports these metrics:
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
-* `duration score` - relative utterance length similarity between target and reference.
+* `duration score` - relative audio length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
+
+### Compare Speech-recognition models (ASR)
+
+`speech-recognition` works with native ASR models, for example
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512).
+
+The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
+transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
+(CER) when `--speech-language` is `zh`, `ja`, `Chinese`, or `Japanese`, and word error rate (WER) otherwise.
+
+#### FunASR
+
+```sh
+pip install .[funasr]
+
+# Collect ground truth from the baseline funasr model
+wwb --base-model FunAudioLLM/Fun-ASR-Nano-2512 --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-openvino
+
+# Measure similarity with the Optimum-OpenVINO inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition
+
+# Measure similarity with the OpenVINO GenAI inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+`--speech-language` forces the transcription language as a code (Fun-ASR-Nano-2512 supports `en`, `zh`,
+and `ja`). WWB defaults to `en`.
+
+> **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.

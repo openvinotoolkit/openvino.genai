@@ -117,7 +117,7 @@ int main(int argc, char* argv[]) try {
     if (device == "NPU")
         pipe = std::make_unique<ov::genai::VLMPipeline>(models_path, device);
     else {
-        // Setting of Scheduler config will trigger usage of ContinuousBatching pipeline, which is not default for Qwen2VL, Qwen2.5VL, Gemma3 due to accuracy issues.
+        // Setting SchedulerConfig triggers ContinuousBatching pipeline usage.
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = false;
         scheduler_config.max_num_batched_tokens = std::numeric_limits<std::size_t>::max();
