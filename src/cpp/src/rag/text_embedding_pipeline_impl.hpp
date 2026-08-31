@@ -11,6 +11,7 @@ class TextEmbeddingPipelineImpl final : public EmbeddingPipelineImpl {
 public:
     TextEmbeddingPipelineImpl(const std::filesystem::path& models_path,
                               const std::string& device,
+                              const TextEmbeddingPipeline::Config& config,
                               const ov::AnyMap& properties);
 
     EmbedResult embed(const StringInputs& text, const ov::AnyMap& properties) override;
