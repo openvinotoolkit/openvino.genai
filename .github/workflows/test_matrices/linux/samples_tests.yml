@@ -65,7 +65,9 @@
     - Video_generation_samples
 
 - name: Qwen3-VL
-  extra_cmd: python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@b254b32cd9c18ad3bfa6fbe41267cf3b6fabba38"
+  extra_cmd: >-
+    python -m pip install transformers==4.57.6 &&
+    python -m pip install --no-deps "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@b254b32cd9c18ad3bfa6fbe41267cf3b6fabba38"
   marker: qwen3_vl
   cmd: tests/python_tests/samples
   runner: aks-linux-4-cores-16gb

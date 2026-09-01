@@ -3,6 +3,7 @@
 - name: ASR
   # TODO: skip some tests temporary until https://github.com/huggingface/datasets/issues/7647 dataset is fixed
   cmd: |-
+    python -m pip install transformers==5.0.0
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"
   timeout: 120
   components:
@@ -63,6 +64,7 @@
 
 - name: Rag tests
   cmd: |-
+    python -m pip install transformers==5.0.0
     python -m pytest -v ./tests/python_tests/test_rag.py
   timeout: 35
   components:
@@ -70,6 +72,7 @@
 
 - name: WWB tests
   cmd: |-
+    python -m pip install transformers==5.0.0
     python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
   timeout: 120
   components:
@@ -86,6 +89,7 @@
 
 - name: WWB tests (image, VLM, video)
   cmd: |-
+    python -m pip install transformers==5.0.0
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
   timeout: 120
   components:
