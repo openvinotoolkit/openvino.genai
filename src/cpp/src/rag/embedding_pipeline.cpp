@@ -11,17 +11,6 @@
 
 namespace ov {
 namespace genai {
-namespace {
-
-TextEmbeddingPipeline::Config get_text_embedding_config(const ov::AnyMap& properties) {
-    const auto config_it = properties.find(text_embedding_config.name());
-    if (config_it != properties.end()) {
-        return config_it->second.as<TextEmbeddingPipeline::Config>();
-    }
-    return TextEmbeddingPipeline::Config(properties);
-}
-
-}  // namespace
 
 EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
                                      const std::string& device,
@@ -29,11 +18,7 @@ EmbeddingPipeline::EmbeddingPipeline(const std::filesystem::path& models_path,
     if (std::filesystem::exists(models_path / "openvino_language_model.xml")) {
         m_impl = std::make_unique<MultimodalEmbeddingPipelineImpl>(models_path, device, properties);
     } else {
-        m_impl = std::make_unique<TextEmbeddingPipelineImpl>(
-            models_path,
-            device,
-            get_text_embedding_config(properties),
-            properties);
+        m_impl = std::make_unique<TextEmbeddingPipelineImpl>(models_path, device, properties);
     }
 }
 
