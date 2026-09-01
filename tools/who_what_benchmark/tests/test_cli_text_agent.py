@@ -36,6 +36,10 @@ def test_resolve_json_dataset_path_supports_home_shorthand(tmp_path, monkeypatch
     dataset_file = tmp_path / "data.jsonl"
     dataset_file.write_text('{"messages": [], "tools": []}\n', encoding="utf-8")
     monkeypatch.setenv("HOME", str(tmp_path))
+    if sys.platform == "win32":
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("HOMEDRIVE", str(tmp_path.drive))
+        monkeypatch.setenv("HOMEPATH", str(tmp_path).replace(str(tmp_path.drive), "", 1))
 
     resolved = resolve_json_dataset_path("~/data.jsonl")
 
@@ -153,7 +157,7 @@ def test_text_agent_end_to_end(
     if prompt_path.exists():
         prompt_value = prompt_path.read_text(encoding="utf-8")
     assert expected_prompt in prompt_value
-    assert "Agent dataset summary" in hf_output
+    assert "Text-agent dataset selected from --dataset:" in hf_output
 
     optimum_output = run_wwb(
         [
@@ -161,6 +165,8 @@ def test_text_agent_end_to_end(
             model_path,
             "--gt-data",
             gt_path,
+            "--dataset",
+            dataset_path,
             "--model-type",
             model_type,
             "--num-samples",
@@ -185,6 +191,8 @@ def test_text_agent_end_to_end(
             model_path,
             "--gt-data",
             gt_path,
+            "--dataset",
+            dataset_path,
             "--model-type",
             model_type,
             "--num-samples",
