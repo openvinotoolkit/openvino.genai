@@ -56,12 +56,6 @@ public:
     /// @return The step, or nullopt once end() has been called and the queue is drained.
     std::optional<ov::AnyMap> read() override;
 
-    /// @brief Take the oldest queued step if one is already there, without blocking.
-    /// @return The step, or nullopt when the queue is momentarily empty — which, unlike read()'s
-    ///         nullopt, does not mean the stream ended. Use for draining after the writer is known
-    ///         to be done, or for polling alongside other work.
-    std::optional<ov::AnyMap> try_read();
-
 private:
     class Impl;
     std::unique_ptr<Impl> m_impl;

@@ -49,11 +49,6 @@ public:
         return pop(lock);
     }
 
-    std::optional<ov::AnyMap> try_read() {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        return pop(lock);
-    }
-
 private:
     // TODO: temporary — remove together with the trace_write() call in write().
     void trace_write(const ov::AnyMap& data, size_t queue_depth) {
@@ -112,10 +107,6 @@ void OmniChannel::end() {
 
 std::optional<ov::AnyMap> OmniChannel::read() {
     return m_impl->read();
-}
-
-std::optional<ov::AnyMap> OmniChannel::try_read() {
-    return m_impl->try_read();
 }
 
 }  // namespace genai
