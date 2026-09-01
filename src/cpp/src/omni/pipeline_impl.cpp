@@ -153,8 +153,12 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const std::string& p
         // Declared before the VLM runs: when streaming, this is what puts the talker on its own
         // thread, and it has to be listening before the thinker starts writing.
         TalkerStage talker_stage(m_talker, channel, talker_speech_config, speech_streamer);
+        // Only reach for the streaming overload when there is something to stream: implementing it
+        // is optional for a VLM backend, and calling it with a null streamer would throw on a
+        // backend that supports batch speech but not streaming.
         VLMDecodedResults vlm_result =
-            m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer, channel);
+            channel ? m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer, channel)
+                    : m_vlm->generate(prompt, images, videos, audios, videos_metadata, text_cfg, streamer);
         TalkerResults talker_result = talker_stage.finish(vlm_result);
         // TODO: when `channel` is set, vlm_result.intermediate_hidden_states holds a second full
         // copy of what already travelled through it — the CB backend accumulates every step on the
@@ -201,8 +205,12 @@ OmniDecodedResults OmniPipeline::OmniPipelineImpl::generate(const ChatHistory& h
         // and audio tags outside the user message and change the Thinker output.
         const std::shared_ptr<OmniChannel> channel = make_channel_if_streaming(text_cfg);
         TalkerStage talker_stage(m_talker, channel, talker_speech_config, speech_streamer);
+        // Only reach for the streaming overload when there is something to stream: implementing it
+        // is optional for a VLM backend, and calling it with a null streamer would throw on a
+        // backend that supports batch speech but not streaming.
         VLMDecodedResults vlm_result =
-            m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer, channel);
+            channel ? m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer, channel)
+                    : m_vlm->generate(history, images, videos, audios, videos_metadata, text_cfg, streamer);
         // TODO: same duplicated hidden states as in the prompt overload above; see the note there.
         TalkerResults talker_result = talker_stage.finish(vlm_result);
         OmniDecodedResults omni_result;

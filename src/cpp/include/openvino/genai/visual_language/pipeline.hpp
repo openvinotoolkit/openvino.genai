@@ -216,44 +216,38 @@ public:
     /// of the same object can generate speech while text generation is still running. Used by
     /// OmniPipeline; `omni_streamer` is null for conventional VLM use.
     ///
-    /// The default implementation ignores a null `omni_streamer` and forwards to the non-streaming
-    /// overload above, so backends that don't emit hidden states need no override; passing a live
-    /// streamer to such a backend throws instead of silently producing no speech.
+    /// Overriding is optional: this overload exists only to serve
+    /// `GenerationConfig::text2audio_stream`, so the default throws `ov::NotImplemented` rather than
+    /// quietly dropping the streamer and producing no speech. A backend that skips it still supports
+    /// non-streaming speech output in full — OmniPipeline calls the non-streaming overload above when
+    /// streaming is off, and never routes a null `omni_streamer` here.
     /// @note This is a preview API and is subject to change.
-    virtual VLMDecodedResults generate(const std::string& prompt,
-                                       const std::vector<ov::Tensor>& images,
-                                       const std::vector<ov::Tensor>& videos,
-                                       const std::vector<ov::Tensor>& audios,
-                                       const std::vector<VideoMetadata>& videos_metadata,
-                                       const GenerationConfig& generation_config,
-                                       const StreamerVariant& streamer,
-                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
-        OPENVINO_ASSERT(!omni_streamer,
-                        "This VLM pipeline implementation doesn't support streaming to a talker. "
-                        "Streaming the thinker's hidden states requires the continuous-batching "
-                        "backend: load the model with attention_backend=PA on a CPU or GPU device.");
-        return generate(prompt, images, videos, audios, videos_metadata, generation_config, streamer);
+    virtual VLMDecodedResults generate(const std::string& /* prompt */,
+                                       const std::vector<ov::Tensor>& /* images */,
+                                       const std::vector<ov::Tensor>& /* videos */,
+                                       const std::vector<ov::Tensor>& /* audios */,
+                                       const std::vector<VideoMetadata>& /* videos_metadata */,
+                                       const GenerationConfig& /* generation_config */,
+                                       const StreamerVariant& /* streamer */,
+                                       const std::shared_ptr<OmniStreamerBase>& /* omni_streamer */) {
+        throw_omni_streaming_not_implemented();
     }
 
-    /// @brief ChatHistory form of the omni-streaming generate above. OmniPipeline uses this one for
-    /// its ChatHistory overload rather than applying the chat template itself and calling the string
-    /// form: the multimodal normalization that places image and audio tags inside the user message
-    /// only happens on the ChatHistory path, and going through a templated string changes the
-    /// Thinker's output.
+    /// @brief ChatHistory form of the omni-streaming generate above; same optional-override contract.
+    /// OmniPipeline uses this one for its ChatHistory overload rather than applying the chat template
+    /// itself and calling the string form: the multimodal normalization that places image and audio
+    /// tags inside the user message only happens on the ChatHistory path, and going through a
+    /// templated string changes the Thinker's output.
     /// @note This is a preview API and is subject to change.
-    virtual VLMDecodedResults generate(const ChatHistory& history,
-                                       const std::vector<ov::Tensor>& images,
-                                       const std::vector<ov::Tensor>& videos,
-                                       const std::vector<ov::Tensor>& audios,
-                                       const std::vector<VideoMetadata>& videos_metadata,
-                                       const GenerationConfig& generation_config,
-                                       const StreamerVariant& streamer,
-                                       const std::shared_ptr<OmniStreamerBase>& omni_streamer) {
-        OPENVINO_ASSERT(!omni_streamer,
-                        "This VLM pipeline implementation doesn't support streaming to a talker. "
-                        "Streaming the thinker's hidden states requires the continuous-batching "
-                        "backend: load the model with attention_backend=PA on a CPU or GPU device.");
-        return generate(history, images, videos, audios, videos_metadata, generation_config, streamer);
+    virtual VLMDecodedResults generate(const ChatHistory& /* history */,
+                                       const std::vector<ov::Tensor>& /* images */,
+                                       const std::vector<ov::Tensor>& /* videos */,
+                                       const std::vector<ov::Tensor>& /* audios */,
+                                       const std::vector<VideoMetadata>& /* videos_metadata */,
+                                       const GenerationConfig& /* generation_config */,
+                                       const StreamerVariant& /* streamer */,
+                                       const std::shared_ptr<OmniStreamerBase>& /* omni_streamer */) {
+        throw_omni_streaming_not_implemented();
     }
 
     /// @brief Backend capability: true when the active execution path emits the per-step hidden
@@ -272,6 +266,19 @@ public:
     /// @see supports_hidden_states_collection(), which instead reflects the active backend.
     /// @note This is a preview API and is subject to change.
     virtual bool is_audio_output_enabled() const = 0;
+
+protected:
+    /// @brief Shared body of the two omni-streaming generate() defaults above, so the explanation
+    /// can't drift between them. Separate from OmniPipeline's construction-time check against
+    /// supports_hidden_states_collection(), which rejects an incapable backend earlier and with a
+    /// message about how the model was loaded rather than about implementing this interface.
+    [[noreturn]] static void throw_omni_streaming_not_implemented() {
+        OPENVINO_THROW_NOT_IMPLEMENTED(
+            "This VLM backend does not implement streaming the thinker's output to a talker. "
+            "Implementing this generate() overload is optional: it is needed only to support "
+            "GenerationConfig::text2audio_stream. A backend without it still produces speech "
+            "normally, because OmniPipeline then runs the talker over the finished text instead.");
+    }
 };
 
 /// @brief A Visual language modeling pipeline class used to generate a
