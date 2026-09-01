@@ -1,6 +1,7 @@
 # Test matrix for the genai_samples_tests job.
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: LLM
+  extra_cmd: python -m pip install transformers==5.0.0
   marker: llm and not transformers_lower_v5
   cmd: tests/python_tests/samples
   runner: aks-linux-4-cores-16gb
