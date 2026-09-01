@@ -514,6 +514,90 @@ jobs:
         run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
+      # --- TEMPORARY: CVS-193539 arm64 Runtime probe. Runtime-only; no openvino_genai. ---
+      - name: Whisper batch-consistency Runtime reproducer (CVS-193539)
+        if: ${{ always() && matrix.test.name == 'ASR' }}
+        continue-on-error: true
+        working-directory: ${{ env.SRC_DIR }}
+        run: |
+          set +e
+          REPRO_DIR="${RUNNER_TEMP}/whisper_repro"
+          ENVF="${REPRO_DIR}/whisper_repro_env.txt"
+          ARCHIVE="tests/python_tests/whisper_repro/whisper_repro.tar.gz"
+          EXPECTED_ARCHIVE_SHA="910225c7d1694174a42757e6451e902e265f48a8d986b3410c18379ef465cb4e"
+          mkdir -p "${REPRO_DIR}"
+          default_status="not_run"
+          one_thread_status="not_run"
+          {
+            echo "== uname =="; uname -m; uname -a
+            echo "== sw_vers =="; sw_vers
+            echo "== python =="; python --version; which python
+            echo "== openvino =="; python -c "import openvino as ov; print(ov.get_version())"
+            echo "== ov_version(job output) =="; echo "${{ needs.openvino_download.outputs.ov_version }}"
+            echo "== optimum/transformers =="; python -c "import importlib.metadata as m; print('optimum-intel', m.version('optimum-intel')); print('transformers', m.version('transformers'))"
+            echo "== cpu =="; sysctl -n machdep.cpu.brand_string hw.ncpu hw.logicalcpu hw.physicalcpu hw.optional.arm64 2>/dev/null
+            echo "== ov INFERENCE_NUM_THREADS (core-level default, PRE-compile) =="
+            python -c "import openvino as ov; print(ov.Core().get_property('CPU','INFERENCE_NUM_THREADS'))" 2>/dev/null
+            echo "   (authoritative per-run EFFECTIVE thread count is printed by the reproducer from the COMPILED model in each log)"
+          } | tee "${ENVF}"
+          ACTUAL_ARCHIVE_SHA="$(shasum -a 256 "${ARCHIVE}" | awk '{print $1}')"
+          {
+            echo "== archive sha256 =="
+            echo "expected=${EXPECTED_ARCHIVE_SHA}"
+            echo "actual=${ACTUAL_ARCHIVE_SHA}"
+          } | tee -a "${ENVF}"
+          if [ "${ACTUAL_ARCHIVE_SHA}" != "${EXPECTED_ARCHIVE_SHA}" ]; then
+            echo "ERROR: archive checksum mismatch; refusing to extract or run." | tee -a "${ENVF}"
+            default_status="archive_checksum_mismatch"
+            one_thread_status="archive_checksum_mismatch"
+          else
+            tar -xzf "${ARCHIVE}" -C "${REPRO_DIR}"
+            D="$(python -c 'from datetime import datetime; print(datetime.now().strftime("%Y%m%d"))')"
+            OI="$(python -c 'import importlib.metadata as m; print(m.version("optimum-intel"))')"
+            TF="$(python -c 'import importlib.metadata as m; print(m.version("transformers"))')"
+            ROOT="$(python -c 'import os; print(os.path.abspath(os.path.expanduser(os.environ.get("OV_CACHE","~/.cache/ov_cache/mac/"))))')"
+            EXPECTED="${ROOT}/${D}/optimum-intel-${OI}_transformers-${TF}/converted_models/whisper-tiny"
+            {
+              echo "== expected CI model dir =="; echo "${EXPECTED}"
+              echo "== all matching whisper-tiny dirs =="
+              ls -d "${HOME}"/.cache/ov_cache/mac/*/optimum-intel-*_transformers-*/converted_models/whisper-tiny 2>/dev/null | sort || true
+            } | tee -a "${ENVF}"
+            if [ ! -d "${EXPECTED}" ]; then
+              echo "ERROR: expected current CI model dir is absent; refusing to use a stale export." | tee -a "${ENVF}"
+              default_status="missing_model"
+              one_thread_status="missing_model"
+            else
+              MODEL="${EXPECTED}"
+              echo "MODEL=${MODEL}" | tee -a "${ENVF}"
+              {
+                echo "== sha256 (model identity) =="
+                shasum -a 256 "${MODEL}/openvino_encoder_model.xml" "${MODEL}/openvino_encoder_model.bin" "${MODEL}/openvino_decoder_model.xml" "${MODEL}/openvino_decoder_model.bin" "${MODEL}/generation_config.json" "${MODEL}/config.json" "${MODEL}/preprocessor_config.json" "${REPRO_DIR}/features_AB.npz"
+              } | tee -a "${ENVF}"
+              python "${REPRO_DIR}/whisper_batch_repro.py" --model-dir "${MODEL}" --features "${REPRO_DIR}/features_AB.npz" --threads 0 > "${REPRO_DIR}/whisper_repro_default.log" 2>&1
+              default_status=$?
+              python "${REPRO_DIR}/whisper_batch_repro.py" --model-dir "${MODEL}" --features "${REPRO_DIR}/features_AB.npz" --threads 1 > "${REPRO_DIR}/whisper_repro_1thread.log" 2>&1
+              one_thread_status=$?
+            fi
+          fi
+          {
+            echo "== reproducer process exit status (NOT the verdict) =="
+            echo "default_status=${default_status}"
+            echo "one_thread_status=${one_thread_status}"
+            echo "   Authoritative verdict = the JIRA-SUMMARY / divergence lines inside the two logs."
+          } | tee -a "${ENVF}"
+          exit 0
+
+      - name: Upload Whisper reproducer logs
+        if: ${{ always() && matrix.test.name == 'ASR' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: whisper_repro_logs_${{ matrix.test.name }}
+          path: |
+            ${{ runner.temp }}/whisper_repro/whisper_repro_env.txt
+            ${{ runner.temp }}/whisper_repro/whisper_repro_default.log
+            ${{ runner.temp }}/whisper_repro/whisper_repro_1thread.log
+          if-no-files-found: warn
+
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
     needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, prepare_test_matrices ]
