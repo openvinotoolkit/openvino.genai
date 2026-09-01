@@ -127,8 +127,8 @@ namespace ov {
 namespace genai {
 namespace utils {
 
-std::vector<std::string> get_config_properties_names() {
-    return {
+static const std::vector<std::string>& get_config_properties_names() {
+    static const std::vector<std::string> names = {
         max_length.name(),
         pad_to_max_length.name(),
         truncation.name(),
@@ -138,8 +138,9 @@ std::vector<std::string> get_config_properties_names() {
         embed_instruction.name(),
         query_instruction.name(),
         padding_side.name(),
-        text_embedding_config.name()
+        text_embedding_config.name(),
     };
+    return names;
 }
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     ov::AnyMap properties_copy = properties;
@@ -157,7 +158,8 @@ TextEmbeddingPipeline::Config get_text_embedding_config(const ov::AnyMap& proper
         for (const std::string& property_name : get_config_properties_names()) {
             if (property_name != text_embedding_config.name()) {
                 OPENVINO_ASSERT(!properties.count(property_name),
-                                "Mixing individual config properties with text_embedding_config is not allowed");
+                                "Mixing individual config properties with text_embedding_config is not allowed. Conflicting property: ",
+                                property_name);
             }
         }
         return config_it->second.as<TextEmbeddingPipeline::Config>();
