@@ -23,9 +23,9 @@ class TestImage2Video:
     @pytest.mark.parametrize("download_test_content", ["overture-creations.png"], indirect=True)
     def test_sample_image2video(self, convert_model, sample_args, download_test_content):
         py_script = SAMPLES_PY_DIR / "video_generation/image2video.py"
-        py_command = [sys.executable, py_script, convert_model, download_test_content, sample_args]
+        py_command = [sys.executable, py_script, convert_model, download_test_content, sample_args, "5"]
         run_sample(py_command)
 
         cpp_sample = SAMPLES_CPP_DIR / "image2video"
-        cpp_command = [cpp_sample, convert_model, download_test_content, sample_args]
+        cpp_command = [cpp_sample, convert_model, download_test_content, sample_args, "5"]
         run_sample(cpp_command)

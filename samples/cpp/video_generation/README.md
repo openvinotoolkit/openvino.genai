@@ -87,7 +87,7 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
 - **Run Command:**
   ```bash
-  ./image2video model_dir image_path prompt
+  ./image2video model_dir image_path prompt [num_frames]
   ```
 
   Example (download the overture image first):

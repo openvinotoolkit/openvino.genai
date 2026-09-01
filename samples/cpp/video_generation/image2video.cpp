@@ -11,11 +11,13 @@
 #include <openvino/genai/video_generation/image2video_pipeline.hpp>
 
 int main(int32_t argc, char* argv[]) try {
-    OPENVINO_ASSERT(argc == 4, "Usage: ", argv[0], " <MODEL_DIR> <IMAGE_PATH> '<PROMPT>'");
+    OPENVINO_ASSERT(argc == 4 || argc == 5,
+                    "Usage: ", argv[0], " <MODEL_DIR> <IMAGE_PATH> '<PROMPT>' [NUM_FRAMES]");
 
     std::filesystem::path models_dir = argv[1];
     std::filesystem::path image_path = argv[2];
     std::string prompt = argv[3];
+    int64_t num_frames = (argc == 5) ? std::stoll(argv[4]) : 161;
 
     const std::string device = "CPU";  // GPU can be used as well
     float frame_rate = 25.0f;
@@ -29,7 +31,7 @@ int main(int32_t argc, char* argv[]) try {
         ov::genai::negative_prompt("static, motionless, frozen, still photograph, no movement, low quality, blurry, distorted"),
         ov::genai::height(480),
         ov::genai::width(704),
-        ov::genai::num_frames(161),
+        ov::genai::num_frames(num_frames),
         ov::genai::num_inference_steps(50),
         ov::genai::num_videos_per_prompt(1),
         ov::genai::callback(progress_bar),

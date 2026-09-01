@@ -20,6 +20,7 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory (must contain vae_encoder/)")
     parser.add_argument("image", help="Path to the conditioning image")
     parser.add_argument("prompt", help="Text prompt to guide generation")
+    parser.add_argument("num_frames", type=int, nargs="?", default=161, help="Number of frames to generate")
     args = parser.parse_args()
 
     pipe = openvino_genai.Image2VideoPipeline(args.model_dir, "CPU")  # GPU can be used as well
@@ -36,8 +37,8 @@ def main():
         negative_prompt="static, motionless, frozen, still photograph, no movement, low quality, blurry, distorted",
         height=480,
         width=704,
-        num_frames=161,
-        num_inference_steps=50,
+        num_frames=args.num_frames,
+        num_inference_steps=25,
         num_videos_per_prompt=1,
         callback=callback,
         frame_rate=frame_rate,

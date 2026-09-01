@@ -92,7 +92,7 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python image2video.py model_dir image_path prompt
+  python image2video.py model_dir image_path prompt [num_frames]
   ```
 
   Example (download the overture image first):
