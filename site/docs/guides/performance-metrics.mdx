@@ -11,6 +11,7 @@ sidebar_position: 5
 - Time To the First Token (TTFT), ms
 - Time per Output Token (TPOT), ms/token
 - Generate total duration, ms
+- Chat template application duration, ms
 - Tokenization duration, ms
 - Detokenization duration, ms
 - Throughput, tokens/s
@@ -282,5 +283,5 @@ print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
 :::tip
-For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/README.md#9-llms-benchmarking-sample-benchmark_genai) and C++ [benchmark_genai](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/README.md#9-llms-benchmarking-sample-benchmark_genai) samples.
+For more information, refer to the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/benchmark_genai.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/benchmark_genai.cpp) and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/text_generation/benchmark_genai.js) benchmark samples.
 :::
