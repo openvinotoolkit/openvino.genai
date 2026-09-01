@@ -158,6 +158,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
         "optimum-intel-internal-testing/tiny-random-qwen3.5",
+        "optimum-intel-internal-testing/tiny-random-muse-glimmer",
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
         "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
@@ -167,6 +168,7 @@ else:
 MODEL_GEMMA = "optimum-intel-internal-testing/tiny-random-gemma3"
 MODEL_GEMMA3N = "optimum-intel-internal-testing/tiny-random-gemma3n"
 MODEL_QWEN3_OMNI = "optimum-intel-internal-testing/tiny-random-qwen3-omni"
+MODEL_DEEPSEEK_OCR2 = "optimum-intel-internal-testing/tiny-random-deepseek-ocr-2"
 
 MODEL_IDS: list[str] = []
 if is_transformers_version("<", "5.0"):
@@ -188,6 +190,7 @@ else:
         "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
         "qnguyen3/nanoLLaVA",
+        MODEL_DEEPSEEK_OCR2,
         *VIDEO_MODEL_IDS,
     ]
 
@@ -208,6 +211,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     MODEL_GEMMA3N: lambda idx: "<image_soft_token>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
+    MODEL_DEEPSEEK_OCR2: lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
@@ -216,6 +220,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|image|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|image|>",
+    "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|image|>",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
@@ -231,6 +236,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma4-moe": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it": lambda idx: "<|video|>",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B": lambda idx: "<|video|>",
+    "optimum-intel-internal-testing/tiny-random-muse-glimmer": lambda idx: "<|video|>",
     VIDEOCHAT_FLASH_QWEN_MODEL_ID: lambda idx: f"<|image_{idx + 1}|>\n",
 }
 
@@ -281,6 +287,11 @@ NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-gemma4-moe",
     "optimum-intel-internal-testing/tiny-random-gemma4-unified-it",
     "optimum-intel-internal-testing/tiny-random-gemma4-31B",
+    MODEL_DEEPSEEK_OCR2,
+}
+
+MODELS_WITHOUT_CHAT_TEMPLATE = {
+    MODEL_DEEPSEEK_OCR2,
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -319,6 +330,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.2.0."
         )
+    if model_id == "optimum-intel-internal-testing/tiny-random-muse-glimmer" and is_transformers_version("<", "5.15.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of Muse Glimmer. Minimum required is 5.15.0."
+        )
     if model_id in [
         "optimum-intel-internal-testing/tiny-random-gemma4",
         "optimum-intel-internal-testing/tiny-random-gemma4-moe",
@@ -327,13 +342,9 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.5.0."
         )
-    if model_id in [MODEL_GEMMA3N] and (
-        is_transformers_version("<", "4.57.0")
-        or is_transformers_version(">=", "5.0.0")
-        or is_optimum_version("<", "2.0.0")
-    ):
+    if model_id in [MODEL_GEMMA3N] and (is_transformers_version("<", "5.0.0") or is_optimum_version("<", "2.0.0")):
         pytest.skip(
-            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is >= 4.57.0 and < 5.0.0. Supported optimum version is >= 2.0.0."
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.0.0. Supported optimum version is >= 2.0.0."
         )
 
     if model_id in [
@@ -341,6 +352,10 @@ def _maybe_skip_unsupported_model_export(model_id: str) -> None:
     ] and is_transformers_version("<", "5.10.0"):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 5.10.0."
+        )
+    if model_id == MODEL_DEEPSEEK_OCR2 and is_transformers_version("<", "5.11.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of DeepSeek-OCR-2. Minimum required is 5.11.0."
         )
     if _is_videochat_flash_qwen_model(model_id) and not is_optimum_intel_version_for_videochat_flash_qwen():
         pytest.skip("ValueError: The current version of optimum-intel does not support videochat_flash_qwen")
@@ -363,6 +378,7 @@ def _setup_generation_config(
     set_eos_token: bool = True,
     do_sample: bool = True,
     prompt_lookup: bool = False,
+    tree_search: bool = False,
 ) -> GenerationConfig:
     generation_config = pipeline.get_generation_config()
     generation_config.max_new_tokens = max_new_tokens
@@ -378,6 +394,11 @@ def _setup_generation_config(
 
     if ignore_eos:
         generation_config.ignore_eos = True
+
+    if tree_search:
+        generation_config.num_assistant_tokens = 8
+        generation_config.branching_factor = 4
+        generation_config.tree_depth = 2
 
     return generation_config
 
@@ -468,6 +489,17 @@ def _get_ov_model(model_id: str) -> str:
         else:
             processor.audio_tokenizer = None
 
+        # DeepSeek-OCR-2 tiny-random currently may miss preprocessor_config.json
+        # So override processor with AutoImageProcessor in this case.
+        if model_id == MODEL_DEEPSEEK_OCR2:
+            try:
+                processor = transformers.AutoImageProcessor.from_pretrained(
+                    model_cached,
+                    trust_remote_code=True,
+                )
+            except (OSError, ValueError):
+                pass
+
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
 
@@ -476,6 +508,9 @@ def _get_ov_model(model_id: str) -> str:
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
+QWEN3_VL_SDPA_XFAIL_REASON = (
+    "qwen3-vl vision embeddings count does not match image pad tokens in prompt with SDPA backend"
+)
 
 
 @pytest.fixture(scope="module")
@@ -495,7 +530,20 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
+    if "qwen3-vl" in ov_model and ov_backend == "SDPA":
+        pytest.xfail(QWEN3_VL_SDPA_XFAIL_REASON)
+
     models_path = _get_ov_model(ov_model)
+
+    pipeline_properties: dict = {"ATTENTION_BACKEND": ov_backend, "prompt_lookup": ov_prompt_lookup}
+    if "qwen3.5" in ov_model and ov_backend == "PA" and ov_prompt_lookup:
+        # qwen3.5 is a hybrid (linear-attention) model. Prompt lookup on the PA backend engages the
+        # linear-attention verifier, which does not yet support prefix caching. VLMPipeline enables
+        # prefix caching by default (latency-oriented scheduler config), so pass an explicit config
+        # with it disabled instead of relying on the default.
+        scheduler_config = SchedulerConfig()
+        scheduler_config.enable_prefix_caching = False
+        pipeline_properties["scheduler_config"] = scheduler_config
 
     vision_preprocess_env_set = False
     key = "VISION_PREPROCESS"
@@ -506,7 +554,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
             vision_preprocess_env_set = True
 
     try:
-        pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend, prompt_lookup=ov_prompt_lookup)
+        pipeline = VLMPipeline(models_path, "CPU", **pipeline_properties)
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
@@ -761,11 +809,18 @@ def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
 
+SINGLE_IMAGE_ONLY_MODELS = {
+    MODEL_DEEPSEEK_OCR2,
+}
+
+
 @pytest.mark.transformers_dependent(
     reason="minicpmv, internvl_chat, minicpmo is not supported by transformers>=v5; gemma3, llava-next, llava - CVS-186059"
 )
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
+    if ov_pipe_model.model_id in SINGLE_IMAGE_ONLY_MODELS and len(test_images) != 1:
+        pytest.skip("Model supports single image input only")
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
     def streamer(word: str) -> bool:
@@ -885,8 +940,23 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         assert len(vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations) == len(
             cb_vlm_perf_metrics.vlm_raw_metrics.prepare_embeddings_durations
         )
+        assert len(vlm_perf_metrics.vlm_raw_metrics.vision_encoding_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.vision_encoding_durations
+        )
+        assert len(vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations) == len(
+            cb_vlm_perf_metrics.vlm_raw_metrics.text_embedding_durations
+        )
+
         assert vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
         assert cb_vlm_perf_metrics.get_prepare_embeddings_duration().mean > 0
+
+        if images or videos:
+            assert vlm_perf_metrics.get_vision_encoding_duration().mean > 0
+            assert cb_vlm_perf_metrics.get_vision_encoding_duration().mean > 0
+
+        assert vlm_perf_metrics.get_text_embedding_duration().mean > 0
+        assert cb_vlm_perf_metrics.get_text_embedding_duration().mean > 0
+
         assert (
             vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
             == cb_vlm_perf_metrics.vlm_raw_metrics.per_image_slice_counts
@@ -1073,6 +1143,8 @@ def test_vlm_pipeline_chat(
     system_message: str,
     iteration_images: list[list[PIL.Image]],
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     ov_pipe = ov_pipe_model.pipeline
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
@@ -1115,6 +1187,8 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
@@ -1293,6 +1367,9 @@ def test_vlm_pipeline_chat_with_video(
     system_message: str,
     iteration_images_and_videos,
 ):
+    if sys.platform == "win32" and "gemma4" in ov_pipe_model.model_id:
+        pytest.skip("Access violation on Windows, CVS-192891")
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -1405,7 +1482,14 @@ def test_perf_metrics(
     assert 0 < perf_metrics.get_generate_duration().mean < generate_time
     assert 0 < perf_metrics.get_tokenization_duration().mean < generate_time
     assert 0 < perf_metrics.get_detokenization_duration().mean < generate_time
-    assert 0 < perf_metrics.get_prepare_embeddings_duration().mean < generate_time
+
+    prepare_embeddings_mean = perf_metrics.get_prepare_embeddings_duration().mean
+    assert 0 < prepare_embeddings_mean < generate_time
+    vision_encoding_mean = perf_metrics.get_vision_encoding_duration().mean
+    assert 0 < vision_encoding_mean < prepare_embeddings_mean
+    text_embedding_mean = perf_metrics.get_text_embedding_duration().mean
+    assert 0 < text_embedding_mean < prepare_embeddings_mean
+    assert 0 < vision_encoding_mean + text_embedding_mean < prepare_embeddings_mean
 
     squared_generate_time = generate_time * generate_time
     assert 0 <= perf_metrics.get_ttft().std < squared_generate_time
@@ -1416,17 +1500,24 @@ def test_perf_metrics(
     assert 0 <= perf_metrics.get_generate_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_tokenization_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_detokenization_duration().std < squared_generate_time
-    assert (
-        0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
-    )
+    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_vision_encoding_duration().std < squared_generate_time
+    assert 0 <= perf_metrics.get_text_embedding_duration().std < squared_generate_time
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
 
-    raw_dur = np.array(vlm_raw_metrics.prepare_embeddings_durations) / 1000.0
-    mean_dur, std_dur = perf_metrics.get_prepare_embeddings_duration()
-    assert np.allclose(mean_dur, np.mean(raw_dur))
-    assert np.allclose(std_dur, np.std(raw_dur))
+    metrics_and_raw_pairs = [
+        (perf_metrics.get_prepare_embeddings_duration(), vlm_raw_metrics.prepare_embeddings_durations),
+        (perf_metrics.get_vision_encoding_duration(), vlm_raw_metrics.vision_encoding_durations),
+        (perf_metrics.get_audio_encoding_duration(), vlm_raw_metrics.audio_encoding_durations),
+        (perf_metrics.get_text_embedding_duration(), vlm_raw_metrics.text_embedding_durations),
+    ]
+
+    for (mean_duration, std_duration), raw_metrics in metrics_and_raw_pairs:
+        raw_durations = np.array(raw_metrics) / 1000.0
+        assert np.allclose(mean_duration, np.mean(raw_durations))
+        assert np.allclose(std_duration, np.std(raw_durations))
 
     # Test per-image and request-level image slice metrics.
     assert perf_metrics.get_total_image_slice_count() > 0
@@ -1543,6 +1634,8 @@ def test_vlm_npu_multiple_images(
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Explain in details 1+1=",
@@ -1675,6 +1768,8 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     ov_pipe_model: VlmModelInfo,
     image_sequence: list[openvino.Tensor],
 ):
+    if ov_pipe_model.model_id in MODELS_WITHOUT_CHAT_TEMPLATE:
+        pytest.skip("Model has no chat template")
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
 
@@ -2222,6 +2317,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if optimum_model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "muse_glimmer":
+            processor.tokenizer.add_bos_token = False
         if optimum_model.config.model_type in ["internvl_chat", "minicpmv"]:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_cached, trust_remote_code=True)
         if optimum_model.config.model_type == "minicpmv":
@@ -2297,6 +2394,9 @@ OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
+    # muse glimmer
+    "*tiny-random-muse-glimmer/*/CPP/image*": "CVS-192673",
+    "*tiny-random-muse-glimmer/*/CPP/video*": "CVS-192673",
     # gemma3n cases
     "*tiny-random-gemma3n/PA/CPP/image*": "CVS-190429",
     "*tiny-random-gemma3n/SDPA/CPP/image*": "CVS-190429",
@@ -2341,6 +2441,8 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
     # videochat_flash_qwen text-only cases
     "*tiny-videochat-flash-qwen/PA/CPP/text-only": "CVS-183813",
+    # deepseek-ocr-2 text-only cases
+    "*tiny-random-deepseek-ocr-2/*/text-only": "DeepSeek OCR-2 model requires image input.",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
@@ -3040,12 +3142,21 @@ def test_vlm_eagle3(cat_tensor):
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    generation_config_with_draft_tree = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
+    )
     result_with_draft = ov_pipe_with_draft.generate(
         PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft
+    )
+    result_with_draft_tree = ov_pipe_with_draft.generate(
+        PROMPTS[2], images=[cat_tensor], generation_config=generation_config_with_draft_tree
     )
 
     assert result_without_draft.texts[0].strip() == result_with_draft.texts[0].strip(), (
         "Result should be the same when Eagle3 draft model is enabled and disabled."
+    )
+    assert result_without_draft.texts[0].strip() == result_with_draft_tree.texts[0].strip(), (
+        "Result should be the same when Eagle3 draft model and tree search are enabled and disabled."
     )
 
 
@@ -3091,13 +3202,23 @@ def test_vlm_eagle3_chat_with_videos(
         draft_model=ov_draft,
     )
     generation_config_with_draft = _setup_generation_config(ov_pipe_with_draft, max_new_tokens=20, do_sample=False)
+    generation_config_with_draft_tree = _setup_generation_config(
+        ov_pipe_with_draft, max_new_tokens=20, tree_search=True, do_sample=False
+    )
     results_with_draft = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft)
+    results_with_draft_tree = run_two_round_chat(ov_pipe_with_draft, generation_config_with_draft_tree)
 
     assert results_without_draft[0] == results_with_draft[0], (
         "First mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
     )
     assert results_without_draft[1] == results_with_draft[1], (
         "Second mixed-modality chat turn should be the same when Eagle3 draft model is enabled and disabled."
+    )
+    assert results_without_draft[0] == results_with_draft_tree[0], (
+        "First mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
+    )
+    assert results_without_draft[1] == results_with_draft_tree[1], (
+        "Second mixed-modality chat turn should be the same when Eagle3 draft model and tree search are enabled and disabled."
     )
 
 

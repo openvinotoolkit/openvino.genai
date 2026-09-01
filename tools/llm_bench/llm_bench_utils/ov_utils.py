@@ -24,7 +24,7 @@ from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
 from openvino_genai import StreamingStatus
-from wrappers.speech_to_text import Qwen3ASROptimumPipeline
+from wrappers.speech_to_text import FunASROptimumPipeline, Qwen3ASROptimumPipeline
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -240,6 +240,30 @@ def cb_pipeline_required(args):
         (args["cb_config"].get("cache_eviction_config") is not None or args["cb_config"].get("sparse_attention_config") is not None)
 
 
+def setup_draft_model_for_sd(args, device):
+    import openvino_genai
+
+    draft_model = {}
+    draft_model_path = args.get("draft_model", "")
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f"==Failure ==: draft model by path:{draft_model_path} is not exists")
+        log.info("Speculative Decoding is activated")
+        draft_device = args.get("draft_device", None) or device
+        draft_model_load_kwargs = {}
+        if args.get("draft_cb_config") is not None:
+            draft_model_load_kwargs = {
+                "scheduler_config": get_scheduler_config_genai(
+                    args.get("draft_cb_config"), config_name="draft CB config"
+                )
+            }
+        draft_model["draft_model"] = openvino_genai.draft_model(
+            draft_model_path, draft_device.upper(), **draft_model_load_kwargs
+        )
+
+    return draft_model
+
+
 def create_genai_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs):
     import openvino_genai
     from packaging.version import parse
@@ -258,14 +282,8 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
         version = get_version_in_format_to_pars(openvino_genai.get_version())
         use_streamer_metrics = parse(version) < parse("2025.0.0") or (draft_model_path and parse(version) < parse("2025.1.0"))
 
-    if draft_model_path:
-        if not Path(draft_model_path).exists():
-            raise RuntimeError(f'==Failure ==: draft model by path:{draft_model_path} is not exists')
-        log.info("Speculative Decoding is activated")
-        draft_device = kwargs.get('draft_device', None) or device
-        draft_model_load_kwargs = {'scheduler_config': get_scheduler_config_genai(kwargs.get("draft_cb_config"), config_name="draft CB config")}\
-            if kwargs.get("draft_cb_config") is not None else {}
-        config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
+    if kwargs.get("draft_model", ""):
+        config.update(setup_draft_model_for_sd(kwargs, device))
 
     if kwargs.get('max_ngram_size') and kwargs.get('num_assistant_tokens'):
         log.info("Prompt Lookup decoding is activated")
@@ -585,7 +603,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
 def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, processor, **kwargs):
     import openvino_genai as ov_genai
 
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
     pipeline_class = ov_genai.ASRPipeline if hasattr(ov_genai, "ASRPipeline") else ov_genai.WhisperPipeline
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -620,11 +638,15 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
     # but Transformers does not recognize this architecture.
     Qwen3ASROptimumPipeline.init_model(use_case.model_type)
 
-    try:
-        processor = AutoProcessor.from_pretrained(model_path)
-    except Exception:
-        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+    if use_case.model_type == "fun-asr":
+        processor = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
+    else:
+        try:
+            processor = AutoProcessor.from_pretrained(model_path)
+        except Exception:
+            processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+            trust_remote_code = True
 
     if kwargs.get("genai", True):
         if not is_genai_available(log_msg=True):
@@ -664,6 +686,8 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
 
     if use_case.model_type == "qwen3-asr":
         pipe = Qwen3ASROptimumPipeline(model=ov_model, processor=processor)
+    elif use_case.model_type == "fun-asr":
+        pipe = FunASROptimumPipeline(model=ov_model, tokenizer=processor)
     elif use_case.model_type == "whisper":
         pipe = pipeline(
             "automatic-speech-recognition",
@@ -704,6 +728,9 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_data
     cb_config = kwargs.get("cb_config")
     if cb_config is not None:
         ov_config["scheduler_config"] = get_scheduler_config_genai(cb_config)
+
+    if kwargs.get("draft_model", ""):
+        ov_config.update(setup_draft_model_for_sd(kwargs, device))
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()

@@ -363,10 +363,18 @@ public:
                                                            generation_config.relevance_weight);
 
         const auto embeddings_start_time = std::chrono::steady_clock::now();
+        
+        const auto audio_encoding_start = std::chrono::steady_clock::now();
         m_inputs_embedder->encode_audios(audios);
+        PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.audio_encoding_durations, audio_encoding_start);
+
+        const auto vision_encoding_start = std::chrono::steady_clock::now();
         auto encoded_images = m_inputs_embedder->encode_images(images);
-        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
         auto encoded_videos = m_inputs_embedder->encode_videos(videos, videos_metadata);
+        PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.vision_encoding_durations, vision_encoding_start);
+
+        vlm_utils::update_image_slice_counts(perf_metrics, encoded_images);
+
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
@@ -374,7 +382,7 @@ public:
 
             const auto template_start = std::chrono::steady_clock::now();
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
-            raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start));
+            PerfMetrics::emplace_duration(raw_counters.chat_template_durations, template_start);
 
             if (m_use_full_chat_history) {
                 m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
@@ -483,8 +491,9 @@ public:
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
         decoded.perf_metrics.num_input_tokens = perf_metrics.num_input_tokens;
         decoded.perf_metrics.load_time = this->get_load_time();
-        res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
-        res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        PerfMetrics::emplace_duration(res_raw_counters.generate_durations, generate_start_time, generate_end_time);
+        PerfMetrics::emplace_duration(res_raw_counters.detokenization_durations, decode_start_time, decode_end_time);
+        
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
         res_raw_counters.chat_template_durations.insert(res_raw_counters.chat_template_durations.end(), raw_counters.chat_template_durations.begin(), raw_counters.chat_template_durations.end());
 
@@ -494,6 +503,25 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
+
+        decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.end(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.end()
+        );
+        
         decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
             decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
             perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
@@ -558,6 +586,8 @@ public:
 
         auto processed_chat_data = chat_context.process(images, videos, videos_metadata);
 
+        perf_metrics.vlm_raw_metrics.vision_encoding_durations.emplace_back(processed_chat_data.vision_encoding_duration);
+
         bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
         if (use_full_history) {
@@ -571,7 +601,7 @@ public:
             processed_chat_data.normalized_history,
             true
         );
-        raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start));
+        PerfMetrics::emplace_duration(raw_counters.chat_template_durations, template_start);
 
         ov::genai::utils::GenerationFinishInfo generation_finish_info;
 
@@ -638,8 +668,8 @@ public:
         auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
         decoded.perf_metrics.num_input_tokens = perf_metrics.num_input_tokens;
         decoded.perf_metrics.load_time = this->get_load_time();
-        res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
-        res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        PerfMetrics::emplace_duration(res_raw_counters.generate_durations, generate_start_time, generate_end_time);
+        PerfMetrics::emplace_duration(res_raw_counters.detokenization_durations, decode_start_time, decode_end_time);
         res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
         res_raw_counters.chat_template_durations.insert(res_raw_counters.chat_template_durations.end(), raw_counters.chat_template_durations.begin(), raw_counters.chat_template_durations.end());
 
@@ -649,6 +679,25 @@ public:
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
             perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
         );
+
+        decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.vision_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.vision_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.audio_encoding_durations.end(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.audio_encoding_durations.end()
+        );
+
+        decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.text_embedding_durations.end(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.begin(),
+            perf_metrics.vlm_raw_metrics.text_embedding_durations.end()
+        );
+
         decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.insert(
             decoded.perf_metrics.vlm_raw_metrics.per_image_slice_counts.end(),
             perf_metrics.vlm_raw_metrics.per_image_slice_counts.begin(),
@@ -803,8 +852,7 @@ private:
                 history_vision_count
             );
         }
-        const auto embeddings_end_time = std::chrono::steady_clock::now();
-        perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(embeddings_end_time - embeddings_start_time));
+        PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
 
         if (m_is_npu) {
             // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN

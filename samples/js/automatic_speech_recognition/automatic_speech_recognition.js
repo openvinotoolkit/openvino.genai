@@ -4,11 +4,11 @@
 import { basename } from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
-import { WhisperPipeline } from 'openvino-genai-node';
-import { readAudio } from './wav_utils.js';
+import { ASRPipeline } from 'openvino-genai-node';
+import { readAudio } from '../wav_utils.js';
 
 /**
- * Parse CLI arguments, run Whisper inference and print transcription output.
+ * Parse CLI arguments, run ASR inference and print transcription output.
  * @returns {Promise<void>}
  */
 async function main() {
@@ -16,12 +16,12 @@ async function main() {
     .scriptName(basename(process.argv[1]))
     .command(
       '$0 <model_dir> <audio_file> [device]',
-      'Run Whisper speech recognition on an audio file',
+      'Run automatic speech recognition on an audio file',
       (yargsBuilder) =>
         yargsBuilder
           .positional('model_dir', {
             type: 'string',
-            describe: 'Path to the converted Whisper model directory',
+            describe: 'Path to the converted ASR model directory',
             demandOption: true,
           })
           .positional('audio_file', {
@@ -43,17 +43,21 @@ async function main() {
   const wavFilePath = argv.audio_file;
   const device = argv.device;
 
-  let properties = {};
+  const properties = {};
   if (device === 'NPU' || device.startsWith('GPU')) {
-    properties["CACHE_DIR"] = 'whisper_cache';
+    // Cache compiled models on disk for GPU and NPU to save time on the next run.
+    properties['CACHE_DIR'] = 'asr_cache';
   }
-  // Word timestamps require word_timestamps in the pipeline constructor
+  // Word timestamps supported by Whisper models only.
+  // Must be passed to the ASRPipeline constructor as a property.
   properties.word_timestamps = true;
 
-  const pipeline = await WhisperPipeline(modelDir, device, properties);
+  const pipeline = await ASRPipeline(modelDir, device, properties);
 
-  // Pass only the options to override; avoid spreading full getGenerationConfig()
-  // (it can contain values that do not round-trip correctly, e.g. max_new_tokens).
+  // If the language is known in advance it can be specified in the generation config.
+  // In the form of "<|en|>" for Whisper models. Supported by multilingual models only.
+  // In the form of "English" for Qwen3-ASR models.
+  // Whisper model parameters (task, return_timestamps, word_timestamps) are ignored for Qwen3-ASR models.
   const generationConfig = {
     language: '<|en|>',
     task: 'transcribe',
@@ -61,20 +65,21 @@ async function main() {
     word_timestamps: true,
   };
 
+  // Pipeline expects normalized audio with a sample rate of 16 kHz.
   const audioTensor = await readAudio(wavFilePath);
   const result = await pipeline.generate(audioTensor, { generationConfig });
 
   console.log(result.texts?.[0] ?? '');
 
-  if (result.chunks?.length) {
-    for (const chunk of result.chunks) {
+  if (result.chunks?.[0]?.length) {
+    for (const chunk of result.chunks[0]) {
       console.log(`timestamps: [${chunk.startTs.toFixed(2)}, ${chunk.endTs.toFixed(2)}] text: ${chunk.text}`);
     }
   }
 
-  if (result.words?.length) {
-    for (const word of result.words) {
-      console.log(`[${word.startTs.toFixed(2)}, ${word.endTs.toFixed(2)}]: ${word.word}`);
+  if (result.words?.[0]?.length) {
+    for (const word of result.words[0]) {
+      console.log(`[${word.startTs.toFixed(2)}, ${word.endTs.toFixed(2)}]: ${word.text}`);
     }
   }
 }

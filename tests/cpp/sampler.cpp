@@ -44,7 +44,8 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
 
     // to emulate processed prompt and add next token [ 0 ]
     sequence_groups.front()->get_sequences().front()->append_token(0, 1.f);    
-    sequence_groups.front()->update_processed_tokens_num(5);
+    constexpr size_t processed_before = 5;
+    sequence_groups.front()->update_processed_tokens_num(processed_before);
 
     // append candidates [ 2, 3, 4 ]
     size_t num_validated_tokens = 3;
@@ -75,6 +76,8 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     TokenIds actual = sequence_groups.front()->get_sequences().front()->get_generated_ids(),
              expected{0, 1};
     ASSERT_EQ(sequence_groups.front()->get_sequences().front()->get_generated_ids(), expected);
+    EXPECT_EQ(sequence_groups.front()->get_num_processed_tokens(), processed_before + 1)
+        << "Full rejection must retain the target replacement token as accepted depth one";
 }
 
 TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {

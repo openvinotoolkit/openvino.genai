@@ -693,7 +693,7 @@ public:
 
     // Assisting generation parameters
     float assistant_confidence_threshold = 0.f;
-    size_t num_assistant_tokens = 0;
+    std::optional<size_t> num_assistant_tokens = std::nullopt;
     size_t max_ngram_size = 0;
 
     // Tree search parameters
