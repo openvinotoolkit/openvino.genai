@@ -55,7 +55,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 
 When performing a code review on a Pull Request, additionally follow this protocol:
 
-1. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review. Individual items in the checklist can be marked as N/A.
+1. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review. Individual items can be marked as N/A in the checklist.
 2. If the documentation is updated, PR description MUST include a link to the corresponding documentation deployed on the fork.
 3. PR description must be up to date and include all information about the changes.
 4. Include C++ Core Guidelines references in review comments.
