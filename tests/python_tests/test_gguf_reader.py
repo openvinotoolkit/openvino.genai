@@ -141,12 +141,31 @@ def test_pipelines_with_gguf_generate(
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 # CVS-179725: greedy-decoded text can diverge from the HF reference for this small, quantized
 # model on edge-case prompts (near-empty/special-tokens-only context), where the argmax choice is
-# low-confidence and sensitive to tiny FP differences between graph variants (frontend vs legacy
-# reader, SDPA vs PagedAttention). Confirmed the token ids encoded by FRONTEND and LEGACY are
-# byte-identical for these prompts, and the set of failing (reader, pipeline_type, prompt) combos
-# has no consistent split by reader (e.g. legacy fails "only_special_tokens" but not
-# "multiple_special_tokens", frontend is the reverse) -- this is decoding instability, not a
-# tokenization bug introduced by the frontend reader.
+# low-confidence and sensitive to tiny FP differences in how the top logits are computed. Confirmed
+# via a standalone C++ harness (not exercising this test's Python plumbing) that:
+#   - Encoded token ids are byte-identical between FRONTEND and LEGACY for these prompts -- ruling
+#     out a tokenization bug in genai, openvino or openvino_tokenizers.
+#   - FRONTEND-reader GGUF always runs the Stateful/SDPA pipeline (gguf_requires_sdpa() above
+#     forces it regardless of the requested backend), so "frontend"+STATEFUL and "frontend"+
+#     PAGED_ATTENTION are actually the same execution path and, as expected, produce identical
+#     output; the real axes of variation are FRONTEND-stateful, LEGACY-stateful(SDPA), and
+#     LEGACY-pagedattention(continuous batching).
+#   - Regular-content prompts match exactly across all three; only these degenerate prompts
+#     diverge, and inconsistently (e.g. LEGACY continuous-batching matches the HF reference for
+#     "only_special_tokens"/"multiple_special_tokens" while FRONTEND and LEGACY-SDPA both miss it
+#     differently; for "special_tokens_with_text" FRONTEND and LEGACY-SDPA agree with each other
+#     but not with HF, while LEGACY continuous-batching disagrees with both). No single reader or
+#     backend is consistently right or wrong.
+#   - Manually verified the Q4_0 embedding weight dequantization and RoPE frequency constants
+#     match (bit-for-bit equivalent / matching to ~7 significant digits) between the two readers'
+#     converted graphs, ruling out a weight-conversion bug for this file's quant types.
+# This is decode-time numerical instability (SDPA vs PagedAttention kernel, and frontend vs legacy
+# graph topology, each accumulate FP error slightly differently) hitting a near-tied argmax on a
+# heavily 4-bit-quantized 0.5B model given essentially no real content to condition on -- not a
+# bug introduced by this PR. Also note OpenVINO's own GGUF frontend docs (openvino/src/frontends/
+# gguf/docs/supported_models.md) only end-to-end verify the qwen2 architecture with Q4_K_M/Q8_0
+# quantization; Q4_0 (used by this test's gguf_full_path) isn't upstream-verified for qwen2, so
+# this exact model+quant combination sitting closer to the edge of acceptable drift is plausible.
 @pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725")
 def test_full_gguf_pipeline(
     model_gguf: ModelInfo,
