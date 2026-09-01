@@ -351,6 +351,8 @@ jobs:
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
         run: |
+          # OpenVino has removed globs from CMakeLists, so we need to copy them to build samples
+          # Tracking issue: CVS-193799
           cp ${{ env.SRC_DIR }}/samples/cpp/CMakeLists.txt ${{ env.OV_INSTALL_DIR }}/samples/cpp/CMakeLists.txt
           cp ${{ env.SRC_DIR }}/samples/c/CMakeLists.txt ${{ env.OV_INSTALL_DIR }}/samples/c/CMakeLists.txt
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
