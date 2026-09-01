@@ -57,25 +57,6 @@ bool should_use_stateful_pipeline(bool is_npu_requested,
     return false;
 }
 
-// A .gguf converted by the OpenVINO GGUF frontend must run on the SDPA backend: its graph is not
-// accepted by ov::pass::SDPAToPagedAttention, and pushing it through the CB adapter fails deep in
-// the plugin with a confusing shape mismatch rather than a usable error. A scheduler_config alone
-// (without ATTENTION_BACKEND=PA) also selects the CB adapter, so check for that too.
-// The legacy reader's graph does convert to PagedAttention, so leave it alone.
-bool gguf_requires_sdpa(const std::filesystem::path& models_path, bool use_legacy_reader) {
-    return models_path.extension() == ".gguf" && !use_legacy_reader;
-}
-
-void warn_if_paged_attention_requested_for_gguf(const ov::AnyMap& user_properties) {
-    auto it = user_properties.find("ATTENTION_BACKEND");
-    const bool asked_for_pa = it != user_properties.end() && it->second.as<std::string>() == ov::genai::PA_BACKEND;
-    if (asked_for_pa || user_properties.find(ov::genai::scheduler_config.name()) != user_properties.end()) {
-        ov::genai::utils::print_gguf_debug_info(
-            "GGUF models converted by the OpenVINO GGUF frontend only run on the SDPA attention backend; "
-            "the requested PagedAttention / continuous-batching configuration is ignored.");
-    }
-}
-
 // This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
@@ -282,29 +263,10 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
     utils::extract_extensions_to_core(properties);
 
-    // read_model() consumes the GGUF-specific properties (and strips them before they reach the
-    // plugin); read them here too, because which reader ran decides the branches below.
-    const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
-
-    // GGUF models converted by the frontend reader produce a stateful SDPA decoder (see
-    // gguf_requires_sdpa above); default to SDPA unless the user explicitly picked a backend. The
-    // legacy reader's graph does convert to PagedAttention, so it must not be forced onto SDPA.
-    if (gguf_requires_sdpa(models_path, use_legacy_reader) && !is_npu_requested &&
-        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
-        attention_backend = SDPA_BACKEND;
-    }
-
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (gguf_requires_sdpa(models_path, use_legacy_reader)) {
-        warn_if_paged_attention_requested_for_gguf(user_properties);
-        // Drop scheduler_config: it only configures continuous batching, and the plugin rejects
-        // it as an unknown property on the stateful path.
-        properties = utils::extract_scheduler_config(properties).first;
-    }
-    if (gguf_requires_sdpa(models_path, use_legacy_reader) ||
-        should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -345,16 +307,8 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
     // read_model() consumes the GGUF-specific properties (and strips them before they reach the
-    // plugin); read them here too, because which reader ran decides the branches below.
+    // plugin); read it here too, since the tokenizer construction below depends on which reader ran.
     const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
-
-    // GGUF models converted by the frontend reader are converted to a stateful SDPA decoder (see
-    // the GGUF-path comment in the tokenizer-aware constructor above); default them to SDPA unless
-    // the user chose a backend. The legacy reader's graph must not be forced onto SDPA.
-    if (gguf_requires_sdpa(models_path, use_legacy_reader) && !is_npu_requested &&
-        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
-        attention_backend = SDPA_BACKEND;
-    }
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
@@ -370,14 +324,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             : Tokenizer(models_path, properties);
 
     const auto generation_config = utils::from_config_json_if_exists(models_path);
-    if (gguf_requires_sdpa(models_path, use_legacy_reader)) {
-        warn_if_paged_attention_requested_for_gguf(user_properties);
-        // Drop scheduler_config: it only configures continuous batching, and the plugin rejects
-        // it as an unknown property on the stateful path.
-        properties = utils::extract_scheduler_config(properties).first;
-    }
-    if (gguf_requires_sdpa(models_path, use_legacy_reader) ||
-        should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
+    if (should_use_stateful_pipeline(is_npu_requested, has_draft_model, attention_backend, model, properties)) {
         m_pimpl = StatefulPipeline::create(model, tokenizer, device, properties, generation_config, models_path);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
