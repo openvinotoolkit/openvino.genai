@@ -835,6 +835,40 @@ ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(c
 }
 
 template <>
+std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMetadata>>(const Napi::Env& env,
+                                                                                       const Napi::Value& value) {
+    std::vector<ov::genai::VideoMetadata> videos_metadata;
+    if (value.IsUndefined() || value.IsNull()) {
+        return videos_metadata;
+    }
+    OPENVINO_ASSERT(value.IsArray(), "videosMetadata must be an array of VideoMetadata objects.");
+    const auto array = value.As<Napi::Array>();
+    const uint32_t length = array.Length();
+    videos_metadata.reserve(length);
+    for (uint32_t i = 0; i < length; ++i) {
+        const Napi::Value item = array.Get(i);
+        OPENVINO_ASSERT(item.IsObject() && !item.IsArray(), "Each videosMetadata entry must be an object.");
+        const auto object = item.As<Napi::Object>();
+        ov::genai::VideoMetadata metadata;
+        if (const Napi::Value field = object.Get("fps"); !field.IsUndefined() && !field.IsNull()) {
+            metadata.fps = js_to_cpp<float>(env, field);
+        }
+        if (const Napi::Value field = object.Get("frames_indices"); !field.IsUndefined() && !field.IsNull()) {
+            OPENVINO_ASSERT(field.IsArray(),
+                            "videosMetadata.frames_indices must be an array of non-negative integers.");
+            const auto indices = field.As<Napi::Array>();
+            const uint32_t indices_length = indices.Length();
+            metadata.frames_indices.reserve(indices_length);
+            for (uint32_t j = 0; j < indices_length; ++j) {
+                metadata.frames_indices.push_back(js_to_cpp<size_t>(env, indices.Get(j)));
+            }
+        }
+        videos_metadata.push_back(std::move(metadata));
+    }
+    return videos_metadata;
+}
+
+template <>
 ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
                                                                               const Napi::Value& value) {
     ov::genai::ImageGenerationConfig config;

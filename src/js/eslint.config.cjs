@@ -101,6 +101,7 @@ module.exports = defineConfig([
             "talker_repetition_penalty",
             "cp_temperature",
             "cp_top_k",
+            "frames_indices",
           ],
         },
       ],

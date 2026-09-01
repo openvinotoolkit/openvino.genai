@@ -34,6 +34,7 @@ import {
   Text2SpeechPipelineProperties,
   OmniPipelineProperties,
   OmniTalkerSpeechConfig,
+  VideoMetadata,
 } from "./utils.js";
 import {
   VLMPerfMetrics,
@@ -260,8 +261,6 @@ export interface VLMPipeline {
 
 /**
  * Native binding interface used by the high-level Omni pipeline wrapper.
- *
- * @note This is a preview API and is subject to change in future releases.
  */
 export interface OmniPipeline {
   new (): OmniPipeline;
@@ -275,6 +274,7 @@ export interface OmniPipeline {
     inputs: string | IChatHistory,
     images: Tensor[] | undefined,
     videos: Tensor[] | undefined,
+    videosMetadata: VideoMetadata[] | undefined,
     audios: Tensor[] | undefined,
     streamer: ((chunk: string) => StreamingStatus) | undefined,
     speechStreamer: ((audioChunk: Tensor) => StreamingStatus) | undefined,

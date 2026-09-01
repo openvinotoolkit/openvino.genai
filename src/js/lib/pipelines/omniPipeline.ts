@@ -8,6 +8,7 @@ import {
   OmniPipelineProperties,
   OmniTalkerSpeechConfig,
   StreamingStatus,
+  VideoMetadata,
 } from "../utils.js";
 import { OmniDecodedResults } from "../decodedResults.js";
 import type { Tensor } from "openvino-node";
@@ -22,6 +23,11 @@ export type OmniGenerateOptions = {
   images?: Tensor[];
   /** Array of video frame tensors to include in the prompt. */
   videos?: Tensor[];
+  /**
+   * Optional metadata for each video in {@link OmniGenerateOptions.videos}, aligned by index.
+   * Controls frame sampling and timing before encoding. When omitted, model defaults are used.
+   */
+  videosMetadata?: VideoMetadata[];
   /** Array of audio tensors to include in the prompt. */
   audios?: Tensor[];
   /** Generation configuration for the thinker text decode (max_new_tokens, temperature, etc.). */
@@ -86,7 +92,8 @@ export class OmniPipeline {
    * @param inputs - Input prompt string or chat history. May contain model-specific image/video/audio tags.
    * @param options - Optional parameters.
    * @param options.images - Array of image tensors to include in the prompt.
-   * @param options.videos - Array of video frame tensors to include in the prompt.
+   * @param options.videos - Array of video frame tensors.
+   * @param options.videosMetadata - Optional metadata for each video, aligned by index.
    * @param options.audios - Array of audio tensors to include in the prompt.
    * @param options.textConfig - Generation config for the thinker text decode.
    * @param options.talkerSpeechConfig - Generation config for the talker speech output.
@@ -99,13 +106,22 @@ export class OmniPipeline {
     options: OmniGenerateOptions = {},
   ): Promise<OmniDecodedResults> {
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
-    const { images, videos, audios, textConfig, talkerSpeechConfig, streamer, speechStreamer } =
-      options;
+    const {
+      images,
+      videos,
+      videosMetadata,
+      audios,
+      textConfig,
+      talkerSpeechConfig,
+      streamer,
+      speechStreamer,
+    } = options;
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
     const result = await innerGenerate(
       inputs,
       images,
       videos,
+      videosMetadata,
       audios,
       streamer,
       speechStreamer,

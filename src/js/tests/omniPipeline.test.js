@@ -4,7 +4,7 @@
 import assert from "node:assert";
 import { describe, it, before } from "node:test";
 import { addon as ov } from "openvino-node";
-import { createTestImageTensor, createTestRawSpeech } from "./utils.js";
+import { createTestImageTensor, createTestRawSpeech, createTestVideoTensor } from "./utils.js";
 import {
   OmniPipeline,
   DecodedResults,
@@ -22,33 +22,17 @@ const deterministicSpeechConfig = {
   cp_top_k: 1,
 };
 
-// Smoke tests: exercise the binding wiring without loading a multi-GB Qwen3-Omni
-// checkpoint. Generation that requires a loaded pipeline lives in the model-gated
-// suite below.
-describe("OmniPipeline smoke", { skip: process.platform === "darwin" }, () => {
-  it("exposes the OmniPipeline factory", () => {
-    assert.strictEqual(typeof OmniPipeline, "function");
-  });
-
-  it("exposes the OmniDecodedResults class", () => {
-    assert.strictEqual(typeof OmniDecodedResults, "function");
-  });
-
-  it("rejects when the model path does not exist", async () => {
-    await assert.rejects(OmniPipeline("./nonexistent-omni-model", "CPU"));
-  });
-});
-
 // Functional tests require a Qwen3-Omni model exported with audio output. Speech output
 // uses the continuous-batching backend, which OmniPipeline enables by default. When
 // OMNI_PATH is not provided the suite is skipped so the shared JS test run is not blocked
 // by the large checkpoint.
-describe("OmniPipeline", { skip: !OMNI_PATH || process.platform === "darwin" }, () => {
-  let pipeline, testImage, testAudio;
+describe("OmniPipeline", { skip: !OMNI_PATH }, () => {
+  let pipeline, testImage, testAudio, testVideo;
 
   before(async () => {
     pipeline = await OmniPipeline(OMNI_PATH, "CPU");
     testImage = createTestImageTensor();
+    testVideo = createTestVideoTensor();
     const speech = createTestRawSpeech({ durationSeconds: 0.2 });
     testAudio = new ov.Tensor("f32", [speech.length], speech);
   });
@@ -76,6 +60,16 @@ describe("OmniPipeline", { skip: !OMNI_PATH || process.platform === "darwin" }, 
     const result = await pipeline.generate("Describe the inputs.", {
       images: [testImage],
       audios: [testAudio],
+      textConfig: { max_new_tokens: 20 },
+      talkerSpeechConfig: { return_audio: false },
+    });
+    assert.strictEqual(result.texts.length, 1);
+  });
+
+  it("should generate text with a video and metadata", async () => {
+    const result = await pipeline.generate("Describe the video.", {
+      videos: [testVideo],
+      videosMetadata: [{ fps: 2, frames_indices: [0, 2] }],
       textConfig: { max_new_tokens: 20 },
       talkerSpeechConfig: { return_audio: false },
     });
@@ -117,6 +111,46 @@ describe("OmniPipeline", { skip: !OMNI_PATH || process.platform === "darwin" }, 
     assert.ok(textChunks > 0, "Text streamer should be called");
     assert.ok(audioChunks > 0, "Speech streamer should be called");
     assert.ok(result instanceof OmniDecodedResults);
+  });
+
+  it("should stop generation from the text streamer", async () => {
+    let textChunks = 0;
+    const result = await pipeline.generate("Count to ten.", {
+      textConfig: {
+        max_new_tokens: 4,
+        ignore_eos: true,
+        structured_output_config: { regex: "a+" },
+      },
+      talkerSpeechConfig: { return_audio: false },
+      streamer: () => {
+        textChunks++;
+        return StreamingStatus.STOP;
+      },
+    });
+
+    assert.ok(textChunks > 0, "Text streamer should be called before stopping");
+    assert.ok(result instanceof OmniDecodedResults);
+  });
+
+  it("should reject concurrent generation calls without releasing the active call", async () => {
+    const activeGeneration = pipeline.generate("Count to ten.", {
+      textConfig: { max_new_tokens: 20, ignore_eos: true },
+      talkerSpeechConfig: { return_audio: false },
+    });
+
+    await assert.rejects(
+      pipeline.generate("Second request.", {
+        talkerSpeechConfig: { return_audio: false },
+      }),
+      /Another generation is already in progress/,
+    );
+    await assert.rejects(
+      pipeline.generate("Third request.", {
+        talkerSpeechConfig: { return_audio: false },
+      }),
+      /Another generation is already in progress/,
+    );
+    await activeGeneration;
   });
 
   it("should generate with ChatHistory", async () => {

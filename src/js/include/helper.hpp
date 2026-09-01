@@ -50,6 +50,20 @@ using VLMGenerateInputs = std::variant<std::string, ov::genai::ChatHistory>;
 template <typename TargetType>
 TargetType js_to_cpp(const Napi::Env& env, const Napi::Value& value);
 
+/**
+ * @brief Convert a JS argument and assign it to a field only when the argument is defined (not undefined or null).
+ * @tparam TargetType destination C++ data type deduced from field
+ * @param env Napi::Env of the current call
+ * @param value the JS value to convert
+ * @param field destination overwritten only when value is defined
+ */
+template <typename TargetType>
+void set_if_defined(const Napi::Env& env, const Napi::Value& value, TargetType& field) {
+    if (!value.IsUndefined() && !value.IsNull()) {
+        field = js_to_cpp<TargetType>(env, value);
+    }
+}
+
 /** @brief  A template specialization for TargetType ov::Any */
 template <>
 ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value);
@@ -144,6 +158,10 @@ ov::genai::SpeechGenerationConfig js_to_cpp<ov::genai::SpeechGenerationConfig>(c
 template <>
 ov::genai::OmniTalkerSpeechConfig js_to_cpp<ov::genai::OmniTalkerSpeechConfig>(const Napi::Env& env,
                                                                                const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::vector<ov::genai::VideoMetadata> */
+template <>
+std::vector<ov::genai::VideoMetadata> js_to_cpp<std::vector<ov::genai::VideoMetadata>>(const Napi::Env& env,
+                                                                                       const Napi::Value& value);
 template <>
 ov::genai::ImageGenerationConfig js_to_cpp<ov::genai::ImageGenerationConfig>(const Napi::Env& env,
                                                                               const Napi::Value& value);

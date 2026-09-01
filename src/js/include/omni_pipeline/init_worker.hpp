@@ -19,7 +19,6 @@ public:
                    std::filesystem::path model_path,
                    std::string device,
                    ov::AnyMap properties);
-    virtual ~OmniInitWorker() {}
 
     void Execute() override;
     void OnOK() override;

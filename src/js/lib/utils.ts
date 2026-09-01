@@ -628,3 +628,19 @@ export type OmniTalkerSpeechConfig = {
   /** CodePredictor top-k override (must be >= 1 when set). */
   cp_top_k?: Uint;
 };
+
+/**
+ * Metadata describing the original video source. Controls video frame sampling before encoding.
+ *
+ * @note This is a preview API and is subject to change in future releases.
+ */
+export type VideoMetadata = {
+  /** Frame rate of the original video in frames per second. 0 (default) means unknown. */
+  fps?: number;
+  /**
+   * Indices of frames to sample from the provided video tensor.
+   * When omitted or empty, model-specific sampling is applied if defined, otherwise all frames are processed.
+   * When non-empty, only the specified frames are extracted and model-specific sampling logic is skipped.
+   */
+  frames_indices?: Uint[];
+};

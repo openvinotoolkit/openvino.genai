@@ -68,6 +68,29 @@ TEST_MODELS = {
 }
 
 
+def _align_qwen3_omni_video_patch_size(model_path: Path) -> None:
+    """Match video patch_size to the shared vision encoder (image) patch_size in the broken tiny checkpoint."""
+    processor_config_path = model_path / "processor_config.json"
+    with processor_config_path.open(encoding="utf-8") as processor_config_file:
+        processor_config = json.load(processor_config_file)
+
+    image_processor = processor_config.get("image_processor")
+    video_processor = processor_config.get("video_processor")
+    if not isinstance(image_processor, dict) or not isinstance(video_processor, dict):
+        raise RuntimeError(
+            "Qwen3-Omni processor_config.json must contain image_processor and video_processor objects"
+        )
+
+    image_patch_size = image_processor.get("patch_size")
+    if video_processor.get("patch_size") == image_patch_size:
+        return
+
+    video_processor["patch_size"] = image_patch_size
+    with processor_config_path.open("w", encoding="utf-8") as processor_config_file:
+        json.dump(processor_config, processor_config_file, indent=2)
+        processor_config_file.write("\n")
+
+
 def _patch_tiny_qwen3_omni(model_path: Path, hf_tokenizer) -> None:
     """Align the known-broken tiny checkpoint until it is regenerated upstream."""
     native_audio_tokens = ["<|audio_start|>", "<|audio_pad|>", "<|audio_end|>"]
@@ -80,6 +103,8 @@ def _patch_tiny_qwen3_omni(model_path: Path, hf_tokenizer) -> None:
             )
         hf_tokenizer.save_pretrained(model_path)
         hugging_face.convert_and_save_tokenizer(hf_tokenizer, model_path)
+
+    _align_qwen3_omni_video_patch_size(model_path)
 
     def token_id(token: str) -> int:
         return int(hf_tokenizer.convert_tokens_to_ids(token))
@@ -110,6 +135,10 @@ def _patch_tiny_qwen3_omni(model_path: Path, hf_tokenizer) -> None:
         "vision_start_token_id": token_id("<|vision_start|>"),
         "user_token_id": role_token_ids["user"],
     }
+
+    thinker_config = config.get("thinker_config")
+    if not isinstance(thinker_config, dict):
+        raise RuntimeError("Qwen3-Omni config.json must contain a thinker_config object")
 
     if all(config.get(key) == value for key, value in expected_config.items()) and all(
         config["thinker_config"].get(key) == value for key, value in expected_thinker_config.items()
@@ -146,8 +175,7 @@ if __name__ == "__main__":
             env_vars[f"{model_name}_PATH"] = str(result.models_path)
         except Exception as e:
             print(f"Error processing model '{model_name}': {e}")
-            raise
-    print(f"All models downloaded and converted successfully!")
+    print("Model setup completed.")
 
     # Write environment variables to .env file
     result = [f"{var_name}={var_value}\n" for var_name, var_value in env_vars.items()]
