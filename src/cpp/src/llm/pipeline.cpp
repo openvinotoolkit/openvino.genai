@@ -282,16 +282,17 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
     utils::extract_extensions_to_core(properties);
 
-    // GGUF models convert to a stateful SDPA decoder (see gguf_requires_sdpa above); default to
-    // SDPA unless the user explicitly picked a backend.
-    if (models_path.extension() == ".gguf" && !is_npu_requested &&
-        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
-        attention_backend = SDPA_BACKEND;
-    }
-
     // read_model() consumes the GGUF-specific properties (and strips them before they reach the
     // plugin); read them here too, because which reader ran decides the branches below.
     const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
+
+    // GGUF models converted by the frontend reader produce a stateful SDPA decoder (see
+    // gguf_requires_sdpa above); default to SDPA unless the user explicitly picked a backend. The
+    // legacy reader's graph does convert to PagedAttention, so it must not be forced onto SDPA.
+    if (gguf_requires_sdpa(models_path, use_legacy_reader) && !is_npu_requested &&
+        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
+        attention_backend = SDPA_BACKEND;
+    }
 
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
 
@@ -343,16 +344,17 @@ ov::genai::LLMPipeline::LLMPipeline(
     utils::extract_extensions_to_core(properties);
     bool has_draft_model = properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end();
 
-    // GGUF models are converted to a stateful SDPA decoder (see the GGUF-path comment in the
-    // tokenizer-aware constructor above); default them to SDPA unless the user chose a backend.
-    if (models_path.extension() == ".gguf" && !is_npu_requested &&
-        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
-        attention_backend = SDPA_BACKEND;
-    }
-
     // read_model() consumes the GGUF-specific properties (and strips them before they reach the
     // plugin); read them here too, because which reader ran decides the branches below.
     const bool use_legacy_reader = utils::extract_gguf_properties(properties).use_legacy_reader();
+
+    // GGUF models converted by the frontend reader are converted to a stateful SDPA decoder (see
+    // the GGUF-path comment in the tokenizer-aware constructor above); default them to SDPA unless
+    // the user chose a backend. The legacy reader's graph must not be forced onto SDPA.
+    if (gguf_requires_sdpa(models_path, use_legacy_reader) && !is_npu_requested &&
+        user_properties.find("ATTENTION_BACKEND") == user_properties.end()) {
+        attention_backend = SDPA_BACKEND;
+    }
 
     // Read model and create tokenizer once to avoid double I/O during pipeline construction.
     std::shared_ptr<ov::Model> model = utils::read_model(models_path, properties);
