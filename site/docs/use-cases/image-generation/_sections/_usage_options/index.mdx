@@ -96,3 +96,26 @@ For the full list of generation parameters, refer to the [Image Generation Confi
 For image generation models like Stable Diffusion, LoRA adapters can modify the generation process to produce images with specific artistic styles, content types, or quality enhancements.
 
 Refer to the [LoRA Adapters](/docs/guides/lora-adapters.mdx) for more details on working with LoRA adapters.
+
+### Performance Metrics
+
+Image generation pipelines (`Text2ImagePipeline`, `Image2ImagePipeline`, `InpaintingPipeline`) have `get_performance_metrics()` method that returns an `ImageGenerationPerfMetrics` instance, which provides:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `get_generate_duration()` | float, ms | Total duration of the `generate()` call |
+| `get_inference_duration()` | float, ms | Total model inference time |
+| `get_load_time()` | float, ms | Model load time |
+| `get_iteration_duration()` | `MeanStdPair`, ms | Per-step denoising iteration duration |
+| `get_unet_infer_duration()` | `MeanStdPair`, ms | UNet inference duration per step (UNet-based models) |
+| `get_transformer_infer_duration()` | `MeanStdPair`, ms | Transformer inference duration per step (DiT-based models) |
+| `get_text_encoder_infer_duration()` | dict[str, float], ms | Inference duration per text encoder |
+| `get_vae_encoder_infer_duration()` | float, ms | VAE encoder inference duration |
+| `get_vae_decoder_infer_duration()` | float, ms | VAE decoder inference duration |
+| `get_first_and_other_iter_duration()` | tuple(float, float), ms | First iteration vs average of remaining iterations |
+
+Raw values are available in the `raw_metrics` field.
+
+:::tip
+For more details, refer to the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/image_generation/benchmark_image_gen.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/image_generation/benchmark_image_gen.cpp) image generation benchmark samples.
+:::
