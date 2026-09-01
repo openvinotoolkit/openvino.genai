@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <chrono>
 #include "audio_utils.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
@@ -47,8 +48,11 @@ int main(int argc, char* argv[]) try {
 
     // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
+    const auto wall_start = std::chrono::steady_clock::now();
     auto result = pipeline.generate(raw_speech, config);
-
+    const auto wall_sec = std::chrono::duration<float>(std::chrono::steady_clock::now() - wall_start).count();
+    std::cout << std::fixed << std::setprecision(2) << "\nTotal wall time: " << wall_sec
+              << std::endl;
     std::cout << result << "\n";
 
     std::cout << std::fixed << std::setprecision(2);

@@ -106,6 +106,18 @@ struct OPENVINO_GENAI_EXPORTS ASRStreamingConfig {
     size_t warmup_chunks = 2;
     /// Tokens rolled back from accumulated output when computing the prefix for the next pass.
     size_t context_rollback_tokens = 5;
+
+    /// Maximum chunks of audio retained in the sliding window before older, already-decoded
+    /// audio is dropped from the front of the accumulated buffer. 0 = unbounded (re-encode the
+    /// entire session every pass, the legacy behavior). When set, bounds per-pass re-encoding
+    /// cost to O(window_chunk_num) instead of O(session length), turning total session cost
+    /// from O(n^2) to O(n * window_chunk_num).
+    size_t window_chunk_num = 0;
+
+    /// Chunks of already-decoded audio treated as still "unfixed" (not yet safe to drop) once
+    /// the sliding window is active. Must be less than window_chunk_num. Independent of
+    /// warmup_chunks. Ignored when window_chunk_num == 0.
+    size_t window_rollback_chunk_num = 2;
 };
 
 /// A partial transcription delivered after each decode pass.

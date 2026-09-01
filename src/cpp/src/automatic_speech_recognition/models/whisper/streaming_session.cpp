@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "automatic_speech_recognition/debug_dump.hpp"
+#include "automatic_speech_recognition/sliding_window.hpp"
 #include "pipeline.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
@@ -73,6 +75,14 @@ void WhisperASRStreamingSessionImpl::decode_current_accum() {
         config_for_pass.prefix = m_current_committed_text;
     }
 
+    if (asr_debug_dump_enabled()) {
+        asr_debug_dump_chunk("whisper",
+                             m_chunk_count,
+                             m_audio_accum,
+                             /*sample_rate=*/16000,
+                             inject_prefix ? m_current_committed_text : std::string());
+    }
+
     const ASRDecodedResults results = m_pipeline->generate(m_audio_accum, config_for_pass, nullptr);
     OPENVINO_ASSERT(!results.texts.empty(), "WhisperASRStreamingSessionImpl: generate returned empty results");
 
@@ -84,7 +94,15 @@ void WhisperASRStreamingSessionImpl::decode_current_accum() {
     ++m_chunk_count;
 
     const std::string prev_committed = m_current_committed_text;
-    m_current_committed_text = compute_committed_text();
+    std::string candidate_committed = compute_committed_text();
+
+    // committed_text is documented to grow monotonically. A decode pass can occasionally produce
+    // a shorter (or empty) continuation than the audio/text context implies -- e.g. once the
+    // ever-growing text prefix outpaces what a tight sliding audio window still supports -- so
+    // never let it retreat below what was already committed.
+    if (candidate_committed.size() >= prev_committed.size()) {
+        m_current_committed_text = std::move(candidate_committed);
+    }
     m_current_new_committed_text = m_current_committed_text.substr(prev_committed.size());
     m_current_partial_text = (m_current_text.size() >= m_current_committed_text.size())
                                  ? m_current_text.substr(m_current_committed_text.size())
@@ -103,11 +121,25 @@ std::optional<ASRPartialResult> WhisperASRStreamingSessionImpl::push_chunk(const
         return std::nullopt;
     }
 
+    // m_audio_accum has been fully decoded by the end of every prior push_chunk()/finish()
+    // call, so its size right before this drain is exactly how much is safe to drop from.
+    const size_t already_inferred_samples = m_audio_accum.size();
+
     // Drain the buffer, capping at the Whisper maximum window.
     const size_t remaining_capacity = WHISPER_MAX_SAMPLES - m_audio_accum.size();
     const size_t drain = std::min(m_buffer.size(), remaining_capacity);
     m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.begin() + drain);
     m_buffer.erase(m_buffer.begin(), m_buffer.begin() + drain);
+
+    // Drop already-decoded audio outside the sliding window now that the drain is done. This
+    // frees capacity against WHISPER_MAX_SAMPLES for the *next* call, so a window configured
+    // to stay under 30s means m_window_full is rarely (if ever) reached and streaming is
+    // effectively unbounded, not just single-utterance.
+    apply_sliding_window_drop(m_audio_accum,
+                              already_inferred_samples,
+                              m_chunk_size_samples,
+                              m_streaming_config.window_chunk_num,
+                              m_streaming_config.window_rollback_chunk_num);
 
     if (m_audio_accum.size() >= WHISPER_MAX_SAMPLES) {
         m_window_full = true;
@@ -123,10 +155,18 @@ ASRPartialResult WhisperASRStreamingSessionImpl::finish() {
     m_current_new_committed_text = "";
 
     if (!m_buffer.empty() && !m_window_full) {
+        const size_t already_inferred_samples = m_audio_accum.size();
+
         const size_t remaining_capacity = WHISPER_MAX_SAMPLES - m_audio_accum.size();
         const size_t drain = std::min(m_buffer.size(), remaining_capacity);
         m_audio_accum.insert(m_audio_accum.end(), m_buffer.begin(), m_buffer.begin() + drain);
         m_buffer.clear();
+
+        apply_sliding_window_drop(m_audio_accum,
+                                  already_inferred_samples,
+                                  m_chunk_size_samples,
+                                  m_streaming_config.window_chunk_num,
+                                  m_streaming_config.window_rollback_chunk_num);
 
         if (!m_audio_accum.empty()) {
             decode_current_accum();

@@ -12,19 +12,37 @@
 //   DEVICE      — OpenVINO device string (default: CPU)
 //   CHUNK_SEC   — decode interval in seconds (default: 2.0)
 //   STEP_MS     — chunk push interval in ms (default: 500)
+//   --window-chunks N          — sliding window size in chunks, 0 = unbounded (default: 6)
+//   --window-rollback-chunks N — unfixed rollback chunks within the window (default: 2)
+//   --repetition-penalty F     — generation repetition penalty, 1.0 = disabled (default: 1.0)
+//   --no-repeat-ngram-size N   — forbid repeating any N-gram, 0 = disabled (default: 0)
 
 #include <chrono>
 #include <iomanip>
 #include <iostream>
 
+#ifdef _WIN32
+#    define WIN32_LEAN_AND_MEAN
+#    define NOMINMAX
+#    include <windows.h>
+#endif
+
 #include "audio_utils.hpp"
 #include "openvino/genai/automatic_speech_recognition/pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
+#ifdef _WIN32
+    // The model emits UTF-8 text; without this the Windows console renders non-ASCII bytes
+    // (e.g. em-dashes) as mojibake under its default OEM codepage.
+    SetConsoleOutputCP(CP_UTF8);
+#endif
+
     if (argc < 3) {
         throw std::runtime_error(std::string{"Usage: "} + argv[0] +
                                  " <MODEL_DIR> <WAV_FILE> [DEVICE] [CHUNK_SEC] [STEP_MS] "
-                                 "[--device DEVICE] [--chunk-sec SEC] [--step-ms MS]");
+                                 "[--device DEVICE] [--chunk-sec SEC] [--step-ms MS] "
+                                 "[--window-chunks N] [--window-rollback-chunks N] "
+                                 "[--repetition-penalty F] [--no-repeat-ngram-size N]");
     }
 
     const std::filesystem::path models_path = argv[1];
@@ -32,6 +50,10 @@ int main(int argc, char* argv[]) try {
     std::string device = "CPU";
     float chunk_sec = 2.0f;
     int step_ms = 500;
+    size_t window_chunks = 6;
+    size_t window_rollback_chunks = 2;
+    float repetition_penalty = 1.0f;
+    size_t no_repeat_ngram_size = 0;
 
     int positional_index = 0;
     for (int i = 3; i < argc; ++i) {
@@ -61,6 +83,38 @@ int main(int argc, char* argv[]) try {
             continue;
         }
 
+        if (arg == "--window-chunks") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --window-chunks");
+            }
+            window_chunks = static_cast<size_t>(std::stoul(argv[++i]));
+            continue;
+        }
+
+        if (arg == "--window-rollback-chunks") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --window-rollback-chunks");
+            }
+            window_rollback_chunks = static_cast<size_t>(std::stoul(argv[++i]));
+            continue;
+        }
+
+        if (arg == "--repetition-penalty") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --repetition-penalty");
+            }
+            repetition_penalty = std::stof(argv[++i]);
+            continue;
+        }
+
+        if (arg == "--no-repeat-ngram-size") {
+            if (i + 1 >= argc) {
+                throw std::runtime_error("Missing value for --no-repeat-ngram-size");
+            }
+            no_repeat_ngram_size = static_cast<size_t>(std::stoul(argv[++i]));
+            continue;
+        }
+
         if (positional_index >= 3) {
             throw std::runtime_error("Unexpected argument: " + arg);
         }
@@ -83,11 +137,17 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::ASRGenerationConfig gen_config = pipeline.get_generation_config();
     gen_config.max_new_tokens = 32;  // keep chunk decodes fast
+    gen_config.repetition_penalty = repetition_penalty;
+    if (no_repeat_ngram_size > 0) {
+        gen_config.no_repeat_ngram_size = no_repeat_ngram_size;
+    }
 
     ov::genai::ASRStreamingConfig streaming_config;
     streaming_config.chunk_size_sec = chunk_sec;
     streaming_config.warmup_chunks = 2;
     streaming_config.context_rollback_tokens = 5;
+    streaming_config.window_chunk_num = window_chunks;
+    streaming_config.window_rollback_chunk_num = window_rollback_chunks;
 
     std::cout << "Loading audio: " << wav_file << "\n";
     const ov::genai::RawSpeechInput wav = utils::audio::read_wav(wav_file);
@@ -101,18 +161,22 @@ int main(int argc, char* argv[]) try {
     const size_t step_samples = static_cast<size_t>(step_ms * 16000 / 1000);
     const auto wall_start = std::chrono::steady_clock::now();
 
+    int chunk_num = 0;
     for (size_t pos = 0; pos < total_samples; pos += step_samples) {
         const size_t end = std::min(pos + step_samples, total_samples);
         const std::vector<float> segment(wav.begin() + pos, wav.begin() + end);
         if (const auto result = session.push_chunk(segment)) {
-            std::cout << "[partial] (" << result->language << ") +" << result->new_committed_text
+            std::cout << chunk_num << " [partial] (" << result->language << ") +" << result->new_committed_text
                       << " [" << result->partial_text << "]\n";
+
+            chunk_num++;
         }
     }
 
     const auto final_result = session.finish();
     if (!final_result.new_committed_text.empty()) {
-        std::cout << "[partial] (" << final_result.language << ") +" << final_result.new_committed_text << " []\n";
+        std::cout << chunk_num << "[partial] (" << final_result.language << ") +" << final_result.new_committed_text
+                  << " []\n";
     }
 
     const auto wall_sec =

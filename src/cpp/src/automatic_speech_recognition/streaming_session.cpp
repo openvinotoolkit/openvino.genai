@@ -11,6 +11,14 @@ namespace ov::genai {
 ASRStreamingSession::ASRStreamingSession(ASRPipeline& pipeline,
                                           const ASRStreamingConfig& streaming_config,
                                           const std::optional<ASRGenerationConfig>& generation_config) {
+    OPENVINO_ASSERT(
+        streaming_config.window_chunk_num == 0 ||
+            streaming_config.window_chunk_num > streaming_config.window_rollback_chunk_num,
+        "ASRStreamingConfig: window_chunk_num (",
+        streaming_config.window_chunk_num,
+        ") must be either 0 (disabled) or greater than window_rollback_chunk_num (",
+        streaming_config.window_rollback_chunk_num,
+        ")");
     const ASRGenerationConfig resolved = generation_config.value_or(pipeline.get_generation_config());
     m_impl = pipeline.m_impl->create_streaming_session_impl(streaming_config, resolved);
 }
