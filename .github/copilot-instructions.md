@@ -65,3 +65,4 @@ When performing a code review on a Pull Request, additionally follow this protoc
 8. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
 9. Helper scripts shouldn't be committed.
 10. ABI stability isn't required.
+11. If a PR aims to improve accuracy or performance, the PR description must include corresponding metrics. Performance-oriented PRs require both accuracy and performance metrics.
