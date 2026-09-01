@@ -14,6 +14,8 @@
 //   STEP_MS     — chunk push interval in ms (default: 500)
 //   --window-chunks N          — sliding window size in chunks, 0 = unbounded (default: 6)
 //   --window-rollback-chunks N — unfixed rollback chunks within the window (default: 2)
+//   --unbounded-prefix         — experimental, Qwen3-ASR only: keep audio bounded (per
+//                                --window-chunks) but stop evicting the text prefix.
 //   --repetition-penalty F     — generation repetition penalty, 1.0 = disabled (default: 1.0)
 //   --no-repeat-ngram-size N   — forbid repeating any N-gram, 0 = disabled (default: 0)
 
@@ -42,6 +44,7 @@ int main(int argc, char* argv[]) try {
                                  " <MODEL_DIR> <WAV_FILE> [DEVICE] [CHUNK_SEC] [STEP_MS] "
                                  "[--device DEVICE] [--chunk-sec SEC] [--step-ms MS] "
                                  "[--window-chunks N] [--window-rollback-chunks N] "
+                                 "[--unbounded-prefix] "
                                  "[--repetition-penalty F] [--no-repeat-ngram-size N]");
     }
 
@@ -52,6 +55,7 @@ int main(int argc, char* argv[]) try {
     int step_ms = 500;
     size_t window_chunks = 6;
     size_t window_rollback_chunks = 2;
+    bool unbounded_prefix = false;
     float repetition_penalty = 1.0f;
     size_t no_repeat_ngram_size = 0;
 
@@ -96,6 +100,11 @@ int main(int argc, char* argv[]) try {
                 throw std::runtime_error("Missing value for --window-rollback-chunks");
             }
             window_rollback_chunks = static_cast<size_t>(std::stoul(argv[++i]));
+            continue;
+        }
+
+        if (arg == "--unbounded-prefix") {
+            unbounded_prefix = true;
             continue;
         }
 
@@ -148,6 +157,7 @@ int main(int argc, char* argv[]) try {
     streaming_config.context_rollback_tokens = 5;
     streaming_config.window_chunk_num = window_chunks;
     streaming_config.window_rollback_chunk_num = window_rollback_chunks;
+    streaming_config.unbounded_prefix = unbounded_prefix;
 
     std::cout << "Loading audio: " << wav_file << "\n";
     const ov::genai::RawSpeechInput wav = utils::audio::read_wav(wav_file);

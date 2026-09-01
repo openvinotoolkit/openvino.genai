@@ -13,8 +13,8 @@ namespace ov::genai {
 /// plus the newest, not-yet-decoded chunk that was just merged in. No-op when
 /// `window_chunk_num == 0` or `audio_accum` already fits the window.
 ///
-/// Call this AFTER merging the newest chunk into `audio_accum` (matching the SGLang
-/// reference's ordering), not before — trimming first would double-count the "room for the
+/// Call this AFTER merging the newest chunk into `audio_accum`,
+/// not before — trimming first would double-count the "room for the
 /// newest chunk" margin once in the keep target and again via the append that follows.
 ///
 /// `already_inferred_samples` is `audio_accum`'s size immediately before this call's merge —
@@ -25,8 +25,7 @@ namespace ov::genai {
 /// Returns the number of samples actually dropped from the front (0 if no-op). Callers that
 /// track text state keyed to absolute audio position (e.g. which chunk's audio grounds a given
 /// piece of committed text) need this to know how far the window's front edge just advanced,
-/// so they can evict/reset any state whose grounding audio no longer exists in the window --
-/// mirroring SGLang's roll-triggered `start_new_window()` reset rather than a fixed heuristic.
+/// so they can evict/reset any state whose grounding audio no longer exists in the window.
 size_t apply_sliding_window_drop(std::vector<float>& audio_accum,
                                   size_t already_inferred_samples,
                                   size_t chunk_size_samples,

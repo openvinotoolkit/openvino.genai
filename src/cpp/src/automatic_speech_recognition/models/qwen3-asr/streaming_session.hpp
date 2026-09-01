@@ -48,8 +48,7 @@ private:
     // (parsed, tag-free) contribution. bounded_prefix() rebuilds the decoder's prefix by
     // concatenating these fresh every pass -- never a persistent chain that could silently erode.
     // Entries are evicted in decode_current_accum() once m_total_dropped_samples has advanced past
-    // the absolute sample range that grounded that chunk's own audio -- i.e. tied to actual sliding
-    // window rolls (mirroring SGLang's start_new_window() reset), not a static chunk-count margin.
+    // the absolute sample range that grounded that chunk's own audio, not a static chunk-count margin.
     struct CommitRecord {
         size_t chunk_index;
         std::string text_delta;

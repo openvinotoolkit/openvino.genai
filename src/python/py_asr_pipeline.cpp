@@ -91,6 +91,23 @@ auto asr_streaming_config_docstring = R"(
     :param context_rollback_tokens: Number of trailing tokens to rewind from the accumulated text when
                                     reusing it as a prefix for the next decode pass.
     :type context_rollback_tokens: int
+
+    :param window_chunk_num: Maximum chunks of audio retained in the sliding window before older,
+                             already-decoded audio is dropped from the front of the accumulated
+                             buffer. 0 = unbounded (re-encode the entire session every pass).
+    :type window_chunk_num: int
+
+    :param window_rollback_chunk_num: Chunks of already-decoded audio treated as still "unfixed"
+                                      (not yet safe to drop) once the sliding window is active.
+                                      Must be less than window_chunk_num. Ignored when
+                                      window_chunk_num == 0.
+    :type window_rollback_chunk_num: int
+
+    :param unbounded_prefix: Experimental, Qwen3-ASR only. When true, disables eviction of the
+                             text-history prefix tied to the audio sliding window, so the decoder
+                             prefix grows unbounded for the life of the session even though the
+                             audio window itself still stays bounded. Ignored when window_chunk_num == 0.
+    :type unbounded_prefix: bool
 )";
 
 auto asr_partial_result_docstring = R"(
@@ -366,7 +383,10 @@ void init_asr_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_readwrite("chunk_size_sec", &ASRStreamingConfig::chunk_size_sec)
         .def_readwrite("warmup_chunks", &ASRStreamingConfig::warmup_chunks)
-        .def_readwrite("context_rollback_tokens", &ASRStreamingConfig::context_rollback_tokens);
+        .def_readwrite("context_rollback_tokens", &ASRStreamingConfig::context_rollback_tokens)
+        .def_readwrite("window_chunk_num", &ASRStreamingConfig::window_chunk_num)
+        .def_readwrite("window_rollback_chunk_num", &ASRStreamingConfig::window_rollback_chunk_num)
+        .def_readwrite("unbounded_prefix", &ASRStreamingConfig::unbounded_prefix);
 
     py::class_<ASRPartialResult>(m, "ASRPartialResult", asr_partial_result_docstring)
         .def(py::init<>())

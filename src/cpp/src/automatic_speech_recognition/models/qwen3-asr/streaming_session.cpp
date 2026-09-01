@@ -90,9 +90,7 @@ std::string Qwen3ASRStreamingSessionImpl::bounded_prefix() const {
 void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
     // Evict commit_history entries whose grounding audio no longer exists in m_audio_accum, tied
     // directly to how far the sliding window has actually rolled (m_total_dropped_samples) rather
-    // than a fixed chunk-count margin -- mirroring SGLang's start_new_window() reset (which discards
-    // everything not yet safely emitted whenever the window rolls), but at the finer per-chunk
-    // granularity our commit_history already tracks instead of a single blob reset.
+    // than a fixed chunk-count margin.
     //
     // Chunk `i`'s own audio spans absolute samples [i * chunk_size, (i+1) * chunk_size) in the full
     // session stream (each successful decode pass consumes exactly one new chunk in steady state).
@@ -102,9 +100,15 @@ void Qwen3ASRStreamingSessionImpl::decode_current_accum() {
     // window_chunk_num == 0 means the audio window is itself unbounded, so nothing is ever dropped
     // (m_total_dropped_samples stays 0) and nothing is evicted here either -- matches the audio
     // window's own semantics.
-    while (!m_commit_history.empty() &&
-           (m_commit_history.front().chunk_index + 1) * m_chunk_size_samples <= m_total_dropped_samples) {
-        m_commit_history.pop_front();
+    //
+    // unbounded_prefix skips this eviction entirely: the audio window still slides normally, 
+    // but the text prefix is left to grow for the life of the session instead of staying bounded 
+    // to what the window can still see.
+    if (!m_streaming_config.unbounded_prefix) {
+        while (!m_commit_history.empty() &&
+               (m_commit_history.front().chunk_index + 1) * m_chunk_size_samples <= m_total_dropped_samples) {
+            m_commit_history.pop_front();
+        }
     }
 
     // Captured before wrapping with the language tag: the exact tag-free text this pass's prefix
