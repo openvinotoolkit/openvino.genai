@@ -192,7 +192,6 @@
 
 - name: Qwen3.5 MTP speculative decoding tests
   cmd: |-
-    export OV_CACHE="${OV_CACHE}/qwen35_mtp"
     python -m pip install transformers==5.2.0
     python -m pip install -U "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@qwen35_mtp"
     python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
