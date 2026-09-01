@@ -8,6 +8,9 @@ from typing import TypedDict
 
 from workflow_rerun.constants import LOGGER
 
+# Fallback category recorded when an error entry has no category.
+NO_CATEGORY = "NO CATEGORY"
+
 
 class LogFile(TypedDict):
     file_name: str
@@ -17,6 +20,7 @@ class LogFile(TypedDict):
 class ErrorData(TypedDict):
     error_text: str
     ticket: int
+    category: str
 
 
 class LogAnalyzer:
@@ -36,13 +40,18 @@ class LogAnalyzer:
         self.found_matching_error = False
         self.found_error_ticket = None
         self.matched_error_text = None
+        self.matched_category = None
 
     def _collect_errors_to_look_for(self) -> None:
         with open(file=self._path_to_errors_file, mode="r", encoding="utf-8") as errors_file:
             errors_data = json.load(errors_file)
             for error_data in errors_data:
                 self._errors_to_look_for.append(
-                    ErrorData(error_text=error_data["error_text"], ticket=error_data["ticket"])
+                    ErrorData(
+                        error_text=error_data["error_text"],
+                        ticket=error_data["ticket"],
+                        category=error_data.get("category", NO_CATEGORY),
+                    )
                 )
 
     def _collect_log_files(self) -> None:
@@ -102,14 +111,18 @@ class LogAnalyzer:
         Iterates over the known errors and tries to find them in the collected log files
         """
         for error in self._errors_to_look_for:
-            LOGGER.info(f'LOOKING FOR "{error["error_text"]}" ERROR...')
+            LOGGER.info(f'LOOKING FOR "{error["error_text"]}" ERROR (CATEGORY: {error["category"]})...')
 
             for log_file in self._log_files:
                 if self._is_error_in_log(error_to_look_for=error["error_text"], log_file_path=log_file["path"]):
-                    LOGGER.info(f'FOUND "{error["error_text"]}" ERROR IN {log_file["path"]}. TICKET: {error["ticket"]}')
+                    LOGGER.info(
+                        f'FOUND "{error["error_text"]}" ERROR IN {log_file["path"]}. '
+                        f"TICKET: {error['ticket']}. CATEGORY: {error['category']}"
+                    )
                     self.found_matching_error = True
                     self.found_error_ticket = error["ticket"]
                     self.matched_error_text = error["error_text"]
+                    self.matched_category = error["category"]
                     return
 
 
