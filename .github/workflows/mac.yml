@@ -475,6 +475,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       HF_HOME: ${{ github.workspace }}/hf_cache
+      CLEANUP_CACHE: ${{ matrix.test.name == 'ASR' && 'false' || '1' }}
 
     steps:
       - name: Clone openvino.genai
