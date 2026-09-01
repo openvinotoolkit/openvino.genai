@@ -87,3 +87,9 @@ Refer to the [LoRA Adapters](/docs/guides/lora-adapters) for more details on wor
 For the full list of generation parameters, refer to the [Video Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html).
 
 :::
+
+### Performance Metrics
+
+`Text2VideoPipeline` returns `VideoGenerationResult` with a `performance_stat` field of type `VideoGenerationPerfMetrics`, which inherits from `ImageGenerationPerfMetrics`.
+
+Refer to the [Image Generation Performance Metrics](/docs/use-cases/image-generation/#performance-metrics) for details.
