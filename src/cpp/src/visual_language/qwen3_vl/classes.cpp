@@ -753,7 +753,7 @@ ov::Tensor InputsEmbedderQwen3VL::get_inputs_embeds(
         // Cache draft embeddings as text-only inputs for Eagle3 draft model.
         cache_draft_inputs_embeds(text_embeds);
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
-        text_embeds.copy_to(inputs_embeds);
+        std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
         return inputs_embeds;
     }
 
