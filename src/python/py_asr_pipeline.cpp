@@ -62,7 +62,9 @@ auto asr_decoded_results_docstring = R"(
     Parameters:
     texts:              vector of resulting sequences.
     scores:             scores for each sequence.
-    languages:          detected languages for the input audio(s), e.g. ["en"].
+    languages:          language associated with each transcription. Each entry contains the detected language when
+                        supported, or the requested language when generation forces one. An entry is empty when no
+                        language was requested and the model does not support language identification, as with Fun-ASR.
     perf_metrics:       performance metrics with tpot, ttft, etc. of type ov::genai::ASRPerfMetrics.
     chunks:             optional chunks of resulting sequences with timestamps
     words:              optional chunks of resulting words with timestamps
@@ -127,7 +129,7 @@ auto asr_generation_config_docstring = R"(
 
     :param language: Language to use for generation.
                      In the form of `en`, `<|en|>` for Whisper models. Can be set for multilingual models only.
-                     In the form of English for Qwen3-ASR models.
+                     In the form of English for Qwen3-ASR and Fun-ASR models.
     :type language: Optional[str]
 
     :param return_timestamps: Whether to return segment-level timestamps.

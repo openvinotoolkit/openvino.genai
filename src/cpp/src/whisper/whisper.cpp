@@ -3,6 +3,8 @@
 
 #include "whisper.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <openvino/openvino.hpp>
 #include <thread>
@@ -27,6 +29,30 @@ using ov::genai::MicroSeconds;
 
 namespace {
 
+// Convert one logits row (batch_idx) to log-probabilities in place, over the full vocabulary.
+void logits_row_to_logprobs(ov::Tensor& logits, size_t batch_idx) {
+    const ov::Shape shape = logits.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3);
+    OPENVINO_ASSERT(batch_idx < shape[0], "Logits batch size doesn't match the number of beams");
+    OPENVINO_ASSERT(shape[1] > 0);
+    OPENVINO_ASSERT(shape[2] > 0);
+
+    const size_t vocab_size = shape[2];
+    const size_t batch_offset = batch_idx * shape[1] * vocab_size;
+    const size_t sequence_offset = (shape[1] - 1) * vocab_size;
+    float* const row = logits.data<float>() + batch_offset + sequence_offset;
+
+    float max_logit = *std::max_element(row, row + vocab_size);
+    double sum = 0.0;
+    for (size_t i = 0; i < vocab_size; ++i) {
+        sum += std::exp(static_cast<double>(row[i]) - max_logit);
+    }
+    float log_sum = static_cast<float>(std::log(sum)) + max_logit;
+    for (size_t i = 0; i < vocab_size; ++i) {
+        row[i] -= log_sum;
+    }
+}
+
 void process_whisper_logits(ov::Tensor logits,
                             const ov::genai::WhisperGenerationConfig& config,
                             const bool return_timestamps,
@@ -34,7 +60,14 @@ void process_whisper_logits(ov::Tensor logits,
     const bool initial_step = batch_to_generated_ids.empty();
     const size_t batch_size = logits.get_shape().at(0);
 
+    // Normalize before masking so beam scores remain comparable across rows, matching HF beam search.
+    const bool is_beam_search = config.is_beam_search();
+
     for (size_t batch = 0; batch < batch_size; batch++) {
+        if (is_beam_search) {
+            logits_row_to_logprobs(logits, batch);
+        }
+
         if (initial_step) {
             ov::genai::do_suppress_tokens(logits, batch, config.begin_suppress_tokens);
         }
@@ -42,8 +75,15 @@ void process_whisper_logits(ov::Tensor logits,
         ov::genai::do_suppress_tokens(logits, batch, config.suppress_tokens);
 
         if (return_timestamps) {
-            const auto& generated_ids = initial_step ? std::vector<int64_t>{} : batch_to_generated_ids.at(batch);
-            ov::genai::process_whisper_timestamp_logits(logits, batch, config, generated_ids, initial_step);
+            if (initial_step) {
+                ov::genai::process_whisper_timestamp_logits(logits, batch, config, {}, initial_step);
+            } else {
+                ov::genai::process_whisper_timestamp_logits(logits,
+                                                            batch,
+                                                            config,
+                                                            batch_to_generated_ids.at(batch),
+                                                            initial_step);
+            }
         }
     }
 }
@@ -53,11 +93,18 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
                                                   const ov::Tensor& encoder_hidden_state,
                                                   const std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
                                                   ov::genai::Sampler& sampler,
-                                                  ov::genai::SequenceGroup::Ptr sequence_group,
                                                   const bool return_timestamps,
                                                   const ov::genai::WhisperGenerationConfig& config,
                                                   ov::genai::RawPerfMetrics& raw_metrics,
                                                   ov::genai::WhisperRawPerfMetrics& whisper_raw_metrics) {
+    ov::genai::SequenceGroup::Ptr sequence_group =
+        std::make_shared<ov::genai::SequenceGroup>(0, input_ids, config);
+
+    // Keep the sampler's score representation consistent with process_whisper_logits().
+    if (config.is_beam_search()) {
+        sequence_group->set_logits_type(ov::genai::LogitsType::LOG_PROBS);
+    }
+
     const auto handle = std::make_shared<ov::genai::GenerationHandleImpl>(sequence_group->get_generation_stream(),
                                                                           sequence_group->get_sampling_parameters());
 
@@ -366,7 +413,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                 hidden_state_tensor,
                                                 streamer,
                                                 sampler,
-                                                sequence_group,
                                                 return_timestamps,
                                                 config,
                                                 raw_metrics,

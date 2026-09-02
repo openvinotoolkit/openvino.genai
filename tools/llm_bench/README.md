@@ -217,6 +217,14 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code mo
 python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
 ```
 
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino -m google/gemma-3n-E2B-it gemma-3n-E2B-it --task=image-text-to-text
+# chat iteration
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
+```
+
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models
@@ -271,14 +279,17 @@ pip install kokoro
 optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code models/ov_Kokoro-82M
 # run benchmark.py with Kokoro (Optimum or GenAI)
 python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice af_heart --speech_language en-us
+
+# Qwen3-Omni text-to-speech
+python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice Ethan
 ```
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
-- `--speech_voice`: Voice to use for Kokoro models. Default is `af_heart`
+- `--speech_voice`: Voice to use for Kokoro (default `af_heart`) and Qwen3-Omni (default `Ethan`)
 - `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
 
-> **Supported Text to Speech model types:** speecht5, kokoro
+> **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni
 
 ### Speech to Text models
 ```sh
@@ -288,9 +299,17 @@ optimum-cli export openvino --model openai/whisper-base models/whisper-base
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
 python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
+
+# Qwen3-Omni speech recognition
+python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
+
+# FunASR speech recognition
+optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
+python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2
 ```
 
-> **Supported Speech to Text model types:** whisper, qwen3-asr
+> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
+
 
 ### Text Rerank models
 ```sh

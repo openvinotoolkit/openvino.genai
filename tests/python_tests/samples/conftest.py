@@ -47,18 +47,9 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "gguf_filename": "SmolLM2-135M.F16.gguf",
         "convert_args": ['--trust-remote-code']
     },
-    "SmolLM2-360M": {
-        "name": "HuggingFaceTB/SmolLM2-360M",
-        "convert_args": ['--trust-remote-code']
-    },
-    "WhisperTiny": {
-        "name": "openai/whisper-tiny",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },
-    "Qwen2.5-0.5B-Instruct": {
-        "name": "Qwen/Qwen2.5-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code']
-    },
+    "SmolLM2-360M": {"name": "HuggingFaceTB/SmolLM2-360M", "convert_args": ["--trust-remote-code"]},
+    "WhisperTiny": {"name": "openai/whisper-tiny", "convert_args": ["--trust-remote-code", "--weight-format", "fp16"]},
+    "Qwen2.5-0.5B-Instruct": {"name": "Qwen/Qwen2.5-0.5B-Instruct", "convert_args": ["--trust-remote-code"]},
     "Qwen2.5-0.5B-Instruct-GGUF": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
@@ -195,6 +186,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-qwen3-vl": {
         "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-qwen3-omni": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-omni",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
     "tiny-random-qwen3-vl-embedding": {
