@@ -488,10 +488,10 @@ def resolve_json_dataset_path(dataset_path: str) -> str:
     if dataset_path is None or not dataset_path.lower().endswith((".json", ".jsonl")):
         raise ValueError("Dataset path must be a .json or .jsonl file")
 
-    expanded_dataset_path = os.path.expanduser(dataset_path)
-    if os.path.isfile(expanded_dataset_path):
+    expanded_dataset_path = Path(dataset_path).expanduser().resolve()
+    if expanded_dataset_path.exists() and expanded_dataset_path.is_file():
         logger.info(f"JSON dataset found at local path: {expanded_dataset_path}")
-        return expanded_dataset_path
+        return str(expanded_dataset_path)
 
     from importlib.resources import files
 

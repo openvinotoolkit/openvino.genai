@@ -30,20 +30,42 @@ def test_load_prompts_rejects_local_json_for_non_agent(tmp_path):
         load_prompts(args)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="lin/mac specific path is checking")
 def test_resolve_json_dataset_path_supports_home_shorthand(tmp_path, monkeypatch):
     from whowhatbench.utils import resolve_json_dataset_path
 
     dataset_file = tmp_path / "data.jsonl"
     dataset_file.write_text('{"messages": [], "tools": []}\n', encoding="utf-8")
     monkeypatch.setenv("HOME", str(tmp_path))
-    if sys.platform == "win32":
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.setenv("HOMEDRIVE", str(tmp_path.drive))
-        monkeypatch.setenv("HOMEPATH", str(tmp_path).replace(str(tmp_path.drive), "", 1))
 
     resolved = resolve_json_dataset_path("~/data.jsonl")
 
     assert resolved == str(dataset_file)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "nested/data.jsonl",
+        "./nested/data.jsonl",
+        r"nested\\data.jsonl",
+        r".\\nested\\data.jsonl",
+    ],
+)
+def test_resolve_json_dataset_path_supports_relative_paths(tmp_path, monkeypatch, relative_path):
+    from whowhatbench.utils import resolve_json_dataset_path
+
+    if "\\" in relative_path and sys.platform != "win32":
+        pytest.skip("Windows-style relative path case")
+
+    dataset_file = tmp_path / "nested" / "data.jsonl"
+    dataset_file.parent.mkdir(parents=True, exist_ok=True)
+    dataset_file.write_text('{"messages": [], "tools": []}\n', encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    resolved = resolve_json_dataset_path(relative_path)
+
+    assert resolved == str(dataset_file.resolve())
 
 
 def _create_messages_dataset(path, as_jsonl=False, use_real_prompt=False):
