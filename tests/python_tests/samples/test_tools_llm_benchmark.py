@@ -65,6 +65,14 @@ llm_chat_json = [
         "prompt": ["Tell me the plot of Mulan.", "Who is the main character?"],
     }
 ]
+vlm_chat_json = [
+    {
+        "prompt": "What animal is this?",
+        "media": [
+            "cat.png",
+        ],
+    }
+]
 
 
 @pytest.fixture(scope="module")
@@ -1014,3 +1022,61 @@ class TestBenchmarkLLM:
         assert prefill_info_log_msg in result.stdout, (
             f"Expected log message `{prefill_info_log_msg}` not found in output"
         )
+
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "visual_text_gen_chat",
+                "--optimum",
+                "-p",
+                "Describe these image in detail",
+                "--chat_iter",
+                "2",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--optimum"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "visual_text_gen_chat",
+                "--genai",
+                "-p",
+                "Describe these image in detail",
+                "--chat_iter",
+                "3",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen_chat", "--genai"],
+        ],
+    )
+    @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-llava"], indirect=True)
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("vlm_chat_json.jsonl", vlm_chat_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_vlm_chat(
+        self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
+        # to use the relative media and mask_image paths
+        os.chdir(os.path.dirname(download_test_content))
+
+        prompt_args = (
+            ["--media", download_test_content]
+            if "-p" in sample_args
+            else ["-pf", generate_llm_bench_input_generation_jsonl]
+        )
+        # Run Python benchmark
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [sys.executable, benchmark_script, "-m", convert_model, *prompt_args] + sample_args
+        run_sample(benchmark_py_command)
