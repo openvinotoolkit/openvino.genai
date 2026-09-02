@@ -82,7 +82,6 @@
 
 - name: WWB ASR tests (FunASR)
   cmd: |-
-    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@4b025618bdf981ad9539d4f8daf56755ebee03d2#egg=optimum-intel"
     python -m pip install transformers==4.57.6 "whowhatbench[funasr]"
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr"
   timeout: 120
