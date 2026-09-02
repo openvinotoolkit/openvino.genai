@@ -23,6 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
+  HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/b53e4e21/
   OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -699,7 +700,6 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests
-      HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
 
     steps:
       - name: Clone openvino.genai
