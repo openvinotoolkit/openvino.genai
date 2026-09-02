@@ -127,21 +127,43 @@ namespace ov {
 namespace genai {
 namespace utils {
 
+static const std::vector<std::string>& get_config_properties_names() {
+    static const std::vector<std::string> names = {
+        max_length.name(),
+        pad_to_max_length.name(),
+        truncation.name(),
+        batch_size.name(),
+        pooling_type.name(),
+        normalize.name(),
+        embed_instruction.name(),
+        query_instruction.name(),
+        padding_side.name(),
+        text_embedding_config.name()
+    };
+    return names;
+}
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     ov::AnyMap properties_copy = properties;
-
-    properties_copy.erase(max_length.name());
-    properties_copy.erase(pad_to_max_length.name());
-    properties_copy.erase(truncation.name());
-    properties_copy.erase(batch_size.name());
-    properties_copy.erase(pooling_type.name());
-    properties_copy.erase(normalize.name());
-    properties_copy.erase(embed_instruction.name());
-    properties_copy.erase(query_instruction.name());
-    properties_copy.erase(padding_side.name());
-    properties_copy.erase(text_embedding_config.name());
+    for (const auto& name : get_config_properties_names()) {
+        properties_copy.erase(name);
+    }
 
     return properties_copy;
+}
+
+
+TextEmbeddingPipeline::Config get_text_embedding_config(const ov::AnyMap& properties) {
+    const auto config_it = properties.find(text_embedding_config.name());
+    if (config_it != properties.end()) {
+        for (const std::string& property_name : get_config_properties_names()) {
+            OPENVINO_ASSERT(
+                property_name == text_embedding_config.name() || !properties.count(property_name),
+                "Mixing individual config properties with text_embedding_config is not allowed. Conflicting property: ",
+                property_name);
+        }
+        return config_it->second.as<TextEmbeddingPipeline::Config>();
+    }
+    return TextEmbeddingPipeline::Config(properties);
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const TextEmbeddingPipeline::Config& config) {
