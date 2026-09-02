@@ -699,6 +699,7 @@ jobs:
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
       EXTENSION_LIB_PATH: ${{ github.workspace }}/install/tests
+      HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
 
     steps:
       - name: Clone openvino.genai
