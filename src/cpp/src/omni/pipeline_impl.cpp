@@ -27,11 +27,10 @@ std::shared_ptr<OmniChannel> make_channel_if_streaming(const GenerationConfig& t
 /// together. Without a bridge there is nothing to overlap, so finish() runs the talker inline over
 /// the finished VLM result.
 ///
-/// This does not make speech arrive sooner on its own: the default talker still drains the bridge
-/// to exhaustion before it infers anything, so it simply waits on another thread. What it buys is
-/// the thread a talker needs in order to start early — with the talker on the caller's thread, a
-/// TalkerBase that consumed the stream incrementally would have nowhere to run until the thinker
-/// was already done.
+/// The thread is what makes early speech possible at all: with the talker on the caller's thread it
+/// would have nowhere to run until the thinker was already done, so no amount of incremental
+/// consumption downstream could help. Whether speech actually arrives sooner is then up to the
+/// talker, which decides how much of the stream it wants before inferring anything.
 ///
 /// One visible consequence: when streaming, a speech streamer callback is invoked from the talker
 /// thread rather than the caller's. The text streamer keeps running on the caller's thread as

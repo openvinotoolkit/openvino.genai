@@ -50,8 +50,9 @@ struct OPENVINO_GENAI_EXPORTS TalkerResults {
  * existing Qwen3-Omni Talker + CodePredictor + Code2Wav stack.
  *
  * No data members, so a backend is free to store (or not store) a default speech config however it
- * likes. Every method is pure except the text-source generate() below, which defaults to draining
- * the bridge and delegating, so existing backends keep compiling and gain streaming for free.
+ * likes. Every method is pure except the text-source generate() below, which is optional to
+ * override: its default throws, because streaming cannot be synthesized from the non-streaming
+ * entry point. A backend that skips it still produces speech in full.
  *
  * @note This is a preview API and is subject to change.
  */
@@ -110,11 +111,14 @@ public:
     /// implementation may block on the source for as long as it likes without stalling the thinker.
     /// A speech streamer passed here is therefore invoked from that worker thread.
     ///
-    /// The default implementation reads the source to exhaustion, concatenates every step's tokens
-    /// and hidden states back into the layout the VLMDecodedResults overload expects, and forwards
-    /// to it. So it produces bit-identical output to the non-streaming path, and any TalkerBase
-    /// subclass supports streaming without writing code. Override to consume the stream
-    /// incrementally and start speaking before the thinker finishes.
+    /// Overriding is optional: this overload exists only to serve
+    /// `GenerationConfig::text2audio_stream`, so the default throws `ov::NotImplemented` rather than
+    /// draining the bridge and falling back to the VLMDecodedResults overload. That fallback would
+    /// be correct but pointless — it cannot speak before the thinker finishes, so it would pay for a
+    /// bridge, a thread and a per-step allocation to reach exactly the non-streaming result. A
+    /// talker that skips this overload still supports speech output in full; callers get it by
+    /// leaving `text2audio_stream` off, and OmniPipeline then runs the talker over the finished
+    /// thinker output.
     ///
     /// @param text_source Read end of the bridge; read() blocks until a step arrives or the thinker
     ///                    ends. Must not be null.
@@ -200,9 +204,8 @@ public:
     /// the thinker is still generating: the talker is prefilled as soon as the prompt and the
     /// thinker's first token have arrived, and then pulls one token per codec step.
     ///
-    /// Replaces TalkerBase's drain-everything default, and produces the same waveform it did — with a
-    /// fixed `rng_seed`, bit-identical to the VLMDecodedResults overload's for the same thinker
-    /// output. Only the timing changes.
+    /// Streaming changes only the timing, not the result: with a fixed `rng_seed` the waveform is
+    /// bit-identical to the one the VLMDecodedResults overload produces for the same thinker output.
     TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
                           const OmniTalkerSpeechConfig& talker_speech_config,
                           const OmniSpeechStreamerVariant& speech_streamer = std::monostate{}) override;
