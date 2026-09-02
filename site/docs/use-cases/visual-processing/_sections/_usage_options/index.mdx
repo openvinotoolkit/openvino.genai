@@ -115,9 +115,9 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
-### Reuse Shared Prompt Prefixes
+### Continuous Batching, PagedAttention, and Prefix Caching
 
-Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous batching backend, which uses PagedAttention. Set `enable_prefix_caching` explicitly to keep completed KV-cache blocks available for later requests to the same pipeline. Requests whose resulting input-embedding prefix is identical can then reuse those blocks, which may reduce prefill work and time to first token (TTFT) after the first request. For multimodal requests, both the text and the corresponding visual inputs must match; matching tokenized text alone is not sufficient.
+Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous batching (CB) backend, which uses PagedAttention (PA). Set `enable_prefix_caching` explicitly to keep completed KV-cache blocks available for later requests to the same pipeline. Requests whose resulting input-embedding prefix is identical can then reuse those blocks, which may reduce prefill work and time to first token (TTFT) after the first request. For multimodal requests, both the text and the corresponding visual inputs must match; matching tokenized text alone is not sufficient.
 
 <LanguageTabs>
     <TabItemPython>
@@ -127,7 +127,7 @@ Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous ba
         model_path = "path/to/exported_vlm"
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = True
-        scheduler_config.cache_size = 2  # GiB
+        scheduler_config.cache_size = 2  # GB
 
         pipe = ov_genai.VLMPipeline(
             model_path,
@@ -153,7 +153,7 @@ Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous ba
         const std::string model_path = "path/to/exported_vlm";
         ov::genai::SchedulerConfig scheduler_config;
         scheduler_config.enable_prefix_caching = true;
-        scheduler_config.cache_size = 2;  // GiB
+        scheduler_config.cache_size = 2;  // GB
 
         ov::genai::VLMPipeline pipe(
             model_path,
@@ -177,7 +177,7 @@ Pass a `SchedulerConfig` to `VLMPipeline` to explicitly select the continuous ba
     </TabItemCpp>
 </LanguageTabs>
 
-`cache_size` is the maximum cache allocation in GiB and must fit in available device memory. If `num_kv_blocks` and `cache_size` are both set, `num_kv_blocks` takes precedence; leaving both at zero enables dynamic cache allocation. Cached blocks are scoped to the pipeline instance and can be overwritten under cache pressure.
+`cache_size` is the maximum cache allocation in GB and must fit in available device memory. If `num_kv_blocks` and `cache_size` are both set, `num_kv_blocks` takes precedence; leaving both at zero enables dynamic cache allocation. Cached blocks are scoped to the pipeline instance and can be overwritten under cache pressure.
 
 On supported platforms, `VLMPipeline` may select PagedAttention automatically and currently uses a latency-oriented scheduler configuration with prefix caching enabled. Supplying `scheduler_config` replaces those scheduler defaults; because a new `SchedulerConfig` has prefix caching disabled, set `enable_prefix_caching = True` as shown above. Explicit selection requires PagedAttention support (available on x86-64 and ARM64) and is not available for `VLMPipeline` on NPU. Initialization also depends on whether the model graph and target device support the PagedAttention path; prefix reuse and its performance benefit therefore vary by model, device, prefix length, and cache pressure.
 
