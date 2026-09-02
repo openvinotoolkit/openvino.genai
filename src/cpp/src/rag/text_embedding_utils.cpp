@@ -156,8 +156,8 @@ TextEmbeddingPipeline::Config get_text_embedding_config(const ov::AnyMap& proper
     const auto config_it = properties.find(text_embedding_config.name());
     if (config_it != properties.end()) {
         for (const std::string& property_name : get_config_properties_names()) {
-            if (property_name != text_embedding_config.name()) {
-OPENVINO_ASSERT(!properties.count(property_name),
+            OPENVINO_ASSERT(
+                property_name == text_embedding_config.name() || !properties.count(property_name),
                 "Mixing individual config properties with text_embedding_config is not allowed. Conflicting property: ",
                 property_name);
         }
