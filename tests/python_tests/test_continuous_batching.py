@@ -602,15 +602,22 @@ speculative_cases = [
 ]
 
 # u8 stores the KV cache quantized, which selects different attention kernels than f16.
-kv_cache_precisions = [ov.Type.f16, ov.Type.u8]
+# None leaves the hint unset so the plugin resolves the cache type for the main and KV-update models.
+kv_cache_precisions = [ov.Type.f16, ov.Type.u8, None]
 
 
-def kv_cache_precision_id(kv_cache_precision: ov.Type) -> str:
+def kv_cache_precision_id(kv_cache_precision: ov.Type | None) -> str:
+    if kv_cache_precision is None:
+        return "kv_cache_precision=unset"
     return f"kv_cache_precision={kv_cache_precision.get_type_name()}"
 
 
-def get_llm_properties_with_kv_cache_precision(kv_cache_precision: ov.Type) -> dict:
-    return get_default_llm_properties() | {hints.kv_cache_precision: kv_cache_precision}
+def get_llm_properties_for_kv_cache_precision(kv_cache_precision: ov.Type | None) -> dict:
+    properties = get_default_llm_properties()
+    if kv_cache_precision is None:
+        properties.pop(hints.kv_cache_precision, None)
+        return properties
+    return properties | {hints.kv_cache_precision: kv_cache_precision}
 
 
 @pytest.mark.parametrize(
@@ -640,7 +647,7 @@ def test_speculative_decoding_extended_perf_metrics(
             model_path,
             pipeline_type=pipeline_type,
             draft_model_path=draft_model_path,
-            ov_config=get_llm_properties_with_kv_cache_precision(kv_cache_precision),
+            ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
         )
         return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 
@@ -751,7 +758,7 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
         draft_model_path=draft_model_path,
-        ov_config=get_llm_properties_with_kv_cache_precision(kv_cache_precision),
+        ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
     )
 
     # Run reference HF model:
@@ -1142,7 +1149,7 @@ def test_eagle3_tree_decode(
         main_model_path,
         pipeline_type=PipelineType.SPECULATIVE_DECODING,
         draft_model_path=draft_model_path,
-        ov_config=get_llm_properties_with_kv_cache_precision(kv_cache_precision),
+        ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
     )
 
     # Test with tree-based configuration
