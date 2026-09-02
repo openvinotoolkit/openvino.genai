@@ -279,7 +279,9 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::prepare_lm_extra_inputs(
         // so add_request() can consume them for draft-path first-token trimming.
         const ov::Tensor draft_inputs_embeds = m_inputs_embedder->get_draft_inputs_embeds();
         if (draft_inputs_embeds && draft_inputs_embeds.get_size() > 0) {
-            prepared_inputs[kDraftEmbeddingsExtraInputName] = draft_inputs_embeds;
+            ov::Tensor draft_copy(draft_inputs_embeds.get_element_type(), draft_inputs_embeds.get_shape());
+            draft_inputs_embeds.copy_to(draft_copy);
+            prepared_inputs[kDraftEmbeddingsExtraInputName] = std::move(draft_copy);
         }
     }
     return prepared_inputs;
