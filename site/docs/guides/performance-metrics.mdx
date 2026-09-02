@@ -11,6 +11,7 @@ sidebar_position: 5
 - Time To the First Token (TTFT), ms
 - Time per Output Token (TPOT), ms/token
 - Generate total duration, ms
+- Chat template application duration, ms
 - Tokenization duration, ms
 - Detokenization duration, ms
 - Throughput, tokens/s
@@ -22,7 +23,7 @@ and:
 - Number of tokens in the input prompt
 - Number of input tokens reused from the prefix cache
 
-Performance metrics are stored either in the [`DecodedResults`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.DecodedResults.html) or [`EncodedResults`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.EncodedResults.html) in `perf_metric` field.
+Performance metrics are stored either in the [`DecodedResults`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.DecodedResults.html) or [`EncodedResults`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.EncodedResults.html) in `perf_metrics` field.
 Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type [`openvino_genai.RawPerfMetrics`](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.RawPerfMetrics.html) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more.
 These raw metrics are accessible if you wish to calculate your own statistical values such as median or percentiles.
 However, since mean and standard deviation values are usually sufficient, we will focus on `PerfMetrics`.
@@ -308,5 +309,5 @@ print(f'Median from token to token duration: {np.median(durations):.2f} ms')
 ```
 
 :::tip
-For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/README.md#9-llms-benchmarking-sample-benchmark_genai) and C++ [benchmark_genai](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/README.md#9-llms-benchmarking-sample-benchmark_genai) samples.
+For more information, refer to the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/benchmark_genai.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/benchmark_genai.cpp) and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/text_generation/benchmark_genai.js) benchmark samples.
 :::
