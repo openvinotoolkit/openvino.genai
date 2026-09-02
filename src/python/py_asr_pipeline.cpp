@@ -105,7 +105,7 @@ auto asr_streaming_config_docstring = R"(
                                       window_chunk_num == 0.
     :type window_rollback_chunk_num: int
 
-    :param unbounded_prefix: Experimental, Qwen3-ASR only. When true, disables eviction of the
+    :param unbounded_prefix: Experimental. When true, disables eviction of the
                              text-history prefix tied to the audio sliding window, so the decoder
                              prefix grows unbounded for the life of the session even though the
                              audio window itself still stays bounded. Ignored when window_chunk_num == 0.

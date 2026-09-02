@@ -126,7 +126,7 @@ struct OPENVINO_GENAI_EXPORTS ASRStreamingConfig {
     /// warmup_chunks. Ignored when window_chunk_num == 0.
     size_t window_rollback_chunk_num = 2;
 
-    /// Experimental, Qwen3-ASR only. When true, disables eviction of the text-history prefix
+    /// Experimental. When true, disables eviction of the text-history prefix
     /// tied to the audio sliding window (see window_chunk_num), so the decoder prefix grows
     /// unbounded for the life of the session even though the audio window itself still stays
     /// bounded..
