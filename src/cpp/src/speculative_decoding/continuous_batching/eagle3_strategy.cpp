@@ -102,8 +102,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // Read the runtime KV cache precision from the compiled main model's key_cache input port: plugins may resolve the
     // actual cache precision (e.g. CPU promoting to bf16 based on inference precision) independently of that hint, and
     // the reorder model must match the precision of the tensors actually bound by the scheduler.
-    auto rt_kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
-    auto kv_cache_precision =
+    const auto rt_kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
+    const auto kv_cache_precision =
         m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
     // transformation for kv update model: u4 KV cache is stored as u8 internally,
     // so the reorder pass operates on u8 while the original precision is preserved in rt_info.
