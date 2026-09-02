@@ -113,6 +113,8 @@ Image generation pipelines (`Text2ImagePipeline`, `Image2ImagePipeline`, `Inpain
 | `get_vae_encoder_infer_duration()` | float, ms | VAE encoder inference duration |
 | `get_vae_decoder_infer_duration()` | float, ms | VAE decoder inference duration |
 | `get_first_and_other_iter_duration()` | tuple(float, float), ms | First iteration vs average of remaining iterations |
+| `get_first_and_other_unet_infer_duration()` | tuple(float, float), ms | First UNet inference iteration vs average of remaining iterations |
+| `get_first_and_other_trans_infer_duration()` | tuple(float, float), ms | First Transformer inference iteration vs average of remaining iterations |
 
 Raw values are available in the `raw_metrics` field.
 
