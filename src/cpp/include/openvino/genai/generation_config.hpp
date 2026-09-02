@@ -643,6 +643,11 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *        to the talker as they are produced instead of handing over the whole sequence once text
  *        generation has finished, so speech starts before the text is complete. Requires
  *        talker_speech_config.return_audio and the continuous-batching backend.
+ *        Interaction with stop_strings: a token is streamed to the talker at the step it is sampled,
+ *        which is before a stop string spanning it can be matched. Tokens rewound out of the text
+ *        afterwards have already reached the talker, so the speech may voice up to one stop string
+ *        more than the returned text shows. Leave text2audio_stream off if the two must agree
+ *        exactly.
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
 public:
@@ -717,6 +722,8 @@ public:
     // running, instead of handing the whole sequence over once it has finished. OmniPipeline creates
     // an OmniChannel and passes it to the VLM when this is set. Requires
     // talker_speech_config.return_audio and the continuous-batching backend.
+    // Combined with stop_strings, the speech can run up to one stop string past the returned text;
+    // see the class doc above.
     // Preview API: subject to change.
     bool text2audio_stream = false;
 

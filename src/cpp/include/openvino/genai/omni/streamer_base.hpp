@@ -44,6 +44,12 @@ namespace ov::genai {
  * one entry longer: a hidden state is what predicted the *next* token, so the last generated token
  * (typically EOS) is sampled from the previous position's state and never gets one of its own.
  *
+ * Writes are final: there is no retraction, and a reader may act on a token as soon as it arrives.
+ * A token is written at the step it is sampled, which is before a stop string spanning it can be
+ * matched, so a stop string rewound out of the returned text has already been written here. Readers
+ * that must agree exactly with the text cannot use this interface; see
+ * GenerationConfig::text2audio_stream.
+ *
  * Thread safety: write() and end() are called sequentially from the thread running the VLM decode
  * loop; no concurrent calls are made from that side. When the talker consumes the stream on
  * another thread, the implementation owns the synchronization between write() and read().

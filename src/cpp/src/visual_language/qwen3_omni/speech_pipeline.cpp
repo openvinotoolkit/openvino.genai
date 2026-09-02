@@ -853,8 +853,12 @@ ov::Tensor Qwen3OmniSpeechPipeline::codes_to_wav(const ov::Tensor& codes) {
 /// nothing here needs it. Everything is expressed as a position inside the assistant segment instead.
 ///
 /// A stop string that the thinker rewinds after writing cannot be taken back off the bridge, so the
-/// talker may speak a token the caller's text does not show. The same is true of the drain-everything
-/// default in TalkerBase; fixing it belongs to the bridge, not here.
+/// talker may speak a token the caller's text does not show. The bridge delivers a token at the step
+/// it is sampled, and a stop string spanning it is only matched afterwards, so no consumer can avoid
+/// this — fixing it would mean withholding tokens here for as long as the longest stop string, which
+/// costs exactly the time-to-first-audio that streaming exists to buy. Accepted and documented on
+/// GenerationConfig::text2audio_stream; only the batch path, which reads full_token_ids after the
+/// rewind, is exact.
 class Qwen3OmniSpeechPipeline::ThinkerStream {
 public:
     explicit ThinkerStream(const std::shared_ptr<OmniTextSourceBase>& source) : m_source(source) {
