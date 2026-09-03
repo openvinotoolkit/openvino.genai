@@ -166,12 +166,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
         const std::vector<ov::genai::EncodedImage> no_images;
         const auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, no_images);
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, no_images, metrics, true, image_sequence);
-        } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, no_images, metrics, true, image_sequence);
-        }
+        inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, no_images, metrics, true, image_sequence);
         const auto [position_ids, rope_delta] = m_inputs_embedder->get_position_ids(inputs_embeds.get_shape()[1], 0);
         m_inputs_embedder->set_position_ids(position_ids);
         if (rope_delta.has_value()) {

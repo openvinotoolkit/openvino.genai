@@ -828,30 +828,16 @@ private:
         std::optional<ov::Tensor> token_type_ids;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
-                    unified_prompt,
-                    encoded_images,
-                    encoded_videos,
-                    perf_metrics,
-                    recalculate_merged_embeddings,
-                    image_sequence,
-                    video_sequence,
-                    history_vision_count
-                );
-        } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(
-                unified_prompt,
-                encoded_images,
-                encoded_videos,
-                perf_metrics,
-                recalculate_merged_embeddings,
-                image_sequence,
-                video_sequence,
-                history_vision_count
-            );
-        }
+        inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+            unified_prompt,
+            encoded_images,
+            encoded_videos,
+            perf_metrics,
+            recalculate_merged_embeddings,
+            image_sequence,
+            video_sequence,
+            history_vision_count
+        );
         PerfMetrics::emplace_duration(perf_metrics.vlm_raw_metrics.prepare_embeddings_durations, embeddings_start_time);
 
         if (m_is_npu) {

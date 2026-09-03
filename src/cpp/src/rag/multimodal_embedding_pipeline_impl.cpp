@@ -174,23 +174,19 @@ EmbedResult MultimodalEmbeddingPipelineImpl::multimodal_embed(
                                                     encoded_videos);
 
             BatchItem item;
-            if (m_inputs_embedder->has_token_type_ids()) {
-                std::tie(item.inputs_embeds, item.token_type_ids) =
-                    m_inputs_embedder->get_inputs_embeds_with_token_type_ids(normalized_prompt.unified_prompt,
-                                                                             encoded_images,
-                                                                             encoded_videos,
-                                                                             metrics,
-                                                                             true,
-                                                                             normalized_prompt.images_sequence,
-                                                                             normalized_prompt.videos_sequence);
-            } else {
-                item.inputs_embeds = m_inputs_embedder->get_inputs_embeds(normalized_prompt.unified_prompt,
-                                                                          encoded_images,
-                                                                          encoded_videos,
-                                                                          metrics,
-                                                                          true,
-                                                                          normalized_prompt.images_sequence,
-                                                                          normalized_prompt.videos_sequence);
+            item.inputs_embeds = m_inputs_embedder->get_inputs_embeds(
+                normalized_prompt.unified_prompt,
+                encoded_images,
+                encoded_videos,
+                metrics,
+                true,
+                normalized_prompt.images_sequence,
+                normalized_prompt.videos_sequence
+            );
+            
+            const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+            if (auto it = lm_extra_inputs.find("token_type_ids"); it != lm_extra_inputs.end()) {
+                item.token_type_ids = it->second;
             }
 
             const size_t seq_length = item.inputs_embeds.get_shape().at(1);

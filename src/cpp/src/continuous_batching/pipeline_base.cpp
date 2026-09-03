@@ -401,28 +401,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[0]);
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, tt_ids] =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
-                                                                         m_history_images,
-                                                                         m_history_videos,
-                                                                         vlm_perf_metrics[0],
-                                                                         recalculate_merged_embeddings,
-                                                                         m_history_image_ids,
-                                                                         m_history_video_ids,
-                                                                         m_history_vision_count);
-            input_embeds_list.push_back(std::move(embeds));
-            token_type_ids_list.push_back(std::move(tt_ids));
-        } else {
-            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_history,
-                                                                                m_history_images,
-                                                                                m_history_videos,
-                                                                                vlm_perf_metrics[0],
-                                                                                recalculate_merged_embeddings,
-                                                                                m_history_image_ids,
-                                                                                m_history_video_ids,
-                                                                                m_history_vision_count));
-        }
+        input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
+            templated_history,
+            m_history_images,
+            m_history_videos,
+            vlm_perf_metrics[0],
+            recalculate_merged_embeddings,
+            m_history_image_ids,
+            m_history_video_ids,
+            m_history_vision_count
+        ));
 
         extract_audio_prompt_ids(sampling_params[0], cache_size_before);
 
@@ -463,26 +451,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
             size_t cache_size_before = prepare_prompt_ids(prompt, sampling_params[i]);
 
-            if (m_inputs_embedder->has_token_type_ids()) {
-                auto [embeds, tt_ids] =
-                    m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
-                                                                             encoded_images,
-                                                                             encoded_videos,
-                                                                             vlm_perf_metrics[i],
-                                                                             recalculate_merged_embeddings,
-                                                                             image_sequence,
-                                                                             video_sequence);
-                input_embeds_list.push_back(std::move(embeds));
-                token_type_ids_list.push_back(std::move(tt_ids));
-            } else {
-                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt,
-                                                                                    encoded_images,
-                                                                                    encoded_videos,
-                                                                                    vlm_perf_metrics[i],
-                                                                                    recalculate_merged_embeddings,
-                                                                                    image_sequence,
-                                                                                    video_sequence));
-            }
+            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
+                unified_prompt,
+                encoded_images,
+                encoded_videos,
+                vlm_perf_metrics[i],
+                recalculate_merged_embeddings,
+                image_sequence,
+                video_sequence
+            ));
 
             extract_audio_prompt_ids(sampling_params[i], cache_size_before);
 
@@ -704,28 +681,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const size_t cache_size_before =
             capture_prompt_ids ? m_inputs_embedder->get_cache_state().get_state().size() : 0;
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, tt_ids] =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,
-                                                                         processed_chat_data.encoded_images,
-                                                                         processed_chat_data.encoded_videos,
-                                                                         vlm_perf_metrics[i],
-                                                                         recalculate_merged_embeddings,
-                                                                         processed_chat_data.image_sequence,
-                                                                         processed_chat_data.video_sequence,
-                                                                         processed_chat_data.vision_counts);
-            input_embeds_list.push_back(std::move(embeds));
-            token_type_ids_list.push_back(std::move(tt_ids));
-        } else {
-            input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(templated_history,
-                                                                                processed_chat_data.encoded_images,
-                                                                                processed_chat_data.encoded_videos,
-                                                                                vlm_perf_metrics[i],
-                                                                                recalculate_merged_embeddings,
-                                                                                processed_chat_data.image_sequence,
-                                                                                processed_chat_data.video_sequence,
-                                                                                processed_chat_data.vision_counts));
-        }
+        input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(
+            templated_history,
+            processed_chat_data.encoded_images,
+            processed_chat_data.encoded_videos,
+            vlm_perf_metrics[i],
+            recalculate_merged_embeddings,
+            processed_chat_data.image_sequence,
+            processed_chat_data.video_sequence,
+            processed_chat_data.vision_counts
+        ));
 
         if (capture_prompt_ids) {
             const auto& cache_ids = m_inputs_embedder->get_cache_state().get_state();
@@ -848,34 +813,25 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
         const auto [unified_prompt, image_sequence, video_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
 
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(
-                unified_prompt,
-                encoded_images,
-                encoded_videos,
-                metrics,
-                true,
-                image_sequence,
-                video_sequence
-            );
-        } else {
-            inputs = m_inputs_embedder->get_inputs_embeds(
-                unified_prompt,
-                encoded_images,
-                encoded_videos,
-                metrics,
-                true,
-                image_sequence,
-                video_sequence
-            );
-        }
+        inputs = m_inputs_embedder->get_inputs_embeds(
+            unified_prompt,
+            encoded_images,
+            encoded_videos,
+            metrics,
+            true,
+            image_sequence,
+            video_sequence
+        );
+
         PerfMetrics::emplace_duration(metrics.vlm_raw_metrics.prepare_embeddings_durations, start_get_inputs_embeds);
-        handle = add_request(request_id,
-                             inputs,
-                             sampling_params,
-                             token_type_ids,
-                             prompt_ids,
-                             m_inputs_embedder->get_lm_extra_inputs());
+        handle = add_request(
+            request_id,
+            inputs,
+            sampling_params,
+            token_type_ids,
+            prompt_ids,
+            m_inputs_embedder->get_lm_extra_inputs()
+        );
         handle->m_generation_stream->set_vlm_perf_metrics(std::move(metrics));
     }
     return handle;
