@@ -10,57 +10,11 @@ from tqdm import tqdm
 from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
-from .utils import patch_awq_for_inference, get_ignore_parameters_flag
+from .utils import patch_awq_for_inference, get_ignore_parameters_flag, SDMetricsCollector
 import inspect
 
 PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
-
-
-# counter values of each model already reported, see get_sd_token_numbers()
-sd_prev_counters = {}
-
-
-def get_sd_token_numbers(answer, model):
-    # SDPerModelsPerfMetrics is set as extended_perf_metrics only for speculative decoding pipelines
-    extended_perf_metrics = getattr(answer, "extended_perf_metrics", None)
-    if not hasattr(extended_perf_metrics, "get_num_accepted_tokens"):
-        return None
-    draft_model_metrics = extended_perf_metrics.draft_model_metrics
-    # some backends accumulate the metrics over generate() calls of the same pipeline, others reset them,
-    # so the already reported iterations are detected by the draft model latencies to know which case it is
-    durations = draft_model_metrics.raw_metrics.m_durations
-    prev_count, prev_marker = sd_prev_counters.get((id(model), 'durations'), (0, None))
-    is_accumulated = 0 < prev_count <= len(durations) and durations[prev_count - 1] == prev_marker
-    sd_prev_counters[(id(model), 'durations')] = (len(durations), durations[-1] if len(durations) > 0 else None)
-
-    def get_delta(name, total):
-        prev = sd_prev_counters.get((id(model), name), 0) if is_accumulated else 0
-        sd_prev_counters[(id(model), name)] = total
-        return total - prev
-
-    # get_num_draft_processed_tokens() is the draft model specific alias of get_num_generated_tokens()
-    draft_processed_tokens = get_delta('processed', draft_model_metrics.get_num_generated_tokens())
-    num_accepted = get_delta('accepted', extended_perf_metrics.get_num_accepted_tokens())
-    # a negative value means the counters got out of sync, so the per prompt value is unknown
-    if draft_processed_tokens < 0 or num_accepted < 0:
-        return None
-    token_numbers = {
-        "draft_processed_tokens": draft_processed_tokens,
-        "num_accepted": num_accepted,
-    }
-    # the candidate token metrics are not reported by every pipeline
-    if hasattr(extended_perf_metrics, "get_num_draft_tokens"):
-        candidates = get_delta('candidates', extended_perf_metrics.get_num_draft_tokens())
-        try:
-            rejected = get_delta('rejected', extended_perf_metrics.get_num_rejected_tokens())
-        except RuntimeError:
-            # get_num_rejected_tokens() asserts that the accepted tokens do not exceed the candidate ones
-            return token_numbers
-        if candidates >= 0 and rejected >= 0:
-            token_numbers["draft_candidate_tokens"] = candidates
-            token_numbers["rejected_tokens"] = rejected
-    return token_numbers
 
 
 @register_evaluator("text")
@@ -245,7 +199,7 @@ class TextEvaluator(BaseEvaluator):
         prompt_data = data["prompts"]
 
         answers = []
-        sd_token_numbers = []
+        sd_metrics = SDMetricsCollector()
         prompts = (
             prompt_data.values
             if self.num_samples is None
@@ -269,7 +223,7 @@ class TextEvaluator(BaseEvaluator):
                     self.assistant_confidence_threshold,
                     **extra_kwargs,
                 )
-                sd_token_numbers.append(get_sd_token_numbers(answer, model))
+                sd_metrics.collect(answer)
                 answers.append(answer.texts[0] if hasattr(answer, "texts") else answer)
         else:
             if self.generation_config_extra:
@@ -290,7 +244,7 @@ class TextEvaluator(BaseEvaluator):
                         )
                         for ans in ans_batch:
                             answers.append(ans.m_generation_ids[0])
-                            sd_token_numbers.append(get_sd_token_numbers(ans, model))
+                            sd_metrics.collect(ans)
 
                         batch.clear()
 
@@ -298,9 +252,6 @@ class TextEvaluator(BaseEvaluator):
         df = pd.DataFrame(res_data)
         df["language"] = self.language
         df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
-        if any(sd_token_numbers):
-            for column in ("draft_processed_tokens", "draft_candidate_tokens", "num_accepted", "rejected_tokens"):
-                if any(sd and column in sd for sd in sd_token_numbers):
-                    df[column] = [sd.get(column) if sd else None for sd in sd_token_numbers]
+        sd_metrics.add_columns(df)
 
         return df
