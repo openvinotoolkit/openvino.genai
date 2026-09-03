@@ -110,7 +110,6 @@ def tensor_models_export_import(root_dir: Path):
         unet=unet,
         vae=vae,
     )
-    _ = imported_pipe
 
 
 def export_import_with_reshape(root_dir: Path, prompt: str):

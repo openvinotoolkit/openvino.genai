@@ -90,7 +90,6 @@ void tensor_models_export_import(const std::filesystem::path& root_dir) {
         text_encoder_2,
         unet,
         vae);
-    (void)imported_pipe;
 }
 
 void export_import_with_reshape(const std::filesystem::path& root_dir, const std::string& prompt) {
