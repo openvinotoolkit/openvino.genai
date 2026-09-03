@@ -56,15 +56,21 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"].task not in ["visual_text_gen", "image_gen", "video_gen", "text_embed"]:
+            if args["use_case"].task not in [
+                "visual_text_gen",
+                "visual_text_gen_chat",
+                "image_gen",
+                "video_gen",
+                "text_embed",
+            ]:
                 raise RuntimeError(
                     "Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models / Multimodal Embeddings"
                 )
             data_dict = {}
             if "media" in input_key:
                 if args["media"] is None and args["images"] is None:
-                    if args["use_case"].task == "visual_text_gen":
-                        if args["video"] is None:
+                    if args["use_case"].task in ["visual_text_gen", "visual_text_gen_chat"]:
+                        if args["video"] is None and args["media"] is None:
                             log.warn("Input image/video is not provided. Only text generation part will be evaluated")
                     elif args["use_case"].task == "text_embed":
                         pass
@@ -76,7 +82,7 @@ def get_param_from_file(args, input_key):
                 data_dict["video"] = args["video"]
 
             if args["prompt"] is None:
-                if args["use_case"].task == "visual_text_gen":
+                if args["use_case"].task in ["visual_text_gen", "visual_text_gen_chat"]:
                     data_dict["prompt"] = "What is OpenVINO?" if data_dict.get("media") is None else "Describe image"
                 elif args["use_case"].task == "image_gen":
                     data_dict["prompt"] = "sailing ship in storm by Leonardo da Vinci"
@@ -251,7 +257,7 @@ def analyze_args(args):
     if model_framework == "ov":
         set_default_param_for_ov_config(model_args["config"])
         if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
-            if use_case.task in ["text_gen", "visual_text_gen"]:
+            if use_case.task in ["text_gen", "text_gen_chat", "visual_text_gen", "visual_text_gen_chat"]:
                 model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
@@ -364,7 +370,10 @@ def resolve_media_file_path(file_path, prompt_file_path):
     if not file_path:
         return file_path
     if not (file_path.startswith("http://") or file_path.startswith("https://")):
-        return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
+        media_file_path = Path(file_path)
+        if media_file_path.is_absolute():
+            return str(media_file_path.resolve())
+        return str((Path(prompt_file_path).parent / media_file_path).resolve())
     return file_path
 
 

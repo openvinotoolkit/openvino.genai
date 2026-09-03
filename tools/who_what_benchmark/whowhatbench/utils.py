@@ -9,6 +9,8 @@ import sys
 import json
 import torch
 import random
+import re
+import string
 import logging
 import tarfile
 import datasets
@@ -244,6 +246,33 @@ def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lor
     return model
 
 
+def normalize_text(text: str) -> str:
+    """Normalize text for forgiving transcript comparison."""
+    text = text.lower().strip()
+    text = re.sub(r"[-‐-‒–—]+", " ", text)  # treat hyphens/dashes as separators
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+@contextmanager
+def no_double_bos(processor):
+    """Disable add_bos_token while a Gemma chat template that already emits bos is applied."""
+    tokenizer = getattr(processor, "tokenizer", None)
+    orig_add_bos_token = getattr(tokenizer, "add_bos_token", None)
+    if (
+        orig_add_bos_token is not None
+        and getattr(tokenizer, "chat_template", None)
+        and "bos_token" in tokenizer.chat_template
+    ):
+        tokenizer.add_bos_token = False
+    try:
+        yield
+    finally:
+        if orig_add_bos_token is not None:
+            tokenizer.add_bos_token = orig_add_bos_token
+
+
 # preapre default dataset for visualtext(VLM) evalutor
 def preprocess_fn(example):
     return {
@@ -416,3 +445,90 @@ class SDMetricsCollector:
             if acceptance_rate == acceptance_rate:
                 token_numbers["acceptance_rate"] = acceptance_rate * 100
         return token_numbers
+
+
+AUDIO_SAMPLING_RATE = 16000
+# The 24th FLEURS sample is a duplicate, while dataset shuffling is unstable across versions.
+# Keep 23 because the preceding samples are already sufficiently varied.
+DEFAULT_NUM_SAMPLES = 23
+
+
+def to_mono_16k(audio, sampling_rate):
+    """Downmix to mono and resample to 16 kHz float32."""
+    from math import gcd
+    from scipy.signal import resample_poly
+
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    if sampling_rate != AUDIO_SAMPLING_RATE:
+        common = gcd(int(sampling_rate), AUDIO_SAMPLING_RATE)
+        audio = resample_poly(audio, AUDIO_SAMPLING_RATE // common, int(sampling_rate) // common)
+    return np.asarray(audio, dtype=np.float32)
+
+
+def load_audio_dataset(args):
+    """Stream an ASR dataset as columns: id and 16 kHz mono float32 waveform."""
+    import io
+    import soundfile as sf
+    from datasets import Audio, load_dataset
+
+    dataset = args.dataset or "google/fleurs,en_us"
+    split = args.split if args.split is not None else "validation"
+    if "," in dataset:
+        path, name = dataset.split(",", 1)
+    else:
+        path, name = dataset, None
+    audio_field = args.dataset_field if args.dataset_field not in (None, "text") else "audio"
+    num_samples = args.num_samples if args.num_samples is not None else DEFAULT_NUM_SAMPLES
+
+    data = load_dataset(path=path, name=name, split=split, streaming=True)
+    # datasets>=5 needs torchcodec to decode Audio; decode with soundfile instead.
+    data = data.cast_column(audio_field, Audio(decode=False))
+    data = data.take(num_samples)
+
+    audios, ids = [], []
+    for idx, row in enumerate(data):
+        raw = row[audio_field]
+        if raw.get("bytes"):
+            audio, sampling_rate = sf.read(io.BytesIO(raw["bytes"]), dtype="float32")
+        else:
+            audio, sampling_rate = sf.read(raw["path"], dtype="float32")
+        audios.append(to_mono_16k(audio, sampling_rate))
+        ids.append(os.path.basename(raw["path"]) if raw.get("path") else str(idx))
+
+    return {"prompts": ids, "audio": audios}
+
+
+def _read_model_json(model_id, filename):
+    model_path = Path(model_id)
+    if model_path.is_dir():
+        json_path = model_path / filename
+        if not json_path.is_file():
+            return None
+    else:
+        from huggingface_hub import hf_hub_download
+
+        try:
+            json_path = hf_hub_download(repo_id=str(model_id), filename=filename)
+        except Exception:
+            return None
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as json_file:
+            return json.load(json_file)
+    except Exception:
+        return None
+
+
+def get_model_type(model_id):
+    config = _read_model_json(model_id, "config.json")
+    if isinstance(config, dict) and config.get("model_type"):
+        return config["model_type"]
+
+    metadata = _read_model_json(model_id, "configuration.json")
+    if isinstance(metadata, dict):
+        model = metadata.get("model")
+        if isinstance(model, dict) and model.get("type"):
+            return model["type"]
+
+    return None
