@@ -1266,17 +1266,34 @@ def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OV
     )
 
 
-def test_cb_add_request_rejects_dynamic_lora_mode(model_facebook_opt_125m: OVConvertedModelSchema):
-    """add_request() must reject MODE_DYNAMIC LoRA adapters."""
+def test_cb_add_request_accepts_empty_lora_config(model_facebook_opt_125m: OVConvertedModelSchema):
+    """add_request() must allow an explicit empty LoRA config."""
     import openvino_genai as ov_genai
 
     pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
 
-    adapter_config = ov_genai.AdapterConfig(mode=ov_genai.AdapterConfig.Mode.MODE_DYNAMIC)
+    modes = [
+        ov_genai.AdapterConfig.Mode.MODE_AUTO,
+        ov_genai.AdapterConfig.Mode.MODE_DYNAMIC,
+        ov_genai.AdapterConfig.Mode.MODE_STATIC_RANK,
+    ]
+    for request_id, mode in enumerate(modes):
+        config = GenerationConfig()
+        config.max_new_tokens = 10
+        config.adapters = ov_genai.AdapterConfig(mode=mode)
+
+        pipe.add_request(request_id, "test prompt", generation_config=config)
+
+
+def test_cb_add_request_rejects_non_empty_dynamic_lora_mode(model_facebook_opt_125m: OVConvertedModelSchema):
+    """add_request() must reject MODE_DYNAMIC when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
 
     config = GenerationConfig()
     config.max_new_tokens = 10
-    config.adapters = adapter_config
+    config.adapters = ov_genai.AdapterConfig(ov_genai.Adapter(), mode=ov_genai.AdapterConfig.Mode.MODE_DYNAMIC)
 
     with pytest.raises(RuntimeError):
         pipe.add_request(0, "test prompt", generation_config=config)
