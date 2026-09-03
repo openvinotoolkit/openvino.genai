@@ -7,7 +7,6 @@
 #include <random>
 
 #include "lm_encoding.hpp"
-#include "logger.hpp"
 #include "lora/helper.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/tokenizer.hpp"
@@ -28,12 +27,6 @@
 using namespace ov::genai;
 
 namespace {
-void log_paged_attention_fallback(const ov::Exception& exception) {
-    GENAI_INFO("Paged Attention backend initialization failed. Falling back to SDPA backend. "
-                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
-    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
-}
-
 void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     switch (vlm_config.model_type) {
@@ -984,7 +977,7 @@ VLMPipeline::VLMPipeline(
                 m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_dir, scheduler_config, device, plugin_properties);
 #endif
             } catch (const ov::Exception& exception) {
-                log_paged_attention_fallback(exception);
+                utils::log_paged_attention_fallback(exception);
                 language_model = utils::singleton_core().read_model(language_model_path, {}, properties);
             }
         }
@@ -994,6 +987,7 @@ VLMPipeline::VLMPipeline(
         }
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }
@@ -1034,7 +1028,7 @@ VLMPipeline::VLMPipeline(
                 m_pimpl = std::make_shared<VLMContinuousBatchingAdapter>(language_model, models_map, tokenizer, config_dir_path, scheduler_config, device, plugin_properties, generation_config);
     #endif
             } catch (const ov::Exception& exception) {
-                log_paged_attention_fallback(exception);
+                utils::log_paged_attention_fallback(exception);
                 language_model = utils::singleton_core().read_model(model_str, weights);
             }
         }
@@ -1045,6 +1039,7 @@ VLMPipeline::VLMPipeline(
 
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     auto stop_time = std::chrono::steady_clock::now();
     m_pimpl->set_load_time(std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count());
 }

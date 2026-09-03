@@ -20,15 +20,8 @@
 #include "speculative_decoding/stateful/gemma4_mtp_strategy.hpp"
 #include "utils.hpp"
 #include "model_desc.hpp"
-#include "logger.hpp"
 
 namespace {
-
-void log_paged_attention_fallback(const ov::Exception& exception) {
-    GENAI_INFO("Paged Attention backend initialization failed. Falling back to SDPA backend. "
-                "Set ATTENTION_BACKEND=\"SDPA\" to skip Paged Attention initialization.");
-    GENAI_DEBUG("Paged Attention backend initialization error: %s", exception.what());
-}
 
 std::shared_ptr<ov::Model> peek_draft_model(const ov::AnyMap& properties) {
     auto it = properties.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
@@ -242,6 +235,7 @@ ov::genai::LLMPipeline::LLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
     m_pimpl = std::make_unique<StatefulLLMPipeline>(request, tokenizer, generation_config);
     m_pimpl->save_load_time(start_time);
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
 }
 
 ov::genai::LLMPipeline::LLMPipeline(
@@ -274,7 +268,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
         } catch (const ov::Exception& exception) {
-            log_paged_attention_fallback(exception);
+            utils::log_paged_attention_fallback(exception);
             model = utils::read_model(models_path, properties);
         }
     }
@@ -285,6 +279,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     m_pimpl->save_load_time(start_time);
 }
 
@@ -320,7 +315,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config, models_path);
 #endif
         } catch (const ov::Exception& exception) {
-            log_paged_attention_fallback(exception);
+            utils::log_paged_attention_fallback(exception);
             model = utils::read_model(models_path, properties);
         }
     }
@@ -331,6 +326,7 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<StatefulLLMPipeline>(model, tokenizer, device, properties, generation_config);
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     m_pimpl->save_load_time(start_time);
 }
 
@@ -371,7 +367,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(model, tokenizer, utils::get_latency_oriented_scheduler_config(), device, properties, generation_config);
 #endif
         } catch (const ov::Exception& exception) {
-            log_paged_attention_fallback(exception);
+            utils::log_paged_attention_fallback(exception);
             model = utils::singleton_core().read_model(model_str, weights_tensor);
         }
     }
@@ -387,6 +383,7 @@ ov::genai::LLMPipeline::LLMPipeline(
             generation_config);
     }
 
+    utils::log_attention_backend(m_pimpl->get_attention_backend());
     m_pimpl->save_load_time(start_time);
 }
 
