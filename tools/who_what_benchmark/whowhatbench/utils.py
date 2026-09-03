@@ -405,6 +405,7 @@ class SDMetricsCollector:
         "num_accepted",
         "rejected_tokens",
         "acceptance_rate",
+        "miss_rate",
     )
 
     def __init__(self):
@@ -436,8 +437,12 @@ class SDMetricsCollector:
             except RuntimeError:
                 return token_numbers
 
-            token_numbers["draft_candidate_tokens"] = extended_perf_metrics.get_num_draft_tokens()
+            candidates = extended_perf_metrics.get_num_draft_tokens()
+            token_numbers["draft_candidate_tokens"] = candidates
             token_numbers["rejected_tokens"] = rejected
+            # without any candidate token the miss rate is undefined, just like the acceptance rate below
+            if candidates > 0:
+                token_numbers["miss_rate"] = rejected / candidates * 100
 
         if hasattr(extended_perf_metrics, "get_draft_acceptance_rate"):
             acceptance_rate = extended_perf_metrics.get_draft_acceptance_rate()
