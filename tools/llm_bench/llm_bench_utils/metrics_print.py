@@ -142,9 +142,7 @@ def print_average_tts(iter_data_list, prompt_idx_list):
         return
 
     measured_iterations = {
-        data.get("iteration")
-        for data in iter_data_list
-        if data.get("iteration") not in ("", None, 0)
+        data.get("iteration") for data in iter_data_list if data.get("iteration") not in ("", None, 0)
     }
     total_iters = len(measured_iterations)
     if total_iters <= 0:
