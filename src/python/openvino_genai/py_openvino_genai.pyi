@@ -306,7 +306,7 @@ class ASRPipeline:
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
         """
-    def create_streaming_session(self, streaming_config: openvino_genai.py_openvino_genai.ASRStreamingConfig | None = None, generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, callback: collections.abc.Callable[[ASRPartialResult], None] = None) -> ASRStreamingSession:
+    def create_streaming_session(self, streaming_config: openvino_genai.py_openvino_genai.ASRStreamingConfig | None = None, generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None) -> ASRStreamingSession:
         """
         Create a streaming ASR session for incremental transcription.
         """
@@ -476,7 +476,25 @@ class ASRStreamingConfig:
         :param context_rollback_tokens: Number of trailing tokens to rewind from the accumulated text when
                                         reusing it as a prefix for the next decode pass.
         :type context_rollback_tokens: int
+    
+        :param window_chunk_num: Maximum chunks of audio retained in the sliding window before older,
+                                 already-decoded audio is dropped from the front of the accumulated
+                                 buffer. 0 = unbounded (re-encode the entire session every pass).
+        :type window_chunk_num: int
+    
+        :param window_rollback_chunk_num: Chunks of already-decoded audio treated as still "unfixed"
+                                          (not yet safe to drop) once the sliding window is active.
+                                          Must be less than window_chunk_num. Ignored when
+                                          window_chunk_num == 0.
+        :type window_rollback_chunk_num: int
+    
+        :param unbounded_prefix: Experimental. When true, disables eviction of the
+                                 text-history prefix tied to the audio sliding window, so the decoder
+                                 prefix grows unbounded for the life of the session even though the
+                                 audio window itself still stays bounded. Ignored when window_chunk_num == 0.
+        :type unbounded_prefix: bool
     """
+    unbounded_prefix: bool
     def __init__(self) -> None:
         ...
     @property
@@ -497,20 +515,28 @@ class ASRStreamingConfig:
     @warmup_chunks.setter
     def warmup_chunks(self, arg0: typing.SupportsInt) -> None:
         ...
+    @property
+    def window_chunk_num(self) -> int:
+        ...
+    @window_chunk_num.setter
+    def window_chunk_num(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def window_rollback_chunk_num(self) -> int:
+        ...
+    @window_rollback_chunk_num.setter
+    def window_rollback_chunk_num(self, arg0: typing.SupportsInt) -> None:
+        ...
 class ASRStreamingSession:
     def __repr__(self) -> str:
         ...
-    def finish(self) -> ASRDecodedResults:
+    def finish(self) -> ASRPartialResult:
         """
-        Flush the remaining buffered audio and return the final decoded result.
+        Flush the remaining buffered audio and return the final partial result. partial_text is always empty on the returned result.
         """
-    def get_partial_result(self) -> ASRPartialResult:
+    def push_chunk(self, pcm16k: collections.abc.Sequence[typing.SupportsFloat]) -> openvino_genai.py_openvino_genai.ASRPartialResult | None:
         """
-        Return the latest partial transcript.
-        """
-    def push_chunk(self, pcm16k: collections.abc.Sequence[typing.SupportsFloat]) -> None:
-        """
-        Append audio samples to the streaming buffer. A decode pass is triggered when enough audio has accumulated.
+        Append audio samples to the streaming buffer. Returns a partial result if a decode pass was triggered, None otherwise.
         """
 class Adapter:
     """
