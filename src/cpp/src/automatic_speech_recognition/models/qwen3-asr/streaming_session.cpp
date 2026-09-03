@@ -18,6 +18,10 @@ namespace {
 // UTF-8 encoding of U+FFFD REPLACEMENT CHARACTER — signals a corrupted decode boundary.
 static constexpr const char* REPLACEMENT_CHAR_UTF8 = "\xef\xbf\xbd";
 
+// Marks the end of the "language <Lang><asr_text>" header that precedes the actual transcript in
+// auto-detect mode. Rollback must never trim back into it -- see trim_rollback().
+static const std::string ASR_TEXT_TAG = "<asr_text>";
+
 }  // namespace
 
 Qwen3ASRStreamingSessionImpl::Qwen3ASRStreamingSessionImpl(Qwen3ASR* pipeline,
@@ -40,16 +44,43 @@ std::string Qwen3ASRStreamingSessionImpl::trim_rollback(const std::string& raw) 
     const TokenizedInputs encoded = m_pipeline->m_tokenizer.encode(raw);
     const ov::Tensor& ids_tensor = encoded.input_ids;
     const size_t n_tokens = ids_tensor.get_shape()[1];
+    const int64_t* data = ids_tensor.data<const int64_t>();
+
+    // In auto-detect mode, `raw` is prefixed with a "language <Lang><asr_text>" header the model
+    // generated itself (rather than a fixed part of the prompt template), so it's just as much a
+    // target for rollback trimming as the real transcript that follows it. If rollback ever cuts
+    // into the header, parse_asr_output() can no longer find "<asr_text>" and falls back to
+    // returning the (now header-fragment-containing) text unstripped, leaking literal template text
+    // into the committed transcript. Find the smallest token count whose decode still reproduces
+    // the header in full, and never trim below it.
+    size_t min_keep_tokens = 0;
+    const size_t tag_pos = raw.find(ASR_TEXT_TAG);
+    if (tag_pos != std::string::npos) {
+        const size_t tag_end = tag_pos + ASR_TEXT_TAG.size();
+        for (size_t keep = 1; keep <= n_tokens; ++keep) {
+            const std::vector<int64_t> kept_ids(data, data + keep);
+            const std::string decoded = m_pipeline->m_tokenizer.decode(kept_ids);
+            if (decoded.size() >= tag_end && decoded.find(ASR_TEXT_TAG) != std::string::npos) {
+                min_keep_tokens = keep;
+                break;
+            }
+        }
+        if (min_keep_tokens == 0) {
+            // No token count reproduced the header intact (tokenizer re-encoding drift); refuse to
+            // commit anything this pass rather than risk emitting a truncated header.
+            return "";
+        }
+    }
 
     size_t rollback = m_streaming_config.context_rollback_tokens;
 
-    // Increase rollback until the decoded prefix is free of replacement characters.
+    // Increase rollback until the decoded prefix is free of replacement characters, but never trim
+    // past min_keep_tokens (the end of the "<asr_text>" header, when present).
     while (true) {
         const size_t keep = (n_tokens > rollback) ? n_tokens - rollback : 0;
-        if (keep == 0) {
+        if (keep == 0 || keep < min_keep_tokens) {
             return "";
         }
-        const int64_t* data = ids_tensor.data<const int64_t>();
         const std::vector<int64_t> kept_ids(data, data + keep);
         const std::string trimmed = m_pipeline->m_tokenizer.decode(kept_ids);
         if (trimmed.find(REPLACEMENT_CHAR_UTF8) == std::string::npos) {
