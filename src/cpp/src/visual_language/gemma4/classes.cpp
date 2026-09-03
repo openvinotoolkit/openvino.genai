@@ -529,14 +529,24 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
     return result;
 }
 
-// TODO Move to get_inputs_embeds() after get_inputs_embeds_with_token_type_ids() is removed
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
+ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
+                                                   const std::vector<EncodedImage>& images,
+                                                   VLMPerfMetrics& metrics,
+                                                   bool recalculate_merged_embeddings,
+                                                   const std::vector<size_t>& images_sequence) {
+    return get_inputs_embeds(prompt, images, {}, metrics, recalculate_merged_embeddings, images_sequence, {});
+}
+
+ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
     const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    const std::vector<EncodedVideo>& videos,
-    VLMPerfMetrics& metrics,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence,
-    const std::vector<size_t>& videos_sequence) {
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
+) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
@@ -581,7 +591,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
 
     if (image_embeds.empty() && video_embeds.empty()) {
         text_embeds.copy_to(inputs_embeds);
-        return {std::move(inputs_embeds), std::move(input_ids)};
+        return inputs_embeds;
     }
 
     // Merge image embeddings at image_token_id positions
@@ -598,27 +608,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
             utils::merge_text_and_image_embeddings_llava(input_ids, inputs_embeds, video_embeds, m_video_token_id);
     }
 
-    return {std::move(inputs_embeds), std::move(input_ids)};
-}
-
-ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(const std::string& prompt,
-                                                   const std::vector<EncodedImage>& images,
-                                                   VLMPerfMetrics& metrics,
-                                                   bool recalculate_merged_embeddings,
-                                                   const std::vector<size_t>& images_sequence) {
-    return compute_inputs_embeds(prompt, images, {}, metrics, images_sequence, {}).first;
-}
-
-ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
-    const std::string& prompt,
-    const std::vector<ov::genai::EncodedImage>& images,
-    const std::vector<ov::genai::EncodedVideo>& videos,
-    ov::genai::VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& images_sequence,
-    const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    return compute_inputs_embeds(prompt, images, videos, metrics, images_sequence, videos_sequence).first;
+    return inputs_embeds;
 }
 
 bool InputsEmbedderGemma4::has_token_type_ids() const {
