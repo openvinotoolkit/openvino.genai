@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <unordered_map>
 
 #include "visual_language/vlm_config.hpp"
 
@@ -42,6 +43,8 @@ public:
 
     bool has_token_type_ids() const override;
 
+    const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
     NormalizedPrompt normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const override;
@@ -50,7 +53,7 @@ public:
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
 
-protected:
+private:
     /**
      * @brief Patches the original Gemma3 chat template by removing trim filters.
      *
@@ -66,6 +69,9 @@ protected:
      * Removing trim filters in the chat template resolves this issue with different formatting order.
      */
     void patch_chat_template();
+
+    // Extra inputs to pass to the language model (token_type_ids)
+    std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs;
 };
 
 } // namespace ov::genai

@@ -529,6 +529,7 @@ ov::Tensor InputsEmbedderGemma4::get_per_layer_embeddings(const ov::Tensor& inpu
     return result;
 }
 
+// TODO Move to get_inputs_embeds() after get_inputs_embeds_with_token_type_ids() is removed
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
@@ -562,15 +563,19 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::compute_inputs_embeds(
 
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
 
+    encode_vision_token_ids();
+
     if (has_per_layer_embeddings()) {
         m_lm_extra_inputs["per_layer_inputs"] = get_per_layer_embeddings(input_ids);
+    }
+
+    if (has_token_type_ids()) {
+        m_lm_extra_inputs["token_type_ids"] = get_token_type_ids(input_ids);
     }
 
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
-
-    encode_vision_token_ids();
 
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
 
@@ -649,6 +654,7 @@ bool InputsEmbedderGemma4::has_token_type_ids() const {
 }
 
 ov::Tensor InputsEmbedderGemma4::get_token_type_ids(const ov::Tensor& input_ids) {
+    OPENVINO_ASSERT(m_image_token_id != -1 && m_video_token_id != -1, "Vision token IDs must be initialized");
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
     const size_t num_elements = input_ids.get_size();
     ov::Tensor token_type_ids(ov::element::i64, input_ids.get_shape());

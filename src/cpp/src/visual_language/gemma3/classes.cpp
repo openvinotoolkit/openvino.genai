@@ -128,16 +128,13 @@ void InputsEmbedderGemma3::patch_chat_template() {
     m_tokenizer.set_chat_template(patched_chat_template);
 }
 
-ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-    OPENVINO_THROW(
-        "[InputsEmbedderGemma3] The method get_inputs_embeds is not supported for Gemma3 models because token type IDs are required to distinguish between text and image tokens in the input sequence. "
-        "Please use get_inputs_embeds_with_token_type_ids instead, which returns both the input embeddings and the necessary token type IDs. "
-        "This is required for correct processing of multimodal inputs in Gemma3."
-    );
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_token_type_ids(const std::string& unified_prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
-
+ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(
+    const std::string& unified_prompt,
+    const std::vector<EncodedImage>& images,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& images_sequence
+) {
     std::vector<ov::Tensor> image_embeds;
     image_embeds.reserve(images_sequence.size());
     for (size_t new_image_id : images_sequence) {
@@ -155,11 +152,12 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_t
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
 
         const size_t seq_len = text_embeds.get_shape()[1];
-        std::vector<int64_t> token_type_ids_data(seq_len, 0);
-        ov::Tensor token_type_ids_all_0(ov::element::i64, {1, seq_len});
-        std::fill_n(token_type_ids_all_0.data<int64_t>(), seq_len, 0);
 
-        return {inputs_embeds, token_type_ids_all_0};
+        ov::Tensor token_type_ids_all_0(ov::element::i64, {1, seq_len});
+        std::fill_n(token_type_ids_all_0.data<int64_t>(), token_type_ids_all_0.get_size(), 0);
+        m_lm_extra_inputs["token_type_ids"] = token_type_ids_all_0;
+
+        return inputs_embeds;
     }
 
     auto start_tokenizer_time = std::chrono::steady_clock::now();
@@ -179,8 +177,27 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_t
     for (size_t i = 0; i < num_elements; ++i) {
         token_type_data[i] = (input_ids_data[i] == image_token_id) ? 1 : 0;
     }
+    m_lm_extra_inputs["token_type_ids"] = token_type_ids;
 
+    return inputs_embeds;
+}
+
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_token_type_ids(
+    const std::string& unified_prompt,
+    const std::vector<EncodedImage>& images,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& images_sequence
+) {
+    const auto inputs_embeds = get_inputs_embeds(unified_prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
+    OPENVINO_ASSERT(m_lm_extra_inputs.find("token_type_ids") != m_lm_extra_inputs.end(),
+        "[InputsEmbedderGemma3] token_type_ids not found in lm_extra_inputs");
+    const auto token_type_ids = m_lm_extra_inputs.at("token_type_ids");
     return {inputs_embeds, token_type_ids};
+}
+
+const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma3::get_lm_extra_inputs() const {
+    return m_lm_extra_inputs;
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderGemma3::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
