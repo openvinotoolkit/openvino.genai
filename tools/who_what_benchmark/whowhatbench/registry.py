@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 
 # Registry for evaluators
@@ -45,7 +46,9 @@ class Evaluator(ABC):
 
 class BaseEvaluator(Evaluator):
     def dump_gt(self, csv_name: str):
+        Path(csv_name).parent.mkdir(parents=True, exist_ok=True)
         self.gt_data.to_csv(csv_name)
 
     def dump_predictions(self, csv_name: str):
+        Path(csv_name).parent.mkdir(parents=True, exist_ok=True)
         self.predictions.to_csv(csv_name)

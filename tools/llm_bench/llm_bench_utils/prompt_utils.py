@@ -7,6 +7,7 @@ import os
 import numpy as np
 from PIL import Image
 import logging as log
+import librosa
 from transformers.image_utils import load_image
 from .model_utils import get_param_from_file, resolve_media_file_path
 from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data
@@ -97,13 +98,32 @@ def load_image_genai(image_path):
     return ov.Tensor(image_data)
 
 
+def load_audio_genai(audio_path):
+    # GenAI pipelines expect a 16 kHz mono waveform tensor.
+    audio_data, _ = librosa.load(audio_path, sr=16000, mono=True)
+    return ov.Tensor(audio_data.astype(np.float32))
+
+
+def load_audio_optimum(audio_path):
+    # Optimum processors resample internally; return (array, native_rate).
+    return librosa.load(audio_path, sr=None, mono=True)
+
+
 def extract_prompt_data(inputs, required_frames, genai_flag):
-    prompts, images, videos = [], [], []
+    prompts, images, videos, audios = [], [], [], []
+
+    def _normalize_to_list(value):
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return [value]
+
     if not isinstance(inputs, (list, tuple, set)):
         inputs = [inputs]
     for input_data in inputs:
-        if input_data.get("video") is not None:
-            entry = Path(input_data["video"])
+        for video_item in _normalize_to_list(input_data.get("video")):
+            entry = Path(video_item)
             if entry.is_dir():
                 for filename in sorted(entry.iterdir()):
                     video_tensor = make_video_tensor(filename, required_frames, genai_flag)
@@ -111,35 +131,68 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
             else:
                 video_tensor = make_video_tensor(entry, required_frames, genai_flag)
                 videos.append(video_tensor)
-        if input_data.get("media") is not None:
-            func_load_image = load_image_genai if genai_flag else load_image
-            entry = Path(input_data["media"])
+
+        func_load_image = load_image_genai if genai_flag else load_image
+        for media_item in _normalize_to_list(input_data.get("media")):
+            entry = Path(media_item)
             if entry.is_dir():
                 for file in sorted(entry.iterdir()):
                     img = func_load_image(str(file))
                     images.append(img)
             else:
-                img = func_load_image(input_data["media"])
+                img = func_load_image(media_item)
                 images.append(img)
-        prompts.append(input_data["prompt"])
-    return prompts, images, videos
+
+        if input_data.get("audio") is not None:
+            func_load_audio = load_audio_genai if genai_flag else load_audio_optimum
+            for audio_item in _normalize_to_list(input_data.get("audio")):
+                audios.append(func_load_audio(str(audio_item)))
+        prompts.append(input_data.get("prompt", ""))
+    return prompts, images, videos, audios
 
 
 def get_vlm_prompt(args):
     vlm_file_list = []
+
+    def _resolve_media_path(vlm_input_item, prompt_file_path):
+        for media_key in ["media", "video", "audio"]:
+            if media_key in vlm_input_item and vlm_input_item[media_key] is not None:
+                if isinstance(vlm_input_item[media_key], list):
+                    vlm_input_item[media_key] = [
+                        resolve_media_file_path(item, prompt_file_path) for item in vlm_input_item[media_key]
+                    ]
+                elif vlm_input_item[media_key] is not None:
+                    vlm_input_item[media_key] = resolve_media_file_path(vlm_input_item[media_key], prompt_file_path)
+
     output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
     if is_json_data:
         vlm_param_list = parse_vlm_json_data(output_data_list)
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'media' in vlm_file:
-                    vlm_file['media'] = resolve_media_file_path(vlm_file.get('media'), args['prompt_file'][0])
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0 and 'video' in vlm_file:
-                    vlm_file['video'] = resolve_media_file_path(vlm_file.get('video'), args['prompt_file'][0])
+                if isinstance(vlm_file, list):
+                    for chat_iter in vlm_file:
+                        _resolve_media_path(chat_iter, args["prompt_file"][0])
+                else:
+                    _resolve_media_path(vlm_file, args["prompt_file"][0])
                 vlm_file_list.append(vlm_file)
     else:
         vlm_file_list.append(output_data_list)
     return vlm_file_list
+
+
+def get_text_embed_prompt(args):
+    output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
+    if not is_json_data:
+        return [output_data_list[0]]
+
+    result = []
+    for vlm_file in parse_vlm_json_data(output_data_list, optional_prompt=True):
+        if args["prompt_file"] and "media" in vlm_file:
+            vlm_file["media"] = resolve_media_file_path(vlm_file.get("media"), args["prompt_file"][0])
+        if args["prompt_file"] and "video" in vlm_file:
+            vlm_file["video"] = resolve_media_file_path(vlm_file.get("video"), args["prompt_file"][0])
+        result.append(vlm_file)
+    return result
 
 
 def get_image_prompt(args):

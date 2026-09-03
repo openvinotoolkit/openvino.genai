@@ -35,6 +35,11 @@ struct NormalizedPrompt {
 class InputsEmbedder {
 public:
     InputsEmbedder(const std::filesystem::path& model_dir,
+                   const Tokenizer& tokenizer,
+                   const std::string& device,
+                   const ov::AnyMap device_config);
+
+    InputsEmbedder(const std::filesystem::path& model_dir,
                    const std::string& device,
                    const ov::AnyMap device_config);
 
@@ -78,7 +83,12 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    );
+
+    void encode_audios(const std::vector<ov::Tensor>& audios);
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
@@ -205,7 +215,12 @@ private:
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
-        virtual std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
+        virtual std::vector<ov::genai::EncodedVideo> encode_videos(
+            const std::vector<ov::Tensor>& videos,
+            const std::vector<VideoMetadata>& videos_metadata = {}
+        );
+
+        virtual void encode_audios(const std::vector<ov::Tensor>& audios) {}
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
         
@@ -285,6 +300,7 @@ private:
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
+            const Tokenizer& tokenizer,
             const std::string& device,
             const ov::AnyMap device_config);
 
@@ -323,12 +339,23 @@ private:
         ) const;
 
         /**
+         * @brief Sample video frames if metadata indicates sampling is needed.
+         */
+        ov::Tensor sample_video_if_needed(const ov::Tensor& video, const VideoMetadata& metadata) const;
+
+        /**
         * @brief Converts a vector of batched images ([NHWC]) into a vector of individual image tensors ([1HWC]).
         *
         * @param images A vector of tensors representing the images. Each tensor can have a shape of either [NHWC] or [HWC].
         * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
         */
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
+
+        ov::Tensor get_text_embedding(
+            EmbeddingsRequest& req,
+            const ov::Tensor& input_ids,
+            ov::genai::VLMPerfMetrics& metrics
+        );
 
         /**
          * @brief Check if CDPruner is available and enabled.
@@ -370,9 +397,14 @@ private:
     friend class InputsEmbedderQwen2VL;
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderQwen3VL;
+    friend class InputsEmbedderQwen3_5;
+    friend class InputsEmbedderQwen3Omni;
     friend class InputsEmbedderGemma3;
+    friend class InputsEmbedderGemma3n;
     friend class InputsEmbedderGemma4;
+    friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
+    friend class InputsEmbedderMuseGlimmer;
 };
 
 template <typename Func>

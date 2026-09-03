@@ -1,0 +1,324 @@
+# Test matrix for the manylinux genai_tests_wheel job.
+# Each entry runs when any of its `components` is affected (has `.test`).
+- name: ASR
+  # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"
+  timeout: 120
+  components:
+    - automatic_speech_recognition
+
+- name: ASR (Qwen3-ASR)
+  cmd: |-
+    # optimum intel master commit with Qwen3-ASR support
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4"
+    python -m pip install transformers==4.57.6 qwen-asr==0.0.6
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "qwen3-asr"
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
+- name: ASR (Fun-ASR)
+  cmd: |-
+    # optimum intel master commit with Fun-ASR support
+    python -m pip install --no-deps --force-reinstall "optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@e1de5beecfd0c3ae6047ea22cea4a4cad4307aff"
+    python -m pip install transformers==4.57.6 funasr==1.4.1
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -k "fun-asr"
+  timeout: 20
+  components:
+    - automatic_speech_recognition
+
+- name: Cacheopt E2E (Part 1)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py
+  timeout: 180
+  components:
+    - continuous_batching
+
+- name: Cacheopt E2E (Part 2)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py
+  timeout: 360
+  components:
+    - continuous_batching
+
+- name: Cacheopt E2E (xattention)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_sparse_prefill.py
+  timeout: 180
+  components:
+    - continuous_batching
+
+- name: LLM
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_llm_pipeline.py ./tests/python_tests/test_llm_pipeline_static.py ./tests/python_tests/test_structured_output.py ./tests/python_tests/test_image_generation.py ./tests/python_tests/test_image_generation_multi_call.py -m "not transformers_lower_v5" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - LLM
+    - Image_generation
+
+- name: LLM with transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
+    python -m pytest -v ./tests/python_tests/test_llm_pipeline.py ./tests/python_tests/test_llm_pipeline_static.py ./tests/python_tests/test_structured_output.py ./tests/python_tests/test_image_generation.py ./tests/python_tests/test_image_generation_multi_call.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - LLM
+    - Image_generation
+
+- name: VLM (match_optimum_with_resolutions)
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -k "test_vlm_pipeline_match_optimum_with_resolutions" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - visual_language
+
+- name: VLM
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "not transformers_lower_v5" -k "not test_vlm_pipeline_match_optimum_with_resolutions and not videochat and not qwen3-vl and not eagle3" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - visual_language
+
+- name: Video Generation
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 60
+  components:
+    - video_generation
+
+- name: Kokoro TTS
+  cmd: |-
+    python -m pytest -s -v tests/python_tests/test_kokoro_pipeline.py
+  timeout: 60
+  components:
+    - speech_generation
+
+- name: Misaki C++ Parity
+  cmd: |-
+    rm -rf ./build_misaki_cpp_ci
+    unset CMAKE_CXX_COMPILER_LAUNCHER
+    unset CMAKE_C_COMPILER_LAUNCHER
+    cmake -S ./src/cpp/src/speech_generation/misaki_cpp -B ./build_misaki_cpp_ci -DMISAKI_CPP_BUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER:STRING= -DCMAKE_C_COMPILER_LAUNCHER:STRING=
+    cmake --build ./build_misaki_cpp_ci --target misaki_cpp_py --parallel
+    export PYTHONPATH="./build_misaki_cpp_ci:./build_misaki_cpp_ci/Release:${PYTHONPATH}"
+    python -m pytest -s -v src/cpp/src/speech_generation/misaki_cpp/tests/test_misaki_cpp_parity.py
+  timeout: 30
+  components:
+    - speech_generation
+
+- name: GGUF Reader tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_gguf_reader.py
+  timeout: 60
+  components:
+    - GGUF
+    - LLM
+
+- name: Tokenizer tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_tokenizer.py
+  timeout: 60
+  components:
+    - tokenizers
+
+- name: API tests
+  cmd: |-
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3 and not qwen35_mtp and not transformers_lower_v5" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+  timeout: 60
+  components:
+    - continuous_batching
+    - sampling
+    - text_streamer
+
+- name: Rag tests
+  # Pin optimum which supports qwen3-vl-embedding
+  cmd: |-
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@f48d93fddff8c91e198389c47a6d5974789b67f4#egg=optimum-intel"
+    python -m pytest -v ./tests/python_tests/test_rag.py
+  timeout: 35
+  components:
+    - RAG
+
+- name: WWB tests
+  cmd: |-
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests --ignore=./tools/who_what_benchmark/tests/test_cli_image.py --ignore=./tools/who_what_benchmark/tests/test_cli_vlm.py --ignore=./tools/who_what_benchmark/tests/test_cli_videos.py --ignore=./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB ASR tests (FunASR)
+  cmd: |-
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@4b025618bdf981ad9539d4f8daf56755ebee03d2#egg=optimum-intel"
+    python -m pip install transformers==4.57.6 "whowhatbench[funasr]"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_speech_recognition.py -k "funasr"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB tests (image, VLM, video)
+  cmd: |-
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: WWB tests with transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tools/who_what_benchmark/tests -m "transformers_dependent or transformers_lower_v5" -k "not videochat"
+  timeout: 120
+  components:
+    - WWB
+
+- name: EAGLE3 speculative decoding tests
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: Gemma4 MTP speculative decoding tests
+  cmd: |-
+    python -m pip install git+https://github.com/openvino-agent/optimum-intel.git@support_mtp
+    python -m pip install transformers==5.8.0
+    python -m pytest -v ./tests/python_tests/test_stateful_speculative_decoding.py -k "gemma4_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: Qwen3.5 MTP speculative decoding tests
+  cmd: |-
+    python -m pip install -U "optimum-intel @ git+https://github.com/openvino-agent/optimum-intel.git@qwen35_mtp"
+    pip install transformers==5.2.0
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "qwen35_mtp"
+  timeout: 90
+  components:
+    - speculative_decoding
+
+- name: WWB tests (nanollava)
+  cmd: |-
+    # optimum intel commit compatible with transformers 4.48
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@140e49a68718ab0025a3b5f02864b9ca9f009558#egg=optimum-intel"
+    python -m pip install transformers==4.48.0 diffusers==0.35.2
+    python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
+  timeout: 90
+  components:
+    - WWB
+
+- name: WWB tests (videochat)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tools/who_what_benchmark/tests -k "videochat"
+  timeout: 90
+  components:
+    - WWB
+
+- name: VLM (MiniCPM-o-2_6)
+  cmd: |-
+    python -m pip install transformers==4.51.3 diffusers==0.37.1
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (videochat)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "videochat"
+  timeout: 90
+  components:
+    - visual_language
+
+- name: VLM (qwen3-vl)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pip install --no-deps "git+https://github.com/huggingface/optimum-intel.git@b254b32cd9c18ad3bfa6fbe41267cf3b6fabba38#egg=optimum-intel"
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl or eagle3"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: LLM (qwen3-next)
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -s -v tests/python_tests/test_llm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-next"
+  timeout: 60
+  components:
+    - LLM
+
+- name: VLM (qwen3.5)
+  cmd: |-
+    python -m pip install transformers==5.2.0
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3.5"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (gemma3n)
+  cmd: |-
+    python -m pip install transformers==4.57.0
+    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@09d4c961f7ccc99f445dd3418fb85b9a46547ce4
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma3n"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (gemma4)
+  cmd: |-
+    python -m pip install transformers==5.5.0
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4 and not gemma4-unified"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (gemma4-unified)
+  cmd: |-
+    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@3e159833682a192132094443b7ff8da3d7d46c42
+    python -m pip install transformers==5.10.0
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "gemma4-unified"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: VLM (deepseek-ocr-2)
+  cmd: |-
+    pip install --no-deps git+https://github.com/huggingface/optimum-intel.git@e3929c8d145384df49faa843c22c143b37305201
+    python -m pip install transformers==5.11.0
+    pip show transformers optimum-intel openvino_tokenizers openvino_genai
+    python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "deepseek-ocr-2"
+  timeout: 60
+  components:
+    - visual_language
+
+- name: ASR Transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "transformers_lower_v5"
+  timeout: 120
+  components:
+    - automatic_speech_recognition
+
+- name: VLM with transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
+    python -m pytest -v ./tests/python_tests/test_vlm_pipeline.py -m "transformers_lower_v5 or transformers_dependent" --override-ini cache_dir=/mount/caches/pytest/
+  timeout: 90
+  components:
+    - visual_language
+
+- name: API tests transformers under 5.0
+  cmd: |-
+    python -m pip install transformers==4.57.6 diffusers==0.37.1
+    python -m pytest -v ./tests/python_tests/test_continuous_batching.py -m "transformers_lower_v5 or transformers_dependent" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py
+  timeout: 60
+  components:
+    - continuous_batching
+    - sampling
+    - text_streamer

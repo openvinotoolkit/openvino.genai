@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <regex>
 
 #include "load_image.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -77,14 +78,19 @@ int main(int argc, char* argv[]) try {
     std::filesystem::path models_path = argv[1];
     ov::genai::ModelsMap models_map;
 
-    std::map<std::string, std::string> model_name_to_file_map = {
-        {"language", "openvino_language_model"},
-        {"resampler", "openvino_resampler_model"},
-        {"text_embeddings", "openvino_text_embeddings_model"},
-        {"vision_embeddings", "openvino_vision_embeddings_model"}};
+    static const std::regex model_name_regex = std::regex("^openvino_|_model$");
+    for (const auto& entry : std::filesystem::directory_iterator(models_path)) {
+        if (entry.path().extension() != ".xml")
+            continue;
+        const std::string stem = entry.path().stem().string();
+        if (stem.find("tokenizer") != std::string::npos)
+            continue;
+        const std::filesystem::path bin_file = entry.path().parent_path() / (stem + ".bin");
+        if (!std::filesystem::exists(bin_file))
+            continue;
 
-    for (const auto& [model_name, file_name] : model_name_to_file_map) {
-        models_map.emplace(model_name, decrypt_model(models_path, file_name + ".xml", file_name + ".bin"));
+        std::string model_name = std::regex_replace(stem, model_name_regex, "");
+        models_map.emplace(model_name, decrypt_model(models_path, stem + ".xml", stem + ".bin"));
     }
 
     ov::genai::Tokenizer tokenizer = decrypt_tokenizer(models_path);

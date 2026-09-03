@@ -16,6 +16,7 @@ from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
 from kv_cache_eviction_utils import get_scheduler_config
 from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
+from optimum.intel.utils.import_utils import is_transformers_version
 
 
 def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
@@ -158,8 +159,8 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
     assert similarity_metric > test_struct.similarity_threshold
     assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
-    assert pipeline_opt_metrics.kv_cache_size_in_bytes > 0
-    assert pipeline_noopt_metrics.kv_cache_size_in_bytes > 0
+    assert pipeline_opt_metrics.cache_size_in_bytes > 0
+    assert pipeline_noopt_metrics.cache_size_in_bytes > 0
 
 
 def get_greedy_seq_len_300() -> GenerationConfig:
@@ -178,13 +179,55 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
     return generation_config
 
 
-scheduler_params_list = [
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False}, get_greedy_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False}, get_beam_search_seq_len_300()),
-    ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300()),
-]
+if is_transformers_version("<", "5.0"):
+    # error: group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790
+    scheduler_params_list = [
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "enable_prefix_caching": True,
+            },
+            get_beam_search_seq_len_300(),
+        ),
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "enable_prefix_caching": False,
+            },
+            get_beam_search_seq_len_300(),
+        ),
+    ]
+else:
+    scheduler_params_list = [
+        (
+            {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True},
+            get_greedy_seq_len_300(),
+        ),
+        (
+            {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False},
+            get_greedy_seq_len_300(),
+        ),
+        (
+            {
+                "num_kv_blocks": 0,
+                "cache_size": 0,
+                "dynamic_split_fuse": False,
+                "max_num_batched_tokens": 600,
+                "use_cache_eviction": True,
+                "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG,
+            },
+            get_greedy_seq_len_300(),
+        ),
+    ]
+
+
+@pytest.mark.transformers_dependent
 @pytest.mark.parametrize("params", scheduler_params_list)
 def test_dynamic_memory_allocation(params):
     prompts, _ = get_test_dataset()

@@ -17,7 +17,6 @@ from openvino_genai import (
     StreamerBase, 
     DecodedResults,
 )
-
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
 from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
@@ -66,8 +65,10 @@ MAIN_PIPELINE_TYPES = (
 
 LINEAR_ATTENTION_PIPELINE_TYPES = (
     PipelineType.STATEFUL,
-    PipelineType.AUTO,
+    PipelineType.PAGED_ATTENTION,
 )
+
+LINEAR_ATTENTION_SPECULATIVE_PIPELINE_TYPES = (PipelineType.PROMPT_LOOKUP_DECODING,)
 
 ALL_PIPELINE_TYPES = (
     *MAIN_PIPELINE_TYPES,

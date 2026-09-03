@@ -2,11 +2,15 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-def create_base_prompt(json_data, key='prompt'):
+
+def create_base_prompt(json_data, key="prompt", optional=False):
     prompt_data = {}
     if key not in json_data:
+        if optional:
+            prompt_data[key] = ""
+            return prompt_data
         raise RuntimeError(f"== key word '{key}' does not exist ==")
-    if json_data[key] == "":
+    if json_data[key] == "" and not optional:
         raise RuntimeError(f"== {key} should not be empty string ==")
     prompt_data[key] = json_data[key]
     return prompt_data
@@ -20,15 +24,27 @@ def parse_text_json_data(json_data_list):
     return text_param_list
 
 
-def parse_vlm_json_data(json_data_list):
+def parse_vlm_json_data(json_data_list, optional_prompt=False):
     text_param_list = []
     for json_data in json_data_list:
-        prompt_data = create_base_prompt(json_data)
-        for param in ["media", "video"]:
-            if param in json_data:
-                prompt_data[param] = json_data[param]
+        data_list = json_data
+        chat_mode = isinstance(json_data, list)
+        if not chat_mode:
+            data_list = [json_data]
 
-        text_param_list.append(prompt_data)
+        new_data = []
+        for data in data_list:
+            prompt_data = create_base_prompt(data, optional=optional_prompt)
+            for param in ["media", "video", "audio"]:
+                if param in data:
+                    prompt_data[param] = data[param]
+            new_data.append(prompt_data)
+
+        if chat_mode:
+            text_param_list.append(new_data)
+        else:
+            text_param_list.extend(new_data)
+
     return text_param_list
 
 
@@ -75,5 +91,7 @@ def parse_speech_json_data(json_data_list):
             speech_param["language"] = json_data["language"]
         if "timestamp" in json_data:
             speech_param["timestamp"] = json_data["timestamp"]
+        if "prompt" in json_data:
+            speech_param["prompt"] = json_data["prompt"]
         speech_param_list.append(speech_param)
     return speech_param_list

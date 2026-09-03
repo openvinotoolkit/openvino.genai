@@ -20,9 +20,13 @@ public:
     explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
 
 protected:
+    // Loads processor configuration while deferring model compilation to subclasses.
+    VisionEncoderQwen2VL(const std::filesystem::path& config_dir, ConfigOnlyTag);
+    VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);
+
     /**
      * @brief Encodes video frames by grouping them into chunks of config.temporal_patch_size adjacent frames
      * and saves results into the encoded_video struct.
@@ -59,6 +63,7 @@ public:
     InputsEmbedderQwen2VL(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
+        const Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap device_config);
 
@@ -82,7 +87,10 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
-    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    ) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
@@ -153,7 +161,7 @@ protected:
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
     ) const;
 
-    ov::Tensor create_position_ids(
+    virtual std::pair<ov::Tensor, int64_t> create_position_ids(
         const ov::Tensor& input_ids_tensor,
         const std::vector<std::array<size_t, 3>>& images_grid_thw,
         const std::vector<size_t>& images_sequence,
@@ -175,6 +183,15 @@ protected:
 };
 
 namespace qwen2_vl_utils {
+
+ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels);
+
+ov::Tensor reshape_image_patches(
+    const ov::Tensor& patches,
+    size_t grid_t, size_t grid_h, size_t grid_w,
+    size_t channel, size_t temporal_patch_size, size_t patch_size, size_t merge_size);
+
+ov::Tensor transpose_image_patches(const ov::Tensor& reshaped_patches);
 
 std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
     const std::vector<EncodedImage>& encoded_images,

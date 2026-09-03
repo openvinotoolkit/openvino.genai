@@ -33,7 +33,7 @@ void save_video(const std::string& filename,
         }
 
         const int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
-        cv::VideoWriter writer(out, fourcc, static_cast<double>(fps), cv::Size(W, H), true);
+        cv::VideoWriter writer(out, cv::CAP_OPENCV_MJPEG, fourcc, static_cast<double>(fps), cv::Size(W, H), true);
         if (!writer.isOpened())
             throw std::runtime_error("VideoWriter failed to open: " + out);
 

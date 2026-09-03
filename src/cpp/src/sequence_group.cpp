@@ -9,9 +9,10 @@ namespace genai {
 
 std::mutex Sequence::m_counter_mutex;
 
-size_t Sequence::_make_hash(size_t content_length) {
+size_t Sequence::_make_hash(size_t content_length, size_t block_size) {
+    OPENVINO_ASSERT(content_length > 0, "Hash computation requires positive content length");
+    OPENVINO_ASSERT(block_size > 0, "Hash computation requires positive block size");
         auto sequence_group = get_sequence_group_ptr();
-        auto block_size = sequence_group->get_block_size();
         size_t block_start_idx = content_length - (content_length % block_size);
         if (block_start_idx == content_length) {
             block_start_idx -= block_size;
@@ -80,23 +81,29 @@ std::vector<int64_t> Sequence::_reduce_embedding(const std::vector<float>& embed
 // Each KV block can be uniquely identified by 
 // the tokens within the block and the tokens in the prefix before the block.
 // hash(prefix tokens + block tokens) <--> KV Block
-size_t Sequence::get_hash(size_t content_length) {
+size_t Sequence::get_hash(size_t content_length, size_t block_size) {
 
     auto sequence_group = get_sequence_group_ptr();
     OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
-    auto content_len = content_length == 0 ? sequence_group->get_context_len() : content_length;
-    auto block_size = sequence_group->get_block_size();
+    OPENVINO_ASSERT(content_length > 0, "Hash computation requires positive content length");
+    OPENVINO_ASSERT(block_size > 0, "Hash computation requires positive block size");
     size_t cur_content = block_size * (m_prefix_hashes.size() + 1);
-    while (cur_content <= content_len)
+    while (cur_content <= content_length)
     {
-        m_prefix_hashes.push_back(_make_hash(cur_content));
+        m_prefix_hashes.push_back(_make_hash(cur_content, block_size));
         cur_content += block_size;
     }
-    if (content_len % block_size == 0) {
-        return m_prefix_hashes[content_len / block_size - 1];
+    if (content_length % block_size == 0) {
+        return m_prefix_hashes[content_length / block_size - 1];
     }
     
-    return _make_hash(content_len);
+    return _make_hash(content_length, block_size);
+}
+
+size_t Sequence::get_hash(size_t block_size) {
+    auto sequence_group = get_sequence_group_ptr();
+    OPENVINO_ASSERT(sequence_group, "Hash computation requires setting of sequence_group ptr.");
+    return get_hash(sequence_group->get_context_len(), block_size);
 }
 }  // namespace genai
 }  // namespace ov

@@ -9,11 +9,19 @@ import {
   TextRerankPipelineOptions,
 } from "./pipelines/textRerankPipeline.js";
 import { WhisperPipeline as Whisper } from "./pipelines/whisperPipeline.js";
+import { ASRPipeline as ASR } from "./pipelines/asrPipeline.js";
+import { Text2ImagePipeline as Text2Image } from "./pipelines/text2ImagePipeline.js";
+import { Image2ImagePipeline as Image2Image } from "./pipelines/image2ImagePipeline.js";
+import { InpaintingPipeline as Inpainting } from "./pipelines/inpaintingPipeline.js";
 import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipeline.js";
 import {
   LLMPipelineProperties,
   VLMPipelineProperties,
   WhisperPipelineProperties,
+  ASRPipelineProperties,
+  Text2ImagePipelineProperties,
+  Image2ImagePipelineProperties,
+  InpaintingPipelineProperties,
   Text2SpeechPipelineProperties,
 } from "./utils.js";
 
@@ -77,6 +85,50 @@ class PipelineFactory {
     return pipeline;
   }
 
+  static async ASRPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: ASRPipelineProperties = {},
+  ) {
+    const pipeline = new ASR(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  static async Text2ImagePipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Text2ImagePipelineProperties = {},
+  ) {
+    const pipeline = new Text2Image(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  static async Image2ImagePipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: Image2ImagePipelineProperties = {},
+  ) {
+    const pipeline = new Image2Image(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  static async InpaintingPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: InpaintingPipelineProperties = {},
+  ) {
+    const pipeline = new Inpainting(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
   static async Text2SpeechPipeline(
     modelPath: string,
     device: string = "CPU",
@@ -95,19 +147,28 @@ export const {
   TextEmbeddingPipeline,
   TextRerankPipeline,
   WhisperPipeline,
+  ASRPipeline,
+  Text2ImagePipeline,
+  Image2ImagePipeline,
+  InpaintingPipeline,
   Text2SpeechPipeline,
 } = PipelineFactory;
 export {
   DecodedResults,
   VLMDecodedResults,
   WhisperDecodedResults,
+  ASRDecodedResults,
   Text2SpeechDecodedResults,
 } from "./decodedResults.js";
 export type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
+export type { ASRDecodedResultChunk } from "./decodedResults.js";
 export {
   PerfMetrics,
   VLMPerfMetrics,
   WhisperPerfMetrics,
+  ASRPerfMetrics,
+  ImageGenerationPerfMetrics,
+  Text2ImagePerfMetrics,
   Text2SpeechPerfMetrics,
 } from "./perfMetrics.js";
 export * from "./utils.js";

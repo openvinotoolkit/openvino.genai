@@ -6,7 +6,7 @@ import sys
 from setuptools import find_packages, setup
 
 with open("requirements.txt") as f:
-    required = f.read().splitlines()
+    required = [line.strip() for line in f.read().splitlines() if line.strip() and not line.lstrip().startswith("#")]
 
 
 is_installing_editable = "develop" in sys.argv
@@ -47,20 +47,27 @@ setup(
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
     package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json"]},
     extras_require={
+        "funasr": ["funasr==1.4.2"],
         "minicpm-o-2_6": [
-            "torch==2.10.0",
-            "torchvision==0.25.0",
-            "torchaudio==2.10.0",
+            "torch==2.13.0",
+            "torchvision==0.28.0",
+            "torchaudio==2.11.0",
             "transformers>=4.50,<=4.51.3",
             "optimum-intel==1.27.0",
         ],
         "llm-test-openvino": [
-            "torchaudio==2.8.0",
-            "transformers[sentencepiece]==4.57.6",
+            "torchaudio==2.11.0",
+            "transformers[sentencepiece]==5.0.0",
             "sentence_transformers==5.3.0",
-            "huggingface-hub==0.36.2",
-            "tqdm==4.67.3",
-            "optimum-intel[nncf,tests]==1.27.0",
+            "huggingface-hub==1.22.0",
+            "tqdm==4.70.0",
+            "optimum-intel[nncf,tests]==2.0.0",
+        ],
+        "kokoro": [
+            "spacy==3.8.14",
+            "kokoro==0.9.4",
+            "transformers==4.57.6",
+            "optimum-intel[nncf] @ https://github.com/huggingface/optimum-intel/archive/a8c4734741e766ef95d7f1a7d1e29a1d4ba2ab8f.tar.gz",
         ],
     },
 )

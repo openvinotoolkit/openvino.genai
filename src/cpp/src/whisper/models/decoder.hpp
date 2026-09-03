@@ -18,7 +18,8 @@ public:
                                                      const ov::PartialShape& lhs_shape,
                                                      const bool decompose_cross_attention_spda_ops);
 
-    std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state, const int64_t decoder_start_token_id);
+    std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state,
+                                              const WhisperGenerationConfig& config);
 
     virtual void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) = 0;
 

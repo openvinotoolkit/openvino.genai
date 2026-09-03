@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, before } from "node:test";
+import os from "node:os";
 import assert from "node:assert/strict";
 import { TextRerankPipeline } from "../dist/index.js";
 
@@ -19,7 +20,8 @@ const docs = [
 ];
 const query = "What is the weather in London?";
 
-describe("TextRerankPipeline", () => {
+// Skip due to CVS-179949
+describe("TextRerankPipeline", { skip: os.platform() === "darwin" }, () => {
   let pipeline = null;
 
   before(async () => {
@@ -65,7 +67,8 @@ describe("TextRerankPipeline", () => {
   });
 });
 
-describe("TextRerankPipeline initialization", () => {
+// Skip due to CVS-179949
+describe("TextRerankPipeline initialization", { skip: os.platform() === "darwin" }, () => {
   it("respects top_n in config", async () => {
     const limited = await TextRerankPipeline(RERANK_MODEL_PATH, {
       device: "CPU",

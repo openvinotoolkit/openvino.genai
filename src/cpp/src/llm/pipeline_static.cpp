@@ -109,7 +109,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
     auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model, properties, kv_pos);
     m_max_prompt_len = kv_desc.max_prompt_len;
-    m_kvcache_total = kv_desc.max_prompt_len + kv_desc.min_response_len;
+    m_kvcache_total = ov::genai::utils::get_npu_kv_cache_capacity(compiled);
     m_request = compiled.create_infer_request();
     m_sampler.set_seed(m_generation_config.rng_seed);
 }
@@ -132,20 +132,29 @@ DecodedResults StatefulLLMPipeline::generate(
     }
 
     ov::genai::TokenizedInputs tokenized_input;
+    auto tokenization_start_time = start_time;
+    std::optional<float> chat_template_duration_us;
     if (m_is_chat_conversation) {
         m_history.push_back({{"role", "user"}, {"content", prompt}});
         constexpr bool add_generation_prompt = true;
+        const auto template_start_time = std::chrono::steady_clock::now();
         prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+        chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+        tokenization_start_time = std::chrono::steady_clock::now();
         // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
     } else {
         if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
+            const auto template_start_time = std::chrono::steady_clock::now();
             auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+            tokenization_start_time = std::chrono::steady_clock::now();
             tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
         } else {
             // in case when chat_template was not found in tokenizer_config.json or set
+            tokenization_start_time = std::chrono::steady_clock::now();
             tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
         }
     }
@@ -175,7 +184,10 @@ DecodedResults StatefulLLMPipeline::generate(
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    if (chat_template_duration_us.has_value()) {
+        raw_counters.chat_template_durations.emplace_back(*chat_template_duration_us);
+    }
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
@@ -194,9 +206,11 @@ DecodedResults StatefulLLMPipeline::generate(
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-    
+
     constexpr bool add_generation_prompt = true;
+    const auto template_start_time = std::chrono::steady_clock::now();
     auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+    const auto tokenization_start_time = std::chrono::steady_clock::now();
     // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
     auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
 
@@ -209,18 +223,19 @@ DecodedResults StatefulLLMPipeline::generate(
     decoded_results.scores = encoded_results.scores;
     decoded_results.finish_reasons = encoded_results.finish_reasons;
     auto decode_stop_time =  std::chrono::steady_clock::now();
-    
+
     // Update perf metrics
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    raw_counters.chat_template_durations.emplace_back(PerfMetrics::get_microsec(tokenization_start_time - template_start_time));
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
-    
+
     return decoded_results;
 }
 
@@ -305,7 +320,7 @@ EncodedResults StatefulLLMPipeline::generate(
     int64_t output_sequence_len = logits.get_shape().at(1);
 
     auto sequence_group = std::make_shared<SequenceGroup>(
-        0 /* request_id */, input_ids, config, 1 /* block_size */);
+        0 /* request_id */, input_ids, config);
     sequence_group->schedule_tokens(sequence_group->get_prompt_len());
     sequence_group->set_output_seq_len(output_sequence_len);
 
@@ -313,7 +328,10 @@ EncodedResults StatefulLLMPipeline::generate(
     GenerationHandle handle = std::make_shared<GenerationHandleImpl>(
         sequence_group->get_generation_stream(), sequence_group->get_sampling_parameters());
 
+    const auto sample_start = std::chrono::steady_clock::now();
     SamplerOutput sampler_output = m_sampler.sample({sequence_group}, logits);
+    raw_perf_counters.m_sampling_durations.emplace_back(
+        PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
     stream_generated_tokens(streamer_ptr, handle);
 
     int64_t input_ids_data = -1;
@@ -346,7 +364,10 @@ EncodedResults StatefulLLMPipeline::generate(
         raw_perf_counters.m_new_token_times.emplace_back(std::chrono::steady_clock::now());
         raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
+        const auto sample_start = std::chrono::steady_clock::now();
         SamplerOutput sampler_output = m_sampler.sample({sequence_group}, m_request.get_tensor("logits"));
+        raw_perf_counters.m_sampling_durations.emplace_back(
+            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sample_start));
         stream_generated_tokens(streamer_ptr, handle);
     }
 

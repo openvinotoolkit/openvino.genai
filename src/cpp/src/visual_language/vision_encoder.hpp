@@ -10,6 +10,7 @@
 #include "visual_language/processor_config.hpp"
 #include "visual_language/video_processor_config.hpp"
 #include "circular_buffer_queue.hpp"
+#include "openvino/genai/visual_language/video_metadata.hpp"
 
 
 namespace ov::genai {
@@ -68,26 +69,20 @@ struct EncodedImage {
     size_t num_image_tokens = 0;
 };
 
-/// @brief A struct describing video metadata of a given video.
-struct VideoMetadata {
-    float fps = 24.0f;
-    std::vector<size_t> frames_indices;
-};
-
 /// @brief Embeddings of a given video. 
 struct EncodedVideo {
     /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
     ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
-    size_t num_video_tokens;
+    size_t num_video_tokens = 0;
 
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
     ImageSize resized_source_size;
 
     /// @brief A number of encoded frames.
-    size_t frame_num;
+    size_t frame_num = 0;
 
     /// @brief Video metadata, used for video input processing and prompt normalization.
     VideoMetadata metadata;
@@ -137,13 +132,17 @@ public:
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
     /// @brief Compute embeddings of a or multiple video given
-    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) {
         OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
     }
 
     /// @brief Gets processor config
     /// @return Processor config
     ProcessorConfig get_processor_config() const;
+
+    /// @brief Gets video processor config
+    /// @return Video processor config
+    VideoProcessorConfig get_video_processor_config() const;
 
 protected:
     /// @brief  Infer requests queue for image encoding model.
@@ -156,7 +155,13 @@ protected:
     /// Used by models with separate video processor (e.g. Qwen3-VL).
     VideoProcessorConfig m_video_processor_config;
 
+    void resolve_processor_configs(const std::filesystem::path& config_dir_path);
+    
     VisionEncoder() = default;
+    // Loads processor configuration while deferring model compilation to derived encoders.
+    struct ConfigOnlyTag {};
+    VisionEncoder(const std::filesystem::path& config_dir, ConfigOnlyTag);
+    VisionEncoder(const ModelsMap& models_map, const std::filesystem::path& config_dir, ConfigOnlyTag);
 
 public:
     VisionEncoder(

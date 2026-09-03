@@ -283,6 +283,11 @@ void init_t5_encoder_model(py::module_& m);
 void init_unet2d_condition_model(py::module_& m);
 void init_sd3_transformer_2d_model(py::module_& m);
 void init_flux_transformer_2d_model(py::module_& m);
+void init_flux2_transformer_2d_model(py::module_& m);
+void init_zimage_transformer_2d_model(py::module_& m);
+void init_qwen3_text_encoder(py::module_& m);
+void init_qwen2_5_vl(py::module_& m);
+void init_qwen_image_transformer_2d_model(py::module_& m);
 void init_autoencoder_kl(py::module_& m);
 
 void init_image_generation_pipelines(py::module_& m) {
@@ -312,6 +317,11 @@ void init_image_generation_pipelines(py::module_& m) {
     init_unet2d_condition_model(m);
     init_sd3_transformer_2d_model(m);
     init_flux_transformer_2d_model(m);
+    init_flux2_transformer_2d_model(m);
+    init_zimage_transformer_2d_model(m);
+    init_qwen3_text_encoder(m);
+    init_qwen2_5_vl(m);
+    init_qwen_image_transformer_2d_model(m);
     init_autoencoder_kl(m);
 
     auto image_generation_scheduler = py::class_<ov::genai::Scheduler, std::shared_ptr<ov::genai::Scheduler>>(m, "Scheduler", "Scheduler for image generation pipelines.");
@@ -630,7 +640,8 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("image"), "Initial image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Image2ImagePipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::Image2ImagePipeline::get_performance_metrics)
+        .def("export_model", &ov::genai::Image2ImagePipeline::export_model, py::arg("export_path"));
 
 
     auto inpainting_pipeline = py::class_<ov::genai::InpaintingPipeline>(m, "InpaintingPipeline", "This class is used for generation with inpainting models.")
@@ -737,7 +748,8 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("mask_image"), "Mask image",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::InpaintingPipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::InpaintingPipeline::get_performance_metrics)
+        .def("export_model", &ov::genai::InpaintingPipeline::export_model, py::arg("export_path"));
 
     // define constructors to create one pipeline from another
     // NOTE: needs to be defined once all pipelines are created

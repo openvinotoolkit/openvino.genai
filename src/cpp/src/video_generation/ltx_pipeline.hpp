@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -44,7 +45,7 @@ const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     0.0,                     // guidance_rescale
     161,                     // num_frames
     25.0f,                   // frame_rate
-    TaylorSeerCacheConfig{}  // taylorseer_config
+    std::nullopt             // taylorseer_config
 };
 
 // Some defaults aren't special values so it's not possible to distinguish
@@ -592,9 +593,10 @@ public:
 
         // Prepare timesteps
         size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
-        m_scheduler->set_timesteps(video_sequence_length,
-                                   merged_generation_config.num_inference_steps,
-                                   1.0f);
+        const double mu = m_scheduler->calculate_shift(video_sequence_length);
+        m_scheduler->set_timesteps_with_mu(mu,
+                                           merged_generation_config.num_inference_steps,
+                                           1.0f);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         // Prepare micro-conditions
@@ -607,11 +609,6 @@ public:
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
-
-        // // Prepare timesteps
-        // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
-        ov::Tensor timestep(ov::element::f32, {1});
-        float* timestep_data = timestep.data<float>();
 
         ov::Shape latent_shape_cfg = latent.get_shape();
         latent_shape_cfg[0] *= batch_size_multiplier;
@@ -645,15 +642,13 @@ public:
                 latent_cfg = numpy_utils::repeat(latent_cfg, request_input_batch / latent_cfg.get_shape()[0]);
             }
 
-            timestep_data[0] = timesteps[inference_step];
-
             ov::Tensor noise_pred_tensor;
             // Use TaylorSeer if enabled and caching is appropriate
             if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
                 noise_pred_tensor = ts_state.predict(inference_step);
             } else {
                 auto infer_start = std::chrono::steady_clock::now();
-                noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
+                noise_pred_tensor = m_transformer->infer(latent_cfg, timesteps[inference_step]);
                 auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
                 m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
                 if (ts_state.is_active()) {

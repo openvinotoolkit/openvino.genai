@@ -29,7 +29,7 @@ def video_generation_model() -> str:
     def convert_model(temp_path: Path) -> None:
         command = ["optimum-cli", "export", "openvino", "--model", MODEL_NAME, "--trust-remote-code", str(temp_path)]
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
+        retry_request(lambda: subprocess.run(command, check=True, text=True, encoding="utf-8", capture_output=True))
 
     try:
         manager.execute(convert_model)
@@ -386,10 +386,10 @@ class TestTaylorSeer:
             "Last step latents are identical — TaylorSeer prediction should have changed the result"
         )
 
-    def test_taylorseer_default_on(self, video_generation_model):
-        """Test that TaylorSeer is enabled by default"""
+    def test_taylorseer_default_disabled(self, video_generation_model):
+        """Test that TaylorSeer is disabled by default"""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-        assert pipe.get_generation_config().taylorseer_config is not None
+        assert pipe.get_generation_config().taylorseer_config is None
 
 class TestLoRAVideoGeneration:
     def test_lora_adapters_constructor(self, video_generation_model):

@@ -4,26 +4,36 @@
 import os
 
 import pandas as pd
+import yaml
 
 from tqdm import tqdm
 from itertools import zip_longest
 from typing import Literal, Any, Union
+from importlib.resources import files
 
 from .registry import register_evaluator
-from .text_evaluator import TextEvaluator
-from .utils import get_ignore_parameters_flag, prepare_default_data_image, prepare_default_data_video
-from .visual_utils import fix_phi3_v_eos_token_id, MODEL_TYPE_TO_CLS_MAPPING
+from .text_evaluator import TextEvaluator, PROMPTS_FILE, LONG_PROMPTS_FILE
+from .utils import (
+    OMNI_MODEL_TYPES,
+    get_ignore_parameters_flag,
+    prepare_default_data_image,
+    prepare_default_data_video,
+    fix_phi3_v_eos_token_id,
+)
+from .inputs_preprocessors import MODEL_TYPE_TO_CLS_MAPPING
 
 DEF_VIDEO_FRAMES_AMOUNT = 10
+DEF_VIDEO_FRAMES_AMOUNT_GEMMA4 = 32
 
 
-@register_evaluator("visual-text", "visual-video-text")
+@register_evaluator("visual-text", "visual-video-text", "visual-text-only")
 class VisualTextEvaluator(TextEvaluator):
     def __init__(
         self,
         base_model: Any = None,
         tokenizer: Any = None,
         processor: Any = None,
+        config: Any = None,
         gt_data: str = None,
         test_data: Union[str, list] = None,
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
@@ -35,14 +45,19 @@ class VisualTextEvaluator(TextEvaluator):
         seqs_per_request=None,
         pruning_ratio=None,
         relevance_weight=None,
-        task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
+        task_type: Literal["visual-text", "visual-video-text", "visual-text-only"] = "visual-text",
         frames_num: int | None = None,
+        generation_config_extra=None,
+        language="en",
+        long_prompt=True,
     ) -> None:
         self.processor = processor
-        self.is_image_input = (task_type == "visual-text")
-        self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
+        self.is_image_input = task_type == "visual-text"
+        self.is_text_only = task_type == "visual-text-only"
+        self.frames_num = self._resolve_frames_num(frames_num, config)
         self.pruning_ratio = pruning_ratio
         self.relevance_weight = relevance_weight
+        self.generation_config_extra = generation_config_extra or {}
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -56,6 +71,9 @@ class VisualTextEvaluator(TextEvaluator):
             gen_answer_fn=gen_answer_fn,
             generation_config=generation_config,
             seqs_per_request=seqs_per_request,
+            generation_config_extra=self.generation_config_extra,
+            language=language,
+            long_prompt=long_prompt,
         )
 
     def score(self, model_or_data, gen_answer_fn=None, **kwargs):
@@ -64,6 +82,9 @@ class VisualTextEvaluator(TextEvaluator):
         else:
             predictions = self._generate_data(model_or_data, gen_answer_fn, self.generation_config)
         self.predictions = predictions
+
+        # Align gt_data with predictions (handles skipped prompts)
+        self.gt_data = self.gt_data[self.gt_data["prompts"].isin(predictions["prompts"].values)]
 
         all_metrics_per_prompt = {}
         all_metrics = {}
@@ -115,8 +136,14 @@ class VisualTextEvaluator(TextEvaluator):
             crop_question,
             pruning_ratio,
             relevance_weight,
+            generation_config_extra=None,
         ):
-            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and "transformers" in str(type(model)):
+            # Optimum exports OpenVINO models (OVModelFor*). Everything else reaching
+            # this path is a native torch/HF model, possibly wrapped (e.g. by peft.PeftModel).
+            is_optimum_ov = "openvino" in str(type(model)).lower()
+            if model.config.model_type in MODEL_TYPE_TO_CLS_MAPPING and (
+                not is_optimum_ov or model.config.model_type == "muse_glimmer"
+            ):
                 inputs_processor = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type]()
                 preprocess_inputs = inputs_processor.preprocess_inputs
             else:
@@ -126,20 +153,36 @@ class VisualTextEvaluator(TextEvaluator):
 
                 preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING_OPT[model.config.model_type].preprocess_inputs
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
-            tokens = model.generate(
+            input_ids_len = inputs["input_ids"].shape[-1]
+            # videochat_flash_qwen expects "inputs" instead of "input_ids" and requires "modalities" field to be set
+            if model.config.model_type == "videochat_flash_qwen":
+                inputs["inputs"] = inputs.pop("input_ids")
+            generate_kwargs = dict(
                 **inputs,
                 **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
                 do_sample=False,
-                max_new_tokens=max_new_tokens,
                 tokenizer=tokenizer,
                 **get_ignore_parameters_flag()
             )
+
+            is_hf_omni = model.config.model_type in OMNI_MODEL_TYPES and not is_optimum_ov
+            if is_hf_omni:
+                # Qwen3-Omni's generate() bounds text output via thinker_max_new_tokens
+                # and would synthesize audio unless return_audio is disabled.
+                generate_kwargs["thinker_max_new_tokens"] = max_new_tokens
+                generate_kwargs["return_audio"] = False
+            else:
+                generate_kwargs["max_new_tokens"] = max_new_tokens
+            tokens = model.generate(**generate_kwargs)
+            if is_hf_omni and isinstance(tokens, tuple):
+                # (text_ids, audio) is returned when return_audio=False on transformers < 4.58
+                tokens = tokens[0]
             if isinstance(tokens, tuple) and isinstance(tokens[0], list) and isinstance(tokens[0][0], str):
                 # Some models return a decoded output, like miniCPM-o
                 # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
                 return tokens[0][0]
             if crop_question:
-                tokens = tokens[:, inputs["input_ids"].shape[-1] :]
+                tokens = tokens[:, input_ids_len:]
 
             answer = self.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
             return answer
@@ -157,8 +200,26 @@ class VisualTextEvaluator(TextEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            input_data = prepare_default_data_image(self.num_samples) if self.is_image_input else prepare_default_data_video(self.num_samples, self.frames_num)
+            if self.is_text_only:
+                prompts_file_path = LONG_PROMPTS_FILE if self.long_prompt else PROMPTS_FILE
+                data_path = files("whowhatbench.prompts").joinpath(prompts_file_path)
+                lang_prompt_data = yaml.safe_load(data_path.read_text(encoding="utf-8"))
+                prompts_list = list(lang_prompt_data[self.language]["prompts"])
+                if self.num_samples is not None:
+                    prompts_list = prompts_list[: self.num_samples]
+                input_data = {
+                    "prompts": prompts_list,
+                    "images": [None] * len(prompts_list),
+                    "videos": [None] * len(prompts_list),
+                }
+            elif self.is_image_input:
+                input_data = prepare_default_data_image(self.num_samples)
+            else:
+                input_data = prepare_default_data_video(self.num_samples, self.frames_num)
             data = pd.DataFrame.from_dict(input_data)
+
+        # Skip prompts that cause issues for specific models
+        self._skip_prompts_for_model(data, model)
 
         prompt_data = data["prompts"]
         image_data = data["images"]
@@ -168,6 +229,8 @@ class VisualTextEvaluator(TextEvaluator):
         prompts = prompt_data.values
         images = image_data.values
         videos = videos_data.values
+
+        extra_kwargs = {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
 
         for p, i, v in tqdm(
             zip_longest(prompts, images, videos),
@@ -186,6 +249,7 @@ class VisualTextEvaluator(TextEvaluator):
                     self._crop_question,
                     self.pruning_ratio,
                     self.relevance_weight,
+                    **extra_kwargs,
                 )
             )
 
@@ -193,3 +257,26 @@ class VisualTextEvaluator(TextEvaluator):
         df = pd.DataFrame(res_data)
 
         return df
+
+    def _skip_prompts_for_model(self, data: pd.DataFrame, model):
+        """
+        Skip prompts that cause issues for specific models by mutating the input data.
+        """
+        # Relates to Qwen/Qwen3.5-0.8B
+        if model.config.model_type == "qwen3_5" and model.config.text_config.hidden_size == 1024:
+            # This prompt and corresponding image cause the original model to output incoherent answer,
+            # likely due to image complexity and small model size.
+            prompt_to_skip = 'Extract the letters in the words "Bus Stop" that fall between the wheels of the bus logo drawn above it.'
+            data.drop(data[data["prompts"] == prompt_to_skip].index, inplace=True)
+
+    def _resolve_frames_num(self, frames_num: int | None, config: Any | None) -> int:
+        """
+        Resolve the number of frames to use for video input based on the model config.
+        """
+        if frames_num is not None:
+            return frames_num
+
+        if getattr(config, "model_type", None) in ("gemma4", "gemma4_unified"):
+            return DEF_VIDEO_FRAMES_AMOUNT_GEMMA4
+
+        return DEF_VIDEO_FRAMES_AMOUNT

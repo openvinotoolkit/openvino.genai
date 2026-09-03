@@ -5,9 +5,12 @@ from typing import Union, Optional
 from packaging.version import Version
 
 import os
+import sys
 import json
 import torch
 import random
+import re
+import string
 import logging
 import tarfile
 import datasets
@@ -19,7 +22,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from pathlib import Path
-from transformers import set_seed
+from transformers import set_seed, PreTrainedTokenizer
 from contextlib import contextmanager
 from datasets.utils.file_utils import xopen
 from transformers.image_utils import load_image
@@ -28,32 +31,81 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+OMNI_MODEL_TYPES = {
+    "qwen3_omni_moe": "Qwen3OmniMoeForConditionalGeneration",
+    "qwen3_omni": "Qwen3OmniForConditionalGeneration",
+}
+
+
+def fix_phi3_v_eos_token_id(model_type: str, tokenizer: PreTrainedTokenizer) -> dict:
+    """
+    phi3_v configs aren't consistent. Override the default
+    eos_token_id with the one from a tokenizer similar to
+    an example in
+    https://huggingface.co/microsoft/Phi-3.5-vision-instruct
+    """
+    if "phi3_v" == model_type:
+        return {"eos_token_id": tokenizer.eos_token_id}
+    else:
+        return dict()
+
+
 def new_randn_tensor(
     shape: Union[tuple, list],
-    generator: Optional[Union[list["torch.Generator"],
-                              "torch.Generator"]] = None,
+    generator: Optional[Union[list["torch.Generator"], "torch.Generator"]] = None,
     device: Optional["torch.device"] = None,
     dtype: Optional["torch.dtype"] = None,
     layout: Optional["torch.layout"] = None,
 ):
     latents = torch.zeros(shape).view(-1)
     for i in range(latents.shape[0]):
-        latents[i] = torch.randn(
-            1, generator=generator, dtype=torch.float32).item()
+        latents[i] = torch.randn(1, generator=generator, dtype=torch.float32).item()
 
     return latents.view(shape)
 
 
 def patch_diffusers():
     from diffusers.utils import torch_utils
+
     torch_utils.randn_tensor = new_randn_tensor
+
+
+def patch_speechbrain_lazy_import_guard_for_windows() -> None:
+    """Make SpeechBrain's lazy-import guard skip ``inspect.py`` callers on Windows too.
+
+    Its guard uses ``endswith("/inspect.py")`` (POSIX only), so on Windows an ``inspect``
+    scan of ``sys.modules`` imports optional integrations (``k2_fsa``, ``flair``, ...) and
+    crashes on the first missing one.
+    """
+    if sys.platform != "win32":
+        return
+
+    from speechbrain.utils import importutils
+
+    original_ensure_module = importutils.LazyModule.ensure_module
+    if getattr(original_ensure_module, "_win_inspect_guard_fix", False):
+        return
+
+    def ensure_module(self, stacklevel: int):
+        try:
+            filename = sys._getframe(stacklevel + 1).f_code.co_filename
+        except ValueError:
+            filename = ""
+        if os.path.basename(filename) == "inspect.py":
+            raise AttributeError()
+        return original_ensure_module(self, stacklevel)
+
+    ensure_module._win_inspect_guard_fix = True
+    importutils.LazyModule.ensure_module = ensure_module
 
 
 @contextmanager
 def mock_AwqQuantizer_validate_environment(to_patch):
     original_fun = transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment
     if to_patch:
-        transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment = lambda self, device_map, **kwargs: None
+        transformers.quantizers.quantizer_awq.AwqQuantizer.validate_environment = (
+            lambda self, device_map, **kwargs: None
+        )
     try:
         yield
     finally:
@@ -135,16 +187,16 @@ def get_json_config(config):
         raise ValueError("Config must be a non-empty string or path to a JSON file.")
     json_config = {}
     if Path(config).is_file():
-        with open(config, 'r') as f:
+        with open(config, "r") as f:
             try:
                 json_config = json.load(f)
             except json.JSONDecodeError:
-                raise RuntimeError(f'Failed to parse JSON from file: {config}')
+                raise RuntimeError(f"Failed to parse JSON from file: {config}")
     else:
         try:
             json_config = json.loads(config)
         except json.JSONDecodeError:
-            raise RuntimeError(f'Failed to parse JSON config: {config}')
+            raise RuntimeError(f"Failed to parse JSON config: {config}")
 
     return json_config
 
@@ -194,25 +246,48 @@ def apply_peft_adapters(model, adapters, alphas, merged_adapter_name="merged_lor
     return model
 
 
+def normalize_text(text: str) -> str:
+    """Normalize text for forgiving transcript comparison."""
+    text = text.lower().strip()
+    text = re.sub(r"[-‐-‒–—]+", " ", text)  # treat hyphens/dashes as separators
+    text = text.translate(str.maketrans("", "", string.punctuation))
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+@contextmanager
+def no_double_bos(processor):
+    """Disable add_bos_token while a Gemma chat template that already emits bos is applied."""
+    tokenizer = getattr(processor, "tokenizer", None)
+    orig_add_bos_token = getattr(tokenizer, "add_bos_token", None)
+    if (
+        orig_add_bos_token is not None
+        and getattr(tokenizer, "chat_template", None)
+        and "bos_token" in tokenizer.chat_template
+    ):
+        tokenizer.add_bos_token = False
+    try:
+        yield
+    finally:
+        if orig_add_bos_token is not None:
+            tokenizer.add_bos_token = orig_add_bos_token
+
+
 # preapre default dataset for visualtext(VLM) evalutor
 def preprocess_fn(example):
     return {
-        "prompts": example["instruction"],
-        "images": load_image(example["image_url"]),
+        "prompts": example["question"],
+        "images": load_image(example["image"]),
         "videos": None,
     }
 
 
 def prepare_default_data_image(num_samples=None):
-    DATASET_NAME = "ucla-contextual/contextual_test"
+    DATASET_NAME = "lmms-lab/VQAv2"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
-    )
+    default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
+    return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
 def prepare_default_data_video(num_samples=None, num_frames=10):
@@ -223,30 +298,40 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
     SUBSET = "30_60_s_academic_v0_1"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
 
-    questions_per_video_set = datasets.load_dataset(DATASET_NAME, SUBSET,
-                                                    split="open_ended",
-                                                    data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"})
-    questions_per_video = {val['video']: val for val in questions_per_video_set}
+    questions_per_video_set = datasets.load_dataset(
+        DATASET_NAME,
+        SUBSET,
+        split="open_ended",
+        data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"},
+    )
+    questions_per_video = {val["video"]: val for val in questions_per_video_set}
 
     # 30_60_s_academic_v0_1_videos_10.tar.gz - just the most lightweight chunk among subset
     # https://huggingface.co/datasets/lmms-lab/LLaVA-Video-178K/tree/main/30_60_s_academic_v0_1
     # the archive contains 56 videos
-    videos_arc_path = hf_hub_download(repo_id="lmms-lab/LLaVA-Video-178K",
-                                      filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz",
-                                      repo_type="dataset")
+    videos_arc_path = hf_hub_download(
+        repo_id="lmms-lab/LLaVA-Video-178K", filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz", repo_type="dataset"
+    )
 
+    # max resolution 1280x720, max size 6MB
+    max_video_size_bytes = 6 * 1024 * 1024
     video_samples = []
     extract_dir = "./videos"
     os.makedirs(extract_dir, exist_ok=True)
     with tarfile.open(videos_arc_path, "r:gz") as tar:
-        all_videos = tar.getnames()
+        all_videos = []
+        for member in tar.getmembers():
+            if member.size < max_video_size_bytes:
+                all_videos.append(member.name)
 
         if len(all_videos) < NUM_SAMPLES:
-            logger.warning(f"The required number of samples {NUM_SAMPLES} exceeds the available amount of data {len(all_videos)}."
-                           f"num-samples will be updated to max available: {len(all_videos)}.")
+            logger.warning(
+                f"The required number of samples {NUM_SAMPLES} exceeds the available amount of data {len(all_videos)}."
+                f"num-samples will be updated to max available: {len(all_videos)}."
+            )
             NUM_SAMPLES = len(all_videos)
 
-        video_samples = random.Random(42).sample(all_videos, NUM_SAMPLES)  # nosec
+        video_samples = random.Random(43).sample(all_videos, NUM_SAMPLES)  # nosec
         for sample in video_samples:
             tar.extract(sample, path=extract_dir)
 
@@ -259,9 +344,11 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
 
     data = []
     for video_rel_path in video_samples:
-        video_tensor = load_video(os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn)
-        prompt = questions_per_video[video_rel_path]['conversations'][0]['value'].replace("<image>\n", "")
-        data.append({'prompts': prompt, "images": None, 'videos': video_tensor[0]})
+        video_tensor = load_video(
+            os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn
+        )
+        prompt = questions_per_video[video_rel_path]["conversations"][0]["value"].replace("<image>\n", "")
+        data.append({"prompts": prompt, "images": None, "videos": video_tensor[0]})
 
     return data
 
@@ -307,3 +394,90 @@ def parquet_generate_tables(self, files, *args, **kwargs):
 def disable_diffusers_model_progress_bar(model):
     if hasattr(model, "set_progress_bar_config"):
         model.set_progress_bar_config(disable=True)
+
+
+AUDIO_SAMPLING_RATE = 16000
+# The 24th FLEURS sample is a duplicate, while dataset shuffling is unstable across versions.
+# Keep 23 because the preceding samples are already sufficiently varied.
+DEFAULT_NUM_SAMPLES = 23
+
+
+def to_mono_16k(audio, sampling_rate):
+    """Downmix to mono and resample to 16 kHz float32."""
+    from math import gcd
+    from scipy.signal import resample_poly
+
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    if sampling_rate != AUDIO_SAMPLING_RATE:
+        common = gcd(int(sampling_rate), AUDIO_SAMPLING_RATE)
+        audio = resample_poly(audio, AUDIO_SAMPLING_RATE // common, int(sampling_rate) // common)
+    return np.asarray(audio, dtype=np.float32)
+
+
+def load_audio_dataset(args):
+    """Stream an ASR dataset as columns: id and 16 kHz mono float32 waveform."""
+    import io
+    import soundfile as sf
+    from datasets import Audio, load_dataset
+
+    dataset = args.dataset or "google/fleurs,en_us"
+    split = args.split if args.split is not None else "validation"
+    if "," in dataset:
+        path, name = dataset.split(",", 1)
+    else:
+        path, name = dataset, None
+    audio_field = args.dataset_field if args.dataset_field not in (None, "text") else "audio"
+    num_samples = args.num_samples if args.num_samples is not None else DEFAULT_NUM_SAMPLES
+
+    data = load_dataset(path=path, name=name, split=split, streaming=True)
+    # datasets>=5 needs torchcodec to decode Audio; decode with soundfile instead.
+    data = data.cast_column(audio_field, Audio(decode=False))
+    data = data.take(num_samples)
+
+    audios, ids = [], []
+    for idx, row in enumerate(data):
+        raw = row[audio_field]
+        if raw.get("bytes"):
+            audio, sampling_rate = sf.read(io.BytesIO(raw["bytes"]), dtype="float32")
+        else:
+            audio, sampling_rate = sf.read(raw["path"], dtype="float32")
+        audios.append(to_mono_16k(audio, sampling_rate))
+        ids.append(os.path.basename(raw["path"]) if raw.get("path") else str(idx))
+
+    return {"prompts": ids, "audio": audios}
+
+
+def _read_model_json(model_id, filename):
+    model_path = Path(model_id)
+    if model_path.is_dir():
+        json_path = model_path / filename
+        if not json_path.is_file():
+            return None
+    else:
+        from huggingface_hub import hf_hub_download
+
+        try:
+            json_path = hf_hub_download(repo_id=str(model_id), filename=filename)
+        except Exception:
+            return None
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as json_file:
+            return json.load(json_file)
+    except Exception:
+        return None
+
+
+def get_model_type(model_id):
+    config = _read_model_json(model_id, "config.json")
+    if isinstance(config, dict) and config.get("model_type"):
+        return config["model_type"]
+
+    metadata = _read_model_json(model_id, "configuration.json")
+    if isinstance(metadata, dict):
+        model = metadata.get("model")
+        if isinstance(model, dict) and model.get("type"):
+            return model["type"]
+
+    return None

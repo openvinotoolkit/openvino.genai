@@ -8,6 +8,7 @@ import pytest
 import shutil
 import logging
 import requests
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -46,18 +47,9 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "gguf_filename": "SmolLM2-135M.F16.gguf",
         "convert_args": ['--trust-remote-code']
     },
-    "SmolLM2-360M": {
-        "name": "HuggingFaceTB/SmolLM2-360M",
-        "convert_args": ['--trust-remote-code']
-    },
-    "WhisperTiny": {
-        "name": "openai/whisper-tiny",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },
-    "Qwen2.5-0.5B-Instruct": {
-        "name": "Qwen/Qwen2.5-0.5B-Instruct",
-        "convert_args": ['--trust-remote-code']
-    },
+    "SmolLM2-360M": {"name": "HuggingFaceTB/SmolLM2-360M", "convert_args": ["--trust-remote-code"]},
+    "WhisperTiny": {"name": "openai/whisper-tiny", "convert_args": ["--trust-remote-code", "--weight-format", "fp16"]},
+    "Qwen2.5-0.5B-Instruct": {"name": "Qwen/Qwen2.5-0.5B-Instruct", "convert_args": ["--trust-remote-code"]},
     "Qwen2.5-0.5B-Instruct-GGUF": {
         "name": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
@@ -98,6 +90,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-minicpmv-2_6": {
         "name": "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-phi3-vision": {
+        "name": "optimum-intel-internal-testing/tiny-random-phi3-vision",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
     },
     "InternVL2-1B": {
@@ -164,6 +160,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "AngelSlim/Qwen3-1.7B_eagle3",
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
+    "tiny-random-qwen3-layer10": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-layer10",
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
+    },
+    "tiny-random-qwen3-eagle3": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-eagle3",
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
+    },
     "tiny-random-llava-next-video": {
         "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
@@ -179,6 +183,26 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "stable-diffusion-3-tiny-random": {
         "name": "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
         "convert_args": ["--trust-remote-code", "--weight-format", "fp16"],
+    },
+    "tiny-random-qwen3-vl": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-qwen3-omni": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-omni",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-qwen3-vl-embedding": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-embedding",
+        "convert_args": ["--trust-remote-code", "--task", "feature-extraction"],
+    },
+    "tiny-random-qwen3-vl-layer10": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-layer10",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
+    },
+    "tiny-random-qwen3-vl-eagle3": {
+        "name": "optimum-intel-internal-testing/tiny-random-qwen3-vl-eagle3",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"],
     },
 }
 
@@ -242,17 +266,29 @@ def setup_and_teardown(request, tmp_path_factory):
             logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
 
 
+def get_hf_cli_command() -> str:
+    # huggingface_hub < 1.0 supports huggingface-cli
+    # huggingface_hub >= 0.34 supports huggingface-cli and hf
+    # huggingface_hub >= 1.0 huggingface-cli is deprecated, need to use hf
+    version = metadata.version("huggingface_hub")
+    major = int(version.split(".", 1)[0])
+    if major >= 1:
+        return "hf"
+    return "huggingface-cli"
+
+
 def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
-    """Download the GGUF model using huggingface-cli."""
+    """Download the GGUF model using huggingface-cli/hf."""
     sub_env = os.environ.copy()
     model_name = model["name"]
     model_gguf_filename = model["gguf_filename"]
     dest_dir = Path(model_path)
+    hf_cli_command = get_hf_cli_command()
 
     manager = AtomicDownloadManager(dest_dir)
 
     def download_to_temp(temp_path: Path) -> None:
-        command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", str(temp_path)]
+        command = [hf_cli_command, "download", model_name, model_gguf_filename, "--local-dir", str(temp_path)]
         logger.info(f"Downloading command: {' '.join(command)}")
         result = retry_request(
             lambda: subprocess.run(
@@ -260,6 +296,7 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
                 check=True,
                 text=True,
                 env=sub_env,
+                encoding="utf-8",
                 stderr=subprocess.STDOUT,
                 stdout=subprocess.PIPE,
             )
@@ -269,7 +306,7 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
     try:
         manager.execute(download_to_temp)
     except subprocess.CalledProcessError as error:
-        logger.error(f"huggingface-cli returned {error.returncode}. Output:\n{error.output}")
+        logger.error(f"{hf_cli_command} returned {error.returncode}. Output:\n{error.output}")
         raise
 
 
@@ -291,21 +328,29 @@ def optimum_cli_convert(model, model_path):
         if model_args:
             command.extend(model_args)
         logger.info(f"Conversion command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
-    
+        retry_request(
+            lambda: subprocess.run(
+                command,
+                check=True,
+                text=True,
+                encoding="utf-8",
+                env=sub_env,
+                stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE,
+            )
+        )
+
     try:
         manager.execute(convert_to_temp)
     except subprocess.CalledProcessError as error:
         logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
 
-@pytest.fixture(scope="session")
-def convert_model(request):
-    """Fixture to convert the model once for the session."""
-    model_id = request.param
+
+def _prepare_model_for_tests(model_id: str):
     model = MODELS[model_id]
     model_name = model["name"]
-    
+
     if "gguf_filename" in model:
         downloaded_models_dir = get_ov_cache_downloaded_models_dir()
         model_cache = downloaded_models_dir / model_id
@@ -313,29 +358,53 @@ def convert_model(request):
         gguf_file_path = model_path / model["gguf_filename"]
         logger.info(f"Preparing GGUF model: {model_name}")
         download_gguf_model(model, str(model_path))
-        yield str(gguf_file_path)
-    elif not model["convert_args"]:
+        return str(gguf_file_path), model_cache
+
+    if not model["convert_args"]:
         downloaded_models_dir = get_ov_cache_downloaded_models_dir()
         model_cache = downloaded_models_dir / model_id
         model_path = model_cache / model_name
         logger.info(f"Downloading pre-converted model: {model_name}")
         manager = AtomicDownloadManager(model_path)
-        
+
         def download_to_temp(temp_path: Path) -> None:
             sub_env = os.environ.copy()
-            command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
+            command = [get_hf_cli_command(), "download", model_name, "--local-dir", str(temp_path)]
             logger.info(f"Downloading command: {' '.join(command)}")
-            retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
-        
+            retry_request(
+                lambda: subprocess.run(
+                    command, check=True, encoding="utf-8", capture_output=True, text=True, env=sub_env
+                )
+            )
+
         manager.execute(download_to_temp)
-        yield str(model_path)
-    else:
-        converted_models_dir = get_ov_cache_converted_models_dir()
-        model_cache = converted_models_dir / model_id
-        model_path = model_cache / model_name
-        logger.info(f"Preparing model: {model_name}")
-        optimum_cli_convert(model, str(model_path))
-        yield str(model_path)
+        return str(model_path), model_cache
+
+    converted_models_dir = get_ov_cache_converted_models_dir()
+    model_cache = converted_models_dir / model_id
+    model_path = model_cache / model_name
+    logger.info(f"Preparing model: {model_name}")
+    optimum_cli_convert(model, str(model_path))
+    return str(model_path), model_cache
+
+
+@pytest.fixture(scope="session")
+def convert_model(request):
+    """Fixture to convert the model once for the session."""
+    model_path, model_cache = _prepare_model_for_tests(request.param)
+    yield model_path
+
+    if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
+        if model_cache.exists():
+            logger.info(f"Removing cached model: {model_cache}")
+            shutil.rmtree(model_cache)
+
+
+@pytest.fixture(scope="session")
+def convert_draft_model(request):
+    """Fixture to convert a draft model once for the session."""
+    model_path, model_cache = _prepare_model_for_tests(request.param)
+    yield model_path
 
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if model_cache.exists():
@@ -354,12 +423,14 @@ def download_model(request):
     logger.info(f"Preparing model: {model_name}")
     
     manager = AtomicDownloadManager(model_path)
-    
+
     def download_to_temp(temp_path: Path) -> None:
         sub_env = os.environ.copy()
-        command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
+        command = [get_hf_cli_command(), "download", model_name, "--local-dir", str(temp_path)]
         logger.info(f"Downloading command: {' '.join(command)}")
-        retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
+        retry_request(
+            lambda: subprocess.run(command, check=True, encoding="utf-8", capture_output=True, text=True, env=sub_env)
+        )
 
     manager.execute(download_to_temp)
 

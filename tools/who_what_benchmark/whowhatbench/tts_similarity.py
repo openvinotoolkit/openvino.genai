@@ -6,8 +6,6 @@ import argparse
 import json
 import logging
 import math
-import re
-import string
 from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
@@ -16,6 +14,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import librosa
 import numpy as np
 import soundfile as sf
+
+from .utils import normalize_text, patch_speechbrain_lazy_import_guard_for_windows
 
 
 DEFAULT_WHISPER_MODEL = "base.en"
@@ -29,7 +29,7 @@ class Scores:
     speaker: Optional[float]
     # Content = same words?
     content: Optional[float]
-    # Duration = similar overall utterance length / pacing?
+    # Duration = similar overall audio length / pacing?
     duration: Optional[float]
     # Acoustic = similar loudness / spectral richness / bandwidth?
     acoustic: Optional[float]
@@ -79,15 +79,6 @@ class ScoringConfig:
     overall_speaker_weight: float = 0.30
     overall_acoustic_weight: float = 0.30
     overall_duration_weight: float = 0.10
-
-
-def normalize_text(text: str) -> str:
-    """Normalize text for forgiving transcript comparison."""
-    text = text.lower().strip()
-    text = re.sub(r"[-‐-‒–—]+", " ", text)  # treat hyphens/dashes as separators
-    text = text.translate(str.maketrans("", "", string.punctuation))
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
 
 
 def safe_float(x: Any) -> Optional[float]:
@@ -203,6 +194,8 @@ class TTSSimilarityEvaluator:
                 torchaudio.list_audio_backends = lambda: []
             if not hasattr(torchaudio, "set_audio_backend"):
                 torchaudio.set_audio_backend = lambda _backend: None
+
+            patch_speechbrain_lazy_import_guard_for_windows()
 
             from speechbrain.inference.speaker import SpeakerRecognition
 

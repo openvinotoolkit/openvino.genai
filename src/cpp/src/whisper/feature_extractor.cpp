@@ -131,7 +131,7 @@ static void fft(const std::vector<float>& in,
 static void log_mel_spectrogram_worker_thread(int ith,
                                               const std::vector<float>& hann,
                                               const std::vector<float>& samples,
-                                              int n_samples,
+                                              int n_active_samples,
                                               int frame_size,
                                               int frame_step,
                                               int n_threads,
@@ -147,16 +147,16 @@ static void log_mel_spectrogram_worker_thread(int ith,
     OPENVINO_ASSERT(mel_filter.size() == n_fft * features.feature_size);
 
     // calculate FFT only when fft_in are not all zero
-    for (; i < std::min(n_samples / frame_step + 1, int(features.n_frames)); i += n_threads) {
+    for (; i < std::min(n_active_samples / frame_step + 1, int(features.n_frames)); i += n_threads) {
         const int offset = i * frame_step;
 
         // apply Hanning window (~10% faster)
-        for (int j = 0; j < std::min(frame_size, n_samples - offset); j++) {
+        for (int j = 0; j < std::min(frame_size, n_active_samples - offset); j++) {
             fft_in[j] = hann[j] * samples[offset + j];
         }
         // fill the rest with zeros
-        if (n_samples - offset < frame_size) {
-            std::fill(fft_in.begin() + (n_samples - offset), fft_in.end(), 0.0);
+        if (n_active_samples - offset < frame_size) {
+            std::fill(fft_in.begin() + (n_active_samples - offset), fft_in.end(), 0.0);
         }
 
         // FFT
@@ -342,10 +342,12 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
                                               const size_t feature_size,
                                               const size_t n_fft,
                                               const size_t hop_length,
+                                              const size_t n_samples,
                                               const size_t n_threads,
                                               const std::vector<float>& mel_filter,
                                               const std::vector<float>& sin_vals,
-                                              const std::vector<float>& cos_vals) {
+                                              const std::vector<float>& cos_vals,
+                                              const bool pad_to_max_duration) {
     // Hanning window (Use cosf to eliminate difference)
     // ref: https://pytorch.org/docs/stable/generated/torch.hann_window.html
     // ref: https://github.com/openai/whisper/blob/main/whisper/audio.py#L147
@@ -353,7 +355,8 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
     hann_window(n_fft, true, hann);
 
     const size_t reflect_pad_size = n_fft / 2;
-    auto padded_raw_speech = pad(raw_speech, sampling_rate * 30, reflect_pad_size);
+    const size_t minimum_length = pad_to_max_duration ? n_samples : raw_speech.size();
+    auto padded_raw_speech = pad(raw_speech, minimum_length, reflect_pad_size);
 
     WhisperFeatures features;
     features.feature_size = feature_size;
@@ -447,6 +450,21 @@ WhisperFeatureExtractor::WhisperFeatureExtractor(const std::filesystem::path& pr
     init_mel_filter();
 }
 
+WhisperFeatureExtractor::WhisperFeatureExtractor(size_t feature_size,
+                                                 size_t sampling_rate,
+                                                 size_t n_fft,
+                                                 size_t hop_length)
+    : feature_size(feature_size),
+      sampling_rate(sampling_rate),
+      hop_length(hop_length),
+      n_fft(n_fft),
+      chunk_length(0),
+      n_samples(0),
+      nb_max_frames(0) {
+    fill_sin_cos_table(sin_vals, cos_vals, n_fft);
+    init_mel_filter();
+}
+
 void WhisperFeatureExtractor::init_parameters(const std::filesystem::path& preprocessor_json_path) {
     // preprocessor_config.json not found. Skip parameters initialization from file, use defaults.
     if (!std::filesystem::exists(preprocessor_json_path)) {
@@ -480,17 +498,24 @@ void WhisperFeatureExtractor::init_mel_filter() {
     }
 }
 
-WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech) {
+WhisperFeatures WhisperFeatureExtractor::extract(const std::vector<float>& raw_speech, bool pad_to_max_duration) {
+    OPENVINO_ASSERT(raw_speech.size() > n_fft / 2,
+                    "raw_speech too short for reflect padding: size=",
+                    raw_speech.size(),
+                    ", required > ",
+                    n_fft / 2);
     size_t n_threads = std::min(4, (int32_t)std::thread::hardware_concurrency());
     return mel_spectrogram_convert_audio(raw_speech,
                                          sampling_rate,
                                          feature_size,
                                          n_fft,
                                          hop_length,
+                                         n_samples,
                                          n_threads,
                                          mel_filter,
                                          sin_vals,
-                                         cos_vals);
+                                         cos_vals,
+                                         pad_to_max_duration);
 }
 
 }  // namespace genai

@@ -9,12 +9,13 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "08:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     ignore:
-      # Cannot be updated for the moment, ticket: 184715
-      - dependency-name: "actions/checkout"
+      # actions/smart-ci update triggered on each new openvino commit
+      # update manually on demand to reduce noise
+      - dependency-name: "openvinotoolkit/openvino/.github/actions/smart-ci"
       # Due to recent trivy security issues to be updated manually
       - dependency-name: "aquasecurity/trivy-action"
     groups:
@@ -31,7 +32,7 @@ updates:
       - "/.github/actions/install_wheel"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "02:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
@@ -53,7 +54,7 @@ updates:
       - "/samples/js"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "04:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: lockfile-only
@@ -74,7 +75,7 @@ updates:
       - "./tools/who_what_benchmark/"
     schedule:
       interval: "daily"
-      time: "09:00"
+      time: "06:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
     ignore:
@@ -93,6 +94,10 @@ updates:
       # huggingface-hub is installed for who_what_benchmark only if "llm-test-openvino" extras option is specified
       # newest version of huggingface-hub cause conflict with transformers 4.57.6, which is also defined for this extras
       - dependency-name: "huggingface-hub"
+      # update transformers version is dependent on optimum-intel for now and required more precise changes in repo
+      - dependency-name: "transformers"
+      # update required more precise changes in repo and made upon request
+      - dependency-name: "optimum-intel"
     groups:
       pip-dependencies:
         patterns:

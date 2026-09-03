@@ -111,6 +111,15 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'MuseGlimmerForConditionalGeneration',
+    models: [
+      {
+        name: 'Muse-Glimmer',
+        links: ['https://huggingface.co/meta-models/Muse-Glimmer-30B'],
+      },
+    ],
+  },
+  {
     architecture: 'Phi3VForCausalLM',
     models: [
       {
@@ -159,6 +168,12 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct',
         ],
       },
+      {
+        name: 'Fara-7B',
+        links: [
+          'https://huggingface.co/microsoft/Fara-7B',
+        ],
+      },
     ],
   },
   {
@@ -181,6 +196,41 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Qwen3.5',
+    models: [
+      {
+        name: 'Qwen3.5',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3.5-0.8B',
+          'https://huggingface.co/Qwen/Qwen3.5-2B',
+          'https://huggingface.co/Qwen/Qwen3.5-4B',
+          'https://huggingface.co/Qwen/Qwen3.5-9B',
+          'https://huggingface.co/Qwen/Qwen3.5-27B',
+          'https://huggingface.co/Qwen/Qwen3.5-35B-A3B',
+        ],
+        notesLink: '#qwen3_5-notes',
+      },
+      {
+        name: 'Qwen3.6',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3.6-27B',
+          'https://huggingface.co/Qwen/Qwen3.6-35B-A3B',
+        ],
+        notesLink: '#qwen3_5-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'DeepseekOCR2ForCausalLM',
+    models: [
+      {
+        name: 'DeepSeek-OCR-2',
+        links: ['https://huggingface.co/deepseek-community/DeepSeek-OCR-2'],
+        notesLink: '#deepseek-ocr-2-notes',
+      },
+    ],
+  },
+  {
     architecture: 'Gemma3ForConditionalGeneration',
     models: [
       {
@@ -194,6 +244,18 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'Gemma3nForConditionalGeneration',
+    models: [
+      {
+        name: 'gemma3n',
+        links: [
+          'https://huggingface.co/google/gemma-3n-E2B-it',
+          'https://huggingface.co/google/gemma-3n-E4B-it',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'Gemma4ForConditionalGeneration',
     models: [
       {
@@ -201,7 +263,22 @@ export const VLM_MODELS: VLMModelType[] = [
         links: [
           'https://huggingface.co/google/gemma-4-E2B-it',
           'https://huggingface.co/google/gemma-4-E4B-it',
+          'https://huggingface.co/google/gemma-4-26B-A4B-it',
+          'https://huggingface.co/google/gemma-4-31B-it',
         ],
+        notesLink: '#gemma4-notes',
+      },
+    ],
+  },
+  {
+    architecture: 'Gemma4UnifiedForConditionalGeneration',
+    models: [
+      {
+        name: 'gemma4_unified',
+        links: [
+          'https://huggingface.co/google/gemma-4-12B-it',
+        ],
+        notesLink: '#gemma4-notes',
       },
     ],
   },

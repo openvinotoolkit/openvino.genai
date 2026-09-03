@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Parser } from "./parsers.js";
+import type { Tensor } from "openvino-node";
 
 export enum StreamingStatus {
   RUNNING,
@@ -380,7 +381,7 @@ export type GenerationConfig = GenericGenerationConfig &
 
 /** Generation config for WhisperPipeline. Extends GenerationConfig with Whisper-specific options. */
 export type WhisperGenerationConfig = GenerationConfig & {
-  /** Language token for generation (e.g. "<|en|>"). For multilingual models only. */
+  /** Language for generation: a plain code (e.g. "en") or the wrapped token form (e.g. "<|en|>"). For multilingual models only. */
   language?: string;
   /** Task: "translate" or "transcribe". For multilingual models only. */
   task?: string;
@@ -460,6 +461,16 @@ export type WhisperGenerationConfig = GenerationConfig & {
   suppress_tokens?: Uint[];
 };
 
+/**
+ * Generation config for ASRPipeline. Extends the Whisper generation config with
+ * Qwen3-ASR-specific options. Whisper-specific fields are ignored by Qwen3-ASR models
+ * and vice versa.
+ */
+export type ASRGenerationConfig = WhisperGenerationConfig & {
+  /** Context passed as a previous transcription to steer spelling or style. Supported by Qwen3-ASR models only. */
+  context?: string;
+};
+
 /** Generation config for Text2SpeechPipeline. Extends GenerationConfig with speech-specific options. */
 export type SpeechGenerationConfig = GenerationConfig & {
   /** Minimum ratio of output length to input text length; prevents output that's too short. */
@@ -506,5 +517,68 @@ export type VLMPipelineProperties = {
 export type WhisperPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
 } & Record<string, unknown>;
+
+export type ASRPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+} & Record<string, unknown>;
+
+export type ImageGenerationConfig = {
+  /** Additional prompt for the second text encoder. */
+  prompt_2?: string;
+  /** Additional prompt for the third text encoder. */
+  prompt_3?: string;
+  /** Negative prompt for the primary text encoder. */
+  negative_prompt?: string;
+  /** Negative prompt for the second text encoder. */
+  negative_prompt_2?: string;
+  /** Negative prompt for the third text encoder. */
+  negative_prompt_3?: string;
+  /** Number of images to generate for a single prompt. */
+  num_images_per_prompt?: Uint;
+  /** Seed for the default random generator. */
+  rng_seed?: Uint;
+  /** Guidance scale used during denoising. */
+  guidance_scale?: number;
+  /** Output image height in pixels. */
+  height?: number;
+  /** Output image width in pixels. */
+  width?: number;
+  /** Number of denoising steps. */
+  num_inference_steps?: Uint;
+  /** Maximum sequence length for T5-based text encoders. */
+  max_sequence_length?: number;
+  /** Strength parameter for img2img/inpainting-compatible configs. */
+  strength?: number;
+};
+
+export type Text2ImagePipelineProperties = Record<string, unknown>;
+
+export type Image2ImagePipelineProperties = Record<string, unknown>;
+
+export type InpaintingPipelineProperties = Record<string, unknown>;
+
+/**
+ * Callback for image generation, called once per denoising step.
+ *
+ * The callback may be synchronous or asynchronous. When it returns a Promise,
+ * generation waits for it to settle before the next step, so an in-callback
+ * `await pipeline.decode(latent)` completes without blocking the event loop.
+ *
+ * @param step       Current step index (0-based).
+ * @param numSteps   Total number of denoising steps.
+ * @param latent     Current latent image. Pass it to `pipeline.decode(latent)` to obtain the intermediate image.
+ * @returns `true` to stop generation early, `false` to continue (optionally wrapped in a Promise).
+ */
+export type ImageGenerationCallback = (
+  step: number,
+  numSteps: number,
+  latent: Tensor,
+) => boolean | Promise<boolean>;
+/**
+ * Callback for text-to-image generation, called once per denoising step.
+ *
+ * @deprecated Use `ImageGenerationCallback` instead, as text-to-image pipelines now support the same callback signature as other image generation pipelines.
+ */
+export type Text2ImageCallback = ImageGenerationCallback;
 
 export type Text2SpeechPipelineProperties = Record<string, unknown>;

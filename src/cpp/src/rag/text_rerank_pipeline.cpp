@@ -24,6 +24,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(top_n.name());
     properties_copy.erase(max_length.name());
     properties_copy.erase(pad_to_max_length.name());
+    properties_copy.erase(truncation.name());
     properties_copy.erase(padding_side.name());
 
     return properties_copy;
@@ -153,6 +154,8 @@ public:
         : m_config{config} {
         const auto model_type = read_model_type(models_path);
         const bool is_qwen3 = model_type.has_value() && model_type.value() == "qwen3";
+
+        m_tokenization_params.insert({truncation.name(), true});
 
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});

@@ -5,10 +5,10 @@
 
 #include <filesystem>
 
-#include "visual_language/vlm_config.hpp"
-#include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "visual_language/qwen2vl/classes.hpp"
+#include "visual_language/vision_encoder.hpp"
+#include "visual_language/vlm_config.hpp"
 
 namespace ov::genai {
 
@@ -16,24 +16,23 @@ class VisionEncoderQwen3VL : public VisionEncoderQwen2VL {
 public:
     using VisionEncoderQwen2VL::VisionEncoderQwen2VL;
 
-    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames) override;
 };
 
 class InputsEmbedderQwen3VL : public InputsEmbedderQwen2VL {
 public:
-    InputsEmbedderQwen3VL(
-        const VLMConfig& vlm_config,
-        const std::filesystem::path& model_dir,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderQwen3VL(const VLMConfig& vlm_config,
+                          const std::filesystem::path& model_dir,
+                          const Tokenizer& tokenizer,
+                          const std::string& device,
+                          const ov::AnyMap device_config);
 
-    InputsEmbedderQwen3VL(
-        const VLMConfig& vlm_config,
-        const ModelsMap& models_map,
-        const Tokenizer& tokenizer,
-        const std::filesystem::path& config_dir_path,
-        const std::string& device,
-        const ov::AnyMap device_config);
+    InputsEmbedderQwen3VL(const VLMConfig& vlm_config,
+                          const ModelsMap& models_map,
+                          const Tokenizer& tokenizer,
+                          const std::filesystem::path& config_dir_path,
+                          const std::string& device,
+                          const ov::AnyMap device_config);
 
     ov::Tensor get_inputs_embeds(
         const std::string& prompt,
@@ -45,6 +44,11 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
+    std::vector<ov::genai::EncodedVideo> encode_videos(
+        const std::vector<ov::Tensor>& videos,
+        const std::vector<VideoMetadata>& videos_metadata = {}
+    ) override;
+        
     const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const override;
 
     void start_chat(const std::string& system_message) override;
@@ -52,14 +56,22 @@ public:
     void finish_chat() override;
 
 protected:
-    // Vision embeddings position model
+    // Cached input_ids from last get_encoded_input_ids() call within get_inputs_embeds().
+    // Allows subclasses to access input_ids without re-tokenizing (which corrupts cache state).
+    ov::Tensor m_last_input_ids;
+
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_pos;
-    
-    // Cached extra inputs for language model
+    // By default the vision_embeddings_pos model is patched to perform the weighted sum on the
+    // device (faster, deterministic on GPU). Setting the VISION_POS_EMBEDS=CPP environment
+    // variable disables the patch and falls back to a C++ weighted sum on the host.
+    bool m_use_patched_pos_model = true;
+
     std::unordered_map<std::string, ov::Tensor> m_lm_extra_inputs{
         {"deepstack_visual_embeds", ov::Tensor()},
         {"visual_pos_masks", ov::Tensor()}
     };
+
+    bool has_lm_extra_input(const std::string& input_name) const;
 
     void expand_video_tags_in_prompt(
         std::string& unified_prompt,
@@ -78,10 +90,20 @@ protected:
         const std::vector<size_t>& videos_sequence) override;
 
     /**
-     * @brief Computes interpolated position embeddings.
-     * 
+     * @brief Computes interpolated position embeddings and adds them in-place.
+     *
      * Calculates position interpolation indices and weights, runs vision_embeddings_pos model,
-     * applies bilinear interpolation weights, sums corners, permutes for spatial merge.
+     * applies bilinear interpolation weights, sums corners, permutes for spatial merge,
+     * and adds the result directly into concatenated_embeds (fused permute + addition).
+     */
+    void add_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw, ov::Tensor& concatenated_embeds);
+
+    /**
+     * @brief Computes interpolated position embeddings and returns them as a new tensor.
+     *
+     * Like add_interpolated_pos_embeds, but returns the permuted pos_embeds tensor instead of
+     * fusing it into concatenated_embeds. Used by subclasses whose vision model accepts
+     * pos_embeds as a separate input (e.g. Qwen3-Omni's merged vision model).
      */
     ov::Tensor get_interpolated_pos_embeds(const std::vector<std::array<size_t, 3>>& grids_thw);
 
@@ -92,8 +114,12 @@ protected:
         const std::vector<std::array<size_t, 3>>& videos_grid_thw,
         const std::vector<size_t>& videos_sequence,
         const size_t video_id,
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
-    ) const override;
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) const override;
 };
 
-} // namespace ov::genai
+/// @brief Populates video metadata (frame sampling indices) in encoded_video struct.
+void fill_video_metadata(EncodedVideo& encoded_video,
+                         size_t total_num_frames,
+                         const VideoProcessorConfig& video_config);
+
+}  // namespace ov::genai

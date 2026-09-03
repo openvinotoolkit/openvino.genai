@@ -40,6 +40,19 @@ For example:
 pip install .[minicpm-o-2_6]
 ```
 
+### OpenVINO Runtime configuration
+
+OpenVINO Runtime configuration can be customized using `--ov-config` option.<br>
+
+Example for OpenVINO: `{"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}`<br>
+Additional option for OpenVINO GenAI: `{"ATTENTION_BACKEND": "SDPA"}`<br>
+
+Example of setting option via string in Linux/Windows cmd: `"{\"ATTENTION_BACKEND\": \"SDPA\"}"`<br>
+Example of setting option via string in PowerShell: `'{\"ATTENTION_BACKEND\": \"SDPA\"}'`<br>
+
+More information about properties, please, find [OpenVINO documentation](https://docs.openvino.ai/2026/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).<br>
+
+
 ## Usage
 ### Compare Text-generation Models (LLMs)
 ```sh
@@ -56,8 +69,10 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text
 wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 ```
 
-> **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
-> **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode
+> **NOTE**: use --verbose option for debug to see the outputs with the largest difference.<br>
+> **NOTE**: use `--model-type text-chat` option to run evaluation in chat mode<br>
+> **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-chat` to force chat-completions formatting.<br>
+> **NOTE**: for llama.cpp in `--model-type text`, use `--llamacpp-n-ctx` to set context window size; if omitted, WWB uses 8192.<br>
 
 ### Compare Visual Language Models with image inputs (VLMs)
 ```sh
@@ -91,7 +106,7 @@ wwb --target-model qwen2-vl-7b-Instruct --gt-data qwen_video_test/gt.csv --model
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
 # Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-type text-to-image --hf
+wwb --base-model SimianLuo/LCM_Dreamshaper_v7 --gt-data lcm_test/gt.csv --model-type text-to-image --hf
 # Compute the metric
 # Target images will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-image --genai
@@ -123,17 +138,42 @@ wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-ty
 wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --genai
 ```
 
-### Compare Text Embeddings models
+### Compare Text Embedding models
+
+**Supported options:**
+- `--embeds_pooling_type` - Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side. CLS by default.
+- `--embeds_normalize` - Normalize embeddings. False by default.
+- `--embeds_padding_side` - Side to use for padding 'left' or 'right'. 'right' by default.
+- `--embeds_batch_size` - Batch size value.
+
 ```sh
-# Export FP16 model to OpenVINO
+# Export model to OpenVINO
 optimum-cli export openvino -m BAAI/bge-small-en-v1.5 bge-small-en-v1.5 --task feature-extraction
 
 # Collect the references and save the mapping in the .csv file.
 # Reference data will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --hf
+wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --hf
 # Compute the metric
 # Target data will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --genai
+wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling_type mean --embeds_normalize --embeds_padding_side "left" --genai
+```
+
+### Compare Visual Embedding models
+
+**Supported scenarios:**
+- `image-embedding` - for creation of embedding for a list of texts and images.
+- `video-embedding` - for creation of embedding for a list of texts and videos.
+
+```sh
+# Export model to OpenVINO
+optimum-cli export openvino -m Qwen/Qwen3-VL-Embedding-2B qwen3-vl-embedding-2B --task feature-extraction
+
+# Collect the references and save the mapping in the .csv file.
+# Reference data will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Qwen/Qwen3-VL-Embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --hf
+# Compute the metric
+# Target data will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model ./qwen3-vl-embedding-2B --gt-data embed_test/gt.csv --model-type image-embedding --embeds_pooling_type last_token --genai
 ```
 
 ### Compare Text-to-video models
@@ -168,6 +208,8 @@ wwb --target-model ltx-video-model --gt-data ltx_lora_test/gt.csv --model-type t
 ```
 
 ### Compare Speech-generation models
+
+#### SpeechT5
 ```sh
 # Export SpeechT5 to OpenVINO.
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts_ov
@@ -193,13 +235,70 @@ If omitted for HF/Optimum, WWB will download and use
 `Xenova/cmu-arctic-xvectors-extracted/cmu_us_slt_arctic-wav-arctic_a0508.bin` automatically.
 For GenAI, this is the default speaker embedding that is compiled into the runtime.
 
+#### Kokoro
+```sh
+# Kokoro export
+pip install .[kokoro]
+optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code ov_Kokoro-82M
+
+# Note that above export command will populate a ov_Kokoro-82M directory with:
+# * data folder, containing phonemizer lexicon files
+# * voices folder, containing .bin files. One for each of the voices listed here: https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
+
+# Collect reference audio with Kokoro HF baseline.
+# For Kokoro, use --speech-voice to specify which voice names from the model card to use (for example, af_heart).
+# If omitted, WWB defaults to af_heart.
+wwb --base-model hexgrad/Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --hf --speech-voice af_heart --speech-language en-us
+
+# Compute metrics with Optimum Kokoro target.
+wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --output kokoro_optimum_output --speech-voice af_heart --speech-language en-us
+
+# Compute metrics with GenAI Kokoro target.
+wwb --target-model ov_Kokoro-82M --gt-data kokoro_test/gt.csv --model-type speech-generation --genai --output kokoro_genai_output --speech-voice af_heart --speech-language en-us
+```
+
+For Kokoro, `--speech-voice` is optional. If not specified, it will default to `"af_heart"`. For *optimum* and *genai* modes, you can alternatively use `--speaker_embeddings <model>/voices/<voice>.bin`.
+
+
 The speech-generation evaluator reports these metrics:
 
 * `speaker score` - speaker similarity based on SpeechBrain speaker verification.
 * `content score` - transcript similarity between base model and target model output, based on whisper transcription and normalized text comparison.
 * `acoustic score` - overall sound-character similarity based on spectral features (RMS, log-mel DTW, spectral rolloff)
-* `duration score` - relative utterance length similarity between target and reference.
+* `duration score` - relative audio length similarity between target and reference.
 * `overall similarity` - aggregate score used for sorting worst examples.
+
+### Compare Speech-recognition models (ASR)
+
+`speech-recognition` works with native ASR models, for example
+[FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512).
+
+The metric is `similarity = max(0, 1 - error rate)` between the normalized target and `--base-model`
+transcripts, where 1 is a perfect match and 0 is completely different. WWB uses character error rate
+(CER) when `--speech-language` is `zh`, `ja`, `Chinese`, or `Japanese`, and word error rate (WER) otherwise.
+
+#### FunASR
+
+```sh
+pip install .[funasr]
+
+# Collect ground truth from the baseline funasr model
+wwb --base-model FunAudioLLM/Fun-ASR-Nano-2512 --gt-data gt.csv --model-type speech-recognition --hf
+
+# Convert model to Optimum-Intel
+optimum-cli export openvino -m FunAudioLLM/Fun-ASR-Nano-2512 fun-asr-openvino
+
+# Measure similarity with the Optimum-OpenVINO inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition
+
+# Measure similarity with the OpenVINO GenAI inference backend
+wwb --target-model fun-asr-openvino --gt-data gt.csv --model-type speech-recognition --genai
+```
+
+`--speech-language` forces the transcription language as a code (Fun-ASR-Nano-2512 supports `en`, `zh`,
+and `ja`). WWB defaults to `en`.
+
+> **NOTE**: when overriding the default, pass the same `--speech-language` to the baseline and to the targets.
 
 ### API
 The API provides a way to access to investigate the worst generated text examples.

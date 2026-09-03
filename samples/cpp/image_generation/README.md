@@ -4,6 +4,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 
 There are several sample files:
  - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
+ - [`denoising_process.cpp`](./denoising_process.cpp) demonstrates how to use the callback latent argument with `Text2ImagePipeline::decode()` to render an intermediate image per inference step and save the denoising trajectory as a video
  - [`text2image_concurrency.cpp`](./text2image_concurrency.cpp) demonstrates concurrent usage of the text to image pipeline to create multiple images with different prompts
  - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`taylorseer_text2image.cpp`](./taylorseer_text2image.cpp) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Flux and StableDiffusion3 models are supported.
@@ -75,6 +76,20 @@ ov::Tensor image = pipe.generate(prompt,
    ov::genai::callback(callback)
 );
 ```
+
+## Visualize the text-to-image denoising trajectory as a video
+
+The `denoising_process.cpp` sample demonstrates how to capture the latent at every denoising step from the generation callback, decode it with `Text2ImagePipeline::decode()`, and write the full denoising trajectory as a video. It reuses the `save_video` helper from `samples/cpp/video_generation/`.
+
+The usage of this sample is:
+
+`./denoising_process <MODEL_DIR> '<PROMPT>'`
+
+For example:
+
+`./denoising_process ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'`
+
+The sample writes `denoising_process.avi` in the current working directory. Each video frame is the decoded image of the latent after a single denoising step, so the last frame approximates the final generated image.
 
 ## Run with optional LoRA adapters
 

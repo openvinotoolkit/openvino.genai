@@ -11,13 +11,14 @@ from test_utils import run_sample
 
 
 class TestEncryptedVLM:
-    @pytest.mark.llm
+    @pytest.mark.vlm
+    @pytest.mark.qwen3_vl
     @pytest.mark.samples
     @pytest.mark.skipif(
         sys.platform == "darwin" and platform.machine() == "arm64",
         reason="Only supported on X64 or ARM with SVE support",
     )
-    @pytest.mark.parametrize("convert_model", ["tiny-random-minicpmv-2_6"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen3-vl"], indirect=True)
     @pytest.mark.parametrize("sample_args", ["Describe the images."])
     @pytest.mark.parametrize("download_test_content", ["images/image.png"], indirect=True)
     @pytest.mark.parametrize("generate_test_content", ["images/lines.png"], indirect=True)

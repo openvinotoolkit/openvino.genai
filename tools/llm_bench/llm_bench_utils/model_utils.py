@@ -2,16 +2,21 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
+import io
 import json
 import torch
+import librosa
 import numpy as np
+import urllib.request
 import logging as log
 from pathlib import Path
-from llm_bench_utils.config_class import (
-    PA_ATTENTION_BACKEND,
-    SDPA_ATTENTION_BACKEND,
+from llm_bench_utils.config_class import PA_ATTENTION_BACKEND
+from llm_bench_utils.tts_utils import (
+    SPEECHT5_SPEAKER_EMB_SHAPE,
+    KOKORO_SPEAKER_EMB_SHAPE,
+    is_kokoro_model_id,
 )
-import librosa
+from urllib.parse import urlparse
 
 KNOWN_PRECISIONS = [
     'FP32', 'FP16',
@@ -30,9 +35,9 @@ def get_param_from_file(args, input_key):
     if args['prompt_file'] is None:
         if not isinstance(input_key, (list, tuple)):
             if args[input_key] is None:
-                if args['use_case'].task in ['text_gen', 'text_embed', 'text2speech']:
-                    data_list.append('What is OpenVINO?')
-                elif args['use_case'].task in ['text_rerank']:
+                if args["use_case"].task in ["text_gen", "text_gen_chat", "text_embed", "text2speech"]:
+                    data_list.append("What is OpenVINO?")
+                elif args["use_case"].task in ["text_rerank"]:
                     data_list.append("What are the main features of Intel Core Ultra processors?")
                 elif args["use_case"].task == "code_gen":
                     data_list.append("def print_hello_world():")
@@ -51,14 +56,24 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"].task not in ["visual_text_gen", "image_gen", "video_gen"]:
-                raise RuntimeError("Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models")
+            if args["use_case"].task not in [
+                "visual_text_gen",
+                "visual_text_gen_chat",
+                "image_gen",
+                "video_gen",
+                "text_embed",
+            ]:
+                raise RuntimeError(
+                    "Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models / Multimodal Embeddings"
+                )
             data_dict = {}
             if "media" in input_key:
                 if args["media"] is None and args["images"] is None:
-                    if args["use_case"].task == "visual_text_gen":
-                        if args["video"] is None:
+                    if args["use_case"].task in ["visual_text_gen", "visual_text_gen_chat"]:
+                        if args["video"] is None and args["media"] is None:
                             log.warn("Input image/video is not provided. Only text generation part will be evaluated")
+                    elif args["use_case"].task == "text_embed":
+                        pass
                     elif args["use_case"].task != "image_gen":
                         raise RuntimeError("No input image. ImageToImage/Inpainting Models cannot start generation without one. Please, provide an image.")
                 else:
@@ -67,12 +82,16 @@ def get_param_from_file(args, input_key):
                 data_dict["video"] = args["video"]
 
             if args["prompt"] is None:
-                if args["use_case"].task == "visual_text_gen":
+                if args["use_case"].task in ["visual_text_gen", "visual_text_gen_chat"]:
                     data_dict["prompt"] = "What is OpenVINO?" if data_dict.get("media") is None else "Describe image"
                 elif args["use_case"].task == "image_gen":
                     data_dict["prompt"] = "sailing ship in storm by Leonardo da Vinci"
                 elif args["use_case"].task == "video_gen":
                     data_dict["prompt"] = "A cat plays with ball on the christmas tree"
+                elif args["use_case"].task == "text_embed":
+                    # media-only embedding is valid, no text is added in that case
+                    has_media = data_dict.get("media") is not None or data_dict.get("video") is not None
+                    data_dict["prompt"] = "" if has_media else "What is OpenVINO?"
             else:
                 data_dict["prompt"] = args["prompt"]
             if "negative_prompt" in input_key:
@@ -105,8 +124,24 @@ def get_param_from_file(args, input_key):
 
 
 def read_wav(filepath, sampling_rate):
-    raw_speech = librosa.load(filepath, sr=sampling_rate)
+    filepath_str = str(filepath)
+
+    parsed = urlparse(filepath_str)
+    if parsed.scheme in {"http", "https"}:
+        with urllib.request.urlopen(filepath_str) as response:  # nosec B310 check exists above
+            raw_speech = librosa.load(io.BytesIO(response.read()), sr=sampling_rate)
+            return raw_speech[0]
+
+    raw_speech = librosa.load(filepath_str, sr=sampling_rate)
     return raw_speech[0]
+
+
+def resolve_model_dir(model_path: str | Path) -> Path:
+    # Accepts a model dir or a path to an OpenVINO .xml; returns the dir holding the model.
+    p = Path(model_path)
+    if p.name.endswith("xml"):
+        return p.parents[2]
+    return p
 
 
 def set_default_param_for_ov_config(ov_config):
@@ -115,7 +150,11 @@ def set_default_param_for_ov_config(ov_config):
         ov_config['CACHE_DIR'] = ''
 
 
+TASK_ALIASES = {"embed": "text_embed"}
+
+
 def analyze_args(args):
+    args.task = TASK_ALIASES.get(args.task, args.task)
     model_args = {}
     model_args['prompt'] = args.prompt
     model_args['prompt_file'] = args.prompt_file
@@ -139,14 +178,17 @@ def analyze_args(args):
     model_args["num_frames"] = args.num_frames
     model_args["frame_rate"] = args.frame_rate
     model_args["negative_prompt"] = args.negative_prompt
-    model_args['mask_image'] = args.mask_image
-    model_args['task'] = args.task
-    model_args['strength'] = args.strength
-    model_args['emb_pooling_type'] = args.embedding_pooling
-    model_args['emb_normalize'] = args.embedding_normalize
+    model_args["mask_image"] = args.mask_image
+    model_args["task"] = args.task
+    model_args["speech_language"] = args.speech_language
+    model_args["speech_voice"] = args.speech_voice
+    model_args["strength"] = args.strength
+    model_args["emb_pooling_type"] = args.embedding_pooling
+    model_args["emb_normalize"] = args.embedding_normalize
     model_args["emb_max_length"] = args.embedding_max_length
     model_args["emb_padding_side"] = args.embedding_padding_side
     model_args["emb_pad_to_max_length"] = args.embedding_pad_to_max_length
+    model_args["emb_prompt"] = args.embedding_prompt
     model_args['rerank_max_length'] = args.reranking_max_length
     model_args["rerank_top_n"] = args.reranking_top_n
     model_args["rerank_texts"] = args.texts
@@ -155,6 +197,7 @@ def analyze_args(args):
     model_args["video_frames"] = args.video_frames
     model_args["pruning_ratio"] = args.pruning_ratio
     model_args["relevance_weight"] = args.relevance_weight
+    model_args["num_prefill_tokens"] = args.num_prefill_tokens
     optimum = args.optimum
 
     if optimum and args.genai:
@@ -194,24 +237,28 @@ def analyze_args(args):
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
     use_case = None
     model_name = None
+    model_type = None
     if model_framework in ('ov', 'pt'):
         from llm_bench_utils.get_use_case import get_use_case
+
         use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
-    model_args['use_case'] = use_case
-    if use_case.task == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
-        model_args['prompt'] = 'def print_hello_world():'
-    model_args['config'] = {}
+        use_case.model_type = model_type
+    model_args["use_case"] = use_case
+    model_args["model_type"] = model_type
+    model_args["is_kokoro_model"] = use_case.task == "text_to_speech" and is_kokoro_model_id(model_path)
+    model_args["is_omni_model"] = isinstance(model_type, str) and model_type.startswith("qwen3-omni")
+    if use_case.task == "code_gen" and not model_args["prompt"] and not model_args["prompt_file"]:
+        model_args["prompt"] = "def print_hello_world():"
+    model_args["config"] = {}
     if args.load_config is not None:
         config = get_config(args.load_config)
         if type(config) is dict and len(config) > 0:
-            model_args['config'] = config
-    if model_framework == 'ov':
-        set_default_param_for_ov_config(model_args['config'])
-        if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
-            if use_case.task in ['text_gen']:
-                model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
-            elif use_case.task in ['visual_text_gen']:
-                model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
+            model_args["config"] = config
+    if model_framework == "ov":
+        set_default_param_for_ov_config(model_args["config"])
+        if "ATTENTION_BACKEND" not in model_args["config"] and not optimum and args.device != "NPU":
+            if use_case.task in ["text_gen", "text_gen_chat", "visual_text_gen", "visual_text_gen_chat"]:
+                model_args["config"]["ATTENTION_BACKEND"] = PA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
@@ -231,16 +278,41 @@ def analyze_args(args):
     if args.draft_cb_config:
         draft_cb_config = get_config(args.draft_cb_config)
     model_args["draft_cb_config"] = draft_cb_config
-    model_args['num_assistant_tokens'] = args.num_assistant_tokens
-    model_args['assistant_confidence_threshold'] = args.assistant_confidence_threshold
-    model_args['max_ngram_size'] = args.max_ngram_size
+    model_args["num_assistant_tokens"] = args.num_assistant_tokens
+    model_args["assistant_confidence_threshold"] = args.assistant_confidence_threshold
+    model_args["max_ngram_size"] = args.max_ngram_size
+    sd_generation_config = None
+    if args.sd_generation_config:
+        sd_generation_config = get_config(args.sd_generation_config)
+        if not isinstance(sd_generation_config, dict):
+            raise ValueError(f"--sd_generation_config must be a JSON object, got {type(sd_generation_config).__name__}")
+    model_args["sd_generation_config"] = sd_generation_config
 
     model_args['speaker_embeddings'] = None
     if args.speaker_embeddings:
-        model_args['speaker_embeddings'] = get_speaker_embeddings(args.speaker_embeddings)
-    model_args['vocoder_path'] = args.vocoder_path
-    if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
-        raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
+        expected_shape = KOKORO_SPEAKER_EMB_SHAPE if model_args["is_kokoro_model"] else SPEECHT5_SPEAKER_EMB_SHAPE
+        model_args["speaker_embeddings"] = get_speaker_embeddings(
+            args.speaker_embeddings, expected_shape=expected_shape
+        )
+    model_args["vocoder_path"] = args.vocoder_path
+    if model_args["vocoder_path"] and not Path(model_args["vocoder_path"]).exists():
+        raise RuntimeError(f"==Failure FOUND==: Incorrect vocoder path:{model_args['vocoder_path']}")
+
+    model_args["chat_iter"] = args.chat_iter
+    if model_args["use_case"].task == "text_gen_chat":
+        if args.chat_iter is not None and args.prompt_file is not None:
+            log.warning(
+                "`--chat_iter` can't be combined with `--prompt_file`, llm_bench will ignore `--chat_iter` and take prompts from prompt_file for generation"
+            )
+            model_args["chat_iter"] = None
+        elif args.chat_iter is None and args.prompt_file is None:
+            model_args["chat_iter"] = 1
+
+    model_args["full_chat"] = args.full_chat
+    if model_args["devices"] == "NPU" and not model_args["full_chat"]:
+        log.warning("NPU requires full chat history; enabling --full_chat.")
+        model_args["full_chat"] = True
+
     return model_path, model_framework, model_args
 
 
@@ -298,7 +370,10 @@ def resolve_media_file_path(file_path, prompt_file_path):
     if not file_path:
         return file_path
     if not (file_path.startswith("http://") or file_path.startswith("https://")):
-        return os.path.join(os.path.dirname(prompt_file_path), file_path.replace("./", ""))
+        media_file_path = Path(file_path)
+        if media_file_path.is_absolute():
+            return str(media_file_path.resolve())
+        return str((Path(prompt_file_path).parent / media_file_path).resolve())
     return file_path
 
 

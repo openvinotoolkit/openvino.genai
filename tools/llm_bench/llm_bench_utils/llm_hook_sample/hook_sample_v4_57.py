@@ -14,11 +14,13 @@ from transformers.generation.streamers import BaseStreamer
 from transformers.utils import ModelOutput
 from transformers.generation.configuration_utils import GenerationConfig
 import llm_bench_utils.hook_greedy_search as hook_greedy
+from dataclasses import dataclass
 
 
 logger = log.getLogger(__name__)
 
 
+@dataclass
 class GenerateDecoderOnlyOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -28,6 +30,7 @@ class GenerateDecoderOnlyOutput(ModelOutput):
     past_key_values: Optional[tuple[tuple[tuple[torch.FloatTensor]]]] = None
 
 
+@dataclass
 class GenerateEncoderDecoderOutput(ModelOutput):
     sequences: torch.LongTensor = None
     scores: Optional[tuple[torch.FloatTensor]] = None
@@ -185,12 +188,14 @@ def new_sample(
                 )
 
         # token selection
+        tic_sample = time.perf_counter()
         if do_sample:
             probs = nn.functional.softmax(next_token_scores, dim=-1)
             # TODO (joao): this OP throws "skipping cudagraphs due to ['incompatible ops']", find solution
             next_tokens = torch.multinomial(probs, num_samples=1).squeeze(1)
         else:
             next_tokens = torch.argmax(next_token_scores, dim=-1)
+        hook_greedy.tm_sample_list.append(time.perf_counter() - tic_sample)
 
         # finished sentences should have their next token be a padding token
         if has_eos_stopping_criteria:

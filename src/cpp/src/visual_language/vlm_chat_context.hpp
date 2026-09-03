@@ -36,6 +36,8 @@ public:
         std::vector<std::pair<size_t, size_t>> vision_counts;
 
         bool needs_kv_cache_reset = false;
+
+        float vision_encoding_duration = 0.0f;
     };
 
     VLMChatContext(
@@ -46,7 +48,8 @@ public:
 
     ProcessedChatData process(
         const std::vector<ov::Tensor>& new_images,
-        const std::vector<ov::Tensor>& new_videos = {}
+        const std::vector<ov::Tensor>& new_videos = {},
+        const std::vector<VideoMetadata>& new_videos_metadata = {}
     );
 
     void rollback();
@@ -65,7 +68,8 @@ private:
 
     void encode_visions_if_needed(
         const std::vector<size_t>& image_indices,
-        const std::vector<size_t>& video_indices
+        const std::vector<size_t>& video_indices,
+        const std::vector<VideoMetadata>& videos_metadata = {}
     );
                 
     void fill_messages_metadata(

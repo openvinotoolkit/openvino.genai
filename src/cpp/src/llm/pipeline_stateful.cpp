@@ -24,8 +24,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         OPENVINO_ASSERT(execution_devices.size() == 1u);
         m_is_npu = true;
         m_max_prompt_len = compiled_model.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
-        const auto min_response_len = compiled_model.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
-        m_max_kv_cache_size = m_max_prompt_len + min_response_len;
     }
 }
 
@@ -76,7 +74,6 @@ StatefulLLMPipeline::StatefulLLMPipeline(
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, *filtered_properties, kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
-        m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
     } else {
        compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     }
@@ -112,7 +109,9 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     TokenizedInputs encoded_input,
     OptionalGenerationConfig generation_config,
     StreamerVariant streamer,
-    std::chrono::steady_clock::time_point start_time
+    std::chrono::steady_clock::time_point start_time,
+    std::chrono::steady_clock::time_point tokenization_start_time,
+    std::optional<float> chat_template_duration_us
 ) {
     auto encode_stop_time =  std::chrono::steady_clock::now();
     auto encoded_results = generate(encoded_input, generation_config, streamer);
@@ -131,7 +130,10 @@ DecodedResults StatefulLLMPipeline::get_decoded_results(
     auto stop_time = std::chrono::steady_clock::now();
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - tokenization_start_time));
+    if (chat_template_duration_us.has_value()) {
+        raw_counters.chat_template_durations.emplace_back(*chat_template_duration_us);
+    }
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
 
     // Added tokenization/detokenization times, and updated generate duration, need to reevaluate statistics.
@@ -156,13 +158,18 @@ DecodedResults StatefulLLMPipeline::generate(
     GenerationConfig config = resolve_generation_config(generation_config);
 
     TokenizedInputs encoded_input;
+    auto tokenization_start_time = start_time;
+    std::optional<float> chat_template_duration_us;
 
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
         if (is_chat_conversation) {
             OPENVINO_ASSERT(input_vector->size() == 1, "Can't chat with multiple prompts");
             m_history.push_back({{"role", "user"}, {"content", (*input_vector)[0]}});
             constexpr bool add_generation_prompt = true;
+            const auto template_start_time = std::chrono::steady_clock::now();
             auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+            tokenization_start_time = std::chrono::steady_clock::now();
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
             if (m_use_full_chat_history) {
@@ -176,11 +183,16 @@ DecodedResults StatefulLLMPipeline::generate(
             for (auto& input : *input_vector) {
                 ChatHistory history({{{"role", "user"}, {"content", input}}});
                 constexpr bool add_generation_prompt = true;
+                const auto template_start_time = std::chrono::steady_clock::now();
                 auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                chat_template_duration_us = chat_template_duration_us.value_or(0.0f) +
+                                            PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
                 templated_input_vector.push_back(templated_prompt);
             }
+            tokenization_start_time = std::chrono::steady_clock::now();
             encoded_input = m_tokenizer.encode(templated_input_vector, ov::genai::add_special_tokens(false));
         } else {
+            tokenization_start_time = std::chrono::steady_clock::now();
             encoded_input = m_tokenizer.encode(*input_vector, ov::genai::add_special_tokens(true));
         }
     } else if (auto input_prompt = std::get_if<std::string>(&inputs)) {
@@ -189,7 +201,10 @@ DecodedResults StatefulLLMPipeline::generate(
         if (is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", prompt}});
             constexpr bool add_generation_prompt = true;
+            const auto template_start_time = std::chrono::steady_clock::now();
             auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+            tokenization_start_time = std::chrono::steady_clock::now();
             // Do not add special tokens in chat scenario to be aligned with HF.
             auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
@@ -204,16 +219,27 @@ DecodedResults StatefulLLMPipeline::generate(
             if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
+                const auto template_start_time = std::chrono::steady_clock::now();
                 auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+                chat_template_duration_us = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - template_start_time);
+                tokenization_start_time = std::chrono::steady_clock::now();
                 encoded_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
             } else {
                 // in case when chat_template was not found in tokenizer_config.json or set
+                tokenization_start_time = std::chrono::steady_clock::now();
                 encoded_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
             }
         }
     }
 
-    DecodedResults decoded_results = get_decoded_results(encoded_input, config, streamer, start_time);
+    DecodedResults decoded_results = get_decoded_results(
+        encoded_input,
+        config,
+        streamer,
+        start_time,
+        tokenization_start_time,
+        chat_template_duration_us
+    );
 
     if (is_chat_conversation) {
         if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
@@ -236,7 +262,7 @@ DecodedResults StatefulLLMPipeline::generate(
     StreamerVariant streamer
 ) {
     is_chat_conversation = true;
-    
+
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY;
 
@@ -245,7 +271,7 @@ DecodedResults StatefulLLMPipeline::generate(
                         "Chat doesn't support switching between input types. Please, continue using ChatHistory or restart the chat.");
 
     auto start_time = std::chrono::steady_clock::now();
-    
+
     GenerationConfig config = resolve_generation_config(generation_config);
 
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
@@ -271,7 +297,9 @@ DecodedResults StatefulLLMPipeline::generate(
     m_history = history;
 
     constexpr bool add_generation_prompt = true;
+    const auto template_start_time = std::chrono::steady_clock::now();
     auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+    const auto tokenization_start_time = std::chrono::steady_clock::now();
     auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
 
     TokenizedInputs encoded_input;
@@ -281,7 +309,14 @@ DecodedResults StatefulLLMPipeline::generate(
         ov::genai::align_cache_and_history(new_chat_tokens.input_ids, m_cache_state);
         encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_cache_state);
     }
-    return get_decoded_results(encoded_input, config, streamer, start_time);
+    return get_decoded_results(
+        encoded_input,
+        config,
+        streamer,
+        start_time,
+        tokenization_start_time,
+        PerfMetrics::get_microsec(tokenization_start_time - template_start_time)
+    );
 }
 
 EncodedResults StatefulLLMPipeline::generate(
@@ -335,7 +370,7 @@ EncodedResults StatefulLLMPipeline::generate(
         data->attention_mask.copy_to(attention_mask);
     }
 
-    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) 
+    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS)
         std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(m_tokenized_chat_history));
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);
@@ -424,7 +459,6 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     std::vector<SequenceGroup::Ptr> requests;
-    size_t block_size = 1;
 
     for (size_t request_id = 0; request_id < batch_size; request_id++) {
         SequenceGroup::Ptr sequence_group;
@@ -434,14 +468,14 @@ EncodedResults StatefulLLMPipeline::generate(
             tokenized_chat_hist.reserve(state.size() + input_ids.get_size());
             std::copy(state.begin(), state.end(), std::back_inserter(tokenized_chat_hist));
             std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(tokenized_chat_hist));
-            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config, block_size);
+            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config);
         } else {
             size_t seq_len = input_ids.get_shape().at(1);
             size_t batch_offset = request_id * seq_len;
             const int64_t* prompt_start = input_ids.data<const int64_t>() + batch_offset;
             std::vector<int64_t> tokenized_prompt(prompt_start, prompt_start + seq_len);
 
-            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config, block_size);
+            sequence_group = std::make_shared<SequenceGroup>(request_id, tokenized_prompt, config);
         }
 
         requests.push_back(sequence_group);
@@ -451,8 +485,12 @@ EncodedResults StatefulLLMPipeline::generate(
         m_sampler.set_seed(config.rng_seed);
     }
 
+    size_t max_kv_cache_size = std::numeric_limits<size_t>::max();
+    if (m_is_npu) {
+        max_kv_cache_size = ov::genai::utils::get_npu_kv_cache_capacity(m_model_runner.get_compiled_model());
+    }
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+                                                                                requests, position_ids, std::nullopt, m_cache_state, nullptr, std::nullopt, max_kv_cache_size);
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 

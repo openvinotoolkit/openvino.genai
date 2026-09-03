@@ -16,4 +16,13 @@ export const SPEECH_GENERATION_MODELS: SpeechGenerationModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Kokoro',
+    models: [
+      {
+        name: 'Kokoro-82M TTS',
+        links: ['https://huggingface.co/hexgrad/Kokoro-82M'],
+      },
+    ],
+  },
 ];

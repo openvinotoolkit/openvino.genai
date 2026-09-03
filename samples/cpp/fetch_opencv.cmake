@@ -7,16 +7,24 @@ function(ov_genai_link_opencv target_name)
         set(required_components core imgproc videoio imgcodecs)
     endif()
 
+    # A static OpenCV is preferred. On Windows OpenCVConfig.cmake selects staticlib/ or
+    # lib/ depending on OpenCV_STATIC, so probe the static layout first and fall back to
+    # the shared one. On other platforms OpenCV_STATIC has no effect on the search.
+    set(OpenCV_STATIC ON)
     find_package(OpenCV QUIET COMPONENTS ${required_components})
 
     if(NOT OpenCV_FOUND)
+        # No OpenCV available: build a static one from source.
         include(FetchContent)
 
         if(POLICY CMP0135)
             cmake_policy(SET CMP0135 NEW)
         endif()
 
-        set(BUILD_SHARED_LIBS ON)
+        set(BUILD_SHARED_LIBS OFF)
+        set(BUILD_WITH_STATIC_CRT OFF CACHE BOOL "" FORCE)
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+        set(OPENCV_ENABLE_PLUGINS OFF CACHE BOOL "" FORCE)
         set(WITH_FFMPEG ON)
         set(WITH_PROTOBUF OFF CACHE BOOL "" FORCE)
         set(WITH_GSTREAMER OFF CACHE BOOL "" FORCE)
@@ -44,6 +52,8 @@ function(ov_genai_link_opencv target_name)
         set(BUILD_opencv_ml OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_objdetect OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_photo OFF CACHE BOOL "" FORCE)
+        set(BUILD_opencv_python2 OFF CACHE BOOL "" FORCE)
+        set(BUILD_opencv_python3 OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_python_tests OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_stitching OFF CACHE BOOL "" FORCE)
         set(BUILD_opencv_ts OFF CACHE BOOL "" FORCE)
@@ -65,20 +75,27 @@ function(ov_genai_link_opencv target_name)
             target_include_directories(${target_name} PRIVATE
                 ${OPENCV_MODULE_opencv_${component}_LOCATION}/include)
         endforeach()
-
-        if(LINUX)
-            set_target_properties(${target_name} ${opencv_targets} PROPERTIES
-                INSTALL_RPATH "$ORIGIN/../lib"
-                INSTALL_RPATH_USE_LINK_PATH ON)
-        elseif(APPLE)
-            set_target_properties(${target_name} ${opencv_targets} PROPERTIES
-                INSTALL_RPATH "@loader_path/../lib"
-                INSTALL_RPATH_USE_LINK_PATH ON)
-        endif()
     else()
         set(opencv_targets ${OpenCV_LIBS})
         if(OpenCV_INCLUDE_DIRS)
             target_include_directories(${target_name} PRIVATE ${OpenCV_INCLUDE_DIRS})
+        endif()
+
+        if(OpenCV_SHARED)
+            message(STATUS "${target_name}: linking against a shared OpenCV from ${OpenCV_DIR}")
+            # The OpenCV shared libraries must be locatable at runtime. Samples are
+            # installed to samples_bin/ next to the lib/ folder of the package.
+            if(LINUX)
+                set_target_properties(${target_name} PROPERTIES
+                    INSTALL_RPATH "$ORIGIN/../lib"
+                    INSTALL_RPATH_USE_LINK_PATH ON)
+            elseif(APPLE)
+                set_target_properties(${target_name} PROPERTIES
+                    INSTALL_RPATH "@loader_path/../lib"
+                    INSTALL_RPATH_USE_LINK_PATH ON)
+            endif()
+        else()
+            message(STATUS "${target_name}: linking against a static OpenCV from ${OpenCV_DIR}")
         endif()
     endif()
 

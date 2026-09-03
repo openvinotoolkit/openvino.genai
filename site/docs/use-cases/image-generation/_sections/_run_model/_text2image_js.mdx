@@ -1,0 +1,26 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { writeFile } from 'node:fs/promises';
+import bmp from 'bmp-js';
+import { Text2ImagePipeline } from 'openvino-genai-node';
+
+const pipeline = await Text2ImagePipeline(modelPath, '${props.device || 'CPU'}');
+const image = await pipeline.generate(prompt);
+
+// Save the first generated image as BMP
+const [height, width] = [image.getShape()[1], image.getShape()[2]];
+const rgb = Uint8Array.from(image.data);
+const abgr = Buffer.allocUnsafe(width * height * 4);
+
+for (let src = 0, dst = 0; src < rgb.length; src += 3, dst += 4) {
+  abgr[dst] = 255;              // A
+  abgr[dst + 1] = rgb[src + 2]; // B
+  abgr[dst + 2] = rgb[src + 1]; // G
+  abgr[dst + 3] = rgb[src];     // R
+}
+
+const bmpData = bmp.encode({ width, height, data: abgr });
+await writeFile('image.bmp', bmpData.data);
+`}
+</CodeBlock>

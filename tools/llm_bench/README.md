@@ -94,10 +94,16 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 - `-rj`: Report in JSON format.
 - `-f`: Framework (default: ov).
 - `-p`: Interactive prompt text.
-- `-pf`: Path to a JSONL file containing prompts.
+- `-pf`: Path to a JSONL file containing prompts. Examples of prompt files can be found in the folder openvino.genai/tools/llm_bench/prompts.
 - `-n`: Number of iterations (default: 0, the first iteration is excluded).
 - `-ic`: Limit the output token size (default: 512) for text generation and code generation models.
-- `-lc`: Path to JSON file to load customized configurations.
+- `-lc`: Path to JSON file or string in JSON format to load customized OpenVINO Runtime configurations.<br>
+      Example for OpenVINO: `{"INFERENCE_PRECISION_HINT": "f32", "KV_CACHE_PRECISION": "f32", "DYNAMIC_QUANTIZATION_GROUP_SIZE": 0}` <br>
+      Additional option for OpenVINO GenAI: `{"ATTENTION_BACKEND": "SDPA"}` <br>
+      Example for PyTorch: `{"PREC_BF16":true}`. PyTorch currently only supports bf16 settings<br>
+      Example of setting option via string in Linux/Windows cmd: `"{\"ATTENTION_BACKEND\": \"SDPA\"}"` <br>
+      Example of setting option via string in PowerShell: `'{\"ATTENTION_BACKEND\": \"SDPA\"}'` <br>
+      More information about properties, please, find [OpenVINO documentation](https://docs.openvino.ai/2026/api/c_cpp_api/group__ov__runtime__cpp__prop__api.html).
 - `--optimum`: Use Optimum Intel pipelines for benchmarking.
 - `--from_onnx`: Allow initialize Optimum OpenVINO model using ONNX.
 - `--pruning_ratio`: Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.
@@ -185,6 +191,12 @@ optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/Ti
 python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.1B-Chat-v1.0 -p "What is openvino?" -n 2 --task text_gen --num_assistant_tokens 5
 ```
 
+```sh
+# chat iteration
+python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/llama-2-7b-chat/ -n 2 --task text_gen_chat -pf ./prompts/llm_chat.jsonl
+```
+
 **Some additional parameters:**
 - `--draft_device`: Inference device for Speculative decoding of draft model.
 - `--draft_cb_config`: Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model.
@@ -205,6 +217,14 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code mo
 python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
 ```
 
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino -m google/gemma-3n-E2B-it gemma-3n-E2B-it --task=image-text-to-text
+# chat iteration
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat --chat_iter 3
+python benchmark.py -m ./models/gemma-3n-E2B-it/ -n 2 --task visual_text_gen_chat -pf ./prompts/vlm_chat.jsonl
+```
+
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models
@@ -212,7 +232,7 @@ python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task 
 # convert model to OpenVINO IRs format
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16
 # text to image
-python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "scat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task text-to-image
+python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task text-to-image
 # image to image
 python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney" -n 2 --task image-to-image --media ./image.png
 # inpainting
@@ -253,12 +273,23 @@ optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vo
 wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin
 # run benchmark.py
 python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
+
+# Kokoro export (Optimum)
+pip install kokoro
+optimum-cli export openvino --model hexgrad/Kokoro-82M --trust-remote-code models/ov_Kokoro-82M
+# run benchmark.py with Kokoro (Optimum or GenAI)
+python benchmark.py -m models/ov_Kokoro-82M -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice af_heart --speech_language en-us
+
+# Qwen3-Omni text-to-speech
+python benchmark.py -m models/qwen3-omni/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speech_voice Ethan
 ```
 
 **Some additional parameters:**
 - `--vocoder_path`: Path to vocoder model
+- `--speech_voice`: Voice to use for Kokoro (default `af_heart`) and Qwen3-Omni (default `Ethan`)
+- `--speech_language`: Language for Kokoro models. One of `en-us`, `en-gb`, `es`, `fr-fr`, `hi`, `it`, `pt-br`, `ja`, `zh`
 
-> **Supported Text to Speech model types:** speecht5
+> **Supported Text to Speech model types:** speecht5, kokoro, qwen3-omni
 
 ### Speech to Text models
 ```sh
@@ -268,9 +299,17 @@ optimum-cli export openvino --model openai/whisper-base models/whisper-base
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
 python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
+
+# Qwen3-Omni speech recognition
+python benchmark.py -m models/qwen3-omni/ --media ./how_are_you_doing_today.wav -p "Transcribe this audio." -n 2 --task speech_to_text
+
+# FunASR speech recognition
+optimum-cli export openvino --model FunAudioLLM/Fun-ASR-Nano-2512 models/fun-asr
+python benchmark.py -m models/fun-asr/ --media ./how_are_you_doing_today.wav -n 2
 ```
 
-> **Supported Text to Speech model types:** whisper
+> **Supported Speech to Text model types:** whisper, qwen3-asr, fun-asr, qwen3-omni
+
 
 ### Text Rerank models
 ```sh
@@ -289,22 +328,45 @@ python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 
 > **Supported Text Rerank model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
 
-### Compare Text Embeddings models
+### Compare Text Embedding models
 ```sh
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5
 # run benchmark.py
-python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed
+python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task embed
 ```
+> `--task embed` is the recommended value; `text_embed` is kept as an alias for backward compatibility.
 
 **Some additional parameters:**
-- `-p`: Text for creating embeddings
+- `-p`: Text for creating embeddings. Optional for Qwen3-VL-Embedding when `--media`/`--video` is given — the embedding is then computed for the media alone. Defaults to `"What is OpenVINO?"` for text-only runs.
 - `--embedding_pooling`: Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side.
 - `--embedding_normalize`: Normalize embeddings
 - `--embedding_max_length`: Max length for text embeddings. Input text will be padded or truncated to specified value.
 - `--embedding_padding_side`: Side to use for padding 'left' or 'right'.
+- `--embedding_prompt`: Instruction/system prompt used to guide embedding generation. Distinct from `-p`, which supplies the content being embedded. For Qwen3-VL-Embedding this defaults to `"Represent the user's input."`.
 
-> **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
+> **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3, qwen3-vl
+
+### Compare Multimodal (Qwen3-VL) Embedding models
+Qwen3-VL-Embedding shares its architecture with Qwen3-VL text generation; the embedding behavior requires `--task embed` explicitly.
+```sh
+# convert model to OpenVINO IR format
+optimum-cli export openvino --model Qwen/Qwen3-VL-Embedding-8B --task feature-extraction models/Qwen3-VL-Embedding-8B
+# text-only embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Describe OpenVINO"
+# image embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Represent this image" --media cat.png
+# video embedding
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -p "Represent this video" --video video.mp4 -vf 4
+# media-only embedding: -p is optional when media is provided
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed --media cat.png
+# with Optimum Intel
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed --media cat.png --optimum
+# JSONL input (each entry may include prompt/media/video; prompt may be omitted for media-only entries)
+python benchmark.py -m models/Qwen3-VL-Embedding-8B -n 2 --task embed -pf inputs.jsonl
+```
+
+The GenAI backend uses `openvino_genai.EmbeddingPipeline` when available (falling back to `TextEmbeddingPipeline` on older `openvino_genai`); multimodal inputs require `EmbeddingPipeline`. For Qwen3-VL-Embedding it applies `LAST_TOKEN` pooling by default and chat-template preprocessing. `--batch_size N` repeats the prompt N times; media (images/videos) are decoded once and applied to every prompt in the batch by the GenAI pipeline.
 
 ### Code Generation models
 ```sh
@@ -343,10 +405,11 @@ python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --tas
 ```
 
 **Parameters:**
-- `-mc, --memory_consumption`: Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2, output the maximum memory consumption in all iterations.
+- `-mc, --memory_consumption`: Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations. If the value is 2, output the maximum memory consumption in all iterations. Then 3 means separated process, warm-up only, 4 - separated process with all iterations.
 - `--memory_consumption_interval`: Interval sampling for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance.
-- `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources.
+- `--memory_consumption_cooldown`: Time for relaxing before workload, it allows to deallocate system resources by portable heap-trimming helper.
 - `-mc_dir, --memory_consumption_dir`: Path to store memory consumption logs and chart.
+- `--memory_sampler`: set of metrics to collect: base, full, or win-gpu.
 
 ## 9. Additional Resources
 

@@ -11,7 +11,9 @@ from transformers import set_seed
 import torch
 import openvino_genai
 
+from .utils import parquet_generate_tables
 from .registry import register_evaluator
+from .inpaint_evaluator import patched_parquet
 from .text2image_evaluator import Text2ImageEvaluator
 
 from .whowhat_metrics import ImageSimilarity
@@ -79,15 +81,16 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
 
     def _generate_data(self, model, gen_image_fn=None, image_dir="reference"):
         def default_gen_image_fn(model, prompt, image, num_inference_steps, generator=None):
+            kwargs = {
+                "prompt": prompt,
+                "image": image,
+                "num_inference_steps": num_inference_steps,
+                "output_type": "pil",
+                "strength": 0.8,
+                "generator": generator,
+            }
             with torch.no_grad():
-                output = model(
-                    prompt,
-                    image=image,
-                    num_inference_steps=num_inference_steps,
-                    output_type="pil",
-                    strength=0.8,
-                    generator=generator,
-                )
+                output = model(**kwargs)
             return output.images[0]
 
         generation_fn = gen_image_fn or default_gen_image_fn
@@ -102,7 +105,8 @@ class Image2ImageEvaluator(Text2ImageEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+            with patched_parquet(parquet_generate_tables):
+                data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
         prompts = data["prompts"]
         images = data["images"]

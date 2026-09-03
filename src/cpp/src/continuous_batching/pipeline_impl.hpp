@@ -6,10 +6,13 @@
 #include "continuous_batching/pipeline_base.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
-#include "continuous_batching/cache_eviction.hpp"
+#include "continuous_batching/cache/cache_eviction.hpp"
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
+
+void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
+                                       const SchedulerConfig& scheduler_config);
 
 class ContinuousBatchingPipeline::ContinuousBatchingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:
@@ -31,14 +34,12 @@ protected:
     std::deque<float> m_previous_step_cache_usages;
 
     // for perf metrics
-    float m_load_time_ms = 0.0f;
     size_t m_batch_size = 0; // stored number of processed tokens on last step
 
     // flag to enable validation mode for sampler
     bool m_is_validation_mode_enabled = false;
 
     size_t m_num_decoder_layers = 0;
-    size_t m_block_size = 0;
 
     // Pre-allocated per-layer storages for the per-token cache re-rotation deltas used in cache eviction case
     std::vector<ov::Tensor> m_rotation_deltas_stores;
@@ -98,6 +99,20 @@ protected:
     void _prepare_rotation_data_storage(const SchedulerConfig& normalized_config, size_t embedding_size);
     void _set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output);
 
+    void _validate_linear_verifier_constraints() const;
+
+    /// Reserves LA live + scratch rows for speculative verification.
+    void _reserve_linear_attention_scratch();
+
+    /// Commits speculative LA checkpoint transactions after sampling.
+    virtual void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output);
+
+    /// Mirrors the scheduler's cumulative speculative LA counters into the pipeline metrics.
+    void _publish_linear_attention_pool_metric();
+
+    /// Returns borrowed LA rows of every scheduled sequence to the pool (used on the failure path).
+    void _release_linear_attention_borrowed_rows(const Scheduler::Output& scheduler_output);
+
     virtual void drop_requests();
 
 public:
@@ -134,6 +149,10 @@ public:
     bool has_non_finished_requests() override;
 
     virtual void generate_candidates_for_prompt_lookup();
+
+    virtual bool sync_embeddings_after_candidates() const {
+        return !m_is_validation_mode_enabled;
+    }
 
     void step() override;
 

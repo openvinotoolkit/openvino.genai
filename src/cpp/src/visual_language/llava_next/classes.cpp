@@ -48,7 +48,7 @@ ov::Tensor VisionEncoderLLaVANext::get_pixel_values_llava_next(const ov::Tensor&
 EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
-    ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+    ProcessorConfig config = ProcessorConfig::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values = get_pixel_values_llava_next(image, config);
 
@@ -388,7 +388,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    ov::Tensor text_embeds = get_text_embedding(req, input_ids, metrics);
 
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());

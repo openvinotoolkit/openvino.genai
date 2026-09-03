@@ -20,15 +20,15 @@ async function main() {
       alias: "p",
       type: "string",
       describe:
-        "The prompt to generate text. If without `-p` and `--pf`, the default prompt is `The Sky is blue because`.",
+        "The prompt to generate text. If without `-p` and `-F`, the default prompt is `The Sky is blue because`.",
     })
     .option("prompt_file", {
-      alias: "pf",
+      alias: "F",
       type: "string",
       describe: "Read prompt from file.",
     })
     .option("num_warmup", {
-      alias: "nw",
+      alias: "N",
       type: "number",
       default: 1,
       describe: "Number of warmup iterations.",
@@ -36,11 +36,11 @@ async function main() {
     .option("num_iter", {
       alias: "n",
       type: "number",
-      default: 2,
+      default: 3,
       describe: "Number of iterations.",
     })
     .option("max_new_tokens", {
-      alias: "mt",
+      alias: "M",
       type: "number",
       default: 20,
       describe: "Maximal number of new tokens.",
@@ -111,6 +111,6 @@ async function main() {
   console.log(`Tokenization time: ${perfMetrics.getTokenizationDuration().mean} ± ${perfMetrics.getTokenizationDuration().std} ms`);
   console.log(`Detokenization time: ${perfMetrics.getDetokenizationDuration().mean} ± ${perfMetrics.getDetokenizationDuration().std} ms`);
   console.log(`TTFT: ${perfMetrics.getTTFT().mean} ± ${perfMetrics.getTTFT().std} ms`);
-  console.log(`TPOT: ${perfMetrics.getTPOT().mean} ± ${perfMetrics.getTPOT().std} ms`);
+  console.log(`TPOT: ${perfMetrics.getTPOT().mean} ± ${perfMetrics.getTPOT().std} ms/token`);
   console.log(`Throughput : ${perfMetrics.getThroughput().mean} ± ${perfMetrics.getThroughput().std} tokens/s`);
 }

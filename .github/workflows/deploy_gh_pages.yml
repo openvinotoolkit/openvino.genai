@@ -2,6 +2,11 @@ name: Deploy Docs to GitHub Pages
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'site/**'
   push:
     branches:
       - master
@@ -9,7 +14,7 @@ on:
       - 'site/**'
 
 concurrency:
-  group: 'pages'
+  group: pages-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -22,12 +27,12 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -42,11 +47,13 @@ jobs:
         run: npm run build
 
       - name: Upload pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./site/build
 
   deploy_github_pages:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     needs: build_assets
     permissions:
