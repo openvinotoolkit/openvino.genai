@@ -4,6 +4,8 @@
 
 import argparse
 
+import numpy as np
+import openvino as ov
 import openvino_genai
 
 from pathlib import Path
@@ -55,11 +57,60 @@ def dedicated_models_export_import(root_dir: Path):
 
     pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
         scheduler=openvino_genai.Scheduler.from_config(root_dir / "scheduler" / "scheduler_config.json"),
-        clip_text_model=openvino_genai.CLIPTextModel(root_dir / "text_encoder", device, blob_path=blob_path / "text_encoder"),
-        clip_text_model_with_projection=openvino_genai.CLIPTextModelWithProjection(root_dir / "text_encoder_2", device, blob_path=blob_path / "text_encoder_2"),
+        clip_text_model=openvino_genai.CLIPTextModel(
+            root_dir / "text_encoder", device, blob_path=blob_path / "text_encoder"
+        ),
+        clip_text_model_with_projection=openvino_genai.CLIPTextModelWithProjection(
+            root_dir / "text_encoder_2", device, blob_path=blob_path / "text_encoder_2"
+        ),
         unet=openvino_genai.UNet2DConditionModel(root_dir / "unet", device, blob_path=blob_path / "unet"),
         vae=openvino_genai.AutoencoderKL(root_dir / "vae_decoder", device, blob_path=blob_path),
     )
+
+
+def tensor_models_export_import(root_dir: Path):
+    blob_path = root_dir / "exported_tensors"
+    device = "CPU"
+
+    pipe = openvino_genai.Text2ImagePipeline(root_dir, device)
+    pipe.export_model(blob_path)
+
+    def read_blob_tensor(model_folder: str):
+        blob = np.fromfile(blob_path / model_folder / "openvino_model.blob", dtype=np.uint8)
+        return ov.Tensor(blob)
+
+    text_encoder = openvino_genai.CLIPTextModel(
+        read_blob_tensor("text_encoder"),
+        openvino_genai.CLIPTextModel.Config(root_dir / "text_encoder" / "config.json"),
+        openvino_genai.Tokenizer(root_dir / "tokenizer"),
+        device,
+    )
+    text_encoder_2 = openvino_genai.CLIPTextModelWithProjection(
+        read_blob_tensor("text_encoder_2"),
+        openvino_genai.CLIPTextModelWithProjection.Config(root_dir / "text_encoder_2" / "config.json"),
+        openvino_genai.Tokenizer(root_dir / "tokenizer_2"),
+        device,
+    )
+    vae = openvino_genai.AutoencoderKL(
+        read_blob_tensor("vae_decoder"),
+        openvino_genai.AutoencoderKL.Config(root_dir / "vae_decoder" / "config.json"),
+        device,
+    )
+    unet = openvino_genai.UNet2DConditionModel(
+        read_blob_tensor("unet"),
+        openvino_genai.UNet2DConditionModel.Config(root_dir / "unet" / "config.json"),
+        vae.get_vae_scale_factor(),
+        device,
+    )
+
+    imported_pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
+        scheduler=openvino_genai.Scheduler.from_config(root_dir / "scheduler" / "scheduler_config.json"),
+        clip_text_model=text_encoder,
+        clip_text_model_with_projection=text_encoder_2,
+        unet=unet,
+        vae=vae,
+    )
+    _ = imported_pipe
 
 
 def export_import_with_reshape(root_dir: Path, prompt: str):
@@ -105,6 +156,7 @@ def main():
 
     pipeline_export_import(root_dir)
     dedicated_models_export_import(root_dir)
+    tensor_models_export_import(root_dir)
     export_import_with_reshape(root_dir, args.prompt)
 
 
