@@ -380,7 +380,7 @@ if (image_path.empty()) {
 
 ## Export and import compiled models
 
-`ov::genai::Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
+`ov::genai::Text2ImagePipeline`, `ov::genai::Image2ImagePipeline`, and `ov::genai::InpaintingPipeline` support exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported, currently.
 
 ```cpp
 // export models
