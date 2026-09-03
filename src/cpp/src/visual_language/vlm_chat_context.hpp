@@ -25,19 +25,27 @@ public:
         
         std::vector<EncodedImage> encoded_images;
         std::vector<EncodedVideo> encoded_videos;
+        std::vector<EncodedAudio> encoded_audios;
         std::vector<size_t> image_sequence;
         std::vector<size_t> video_sequence;
+        std::vector<size_t> audio_sequence;
         
         std::vector<EncodedImage> new_encoded_images;
         std::vector<EncodedVideo> new_encoded_videos;
+        std::vector<EncodedAudio> new_encoded_audios;
         std::vector<size_t> new_image_sequence;
         std::vector<size_t> new_video_sequence;
+        std::vector<size_t> new_audio_sequence;
         
         std::vector<std::pair<size_t, size_t>> vision_counts;
 
         bool needs_kv_cache_reset = false;
 
         float vision_encoding_duration = 0.0f;
+
+        // One entry per audio actually encoded, so a registry cache hit is distinguishable from a
+        // miss. An aggregate scalar could not express "nothing was re-encoded this turn".
+        std::vector<MicroSeconds> audio_encoding_durations;
     };
 
     VLMChatContext(
@@ -49,7 +57,8 @@ public:
     ProcessedChatData process(
         const std::vector<ov::Tensor>& new_images,
         const std::vector<ov::Tensor>& new_videos = {},
-        const std::vector<VideoMetadata>& new_videos_metadata = {}
+        const std::vector<VideoMetadata>& new_videos_metadata = {},
+        const std::vector<ov::Tensor>& new_audios = {}
     );
 
     void rollback();
@@ -65,23 +74,28 @@ private:
     size_t m_initial_messages_metadata_count = 0;
     size_t m_initial_base_image_index = 0;
     size_t m_initial_base_video_index = 0;
+    size_t m_initial_base_audio_index = 0;
 
-    void encode_visions_if_needed(
+    /// @return Per-encode audio durations, one entry per cache miss.
+    std::vector<MicroSeconds> encode_visions_if_needed(
         const std::vector<size_t>& image_indices,
         const std::vector<size_t>& video_indices,
-        const std::vector<VideoMetadata>& videos_metadata = {}
+        const std::vector<VideoMetadata>& videos_metadata = {},
+        const std::vector<size_t>& audio_indices = {}
     );
                 
     void fill_messages_metadata(
         size_t start_index,
         const std::vector<size_t>& new_image_indices,
-        const std::vector<size_t>& new_video_indices
+        const std::vector<size_t>& new_video_indices,
+        const std::vector<size_t>& new_audio_indices = {}
     );
 
     std::string multipart_message_to_string(
         const JsonContainer& message,
         size_t base_image_index,
-        size_t base_video_index
+        size_t base_video_index,
+        size_t base_audio_index
     ) const;
 };
 
