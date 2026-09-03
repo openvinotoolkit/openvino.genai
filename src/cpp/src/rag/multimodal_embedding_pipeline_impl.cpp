@@ -282,6 +282,10 @@ EmbedResult MultimodalEmbeddingPipelineImpl::multimodal_embed(
 
         const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
         for (const auto& [name, tensor] : lm_extra_inputs) {
+            if (name == "token_type_ids") {
+                // token_type_ids LM input is set above via batched_token_type_ids
+                continue;
+            }
             if (has_lm_input(name) && tensor.get_size() > 0) {
                 m_language_model_request.set_tensor(name, tensor);
             }
