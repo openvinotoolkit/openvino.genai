@@ -392,10 +392,9 @@ void extract_extensions_to_core(ov::AnyMap& properties);
 
 void clear_false_prompt_lookup_from_config(ov::AnyMap& properties);
 
-// Emits an INFO message announcing the enabled attention backend (SDPA / PA).
 void log_attention_backend(const std::string& attention_backend);
 
-// Emits an INFO message about the Paged Attention initialization failure and the SDPA fallback,
+// Print an INFO message about the Paged Attention initialization failure and the SDPA fallback,
 // followed by a DEBUG message with the original exception details.
 void log_paged_attention_fallback(const ov::Exception& exception);
 
