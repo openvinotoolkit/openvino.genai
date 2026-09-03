@@ -493,6 +493,7 @@ public:
                 m_input_embeds[i].resize(hidden_size);
                 std::copy_n(input_ids.data<const float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
             }
+            // TODO Remove
             if (token_type_ids.has_value()) {
                 const ov::Tensor& tokens = token_type_ids.value();
                 m_token_type_ids = std::vector<int64_t>(tokens.get_size());
@@ -519,6 +520,11 @@ public:
                             "per_layer_inputs must have shape [1, tokens, num_hidden_layers, hidden_size]");
                         m_per_layer_inputs = ov::Tensor(tensor.get_element_type(), shape);
                         tensor.copy_to(m_per_layer_inputs);
+                    } else if (input_name == "token_type_ids") {
+                        m_token_type_ids = std::vector<int64_t>(
+                            tensor.data<const int64_t>(),
+                            tensor.data<const int64_t>() + tensor.get_size()
+                        );
                     } else {
                         OPENVINO_THROW("Unsupported extra input for LLM: " + input_name);
                     }

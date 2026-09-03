@@ -260,6 +260,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             EmbeddingsRequest& req = embeddings_request_guard.get();
             const ov::Tensor& embed_prompt_tensor = m_embedding->infer(req, new_input_ids, use_intermediate_remote_tensor);
             m_llm.set_tensor("inputs_embeds", embed_prompt_tensor);
+            // TODO Remove
             if (token_type_ids.has_value()) {
                 ov::Tensor new_token_type_ids(ov::element::i64, {total_num_tokens, 1});
                 int64_t* token_type_data = new_token_type_ids.data<int64_t>();
@@ -268,7 +269,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             }
             // Update extra inputs for LLM if any
             for (const auto& [name, tensor] : lm_extra_inputs) {
-                // TODO Consider moving token_type_ids input to lm_extra_inputs
                 if (name == "deepstack_visual_embeds") {
                     ov::Shape new_shape = tensor.get_shape();
                     new_shape[1] = 1;
@@ -281,6 +281,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                     m_llm.set_tensor(name, new_visual_pos_masks);
                 } else if (name == "per_layer_inputs" && per_layer_embeddings_callback) {
                     m_llm.set_tensor(name, per_layer_embeddings_callback(new_input_ids));
+                } else if (name == "token_type_ids") {
+                    ov::Tensor new_token_type_ids(tensor.get_element_type(), {total_num_tokens, 1});
+                    std::fill_n(new_token_type_ids.data<int64_t>(), new_token_type_ids.get_size(), 0);
+                    m_llm.set_tensor(name, new_token_type_ids);
                 }
             }
         } else {
