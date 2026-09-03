@@ -356,7 +356,7 @@ NormalizedPrompt InputsEmbedderMuseGlimmer::normalize_prompt(const std::string& 
 
     std::vector<size_t> videos_sequence;
     std::tie(unified_prompt, videos_sequence) =
-        normalize(unified_prompt, VIDEO_SENTINEL, VIDEO_SENTINEL, base_video_id, videos.size(), VisionType::VIDEO);
+        normalize(unified_prompt, VIDEO_SENTINEL, VIDEO_SENTINEL, base_video_id, videos.size(), ModalityType::VIDEO);
     searched_pos = 0;
     const size_t temporal_patch_size = m_vision_encoder->get_video_processor_config().temporal_patch_size;
     for (const size_t new_video_id : videos_sequence) {

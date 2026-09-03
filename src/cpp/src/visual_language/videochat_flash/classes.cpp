@@ -273,7 +273,7 @@ std::string normalize_prompt_impl(
     );
 
     // Convert universal video placeholders into the shared native visual tags.
-    auto [normalized_prompt, visual_sequence] = universal_to_native(prompt, write_native, VisionType::VIDEO);
+    auto [normalized_prompt, visual_sequence] = universal_to_native(prompt, write_native, ModalityType::VIDEO);
     if (!visual_sequence.empty()) {
         OPENVINO_ASSERT(
             !std::regex_search(prompt, native_pattern),

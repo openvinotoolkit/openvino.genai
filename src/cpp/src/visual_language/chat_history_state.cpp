@@ -63,6 +63,24 @@ std::vector<size_t> ChatHistoryInternalState::register_videos(const std::vector<
     return indices;
 }
 
+/**
+ * @brief Audio variant of `register_images()`.
+ */
+std::vector<size_t> ChatHistoryInternalState::register_audios(const std::vector<ov::Tensor>& audios) {
+    auto vision_registry = get_vision_registry();
+
+    std::vector<size_t> indices;
+    indices.reserve(audios.size());
+
+    for (const auto& audio : audios) {
+        VisionID id = vision_registry->register_audio(audio);
+        size_t global_idx = m_audio_index_to_id.size();
+        m_audio_index_to_id.push_back(id);
+        indices.push_back(global_idx);
+    }
+    return indices;
+}
+
 std::vector<EncodedImage> ChatHistoryInternalState::get_encoded_images(const std::vector<size_t>& indices) const {
     auto vision_registry = get_vision_registry();
     
@@ -87,6 +105,18 @@ std::vector<EncodedVideo> ChatHistoryInternalState::get_encoded_videos(const std
     return result;
 }
 
+std::vector<EncodedAudio> ChatHistoryInternalState::get_encoded_audios(const std::vector<size_t>& indices) const {
+    auto vision_registry = get_vision_registry();
+
+    std::vector<EncodedAudio> result;
+    result.reserve(indices.size());
+    for (size_t idx : indices) {
+        VisionID id = m_audio_index_to_id.at(idx);
+        result.push_back(vision_registry->get_encoded_audio(id));
+    }
+    return result;
+}
+
 /**
  * @brief Converts global vision indices to encoded vision data with corresponding
  * deduplicated index sequences.
@@ -101,7 +131,8 @@ std::vector<EncodedVideo> ChatHistoryInternalState::get_encoded_videos(const std
  */
 ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visions_with_sequence(
     std::optional<const std::vector<size_t>> image_sequence,
-    std::optional<const std::vector<size_t>> video_sequence
+    std::optional<const std::vector<size_t>> video_sequence,
+    std::optional<const std::vector<size_t>> audio_sequence
 ) const {
     auto vision_registry = get_vision_registry();
     
@@ -109,6 +140,7 @@ ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visi
     
     std::vector<size_t> global_image_sequence = image_sequence.value_or(build_full_image_sequence());
     std::vector<size_t> global_video_sequence = video_sequence.value_or(build_full_video_sequence());
+    std::vector<size_t> global_audio_sequence = audio_sequence.value_or(build_full_audio_sequence());
     
     std::unordered_map<VisionID, size_t> image_id_to_dedup_index;
     for (size_t global_idx : global_image_sequence) {
@@ -141,7 +173,17 @@ ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visi
             result.video_sequence.push_back(it->second);
         }
     }
-    
+
+    // Kept 1:1 with the sequence, unlike images/videos: the merge binds run k to
+    // audio_sequence[k], so a dedup-collapsed index would place the wrong audio.
+    result.encoded_audios.reserve(global_audio_sequence.size());
+    result.audio_sequence.reserve(global_audio_sequence.size());
+    for (size_t global_idx : global_audio_sequence) {
+        VisionID id = m_audio_index_to_id.at(global_idx);
+        result.audio_sequence.push_back(result.encoded_audios.size());
+        result.encoded_audios.push_back(vision_registry->get_encoded_audio(id));
+    }
+
     return result;
 }
 
@@ -161,6 +203,16 @@ std::vector<size_t> ChatHistoryInternalState::build_full_video_sequence() const 
         sequence.insert(sequence.end(),
                         metadata.video_sequence.begin(),
                         metadata.video_sequence.end());
+    }
+    return sequence;
+}
+
+std::vector<size_t> ChatHistoryInternalState::build_full_audio_sequence() const {
+    std::vector<size_t> sequence;
+    for (const auto& metadata : m_messages_metadata) {
+        sequence.insert(sequence.end(),
+                        metadata.audio_sequence.begin(),
+                        metadata.audio_sequence.end());
     }
     return sequence;
 }
@@ -229,28 +281,32 @@ void ChatHistoryInternalState::truncate_to(size_t size) {
 
     size_t new_image_base_index = 0;
     size_t new_video_base_index = 0;
+    size_t new_audio_base_index = 0;
     for (size_t i = 0; i < size; ++i) {
         new_image_base_index += m_messages_metadata[i].provided_image_indices.size();
         new_video_base_index += m_messages_metadata[i].provided_video_indices.size();
+        new_audio_base_index += m_messages_metadata[i].provided_audio_indices.size();
     }
 
-    release_refs_from(new_image_base_index, new_video_base_index);
+    release_refs_from(new_image_base_index, new_video_base_index, new_audio_base_index);
 
     m_image_index_to_id.resize(new_image_base_index);
     m_video_index_to_id.resize(new_video_base_index);
+    m_audio_index_to_id.resize(new_audio_base_index);
     
     m_messages_metadata.resize(size);
 }
 
 void ChatHistoryInternalState::reset() {
-    release_refs_from(0, 0);
+    release_refs_from(0, 0, 0);
     m_image_index_to_id.clear();
     m_video_index_to_id.clear();
+    m_audio_index_to_id.clear();
     m_messages_metadata.clear();
     m_chat_history_format = ChatHistoryFormat::UNKNOWN;
 }
 
-void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t video_index) {
+void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t video_index, size_t audio_index) {
     auto vision_registry = m_vision_registry.lock();
     if (!vision_registry)
         return;
@@ -260,6 +316,11 @@ void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t vide
     }
     for (size_t i = video_index; i < m_video_index_to_id.size(); ++i) {
         vision_registry->release_ref(m_video_index_to_id[i]);
+    }
+    // Without this, audio entries outlive the conversation and a later turn sees a stale cache
+    // hit instead of re-encoding.
+    for (size_t i = audio_index; i < m_audio_index_to_id.size(); ++i) {
+        vision_registry->release_ref(m_audio_index_to_id[i]);
     }
 }
 
