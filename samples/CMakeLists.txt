@@ -43,6 +43,7 @@ install(DIRECTORY
             python/speech_generation
             python/visual_language_chat
             python/automatic_speech_recognition
+            python/omni
             python/rag
         DESTINATION samples/python COMPONENT cpp_samples_genai
         USE_SOURCE_PERMISSIONS)

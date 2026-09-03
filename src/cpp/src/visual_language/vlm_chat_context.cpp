@@ -20,12 +20,14 @@ VLMChatContext::VLMChatContext(
     m_initial_messages_metadata_count = m_history_state->get_messages_metadata().size();
     m_initial_base_image_index = m_history_state->get_base_image_index();
     m_initial_base_video_index = m_history_state->get_base_video_index();
+    m_initial_base_audio_index = m_history_state->get_base_audio_index();
 }
 
 VLMChatContext::ProcessedChatData VLMChatContext::process(
     const std::vector<ov::Tensor>& new_images,
     const std::vector<ov::Tensor>& new_videos,
-    const std::vector<VideoMetadata>& new_videos_metadata
+    const std::vector<VideoMetadata>& new_videos_metadata,
+    const std::vector<ov::Tensor>& new_audios
 ) {
     ProcessedChatData result;
     
@@ -36,17 +38,20 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
         m_history_state->truncate_to(matching_history_length);
         m_initial_base_image_index = m_history_state->get_base_image_index();
         m_initial_base_video_index = m_history_state->get_base_video_index();
+        m_initial_base_audio_index = m_history_state->get_base_audio_index();
     }
     
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
     std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos);
+    std::vector<size_t> new_audio_indices = m_history_state->register_audios(new_audios);
     
     ManualTimer vision_encoding_timer("Vision Encoding");
     vision_encoding_timer.start();
-    encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata);
+    result.audio_encoding_durations =
+        encode_visions_if_needed(new_image_indices, new_video_indices, new_videos_metadata, new_audio_indices);
     vision_encoding_timer.end();
     
-    fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices);
+    fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices, new_audio_indices);
     
     result.normalized_history = m_history_state->build_normalized_history(m_history);
     
@@ -54,8 +59,10 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
 
     result.encoded_images = std::move(resolved_visions.encoded_images);
     result.encoded_videos = std::move(resolved_visions.encoded_videos);
+    result.encoded_audios = std::move(resolved_visions.encoded_audios);
     result.image_sequence = std::move(resolved_visions.image_sequence);
     result.video_sequence = std::move(resolved_visions.video_sequence);
+    result.audio_sequence = std::move(resolved_visions.audio_sequence);
 
     const auto& last_user_message_metadata = m_history_state->get_messages_metadata().at(
         m_history_state->get_last_user_message_index()
@@ -63,13 +70,16 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
 
     auto resolved_new_visions = m_history_state->resolve_visions_with_sequence(
         last_user_message_metadata.image_sequence,
-        last_user_message_metadata.video_sequence
+        last_user_message_metadata.video_sequence,
+        last_user_message_metadata.audio_sequence
     );
 
     result.new_encoded_images = std::move(resolved_new_visions.encoded_images);
     result.new_encoded_videos = std::move(resolved_new_visions.encoded_videos);
+    result.new_encoded_audios = std::move(resolved_new_visions.encoded_audios);
     result.new_image_sequence = std::move(resolved_new_visions.image_sequence);
     result.new_video_sequence = std::move(resolved_new_visions.video_sequence);
+    result.new_audio_sequence = std::move(resolved_new_visions.audio_sequence);
     
     result.vision_counts = m_history_state->build_vision_counts();
     
@@ -84,13 +94,16 @@ void VLMChatContext::rollback() {
      m_history_state->truncate_to(m_initial_messages_metadata_count);
      m_initial_base_image_index = m_history_state->get_base_image_index();
      m_initial_base_video_index = m_history_state->get_base_video_index();
+     m_initial_base_audio_index = m_history_state->get_base_audio_index();
 }
 
-void VLMChatContext::encode_visions_if_needed(
+std::vector<MicroSeconds> VLMChatContext::encode_visions_if_needed(
     const std::vector<size_t>& image_indices,
     const std::vector<size_t>& video_indices,
-    const std::vector<VideoMetadata>& videos_metadata
+    const std::vector<VideoMetadata>& videos_metadata,
+    const std::vector<size_t>& audio_indices
 ) {
+    std::vector<MicroSeconds> audio_encoding_durations;
     for (size_t idx : image_indices) {
         VisionID id = m_history_state->get_image_vision_id(idx);
         if (!m_vision_registry->has_encoded_image(id)) {
@@ -118,15 +131,32 @@ void VLMChatContext::encode_visions_if_needed(
             m_vision_registry->set_encoded_video(id, std::move(encoded[0]));
         }
     }
+
+    // Content-hash cache hit means an identical tensor re-sent on a later turn is not re-encoded,
+    // which is the whole point of routing audio through the registry.
+    for (size_t idx : audio_indices) {
+        VisionID id = m_history_state->get_audio_vision_id(idx);
+        if (!m_vision_registry->has_encoded_audio(id)) {
+            const ov::Tensor& original = m_vision_registry->get_original(id);
+            const auto audio_encoding_start = std::chrono::steady_clock::now();
+            auto encoded = m_inputs_embedder.encode_audios({original});
+            PerfMetrics::emplace_duration(audio_encoding_durations, audio_encoding_start);
+            m_vision_registry->set_encoded_audio(id, std::move(encoded[0]));
+        }
+    }
+
+    return audio_encoding_durations;
 }
 
 void VLMChatContext::fill_messages_metadata(
     size_t start_index,
     const std::vector<size_t>& new_image_indices,
-    const std::vector<size_t>& new_video_indices
+    const std::vector<size_t>& new_video_indices,
+    const std::vector<size_t>& new_audio_indices
 ) {
     size_t base_image_index = m_initial_base_image_index;
     size_t base_video_index = m_initial_base_video_index;
+    size_t base_audio_index = m_initial_base_audio_index;
 
     for (size_t i = start_index; i < m_history.size(); ++i) {
         const auto& message = m_history[i];
@@ -146,26 +176,36 @@ void VLMChatContext::fill_messages_metadata(
         if (i == m_history_state->get_last_user_message_index()) {
             metadata.provided_image_indices = new_image_indices;
             metadata.provided_video_indices = new_video_indices;
+            metadata.provided_audio_indices = new_audio_indices;
         }
         
         std::vector<EncodedImage> encoded_images = m_history_state->get_encoded_images(metadata.provided_image_indices);
         std::vector<EncodedVideo> encoded_videos = m_history_state->get_encoded_videos(metadata.provided_video_indices);
+        std::vector<EncodedAudio> encoded_audios = m_history_state->get_encoded_audios(metadata.provided_audio_indices);
 
         std::string prompt_to_normalize;
         if (m_history_state->get_chat_history_format() == ChatHistoryFormat::STRING_CONTENT) {
             prompt_to_normalize = message["content"].get_string();
         }
         if (m_history_state->get_chat_history_format() == ChatHistoryFormat::MULTIPART_CONTENT) {
-            prompt_to_normalize = multipart_message_to_string(message, base_image_index, base_video_index);
+            prompt_to_normalize =
+                multipart_message_to_string(message, base_image_index, base_video_index, base_audio_index);
         }
 
-        auto normalized = m_inputs_embedder.normalize_prompt(
-            prompt_to_normalize, base_image_index, base_video_index, encoded_images, encoded_videos
-        );
+        // Per-message audio: each message normalizes with only its own audio, so a block can no
+        // longer be prepended to every user message the way the embedder-member version did.
+        auto normalized = m_inputs_embedder.normalize_prompt(prompt_to_normalize,
+                                                             base_image_index,
+                                                             base_video_index,
+                                                             base_audio_index,
+                                                             encoded_images,
+                                                             encoded_videos,
+                                                             encoded_audios);
         metadata.normalized_content = normalized.unified_prompt;
         
         metadata.image_sequence = normalized.images_sequence;
         metadata.video_sequence = normalized.videos_sequence;
+        metadata.audio_sequence = normalized.audios_sequence;
 
         // image_sequence can be empty after prompt normalization (phi3_vision and phi4mm).
         // It is processed later in corresponding inputs_embedder `get_inputs_embeds()`.
@@ -179,6 +219,7 @@ void VLMChatContext::fill_messages_metadata(
         
         base_image_index += metadata.provided_image_indices.size();
         base_video_index += metadata.provided_video_indices.size();
+        base_audio_index += metadata.provided_audio_indices.size();
         
         m_history_state->add_message_metadata(std::move(metadata));
     }
@@ -190,11 +231,13 @@ void VLMChatContext::fill_messages_metadata(
 std::string VLMChatContext::multipart_message_to_string(
     const JsonContainer& message,
     size_t base_image_index,
-    size_t base_video_index
+    size_t base_video_index,
+    size_t base_audio_index
 ) const {
     std::string result = "";
     size_t image_index = base_image_index;
     size_t video_index = base_video_index;
+    size_t audio_index = base_audio_index;
     for (size_t i = 0; i < message["content"].size(); ++i) {
         const auto& item = message["content"][i];
         if (item.is_object() && item.contains("type")) {
@@ -207,6 +250,9 @@ std::string VLMChatContext::multipart_message_to_string(
             } else if (type == "video") {
                 result += "<ov_genai_video_" + std::to_string(video_index) + ">";
                 video_index++;
+            } else if (type == "audio") {
+                result += "<ov_genai_audio_" + std::to_string(audio_index) + ">";
+                audio_index++;
             } else {
                 OPENVINO_THROW("Unsupported content type in multipart message: ", type);
             }            

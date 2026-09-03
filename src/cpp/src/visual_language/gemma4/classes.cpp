@@ -422,7 +422,7 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
 
     // Images
     auto [unified_prompt, images_sequence] =
-        normalize(prompt, image_token, image_token, base_image_id, images.size(), VisionType::IMAGE);
+        normalize(prompt, image_token, image_token, base_image_id, images.size(), ModalityType::IMAGE);
 
     size_t search_offset = 0;
     for (size_t new_image_id : images_sequence) {
@@ -444,7 +444,7 @@ NormalizedPrompt InputsEmbedderGemma4::normalize_prompt(const std::string& promp
     // Videos
     std::vector<size_t> videos_sequence;
     std::tie(unified_prompt, videos_sequence) =
-        normalize(unified_prompt, video_token, video_token, base_video_id, videos.size(), VisionType::VIDEO);
+        normalize(unified_prompt, video_token, video_token, base_video_id, videos.size(), ModalityType::VIDEO);
 
     expand_video_tags_in_prompt(unified_prompt, videos, videos_sequence, base_video_id);
 

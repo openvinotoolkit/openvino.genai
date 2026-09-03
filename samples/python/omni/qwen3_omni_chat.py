@@ -61,7 +61,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Qwen3-Omni multimodal chat")
     parser.add_argument("model_dir", help="Path to the OpenVINO model directory")
     parser.add_argument("image_dir", help="Image file or directory with images")
-    parser.add_argument("--audio", help="Path to input audio WAV file (optional)")
+    parser.add_argument(
+        "--audio",
+        action="append",
+        default=[],
+        metavar="WAV",
+        help="Input audio WAV file. Repeat to pass several; refer to them in the prompt as "
+        "<ov_genai_audio_0>, <ov_genai_audio_1>, ... An untagged prompt gets them prepended.",
+    )
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
@@ -81,7 +88,7 @@ def main() -> None:
     # talker_config.speaker_id of the model's config.json.
 
     videos = []
-    audios = [load_audio(args.audio)] if args.audio else []
+    audios = [load_audio(path) for path in args.audio]
 
     history = openvino_genai.ChatHistory()
     prompt = input("question:\n")
@@ -107,13 +114,13 @@ def main() -> None:
             break
 
         history.append({"role": "user", "content": prompt})
-        # New images can be passed at each turn; here we rely on the info from turn 1.
-        images = []
+        # Media attaches to the turn it is supplied on, so later turns pass empty lists and refer
+        # back through the history rather than re-sending turn 1's tensors.
         decoded_results = pipe.generate(
             history,
-            images=images,
-            videos=videos,
-            audios=audios,
+            images=[],
+            videos=[],
+            audios=[],
             text_config=text_config,
             talker_speech_config=talker_speech_config,
             streamer=streamer,

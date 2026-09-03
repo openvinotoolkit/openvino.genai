@@ -20,6 +20,14 @@ std::shared_ptr<ov::Model> build_patch_rearrange_model_for_test();
 std::shared_ptr<ov::Model> build_patch_preprocess_model_for_test();
 }  // namespace qwen3_omni_testing
 
+namespace qwen3_omni {
+// Marker strings, hoisted out of the function body so the normalizer, the expansion pass, and the
+// tests share one definition. Token *ids* come from VLMConfig instead — see m_audio_token_id.
+inline constexpr std::string_view AUDIO_START_TAG = "<|audio_start|>";
+inline constexpr std::string_view AUDIO_PAD_TAG = "<|audio_pad|>";
+inline constexpr std::string_view AUDIO_END_TAG = "<|audio_end|>";
+}  // namespace qwen3_omni
+
 /// @brief Vision encoder for Qwen3-Omni.
 /// Does NOT load the vision_embeddings model (it's merged with the merger in the new export format).
 /// Only does image preprocessing (resize, normalize, create raw patches).
@@ -91,17 +99,28 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
-    /// @brief Encode raw audio tensors and cache the embeddings.
-    /// Must be called before get_inputs_embeds() if audio is present.
-    void encode_audios(const std::vector<ov::Tensor>& audios) override;
+    /// @brief Audio-aware overload. Places each audio at its own placeholder run.
+    ov::Tensor get_inputs_embeds(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        const std::vector<ov::genai::EncodedAudio>& audios,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings,
+        const std::vector<size_t>& image_sequence,
+        const std::vector<size_t>& videos_sequence,
+        const std::vector<size_t>& audios_sequence,
+        size_t base_audio_id,
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
+
+    /// @brief Encode each audio independently. Pure — the result is passed back in explicitly.
+    std::vector<ov::genai::EncodedAudio> encode_audios(const std::vector<ov::Tensor>& audios) override;
 
     /// @brief Check if audio encoder model was loaded and is ready for inference.
     bool has_audio_encoder() const {
         return m_audio_encoder != nullptr && m_audio_encoder->is_available();
     }
 
-    /// @brief Override to inject audio placeholder tokens into the prompt
-    /// when audio embeddings are available.
     NormalizedPrompt normalize_prompt(const std::string& prompt,
                                       size_t base_id,
                                       const std::vector<EncodedImage>& images) const override;
@@ -112,8 +131,14 @@ public:
                                       const std::vector<EncodedImage>& images,
                                       const std::vector<EncodedVideo>& videos) const override;
 
-    void start_chat(const std::string& system_message) override;
-    void finish_chat() override;
+    /// @brief Audio-aware normalization: resolves `<ov_genai_audio_N>` and expands each run.
+    NormalizedPrompt normalize_prompt(const std::string& prompt,
+                                      size_t image_base_id,
+                                      size_t video_base_id,
+                                      size_t audio_base_id,
+                                      const std::vector<EncodedImage>& images,
+                                      const std::vector<EncodedVideo>& videos,
+                                      const std::vector<ov::genai::EncodedAudio>& audios) const override;
 
 protected:
     /// @brief Check if the merged vision model was loaded and is ready for inference.
@@ -153,9 +178,8 @@ protected:
 
 private:
     std::unique_ptr<AudioEncoderQwen3Omni> m_audio_encoder;
-    // Cached audio embeddings from last encode_audios() call
-    ov::Tensor m_audio_embeddings;
-    // Audio token ID used to identify audio placeholder positions
+    // From VLMConfig, never a literal: the transformers config class publishes stale
+    // Qwen2.5-era ids that do not match the checkpoint.
     int64_t m_audio_token_id = -1;
 
     // Merged vision model (patch_embed + transformer + merger)
@@ -166,8 +190,20 @@ private:
     // "cu_seq_lens" input instead of the dense "attention_mask".
     bool m_with_cu_seqlens_input = false;
 
-    /// @brief Replace audio token positions in input_embeds with audio features.
-    void merge_audio_embeddings(ov::Tensor& input_embeds, const std::vector<int64_t>& input_ids);
+    /// @brief Grow each single-pad audio tag to its real pad count, using a running offset. A
+    /// one-pad expansion is byte-identical to the tag, so find()-from-zero would rewrite slot 0.
+    void expand_audio_tags_in_prompt(std::string& prompt,
+                                     const std::vector<ov::genai::EncodedAudio>& audios,
+                                     const std::vector<size_t>& audios_sequence,
+                                     size_t base_audio_id) const;
+
+    /// @brief Copy each audio's features into its own placeholder run. Binds run k to
+    /// audios_sequence[k], so out-of-order tags still place the right audio.
+    void merge_audio_embeddings(ov::Tensor& input_embeds,
+                                const std::vector<int64_t>& input_ids,
+                                const std::vector<ov::genai::EncodedAudio>& audios,
+                                const std::vector<size_t>& audios_sequence,
+                                size_t base_audio_id) const;
 };
 
 }  // namespace ov::genai
