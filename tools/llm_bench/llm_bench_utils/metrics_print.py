@@ -150,7 +150,7 @@ def print_average_tts(iter_data_list, prompt_idx_list):
     if total_iters <= 0:
         return
 
-    inputs_dict = {}
+    avg_lines = []
     for prompt_idx in prompt_idx_list:
         prompt_iters = [
             data for data in iter_data_list if data["iteration"] > 0 and data.get("prompt_idx") == prompt_idx
@@ -172,22 +172,21 @@ def print_average_tts(iter_data_list, prompt_idx_list):
         if avg_gen_time >= 0 and avg_duration > 0:
             avg_rtf = avg_gen_time / avg_duration
 
-        prefix = f"[ INFO ] [Average] P[{prompt_idx}]"
+        prefix = f"[Average] P[{prompt_idx}]"
         gen_time_str = f"{avg_gen_time:.2f}s" if avg_gen_time >= 0 else "NA"
         output_size_str = f"{avg_samples} samples" if avg_samples >= 0 else "NA"
         output_duration_str = f"{avg_duration:.2f}s" if avg_duration >= 0 else "NA"
         rtf_str = f"{avg_rtf:.4f}" if avg_rtf >= 0 else "NA"
-        inputs_dict[prompt_idx] = (
-            f"\n{prefix} Generation Time: {gen_time_str}, "
+        avg_lines.append(
+            f"{prefix} Generation Time: {gen_time_str}, "
             f"Output size: {output_size_str} ({output_duration_str}), "
             f"RTF: {rtf_str}"
         )
 
     log.info("<<< Warm-up iteration is excluded. >>>")
-    out_str = "[Total] Iterations: {}".format(total_iters)
-    for prompt_idx in inputs_dict:
-        out_str += inputs_dict[prompt_idx]
-    log.info(out_str)
+    log.info("[Total] Iterations: {}".format(total_iters))
+    for line in avg_lines:
+        log.info(line)
 
 
 def print_memory_info(
