@@ -42,15 +42,15 @@ def print_metrics(
         output_str += 'Input token size: {}, '.format(iter_data['input_size'])
     if iter_data.get('output_size', '') != '':
         if tts_audio is not None:
-            output_str += 'Output size: {} samples ({:.2f}s @ {}Hz), '.format(
+            output_str += "Output size: {} samples ({:.2f}s @ {}Hz), ".format(
                 tts_audio["samples"],
                 tts_audio["duration_s"],
                 tts_audio["sample_rate"],
             )
         else:
-            output_str += 'Output size: {}, '.format(iter_data['output_size'])
-    if iter_data['infer_count'] != '':
-        output_str += 'Infer count: {}, '.format(iter_data['infer_count'])
+            output_str += "Output size: {}, ".format(iter_data["output_size"])
+    if iter_data["infer_count"] != "":
+        output_str += "Infer count: {}, ".format(iter_data["infer_count"])
     if tokenization_time:
         output_str += 'Tokenization Time: {:.2f}ms, '.format(tokenization_time[0])
         if len(tokenization_time) > 1:
@@ -60,7 +60,7 @@ def print_metrics(
     if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
     if tts_audio is not None:
-        output_str += 'RTF: {}, '.format(f"{tts_audio['rtf']:.4f}" if tts_audio["rtf"] >= 0 else "N/A")
+        output_str += "RTF: {}, ".format(f"{tts_audio['rtf']:.4f}" if tts_audio["rtf"] >= 0 else "N/A")
     if prefill_time and prefill_time != "":
         output_str += "Prefill Time: {:.2f}ms, ".format(prefill_time)
     if iter_data.get("total_time", "") != "":
@@ -143,7 +143,7 @@ def print_average_tts(iter_data_list, prompt_idx_list):
 
     warm_up_iters = 0
     for iter_data in iter_data_list:
-        if iter_data['iteration'] == 0:
+        if iter_data["iteration"] == 0:
             # Exclude the warm-up iteration
             warm_up_iters = warm_up_iters + 1
 
@@ -154,16 +154,16 @@ def print_average_tts(iter_data_list, prompt_idx_list):
     inputs_dict = {}
     for prompt_idx in prompt_idx_list:
         prompt_iters = [
-            data
-            for data in iter_data_list
-            if data['iteration'] > 0 and data.get('prompt_idx') == prompt_idx
+            data for data in iter_data_list if data["iteration"] > 0 and data.get("prompt_idx") == prompt_idx
         ]
         if len(prompt_iters) == 0:
             continue
 
-        generation_times = [data['generation_time'] for data in prompt_iters if data.get('generation_time', '') != '']
-        output_samples = [data['output_size'] for data in prompt_iters if data.get('output_size', '') != '']
-        output_durations = [data['tts_output_duration_s'] for data in prompt_iters if data.get('tts_output_duration_s', '') != '']
+        generation_times = [data["generation_time"] for data in prompt_iters if data.get("generation_time", "") != ""]
+        output_samples = [data["output_size"] for data in prompt_iters if data.get("output_size", "") != ""]
+        output_durations = [
+            data["tts_output_duration_s"] for data in prompt_iters if data.get("tts_output_duration_s", "") != ""
+        ]
 
         avg_gen_time = sum(generation_times) / len(generation_times) if len(generation_times) > 0 else -1
         avg_samples = int(sum(output_samples) / len(output_samples)) if len(output_samples) > 0 else -1
