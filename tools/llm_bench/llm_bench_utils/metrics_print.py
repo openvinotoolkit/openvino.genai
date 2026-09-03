@@ -26,6 +26,7 @@ def print_metrics(
     whisper_genai=None,
     chat_idx=None,
     prefill_time=None,
+    tts_audio=None,
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -40,7 +41,14 @@ def print_metrics(
     if iter_data['input_size'] != '':
         output_str += 'Input token size: {}, '.format(iter_data['input_size'])
     if iter_data.get('output_size', '') != '':
-        output_str += 'Output size: {}, '.format(iter_data['output_size'])
+        if tts_audio is not None:
+            output_str += 'Output size: {} samples ({:.2f}s @ {}Hz), '.format(
+                tts_audio["samples"],
+                tts_audio["duration_s"],
+                tts_audio["sample_rate"],
+            )
+        else:
+            output_str += 'Output size: {}, '.format(iter_data['output_size'])
     if iter_data['infer_count'] != '':
         output_str += 'Infer count: {}, '.format(iter_data['infer_count'])
     if tokenization_time:
@@ -51,6 +59,8 @@ def print_metrics(
         output_str += ' Multimodal Embeddings Preparation Time: {:.2f}ms, '.format(iter_data['mm_embeddings_preparation_time'])
     if iter_data.get('generation_time', '') != '':
         output_str += 'Generation Time: {:.2f}s, '.format(iter_data['generation_time'])
+    if tts_audio is not None:
+        output_str += 'RTF: {}, '.format(f"{tts_audio['rtf']:.4f}" if tts_audio["rtf"] >= 0 else "N/A")
     if prefill_time and prefill_time != "":
         output_str += "Prefill Time: {:.2f}ms, ".format(prefill_time)
     if iter_data.get("total_time", "") != "":
@@ -124,6 +134,61 @@ def print_metrics(
     print_memory_info(iter_num, iter_data, chat_idx, prompt_idx)
     if iter_data.get('result_md5', '') != '':
         log.info(f"{prefix} Result MD5:{iter_data['result_md5']}")
+
+
+def print_average_tts(iter_data_list, prompt_idx_list):
+    if len(iter_data_list) <= 1:
+        # 1st iteration is the warm-up iteration
+        return
+
+    warm_up_iters = 0
+    for iter_data in iter_data_list:
+        if iter_data['iteration'] == 0:
+            # Exclude the warm-up iteration
+            warm_up_iters = warm_up_iters + 1
+
+    total_iters = len(iter_data_list) - warm_up_iters
+    if total_iters <= 0:
+        return
+
+    inputs_dict = {}
+    for prompt_idx in prompt_idx_list:
+        prompt_iters = [
+            data
+            for data in iter_data_list
+            if data['iteration'] > 0 and data.get('prompt_idx') == prompt_idx
+        ]
+        if len(prompt_iters) == 0:
+            continue
+
+        generation_times = [data['generation_time'] for data in prompt_iters if data.get('generation_time', '') != '']
+        output_samples = [data['output_size'] for data in prompt_iters if data.get('output_size', '') != '']
+        output_durations = [data['tts_output_duration_s'] for data in prompt_iters if data.get('tts_output_duration_s', '') != '']
+
+        avg_gen_time = sum(generation_times) / len(generation_times) if len(generation_times) > 0 else -1
+        avg_samples = int(sum(output_samples) / len(output_samples)) if len(output_samples) > 0 else -1
+        avg_duration = sum(output_durations) / len(output_durations) if len(output_durations) > 0 else -1
+
+        avg_rtf = -1
+        if avg_gen_time >= 0 and avg_duration > 0:
+            avg_rtf = avg_gen_time / avg_duration
+
+        prefix = f"[ INFO ] [Average] P[{prompt_idx}]"
+        gen_time_str = f"{avg_gen_time:.2f}s" if avg_gen_time >= 0 else "NA"
+        output_size_str = f"{avg_samples} samples" if avg_samples >= 0 else "NA"
+        output_duration_str = f"{avg_duration:.2f}s" if avg_duration >= 0 else "NA"
+        rtf_str = f"{avg_rtf:.4f}" if avg_rtf >= 0 else "NA"
+        inputs_dict[prompt_idx] = (
+            f"\n{prefix} Generation Time: {gen_time_str}, "
+            f"Output size: {output_size_str} ({output_duration_str}), "
+            f"RTF: {rtf_str}"
+        )
+
+    log.info("<<< Warm-up iteration is excluded. >>>")
+    out_str = "[Total] Iterations: {}".format(total_iters)
+    for prompt_idx in inputs_dict:
+        out_str += inputs_dict[prompt_idx]
+    log.info(out_str)
 
 
 def print_memory_info(
