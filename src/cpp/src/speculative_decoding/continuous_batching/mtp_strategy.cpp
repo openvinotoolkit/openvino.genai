@@ -132,7 +132,6 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids,
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     validate_mtp_generation_config(sampling_params);
@@ -147,7 +146,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     // under the same request_id. insert() would be a no-op there, dropping the new handle as a
     // temporary whose destructor stops the freshly added draft request before it can draft.
     m_draft_generations.insert_or_assign(request_id, m_draft_pipeline->add_request(request_id, draft_input_embeds, draft_sampling_params));
-    return m_main_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids, prompt_ids, lm_extra_inputs);
+    return m_main_pipeline->add_request(request_id, input_ids, sampling_params, prompt_ids, lm_extra_inputs);
 }
 
 GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
@@ -159,7 +158,6 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
     // Text-only serving path.
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs_embeds;
-    std::optional<ov::Tensor> token_type_ids;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
@@ -173,7 +171,7 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
             m_inputs_embedder->set_rope_delta(*rope_delta);
         }
     }
-    return add_request(request_id, inputs_embeds, sampling_params, token_type_ids, std::nullopt,
+    return add_request(request_id, inputs_embeds, sampling_params, std::nullopt,
                        m_inputs_embedder->get_lm_extra_inputs());
 }
 
@@ -181,7 +179,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list) {
@@ -210,10 +207,10 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::MtpDecodingImpl
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    // generate_common threads position_ids / token_type_ids / lm_extra_inputs to the main pipeline
+    // generate_common threads position_ids / lm_extra_inputs to the main pipeline
     // (priming the shared embedder's M-RoPE positions) via self->add_request(); the MTP draft ignores
     // them (sequential positions, no VLM inputs) inside MtpDecodingImpl::add_request.
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids,
+    return generate_common(this, input_ids, sampling_params, streamer, position_ids,
                            prompt_ids, lm_extra_inputs_list, strategy);
 }
 }  // namespace ov::genai

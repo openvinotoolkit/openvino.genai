@@ -328,7 +328,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         "Number of prompts should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
-    std::vector<ov::Tensor> token_type_ids_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
     std::vector<ov::Tensor> original_prompt_ids_list;
     std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
@@ -474,7 +473,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
                                                                     sampling_params,
                                                                     streamer,
-                                                                    token_type_ids_list,
                                                                     position_ids_list,
                                                                     original_prompt_ids_list,
                                                                     lm_extra_inputs_list);
@@ -619,7 +617,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         "Number of chat histories should be equal to the number of videos metadata vector.");
 
     std::vector<ov::Tensor> input_embeds_list;
-    std::vector<ov::Tensor> token_type_ids_list;
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
     std::vector<ov::Tensor> original_prompt_ids_list;
     std::vector<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs_list;
@@ -712,7 +709,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list,
                                                                     sampling_params,
                                                                     streamer,
-                                                                    token_type_ids_list,
                                                                     position_ids_list,
                                                                     original_prompt_ids_list,
                                                                     lm_extra_inputs_list);
@@ -794,7 +790,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
-    std::optional<ov::Tensor> token_type_ids;
     // FIXME prompt_ids is not populated for VLM prompt lookup with add_request API
     std::optional<ov::Tensor> prompt_ids;
     GenerationHandle handle;
@@ -828,7 +823,6 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(
             request_id,
             inputs,
             sampling_params,
-            token_type_ids,
             prompt_ids,
             m_inputs_embedder->get_lm_extra_inputs()
         );

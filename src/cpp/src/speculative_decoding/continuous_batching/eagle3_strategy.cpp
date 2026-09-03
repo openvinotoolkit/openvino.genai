@@ -252,7 +252,6 @@ GenerationHandle
 ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
                                                                  const ov::genai::GenerationConfig& sampling_params,
-                                                                 std::optional<ov::Tensor> token_type_ids,
                                                                  std::optional<ov::Tensor> prompt_ids,
                                                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
@@ -261,7 +260,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
         return m_main_pipeline->add_request(request_id,
                                             input_ids,
                                             sampling_params,
-                                            token_type_ids,
                                             prompt_ids,
                                             lm_extra_inputs);
     }
@@ -272,13 +270,10 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     // remove first token from input_ids to create the draft model input
     // refer to: https://github.com/SafeAILab/EAGLE/blob/main/eagle/model/cnets.py#L617
     ov::Tensor draft_input = create_draft_input(input_ids);
-    std::optional<ov::Tensor> draft_token_type_ids = token_type_ids;
     std::optional<ov::Tensor> draft_prompt_ids = prompt_ids;
     ov::Tensor main_position_ids;
     std::optional<int64_t> main_rope_delta;
-    if (draft_token_type_ids.has_value()) {
-        draft_token_type_ids = trim_first_token_sequence_tensor(*draft_token_type_ids, "token_type_ids");
-    }
+
     if (draft_prompt_ids.has_value()) {
         draft_prompt_ids = trim_first_token_sequence_tensor(*draft_prompt_ids, "prompt_ids");
     }
@@ -291,7 +286,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     }
     // The speculative draft path only uses language-model inputs. Multimodal auxiliary inputs such as
     // deepstack/visual tensors are consumed only by the main model, so lm_extra_inputs are not forwarded here.
-    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_token_type_ids, draft_prompt_ids)});
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input, draft_sampling_params, draft_prompt_ids)});
     // Restore main position_ids/rope_delta before adding to the main pipeline.
     if (m_model_input_type == ModelInputType::EMBEDDINGS && m_inputs_embedder && main_position_ids.get_size() > 0) {
         m_inputs_embedder->set_position_ids(main_position_ids);
@@ -300,7 +295,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     auto main_generation = m_main_pipeline->add_request(request_id,
                                                         input_ids,
                                                         sampling_params,
-                                                        token_type_ids,
                                                         prompt_ids,
                                                         lm_extra_inputs);
     align_request_pair_processed_prefix(request_id);
@@ -338,7 +332,6 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
     const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids,
     const std::optional<std::vector<ov::Tensor>>& prompt_ids,
     const std::optional<std::vector<std::unordered_map<std::string, ov::Tensor>>>& lm_extra_inputs_list
@@ -377,7 +370,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
-    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
+    return generate_common(this, input_ids, sampling_params, streamer, position_ids, prompt_ids, lm_extra_inputs_list, strategy);
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::trim_first_token_sequence_tensor(const ov::Tensor& tensor,
