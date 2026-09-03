@@ -392,7 +392,9 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         generated_tokens = np.array(generation_result.tokens)
 
     perf_metrics = generation_result[0].perf_metrics if cb_pipeline else generation_result.perf_metrics
-    extended_perf_metrics = generation_result[0].extended_perf_metrics if cb_pipeline else generation_result.extended_perf_metrics
+    extended_perf_metrics = (
+        generation_result[0].extended_perf_metrics if cb_pipeline else generation_result.extended_perf_metrics
+    )
     return generated_tokens, perf_metrics, extended_perf_metrics, end - start
 
 
