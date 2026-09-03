@@ -141,13 +141,12 @@ def print_average_tts(iter_data_list, prompt_idx_list):
         # 1st iteration is the warm-up iteration
         return
 
-    warm_up_iters = 0
-    for iter_data in iter_data_list:
-        if iter_data["iteration"] == 0:
-            # Exclude the warm-up iteration
-            warm_up_iters = warm_up_iters + 1
-
-    total_iters = len(iter_data_list) - warm_up_iters
+    measured_iterations = {
+        data.get("iteration")
+        for data in iter_data_list
+        if data.get("iteration") not in ("", None, 0)
+    }
+    total_iters = len(measured_iterations)
     if total_iters <= 0:
         return
 
