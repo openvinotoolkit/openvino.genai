@@ -164,7 +164,8 @@ GenerationHandle ContinuousBatchingPipeline::MtpDecodingImpl::add_request(
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const std::vector<ov::genai::EncodedImage> no_images;
-        const auto [unified_prompt, image_sequence, video_sequence] =
+        // The 3-arg overload never fills audio; named to show the binding is deliberately unused.
+        const auto [unified_prompt, image_sequence, video_sequence, unused_audio_sequence] =
             m_inputs_embedder->normalize_prompt(prompt, 0, no_images);
         if (m_inputs_embedder->has_token_type_ids()) {
             std::tie(inputs_embeds, token_type_ids) =

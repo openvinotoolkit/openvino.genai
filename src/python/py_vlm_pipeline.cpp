@@ -46,7 +46,8 @@ auto vlm_generate_common_params = R"(
     :param videos: list of frames
     :type videos: list[ov.Tensor]
 
-    :param audios: audio tensors to be prepended to the prompt (for multimodal models supporting audio input)
+    :param audios: audio tensors, for multimodal models supporting audio input. Place with
+        `<ov_genai_audio_N>` anywhere in the prompt; untagged audio is prepended
     :type audios: list[ov.Tensor]
 
     :param generation_config: generation_config
@@ -78,7 +79,7 @@ auto vlm_generate_kwargs_param = R"(
     image: ov.Tensor - input image,
     images: list[ov.Tensor] - input images,
     videos: list[ov.Tensor] - input videos,
-    audios: list[ov.Tensor] - audio tensors to be prepended to the prompt (for multimodal models supporting audio input),
+    audios: list[ov.Tensor] - audio tensors, placed with `<ov_genai_audio_N>` or prepended if untagged,
     videos_metadata: list[VideoMetadata] - metadata for each video,
     generation_config: GenerationConfig,
     streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped,

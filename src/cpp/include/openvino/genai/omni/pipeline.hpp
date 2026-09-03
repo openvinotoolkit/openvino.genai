@@ -74,9 +74,10 @@ public:
 
     /// @brief Generate text + (optionally) speech from a flat prompt.
     /// @param prompt The user prompt.
-    /// @param images Image tensors to be prepended to the prompt.
-    /// @param videos Video tensors to be prepended to the prompt.
-    /// @param audios Audio tensors to be prepended to the prompt.
+    /// @param images Image tensors. Place them with `<ov_genai_image_N>`; prepended if untagged.
+    /// @param videos Video tensors. Place them with `<ov_genai_video_N>`; prepended if untagged.
+    /// @param audios Audio tensors. Place them with `<ov_genai_audio_N>`; prepended if untagged,
+    ///        which is the recommended form since the model is trained with media before text.
     /// @param text_generation_config Thinker text-decode config.
     /// @param talker_speech_config Talker + speech-output config.
     /// @param streamer Optional streamer for text tokens.

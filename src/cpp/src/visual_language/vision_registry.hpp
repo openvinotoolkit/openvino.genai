@@ -23,16 +23,18 @@ public:
 
     VisionID register_image(const ov::Tensor& image);
     VisionID register_video(const ov::Tensor& video);
+    VisionID register_audio(const ov::Tensor& audio);
 
     std::vector<VisionID> register_images(const std::vector<ov::Tensor>& images);
     std::vector<VisionID> register_videos(const std::vector<ov::Tensor>& videos);
+    std::vector<VisionID> register_audios(const std::vector<ov::Tensor>& audios);
 
     void add_ref(const VisionID& id);
     void release_ref(const VisionID& id);
 
     size_t size() const;
     bool contains(const VisionID& id) const;
-    VisionType get_type(const VisionID& id) const;
+    ModalityType get_type(const VisionID& id) const;
 
     const ov::Tensor& get_original(const VisionID& id) const;
 
@@ -44,15 +46,20 @@ public:
     bool has_encoded_video(const VisionID& id) const;
     const EncodedVideo& get_encoded_video(const VisionID& id) const;
 
+    void set_encoded_audio(const VisionID& id, EncodedAudio encoded);
+    bool has_encoded_audio(const VisionID& id) const;
+    const EncodedAudio& get_encoded_audio(const VisionID& id) const;
+
 private:
     struct VisionEntry {
-        VisionType type;
+        ModalityType type;
         ov::Tensor original;
         std::optional<EncodedImage> encoded_image;
         std::optional<EncodedVideo> encoded_video;
+        std::optional<EncodedAudio> encoded_audio;
         std::atomic<size_t> ref_count{0};
         
-        VisionEntry(VisionType t, ov::Tensor tensor);
+        VisionEntry(ModalityType t, ov::Tensor tensor);
         VisionEntry(VisionEntry&& other) noexcept;
         VisionEntry& operator=(VisionEntry&& other) noexcept;
         
@@ -66,7 +73,7 @@ private:
 
     mutable std::mutex m_mutex;
 
-    VisionID register_vision(const ov::Tensor& tensor, VisionType type);
+    VisionID register_vision(const ov::Tensor& tensor, ModalityType type);
 
     static VisionID compute_hash(const ov::Tensor& tensor);
 };
