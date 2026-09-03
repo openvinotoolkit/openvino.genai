@@ -621,32 +621,6 @@ ov::Tensor InputsEmbedderGemma4::get_inputs_embeds(
     return compute_inputs_embeds(prompt, images, videos, metrics, images_sequence, videos_sequence).first;
 }
 
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<EncodedImage>& images,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& images_sequence) {
-    auto [inputs_embeds, input_ids] = compute_inputs_embeds(prompt, images, {}, metrics, images_sequence, {});
-    ov::Tensor token_type_ids = get_token_type_ids(input_ids);
-    return {std::move(inputs_embeds), std::move(token_type_ids)};
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma4::get_inputs_embeds_with_token_type_ids(
-    const std::string& prompt,
-    const std::vector<ov::genai::EncodedImage>& images,
-    const std::vector<ov::genai::EncodedVideo>& videos,
-    ov::genai::VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& images_sequence,
-    const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
-    auto [inputs_embeds, input_ids] =
-        compute_inputs_embeds(prompt, images, videos, metrics, images_sequence, videos_sequence);
-    ov::Tensor token_type_ids = get_token_type_ids(input_ids);
-    return {std::move(inputs_embeds), std::move(token_type_ids)};
-}
-
 bool InputsEmbedderGemma4::has_token_type_ids() const {
     // Optimum-intel exports `token_type_ids` as an LM input when
     // `text_config.use_bidirectional_attention == "vision"` (see Gemma4OpenVINOConfig.with_behavior).

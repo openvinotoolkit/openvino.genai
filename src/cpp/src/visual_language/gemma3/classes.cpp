@@ -72,10 +72,6 @@ InputsEmbedderGemma3::InputsEmbedderGemma3(
         patch_chat_template();
     }
 
-bool InputsEmbedderGemma3::has_token_type_ids() const {
-    return true;
-}
-
 std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
 
@@ -180,20 +176,6 @@ ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(
     m_lm_extra_inputs["token_type_ids"] = token_type_ids;
 
     return inputs_embeds;
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderGemma3::get_inputs_embeds_with_token_type_ids(
-    const std::string& unified_prompt,
-    const std::vector<EncodedImage>& images,
-    VLMPerfMetrics& metrics,
-    bool recalculate_merged_embeddings,
-    const std::vector<size_t>& images_sequence
-) {
-    const auto inputs_embeds = get_inputs_embeds(unified_prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
-    OPENVINO_ASSERT(m_lm_extra_inputs.find("token_type_ids") != m_lm_extra_inputs.end(),
-        "[InputsEmbedderGemma3] token_type_ids not found in lm_extra_inputs");
-    const auto token_type_ids = m_lm_extra_inputs.at("token_type_ids");
-    return {inputs_embeds, token_type_ids};
 }
 
 const std::unordered_map<std::string, ov::Tensor>& InputsEmbedderGemma3::get_lm_extra_inputs() const {

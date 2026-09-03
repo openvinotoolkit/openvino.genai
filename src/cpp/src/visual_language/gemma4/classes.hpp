@@ -58,25 +58,6 @@ public:
         const std::vector<size_t>& videos_sequence = {},
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
 
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        ov::genai::VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {}) override;
-
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
-        const std::string& prompt,
-        const std::vector<ov::genai::EncodedImage>& images,
-        const std::vector<ov::genai::EncodedVideo>& videos,
-        ov::genai::VLMPerfMetrics& metrics,
-        bool recalculate_merged_embeddings = true,
-        const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& videos_sequence = {},
-        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
-
-    bool has_token_type_ids() const override;
-
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos,
@@ -132,6 +113,8 @@ private:
                                                             const std::vector<size_t>& images_sequence,
                                                             const std::vector<size_t>& videos_sequence);
 
+    bool has_token_type_ids() const;
+    
     ov::Tensor get_token_type_ids(const ov::Tensor& input_ids);
 
     int64_t m_image_token_id = -1;
