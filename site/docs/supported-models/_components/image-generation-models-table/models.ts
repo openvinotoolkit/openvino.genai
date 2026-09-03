@@ -134,7 +134,7 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     architecture: 'Z-Image',
     textToImage: true,
     imageToImage: true,
-    inpainting: true,
+    inpainting: false,
     loraSupport: true,
     links: [
       'https://huggingface.co/Tongyi-MAI/Z-Image',
