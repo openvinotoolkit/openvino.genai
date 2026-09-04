@@ -34,6 +34,11 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 
     m_has_cache_position = utils::has_input(model, "cache_position");
 
+    if (m_decompose_cross_attention_spda_ops) {
+        ov::genai::decompose_scaled_dot_product_attention_for_whisper(model);
+        ov::genai::add_cross_attention_qk_scaled_scores_outputs_for_whisper(model);
+    }
+
     ov::CompiledModel compiled_model;
     if (device == "NPU") {
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
@@ -43,11 +48,6 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
         utils::KVDesc kv_desc;
         std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, properties, kv_pos, true);
     } else {
-        if (m_decompose_cross_attention_spda_ops) {
-            ov::genai::decompose_scaled_dot_product_attention_for_whisper(model);
-            ov::genai::add_cross_attention_qk_scaled_scores_outputs_for_whisper(model);
-        }
-
         utils::apply_slice_before_matmul_transformation(model);
 
         compiled_model = core.compile_model(model, device, properties);
