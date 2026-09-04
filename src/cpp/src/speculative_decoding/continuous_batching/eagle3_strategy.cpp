@@ -91,17 +91,19 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     ov::genai::ModelDesc kv_model_desc;
     kv_model_desc.model = kv_model;
     kv_model_desc.device = std::move(main_device);
-    // only kv cache information is needed for kv update model
+    // as of now, only kv cache information is needed for kv update model
     if (main_model_desc.properties.count(ov::hint::kv_cache_precision.name()) > 0) {
         kv_model_desc.properties[ov::hint::kv_cache_precision.name()] =
             main_model_desc.properties.at(ov::hint::kv_cache_precision.name());
     } else {
-        GENAI_INFO("kv cache precision not specified in main model properties. leave to plugin for default precision.");
+        GENAI_INFO("kv cache precision not specified in main model properties. Leave to the plugin for default precision.");
     }
 
     // Read the runtime KV cache precision from the compiled main model's key_cache input port: plugins may resolve the
-    // actual cache precision (e.g. CPU promoting to bf16 based on inference precision) independently of that hint, and
-    // the reorder model must match the precision of the tensors actually bound by the scheduler.
+    // actual cache precision independently of that hint (e.g. CPU promoting to bf16 when kv cache precision hint is
+    // fp16, GPU promoting to i8 when kv cache precision hint is u8, and for GPU, when the hint is u4, the kv data are
+    // packed as uint8 and be reinterpreted to u4 inside plugin), and the reorder model must match the precision of the
+    // tensors actually bound by the runtime.
     const auto rt_kv_cache_precision = m_main_pipeline->get_kv_cache_element_type();
     const auto kv_cache_precision =
         m_main_pipeline->get_model_property(ov::hint::kv_cache_precision.name()).as<ov::element::Type>();
