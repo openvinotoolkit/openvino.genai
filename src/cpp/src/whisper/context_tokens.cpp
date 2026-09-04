@@ -57,6 +57,12 @@ std::pair<WhisperContextTokens, float> prepare_context_tokens(const WhisperGener
         duration += hotwords_duration;
     }
 
+    if (config.prefix.has_value() && !config.prefix->empty()) {
+        auto [prefix_tokens, prefix_duration] = tokenize(std::string(*config.prefix), config, tokenizer);
+        context_tokens.prefix = std::move(prefix_tokens);
+        duration += prefix_duration;
+    }
+
     return {context_tokens, duration};
 }
 

@@ -33,6 +33,36 @@ timestamps: [0, 2] text:  How are you doing today?
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-recognition-models-whisper-based) for more details.
 
+## Streaming ASR sample
+
+The repository also includes a streaming transcription example in [`asr_streaming.cpp`](asr_streaming.cpp). This sample targets Qwen3-ASR models and uses an incremental `ASRStreamingSession` instead of a single full-audio `generate()` call. Audio is fed in fixed-size steps, and the pipeline decodes once a configured amount of audio has accumulated.
+
+```sh
+asr_streaming <MODEL_DIR> <WAV_FILE> [--device DEVICE] [--chunk-sec SEC] [--step-ms MS]
+```
+
+For example:
+
+```sh
+asr_streaming qwen3-asr-1.7b-ov recording.wav
+asr_streaming qwen3-asr-1.7b-ov recording.wav --device GPU --chunk-sec 3.0 --step-ms 250
+```
+
+Each partial result exposes three fields:
+
+- `committed_text` — all stable text confirmed so far (grows monotonically across callbacks).
+- `new_committed_text` — the stable text added since the previous partial result (delta only).
+- `partial_text` — the trailing region still subject to change. Empty when `context_rollback_tokens` is 0. Always empty in the final callback fired by `finish()`.
+
+The sample prints one line per partial result showing the stable delta and the unstable tail:
+
+```
+[partial] (English) +Okay, so today we're going to be talking about [the history of...]
+[partial] (English) +the history of [the Appalachian Trail...]
+...
+[final ] (English) Okay, so today we're going to be talking about the history of the Appalachian Trail...
+```
+
 # ASR pipeline usage
 
 ```c++

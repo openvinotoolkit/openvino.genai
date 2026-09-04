@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPartialResult', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'ASRStreamingConfig', 'ASRStreamingSession', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -244,6 +244,25 @@ class ASRGenerationConfig(GenerationConfig):
     @translate_token_id.setter
     def translate_token_id(self, arg0: typing.SupportsInt) -> None:
         ...
+class ASRPartialResult:
+    """
+    
+        Partial transcription result emitted after each streaming decode pass.
+    
+        :param language: Detected language for the current stream.
+        :type language: str
+    
+        :param text: Current partial transcript.
+        :type text: str
+    """
+    committed_text: str
+    language: str
+    new_committed_text: str
+    partial_text: str
+    def __init__(self) -> None:
+        ...
+    def __repr__(self) -> str:
+        ...
 class ASRPerfMetrics(PerfMetrics):
     """
     
@@ -286,6 +305,10 @@ class ASRPipeline:
                     ASRPipeline class constructor.
                     models_path (os.PathLike): Path to the model file.
                     device (str): Device to run the model on (e.g., CPU, GPU).
+        """
+    def create_streaming_session(self, streaming_config: openvino_genai.py_openvino_genai.ASRStreamingConfig | None = None, generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None) -> ASRStreamingSession:
+        """
+        Create a streaming ASR session for incremental transcription.
         """
     def generate(self, audio_inputs: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.ASRGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> ASRDecodedResults:
         """
@@ -437,6 +460,84 @@ class ASRRawPerfMetrics:
     @property
     def word_level_timestamps_processing_durations(self) -> list[float]:
         ...
+class ASRStreamingConfig:
+    """
+    
+        ASRStreamingConfig
+    
+        Streaming configuration used by ASRPipeline.create_streaming_session().
+    
+        :param chunk_size_sec: Audio duration to accumulate before triggering a decode pass.
+        :type chunk_size_sec: float
+    
+        :param warmup_chunks: Number of initial decode passes run without a prefix.
+        :type warmup_chunks: int
+    
+        :param context_rollback_tokens: Number of trailing tokens to rewind from the accumulated text when
+                                        reusing it as a prefix for the next decode pass.
+        :type context_rollback_tokens: int
+    
+        :param window_chunk_num: Maximum chunks of audio retained in the sliding window before older,
+                                 already-decoded audio is dropped from the front of the accumulated
+                                 buffer. 0 = unbounded (re-encode the entire session every pass).
+        :type window_chunk_num: int
+    
+        :param window_rollback_chunk_num: Chunks of already-decoded audio treated as still "unfixed"
+                                          (not yet safe to drop) once the sliding window is active.
+                                          Must be less than window_chunk_num. Ignored when
+                                          window_chunk_num == 0.
+        :type window_rollback_chunk_num: int
+    
+        :param unbounded_prefix: Experimental. When true, disables eviction of the
+                                 text-history prefix tied to the audio sliding window, so the decoder
+                                 prefix grows unbounded for the life of the session even though the
+                                 audio window itself still stays bounded. Ignored when window_chunk_num == 0.
+        :type unbounded_prefix: bool
+    """
+    unbounded_prefix: bool
+    def __init__(self) -> None:
+        ...
+    @property
+    def chunk_size_sec(self) -> float:
+        ...
+    @chunk_size_sec.setter
+    def chunk_size_sec(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def context_rollback_tokens(self) -> int:
+        ...
+    @context_rollback_tokens.setter
+    def context_rollback_tokens(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def warmup_chunks(self) -> int:
+        ...
+    @warmup_chunks.setter
+    def warmup_chunks(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def window_chunk_num(self) -> int:
+        ...
+    @window_chunk_num.setter
+    def window_chunk_num(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def window_rollback_chunk_num(self) -> int:
+        ...
+    @window_rollback_chunk_num.setter
+    def window_rollback_chunk_num(self, arg0: typing.SupportsInt) -> None:
+        ...
+class ASRStreamingSession:
+    def __repr__(self) -> str:
+        ...
+    def finish(self) -> ASRPartialResult:
+        """
+        Flush the remaining buffered audio and return the final partial result. partial_text is always empty on the returned result.
+        """
+    def push_chunk(self, pcm16k: collections.abc.Sequence[typing.SupportsFloat]) -> openvino_genai.py_openvino_genai.ASRPartialResult | None:
+        """
+        Append audio samples to the streaming buffer. Returns a partial result if a decode pass was triggered, None otherwise.
+        """
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.

@@ -76,6 +76,7 @@ class ASRPipelineImplBase;
 
 class OPENVINO_GENAI_EXPORTS ASRPipeline {
     std::unique_ptr<ASRPipelineImplBase> m_impl;
+    friend class ASRStreamingSession;
 
 public:
     ASRPipeline(const std::filesystem::path& models_path, const std::string& device, const ov::AnyMap& properties = {});
@@ -102,6 +103,74 @@ public:
     Tokenizer get_tokenizer();
     ASRGenerationConfig get_generation_config() const;
     void set_generation_config(const ASRGenerationConfig& config);
+};
+
+/// Parameters controlling a single streaming ASR session.
+struct OPENVINO_GENAI_EXPORTS ASRStreamingConfig {
+    /// Audio duration to accumulate before triggering a decode pass.
+    float chunk_size_sec = 2.0f;
+    /// Number of initial decode passes run without a prefix (cold-start).
+    size_t warmup_chunks = 2;
+    /// Tokens rolled back from accumulated output when computing the prefix for the next pass.
+    size_t context_rollback_tokens = 5;
+
+    /// Maximum chunks of audio retained in the sliding window before older, already-decoded
+    /// audio is dropped from the front of the accumulated buffer. 0 = unbounded (re-encode the
+    /// entire session every pass, the legacy behavior). When set, bounds per-pass re-encoding
+    /// cost to O(window_chunk_num) instead of O(session length), turning total session cost
+    /// from O(n^2) to O(n * window_chunk_num).
+    size_t window_chunk_num = 0;
+
+    /// Chunks of already-decoded audio treated as still "unfixed" (not yet safe to drop) once
+    /// the sliding window is active. Must be less than window_chunk_num. Independent of
+    /// warmup_chunks. Ignored when window_chunk_num == 0.
+    size_t window_rollback_chunk_num = 2;
+
+    /// Experimental. When true, disables eviction of the text-history prefix
+    /// tied to the audio sliding window (see window_chunk_num), so the decoder prefix grows
+    /// unbounded for the life of the session even though the audio window itself still stays
+    /// bounded..
+    bool unbounded_prefix = false;
+};
+
+/// A partial transcription delivered after each decode pass.
+struct OPENVINO_GENAI_EXPORTS ASRPartialResult {
+    std::string language;
+    std::string committed_text;     // all stable text confirmed so far, including new_committed_text
+    std::string new_committed_text; // stable text added since the previous partial result
+    std::string partial_text;       // trailing region still subject to change
+};
+
+/// Move-only RAII handle for a streaming ASR session.
+/// Lifetime must not exceed the ASRPipeline that created it.
+/// Only one active session per ASRPipeline is supported at a time.
+class OPENVINO_GENAI_EXPORTS ASRStreamingSession {
+public:
+    /// Construct a streaming session on the given pipeline.
+    ASRStreamingSession(ASRPipeline& pipeline,
+                        const ASRStreamingConfig& streaming_config = {},
+                        const std::optional<ASRGenerationConfig>& generation_config = std::nullopt);
+
+    ~ASRStreamingSession();
+    ASRStreamingSession(ASRStreamingSession&&) noexcept;
+    ASRStreamingSession& operator=(ASRStreamingSession&&) noexcept;
+    ASRStreamingSession(const ASRStreamingSession&) = delete;
+    ASRStreamingSession& operator=(const ASRStreamingSession&) = delete;
+
+    /// Feed any amount of 16 kHz mono float32 PCM audio.
+    /// Returns a partial result if a decode pass was triggered, std::nullopt otherwise.
+    std::optional<ASRPartialResult> push_chunk(const std::vector<float>& pcm16k);
+
+    /// Flush remaining buffered audio and return the final partial result.
+    /// partial_text is always empty on the returned result.
+    /// The session must not be used after this call.
+    ASRPartialResult finish();
+
+    // Public so that ASRPipelineImplBase subclasses can inherit from it without friendship.
+    class Impl;
+
+private:
+    std::unique_ptr<Impl> m_impl;
 };
 
 }  // namespace ov::genai
