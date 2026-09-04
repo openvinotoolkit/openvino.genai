@@ -1311,9 +1311,7 @@ def test_cb_add_request_rejects_non_empty_unsupported_pipeline_lora_mode(
     """add_request() must reject unsupported pipeline modes when LoRA adapters are present."""
     import openvino_genai as ov_genai
 
-    adapter_config = ov_genai.AdapterConfig(
-        ov_genai.Adapter(), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
-    )
+    adapter_config = ov_genai.AdapterConfig(ov_genai.Adapter(), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name))
     pipe = ContinuousBatchingPipeline(
         model_facebook_opt_125m.models_path,
         SchedulerConfig(),
