@@ -181,6 +181,9 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // tree search
     read_anymap_param(properties, "branching_factor", branching_factor);
     read_anymap_param(properties, "tree_depth", tree_depth);
+
+    // Thinking / reasoning control
+    read_anymap_param(properties, "reasoning_config", reasoning_config);
 }
 
 
@@ -263,6 +266,18 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "backend", backend);
 }
 
+ReasoningConfig::ReasoningConfig(const ov::AnyMap& properties) {
+    update_config(properties);
+}
+
+void ReasoningConfig::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "budget", budget);
+    read_anymap_param(properties, "start_token_id", start_token_id);
+    read_anymap_param(properties, "end_token_id", end_token_id);
+}
+
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     // max_new_tokens has priority over max_length, only if max_new_tokens was not specified use max_length
     if (max_new_tokens != SIZE_MAX) {
@@ -304,8 +319,28 @@ bool GenerationConfig::is_prompt_lookup() const {
 void GenerationConfig::validate() const {
     OPENVINO_ASSERT(num_return_sequences > 0, "num_return_sequences must be greater than 0");
 
-    // Stop conditions
+    // Thinking / Reasoning validation
+    if (reasoning_config.has_value()) {
+        const auto& rc = *reasoning_config;
+        // budget must be -1 (disabled) or non-negative
+        OPENVINO_ASSERT(rc.budget >= -1,
+            "reasoning_config.budget must be -1 (disabled) or a non-negative value, but got ",
+            rc.budget);
+        // If budget >= 0 (enforcement enabled), both start and end token IDs must be set
+        if (rc.budget >= 0) {
+            OPENVINO_ASSERT(rc.start_token_id >= 0 && rc.end_token_id >= 0,
+                "reasoning_config.start_token_id and end_token_id must both be set "
+                "when reasoning_config.budget is enabled (>= 0).");
+        }
+        // Mutually exclusive with structured output: the grammar transformer and the
+        // thinking-budget FORCING would starve each other (a forced </think> may be
+        // rejected by the grammar, leaving every candidate masked).
+        OPENVINO_ASSERT(!structured_output_config.has_value(),
+            "reasoning_config and structured_output_config cannot be used together: "
+            "the thinking budget FORCING would conflict with the structured output grammar.");
+    }
 
+    // Stop conditions
     OPENVINO_ASSERT(eos_token_id == -1 || stop_token_ids.find(eos_token_id) != stop_token_ids.end(),
         "'stop_token_ids' must contain 'eos_token_id'. Please, call 'set_eos_token_id' with 'eos_token_id' value");
 
@@ -325,7 +360,7 @@ void GenerationConfig::validate() const {
 
     // Sampling strategies
 
-    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()), 
+    OPENVINO_ASSERT(num_return_sequences == 1 || (is_multinomial() || is_beam_search()),
         "'num_return_sequences' can be more than 1 only in case of beam search or multinomial sampling, but got ", num_return_sequences);
 
     // generic penalties, but not supported by beam search currently

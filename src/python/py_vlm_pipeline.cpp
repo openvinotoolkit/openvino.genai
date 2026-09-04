@@ -202,6 +202,29 @@ py::object call_vlm_generate(
     }
 
     auto updated_config = pyutils::update_config_from_kwargs(generation_config, kwargs);
+
+    // ── Auto-detect thinking token IDs (VLM path 1) ──
+    // Triggered when reasoning_config is set but start_token_id is not.
+    // Encodes <think> and </think> via the tokenizer to get the correct IDs.
+    // Conditions:
+    //   1. reasoning_config is set
+    //   2. start_token_id is unset (still at default -1)
+    //   3. Both <think> and </think> encode as single tokens
+    // Silently skips on failure (e.g. tokenizer doesn't support these special tokens).
+    if (updated_config.reasoning_config.has_value() && updated_config.reasoning_config->start_token_id < 0) {
+        try {
+            auto tok = pipe.get_tokenizer();
+            auto start = tok.encode("<think>");
+            auto end = tok.encode("</think>");
+            // Only trust single-token encodings; skip multi-token results
+            if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
+                updated_config.reasoning_config->start_token_id = *start.input_ids.data<int64_t>();
+                updated_config.reasoning_config->end_token_id = *end.input_ids.data<int64_t>();
+            }
+        } catch (...) { /* skip auto-detect on failure */ }
+    }
+
+
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
     const auto videos_metadata = pyutils::get_videos_metadata_from_kwargs(kwargs);
     
@@ -472,6 +495,40 @@ An input image without explicit slicing metadata counts as one slice.)")
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
                 auto map = pyutils::kwargs_to_any_map(kwargs);
+                // Start from the pipeline's loaded config so kwargs-only calls (no
+                // generation_config) inherit EOS, length limits and sampling defaults.
+                ov::genai::GenerationConfig gen_cfg = pipe.get_generation_config();
+                auto it = map.find("generation_config");
+                if (it != map.end()) {
+                    gen_cfg = it->second.as<ov::genai::GenerationConfig>();
+                    map.erase(it);
+                }
+                // Apply reasoning_config from kwargs to gen_cfg so auto-detect can see it.
+                // A one-shot kwarg always wins (like every other kwarg): move it out of the map
+                // unconditionally so the auto-detect block below sees the user-provided value,
+                // even when the pipeline already carries its own reasoning_config.
+                auto rc_it = map.find("reasoning_config");
+                if (rc_it != map.end()) {
+                    gen_cfg.reasoning_config = rc_it->second.as<ov::genai::ReasoningConfig>();
+                    map.erase(rc_it);
+                }
+                // ── Auto-detect thinking token IDs (VLM path 2: kwargs) ──
+                // Used when generation_config is passed via kwargs.
+                // Triggers when reasoning_config is set but start_token_id is not.
+                if (gen_cfg.reasoning_config.has_value() && gen_cfg.reasoning_config->start_token_id < 0) {
+                    try {
+                        auto tok = pipe.get_tokenizer();
+                        auto start = tok.encode("<think>");
+                        auto end = tok.encode("</think>");
+                        // Only trust single-token encodings; skip multi-token results
+                        if (start.input_ids.get_size() == 1 && end.input_ids.get_size() == 1) {
+                            gen_cfg.reasoning_config->start_token_id = *start.input_ids.data<int64_t>();
+                            gen_cfg.reasoning_config->end_token_id = *end.input_ids.data<int64_t>();
+                        }
+                    } catch (...) { /* skip auto-detect on failure */ }
+                }
+
+                map["generation_config"] = gen_cfg;
                 ov::genai::VLMDecodedResults res;
                 {
                     py::gil_scoped_release rel;

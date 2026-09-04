@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningConfig', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -1669,6 +1669,10 @@ class GenerationConfig:
         do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
         num_return_sequences: the number of sequences to generate from a single prompt.
     
+        Thinking / reasoning control:
+        reasoning_config: ReasoningConfig for thinking/reasoning control.
+                          budget=0 disables thinking, N limits it, -1 leaves it unlimited.
+    
         Tree search parameters:
         branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
         tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
@@ -1831,6 +1835,14 @@ class GenerationConfig:
         ...
     @pruning_ratio.setter
     def pruning_ratio(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def reasoning_config(self) -> openvino_genai.py_openvino_genai.ReasoningConfig | None:
+        """
+        Thinking/reasoning control configuration (ReasoningConfig)
+        """
+    @reasoning_config.setter
+    def reasoning_config(self, arg0: openvino_genai.py_openvino_genai.ReasoningConfig | None) -> None:
         ...
     @property
     def relevance_weight(self) -> float:
@@ -2597,6 +2609,10 @@ class LLMPipeline:
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
         
+            Thinking / reasoning control:
+            reasoning_config: ReasoningConfig for thinking/reasoning control.
+                              budget=0 disables thinking, N limits it, -1 leaves it unlimited.
+        
             Tree search parameters:
             branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
             tree_depth:       lookahead depth of the candidate tree; the draft model runs `tree_depth` iterations.
@@ -2699,6 +2715,10 @@ class LLMPipeline:
             top_k:              the number of highest probability vocabulary tokens to keep for top-k-filtering.
             do_sample:          whether or not to use multinomial random sampling that add up to `top_p` or higher are kept.
             num_return_sequences: the number of sequences to generate from a single prompt.
+        
+            Thinking / reasoning control:
+            reasoning_config: ReasoningConfig for thinking/reasoning control.
+                              budget=0 disables thinking, N limits it, -1 leaves it unlimited.
         
             Tree search parameters:
             branching_factor: number of top-k candidates selected per tree node and kept globally per tree layer.
@@ -3493,6 +3513,53 @@ class RawPerfMetrics:
         ...
     @property
     def tokenization_durations(self) -> list[float]:
+        ...
+class ReasoningConfig:
+    """
+    
+        Configuration for thinking/reasoning control in models that emit
+        <think>/</think> tags (e.g. Qwen3, DeepSeek).
+    
+        Reasoning parameters:
+        budget:          Max tokens allowed in the thinking block before forcing </think>.
+                         0 = disable thinking (force immediately), N = limit, -1 = unlimited.
+        start_token_id:  Token ID of the <think> tag.
+        end_token_id:    Token ID of the </think> tag.
+    """
+    __hash__: typing.ClassVar[None] = None
+    def __eq__(self, arg0: ReasoningConfig) -> bool:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        ...
+    @typing.overload
+    def __init__(self, **kwargs) -> None:
+        ...
+    def __repr__(self) -> str:
+        ...
+    @property
+    def budget(self) -> int:
+        """
+        Max tokens allowed in the thinking block before forcing </think> (0 = disable thinking, N = limit, -1 = unlimited)
+        """
+    @budget.setter
+    def budget(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def end_token_id(self) -> int:
+        """
+        Token ID of the </think> tag
+        """
+    @end_token_id.setter
+    def end_token_id(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def start_token_id(self) -> int:
+        """
+        Token ID of the <think> tag
+        """
+    @start_token_id.setter
+    def start_token_id(self, arg0: typing.SupportsInt) -> None:
         ...
 class ReasoningIncrementalParser(IncrementalParser):
     def __init__(self, expect_open_tag: bool = True, keep_original_content: bool = True, open_tag: str = '<think>', close_tag: str = '</think>') -> None:
