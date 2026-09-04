@@ -130,10 +130,6 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
             }
         }
     }
-
-    // Mistral3 (Pixtral)
-    read_json_param(parsed, "spatial_merge_size", spatial_merge_size);
-    read_json_param(parsed, "image_token_index", image_token_index);
 }
 
 }  // namespace ov::genai

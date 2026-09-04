@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <mutex>
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/vision_encoder.hpp"
@@ -24,6 +25,7 @@ public:
     InputsEmbedderMistral3(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
+        const Tokenizer& tokenizer,
         const std::string& device,
         const ov::AnyMap device_config);
 
@@ -51,22 +53,11 @@ public:
 
 private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_multi_modal_projector;
+    int64_t m_image_token_id = -1;
+    std::once_flag m_image_token_id_once_flag;
 
-    /// @brief Apply spatial merge (unfold) to vision encoder output.
-    /// Groups adjacent spatial_merge_size x spatial_merge_size patches and concatenates their features.
-    /// Input: [num_patches, hidden_size] with grid dims (h_patches, w_patches).
-    /// Output: [h_merged * w_merged, hidden_size * spatial_merge_size^2].
-    ov::Tensor spatial_merge(const ov::Tensor& features, size_t h_patches, size_t w_patches) const;
-
-    /// @brief Merge text and image embeddings using masked scatter.
-    /// Replaces every position in text_embeds where input_ids == image_token_id
-    /// with the next image embedding in sequence. Handles non-contiguous image tokens
-    /// separated by [IMG_BREAK]/[IMG_END].
-    ov::Tensor merge_image_embeddings(
-        const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds,
-        const std::vector<ov::Tensor>& image_embeds,
-        int64_t image_token_id) const;
+    /// @brief Encode the native image tag with the tokenizer to obtain its token id.
+    void encode_image_token_id();
 };
 
 }  // namespace ov::genai

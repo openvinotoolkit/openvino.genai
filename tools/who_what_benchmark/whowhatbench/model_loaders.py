@@ -554,6 +554,10 @@ def load_visual_text_model(
 
                 model_cls = AutoModelForImageTextToText
 
+            if config.model_type == "mistral3":
+                # Checkpoint weights are bf16 while the processor emits fp32 pixel_values.
+                model_kwargs.update({"torch_dtype": torch.float32})
+
             model = model_cls.from_pretrained(model_id, device_map=device.lower(), **model_kwargs)
         except ValueError:
             try:

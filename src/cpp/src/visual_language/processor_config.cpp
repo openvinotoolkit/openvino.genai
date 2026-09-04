@@ -19,6 +19,11 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
         size_t patch_size_width = 0;
         read_json_param(parsed, "patch_size.height", patch_size_height);
         read_json_param(parsed, "patch_size.width", patch_size_width);
+        OPENVINO_ASSERT(patch_size_height > 0 && patch_size_width > 0,
+                        "patch_size object must specify positive height and width, got height=",
+                        patch_size_height,
+                        ", width=",
+                        patch_size_width);
         OPENVINO_ASSERT(patch_size_height == patch_size_width,
                         "Non-square patch_size is not supported: height=",
                         patch_size_height,
@@ -27,6 +32,7 @@ ov::genai::ProcessorConfig::ProcessorConfig(const nlohmann::json& parsed) {
         patch_size = patch_size_height;
     } else {
         read_json_param(parsed, "patch_size", patch_size);
+        OPENVINO_ASSERT(patch_size > 0, "patch_size must be positive, got ", patch_size);
     }
 
     read_json_param(parsed, "scale_resolution", scale_resolution);

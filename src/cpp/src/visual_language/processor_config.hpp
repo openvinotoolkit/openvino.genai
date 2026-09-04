@@ -61,6 +61,7 @@ public:
 
     // mistral3 (pixtral) specific config params
     size_t longest_edge = 1540;
+    size_t spatial_merge_size = 2;
 
     struct {
         size_t num_crops = 4;

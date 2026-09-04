@@ -129,6 +129,7 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512',
           'https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503',
         ],
+        notesLink: '#mistral3-notes',
       },
     ],
   },
