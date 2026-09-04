@@ -223,6 +223,7 @@ export const VLM_MODELS: VLMModelType[] = [
         links: [
           'https://huggingface.co/Qwen/Qwen3.8-27B',
         ],
+        notesLink: '#qwen3_5-notes',
       },
     ],
   },
