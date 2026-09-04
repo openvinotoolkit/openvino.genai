@@ -1,8 +1,9 @@
-// Copyright (C) 2025-2026 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { VLMPipeline as VLM } from "./pipelines/vlmPipeline.js";
+import { OmniPipeline as Omni } from "./pipelines/omniPipeline.js";
 import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
 import {
   TextRerankPipeline as TextRerank,
@@ -17,6 +18,7 @@ import { Text2SpeechPipeline as Text2Speech } from "./pipelines/text2SpeechPipel
 import {
   LLMPipelineProperties,
   VLMPipelineProperties,
+  OmniPipelineProperties,
   WhisperPipelineProperties,
   ASRPipelineProperties,
   Text2ImagePipelineProperties,
@@ -55,6 +57,26 @@ class PipelineFactory {
     properties: VLMPipelineProperties = {},
   ) {
     const pipeline = new VLM(modelPath, device, properties);
+    await pipeline.init();
+
+    return pipeline;
+  }
+
+  /**
+   * Creates and initializes an Omni pipeline for text and speech generation.
+   *
+   * @note This is a preview API and is subject to change in future releases.
+   * @param modelPath - A folder containing tokenizer and model IR files.
+   * @param device - Inference device.
+   * @param properties - Device and pipeline properties.
+   * @returns The initialized Omni pipeline.
+   */
+  static async OmniPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    properties: OmniPipelineProperties = {},
+  ) {
+    const pipeline = new Omni(modelPath, device, properties);
     await pipeline.init();
 
     return pipeline;
@@ -144,6 +166,7 @@ class PipelineFactory {
 export const {
   LLMPipeline,
   VLMPipeline,
+  OmniPipeline,
   TextEmbeddingPipeline,
   TextRerankPipeline,
   WhisperPipeline,
@@ -156,12 +179,18 @@ export const {
 export {
   DecodedResults,
   VLMDecodedResults,
+  OmniDecodedResults,
   WhisperDecodedResults,
   ASRDecodedResults,
   Text2SpeechDecodedResults,
 } from "./decodedResults.js";
-export type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
-export type { ASRDecodedResultChunk } from "./decodedResults.js";
+export type {
+  ASRDecodedResultChunk,
+  WhisperDecodedResultChunk,
+  WhisperWordTiming,
+  OmniSpeechResult,
+  OmniSpeechPerfMetrics,
+} from "./decodedResults.js";
 export {
   PerfMetrics,
   VLMPerfMetrics,

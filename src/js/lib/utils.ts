@@ -582,3 +582,49 @@ export type ImageGenerationCallback = (
 export type Text2ImageCallback = ImageGenerationCallback;
 
 export type Text2SpeechPipelineProperties = Record<string, unknown>;
+
+/**
+ * Device and scheduler properties for OmniPipeline initialization.
+ *
+ * @note This is a preview API and is subject to change in future releases.
+ */
+export type OmniPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+} & Record<string, unknown>;
+
+/**
+ * Speech-side generation config for the Qwen3-Omni talker.
+ *
+ * Controls the speech output stack (Talker + CodePredictor + Code2Wav). Standalone config:
+ * the thinker text decode is steered by a separate {@link GenerationConfig} passed as `textConfig`.
+ *
+ * @note This is a preview API and is subject to change in future releases.
+ */
+export type OmniTalkerSpeechConfig = {
+  /** Enable speech output. Defaults to true; set false to produce text only. */
+  return_audio?: boolean;
+  /**
+   * Speaker identity: either a name looked up in the model config, or an explicit
+   * embedding tensor (`[1, 1, talker_hidden_size]`, f32). Default selects the model's default speaker.
+   */
+  speaker?: string | Tensor;
+  /**
+   * Number of codec frames accumulated before streaming each audio chunk. Must be >= 1.
+   * Each frame is 80ms of audio at 24 kHz (1920 samples).
+   */
+  audio_chunk_frames?: Uint;
+  /** Cap on talker autoregressive steps. Independent of `textConfig.max_new_tokens`. */
+  max_new_tokens?: Uint;
+  /** RNG seed for talker + CodePredictor sampling. */
+  rng_seed?: Uint;
+  /** Talker sampling temperature override (must be > 0 when set). */
+  talker_temperature?: number;
+  /** Talker top-k override (must be >= 1 when set). */
+  talker_top_k?: Uint;
+  /** Talker repetition penalty override (must be > 0 when set; 1.0 = no penalty). */
+  talker_repetition_penalty?: number;
+  /** CodePredictor sampling temperature override (must be > 0 when set). */
+  cp_temperature?: number;
+  /** CodePredictor top-k override (must be >= 1 when set). */
+  cp_top_k?: Uint;
+};
