@@ -9,16 +9,16 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-PA_FALLBACK_WARNING = (
-    "[WARNING] Paged Attention backend initialization failed. Falling back to SDPA backend. "
+PA_FALLBACK_INFO = (
+    "[INFO] Paged Attention backend initialization failed. Falling back to SDPA backend. "
     'Set ATTENTION_BACKEND="SDPA" to skip Paged Attention initialization.'
 )
 
 
 def normalize_sample_output(output: str) -> str:
-    if PA_FALLBACK_WARNING not in output:
+    if PA_FALLBACK_INFO not in output:
         return output
-    return output.replace(PA_FALLBACK_WARNING, "").strip()
+    return output.replace(PA_FALLBACK_INFO, "").strip()
 
 
 def compare_videos(video_path1: Path, video_path2: Path) -> bool:
