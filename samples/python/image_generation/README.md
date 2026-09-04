@@ -347,7 +347,7 @@ else:
 
 ## Export and import compiled models
 
-`openvino_genai.Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
+`openvino_genai.Text2ImagePipeline`, `openvino_genai.Image2ImagePipeline`, and `openvino_genai.InpaintingPipeline` support exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported, currently.
 
 ```python
 # export models
