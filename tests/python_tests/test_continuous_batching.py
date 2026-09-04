@@ -1295,5 +1295,5 @@ def test_cb_add_request_rejects_non_empty_dynamic_lora_mode(model_facebook_opt_1
     config.max_new_tokens = 10
     config.adapters = ov_genai.AdapterConfig(ov_genai.Adapter(), mode=ov_genai.AdapterConfig.Mode.MODE_DYNAMIC)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"):
         pipe.add_request(0, "test prompt", generation_config=config)
