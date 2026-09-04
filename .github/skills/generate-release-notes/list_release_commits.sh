@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Ensure release data comes from the canonical repository.
-expected_upstream_url="https://github.com/openvinotoolkit/openvino.genai.git"
+expected_upstream_url_pattern='^(https://github\.com/|git@github\.com:)openvinotoolkit/openvino\.genai\.git$'
 upstream_url=$(git remote get-url upstream 2>/dev/null || true)
 
 if [[ -z "$upstream_url" ]]; then
@@ -11,8 +11,8 @@ if [[ -z "$upstream_url" ]]; then
   exit 1
 fi
 
-if [[ "$upstream_url" != "$expected_upstream_url" ]]; then
-  echo "Error: Git remote 'upstream' points to '$upstream_url'; expected '$expected_upstream_url'." >&2
+if [[ ! "$upstream_url" =~ $expected_upstream_url_pattern ]]; then
+  echo "Error: Git remote 'upstream' points to '$upstream_url'; expected the canonical openvinotoolkit/openvino.genai GitHub repository." >&2
   exit 1
 fi
 
@@ -28,9 +28,8 @@ if [[ ! "$base_tag" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 # Select the newest canonical release branch, excluding suffixed variants.
-current_branch=$(git branch -r --format='%(refname:short)' |
+current_branch=$(git branch -r --sort=version:refname --format='%(refname:short)' |
   grep -E '^upstream/releases/[0-9]{4}/[0-9]+$' |
-  sort -V |
   tail -1)
 
 if [[ -z "$current_branch" ]]; then

@@ -33,16 +33,17 @@ If checkout fails for any reason, stop immediately without creating or modifying
 
 If a commit subject does not provide enough information, inspect the currently checked-out release branch's source code, public APIs, tests, bindings, samples, or documentation to prepare an accurate description.
 
-Group commit into categories:
+Group commits into categories:
 
-- Major core features
+- Features
 - LLM Bench, WWB Tools
 - JS Bindings
-- Docs updates
-- Discontinued and deprecated features
-- Minor features, bug fixes, and other changes
+- Other Changes
+- Docs Updates
+- Discontinued
+- Deprecated
 
-Create a Markdown file <release_notes_YYYY.N.md> with the following template:
+Create a Markdown file named `release_notes_YYYY.N.md` with the following template:
 
 ```markdown
 # OpenVINO™ GenAI Release Notes YYYY.N
