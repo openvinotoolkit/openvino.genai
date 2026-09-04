@@ -457,15 +457,7 @@ class TextAgentEvaluator(BaseEvaluator):
 
         messages = record["messages"]
 
-        history = openvino_genai.ChatHistory()
-        valid_content_messages = 0
-        for msg in messages:
-            if isinstance(msg, dict):
-                history.append(msg)
-                if self._message_has_content(msg):
-                    valid_content_messages += 1
-
-        if valid_content_messages == 0:
+        if not any(self._message_has_content(msg) for msg in messages if isinstance(msg, dict)):
             raise ValueError("All messages are empty in JSON record; prompt cannot be empty")
 
         kwargs = {
