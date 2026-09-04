@@ -1302,3 +1302,65 @@ def test_cb_different_seed_produces_different_output(model_facebook_opt_125m: OV
         f"Requests with different rng_seeds {rng_seeds} must produce at least one distinct output, "
         f"but all produced identical token sequences: {token_seqs[0]}"
     )
+
+
+def test_cb_add_request_accepts_empty_lora_config(model_facebook_opt_125m: OVConvertedModelSchema):
+    """add_request() must allow an explicit empty LoRA config."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+
+    modes = [
+        ov_genai.AdapterConfig.Mode.MODE_AUTO,
+        ov_genai.AdapterConfig.Mode.MODE_DYNAMIC,
+        ov_genai.AdapterConfig.Mode.MODE_STATIC_RANK,
+    ]
+    for request_id, mode in enumerate(modes):
+        config = GenerationConfig()
+        config.max_new_tokens = 10
+        config.adapters = ov_genai.AdapterConfig(mode=mode)
+
+        pipe.add_request(request_id, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_lora_mode(
+    model_facebook_opt_125m: OVConvertedModelSchema, mode_name: str
+):
+    """add_request() must reject unsupported modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+    config.adapters = ov_genai.AdapterConfig(ov_genai.Adapter(), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name))
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)
+
+
+@pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
+def test_cb_add_request_rejects_non_empty_unsupported_pipeline_lora_mode(
+    model_facebook_opt_125m: OVConvertedModelSchema, mode_name: str
+):
+    """add_request() must reject unsupported pipeline modes when LoRA adapters are present."""
+    import openvino_genai as ov_genai
+
+    adapter_config = ov_genai.AdapterConfig(ov_genai.Adapter(), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name))
+    pipe = ContinuousBatchingPipeline(
+        model_facebook_opt_125m.models_path,
+        SchedulerConfig(),
+        "CPU",
+        properties={"adapters": adapter_config},
+    )
+
+    config = GenerationConfig()
+    config.max_new_tokens = 10
+
+    with pytest.raises(
+        RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
+    ):
+        pipe.add_request(0, "test prompt", generation_config=config)

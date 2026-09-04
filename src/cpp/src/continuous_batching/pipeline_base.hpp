@@ -85,7 +85,9 @@ public:
     Tokenizer get_tokenizer();
 
     /**
-     * Adds requests to awaiting queue using encoded inputs
+     * Adds requests to awaiting queue using encoded inputs.
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
@@ -95,8 +97,10 @@ public:
                                          std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs = std::nullopt) = 0;
 
     /**
-     * Adds request to running queue based on string input
-     * This step also performs tokenization's encode
+     * Adds request to running queue based on string input.
+     * This step also tokenizes the prompt (Tokenizer::encode).
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
@@ -105,6 +109,8 @@ public:
     /**
      * Adds request to running queue based on string input and vector of images
      * This step also performs tokenization's encode
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     *       MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
@@ -114,6 +120,8 @@ public:
     /**
      * Adds request to running queue based on string input and vector of images and videos
      * This step also performs tokenization's encode
+     * @note LoRA adapters are only supported in MODE_STATIC or MODE_FUSE modes.
+     * MODE_DYNAMIC, MODE_AUTO and MODE_STATIC_RANK are not supported in the add_request() + step() flow.
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
