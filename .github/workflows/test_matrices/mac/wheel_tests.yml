@@ -1,7 +1,6 @@
 # Test matrix for the macOS genai_tests_wheel job.
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: ASR
-  # TODO: skip some tests temporary until https://github.com/huggingface/datasets/issues/7647 dataset is fixed
   cmd: |-
     python -m pip install transformers==5.0.0
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"

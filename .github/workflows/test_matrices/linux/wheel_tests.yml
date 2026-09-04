@@ -1,7 +1,6 @@
 # Test matrix for the genai_tests_wheel job.
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: ASR
-  # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
   cmd: |-
     python -m pip install transformers==5.0.0
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"
@@ -265,6 +264,7 @@
   components:
     - visual_language
 
+# TODO: Move this job in the main VLM test once it will move to transformers 5.5.
 - name: VLM (gemma4)
   cmd: |-
     pip show transformers optimum-intel openvino_tokenizers openvino_genai

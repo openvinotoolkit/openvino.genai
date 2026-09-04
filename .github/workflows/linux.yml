@@ -941,6 +941,7 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.PY_INSTALL_DIR }}/wheels
 
+      # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
       - name: Install Transformers compatibility version
         run: python -m pip install transformers==5.0.0
 
