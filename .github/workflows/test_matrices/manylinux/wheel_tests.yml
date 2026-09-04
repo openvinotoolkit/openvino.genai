@@ -159,7 +159,7 @@
 
 - name: WWB tests (image, VLM, video)
   cmd: |-
-    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+    python -m pip install "git+https://github.com/huggingface/optimum-intel.git@4f1a926025ac7e5236c8661ab868640ce8076998#egg=optimum-intel"
     python -m pytest -v ./tools/who_what_benchmark/tests/test_cli_image.py ./tools/who_what_benchmark/tests/test_cli_vlm.py ./tools/who_what_benchmark/tests/test_cli_videos.py -m "not nanollava and not transformers_lower_v5" -k "not videochat"
   timeout: 120
   components:

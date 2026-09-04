@@ -847,7 +847,7 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pip install "git+https://github.com/huggingface/optimum-intel.git@afc4d9709dea2ace2e7b74faa9b434b917ce189b#egg=optimum-intel"
+          python -m pip install "git+https://github.com/huggingface/optimum-intel.git@4f1a926025ac7e5236c8661ab868640ce8076998#egg=optimum-intel"
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples and not transformers_lower_v5 and not transformers_higher_v5_1"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
