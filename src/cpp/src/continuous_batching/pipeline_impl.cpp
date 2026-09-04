@@ -707,6 +707,10 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
                         "LoRA adapters value must be the same for all requests");
     }
     set_adapters(sampling_params[0].adapters);
+    std::vector<GenerationConfig> request_sampling_params = sampling_params;
+    for (auto& request_sampling_param : request_sampling_params) {
+        request_sampling_param.adapters = std::nullopt;
+    }
 
     // RAII guard so the flag is restored on every exit path (including exceptions).
     struct HiddenStateExportGuard {
@@ -760,7 +764,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         generations.push_back(add_request(
             request_id,
             input_ids[request_id],
-            sampling_params[request_id],
+            request_sampling_params[request_id],
             has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
             has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
