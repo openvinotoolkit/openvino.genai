@@ -89,7 +89,7 @@ When a GGUF model is passed to the pipeline, the detailed debug info will also b
 [GGUF Reader]: Model generation done. Time: 757ms
 ```
 
-When setting the environment variable `OPENVINO_LOG_LEVEL` >= `ov::log::Level::INFO`, the information about which backend is used(PA/SDPA) will be displayed.
+When setting the environment variable `OPENVINO_LOG_LEVEL` >= `ov::log::Level::INFO`, the information about which backend is used (PA/SDPA) will be displayed.
 
 For example, after PageAttention transformation is applied successfully, the following message is printed to the console in case of `LLMPipeline` or `VLMPipeline`:
 ```sh title="Output:"
