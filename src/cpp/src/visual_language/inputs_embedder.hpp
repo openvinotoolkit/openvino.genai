@@ -405,6 +405,7 @@ private:
     friend class InputsEmbedderDeepseekOCR2;
     friend class InputsEmbedderVideoChatFlashQwen;
     friend class InputsEmbedderMuseGlimmer;
+    friend class InputsEmbedderMistral3;
 };
 
 template <typename Func>
