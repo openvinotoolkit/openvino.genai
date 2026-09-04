@@ -71,6 +71,16 @@ std::shared_ptr<ov::Model> make_matmul_transpose_model(const ov::PartialShape& i
     return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
 }
 
+std::shared_ptr<ov::Model> make_matmul_dynamic_transpose_model(const ov::PartialShape& input_shape, size_t hidden, size_t vocab) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, input_shape);
+    auto weights = std::make_shared<ov::op::v0::Constant>(ov::element::f32, ov::Shape{hidden, vocab}, 0.0f);
+    auto matmul = std::make_shared<ov::op::v0::MatMul>(input, weights);
+    auto order = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{3});
+    auto transpose = std::make_shared<ov::op::v1::Transpose>(matmul, order);
+    auto result = std::make_shared<ov::op::v0::Result>(transpose);
+    return std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input, order});
+}
+
 // Build: Parameter -> MatMul -> Divide -> Tanh -> Multiply -> Result
 std::shared_ptr<ov::Model> make_matmul_div_tanh_mul_model(const ov::PartialShape& input_shape, size_t hidden, size_t vocab) {
     auto input = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, input_shape);
@@ -132,6 +142,11 @@ TEST(SliceBeforeMatmul, AllPatterns) {
         ASSERT_EQ(count_ops<ov::op::v8::Slice>(model), 1u);
         ASSERT_TRUE((has_op_before_matmul<ov::op::v8::Slice>(model)));
     }
+}
+
+TEST(SliceBeforeMatmul, NonConstantTransposeOrderThrows) {
+    auto model = make_matmul_dynamic_transpose_model(ov::PartialShape{1, -1, 64}, 64, 128);
+    ASSERT_THROW(ov::genai::utils::apply_slice_before_matmul_transformation(model), ov::Exception);
 }
 
 // Inference: sliced output matches the last token of non-transformed output
@@ -208,6 +223,11 @@ TEST(GatherBeforeMatmul, AllPatterns) {
         ASSERT_EQ(count_ops<ov::op::v8::Gather>(model), 1u);
         ASSERT_TRUE((has_op_before_matmul<ov::op::v8::Gather>(model)));
     }
+}
+
+TEST(GatherBeforeMatmul, NonConstantTransposeOrderThrows) {
+    auto model = make_matmul_dynamic_transpose_model(ov::PartialShape{1, -1, 64}, 64, 128);
+    ASSERT_THROW(ov::genai::utils::apply_gather_before_matmul_transformation(model), ov::Exception);
 }
 
 // Inference: gathered output for specific indices matches corresponding tokens in full output
