@@ -23,6 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
+  HF_TOKEN_PATH: "C:\\mount\\secrets\\huggingface\\token-primary"
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/b53e4e21/
   OPENVINO_LOG_LEVEL: 1  # Windows fails with out of memory because of too verbose logging
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -89,9 +90,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        # Workaround for ScatterNDUpdate exception.
-        # The ticket for tracking: CVS-192302
-        revision: aa154b5f870b9b1c118dabc970989f9c7de163d3
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -577,7 +576,7 @@ jobs:
           merge-multiple: true
 
       - name: Extract Artifacts
-        run: Expand-Archive -Path ${{ env.OV_INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.OV_INSTALL_DIR }}
+        run: Expand-Archive -Force -Path ${{ env.OV_INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.OV_INSTALL_DIR }}
 
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
@@ -814,7 +813,7 @@ jobs:
           merge-multiple: true
 
       - name: Extract Artifacts
-        run: Expand-Archive -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
+        run: Expand-Archive -Force -Path ${{ env.INSTALL_DIR }}/${{ env.GENAI_ARCHIVE_ARTIFACT_BASE_NAME }}.zip -DestinationPath ${{ env.INSTALL_DIR }}
 
       - name: Download GenAI JS Bildings Artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

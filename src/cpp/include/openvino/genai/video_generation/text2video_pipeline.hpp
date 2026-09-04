@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <filesystem>
+
 #include "openvino/genai/video_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/image_generation/scheduler.hpp"
@@ -178,8 +180,10 @@ public:
     ~Text2VideoPipeline();
 
 private:
-    class LTXPipeline;
-    std::unique_ptr<LTXPipeline> m_impl;
+    class Impl;
+    std::unique_ptr<Impl> m_impl;
+
+    explicit Text2VideoPipeline(std::unique_ptr<Impl> impl);
 };
 
 }  // namespace ov::genai

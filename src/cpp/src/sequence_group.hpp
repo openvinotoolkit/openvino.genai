@@ -924,6 +924,14 @@ public:
         m_generation_stream->set_generation_status(status);
     }
 
+    void set_num_prefix_cache_hit_tokens(size_t num_prefix_cache_hit_tokens) {
+        m_perf_metrics.num_prefix_cache_hit_tokens = num_prefix_cache_hit_tokens;
+    }
+
+    size_t get_num_prefix_cache_hit_tokens() const {
+        return m_perf_metrics.num_prefix_cache_hit_tokens;
+    }
+
     void update_perf_metrics(MicroSeconds inference_duration,
                              MicroSeconds sampling_duration,
                              size_t batch_size,

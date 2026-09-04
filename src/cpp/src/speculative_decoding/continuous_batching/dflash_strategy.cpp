@@ -834,6 +834,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::DFlashDecodingI
         m_perf_metrics.raw_metrics.generate_durations.clear();
         m_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_duration_us);
         m_perf_metrics.num_input_tokens = request->get_prompt_len();
+        m_perf_metrics.num_prefix_cache_hit_tokens = request->get_num_prefix_cache_hit_tokens();
         m_perf_metrics.evaluate_statistics(start_time);
 
         result.perf_metrics = m_perf_metrics;

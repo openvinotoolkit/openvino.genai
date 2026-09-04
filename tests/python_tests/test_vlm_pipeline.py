@@ -2429,9 +2429,6 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-gemma4-unified-it/SDPA/CPP/text-only": "CVS-190429",
     "*tiny-random-gemma4-unified-it/PA/CPP/image*": "CVS-190429",
     "*tiny-random-gemma4-unified-it/PA/CPP/text-only": "CVS-190429",
-    # Gemma4 models (with token_type_ids input) PA cases with image input
-    "*tiny-random-gemma4-moe/PA/*/image*": "CVS-189723",
-    "*tiny-random-gemma4-31B/PA/*/image*": "CVS-189723",
     # Gemma4 video inputs (not yet supported by optimum)
     "*tiny-random-gemma4*/*/video*": "CVS-190256",
     # qwen2vl cases that use 70x70 video resolution
