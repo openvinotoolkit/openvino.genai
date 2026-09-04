@@ -138,6 +138,9 @@ class GenAIModelWrapper:
             "text-reranking",
             "visual-text-chat",
             "visual-text-only",
+            "visual-text-agent",
+            "visual-text-only",
+            "visual-text-agent",
         ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
@@ -277,6 +280,7 @@ def load_omni_hf_pipeline(model_id, device, config, trust_remote_code=False, **k
 
 def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
+
     trust_remote_code = False
     config = None
     if kwargs.get('gguf_file'):
@@ -294,6 +298,7 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
         if not kwargs.get("gguf_file") and config and getattr(config, "quantization_config", None):
             is_gptq = config.quantization_config["quant_method"] == "gptq"
             is_awq = config.quantization_config["quant_method"] == "awq"
+
         with mock_AwqQuantizer_validate_environment(is_awq), mock_torch_cuda_is_available(is_gptq or is_awq):
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=trust_remote_code, device_map="cpu", **model_kwargs)
         if is_awq:
@@ -1116,11 +1121,17 @@ def load_model(
 
     sanitized_kwargs = _sanitize_load_kwargs(model_type, use_hf, use_genai, use_llamacpp, kwargs)
 
-    if model_type == "text" or model_type == "text-chat":
+    if model_type in ("text", "text-agent", "text-chat"):
         return load_text_model(model_id, device, ov_options, use_hf, use_genai, use_llamacpp, **sanitized_kwargs)
     elif model_type == "text-to-image":
         return load_text2image_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
-    elif model_type in ["visual-text", "visual-video-text", "visual-text-chat", "visual-text-only"]:
+    elif model_type in (
+        "visual-text",
+        "visual-video-text",
+        "visual-text-chat",
+        "visual-text-agent",
+        "visual-text-only",
+    ):
         sanitized_kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **sanitized_kwargs)
     elif model_type == "image-to-image":
