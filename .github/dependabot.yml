@@ -96,6 +96,8 @@ updates:
       - dependency-name: "huggingface-hub"
       # update transformers version is dependent on optimum-intel for now and required more precise changes in repo
       - dependency-name: "transformers"
+        versions:
+          - ">=5.6"
       # update required more precise changes in repo and made upon request
       - dependency-name: "optimum-intel"
     groups:
