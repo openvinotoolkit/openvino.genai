@@ -8,7 +8,7 @@ sidebar_position: 3
 **Continuous Batching** is an optimization strategy for LLM inference that improves throughput by dynamically composing a batch of independent requests at each model inference step. Instead of handling each request separately from start to finish, the scheduler continuously combines active requests into a single batch. The algorithm evicts a request from the batch when it has produced its final token, allowing other requests to continue or new ones to join. Continuous Batching in OpenVINO GenAI is built on top of the **PagedAttention (PA)** layer. Read more in [src/cpp/include/openvino/genai/continuous_batching_pipeline.hpp](../../../../src/cpp/include/openvino/genai/continuous_batching_pipeline.hpp).
 
 ## PagedAttention Backend
-**SDPA (Scaled Dot-Product Attention)** pipelines execute one request (or a fixed static batch) at a time with a contiguous KV cache `[batch, num_heads, seq_len, head_dim]` tensor, which grows as the sequence length increases. PA stores K/V in a global pool of fixed-size blocks. Each sequence owns a block table and the attention kernel gathers K/V through that table. New blocks are allocated to a sequence only when the previous one fills up, and blocks are returned to the pool as soon as the sequence finishes. The same pool is shared between all in-flight requests. This makes possible such optimization techniques as multi-request batching, prefix caching, chunked prefill, and cache eviction.
+**SDPA (Scaled Dot-Product Attention)** pipelines execute one request (or a fixed static batch) at a time with a contiguous KV cache `[batch, num_heads, seq_len, head_dim]` tensor, which grows as the sequence length increases. **PA** stores K/V in a global pool of fixed-size blocks. Each sequence owns a block table and the attention kernel gathers K/V through that table. New blocks are allocated to a sequence only when the previous one fills up, and blocks are returned to the pool as soon as the sequence finishes. The same pool is shared between all in-flight requests. This makes possible such optimization techniques as multi-request batching, prefix caching, chunked prefill, and cache eviction.
 
 PA approach can provide higher throughput and better memory utilization.
 
@@ -19,8 +19,10 @@ On supported x86_64/ARM64 platforms, PagedAttention is the default attention bac
 * `ov::genai::VLMPipeline` / `openvino_genai.VLMPipeline`
 * `ov::genai::ContinuousBatchingPipeline` / `openvino_genai.ContinuousBatchingPipeline`
 
-If **PagedAttention backend initialization fails**, `LLMPipeline` and `VLMPipeline` **automatically fall back to the SDPA backend.**\
-To avoid fallback, set the backend explicitly by passing `ATTENTION_BACKEND="PA"` or `SchedulerConfig` to `LLMPipeline` and `VLMPipeline` constructors. In this case, if the PA backend can't be enabled, pipeline creation fails instead of falling back to SDPA.\
+If **PagedAttention backend initialization fails**, `LLMPipeline` and `VLMPipeline` **automatically fall back to the SDPA backend.**
+
+To avoid fallback, set the backend explicitly by passing `ATTENTION_BACKEND="PA"` or `SchedulerConfig` to `LLMPipeline` and `VLMPipeline` constructors. In this case, if the PA backend can't be enabled, pipeline creation fails instead of falling back to SDPA.
+
 Set `ATTENTION_BACKEND="SDPA"` to force SDPA instead of PA.
 
 Scheduling and paged KV cache behavior are configured with `ov::genai::SchedulerConfig` (`openvino_genai.SchedulerConfig`). Please read more about supported parameters and default values in [src/cpp/include/openvino/genai/scheduler_config.hpp](../../../../src/cpp/include/openvino/genai/scheduler_config.hpp).
