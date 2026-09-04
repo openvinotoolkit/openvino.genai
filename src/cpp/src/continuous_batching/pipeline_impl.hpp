@@ -75,11 +75,7 @@ protected:
      * Releases non-running (finished, dropped or OOM) requests from running queue
      */
     void _free_non_running_requests();
-
-    /**
-     * Notify dropped requests by pushing empty output
-     */
-    void _notify_requests_dropped_by_handle();
+    void _notify_handles(const Scheduler::Output& scheduler_output);
 
     /**
      * Handles 'echo' generation parameter

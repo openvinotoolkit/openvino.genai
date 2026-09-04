@@ -516,8 +516,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         for (size_t i = 0; i < m_requests.size(); ++i) {
             SequenceGroup::Ptr sequence_group = m_requests[i];
             if (!sequence_group->is_waiting()) {
+                auto perf_metrics = sequence_group->get_perf_metrics();
+                perf_metrics.load_time = m_load_time_ms;
+                sequence_group->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
                 sequence_group->set_out_of_memory();
-                sequence_group->notify_handle();
+                sequence_group->notify_handle_oom();
             }
         }
         _free_non_running_requests();
@@ -607,30 +610,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         free_fork_timer.end();
     }
 
-    {
-        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
-        candidates_timer.start();
-        generate_candidates_for_prompt_lookup();
-        candidates_timer.end();
-    }
-
-    // Append embeddings for tokens produced in this step.
-    // Validation mode usually skips this because speculative validation reuses/rewinds
-    // candidate tokens instead of committing them here. prompt_lookup is the exception:
-    // it appends validation candidates after sampling and must keep embeddings in sync
-    // before the next scheduling/hash step.
-    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
-    }
-
-    // notify requests dropped by handle
-    {
-        static ManualTimer report_tokens_timer("notify requests dropped by handle");
-        report_tokens_timer.start();
-        _notify_requests_dropped_by_handle();
-        report_tokens_timer.end();
-    }
-
     const auto step_end_time = std::chrono::steady_clock::now();
     for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
         const auto& request = m_requests.at(request_index);
@@ -646,7 +625,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
                                      step_end_time);
     }
 
-    // free non running requests for current step
+    // notify handles before appending candidates: generated_ids must not include unvalidated draft tokens
+    _notify_handles(scheduler_output);
+
+    {
+        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
+        candidates_timer.start();
+        generate_candidates_for_prompt_lookup();
+        candidates_timer.end();
+    }
+
+    // Append embeddings for tokens produced in this step.
+    // Validation mode usually skips this because speculative validation reuses/rewinds
+    // candidate tokens instead of committing them here. prompt_lookup is the exception:
+    // it appends validation candidates after sampling and must keep embeddings in sync
+    // before the next scheduling/hash step.
+    if (m_model_input_type == ModelInputType::EMBEDDINGS && sync_embeddings_after_candidates()) {
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     {
         static ManualTimer clean_up_requests_timer("free non running requests");
@@ -877,10 +873,22 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     std::vector<SequenceGroup::Ptr>::iterator requests_iterator = m_requests.begin();
     while (requests_iterator != m_requests.end()) {
         const auto& request = *requests_iterator;
-        if (request->has_finished() || request->handle_stopped() || request->handle_cancelled()) {
-            auto perf_metrics = request->get_perf_metrics();
-            perf_metrics.load_time = m_load_time_ms;
-            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+        const bool is_finished = request->has_finished();
+        const bool is_stopped = request->handle_stopped();
+        const bool is_cancelled = request->handle_cancelled();
+
+        if (is_finished || is_stopped || is_cancelled) {
+            if (!request->notified_terminal()) {
+                auto perf_metrics = request->get_perf_metrics();
+                perf_metrics.load_time = m_load_time_ms;
+                request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+                if (is_finished) {
+                    request->notify_handle_final();
+                } else {
+                    request->notify_handle_stopped_or_cancelled();
+                }
+            }
+
             for (const auto& sequence : request->get_sequences()) {
                 if (m_scheduler->has_block_table(sequence->get_id())) {
                     m_scheduler->free_sequence(sequence->get_id());
@@ -894,12 +902,38 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_free_non_running_reque
     }
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_requests_dropped_by_handle() {
-    // Notify the last time by pushing empty output
-    // This causes read() to unblock by adding anything to the queue
-    for (SequenceGroup::Ptr& request : m_requests) {
-        if (request->handle_stopped() || request->handle_cancelled())
-            request->push_empty_outputs();
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_notify_handles(const Scheduler::Output& scheduler_output) {
+    for (const auto request_index : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const auto& request = m_requests.at(request_index);
+        const bool is_echo_only = request->get_context_len() <= request->get_prompt_len() &&
+                                  request->get_sampling_parameters().echo &&
+                                  request->get_max_new_tokens() == 0;
+        if (is_echo_only) {
+            auto perf_metrics = request->get_perf_metrics();
+            perf_metrics.load_time = m_load_time_ms;
+            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+            request->notify_handle_echo_only();
+        } else if (request->has_finished()) {
+            auto perf_metrics = request->get_perf_metrics();
+            perf_metrics.load_time = m_load_time_ms;
+            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+            request->notify_handle_final();
+        } else {
+            request->notify_handle();
+        }
+    }
+    // stopped/cancelled requests may not be among the scheduled ones
+    for (auto& request : m_requests) {
+        const bool is_finished = request->has_finished();
+        const bool is_stopped = request->handle_stopped();
+        const bool is_cancelled = request->handle_cancelled();
+
+        if (!is_finished && (is_stopped || is_cancelled) && !request->notified_terminal()) {
+            auto perf_metrics = request->get_perf_metrics();
+            perf_metrics.load_time = m_load_time_ms;
+            request->get_generation_stream()->set_perf_metrics(std::move(perf_metrics));
+            request->notify_handle_stopped_or_cancelled();
+        }
     }
 }
 
@@ -1153,10 +1187,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(
             sequence_group->append_prompt_log_prob(token_logit - max_value - log_sum);
         }
         currently_processed_tokens += output_seq_len * num_running_sequences;
-        // For max_new_tokens == 0, we don't reach sampling so need to notify handle separately
-        if (sequence_group->get_max_new_tokens() == 0) {
-            sequence_group->notify_handle_echo_only();
-        }
     }
 }
 
