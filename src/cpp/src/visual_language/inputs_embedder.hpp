@@ -25,11 +25,13 @@ struct VLMPerfMetrics;
 
 const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};
+const static std::regex UNIVERSAL_AUDIO_PATTERN{R"(<ov_genai_audio_(\d+)>)"};
 
 struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
     std::vector<size_t> videos_sequence;
+    std::vector<size_t> audios_sequence;
 };
 
 class InputsEmbedder {
@@ -88,7 +90,7 @@ public:
         const std::vector<VideoMetadata>& videos_metadata = {}
     );
 
-    void encode_audios(const std::vector<ov::Tensor>& audios);
+    std::vector<EncodedAudio> encode_audios(const std::vector<ov::Tensor>& audios);
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
@@ -145,6 +147,29 @@ public:
         size_t base_video_id,
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos) const;
+
+    /// @brief Audio-aware normalization. Fills audios_sequence and expands each placeholder run.
+    virtual NormalizedPrompt normalize_prompt(
+        const std::string& prompt,
+        size_t base_image_id,
+        size_t base_video_id,
+        size_t base_audio_id,
+        const std::vector<EncodedImage>& images,
+        const std::vector<EncodedVideo>& videos,
+        const std::vector<EncodedAudio>& audios) const;
+
+    /// @brief Audio-aware embeds. audios_sequence holds absolute indices in prompt order.
+    ov::Tensor get_inputs_embeds(const std::string& prompt,
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 const std::vector<ov::genai::EncodedAudio>& audios,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings,
+                                 const std::vector<size_t>& image_sequence,
+                                 const std::vector<size_t>& videos_sequence,
+                                 const std::vector<size_t>& audios_sequence,
+                                 size_t base_audio_id,
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
 
 private:
     class IInputsEmbedder {
@@ -220,7 +245,38 @@ private:
             const std::vector<VideoMetadata>& videos_metadata = {}
         );
 
-        virtual void encode_audios(const std::vector<ov::Tensor>& audios) {}
+        /// @brief Encode each audio independently, holding no state. The default guards the input
+        /// vector, so a model with no audio tower fails loudly instead of discarding the audio.
+        virtual std::vector<ov::genai::EncodedAudio> encode_audios(const std::vector<ov::Tensor>& audios) {
+            OPENVINO_ASSERT(audios.empty(), "Audio input isn't supported by this model.");
+            return {};
+        }
+
+        /// @brief normalize_prompt() for audio-capable models. Fills audios_sequence with absolute
+        /// indices in prompt order and expands each run to its real placeholder count.
+        virtual NormalizedPrompt normalize_prompt(
+            const std::string& prompt,
+            size_t image_base_id,
+            size_t video_base_id,
+            size_t audio_base_id,
+            const std::vector<EncodedImage>& images,
+            const std::vector<EncodedVideo>& videos,
+            const std::vector<ov::genai::EncodedAudio>& audios) const;
+
+        /// @brief get_inputs_embeds() for audio-capable models. audios_sequence holds absolute
+        /// indices in placeholder order, which is what allows audio anywhere in the prompt.
+        virtual ov::Tensor get_inputs_embeds(
+            const std::string& prompt,
+            const std::vector<ov::genai::EncodedImage>& images,
+            const std::vector<ov::genai::EncodedVideo>& videos,
+            const std::vector<ov::genai::EncodedAudio>& audios,
+            ov::genai::VLMPerfMetrics& metrics,
+            bool recalculate_merged_embeddings,
+            const std::vector<size_t>& image_sequence,
+            const std::vector<size_t>& videos_sequence,
+            const std::vector<size_t>& audios_sequence,
+            size_t base_audio_id,
+            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count);
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
         
@@ -335,7 +391,7 @@ private:
             const std::string& automatic_tag,
             size_t base_idx,
             size_t n_visions,
-            VisionType vision_type = VisionType::IMAGE
+            ModalityType modality_type = ModalityType::IMAGE
         ) const;
 
         /**
@@ -407,18 +463,31 @@ private:
     friend class InputsEmbedderMuseGlimmer;
 };
 
+/// @brief Universal-tag pattern for a modality. A switch, not a ternary on IMAGE: a ternary would
+/// route every non-IMAGE modality to the video regex.
+inline const std::regex& universal_pattern_for(ModalityType modality_type) {
+    switch (modality_type) {
+        case ModalityType::IMAGE:
+            return UNIVERSAL_IMAGE_PATTERN;
+        case ModalityType::VIDEO:
+            return UNIVERSAL_VIDEO_PATTERN;
+        case ModalityType::AUDIO:
+            return UNIVERSAL_AUDIO_PATTERN;
+        default:
+            OPENVINO_THROW("Unhandled ModalityType in universal_pattern_for().");
+    }
+}
+
 template <typename Func>
 std::pair<std::string, std::vector<size_t>> universal_to_native(
     const std::string& prompt,
     const Func& write_native,
-    VisionType vision_type = VisionType::IMAGE
+    ModalityType modality_type = ModalityType::IMAGE
 ) {
     std::stringstream stream;
     std::vector<size_t> vision_sequence;
     std::smatch match;
-    auto universal_pattern = vision_type == VisionType::IMAGE ?
-        UNIVERSAL_IMAGE_PATTERN :
-        UNIVERSAL_VIDEO_PATTERN;
+    const std::regex& universal_pattern = universal_pattern_for(modality_type);
     std::regex_search(prompt, match, universal_pattern);
     auto search_begin = prompt.begin();
     while (!match.empty()) {
@@ -433,5 +502,16 @@ std::pair<std::string, std::vector<size_t>> universal_to_native(
 }
 
 void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions);
+
+/// @brief Resolve media tags into a native-tag prompt plus absolute media indices. Same policy for
+/// every modality. Free function so it is unit-testable without a model; normalize() forwards here.
+std::pair<std::string, std::vector<size_t>> normalize_media_tags(
+    const std::string& prompt,
+    const std::string& native_tag,
+    const std::string& automatic_tag,
+    size_t base_idx,
+    size_t n_media,
+    ModalityType modality_type
+);
 
 } // namespace ov::genai

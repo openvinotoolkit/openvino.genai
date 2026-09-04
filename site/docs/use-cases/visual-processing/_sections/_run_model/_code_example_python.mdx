@@ -26,5 +26,9 @@ print(result.texts[0])
 
 # To input videos frames, use 'videos=', frames tensor layout = [Frame, H, W, C]
 # result = pipe.generate(prompt, videos=[frames], max_new_tokens=100)
+
+# Models with an audio tower (Qwen3-Omni) take 'audios=' as mono float32 PCM at 16 kHz.
+# Place each one with <ov_genai_audio_N>, or omit the tag to have it prepended.
+# result = pipe.generate("Describe <ov_genai_audio_0>", audios=[audio], max_new_tokens=100)
 `}
 </CodeBlock>

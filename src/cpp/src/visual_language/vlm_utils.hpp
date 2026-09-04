@@ -34,6 +34,20 @@ inline void update_image_slice_counts(VLMPerfMetrics& metrics, const std::vector
     }
 }
 
+/// @brief Rebase conversation-absolute media indices onto one turn's encoded list. Asserts rather
+/// than wrapping: a size_t underflow here would index far out of bounds instead of failing.
+inline void rebase_media_sequence(std::vector<size_t>& sequence, size_t base_id) {
+    for (auto& index : sequence) {
+        OPENVINO_ASSERT(index >= base_id,
+                        "Media index ",
+                        index,
+                        " is below this turn's base index ",
+                        base_id,
+                        ". Referring to media from an earlier turn is not supported.");
+        index -= base_id;
+    }
+}
+
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
                                                              ov::genai::Tokenizer& tokenizer,
                                                              const std::regex& native_pattern);
