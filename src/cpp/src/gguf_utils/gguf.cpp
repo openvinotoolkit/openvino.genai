@@ -346,6 +346,13 @@ GGUFLoad get_gguf_data(const std::string& file) {
     }
 }
 
+std::unordered_map<std::string, GGUFMetaData> get_gguf_metadata(const std::string& file) {
+    check_file(file);
+    std::unique_ptr<gguf_ctx, decltype(&gguf_close)> ctx(gguf_open(file.data()), gguf_close);
+    OPENVINO_ASSERT(ctx, "Failed to open '", file, "' with gguf_open");
+    return load_metadata(ctx.get());
+}
+
 float metadata_to_float(const std::unordered_map<std::string, GGUFMetaData>& metadata, const std::string& key) {
     auto tensor = std::get<ov::Tensor>(metadata.at(key));
     return *(tensor.data<ov::element_type_traits<ov::element::f32>::value_type>());

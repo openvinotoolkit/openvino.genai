@@ -27,6 +27,16 @@ from utils.ov_genai_pipelines import (
 )
 from data.models import GGUF_MODEL_LIST
 
+# ov::genai::gguf_reader values (see llm_pipeline.hpp): the OpenVINO GGUF frontend and the
+# pre-frontend, hand-written reader (currently the default; see llm_pipeline.hpp for why). Every
+# architecture in GGUF_MODEL_LIST (llama, qwen2) is within the legacy reader's supported scope, so
+# it is exercised here alongside the frontend to catch behavior differences between the two while
+# both exist.
+GGUF_READERS = (
+    pytest.param("FRONTEND", id="frontend"),
+    pytest.param("LEGACY", id="legacy"),
+)
+
 
 @dataclass(frozen=True)
 class ModelInfo:
@@ -57,11 +67,13 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
 
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_pipelines_with_gguf_generate(
     model_gguf: ModelInfo,
     pipeline_type: PipelineType,
+    gguf_reader: str,
 ):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
@@ -100,6 +112,7 @@ def test_pipelines_with_gguf_generate(
         gguf_full_path,
         pipeline_type=pipeline_type,
         dynamic_quantization_group_size=dynamic_quantization_group_size,
+        gguf_reader=gguf_reader,
     )
     encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     del ov_pipe_gguf
@@ -110,6 +123,7 @@ def test_pipelines_with_gguf_generate(
 
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.parametrize(
     "prompt",
@@ -125,12 +139,35 @@ def test_pipelines_with_gguf_generate(
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "darwin", reason="CVS-168882: sporadic segmentation fault")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+# CVS-179725: greedy-decoded text can diverge from the HF reference for this small, quantized
+# model on edge-case prompts (near-empty/special-tokens-only context), where the argmax choice is
+# low-confidence and sensitive to tiny FP differences in how the top logits are computed. Confirmed
+# via a standalone C++ harness (not exercising this test's Python plumbing) that:
+#   - Encoded token ids are byte-identical between FRONTEND and LEGACY for these prompts -- ruling
+#     out a tokenization bug in genai, openvino or openvino_tokenizers.
+#   - Regular-content prompts match exactly across FRONTEND/LEGACY and SDPA/PagedAttention; only
+#     these degenerate prompts diverge, and inconsistently (e.g. LEGACY continuous-batching matches
+#     the HF reference for "only_special_tokens"/"multiple_special_tokens" while FRONTEND and
+#     LEGACY-SDPA both miss it differently; for "special_tokens_with_text" FRONTEND and LEGACY-SDPA
+#     agree with each other but not with HF, while LEGACY continuous-batching disagrees with both).
+#     No single reader or backend is consistently right or wrong.
+#   - Manually verified the Q4_0 embedding weight dequantization and RoPE frequency constants
+#     match (bit-for-bit equivalent / matching to ~7 significant digits) between the two readers'
+#     converted graphs, ruling out a weight-conversion bug for this file's quant types.
+# This is decode-time numerical instability (SDPA vs PagedAttention kernel, and frontend vs legacy
+# graph topology, each accumulate FP error slightly differently) hitting a near-tied argmax on a
+# heavily 4-bit-quantized 0.5B model given essentially no real content to condition on -- not a
+# bug introduced by this PR. Also note OpenVINO's own GGUF frontend docs (openvino/src/frontends/
+# gguf/docs/supported_models.md) only end-to-end verify the qwen2 architecture with Q4_K_M/Q8_0
+# quantization; Q4_0 (used by this test's gguf_full_path) isn't upstream-verified for qwen2, so
+# this exact model+quant combination sitting closer to the edge of acceptable drift is plausible.
 @pytest.mark.xfail(sys.platform == "linux", reason="CVS-179725")
 def test_full_gguf_pipeline(
     model_gguf: ModelInfo,
     pipeline_type: PipelineType,
     enable_save_ov_model: bool,
     prompt: str,
+    gguf_reader: str,
 ):
     gguf_model_id = model_gguf.gguf_model_id
     gguf_full_path = model_gguf.gguf_full_path
@@ -166,7 +203,13 @@ def test_full_gguf_pipeline(
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
 
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
+    ov_pipe_gguf = create_ov_pipeline(
+        gguf_full_path,
+        pipeline_type=pipeline_type,
+        enable_save_ov_model=enable_save_ov_model,
+        dynamic_quantization_group_size=dynamic_quantization_group_size,
+        gguf_reader=gguf_reader,
+    )
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
@@ -178,6 +221,8 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
+        # The saved IR is reloaded as a plain OpenVINO model, not a .gguf -- gguf_reader has no
+        # effect on this path since it's stripped by read_model() regardless of the source format.
         ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
@@ -187,6 +232,7 @@ def test_full_gguf_pipeline(
     assert res_string_input_1 == res_string_input_2
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize(
     "model_ids",
     [
@@ -199,7 +245,7 @@ def test_full_gguf_pipeline(
 )
 @pytest.mark.xfail(sys.platform == "darwin", reason="CVS-172335")
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
+def test_full_gguf_qwen3_pipeline(pipeline_type, gguf_reader, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
     gguf_model_id = model_ids["gguf_model_id"]
@@ -218,7 +264,7 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, gguf_reader=gguf_reader)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
@@ -266,6 +312,7 @@ def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
     path.write_bytes(blob)
 
 
+@pytest.mark.parametrize("gguf_reader", GGUF_READERS)
 @pytest.mark.parametrize(
     "tensor_type,last_dim",
     [
@@ -278,12 +325,15 @@ def _write_minimal_gguf(path: Path, tensor_type: int, last_dim: int) -> None:
     ],
     ids=["q4_k_last_dim_32", "q6_k_last_dim_16"],
 )
-def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_dim):
+def test_gguf_kquant_invalid_last_dim_is_rejected(tmp_path, tensor_type, last_dim, gguf_reader):
     # Regression test for the K-quant heap-buffer-overflow: a crafted GGUF whose
     # K-quant tensor has a last dim that is a multiple of the sub-block size but
     # not of 256 must be rejected at load time rather than overflowing the heap.
+    # Message wording differs between the frontend ("not a multiple of its block
+    # size 256", gguf.cpp) and the legacy reader ("super-block size 256",
+    # gguf_quants.cpp::gguf_load_quantized()); match the part common to both.
     gguf_path = tmp_path / "malformed_kquant.gguf"
     _write_minimal_gguf(gguf_path, tensor_type, last_dim)
 
-    with pytest.raises(RuntimeError, match="super-block size 256"):
-        ov_genai.LLMPipeline(str(gguf_path), "CPU")
+    with pytest.raises(RuntimeError, match="multiple of.*256"):
+        ov_genai.LLMPipeline(str(gguf_path), "CPU", GGUF_READER=gguf_reader)

@@ -28,6 +28,10 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
+// Values of the ov::genai::gguf_reader property; see llm_pipeline.hpp.
+extern const std::string FRONTEND_GGUF_READER;
+extern const std::string LEGACY_GGUF_READER;
+
 }  // namespace genai
 }  // namespace ov
 
@@ -136,7 +140,27 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
 
 ov::Core& singleton_core();
 
-std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
+/// @brief The GGUF-specific properties, pulled out of a user property map.
+///
+/// They configure conversion, not inference, so they must never reach ov::Core::compile_model --
+/// the plugin rejects unknown properties. extract_gguf_properties() is the single place that
+/// removes them, and `rest` is what callers forward on.
+struct GGUFProperties {
+    /// The caller's properties with every GGUF-specific key removed.
+    ov::AnyMap rest;
+    /// ov::genai::enable_save_ov_model: serialize the converted model next to the .gguf.
+    bool enable_save_ov_model = false;
+    /// ov::genai::gguf_reader: FRONTEND_GGUF_READER or LEGACY_GGUF_READER (default, for now).
+    std::string reader = LEGACY_GGUF_READER;
+
+    bool use_legacy_reader() const {
+        return reader == LEGACY_GGUF_READER;
+    }
+};
+
+/// @brief Split the GGUF-specific properties out of a user property map, validating their values.
+/// Mirrors extract_attention_backend(), which does the same for ATTENTION_BACKEND.
+GGUFProperties extract_gguf_properties(const ov::AnyMap& external_properties);
 
 /// @brief Key used in the main properties map to carry per-model property sub-maps.
 /// Value shape: ov::AnyMap keyed by model role (e.g. "vision_embeddings").
