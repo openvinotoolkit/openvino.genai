@@ -70,6 +70,19 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
+namespace {
+
+void assert_supported_add_request_lora_mode(const std::optional<AdapterConfig>& adapters) {
+    if (adapters && static_cast<bool>(*adapters)) {
+        const auto mode = adapters->get_mode();
+        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO && mode != AdapterConfig::MODE_STATIC_RANK,
+            "MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported in the add_request() + step() flow. "
+            "Use MODE_STATIC or MODE_FUSE instead.");
+    }
+}
+
+}  // namespace
+
 void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
                                        const SchedulerConfig& scheduler_config) {
     const bool need_per_layer_kv_cache_control = scheduler_config.use_cache_eviction;
@@ -297,12 +310,8 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs
 ) {
-    if (sampling_params.adapters && static_cast<bool>(*sampling_params.adapters)) {
-        const auto mode = sampling_params.adapters->get_mode();
-        OPENVINO_ASSERT(mode != AdapterConfig::MODE_DYNAMIC && mode != AdapterConfig::MODE_AUTO && mode != AdapterConfig::MODE_STATIC_RANK,
-            "MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported in the add_request() + step() flow. "
-            "Use MODE_STATIC or MODE_FUSE instead.");
-    }
+    assert_supported_add_request_lora_mode(m_generation_config.adapters);
+    assert_supported_add_request_lora_mode(sampling_params.adapters);
 
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
