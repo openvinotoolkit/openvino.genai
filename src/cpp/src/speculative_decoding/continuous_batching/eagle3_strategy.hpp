@@ -83,6 +83,8 @@ protected:
     void validate_awaiting_requests(const std::vector<SequenceGroup::Ptr>& main_awaiting_requests,
                                     const std::vector<SequenceGroup::Ptr>& draft_awaiting_requests) const override;
     void update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
+    std::unordered_map<std::string, ov::Tensor> prepare_lm_extra_inputs(
+        std::unordered_map<std::string, ov::Tensor> lm_extra_inputs) const override;
     ov::Tensor create_draft_input(const ov::Tensor& original_input);
     // Creates draft model input by removing the first token from the original input sequence.
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
