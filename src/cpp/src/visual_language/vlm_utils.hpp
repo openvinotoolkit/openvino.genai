@@ -34,6 +34,28 @@ inline void update_image_slice_counts(VLMPerfMetrics& metrics, const std::vector
     }
 }
 
+// Extract the token IDs appended by one InputsEmbedder call. The embedder's cache is the
+// source of truth here: it already reflects chat templating, multimodal placeholder expansion,
+// and vision-token pruning performed while producing the corresponding embeddings. Negative
+// values are internal visual-embedding markers; preserve them here to retain row alignment.
+inline ov::Tensor extract_prompt_ids(const std::vector<int64_t>& cache_ids,
+                                     size_t cache_size_before,
+                                     size_t expected_embeddings_size) {
+    OPENVINO_ASSERT(cache_ids.size() >= cache_size_before,
+                    "Inputs embedder token cache unexpectedly shrank while preparing prompt embeddings");
+    const size_t prompt_size = cache_ids.size() - cache_size_before;
+    OPENVINO_ASSERT(prompt_size == expected_embeddings_size,
+                    "Number of prompt token IDs produced by InputsEmbedder (",
+                    prompt_size,
+                    ") must match the number of input embeddings (",
+                    expected_embeddings_size,
+                    ")");
+
+    ov::Tensor prompt_ids(ov::element::i64, {1, prompt_size});
+    std::copy(cache_ids.begin() + cache_size_before, cache_ids.end(), prompt_ids.data<int64_t>());
+    return prompt_ids;
+}
+
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text,
                                                              ov::genai::Tokenizer& tokenizer,
                                                              const std::regex& native_pattern);
