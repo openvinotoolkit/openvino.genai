@@ -975,6 +975,41 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
 
 
+@pytest.mark.transformers_lower_v5(
+    reason="Qwen3-VL export is only supported with transformers < 5.0 in this test suite"
+)
+def test_deepstack_visual_pos_masks_layout_pa(cat_tensor: openvino.Tensor):
+    """DeepStack visual_pos_masks must use the tokens-first PagedAttention layout.
+
+    Regression guard: the mask used to be allocated as {1, total_num_tokens},
+    which is the stateful (batch, seq) layout, while the PagedAttention inputs
+    that are token-flattened use tokens-first layouts ({total_num_tokens,
+    hidden_size} for inputs_embeds and {total_num_tokens, 1, ...} for
+    per_layer_inputs). M-RoPE position_ids may be 1-D ({total_num_tokens}) or
+    rank-3 ({N, 1, total_num_tokens}); this test does not constrain that
+    model-specific layout. With the wrong mask layout the DeepStack index_put_
+    inside the language model derives its scatter indices against the wrong axis.
+    """
+    models_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-qwen3-vl")
+    cb_pipe = ContinuousBatchingPipeline(
+        models_path,
+        SchedulerConfig(),
+        "CPU",
+        properties={"ATTENTION_BACKEND": "PA"},
+    )
+
+    generation_config = get_greedy()
+    generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
+
+    results = cb_pipe.generate(
+        [PROMPTS[0]],
+        images=[[cat_tensor]],
+        generation_config=[generation_config],
+    )
+
+    assert results[0].texts[0]
+
+
 @pytest.mark.parametrize(
     "config",
     [
