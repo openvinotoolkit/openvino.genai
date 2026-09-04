@@ -31,6 +31,17 @@ from llm_bench_utils.prompt_utils import get_text_prompt
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 
+def _build_tts_audio_metrics(out_size, sample_rate, generation_time):
+    output_duration_s = (out_size / sample_rate) if sample_rate > 0 else 0
+    rtf = (generation_time / output_duration_s) if output_duration_s > 0 else -1
+    return {
+        "samples": int(out_size),
+        "duration_s": output_duration_s,
+        "sample_rate": int(sample_rate),
+        "rtf": rtf,
+    }
+
+
 def run_text_to_speech_generation_optimum(
     input_text, num, model, processor, vocoder, args, iter_data_list, md5_list, prompt_index, tts_hook, model_precision, proc_id, mem_consumption
 ):
@@ -112,6 +123,9 @@ def run_text_to_speech_generation_optimum(
         **tokenization_kwargs,
         **memory_metrics,
     )
+    tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
+    iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
         iter_num=num,
@@ -120,7 +134,8 @@ def run_text_to_speech_generation_optimum(
         **tokenization_kwargs,
         batch_size=args['batch_size'],
         prompt_idx=prompt_index,
-        tts=tts_hook
+        tts=tts_hook,
+        tts_audio=tts_audio_metrics,
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][prompt_index]
@@ -217,6 +232,9 @@ def run_text_to_speech_generation_genai(
         **tokenization_kwargs,
         **memory_metrics,
     )
+    tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
+    iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
         num,
@@ -224,7 +242,8 @@ def run_text_to_speech_generation_genai(
         warm_up=(num == 0),
         tokenization_time=tokenization_time,
         batch_size=args['batch_size'],
-        prompt_idx=prompt_index
+        prompt_idx=prompt_index,
+        tts_audio=tts_audio_metrics,
     )
 
     log.debug(f"[{num}]Throughput: {perf_metrics.throughput.mean:.4f}")
@@ -256,6 +275,7 @@ def _record_omni_iter(
     generation_time,
     tokenization_kwargs,
     memory_metrics,
+    sample_rate,
 ):
     iter_data = gen_output_data.gen_iterate_data(
         iter_idx=num,
@@ -267,6 +287,9 @@ def _record_omni_iter(
         **tokenization_kwargs,
         **memory_metrics,
     )
+    tts_audio_metrics = _build_tts_audio_metrics(out_size, sample_rate, generation_time)
+    iter_data["tts_output_duration_s"] = tts_audio_metrics["duration_s"]
+    iter_data["tts_rtf"] = tts_audio_metrics["rtf"]
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
         iter_num=num,
@@ -275,6 +298,7 @@ def _record_omni_iter(
         **tokenization_kwargs,
         batch_size=args["batch_size"],
         prompt_idx=prompt_index,
+        tts_audio=tts_audio_metrics,
     )
     md5_list[num][prompt_index] = result_md5_list
     if num > 0:
@@ -355,6 +379,7 @@ def run_omni_text_to_speech_generation_optimum(
         generation_time=generation_time,
         tokenization_kwargs=tokenization_kwargs,
         memory_metrics=memory_metrics,
+        sample_rate=sample_rate,
     )
 
 
@@ -432,6 +457,7 @@ def run_omni_text_to_speech_generation_genai(
         generation_time=generation_time,
         tokenization_kwargs=tokenization_kwargs,
         memory_metrics=memory_metrics,
+        sample_rate=sample_rate,
     )
 
     log.debug(
@@ -515,5 +541,7 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
                 log.info(f"{prefix}[P{p_idx}] start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
+
+    metrics_print.print_average_tts(iter_data_list, prompt_idx_list)
 
     return iter_data_list, pretrain_time, iter_timestamp
