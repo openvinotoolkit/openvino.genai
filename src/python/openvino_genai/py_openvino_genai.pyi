@@ -1684,6 +1684,7 @@ class GenerationConfig:
     return_omni_outputs: bool
     stop_criteria: StopCriteria
     structured_output_config: openvino_genai.py_openvino_genai.StructuredOutputConfig | None
+    text2audio_stream: bool
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """

@@ -642,7 +642,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
-        properties.streamer
+        properties.streamer,
+        properties.omni_streamer
     );
 }
 
@@ -686,7 +687,8 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
         CBGenerateProperties::resolve_property(properties.videos_metadata_batches, batch_size),
         CBGenerateProperties::resolve_property(properties.audios_batches, batch_size),
         properties.generation_config_batches.value(),
-        properties.streamer
+        properties.streamer,
+        properties.omni_streamer
     );
 }
 

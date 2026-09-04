@@ -3,6 +3,8 @@
 
 #include "openvino/genai/omni/talker.hpp"
 
+#include <vector>
+
 #include "openvino/core/except.hpp"
 #include "openvino/genai/omni/pipeline.hpp"
 #include "omni/talker_speech_config_utils.hpp"
@@ -82,6 +84,24 @@ ResolvedTalkerProperties resolve_talker_properties(const OmniTalkerSpeechConfig&
 
 }  // namespace
 
+TalkerResults TalkerBase::generate(const std::shared_ptr<OmniTextSourceBase>& /* text_source */,
+                                   const OmniTalkerSpeechConfig& /* talker_speech_config */,
+                                   const OmniSpeechStreamerVariant& /* speech_streamer */) {
+    // A default could be written — drain the bridge, reassemble it into the layout the
+    // VLMDecodedResults overload expects, forward to it — but it would be a lie by omission. That
+    // default cannot speak before the thinker finishes: this interface's only inference entry point
+    // takes a complete sequence and returns a complete waveform, so there is no mid-stream lever a
+    // generic implementation could pull. It would make text2audio_stream strictly worse than
+    // leaving it off — a bridge, a thread, and a per-step allocation in the decode loop, all to
+    // arrive at exactly the batch result, slightly later. Refusing is more honest than silently
+    // absorbing that cost.
+    OPENVINO_THROW_NOT_IMPLEMENTED(
+        "This talker does not implement streaming the thinker's output. Implementing this "
+        "generate() overload is optional: it is needed only to support "
+        "GenerationConfig::text2audio_stream. A talker without it still produces speech normally "
+        "from the finished thinker output — unset text2audio_stream to use that path.");
+}
+
 class Talker::Impl {
 public:
     Impl(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap& properties) {
@@ -137,6 +157,15 @@ public:
                                          talker_speech_config);
     }
 
+    TalkerResults generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                          const OmniTalkerSpeechConfig& talker_speech_config,
+                          const OmniSpeechStreamerVariant& speech_streamer) {
+        // No accumulation here: the pipeline reads the bridge itself so it can prefill and start
+        // emitting codec frames while the thinker is still generating. Config resolution is the same
+        // as in the overload above.
+        return m_speech->generate_speech(text_source, speech_streamer, talker_speech_config);
+    }
+
     TalkerResults generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {
         auto resolved = resolve_talker_properties(m_speech_config, properties);
         return generate(vlm_result, resolved.config, resolved.speech_streamer);
@@ -182,6 +211,12 @@ TalkerResults Talker::generate(const VLMDecodedResults& vlm_result,
                                const OmniTalkerSpeechConfig& talker_speech_config,
                                const OmniSpeechStreamerVariant& speech_streamer) {
     return m_impl->generate(vlm_result, talker_speech_config, speech_streamer);
+}
+
+TalkerResults Talker::generate(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                               const OmniTalkerSpeechConfig& talker_speech_config,
+                               const OmniSpeechStreamerVariant& speech_streamer) {
+    return m_impl->generate(text_source, talker_speech_config, speech_streamer);
 }
 
 TalkerResults Talker::generate(const VLMDecodedResults& vlm_result, const ov::AnyMap& properties) {

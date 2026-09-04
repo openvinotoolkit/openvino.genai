@@ -3,18 +3,23 @@
 
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <list>
 #include <map>
+#include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "openvino/genai/common_types.hpp"
 #include "openvino/genai/omni/speech_streamer_base.hpp"
 #include "openvino/genai/omni/talker.hpp"
 #include "openvino/genai/omni/talker_speech_config.hpp"
+#include "openvino/genai/omni/text_source_base.hpp"
 #include "openvino/runtime/infer_request.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "visual_language/vlm_config.hpp"
@@ -107,6 +112,41 @@ public:
                                  const OmniSpeechStreamerVariant& audio_streamer,
                                  const OmniTalkerSpeechConfig& talker_speech_config);
 
+    /// @brief Generate speech from a live thinker -> talker bridge instead of a finished result.
+    ///
+    /// Consumes the stream incrementally: it prefills the talker as soon as the prompt and the
+    /// thinker's first generated token have arrived, then pulls one more token per decode step. The
+    /// talker therefore starts emitting codec frames while the thinker is still generating, which is
+    /// what makes streamed audio arrive early. Blocking is deliberate — a decode step that padded
+    /// where a real token was still coming would shift every later row and change the waveform.
+    ///
+    /// Produces the same output as the overload above for the same thinker output, so a fixed
+    /// `rng_seed` gives a bit-identical waveform either way: both build the talker prefix and the
+    /// trailing text rows through the same helpers, only the timing differs.
+    ///
+    /// @param text_source Read end of the bridge. Must not be null. Read from the calling thread,
+    ///                    which OmniPipeline runs separately from the thinker's.
+    /// @param audio_streamer @see the overload above.
+    /// @param talker_speech_config @see the overload above.
+    TalkerResults generate_speech(const std::shared_ptr<OmniTextSourceBase>& text_source,
+                                 const OmniSpeechStreamerVariant& audio_streamer,
+                                 const OmniTalkerSpeechConfig& talker_speech_config);
+
+    /// @brief Source of the projected text row the talker adds to its input at each decode step.
+    ///
+    /// The talker consumes one row of assistant text per generated codec frame. The batch path has
+    /// every row up front; the streaming path projects each row as the thinker produces the token.
+    /// Both are hidden behind this interface so the decode loop is written once.
+    class TrailingSupply {
+    public:
+        virtual ~TrailingSupply() = default;
+
+        /// @brief `talker_hidden_size` floats for decode step `t`, valid until the next call.
+        /// Never null: the supply pads itself (tts_eos then tts_pad) once the text runs out, so the
+        /// decode loop can keep asking for as many steps as the talker wants to take.
+        virtual const float* row(size_t t) = 0;
+    };
+
     /// @brief Return precomputed speaker embedding for the named speaker. Throws if the model
     /// has no `talker_config.speaker_id` or the name doesn't match. Tensor shape is
     /// `[1, 1, talker_hidden_size]`, f32. Use to blend voices: weight-sum two named embeddings
@@ -118,6 +158,17 @@ public:
     std::vector<std::string> list_speakers() const;
 
 private:
+    /// @brief Accumulates the thinker -> talker bridge into absolutely-indexed token and hidden-state
+    /// arrays, blocking on the bridge only when asked for something that has not arrived yet.
+    /// Defined in the .cpp: it is the only place read() is called.
+    class ThinkerStream;
+
+    /// @brief TrailingSupply over the fully precomputed trailing tensor (batch path).
+    class TensorTrailingSupply;
+
+    /// @brief TrailingSupply that pulls one token per step off a ThinkerStream (streaming path).
+    class StreamingTrailingSupply;
+
     Qwen3OmniSpeechConfig m_config;
     bool m_talker_available = false;
 
@@ -175,6 +226,14 @@ private:
     /// @brief Resolve speaker name to codec token ID.
     int64_t resolve_speaker_id(const std::string& speaker) const;
 
+    /// @brief Resolve `talker_speech_config.speaker` to the `[1, 1, talker_hidden_size]` embedding
+    /// summed into the talker prefix: a caller-supplied tensor is validated and taken as is, a name
+    /// is looked up among the precomputed embeddings.
+    ov::Tensor resolve_speaker_embedding(const OmniTalkerSpeechConfig& talker_speech_config) const;
+
+    /// @brief Whether a token stands in for audio / image / video content rather than text.
+    bool is_multimodal_token(int64_t token_id) const;
+
     /// @brief Embed a token via thinker word embeddings (for TTS special tokens).
     /// @return Tensor [1, 1, thinker_hidden_size].
     ov::Tensor embed_thinker_token(int64_t token_id);
@@ -193,13 +252,61 @@ private:
     /// @return [1, seq_len, talker_hidden_size]
     ov::Tensor project_hidden(const ov::Tensor& hidden_state);
 
+    /// @brief Project one thinker token into talker space: word embedding -> text projection.
+    /// @return Tensor [1, 1, talker_hidden_size].
+    ov::Tensor project_thinker_token(int64_t token_id);
+
+    /// @brief Locate the assistant segment the talker speaks — the last `<|im_start|>` followed by
+    /// `assistant`.
+    /// @return `{seg_start, seg_end}`, where `seg_start` indexes that `<|im_start|>` and `seg_end` is
+    ///         the exclusive end of the segment: the next `<|im_start|>`, or `tokens.size()`. So a
+    ///         `<|im_start|>` the thinker *generates* cuts the segment short — pathological input,
+    ///         preserved from the original single-pass implementation. `nullopt` when the sequence
+    ///         holds no assistant segment at all, which leaves the talker nothing to say.
+    std::optional<std::pair<size_t, size_t>> find_last_assistant_segment(const std::vector<int64_t>& tokens) const;
+
+    /// @brief Build the talker prefill input: every user segment that closes before `seg_start`,
+    /// then the 9-row assistant block (3 header rows, the codec specials, the speaker, tts_bos, and
+    /// the first generated token).
+    /// @param tokens Must hold at least `seg_start + 3` entries; positions past the assistant header
+    ///               are not read, so the streaming path can call this before the thinker finishes.
+    /// @param hidden_states Thinker hidden states indexed by *absolute* token position. Only read for
+    ///                      multimodal tokens inside user segments, all of which precede `seg_start`.
+    /// @param row8_token The assistant segment's 4th token (its first generated one), or nullopt when
+    ///                   the thinker has not produced any — then the block is 8 rows instead of 9.
+    /// @param speaker_embed Speaker embedding `[1, 1, talker_hidden_size]` summed with tts_pad in
+    ///                      the talker prefix. Caller owns shape validation.
+    /// @return talker_input_embeds `[1, prefix_len, talker_hidden_size]`.
+    ov::Tensor build_talker_prefix(const std::vector<int64_t>& tokens,
+                                   const std::vector<ov::Tensor>& hidden_states,
+                                   size_t seg_start,
+                                   std::optional<int64_t> row8_token,
+                                   const ov::Tensor& speaker_embed);
+
+    /// @brief Project the assistant text the decode loop consumes one row per step: segment
+    /// positions 4 and up (0-2 are the header, 3 is the prefix's last row), closed by tts_eos.
+    /// @return trailing_text_hidden `[1, max(seg_len - 4, 0) + 1, talker_hidden_size]`.
+    ov::Tensor build_trailing(const std::vector<int64_t>& tokens, size_t seg_start, size_t seg_end);
+
     /// @brief Build the talker input embeddings from thinker outputs.
     /// @param speaker_embed Speaker embedding `[1, 1, talker_hidden_size]` summed with tts_pad in
     ///                      the talker prefix. Caller owns shape validation.
-    /// @return Pair of (talker_input_embeds, trailing_text_hidden).
+    /// @return Pair of (talker_input_embeds, trailing_text_hidden). Both `[1, 0, hidden]` when the
+    ///         sequence holds nothing speakable.
     std::pair<ov::Tensor, ov::Tensor> build_talker_input(const std::vector<int64_t>& full_token_ids,
                                                          const std::vector<ov::Tensor>& all_intermediate_hidden_states,
                                                          const ov::Tensor& speaker_embed);
+
+    /// @brief Prefill the talker on `talker_input`, then run the codec decode loop until EOS, the
+    /// token budget, or the speech streamer says to stop — pulling one text row per step from
+    /// `trailing`. Shared by both generate_speech() overloads; everything that differs between them
+    /// is decided before this is called.
+    /// @param start_time When the enclosing generate_speech() was entered, for the perf record.
+    TalkerResults run_talker(const ov::Tensor& talker_input,
+                             TrailingSupply& trailing,
+                             const OmniSpeechStreamerVariant& audio_streamer,
+                             const OmniTalkerSpeechConfig& talker_speech_config,
+                             std::chrono::steady_clock::time_point start_time);
 
     /// @brief Run the CodePredictor mini-loop for one talker step.
     /// Drives the single-step stateful CodePredictor graph num_code_groups-1 times. Sampling and
