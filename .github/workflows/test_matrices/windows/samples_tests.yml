@@ -59,6 +59,7 @@
     - Video_generation_samples
 
 - name: Qwen3-VL
+  # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194062.
   extra_cmd: python -m pip install transformers==5.0.0
   marker: qwen3_vl
   cmd: tests/python_tests/samples
