@@ -26,6 +26,7 @@ def print_metrics(
     whisper_genai=None,
     chat_idx=None,
     prefill_time=None,
+    sd_metric=None,
 ):
     iter_str = str(iter_num)
     if warm_up:
@@ -113,6 +114,21 @@ def print_metrics(
             f'Running average of the KV cache usage {cb_metric["avg_cache_usage"]:.2f}%, '
             f'max KV cache usage: {cb_metric["max_cache_usage"]:.2f}%',
         )
+    if sd_metric:
+        sd_str = f"{prefix} Speculative decoding: draft tokens processed: {sd_metric['draft_processed_tokens']}, "
+        if sd_metric["draft_candidate_tokens"] is not None:
+            sd_str += f"draft candidate tokens: {sd_metric['draft_candidate_tokens']}, "
+        sd_str += f"accepted by main model: {sd_metric['num_accepted']}, "
+        if sd_metric["rejected_tokens"] is not None:
+            sd_str += f"rejected by main model: {sd_metric['rejected_tokens']}, "
+        sd_str += f"acceptance rate: {sd_metric['acceptance_rate']:.2f}%, miss rate: {sd_metric['miss_rate']:.2f}%"
+        if sd_metric["draft_to_main_inference_duration_ratio"] is not None:
+            sd_str += (
+                f", draft to main inference duration ratio: {sd_metric['draft_to_main_inference_duration_ratio']:.2f}"
+            )
+        log.info(sd_str)
+        print_sd_per_model_metrics(prefix, "main model", sd_metric["main_model"])
+        print_sd_per_model_metrics(prefix, "draft model", sd_metric["draft_model"])
     if stable_diffusion is not None:
         print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion, prompt_idx)
     if whisper is not None:
@@ -124,6 +140,25 @@ def print_metrics(
     print_memory_info(iter_num, iter_data, chat_idx, prompt_idx)
     if iter_data.get('result_md5', '') != '':
         log.info(f"{prefix} Result MD5:{iter_data['result_md5']}")
+
+
+def print_sd_per_model_metrics(prefix, model_name, model_metric):
+    # -1 marks a value that cannot be calculated, for example TTST of a single iteration generation
+    def format_value(key, unit):
+        return "NA" if model_metric[key] == -1 else f"{model_metric[key]:.2f} {unit}"
+
+    log.info(
+        f"{prefix} Speculative decoding {model_name}: "
+        f"generate duration: {model_metric['generate_duration']:.2f} ms, "
+        f"TTFT: {format_value('ttft', 'ms')}, "
+        f"TTST: {format_value('ttst', 'ms')}, "
+        f"TPOT: {format_value('tpot', 'ms/token')}, "
+        f"first infer latency: {format_value('first_infer_latency', 'ms')}, "
+        f"other infers latency: {format_value('other_infers_avg_latency', 'ms/infer')}, "
+        f"throughput: {format_value('throughput', 'tokens/s')}, "
+        f"generated tokens: {model_metric['num_generated_tokens']}, "
+        f"inference count: {model_metric['infer_count']}",
+    )
 
 
 def print_memory_info(

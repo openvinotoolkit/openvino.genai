@@ -689,8 +689,10 @@ def genai_gen_text(
     if generation_config_extra:
         kwargs.update(generation_config_extra)
 
+    # a list input makes generate return DecodedResults with performance metrics
+    # instead of a plain string, keeping speculative decoding statistics available
     return model.generate(
-        question,
+        [question],
         do_sample=False,
         max_new_tokens=max_new_tokens,
         apply_chat_template=use_chat_template,

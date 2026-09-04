@@ -10,7 +10,7 @@ from tqdm import tqdm
 from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
-from .utils import patch_awq_for_inference, get_ignore_parameters_flag
+from .utils import patch_awq_for_inference, get_ignore_parameters_flag, SDMetricsCollector
 import inspect
 
 PROMPTS_FILE = 'text_prompts.yaml'
@@ -199,6 +199,7 @@ class TextEvaluator(BaseEvaluator):
         prompt_data = data["prompts"]
 
         answers = []
+        sd_metrics = SDMetricsCollector()
         prompts = (
             prompt_data.values
             if self.num_samples is None
@@ -210,20 +211,20 @@ class TextEvaluator(BaseEvaluator):
                 {"generation_config_extra": self.generation_config_extra} if self.generation_config_extra else {}
             )
             for p in tqdm(prompts, desc="Evaluate pipeline"):
-                answers.append(
-                    gen_answer_fn(
-                        model,
-                        self.tokenizer,
-                        p,
-                        self.max_new_tokens,
-                        self._crop_question,
-                        self.use_chat_template,
-                        self.empty_adapters,
-                        self.num_assistant_tokens,
-                        self.assistant_confidence_threshold,
-                        **extra_kwargs,
-                    )
+                answer = gen_answer_fn(
+                    model,
+                    self.tokenizer,
+                    p,
+                    self.max_new_tokens,
+                    self._crop_question,
+                    self.use_chat_template,
+                    self.empty_adapters,
+                    self.num_assistant_tokens,
+                    self.assistant_confidence_threshold,
+                    **extra_kwargs,
                 )
+                sd_metrics.collect(answer)
+                answers.append(answer.texts[0] if hasattr(answer, "texts") else answer)
         else:
             if self.generation_config_extra:
                 for k, v in self.generation_config_extra.items():
@@ -243,6 +244,7 @@ class TextEvaluator(BaseEvaluator):
                         )
                         for ans in ans_batch:
                             answers.append(ans.m_generation_ids[0])
+                            sd_metrics.collect(ans)
 
                         batch.clear()
 
@@ -250,5 +252,6 @@ class TextEvaluator(BaseEvaluator):
         df = pd.DataFrame(res_data)
         df["language"] = self.language
         df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
+        sd_metrics.add_columns(df)
 
         return df
