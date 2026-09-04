@@ -89,6 +89,7 @@ void prepare_model_for_paged_attention(const std::shared_ptr<ov::Model>& model,
         .run_on_model(model);
     model->validate_nodes_and_infer_types();
     utils::apply_gather_before_matmul_transformation(model);
+    utils::fix_deepstack_visual_pos_masks_layout_for_paged_attention(model);
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(

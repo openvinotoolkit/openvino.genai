@@ -132,6 +132,18 @@ void apply_slice_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
 void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model);
 
+// SDPAToPagedAttention moves the token dimension of hidden_states from the original
+// [batch, seq, hidden] layout to [total_tokens, 1, hidden] (see find_llm_matmul() below),
+// but it has no knowledge of the "visual_pos_masks" input that Qwen3-VL's DeepStack feature
+// injection relies on: NonZero(visual_pos_masks) still produces (batch_idx, seq_idx) index
+// tuples matching the old layout, no longer the new one. This inserts a Transpose right
+// after the "visual_pos_masks" parameter (if present) so that its consumers see indices
+// aligned with the post-PA hidden_states layout. Must only be called on a model that has already
+// been through SDPAToPagedAttention. Silently a no-op if the model has no such parameter (the
+// common case); if the parameter is there but doesn't match the expected pattern, the model is left
+// untouched and a warning is logged.
+void fix_deepstack_visual_pos_masks_layout_for_paged_attention(std::shared_ptr<ov::Model> model);
+
 std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared_ptr<ov::Model>& model);
 
 ov::Core& singleton_core();

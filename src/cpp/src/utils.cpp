@@ -12,15 +12,19 @@
 
 #include "openvino/runtime/properties.hpp"
 #include "openvino/op/add.hpp"
+#include "openvino/op/constant.hpp"
 #include "openvino/op/divide.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/non_zero.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/op/slice.hpp"
 #include "openvino/op/tanh.hpp"
 #include "openvino/op/transpose.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "gguf_utils/gguf_modeling.hpp"
+#include "logger.hpp"
 
 
 #include "sampling/sampler.hpp"
@@ -389,6 +393,61 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
         matmul->input(0).replace_source_output(gather);
         model->add_parameters({indices});
     }
+}
+
+void fix_deepstack_visual_pos_masks_layout_for_paged_attention(std::shared_ptr<ov::Model> model) {
+    const std::string mask_name = "visual_pos_masks";
+
+    // The runtime feeds this input by tensor name (see ModelRunner::forward()), while some
+    // transformations look it up by friendly name - accept either, like the DFlash transforms do.
+    std::shared_ptr<ov::op::v0::Parameter> visual_pos_masks_param;
+    for (const auto& param : model->get_parameters()) {
+        if (param->get_friendly_name() == mask_name || param->output(0).get_names().count(mask_name) != 0) {
+            visual_pos_masks_param = param;
+            break;
+        }
+    }
+    if (!visual_pos_masks_param) {
+        // Most models (including non-DeepStack VLMs) don't have this input at all.
+        return;
+    }
+
+    // Everything below is a conservative skip rather than a hard error: the worst case is that the
+    // model keeps the pre-existing (broken) layout, which is still better than refusing to compile a
+    // model whose structure we simply don't recognize. Warn loudly though - a silent skip here shows
+    // up much later as an out-of-bounds assert inside ScatterNDUpdate.
+    const auto& mask_shape = visual_pos_masks_param->get_partial_shape();
+    if (mask_shape.rank().is_dynamic() || mask_shape.rank().get_length() != 2) {
+        GENAI_WARN("'%s' is expected to be a 2D [batch, seq_len] input, but has shape %s. "
+                   "Skipping the PagedAttention layout fix for DeepStack feature injection.",
+                   mask_name.c_str(),
+                   mask_shape.to_string().c_str());
+        return;
+    }
+
+    auto target_inputs = visual_pos_masks_param->output(0).get_target_inputs();
+    if (target_inputs.empty()) {
+        return;
+    }
+    for (const auto& target : target_inputs) {
+        if (!ov::is_type<ov::op::v3::NonZero>(target.get_node())) {
+            GENAI_WARN("'%s' is consumed by '%s' instead of the expected NonZero. "
+                       "Skipping the PagedAttention layout fix for DeepStack feature injection.",
+                       mask_name.c_str(),
+                       target.get_node()->get_type_name());
+            return;
+        }
+    }
+
+    auto order = ov::op::v0::Constant::create(ov::element::i64, ov::Shape{2}, std::vector<int64_t>{1, 0});
+    auto transpose = std::make_shared<ov::op::v1::Transpose>(visual_pos_masks_param->output(0), order);
+    transpose->set_friendly_name(visual_pos_masks_param->get_friendly_name() + "_transposed_for_paged_attention");
+    for (const auto& target : target_inputs) {
+        target.replace_source_output(transpose->output(0));
+    }
+    // replace_source_output() only invalidates the affected tensors, it doesn't re-run shape
+    // inference, so leave the model in a validated state for whoever runs next.
+    model->validate_nodes_and_infer_types();
 }
 
 ov::Core& singleton_core() {
