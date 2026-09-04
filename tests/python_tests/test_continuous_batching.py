@@ -13,6 +13,7 @@ from shutil import rmtree
 from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
+import openvino.properties.hint as hints
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
@@ -21,7 +22,7 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.atomic_download import AtomicDownloadManager
-from utils.constants import get_ov_cache_converted_models_dir
+from utils.constants import get_default_llm_properties, get_ov_cache_converted_models_dir
 from utils.hugging_face import (
     OVConvertedModelSchema,
     download_and_convert_model,
@@ -600,6 +601,25 @@ speculative_cases = [
     eagle_models_and_input[0],
 ]
 
+# u8 stores the KV cache quantized, which selects different attention kernels than f16.
+# None leaves the hint unset so the plugin resolves the cache type for the main and KV-update models.
+kv_cache_precisions = [ov.Type.f16, ov.Type.u8, None]
+
+
+def kv_cache_precision_id(kv_cache_precision: ov.Type | None) -> str:
+    if kv_cache_precision is None:
+        return "kv_cache_precision=unset"
+    return f"kv_cache_precision={kv_cache_precision.get_type_name()}"
+
+
+def get_llm_properties_for_kv_cache_precision(kv_cache_precision: ov.Type | None) -> dict:
+    properties = get_default_llm_properties()
+    if kv_cache_precision is None:
+        properties.pop(hints.kv_cache_precision, None)
+        return properties
+    return properties | {hints.kv_cache_precision: kv_cache_precision}
+
+
 @pytest.mark.parametrize(
     "pipeline_type", 
     [
@@ -608,7 +628,10 @@ speculative_cases = [
     ]
 )
 @pytest.mark.parametrize("main_model_id,draft_model_id, prompt", speculative_cases)
-def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType, main_model_id, draft_model_id, prompt):
+@pytest.mark.parametrize("kv_cache_precision", kv_cache_precisions, ids=kv_cache_precision_id)
+def test_speculative_decoding_extended_perf_metrics(
+    pipeline_type: PipelineType, main_model_id, draft_model_id, prompt, kv_cache_precision
+):
     def run_extended_perf_metrics_collection(
         model_id: str,
         generation_config: GenerationConfig,
@@ -620,7 +643,12 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         draft_model_path = None
         if draft_model_id is not None:
             draft_model_path = download_and_convert_model(draft_model_id).models_path
-        ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type, draft_model_path=draft_model_path)
+        ov_pipe = create_ov_pipeline(
+            model_path,
+            pipeline_type=pipeline_type,
+            draft_model_path=draft_model_path,
+            ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
+        )
         return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 
     import time
@@ -714,7 +742,8 @@ devices = [("CPU", "CPU")]
 
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
-def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
+@pytest.mark.parametrize("kv_cache_precision", kv_cache_precisions, ids=kv_cache_precision_id)
+def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt, kv_cache_precision):
     # Download and convert model:
     main_model_schema = download_and_convert_model(main_model)
     main_opt_model = main_model_schema.opt_model
@@ -726,7 +755,10 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
     # Create OpenVINO GenAI pipeline:
 
     ov_pipe = create_ov_pipeline(
-        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
     )
 
     # Run reference HF model:
@@ -1100,7 +1132,10 @@ def test_eagle3_prefix_caching_add_request_no_crash(target_prompt_tokens: int, e
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
 @pytest.mark.parametrize("branching_factor,tree_depth", [(4, 2), (8, 4), (6, 3), (1, 0), (1, 4)])
-def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, prompt, branching_factor, tree_depth):
+@pytest.mark.parametrize("kv_cache_precision", kv_cache_precisions, ids=kv_cache_precision_id)
+def test_eagle3_tree_decode(
+    main_model, main_device, draft_model, draft_device, prompt, branching_factor, tree_depth, kv_cache_precision
+):
     """Test EAGLE3 with tree-based speculative decoding using different tree configurations."""
     # Download and convert model
     main_model_schema = download_and_convert_model(main_model)
@@ -1111,7 +1146,10 @@ def test_eagle3_tree_decode(main_model, main_device, draft_model, draft_device, 
 
     # Create pipeline
     ov_pipe = create_ov_pipeline(
-        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+        main_model_path,
+        pipeline_type=PipelineType.SPECULATIVE_DECODING,
+        draft_model_path=draft_model_path,
+        ov_config=get_llm_properties_for_kv_cache_precision(kv_cache_precision),
     )
 
     # Test with tree-based configuration

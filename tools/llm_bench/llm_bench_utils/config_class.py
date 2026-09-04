@@ -88,6 +88,11 @@ class UseCaseVLM(UseCase):
 
 
 @dataclass
+class UseCaseVLMChat(UseCaseVLM):
+    task = "visual_text_gen_chat"
+
+
+@dataclass
 class UseCaseSpeech2Text(UseCase):
     task = "speech_to_text"
     ov_cls: type | None = OVModelForSpeechSeq2Seq
@@ -284,6 +289,10 @@ USE_CASES = {
         UseCaseTextGenChat(["mpt"], ov_cls=OVMPTModel),
         UseCaseTextGenChat(["blenderbot"], ov_cls=OVModelForSeq2SeqLM, pt_cls=BlenderbotForConditionalGeneration),
         UseCaseTextGenChat(["chatglm"], ov_cls=OVChatGLMModel, pt_cls=AutoModel),
+    ],
+    "visual_text_gen_chat": [
+        UseCaseVLMChat([]),
+        UseCaseVLMChat(["qwen3-omni"], ov_cls=OVModelForMultimodalLM),
     ],
     "ldm_super_resolution": [UseCaseLDMSuperResolution(["ldm-super-resolution"])],
     "text_embed": [UseCaseTextEmbeddings(["qwen3", "qwen3-vl", "bge", "bert", "albert", "roberta", "xlm-roberta"])],

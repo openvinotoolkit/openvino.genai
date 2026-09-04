@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
+__all__: list[str] = ['ASRDecodedResultChunk', 'ASRDecodedResults', 'ASRGenerationConfig', 'ASRPerfMetrics', 'ASRPipeline', 'ASRRawPerfMetrics', 'Adapter', 'AdapterConfig', 'AdaptiveRKVConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EmbedResult', 'EmbeddingPipeline', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'Flux2Transformer2DModel', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'Image2VideoPipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'OmniDecodedResults', 'OmniPipeline', 'OmniSpeechStreamerBase', 'OmniTalkerSpeechConfig', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'Qwen2_5_VLForConditionalGeneration', 'Qwen3TextEncoder', 'QwenImageTransformer2DModel', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Talker', 'TalkerBase', 'TalkerPerfMetrics', 'TalkerResults', 'TaylorSeerCacheConfig', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMPipelineBase', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'VideoMetadata', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'ZImageTransformer2DModel', 'draft_model', 'get_version']
 class ASRDecodedResultChunk:
     """
     
@@ -843,6 +843,15 @@ class AutoencoderKLLTXVideo:
                         latent (ov.Tensor): Latent video tensor.
                         Returns: Decoded video tensor.
         """
+    def encode(self, video: openvino._pyopenvino.Tensor, generator: Generator = None) -> openvino._pyopenvino.Tensor:
+        """
+                        Encodes a video tensor to latent space.
+                        video (ov.Tensor): Input video tensor [B, C, F, H, W].
+                        generator (Generator, optional): Random generator for sampling from the latent
+                            distribution. Required only when the encoder outputs latent parameters
+                            (mean + logvar); unused when it outputs a latent sample directly.
+                        Returns: Normalized latent tensor.
+        """
     def get_config(self) -> AutoencoderKLLTXVideo.Config:
         ...
     def get_vae_scale_factor(self) -> int:
@@ -1371,6 +1380,7 @@ class ExtendedPerfMetrics:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Number of input tokens reused from the prefix cache
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
     
@@ -1385,6 +1395,9 @@ class ExtendedPerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
+    
+        :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
+        :type get_num_prefix_cache_hit_tokens: int
     
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
@@ -1446,6 +1459,8 @@ class ExtendedPerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_num_prefix_cache_hit_tokens(self) -> int:
         ...
     def get_sampling_duration(self) -> MeanStdPair:
         ...
@@ -2162,6 +2177,31 @@ class Image2ImagePipeline:
     def set_generation_config(self, config: ImageGenerationConfig) -> None:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
+        ...
+class Image2VideoPipeline:
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes) -> None:
+        ...
+    @typing.overload
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, device: str, **kwargs) -> None:
+        ...
+    @typing.overload
+    def compile(self, text_encode_device: str, denoise_device: str, vae_device: str, **kwargs) -> None:
+        ...
+    def decode(self, latent: openvino._pyopenvino.Tensor) -> VideoGenerationResult:
+        ...
+    def generate(self, image: openvino._pyopenvino.Tensor, prompt: str, **kwargs) -> VideoGenerationResult:
+        ...
+    def get_generation_config(self) -> VideoGenerationConfig:
+        ...
+    def get_performance_metrics(self) -> VideoGenerationPerfMetrics:
+        ...
+    def reshape(self, num_videos_per_prompt: typing.SupportsInt, num_frames: typing.SupportsInt, height: typing.SupportsInt, width: typing.SupportsInt, guidance_scale: typing.SupportsFloat) -> None:
+        ...
+    def set_generation_config(self, config: VideoGenerationConfig) -> None:
         ...
 class ImageGenerationConfig:
     """
@@ -3093,6 +3133,7 @@ class PerfMetrics:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Number of input tokens reused from the prefix cache
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
     
@@ -3107,6 +3148,9 @@ class PerfMetrics:
     
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
+    
+        :param get_num_prefix_cache_hit_tokens: Returns the number of input tokens reused from the prefix cache.
+        :type get_num_prefix_cache_hit_tokens: int
     
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
@@ -3172,6 +3216,8 @@ class PerfMetrics:
     def get_num_generated_tokens(self) -> int:
         ...
     def get_num_input_tokens(self) -> int:
+        ...
+    def get_num_prefix_cache_hit_tokens(self) -> int:
         ...
     def get_sampling_duration(self) -> MeanStdPair:
         ...
