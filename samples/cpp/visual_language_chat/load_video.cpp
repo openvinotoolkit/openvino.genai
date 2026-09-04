@@ -18,6 +18,8 @@ namespace {
 
 std::vector<size_t> make_indices(size_t total_frames, size_t num_frames) {
     OPENVINO_ASSERT(total_frames > 0, "Video must contain at least one frame");
+    OPENVINO_ASSERT(num_frames > 0, "Number of frames to sample must be positive");
+    // A short video can't yield num_frames distinct indices; sampling fewer beats emitting duplicates.
     const size_t sampled_frames = std::min(total_frames, num_frames);
     std::vector<size_t> indices;
     indices.reserve(sampled_frames);
@@ -35,12 +37,17 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> utils::load_video(const fs::path
     cv::VideoCapture capture(video_path.string());
     OPENVINO_ASSERT(capture.isOpened(), "Could not open video file: ", video_path.string());
 
-    const size_t total_frames = static_cast<size_t>(capture.get(cv::CAP_PROP_FRAME_COUNT));
-    const size_t width = static_cast<size_t>(capture.get(cv::CAP_PROP_FRAME_WIDTH));
-    const size_t height = static_cast<size_t>(capture.get(cv::CAP_PROP_FRAME_HEIGHT));
-    OPENVINO_ASSERT(total_frames > 0 && width > 0 && height > 0,
+    // OpenCV reports 0 or -1 when a container/codec doesn't expose these. Validate as doubles first:
+    // casting -1 to size_t would sail past any positivity check downstream.
+    const double reported_frames = capture.get(cv::CAP_PROP_FRAME_COUNT);
+    const double reported_width = capture.get(cv::CAP_PROP_FRAME_WIDTH);
+    const double reported_height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
+    OPENVINO_ASSERT(reported_frames > 0 && reported_width > 0 && reported_height > 0,
                     "Could not read video metadata: ",
                     video_path.string());
+    const size_t total_frames = static_cast<size_t>(reported_frames);
+    const size_t width = static_cast<size_t>(reported_width);
+    const size_t height = static_cast<size_t>(reported_height);
 
     ov::genai::VideoMetadata metadata;
     metadata.fps = static_cast<float>(capture.get(cv::CAP_PROP_FPS));
@@ -50,7 +57,8 @@ std::pair<ov::Tensor, ov::genai::VideoMetadata> utils::load_video(const fs::path
     uint8_t* destination = video.data<uint8_t>();
     cv::Mat frame;
     size_t decoded_frames = 0;
-    while (capture.read(frame)) {
+    // Bound by the reported count: containers that under-report it would otherwise overrun the tensor.
+    while (decoded_frames < total_frames && capture.read(frame)) {
         OPENVINO_ASSERT(static_cast<size_t>(frame.cols) == width &&
                             static_cast<size_t>(frame.rows) == height && frame.channels() == 3,
                         "Video frame layout changed while decoding: ",
