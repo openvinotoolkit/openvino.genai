@@ -8,7 +8,7 @@
 7. Contributions with use of AI must comply with [OpenVINO's AI Usage Policy](https://github.com/openvinotoolkit/openvino/blob/c4f4325c57977c684184e758449d1f8825ebbfd7/AI_USAGE_POLICY.md).
 
 # Code Quality
-This repository uses [pre-commit](https://pre-commit.com/) hooks to catch common issues early (JSON/YAML syntax errors, merge conflict markers, line endings, etc.).
+This repository uses [pre-commit](https://pre-commit.com/) hooks to catch common issues early (JSON/YAML syntax errors, merge conflict markers, line endings, C/C++ formatting on changed lines, etc.).
 
 To set up locally:
 
