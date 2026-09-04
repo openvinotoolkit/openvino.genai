@@ -30,6 +30,25 @@ public:
                                            OptionalWhisperGenerationConfig generation_config,
                                            const std::shared_ptr<StreamerBase> streamer) = 0;
 
+    /**
+     * Default batch entry point for implementations without native batching.
+     * A single-element batch delegates to scalar generate(); empty and multi-element batches are rejected.
+     */
+    virtual std::vector<WhisperDecodedResults> generate(const std::vector<RawSpeechInput>& raw_speech_inputs,
+                                                        OptionalWhisperGenerationConfig generation_config,
+                                                        const std::shared_ptr<StreamerBase> streamer) {
+        OPENVINO_ASSERT(!raw_speech_inputs.empty(),
+                        "Whisper pipeline expects at least one audio input, got an empty batch.");
+        OPENVINO_ASSERT(
+            raw_speech_inputs.size() == 1,
+            "This Whisper pipeline implementation does not support batched generation. Got ",
+            raw_speech_inputs.size(),
+            " audio inputs.");
+        std::vector<WhisperDecodedResults> results;
+        results.push_back(generate(raw_speech_inputs[0], generation_config, streamer));
+        return results;
+    }
+
     virtual ~WhisperPipelineImplBase() = default;
 };
 
