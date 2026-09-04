@@ -23,7 +23,7 @@ If **PagedAttention backend initialization fails**, `LLMPipeline` and `VLMPipeli
 To avoid fallback, set the backend explicitly by passing `ATTENTION_BACKEND="PA"` or `SchedulerConfig` to `LLMPipeline` and `VLMPipeline` constructors. In this case, if the PA backend can't be enabled, pipeline creation fails instead of falling back to SDPA.\
 Set `ATTENTION_BACKEND="SDPA"` to force SDPA instead of PA.
 
-Scheduling and paged KV cache behavior are configured with `ov::genai::SchedulerConfig` (`openvino_genai.SchedulerConfig`). Please read more about supported parameters and default values in [src/cpp/include/openvino/genai/scheduler_config.hpp](../../../../master/src/cpp/include/openvino/genai/scheduler_config.hpp).
+Scheduling and paged KV cache behavior are configured with `ov::genai::SchedulerConfig` (`openvino_genai.SchedulerConfig`). Please read more about supported parameters and default values in [src/cpp/include/openvino/genai/scheduler_config.hpp](../../../../src/cpp/include/openvino/genai/scheduler_config.hpp).
 
 ## Sample Usage
 
