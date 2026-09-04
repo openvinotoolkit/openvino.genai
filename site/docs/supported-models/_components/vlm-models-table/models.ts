@@ -218,6 +218,13 @@ export const VLM_MODELS: VLMModelType[] = [
         ],
         notesLink: '#qwen3_5-notes',
       },
+      {
+        name: 'Qwen3.8',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3.8-27B',
+        ],
+        notesLink: '#qwen3_5-notes',
+      },
     ],
   },
   {
