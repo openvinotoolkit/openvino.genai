@@ -50,7 +50,7 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 22. Don't introduce try/catch blocks just to be safe. Only catch if an exception is expected.
 23. Avoid reporting the same algorithmic branch choice multiple times.
 24. Avoid ambiguous words like "some" or "capable".
-25. It's fine to call `tensor.as<T>()` without preceding assertion on `tensor.get_element_type()` because `as<>()` performs the necessary type check internally.
+25. It's fine to call `tensor.data<T>()` without preceding assertion on `tensor.get_element_type()` because `data<>()` performs the necessary type check internally.
 
 ## Code Review Instructions for PRs
 
