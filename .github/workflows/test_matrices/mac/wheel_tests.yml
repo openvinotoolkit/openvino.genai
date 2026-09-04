@@ -2,7 +2,6 @@
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: ASR
   cmd: |-
-    python -m pip install transformers==5.0.0
     python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"
   timeout: 120
   components:

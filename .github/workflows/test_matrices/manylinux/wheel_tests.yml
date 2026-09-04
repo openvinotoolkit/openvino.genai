@@ -2,8 +2,16 @@
 # Each entry runs when any of its `components` is affected (has `.test`).
 - name: ASR
   cmd: |-
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py -m "not transformers_lower_v5"
+  timeout: 120
+  components:
+    - automatic_speech_recognition
+
+- name: ASR static with Transformers 5.0
+  cmd: |-
+    # Transformers 5.5 is failing, pin 5.0 for now; tracking issue CVS-194253.
     python -m pip install transformers==5.0.0
-    python -m pytest -v ./tests/python_tests/test_whisper_pipeline.py ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"
+    python -m pytest -v ./tests/python_tests/test_whisper_pipeline_static.py -m "not transformers_lower_v5"
   timeout: 120
   components:
     - automatic_speech_recognition
