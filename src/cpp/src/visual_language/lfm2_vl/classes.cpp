@@ -120,8 +120,10 @@ EncodedImage VisionEncoderLfm2Vl::encode(const ov::Tensor& image, const ov::AnyM
     const auto [target_height, target_width] =
         smart_resize(static_cast<size_t>(input_image.ny), static_cast<size_t>(input_image.nx), config);
 
+    // Lfm2VlImageProcessor's saved preprocessor_config.json specifies resample=3 (PILImageResampling.BICUBIC),
+    // overriding the class's BILINEAR default, so the exported checkpoint's actual preprocessing is bicubic.
     clip_image_u8 resized_image;
-    bilinear_resize(input_image, resized_image, static_cast<int>(target_width), static_cast<int>(target_height));
+    bicubic_resize(input_image, resized_image, static_cast<int>(target_width), static_cast<int>(target_height));
 
     const size_t num_patches_height = target_height / config.encoder_patch_size;
     const size_t num_patches_width = target_width / config.encoder_patch_size;
