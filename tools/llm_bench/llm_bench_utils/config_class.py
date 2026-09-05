@@ -13,7 +13,7 @@ from transformers import (
     SpeechT5HifiGan,
     AutoModelForSequenceClassification
 )
-from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline, LTXPipeline
+from diffusers.pipelines import DiffusionPipeline, LDMSuperResolutionPipeline, LTXPipeline, LTXImageToVideoPipeline
 from optimum.intel.openvino import (
     OVModelForCausalLM,
     OVModelForSeq2SeqLM,
@@ -32,6 +32,11 @@ try:
     from optimum.intel.openvino import OVModelForMultimodalLM
 except ImportError:
     OVModelForMultimodalLM = None
+
+try:
+    from optimum.intel.openvino import OVLTXImageToVideoPipeline
+except ImportError:
+    OVLTXImageToVideoPipeline = None
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
 from dataclasses import dataclass, field
 
@@ -64,6 +69,15 @@ class UseCaseVideoGen(UseCase):
     task = "video_gen"
     ov_cls: type | None = OVLTXPipeline
     pt_cls: type | None = LTXPipeline
+
+    TASK = {
+        "text2video": {"name": "text-to-video", "ov_cls": OVLTXPipeline, "pt_cls": LTXPipeline},
+        "image2video": {
+            "name": "image-to-video",
+            "ov_cls": OVLTXImageToVideoPipeline,
+            "pt_cls": LTXImageToVideoPipeline,
+        },
+    }
 
 
 @dataclass
