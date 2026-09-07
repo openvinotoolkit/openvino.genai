@@ -72,8 +72,7 @@ LTX2Vocoder& LTX2Vocoder::reshape(int64_t batch_size) {
 ov::Tensor LTX2Vocoder::infer(const ov::Tensor& mel_spectrogram) {
     OPENVINO_ASSERT(m_request, "Vocoder model must be compiled first. Cannot infer non-compiled model");
 
-    // The waveform is returned to the user and must outlive the request buffer, so write into an
-    // owned tensor when the output shape is known upfront, otherwise copy after inference
+    // The waveform is returned to the user, so it must own its buffer
     const auto& output = m_request.get_compiled_model().output(0);
     if (output.get_partial_shape().is_static()) {
         ov::Tensor waveform(output.get_element_type(), output.get_shape());
