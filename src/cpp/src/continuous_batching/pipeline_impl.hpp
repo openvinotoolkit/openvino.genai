@@ -115,6 +115,14 @@ protected:
 
     virtual void drop_requests();
 
+    GenerationHandle _add_request(uint64_t request_id,
+                                  const ov::Tensor& input_ids,
+                                  const ov::genai::GenerationConfig& sampling_params,
+                                  std::optional<ov::Tensor> token_type_ids,
+                                  std::optional<ov::Tensor> prompt_ids,
+                                  std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs,
+                                  bool validate_pipeline_lora_mode);
+
 public:
     ContinuousBatchingImpl(const std::shared_ptr<ov::Model>& model,
                            const Tokenizer& tokenizer,

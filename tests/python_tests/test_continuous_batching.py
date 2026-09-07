@@ -89,7 +89,7 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
 
 @pytest.fixture(scope="module")
 def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
-    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    model_id: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     return download_and_convert_model(model_id)
 
 

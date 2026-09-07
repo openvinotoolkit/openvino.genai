@@ -310,7 +310,27 @@ GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request
     std::optional<ov::Tensor> prompt_ids,
     std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs
 ) {
-    assert_supported_add_request_lora_mode(m_generation_config.adapters);
+    return _add_request(request_id,
+                        input_ids,
+                        sampling_params,
+                        token_type_ids,
+                        prompt_ids,
+                        lm_extra_inputs,
+                        true);
+}
+
+GenerationHandle ContinuousBatchingPipeline::ContinuousBatchingImpl::_add_request(
+    uint64_t request_id,
+    const ov::Tensor& input_ids,
+    const ov::genai::GenerationConfig& sampling_params,
+    std::optional<ov::Tensor> token_type_ids,
+    std::optional<ov::Tensor> prompt_ids,
+    std::optional<std::unordered_map<std::string, ov::Tensor>> lm_extra_inputs,
+    bool validate_pipeline_lora_mode
+) {
+    if (validate_pipeline_lora_mode) {
+        assert_supported_add_request_lora_mode(m_generation_config.adapters);
+    }
     assert_supported_add_request_lora_mode(sampling_params.adapters);
 
     auto sampling_params_copy = sampling_params;
@@ -770,13 +790,14 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::ContinuousBatch
         const bool has_valid_lm_extra_inputs =
             lm_extra_inputs_list.has_value() && request_id < lm_extra_inputs_list->size();
 
-        generations.push_back(add_request(
+        generations.push_back(_add_request(
             request_id,
             input_ids[request_id],
             request_sampling_params[request_id],
             has_valid_token_type_ids ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt,
             has_valid_prompt_ids ? std::make_optional((*prompt_ids)[request_id]) : std::nullopt,
-            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt));
+            has_valid_lm_extra_inputs ? std::make_optional((*lm_extra_inputs_list)[request_id]) : std::nullopt,
+            false));
     }
 
     auto all_requests =
