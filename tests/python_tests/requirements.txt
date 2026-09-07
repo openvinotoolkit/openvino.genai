@@ -19,7 +19,7 @@ torchvision==0.26.0
 # - openbmb/MiniCPM-V-2
 timm==1.0.29
 # - openai/whisper-base
-librosa==1.0.0
+librosa==0.11.0
 soundfile==0.14.0
 datasets==5.0.1; sys_platform == "linux"
 datasets==3.6.0; sys_platform != "linux"
