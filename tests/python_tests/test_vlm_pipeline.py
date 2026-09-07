@@ -3518,7 +3518,6 @@ def test_qwen35_vlm_verifier_cache_contract(
         next_actual = lookup.generate(history, generation_config=config)
         assert next_actual.texts == next_reference.texts
 
-
 @pytest.mark.parametrize(
     "model_id",
     [

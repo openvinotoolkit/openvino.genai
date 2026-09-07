@@ -592,6 +592,54 @@ public:
         m_overwriteable_blocks.add(allocation.blocks);
     }
 
+    CacheBlockAllocationResult acquire_unpublished_block(std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
+        CacheBlockAllocationResult result;
+        if (m_free_blocks_num[0] > 0) {
+            result.blocks.reserve(m_num_layers);
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                CacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
+                allocated_block->increment();
+                allocated_block->clear_published_hash();
+                result.blocks.push_back(allocated_block);
+                m_free_blocks[layer_idx].pop_front();
+                --m_free_blocks_num[layer_idx];
+            }
+            return result;
+        }
+        if (m_overwriteable_blocks.num_blocks() == 0) {
+            return result;
+        }
+        result.blocks = m_overwriteable_blocks.get_lru_block_to_overwrite();
+        result.evicted_hash = result.blocks.front()->get_hash();
+        result.evicted_timestamp = result.blocks.front()->get_timestamp();
+        if (erase_registration_if_owned(*result.evicted_hash, result.blocks, cached_blocks)) {
+            result.erased_hash = result.evicted_hash;
+        }
+        for (auto& block : result.blocks) {
+            block->clear_published_hash();
+        }
+        return result;
+    }
+
+    void rollback_uncached_block(CacheBlockAllocationResult allocation,
+                                 std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
+        OPENVINO_ASSERT(!allocation.blocks.empty());
+        if (!allocation.evicted_hash.has_value()) {
+            free_uncached(allocation.blocks);
+            return;
+        }
+        OPENVINO_ASSERT(allocation.evicted_timestamp.has_value());
+        for (auto& block : allocation.blocks) {
+            block->set_hash(*allocation.evicted_hash);
+            block->set_timestamp(*allocation.evicted_timestamp);
+            block->release();
+        }
+        if (allocation.erased_hash.has_value()) {
+            cached_blocks[*allocation.erased_hash] = allocation.blocks;
+        }
+        m_overwriteable_blocks.add(allocation.blocks);
+    }
+
     /**
      * Releases an uncached block set directly to the free pool. This bypasses
      * prefix-cache overwrite storage because transient checkpoints do not have
