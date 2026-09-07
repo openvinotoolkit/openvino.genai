@@ -600,8 +600,8 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionWorkspace_ReservesOnePlusN) {
     }
 }
 
-/// The committed row is block_table[0] across promotion, fork, and copy-on-write.
-TEST(TestCacheOrchestratorHybrid, LinearAttentionCommittedBlockTracksPromotedRowAcrossForkCopyOnWrite) {
+/// The latest row is block_table[0] across promotion, fork, and copy-on-write.
+TEST(TestCacheOrchestratorHybrid, LinearAttentionLatestRowTracksPromotionForkAndCopyOnWrite) {
     auto orchestrator = create_hybrid_orchestrator(
         /*num_kv_blocks=*/16,
         /*num_la_blocks=*/4,
@@ -619,16 +619,19 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionCommittedBlockTracksPromotedRow
     const size_t promoted = orchestrator->promote_linear_attention_temporary_block(parent_id, 1);
     ASSERT_EQ(promoted, static_cast<size_t>(temporary_blocks.front()));
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(parent_id).front()->get_index(), promoted);
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(parent_id), promoted);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(parent_id), promoted);
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(parent_id));
 
     auto child = seq_group->fork_sequence(parent);
     const uint64_t child_id = child->get_id();
     ASSERT_NO_THROW(orchestrator->fork_sequence(parent_id, child_id));
     ASSERT_EQ(orchestrator->get_linear_attention_block_table(child_id).front()->get_index(), promoted);
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(child_id), promoted);
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(child_id), promoted);
+    EXPECT_TRUE(orchestrator->is_linear_attention_latest_row_shared(parent_id));
+    EXPECT_TRUE(orchestrator->is_linear_attention_latest_row_shared(child_id));
 
     seq_group->schedule_tokens(1);
-    orchestrator->append_slots(seq_group);
+    const auto copy_maps = orchestrator->append_slots(seq_group);
 
     const auto& parent_owned = orchestrator->get_linear_attention_block_table(parent_id);
     const auto& child_owned = orchestrator->get_linear_attention_block_table(child_id);
@@ -636,8 +639,14 @@ TEST(TestCacheOrchestratorHybrid, LinearAttentionCommittedBlockTracksPromotedRow
     ASSERT_EQ(child_owned.size(), 1u);
     EXPECT_NE(parent_owned.front()->get_index(), promoted);
     EXPECT_EQ(child_owned.front()->get_index(), promoted);
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(parent_id), parent_owned.front()->get_index());
-    EXPECT_EQ(orchestrator->get_linear_attention_live_block(child_id), child_owned.front()->get_index());
+    const auto& linear_attention_copy_map = copy_maps.at(CacheType::LINEAR_ATTENTION_CACHE);
+    ASSERT_EQ(linear_attention_copy_map.size(), 1u);
+    ASSERT_EQ(linear_attention_copy_map.at(promoted).size(), 1u);
+    EXPECT_EQ(linear_attention_copy_map.at(promoted).front(), parent_owned.front()->get_index());
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(parent_id), parent_owned.front()->get_index());
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(child_id), child_owned.front()->get_index());
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(parent_id));
+    EXPECT_FALSE(orchestrator->is_linear_attention_latest_row_shared(child_id));
 
     orchestrator->free_sequence(child_id);
     orchestrator->free_sequence(parent_id);

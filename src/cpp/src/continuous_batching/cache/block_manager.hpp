@@ -24,6 +24,7 @@ class CacheBlock {
     int m_ref_count;
     int m_index;
     size_t m_hash;
+    bool m_has_published_hash;
     std::chrono::time_point<std::chrono::steady_clock> m_timestamp;
 public:
     using Ptr = std::shared_ptr<CacheBlock>;
@@ -31,6 +32,7 @@ public:
         : m_ref_count(0),
           m_index(index),
           m_hash(0),
+          m_has_published_hash(false),
           m_timestamp(std::chrono::steady_clock::now()) { }
 
     int get_index() const {
@@ -59,11 +61,21 @@ public:
     }
 
     size_t get_hash() const {
+        OPENVINO_ASSERT(m_has_published_hash, "Unpublished cache block has no prefix hash");
         return m_hash;
     }
 
     void set_hash(size_t hash) {
         m_hash = hash;
+        m_has_published_hash = true;
+    }
+
+    bool has_published_hash() const {
+        return m_has_published_hash;
+    }
+
+    void clear_published_hash() {
+        m_has_published_hash = false;
     }
 
     void set_timestamp(const std::chrono::time_point<std::chrono::steady_clock>& timestamp) {
@@ -147,9 +159,7 @@ class OverwritableBlocksHashStore {
         }
         auto hash_and_blocks_for_all_layers = std::min_element(std::begin(m_blocks), std::end(m_blocks), [](const auto& lhs, const auto& rhs) -> bool { return lhs.second[0]->get_timestamp() < rhs.second[0]->get_timestamp(); });
         auto blocks_for_all_layers = hash_and_blocks_for_all_layers->second;
-        auto timestamp = std::chrono::steady_clock::now();
         for (auto& block_ptr : blocks_for_all_layers) {
-            block_ptr->set_timestamp(timestamp);
             block_ptr->increment();
         }
         m_blocks.erase(hash_and_blocks_for_all_layers->first);
@@ -210,6 +220,8 @@ class BlockAllocator {
 public:
     struct CacheBlockAllocationResult {
         BlocksPerLayer blocks;
+        std::optional<uint64_t> evicted_hash;
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> evicted_timestamp;
         std::optional<uint64_t> erased_hash;
 
         operator BlocksPerLayer&() {
@@ -236,6 +248,20 @@ public:
             return blocks.at(index);
         }
     };
+
+private:
+    static bool erase_registration_if_owned(uint64_t hash,
+                                            const BlocksPerLayer& blocks,
+                                            std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
+        const auto cached_blocks_it = cached_blocks.find(hash);
+        if (cached_blocks_it == cached_blocks.end() || cached_blocks_it->second != blocks) {
+            return false;
+        }
+        cached_blocks.erase(cached_blocks_it);
+        return true;
+    }
+
+public:
 
     /**
      * Constructs the BlockAllocator.
@@ -339,6 +365,10 @@ public:
         return num_blocks <= num_free_blocks(layer_idx);
     }
 
+    bool can_allocate_uncached_blocks(size_t num_blocks) const {
+        return can_allocate_blocks(num_blocks);
+    }
+
     /**
      * Frees a given block for a given layer. If no sequence is associated with the block after freeing, the block
      * is returned to the "free" pool.
@@ -361,19 +391,70 @@ public:
      * overwritten before they become visible as sequence cache.
      */
     BlocksPerLayer allocate_uncached_block() {
-        OPENVINO_ASSERT(can_allocate_blocks(1));
+        if (!std::all_of(m_free_blocks_num.begin(),
+                         m_free_blocks_num.end(),
+                         [](size_t free_blocks) { return free_blocks > 0; })) {
+            return {};
+        }
         BlocksPerLayer allocated_blocks;
         allocated_blocks.reserve(m_num_layers);
         for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
-            OPENVINO_ASSERT(m_free_blocks_num[layer_idx] > 0,
-                            "Uncached checkpoint allocation requires a free physical block");
             CacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
             allocated_block->increment();
+            allocated_block->clear_published_hash();
             allocated_blocks.push_back(allocated_block);
             m_free_blocks[layer_idx].pop_front();
             --m_free_blocks_num[layer_idx];
         }
         return allocated_blocks;
+    }
+
+    CacheBlockAllocationResult acquire_unpublished_block(std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
+        CacheBlockAllocationResult result;
+        if (m_free_blocks_num[0] > 0) {
+            result.blocks.reserve(m_num_layers);
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                CacheBlock::Ptr allocated_block = m_free_blocks[layer_idx].front();
+                allocated_block->increment();
+                allocated_block->clear_published_hash();
+                result.blocks.push_back(allocated_block);
+                m_free_blocks[layer_idx].pop_front();
+                --m_free_blocks_num[layer_idx];
+            }
+            return result;
+        }
+        if (m_overwriteable_blocks.num_blocks() == 0) {
+            return result;
+        }
+        result.blocks = m_overwriteable_blocks.get_lru_block_to_overwrite();
+        result.evicted_hash = result.blocks.front()->get_hash();
+        result.evicted_timestamp = result.blocks.front()->get_timestamp();
+        if (erase_registration_if_owned(*result.evicted_hash, result.blocks, cached_blocks)) {
+            result.erased_hash = result.evicted_hash;
+        }
+        for (auto& block : result.blocks) {
+            block->clear_published_hash();
+        }
+        return result;
+    }
+
+    void rollback_uncached_block(CacheBlockAllocationResult allocation,
+                                 std::map<uint64_t, BlocksPerLayer>& cached_blocks) {
+        OPENVINO_ASSERT(!allocation.blocks.empty());
+        if (!allocation.evicted_hash.has_value()) {
+            free_uncached(allocation.blocks);
+            return;
+        }
+        OPENVINO_ASSERT(allocation.evicted_timestamp.has_value());
+        for (auto& block : allocation.blocks) {
+            block->set_hash(*allocation.evicted_hash);
+            block->set_timestamp(*allocation.evicted_timestamp);
+            block->release();
+        }
+        if (allocation.erased_hash.has_value()) {
+            cached_blocks[*allocation.erased_hash] = allocation.blocks;
+        }
+        m_overwriteable_blocks.add(allocation.blocks);
     }
 
     /**
@@ -418,7 +499,14 @@ public:
 
         if (is_any_free) {
             // is_all_free == true due to assert above
-            if (m_enable_prefix_caching)
+            if (m_enable_prefix_caching && !blocks_for_all_layers[0]->has_published_hash()) {
+                for (size_t layer_idx = 0; layer_idx < blocks_for_all_layers.size(); ++layer_idx) {
+                    OPENVINO_ASSERT(!blocks_for_all_layers[layer_idx]->has_published_hash(),
+                                    "Cache blocks across layers must share publication state");
+                    m_free_blocks[layer_idx].push_back(blocks_for_all_layers[layer_idx]);
+                    ++m_free_blocks_num[layer_idx];
+                }
+            } else if (m_enable_prefix_caching)
             {
                 std::set<uint64_t> hashes_across_blocks;
                 for (const auto& block : blocks_for_all_layers) {
@@ -543,13 +631,15 @@ public:
             // get least recently used block from store and reuse it
             result.blocks = m_overwriteable_blocks.get_lru_block_to_overwrite();
             const uint64_t previous_hash = result.blocks[0]->get_hash();
-            if (cached_blocks.erase(previous_hash) > 0) {
+            if (erase_registration_if_owned(previous_hash, result.blocks, cached_blocks)) {
                 result.erased_hash = previous_hash;
             }
 
             // update block with new hash
+            const auto timestamp = std::chrono::steady_clock::now();
             for (auto& block : result.blocks) {
                 block->set_hash(hash);
+                block->set_timestamp(timestamp);
             }
             cached_blocks[hash] = result.blocks;
             return result;
@@ -715,6 +805,47 @@ public:
     size_t get_block_table_logical_start(uint64_t seq_id) const {
         auto it = m_block_table_logical_start.find(seq_id);
         return it == m_block_table_logical_start.end() ? 0 : it->second;
+    }
+
+    bool is_prefix_caching_enabled() const {
+        return m_enable_prefix_caching;
+    }
+
+    /// Maps physical = logical - m_block_table_logical_start for an append-only checkpoint table.
+    /// Precondition: the table may only be truncated from the back while its logical start remains tracked.
+    const CacheBlock::Ptr& get_block_at_logical_position(uint64_t seq_id,
+                                                         size_t layer_idx,
+                                                         size_t logical_block_position) const {
+        const auto table_it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(table_it != m_block_table.end(), "No block table for sequence ", seq_id);
+        OPENVINO_ASSERT(layer_idx < table_it->second.size(),
+                        "Block table layer ", layer_idx, " is out of range for sequence ", seq_id);
+        const size_t logical_start = get_block_table_logical_start(seq_id);
+        OPENVINO_ASSERT(logical_block_position >= logical_start,
+                        "Logical block position ", logical_block_position,
+                        " precedes block table start ", logical_start, " for sequence ", seq_id);
+        const size_t physical_position = logical_block_position - logical_start;
+        OPENVINO_ASSERT(physical_position < table_it->second[layer_idx].size(),
+                        "Logical block position ", logical_block_position,
+                        " is out of range for sequence ", seq_id);
+        return table_it->second[layer_idx][physical_position];
+    }
+
+    /// Returns the latest row represented by an append-only table.
+    const CacheBlock::Ptr& get_latest_represented_block(uint64_t seq_id, size_t layer_idx) const {
+        const auto table_it = m_block_table.find(seq_id);
+        OPENVINO_ASSERT(table_it != m_block_table.end(), "No block table for sequence ", seq_id);
+        OPENVINO_ASSERT(layer_idx < table_it->second.size(),
+                        "Block table layer ", layer_idx, " is out of range for sequence ", seq_id);
+        const BlocksPerLayer& blocks = table_it->second[layer_idx];
+        OPENVINO_ASSERT(!blocks.empty(), "Block table layer ", layer_idx, " is empty for sequence ", seq_id);
+        const size_t latest_logical_position = get_block_table_logical_start(seq_id) + blocks.size() - 1;
+        return get_block_at_logical_position(seq_id, layer_idx, latest_logical_position);
+    }
+
+    /// Returns whether the latest represented row is referenced by more than one block table.
+    bool is_latest_represented_block_shared(uint64_t seq_id, size_t layer_idx) const {
+        return get_latest_represented_block(seq_id, layer_idx)->copy_on_write();
     }
 
     size_t get_num_layers() const {
@@ -1129,7 +1260,12 @@ public:
             }
             return can_allocate_blocks(required_additional_blocks) ? std::numeric_limits<size_t>::max() : 0;
         }
-        return get_num_unused_tokens(seq_group) + num_free_blocks() * m_block_size;
+        const size_t copy_on_write_blocks = get_required_copy_on_write_blocks(seq_group);
+        if (!m_allocator.can_allocate_uncached_blocks(copy_on_write_blocks)) {
+            return 0;
+        }
+        return get_num_unused_tokens(seq_group) +
+               (num_free_blocks() - copy_on_write_blocks) * m_block_size;
     }
 
     /**
@@ -1158,7 +1294,9 @@ public:
         }
         const size_t tokens_needing_new_blocks = num_tokens > get_num_unused_tokens(seq_group) ? num_tokens - get_num_unused_tokens(seq_group) : 0;
         size_t blocks_needed = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
-        return can_allocate_blocks(blocks_needed);
+        const size_t copy_on_write_blocks = get_required_copy_on_write_blocks(seq_group);
+        return m_allocator.can_allocate_uncached_blocks(copy_on_write_blocks) &&
+               can_allocate_blocks(blocks_needed + copy_on_write_blocks);
     }
 
     /**
@@ -1169,7 +1307,11 @@ public:
      * @param num_tokens The number of additional tokens to accommodate.
      * @param prompt_size Prompt size for this sequence.
      */
-    void allocate_tokens(ov::genai::Sequence::Ptr sequence, SequenceGroup::CPtr seq_group, size_t num_tokens, size_t prompt_size = 0) {
+    std::map<size_t, std::list<size_t>> allocate_tokens(ov::genai::Sequence::Ptr sequence,
+                                                        SequenceGroup::CPtr seq_group,
+                                                        size_t num_tokens,
+                                                        size_t prompt_size = 0) {
+        std::map<size_t, std::list<size_t>> copy_blocks_map;
         if (m_fixed_blocks_per_sequence > 0) {
             auto seq_id = sequence->get_id();
             size_t current_blocks = 0;
@@ -1182,14 +1324,20 @@ public:
             if (blocks_needed > 0) {
                 allocate(sequence, blocks_needed, prompt_size);
             }
-            return;
+            return copy_blocks_map;
         }
         const size_t unused_tokens = get_num_unused_tokens(seq_group);
         const size_t tokens_needing_new_blocks = num_tokens > unused_tokens ? num_tokens - unused_tokens : 0;
         const size_t num_blocks = (tokens_needing_new_blocks + m_block_size - 1) / m_block_size;
+        if (m_enable_prefix_caching) {
+            copy_last_block_if_shared(sequence,
+                                      seq_group->get_num_processed_tokens(),
+                                      copy_blocks_map);
+        }
         if (num_blocks > 0) {
             allocate(sequence, num_blocks, prompt_size);
         }
+        return copy_blocks_map;
     }
 
     /**
@@ -1438,14 +1586,18 @@ public:
                 // iteration
                 continue;
 
+            const size_t needed_blocks_per_sequence = num_required_blocks - num_physical_blocks;
+            if (m_enable_prefix_caching) {
+                blocks_count += needed_blocks_per_sequence;
+                continue;
+            }
+
             size_t last_block_id = block_table.back()->get_index();
 
             if (last_block_ids.find(last_block_id) != last_block_ids.end())
                 // this block was already processed
                 continue;
             last_block_ids.insert(last_block_id);
-
-            size_t needed_blocks_per_sequence = num_required_blocks - num_physical_blocks;
 
             CacheBlock::Ptr last_block = block_table.back();
             if (last_block->copy_on_write()) {
@@ -1464,6 +1616,9 @@ public:
                 // block is used only by one sequence
                 blocks_count += needed_blocks_per_sequence;
             }
+        }
+        if (m_enable_prefix_caching) {
+            blocks_count += get_required_copy_on_write_blocks(seq_group);
         }
         return blocks_count;
     }
@@ -1498,6 +1653,7 @@ public:
             if (num_physical_blocks > num_required_blocks) {
                 free_sequence_partially(seq_id, num_physical_blocks - num_required_blocks);
             }
+            invalidate_rolled_back_last_block(seq_id, seq_group->get_context_len());
         }
     }
 
@@ -1518,6 +1674,11 @@ public:
         std::vector<Sequence::Ptr> running_sequences = seq_group->get_running_sequences();
 
         std::map<size_t, std::list<size_t>> copy_blocks_map;
+        if (m_enable_prefix_caching) {
+            copy_last_blocks_if_shared(running_sequences,
+                                       seq_group->get_num_processed_tokens(),
+                                       copy_blocks_map);
+        }
         for (size_t i = 0; i < running_sequences.size(); ++i) {
             Sequence::Ptr sequence = running_sequences[i];
             auto seq_id = sequence->get_id();
@@ -1528,6 +1689,12 @@ public:
             {
                 num_physical_blocks = m_block_table[seq_id][0].size();
                 num_required_blocks = get_num_required_stored_blocks(seq_group, seq_id);
+            }
+
+            if (!m_enable_prefix_caching && num_required_blocks <= num_physical_blocks) {
+                copy_last_block_if_shared(sequence,
+                                          seq_group->get_num_processed_tokens(),
+                                          copy_blocks_map);
             }
 
             if (num_required_blocks > num_physical_blocks) {
@@ -1543,32 +1710,9 @@ public:
                     last_blocks.push_back(m_block_table[seq_id][i].back());
                 }
 
-                bool is_copy_on_write = last_blocks[0]->copy_on_write();
-
-                if (is_copy_on_write) {
-                    BlocksPerLayer new_blocks_for_all_layers;
-                    new_blocks_for_all_layers.reserve(effective_num_layers);
-                    if (m_enable_prefix_caching) {
-                        const size_t content_length = seq_group->get_context_len();
-                        const auto hash = sequence->get_hash(content_length, m_block_size);
-                        new_blocks_for_all_layers = allocate_cached_block(hash, content_length);
-                    } else {
-                        for (size_t i = 0; i < effective_num_layers; i++) {
-                            new_blocks_for_all_layers.push_back(m_allocator.allocate_block(i));
-                        }
-                    }
-
-                    for (size_t i = 0; i < effective_num_layers; i++) {
-                        auto& new_block = new_blocks_for_all_layers[i];
-                        auto& block_table = m_block_table[seq_id][i];
-                        block_table[num_physical_blocks - 1] = new_blocks_for_all_layers[i];
-                        auto& last_block = last_blocks[i];
-                        copy_blocks_map[last_block->get_index()].push_back(new_block->get_index());
-                    }
-                    free_cached_blocks(last_blocks);
-                } else {
+                if (!last_blocks[0]->copy_on_write()) {
                     // we are the only users of this block
-                    if (m_enable_prefix_caching) {
+                    if (m_enable_prefix_caching && last_blocks[0]->has_published_hash()) {
                         // update hash of block
                         const auto prev_hash = last_blocks[0]->get_hash();
                         const size_t content_length = seq_group->get_context_len();
@@ -1588,6 +1732,60 @@ public:
 
         // it returns information which blocks should be forked by ICacheManager
         return copy_blocks_map;
+    }
+
+    void publish_completed_block(const Sequence::Ptr& sequence, size_t content_length) {
+        if (!m_enable_prefix_caching || content_length == 0 || content_length % m_block_size != 0) {
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        const uint64_t seq_id = sequence->get_id();
+        const auto block_table_it = m_block_table.find(seq_id);
+        if (block_table_it == m_block_table.end() || block_table_it->second.empty()) {
+            return;
+        }
+
+        const size_t logical_block_idx = content_length / m_block_size - 1;
+        const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
+        if (logical_block_idx < logical_start) {
+            return;
+        }
+        const size_t physical_block_idx = logical_block_idx - logical_start;
+        if (physical_block_idx >= block_table_it->second[0].size()) {
+            return;
+        }
+
+        BlocksPerLayer completed_blocks;
+        completed_blocks.reserve(m_num_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            CacheBlock::Ptr block = block_table_it->second[layer_idx][physical_block_idx];
+            OPENVINO_ASSERT(block->has_published_hash() ==
+                                block_table_it->second[0][physical_block_idx]->has_published_hash(),
+                            "Cache blocks across layers must share publication state");
+            completed_blocks.push_back(std::move(block));
+        }
+        if (completed_blocks[0]->has_published_hash()) {
+            return;
+        }
+
+        const uint64_t hash = sequence->get_hash(content_length, m_block_size);
+        const auto cached_blocks_it = m_prefix_hash_to_cached_blocks.find(hash);
+        if (cached_blocks_it != m_prefix_hash_to_cached_blocks.end()) {
+            OPENVINO_ASSERT(cached_blocks_it->second.size() == m_num_layers,
+                            "Cached prefix identity must contain one block per layer");
+            for (const CacheBlock::Ptr& cached_block : cached_blocks_it->second) {
+                OPENVINO_ASSERT(cached_block->has_published_hash() && cached_block->get_hash() == hash,
+                                "Cached prefix identity must refer to verified published blocks");
+            }
+            return;
+        }
+
+        for (CacheBlock::Ptr& block : completed_blocks) {
+            block->set_hash(hash);
+        }
+        m_prefix_hash_to_cached_blocks.emplace(hash, completed_blocks);
+        register_cached_content_length(hash, content_length);
     }
 
     bool restore_cached_blocks(SequenceGroup::Ptr group) {
@@ -1821,6 +2019,95 @@ private:
         }
     }
 
+    BlocksPerLayer find_alternative_published_blocks(uint64_t hash, const BlocksPerLayer& excluded_blocks) const {
+        for (const auto& [sequence_id, block_tables] : m_block_table) {
+            (void)sequence_id;
+            if (block_tables.empty()) {
+                continue;
+            }
+            const size_t num_blocks = block_tables[0].size();
+            for (const auto& block_table : block_tables) {
+                OPENVINO_ASSERT(block_table.size() == num_blocks,
+                                "Cache block tables across layers must have equal sizes");
+            }
+            for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx) {
+                BlocksPerLayer candidate_blocks;
+                candidate_blocks.reserve(m_num_layers);
+                for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                    const CacheBlock::Ptr& block = block_tables[layer_idx][block_idx];
+                    if (!block->has_published_hash() || block->get_hash() != hash) {
+                        candidate_blocks.clear();
+                        break;
+                    }
+                    candidate_blocks.push_back(block);
+                }
+                if (!candidate_blocks.empty() && candidate_blocks != excluded_blocks) {
+                    return candidate_blocks;
+                }
+            }
+        }
+        return {};
+    }
+
+    void invalidate_rolled_back_last_block(uint64_t seq_id, size_t retained_content_length) {
+        if (!m_enable_prefix_caching || retained_content_length == 0 ||
+            retained_content_length % m_block_size == 0) {
+            return;
+        }
+        const auto block_table_it = m_block_table.find(seq_id);
+        if (block_table_it == m_block_table.end() || block_table_it->second.empty() ||
+            block_table_it->second[0].empty()) {
+            return;
+        }
+        const size_t retained_logical_position = (retained_content_length - 1) / m_block_size;
+        const size_t latest_logical_position =
+            get_block_table_logical_start_unlocked(seq_id) + block_table_it->second[0].size() - 1;
+        if (retained_logical_position != latest_logical_position) {
+            return;
+        }
+
+        BlocksPerLayer latest_blocks;
+        latest_blocks.reserve(m_num_layers);
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            const CacheBlock::Ptr& block = block_table_it->second[layer_idx].back();
+            if (!block->has_published_hash() || block->get_references_count() > 1) {
+                return;
+            }
+            latest_blocks.push_back(block);
+        }
+
+        const uint64_t published_hash = latest_blocks[0]->get_hash();
+        const auto cached_blocks_it = m_prefix_hash_to_cached_blocks.find(published_hash);
+        const bool owns_registration =
+            cached_blocks_it != m_prefix_hash_to_cached_blocks.end() && cached_blocks_it->second == latest_blocks;
+        const auto content_length_it = m_cached_hash_to_content_length.find(published_hash);
+        OPENVINO_ASSERT(content_length_it != m_cached_hash_to_content_length.end() || !owns_registration,
+                        "Registered prefix blocks have no content length");
+        if (content_length_it == m_cached_hash_to_content_length.end()) {
+            for (const CacheBlock::Ptr& block : latest_blocks) {
+                block->clear_published_hash();
+            }
+            return;
+        }
+        if (content_length_it->second <= retained_content_length) {
+            return;
+        }
+
+        if (owns_registration) {
+            m_prefix_hash_to_cached_blocks.erase(cached_blocks_it);
+            BlocksPerLayer alternative_blocks = find_alternative_published_blocks(published_hash, latest_blocks);
+            if (!alternative_blocks.empty()) {
+                m_prefix_hash_to_cached_blocks.emplace(published_hash, std::move(alternative_blocks));
+            }
+        }
+        if (!m_allocator.has_cached_block(published_hash, m_prefix_hash_to_cached_blocks)) {
+            unregister_cached_hash(published_hash);
+        }
+        for (const CacheBlock::Ptr& block : latest_blocks) {
+            block->clear_published_hash();
+        }
+    }
+
     size_t get_interval_start(size_t interval_end) const {
         return ((interval_end - 1) / m_block_size) * m_block_size;
     }
@@ -1838,6 +2125,151 @@ private:
         const size_t num_logical_blocks = get_num_logical_blocks(seq_group);
         const size_t logical_start = get_block_table_logical_start_unlocked(seq_id);
         return num_logical_blocks > logical_start ? num_logical_blocks - logical_start : 0;
+    }
+
+    bool last_block_requires_copy_on_write(const Sequence::CPtr& sequence,
+                                           size_t num_processed_tokens) const {
+        if (m_enable_prefix_caching && num_processed_tokens % m_block_size == 0) {
+            return false;
+        }
+        auto table_it = m_block_table.find(sequence->get_id());
+        return table_it != m_block_table.end() && !table_it->second.empty() &&
+               !table_it->second[0].empty() && table_it->second[0].back()->copy_on_write();
+    }
+
+    size_t get_required_copy_on_write_blocks(SequenceGroup::CPtr seq_group) const {
+        if (!m_enable_prefix_caching || seq_group->get_num_processed_tokens() % m_block_size == 0) {
+            return 0;
+        }
+        std::map<size_t, size_t> owners_per_block;
+        std::map<size_t, size_t> references_per_block;
+        for (const auto& sequence : seq_group->get_running_sequences()) {
+            auto table_it = m_block_table.find(sequence->get_id());
+            if (table_it == m_block_table.end() || table_it->second.empty() || table_it->second[0].empty()) {
+                continue;
+            }
+            const auto& last_block = table_it->second[0].back();
+            if (last_block->copy_on_write()) {
+                const size_t block_index = static_cast<size_t>(last_block->get_index());
+                ++owners_per_block[block_index];
+                references_per_block[block_index] = static_cast<size_t>(last_block->get_references_count());
+            }
+        }
+        size_t required_blocks = 0;
+        for (const auto& [block_index, owners] : owners_per_block) {
+            required_blocks += std::min(owners, references_per_block.at(block_index) - 1);
+        }
+        return required_blocks;
+    }
+
+    struct CopyOnWriteReplacement {
+        uint64_t sequence_id;
+        BlocksPerLayer previous_blocks;
+        BlockAllocator::CacheBlockAllocationResult allocation;
+        std::optional<size_t> erased_content_length;
+    };
+
+    BlockAllocator::CacheBlockAllocationResult acquire_unpublished_block(
+        std::optional<size_t>& erased_content_length) {
+        BlockAllocator::CacheBlockAllocationResult allocation =
+            m_allocator.acquire_unpublished_block(m_prefix_hash_to_cached_blocks);
+        if (allocation.erased_hash.has_value()) {
+            try {
+                const auto content_length_it = m_cached_hash_to_content_length.find(*allocation.erased_hash);
+                OPENVINO_ASSERT(content_length_it != m_cached_hash_to_content_length.end(),
+                                "Evicted prefix hash has no registered content length");
+                erased_content_length = content_length_it->second;
+                unregister_cached_hash(*allocation.erased_hash);
+            } catch (...) {
+                m_allocator.rollback_uncached_block(std::move(allocation),
+                                                    m_prefix_hash_to_cached_blocks);
+                throw;
+            }
+        }
+        return allocation;
+    }
+
+    void rollback_copy_on_write_replacement(CopyOnWriteReplacement& replacement) {
+        for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+            m_block_table[replacement.sequence_id][layer_idx].back() = replacement.previous_blocks[layer_idx];
+        }
+        const std::optional<uint64_t> erased_hash = replacement.allocation.erased_hash;
+        const std::optional<size_t> erased_content_length = replacement.erased_content_length;
+        m_allocator.rollback_uncached_block(std::move(replacement.allocation),
+                                            m_prefix_hash_to_cached_blocks);
+        if (erased_hash.has_value()) {
+            OPENVINO_ASSERT(erased_content_length.has_value());
+            register_cached_content_length(*erased_hash, *erased_content_length);
+        }
+    }
+
+    void copy_last_blocks_if_shared(const std::vector<Sequence::Ptr>& sequences,
+                                    size_t num_processed_tokens,
+                                    std::map<size_t, std::list<size_t>>& copy_blocks_map) {
+        std::vector<CopyOnWriteReplacement> replacements;
+        replacements.reserve(sequences.size());
+        std::map<size_t, std::list<size_t>> staged_copy_blocks_map;
+        std::map<size_t, size_t> staged_replacements_per_source;
+        try {
+            for (const auto& sequence : sequences) {
+                if (!last_block_requires_copy_on_write(sequence, num_processed_tokens)) {
+                    continue;
+                }
+                const uint64_t sequence_id = sequence->get_id();
+                const auto& source_block = m_block_table[sequence_id][0].back();
+                const size_t source_index = static_cast<size_t>(source_block->get_index());
+                const size_t maximum_replacements =
+                    static_cast<size_t>(source_block->get_references_count() - 1);
+                if (staged_replacements_per_source[source_index] >= maximum_replacements) {
+                    continue;
+                }
+                BlocksPerLayer previous_blocks;
+                previous_blocks.reserve(m_num_layers);
+                for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                    previous_blocks.push_back(m_block_table[sequence_id][layer_idx].back());
+                }
+
+                std::optional<size_t> erased_content_length;
+                BlockAllocator::CacheBlockAllocationResult allocation =
+                    acquire_unpublished_block(erased_content_length);
+                OPENVINO_ASSERT(!allocation.blocks.empty(),
+                                "Shared cache row copy-on-write exhausted free and overwriteable blocks");
+                replacements.push_back({sequence_id,
+                                        std::move(previous_blocks),
+                                        std::move(allocation),
+                                        erased_content_length});
+                auto& replacement = replacements.back();
+                for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                    m_block_table[sequence_id][layer_idx].back() = replacement.allocation.blocks[layer_idx];
+                }
+                staged_copy_blocks_map[replacement.previous_blocks[0]->get_index()].push_back(
+                    replacement.allocation.blocks[0]->get_index());
+                ++staged_replacements_per_source[source_index];
+            }
+
+            auto updated_copy_blocks_map = copy_blocks_map;
+            for (auto& [source_index, destination_indices] : staged_copy_blocks_map) {
+                updated_copy_blocks_map[source_index].splice(
+                    updated_copy_blocks_map[source_index].end(),
+                    destination_indices);
+            }
+            copy_blocks_map.swap(updated_copy_blocks_map);
+        } catch (...) {
+            for (auto replacement_it = replacements.rbegin(); replacement_it != replacements.rend(); ++replacement_it) {
+                rollback_copy_on_write_replacement(*replacement_it);
+            }
+            throw;
+        }
+
+        for (auto& replacement : replacements) {
+            free_cached_blocks(replacement.previous_blocks);
+        }
+    }
+
+    void copy_last_block_if_shared(const Sequence::Ptr& sequence,
+                                   size_t num_processed_tokens,
+                                   std::map<size_t, std::list<size_t>>& copy_blocks_map) {
+        copy_last_blocks_if_shared({sequence}, num_processed_tokens, copy_blocks_map);
     }
 
     size_t get_num_unused_tokens(SequenceGroup::CPtr seq_group) const {
@@ -1909,7 +2341,7 @@ private:
                 }
             }
         } else {
-            if (block_table.size() > 0) {
+            if (block_table.size() > 0 && block_table.back()->has_published_hash()) {
                 CacheBlock::Ptr last_block = block_table.back();
                 auto hash = sequence->get_hash((logical_start + block_table.size()) * m_block_size, m_block_size);
                 auto prev_hash = last_block->get_hash();

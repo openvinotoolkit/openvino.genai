@@ -11,6 +11,7 @@
 #include <string_view>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -70,7 +71,7 @@ class Sequence {
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
-    std::vector<int64_t> m_prefix_hashes;
+    std::unordered_map<size_t, std::vector<int64_t>> m_prefix_hashes;
     SequenceGroup* m_sequence_group = nullptr;
     static std::mutex m_counter_mutex;
     std::vector<std::vector<float>> m_generated_ids_embeds;
@@ -85,6 +86,7 @@ class Sequence {
     static constexpr size_t m_embeddings_hash_calculation_stride = 50; // the stride with which values are taken from embeddings vector
 
     size_t _make_hash(size_t content_length, size_t block_size);
+    void truncate_prefix_hashes();
 
     static std::vector<int64_t> _reduce_embedding(const std::vector<float>& embedding);
 
@@ -100,11 +102,11 @@ class Sequence {
         m_all_intermediate_hidden_states(seq.m_all_intermediate_hidden_states),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
+        m_prefix_hashes(seq.m_prefix_hashes),
         m_sequence_group(seq.m_sequence_group),
+        m_generated_ids_embeds(seq.m_generated_ids_embeds),
         m_type(seq.m_type),
         m_hidden_size(seq.m_hidden_size),
-        m_prefix_hashes(seq.m_prefix_hashes),
-        m_generated_ids_embeds(seq.m_generated_ids_embeds),
         m_position_ids_list(seq.m_position_ids_list),
         m_rope_delta(seq.m_rope_delta),
         m_tree_metadata(seq.m_tree_metadata)
@@ -234,6 +236,7 @@ public:
             truncate_generated_ids_embeds(embeds_to_remove);
             truncate_position_ids(position_ids_to_remove);
         }
+        truncate_prefix_hashes();
     }
 
     GenerationOutput get_last_generation_output(size_t token_cnt = 1, size_t num_token_to_ignore = 0) {
@@ -316,8 +319,9 @@ public:
         OPENVINO_ASSERT(m_type == SequenceGroupType::EMBEDDINGS);
         OPENVINO_ASSERT(num_tokens <= m_generated_ids_embeds.size());
         // remove the last num_tokens embeddings
-        if (num_tokens > 0)
+        if (num_tokens > 0) {
             m_generated_ids_embeds.resize(m_generated_ids_embeds.size() - num_tokens);
+        }
     }
 
     void truncate_position_ids(size_t num_tokens) {
