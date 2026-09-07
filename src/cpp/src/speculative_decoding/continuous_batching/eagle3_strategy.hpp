@@ -91,7 +91,6 @@ protected:
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
     // the wrapper for executing kv cache update model in eagle3 pipeline
     std::shared_ptr<KVUpdateWrapper> m_kv_update_wrapper;
-    bool m_main_has_linear_attention = false;
     std::map<uint64_t, std::optional<uint64_t>> m_linear_attention_checkpoint_sequences;
     std::map<uint64_t, size_t> m_main_generated_lengths_before_validation;
     std::map<uint64_t, size_t> m_validation_candidate_counts;

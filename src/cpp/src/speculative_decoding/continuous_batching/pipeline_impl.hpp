@@ -195,15 +195,17 @@ public:
                                    std::vector<int32_t>& block_update_indices,
                                    std::vector<int32_t>& block_update_begins) const;
 
-protected:
-    void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output) override;
-
     ov::Tensor get_tensor_by_name(const std::string& name) {
         if (m_model_runner) {
             return m_model_runner->get_infer_request().get_tensor(name);
         }
         return {};
     }
+
+protected:
+    // Eagle3 selects the accepted checkpoint after the outer speculative-decoding step
+    // obtains tree/sequential validation metadata.
+    void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output) override;
 };
 
 // EMBEDDINGS pipeline used by MTP main and draft models.
