@@ -86,8 +86,7 @@ ov::Tensor AutoencoderKLLTX2Audio::decode(const ov::Tensor& latent) {
 
     m_decoder_request.set_input_tensor(latent);
     m_decoder_request.infer();
-    // Copy to an owned tensor - get_output_tensor() aliases the infer request's
-    // internal buffer, which would be overwritten on the next decode() call.
+    // Copy to an owned tensor - the request's internal buffer would be overwritten on the next decode() call
     const ov::Tensor output = m_decoder_request.get_output_tensor();
     ov::Tensor mel(output.get_element_type(), output.get_shape());
     output.copy_to(mel);
