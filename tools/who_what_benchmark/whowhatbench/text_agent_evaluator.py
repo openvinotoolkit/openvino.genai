@@ -487,20 +487,56 @@ class TextAgentEvaluator(BaseEvaluator):
             kwargs["adapters"] = openvino_genai.AdapterConfig()
 
         tools = record.get("tools")
+
+        if chat_template and self.chat_template_source:
+            genai_tokenizer = getattr(model, "tokenizer", None)
+            if genai_tokenizer is None and hasattr(model, "get_tokenizer"):
+                try:
+                    genai_tokenizer = model.get_tokenizer()
+                except Exception:
+                    genai_tokenizer = None
+
+            template_set_on_genai = False
+            if genai_tokenizer is not None and hasattr(genai_tokenizer, "set_chat_template"):
+                try:
+                    genai_tokenizer.set_chat_template(chat_template)
+                    template_set_on_genai = True
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to set custom chat template on GenAI tokenizer; tokenizer default template will be used. Error: %s",
+                        exc,
+                    )
+            else:
+                logger.warning(
+                    "Custom chat template was provided but GenAI tokenizer does not support set_chat_template; tokenizer default template will be used"
+                )
+
+            if template_set_on_genai:
+                extra_context = {}
+                if "enable_thinking" in chat_template:
+                    extra_context["enable_thinking"] = False
+                if "reasoning_effort" in chat_template:
+                    extra_context["reasoning_effort"] = "low"
+
+                if extra_context:
+                    if hasattr(history, "set_extra_context"):
+                        history.set_extra_context(extra_context)
+                    else:
+                        logger.warning(
+                            "ChatHistory.set_extra_context is not available in current OpenVINO GenAI package; template extra context was not applied"
+                        )
+        elif chat_template:
+            logger.info(
+                "Chat template was loaded implicitly from tokenizer/model metadata; keeping GenAI runtime default template"
+            )
+
         if tools is not None:
             if hasattr(history, "set_tools"):
                 history.set_tools(tools)
             else:
                 logger.warning(
-                    "ChatHistory.set_tools is not available in current OpenVINO GenAI package; falling back to prompt rendering"
+                    "ChatHistory.set_tools is not available in current OpenVINO GenAI package; tools from dataset record will be ignored"
                 )
-                prompt = self._build_prompt_text(_tokenizer, messages, tools, chat_template, backend_name="GenAI")
-                kwargs["apply_chat_template"] = False
-                res = model.generate(prompt, **kwargs)
-                if hasattr(res, "texts") and len(res.texts) > 0:
-                    return res.texts[0]
-                return str(res)
-
         res = model.generate(history, **kwargs)
 
         if hasattr(res, "texts") and len(res.texts) > 0:
