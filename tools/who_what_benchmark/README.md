@@ -179,6 +179,7 @@ wwb --target-model ./qwen3-vl-embedding-2B --gt-data embed_test/gt.csv --model-t
 ### Compare Text-to-video models
 ```sh
 # Export model to OpenVINO, you can specify weight format with --weight-format option, for example --weight-format fp32/fp16/int8
+# Lightricks/LTX-2 is exported and evaluated the same way
 optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp32 ltx-video-model
 # Collect the references and save the mapping in the .csv file.
 # Reference videos will be stored in the "reference" subfolder under the same path with .csv.

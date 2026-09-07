@@ -903,13 +903,13 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         logger.info("Using OpenVINO GenAI API")
         model = load_text2video_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
-        from diffusers import LTXPipeline
+        from diffusers import DiffusionPipeline
 
         logger.info("Using HF Transformers API")
         try:
-            model = LTXPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
+            model = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float32)
         except ValueError:
-            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
+            model = DiffusionPipeline.from_pretrained(model_id, trust_remote_code=True, torch_dtype=torch.float32)
         if kwargs.get("adapters") is not None:
             adapters = kwargs["adapters"]
             alphas = kwargs.get("alphas", None)
@@ -920,18 +920,18 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
             model.set_adapters([f"adapter_{idx}" for idx in range(len(adapters))], adapter_weights=alphas)
     else:
         logger.info("Using Optimum API")
-        from optimum.intel import OVLTXPipeline
+        from optimum.intel import OVPipelineForText2Video
 
         if "adapters" in kwargs and kwargs["adapters"] is not None:
-            raise ValueError("Adapters are not supported for OVLTXPipeline.")
+            raise ValueError("Adapters are not supported for OVPipelineForText2Video.")
 
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get("from_onnx"):
             model_kwargs["from_onnx"] = kwargs["from_onnx"]
         try:
-            model = OVLTXPipeline.from_pretrained(model_id, device=device, **model_kwargs)
+            model = OVPipelineForText2Video.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
-            model = OVLTXPipeline.from_pretrained(
+            model = OVPipelineForText2Video.from_pretrained(
                 model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
             )
 
