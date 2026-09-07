@@ -29,6 +29,30 @@ ov::Output<ov::Node> find_result_source(const std::shared_ptr<ov::Model>& model,
     return {};
 }
 
+std::shared_ptr<ov::op::v0::MatMul> find_lm_head_matmul(const ov::Output<ov::Node>& logits) {
+    const auto logits_shape = logits.get_partial_shape();
+    OPENVINO_ASSERT(logits_shape.rank().is_static() && logits_shape.rank().get_length() == 3 &&
+                    logits_shape[2].is_static(), "MTP logits must have a static vocabulary dimension.");
+    const auto vocab_size = logits_shape[2].get_length();
+    ov::Output<ov::Node> current = logits;
+    while (current.get_node()) {
+        if (auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(current.get_node_shared_ptr())) {
+            return matmul;
+        }
+        ov::Output<ov::Node> next;
+        for (const auto& input : current.get_node()->input_values()) {
+            const auto shape = input.get_partial_shape();
+            if (shape.rank().is_static() && shape.rank().get_length() == 3 &&
+                shape[2].is_static() && shape[2].get_length() == vocab_size) {
+                OPENVINO_ASSERT(!next.get_node(), "MTP lm_head logits have multiple vocabulary-wide inputs.");
+                next = input;
+            }
+        }
+        current = next;
+    }
+    OPENVINO_THROW("Failed to locate the main model's lm_head MatMul beneath logits.");
+}
+
 // Clone into the MTP model without sharing source-model constants.
 std::shared_ptr<ov::Node> clone_subgraph(const std::shared_ptr<ov::Node>& node,
                                          std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) {
@@ -80,8 +104,7 @@ ov::Output<ov::Node> extract_tied_lm_head_weight(const std::shared_ptr<ov::Model
     const auto logits_source = find_result_source(main_model, "logits");
     OPENVINO_ASSERT(logits_source.get_node(), "Failed to locate `logits` output in the main model for MTP lm_head graft.");
 
-    auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(logits_source.get_node_shared_ptr());
-    OPENVINO_ASSERT(matmul, "Expected the main model `logits` output to be produced by a MatMul (lm_head).");
+    auto matmul = find_lm_head_matmul(logits_source);
 
     transpose_weight = matmul->get_transpose_b();
     return matmul->input_value(1);
@@ -96,8 +119,7 @@ void expose_last_hidden_state(const std::shared_ptr<ov::Model>& main_model) {
     OPENVINO_ASSERT(logits_source.get_node(),
                     "Failed to locate `logits` output in the main model for MTP hidden-state graft.");
 
-    auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(logits_source.get_node_shared_ptr());
-    OPENVINO_ASSERT(matmul, "Expected the main model `logits` output to be produced by a MatMul (lm_head).");
+    auto matmul = find_lm_head_matmul(logits_source);
 
     // The lm_head MatMul consumes the model's last hidden state as its first input.
     auto hidden_state = matmul->input_value(0);

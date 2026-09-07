@@ -25,6 +25,8 @@
 namespace ov::genai {
 
 class ContinuousBatchingAdapter;
+class InputsEmbedder;
+struct ModelDesc;
 
 /**
  * @brief Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
@@ -145,6 +147,7 @@ protected:
     class Eagle3DecodingImpl;
     class DFlashDecodingImpl;
     class MtpDecodingImpl;
+    class Gemma4MtpDecodingImpl;
     class PromptLookupImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
@@ -156,6 +159,7 @@ protected:
     friend class Eagle3DecodingImpl;
     friend class DFlashDecodingImpl;
     friend class MtpDecodingImpl;
+    friend class Gemma4MtpDecodingImpl;
     friend class PromptLookupImpl;
     friend class VLMPipeline;
     friend class ContinuousBatchingAdapter;
@@ -165,6 +169,10 @@ protected:
     ContinuousBatchingPipeline() = default;
 
 private:
+    static std::shared_ptr<IContinuousBatchingPipeline> make_mtp_pipeline(
+        const ModelDesc& main_model, const ModelDesc& draft_model,
+        const std::shared_ptr<InputsEmbedder>& embedder);
+
     // Uses preloaded language model to avoid redundant read_model() during pipeline initialization.
     ContinuousBatchingPipeline(const std::shared_ptr<ov::Model>& language_model,
                                const ModelsMap& models_map,

@@ -3,11 +3,18 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/matmul.hpp"
+#include "openvino/op/multiply.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
+#include "openvino/op/tanh.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "speculative_decoding/mtp_model_transforms.hpp"
@@ -17,6 +24,7 @@ namespace {
 using ov::genai::utils::mtp::apply_mtp_rt_info;
 using ov::genai::utils::mtp::extract_mtp_info_from_config;
 using ov::genai::utils::mtp::extract_tied_lm_head_weight;
+using ov::genai::utils::mtp::expose_last_hidden_state;
 using ov::genai::utils::mtp::graft_lm_head_on_mtp;
 
 constexpr size_t HIDDEN = 8;
@@ -110,6 +118,19 @@ TEST(MtpModelTransforms, ExtractTiedLmHeadWeight) {
     ASSERT_TRUE(weight.get_node());
     EXPECT_TRUE(transpose_weight);
     EXPECT_EQ(weight.get_partial_shape(), (ov::PartialShape{VOCAB, HIDDEN}));
+}
+
+TEST(MtpModelTransforms, ExposeHiddenStateThroughGemma4LogitsSoftcap) {
+    auto model = make_main_model(std::vector<float>(VOCAB * HIDDEN, 0.1f));
+    const auto matmul = model->get_results().front()->input_value(0);
+    const auto tanh = std::make_shared<ov::op::v0::Tanh>(matmul);
+    const auto scale = std::make_shared<ov::op::v1::Multiply>(
+        tanh, ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, std::vector<float>{2.f}));
+    model->get_results().front()->input(0).replace_source_output(scale);
+    model->remove_result(model->get_results().back());
+    expose_last_hidden_state(model);
+    ASSERT_EQ(model->get_results().size(), 2u);
+    EXPECT_EQ(model->get_results().back()->input_value(0), matmul.get_node()->input_value(0));
 }
 
 TEST(MtpModelTransforms, FindsOutputsByResultTensorName) {
