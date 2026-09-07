@@ -40,7 +40,8 @@ void init_video_generation_pipelines(py::module_& m) {
     py::class_<ov::genai::VideoGenerationResult>(m, "VideoGenerationResult")
         .def_readonly("video", &ov::genai::VideoGenerationResult::video)
         .def_readonly("perf_metrics", &ov::genai::VideoGenerationResult::performance_stat)
-        .def_readonly("audio", &ov::genai::VideoGenerationResult::audio);
+        .def_readonly("audio", &ov::genai::VideoGenerationResult::audio)
+        .def_readonly("audio_sample_rate", &ov::genai::VideoGenerationResult::audio_sample_rate);
 
     py::class_<ov::genai::Text2VideoPipeline>(m, "Text2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {
@@ -101,8 +102,7 @@ void init_video_generation_pipelines(py::module_& m) {
                 }
                 return result;
             },
-            py::arg("prompt"))
-        .def("get_audio_sample_rate", &ov::genai::Text2VideoPipeline::get_audio_sample_rate);
+            py::arg("prompt"));
 
     py::class_<ov::genai::Image2VideoPipeline>(m, "Image2VideoPipeline")
         .def(py::init([](const std::filesystem::path& models_path) {

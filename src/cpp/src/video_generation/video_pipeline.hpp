@@ -48,10 +48,6 @@ public:
 
     virtual std::shared_ptr<VideoPipeline> clone() = 0;
 
-    virtual size_t get_audio_sample_rate() const {
-        return 0;
-    }
-
     const VideoGenerationConfig& get_generation_config() const {
         return m_generation_config;
     }
