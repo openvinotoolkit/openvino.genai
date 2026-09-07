@@ -102,7 +102,7 @@ updates:
       - dependency-name: "optimum-intel"
       # librosa >= 1.0.0 requires python3.12
       - dependency-name: "librosa"
-        version:
+        versions:
           - ">=1.0.0"
     groups:
       pip-dependencies:
