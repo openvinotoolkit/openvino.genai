@@ -1293,6 +1293,11 @@ struct AdapterControllerImpl {
     std::unordered_set<std::string> variable_names;
     AdapterConfig current_config;
     bool need_full_apply = true;
+    // Tracks which ov::InferRequest instance last received a full apply, since need_full_apply
+    // alone only reflects whether *some* request was initialized, not this one; a pipeline that
+    // recreates infer requests would otherwise skip set_new_adapter_tensors() for requests that
+    // were never actually initialized.
+    std::optional<ov::InferRequest> last_applied_infer_request;
     bool output_type_initialized = false;
     std::optional<ov::element::Type> state_output_type_override;
     InferRequestSignatureCache lora_state_evaluators;
@@ -1491,8 +1496,10 @@ struct AdapterControllerImpl {
             current_config = std::move(updated_config);
         }
         prepare(infer_request);
-        if(need_full_apply) {
+        bool is_new_infer_request = !last_applied_infer_request || *last_applied_infer_request != infer_request;
+        if(need_full_apply || is_new_infer_request) {
             need_full_apply = false;
+            last_applied_infer_request = infer_request;
             set_new_adapter_tensors(infer_request);
         } else if(diff) {
             if(diff.adapter || diff.tensor_name_prefix) {

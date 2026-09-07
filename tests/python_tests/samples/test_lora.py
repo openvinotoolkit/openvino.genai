@@ -210,7 +210,7 @@ class TestLora:
         if not gpu_devices:
             pytest.skip("GPU device not available")
 
-        target_device = gpu_devices[0] if len(gpu_devices) == 1 else "GPU.1"
+        target_device = gpu_devices[0] if len(gpu_devices) == 1 else gpu_devices[1]
 
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
@@ -232,9 +232,7 @@ class TestLora:
         result_a_first = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config)
         assert len(result_a_first.texts[0]) > 0, "Generation with config A should produce output"
 
-        result_b = pipe.generate(
-            prompt, images=[image_tensor], generation_config=generation_config, adapters=config_b
-        )
+        result_b = pipe.generate(prompt, images=[image_tensor], generation_config=generation_config, adapters=config_b)
         assert len(result_b.texts[0]) > 0, "Generation with config B should produce output"
 
         result_a_second = pipe.generate(
