@@ -117,6 +117,7 @@ class TestText2VideoPipelineGenerate:
         result = pipe.generate("test prompt", height=32, width=32, num_frames=9, num_inference_steps=2)
         assert result is not None
         assert result.video is not None
+        assert result.audio_sample_rate == 0
 
     def test_audio_guidance_scale_rejected(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
@@ -659,10 +660,6 @@ class TestLTX2PipelineConfig:
         pipe.set_generation_config(config)
         assert pipe.get_generation_config().audio_guidance_scale == pytest.approx(7.0)
 
-    def test_audio_sample_rate(self, video_generation_model):
-        pipe = ov_genai.Text2VideoPipeline(video_generation_model)
-        assert pipe.get_audio_sample_rate() == 24000
-
 
 @pytest.mark.parametrize("video_generation_model", [LTX2_MODEL_ID], indirect=True)
 class TestLTX2PipelineGenerate:
@@ -676,6 +673,7 @@ class TestLTX2PipelineGenerate:
         assert audio_shape[0] == 1
         assert audio_shape[1] == 2
         assert audio_shape[2] > 0
+        assert result.audio_sample_rate == 24000
 
     def test_generate_with_negative_prompt(self, video_generation_model):
         pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")

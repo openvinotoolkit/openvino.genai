@@ -389,10 +389,6 @@ public:
         return cloned;
     }
 
-    size_t get_audio_sample_rate() const override {
-        return m_vocoder->get_config().output_sampling_rate;
-    }
-
     bool do_classifier_free_guidance(float guidance_scale) const {
         return guidance_scale > 1.0;
     }
@@ -619,7 +615,10 @@ public:
         m_perf_metrics.generate_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
 
-        return VideoGenerationResult{video, m_perf_metrics, audio};
+        return VideoGenerationResult{video,
+                                     m_perf_metrics,
+                                     audio,
+                                     static_cast<uint32_t>(m_vocoder->get_config().output_sampling_rate)};
     }
 
     VideoGenerationResult decode(const ov::Tensor& latent) override {
