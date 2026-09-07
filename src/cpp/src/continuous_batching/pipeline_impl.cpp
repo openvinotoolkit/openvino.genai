@@ -441,6 +441,35 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_release_linear_attenti
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_publish_completed_cache_blocks(
+    const Scheduler::Output& scheduler_output) {
+    for (size_t seq_group_id : scheduler_output.m_scheduled_sequence_groups_ids) {
+        const SequenceGroup::Ptr& sequence_group = m_requests[seq_group_id];
+        const size_t processed_after = sequence_group->get_num_processed_tokens();
+        for (const Sequence::Ptr& sequence : sequence_group->get_sequences()) {
+            const uint64_t seq_id = sequence->get_id();
+            size_t processed_before = 0;
+            if (scheduler_output.has_linear_attention_paging_data(seq_id)) {
+                const auto& paging_data = scheduler_output.get_linear_attention_paging_data(seq_id);
+                if (paging_data.is_speculative) {
+                    continue;
+                }
+                processed_before = paging_data.num_processed_tokens_before;
+            } else {
+                if (!_can_publish_kv_only_completed_blocks()) {
+                    continue;
+                }
+                const auto kv_data_it = scheduler_output.m_kv_paged_attention_data.find(seq_id);
+                if (kv_data_it == scheduler_output.m_kv_paged_attention_data.end()) {
+                    continue;
+                }
+                processed_before = kv_data_it->second.num_processed_tokens_before;
+            }
+            m_scheduler->publish_completed_blocks(sequence, processed_before, processed_after);
+        }
+    }
+}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_commit_linear_attention_checkpoint_transactions(
     const Scheduler::Output& scheduler_output) {
     if (!m_scheduler->has_linear_attention_cache()) {
@@ -581,6 +610,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
     }
+
+    _publish_completed_cache_blocks(scheduler_output);
 
     // Promote the committed linear-attention state to the correct physical row for any
     // Commit after sampling rewinds the accepted prefix and before fork/free can release LA rows.
