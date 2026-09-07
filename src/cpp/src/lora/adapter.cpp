@@ -1305,6 +1305,13 @@ struct AdapterControllerImpl {
 
     // The cache owns evaluator output tensors for the controller lifetime. Keep a small
     // LRU bound because every entry contains alpha/A/B outputs for every transformed layer.
+    // Sized from measured LoRA adapters (r=64, BF16): a full adapter's prepared A/B tensors
+    // are ~252 MB, so 512 MiB covers roughly two full adapter configs before eviction kicks
+    // in; 8 entries bounds the config count for setups with many small/lightweight adapters,
+    // where the byte cap alone wouldn't trigger eviction soon enough. These numbers are
+    // model-dependent (rank, hidden size, and layer count all scale adapter size) and were
+    // not tuned per model; if a use case needs a different bound, exposing these as
+    // configurable properties is the natural next step.
     static constexpr size_t prepared_tensor_cache_capacity = 8;
     static constexpr size_t prepared_tensor_cache_max_bytes = 512 * 1024 * 1024;
     std::list<PreparedTensorCacheEntry> prepared_tensor_cache;
@@ -1504,12 +1511,14 @@ struct AdapterControllerImpl {
         set_new_adapter_tensors(infer_request, /*alpha_only=*/true);
     }
 
+    // Checks whether two configs would produce the same prepared tensors, making one reusable for the other.
     bool same_prepared_tensor_cache_key(const AdapterConfig& lhs, const AdapterConfig& rhs) const {
         return lhs.get_mode() == rhs.get_mode() &&
                lhs.get_tensor_name_prefix() == rhs.get_tensor_name_prefix() &&
                lhs.get_adapters_and_alphas() == rhs.get_adapters_and_alphas();
     }
 
+    // Returns the inference precision shared by all execution devices, or nullopt if it can't be determined or differs across devices.
     std::optional<ov::element::Type> get_inference_precision(
         const ov::CompiledModel& compiled_model,
         const std::vector<std::string>& execution_devices) const {
@@ -1549,10 +1558,10 @@ struct AdapterControllerImpl {
         return inference_precision;
     }
 
+    // Detects the LoRA state output type for the current infer request and resets the prepared tensor cache if it changed.
     void prepare(ov::InferRequest& infer_request) {
         std::optional<ov::element::Type> new_output_type;
         const auto compiled_model = infer_request.get_compiled_model();
-        ov::element::Type inference_precision = ov::element::dynamic;
         const auto execution_devices = compiled_model.get_property(ov::execution_devices);
         const bool infer_device_is_gpu =
             !execution_devices.empty() &&
@@ -1560,7 +1569,7 @@ struct AdapterControllerImpl {
                 return device.find("GPU") != std::string::npos;
             });
         if (infer_device_is_gpu) {
-            inference_precision =
+            const ov::element::Type inference_precision =
                 get_inference_precision(compiled_model, execution_devices).value_or(ov::element::dynamic);
             if (inference_precision == ov::element::f16) {
                 new_output_type = ov::element::f16;
@@ -1610,6 +1619,7 @@ struct AdapterControllerImpl {
         return weight_getters;
     }
 
+    // Asserts a prepared tensor has the expected type and a shape compatible with its target state.
     void validate_prepared_tensor(const ov::Tensor& tensor,
                                   const ov::op::util::VariableInfo& variable_info,
                                   const ov::element::Type& expected_type) const {
@@ -1618,6 +1628,7 @@ struct AdapterControllerImpl {
         OPENVINO_ASSERT(variable_info.data_shape.compatible(ov::PartialShape(tensor.get_shape())));
     }
 
+    // Evaluates and validates the alpha/A/B tensors for every LoRA-applicable layer for a given config.
     std::vector<LoRAParts<ov::Tensor>> prepare_config_tensors(
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters) {
@@ -1645,6 +1656,7 @@ struct AdapterControllerImpl {
         return prepared_tensors;
     }
 
+    // Sums the byte size of all alpha/A/B tensors, used to track the prepared tensor cache against its byte limit.
     size_t prepared_tensors_byte_size(const std::vector<LoRAParts<ov::Tensor>>& tensors) const {
         size_t result = 0;
         for (const auto& tensor_parts : tensors) {
@@ -1655,6 +1667,7 @@ struct AdapterControllerImpl {
         return result;
     }
 
+    // Returns cached prepared tensors for a config if present, otherwise prepares and caches them, evicting LRU entries as needed.
     const std::vector<LoRAParts<ov::Tensor>>& get_or_prepare_config_tensors(
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters) {
