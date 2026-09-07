@@ -457,7 +457,15 @@ class TextAgentEvaluator(BaseEvaluator):
 
         messages = record["messages"]
 
-        if not any(self._message_has_content(msg) for msg in messages if isinstance(msg, dict)):
+        history = openvino_genai.ChatHistory()
+        valid_content_messages = 0
+        for msg in messages:
+            if isinstance(msg, dict):
+                history.append(msg)
+                if self._message_has_content(msg):
+                    valid_content_messages += 1
+
+        if valid_content_messages == 0:
             raise ValueError("All messages are empty in JSON record; prompt cannot be empty")
 
         kwargs = {
@@ -479,11 +487,21 @@ class TextAgentEvaluator(BaseEvaluator):
             kwargs["adapters"] = openvino_genai.AdapterConfig()
 
         tools = record.get("tools")
-        prompt = self._build_prompt_text(_tokenizer, messages, tools, chat_template, backend_name="GenAI")
+        if tools is not None:
+            if hasattr(history, "set_tools"):
+                history.set_tools(tools)
+            else:
+                logger.warning(
+                    "ChatHistory.set_tools is not available in current OpenVINO GenAI package; falling back to prompt rendering"
+                )
+                prompt = self._build_prompt_text(_tokenizer, messages, tools, chat_template, backend_name="GenAI")
+                kwargs["apply_chat_template"] = False
+                res = model.generate(prompt, **kwargs)
+                if hasattr(res, "texts") and len(res.texts) > 0:
+                    return res.texts[0]
+                return str(res)
 
-        # Prompt is already rendered with chat template; do not re-apply template in GenAI.
-        kwargs["apply_chat_template"] = False
-        res = model.generate(prompt, **kwargs)
+        res = model.generate(history, **kwargs)
 
         if hasattr(res, "texts") and len(res.texts) > 0:
             return res.texts[0]
