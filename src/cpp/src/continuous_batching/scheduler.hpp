@@ -499,6 +499,30 @@ public:
         m_cache_orchestrator->publish_completed_blocks(sequence, processed_before, processed_after);
     }
 
+    void publish_completed_linear_attention_block(const Sequence::Ptr& sequence, size_t content_length) {
+        m_cache_orchestrator->publish_completed_linear_attention_block(sequence, content_length);
+    }
+
+    void publish_completed_linear_attention_blocks(const Sequence::Ptr& sequence,
+                                                    size_t processed_before,
+                                                    size_t processed_after) {
+        OPENVINO_ASSERT(processed_after >= processed_before,
+                        "Linear-attention block publication cannot precede the scheduled forward pass");
+        const size_t cache_interval =
+            m_cache_orchestrator->get_block_size(CacheType::LINEAR_ATTENTION_CACHE);
+        size_t completed_boundary = (processed_before / cache_interval + 1) * cache_interval;
+        while (completed_boundary <= processed_after) {
+            publish_completed_linear_attention_block(sequence, completed_boundary);
+            completed_boundary += cache_interval;
+        }
+    }
+
+    void publish_completed_blocks(const Sequence::Ptr& sequence,
+                                  size_t processed_before,
+                                  size_t processed_after) {
+        m_cache_orchestrator->publish_completed_blocks(sequence, processed_before, processed_after);
+    }
+
     void release_linear_attention_checkpoints(uint64_t seq_id) {
         m_cache_orchestrator->release_linear_attention_temporary_blocks(seq_id);
     }

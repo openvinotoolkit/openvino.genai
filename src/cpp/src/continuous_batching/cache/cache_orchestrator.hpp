@@ -861,7 +861,32 @@ public:
         }
     }
 
-    void release_linear_attention_temporary_blocks(uint64_t seq_id) noexcept {
+    void publish_completed_linear_attention_block(const Sequence::Ptr& sequence, size_t content_length) {
+        if (!has_linear_attention_cache()) {
+            return;
+        }
+        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->publish_completed_block(sequence, content_length);
+    }
+
+    void publish_completed_blocks(const Sequence::Ptr& sequence,
+                                  size_t processed_before,
+                                  size_t processed_after) {
+        OPENVINO_ASSERT(processed_after >= processed_before,
+                        "Cache block publication cannot precede the scheduled forward pass");
+        for (const auto& [cache_type, block_manager] : m_block_managers) {
+            if (!block_manager->is_prefix_caching_enabled()) {
+                continue;
+            }
+            const size_t block_size = block_manager->get_block_size();
+            size_t completed_boundary = (processed_before / block_size + 1) * block_size;
+            while (completed_boundary <= processed_after) {
+                block_manager->publish_completed_block(sequence, completed_boundary);
+                completed_boundary += block_size;
+            }
+        }
+    }
+
+    void release_linear_attention_temporary_blocks(uint64_t seq_id) {
         if (!has_linear_attention_cache()) {
             return;
         }
