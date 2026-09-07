@@ -1474,7 +1474,7 @@ struct AdapterControllerImpl {
             diff.alpha = true;
         } else {
             for(auto const& adapter: adapters1) {
-                diff.alpha = config1.get_alpha(adapter) != config2.get_alpha(adapter);
+                diff.alpha |= config1.get_alpha(adapter) != config2.get_alpha(adapter);
             }
         }
         return diff;
@@ -1519,10 +1519,13 @@ struct AdapterControllerImpl {
     }
 
     // Checks whether two configs would produce the same prepared tensors, making one reusable for the other.
+    // Prepared A/B tensors don't depend on alpha (only the separately-uploaded alpha tensor does), so the
+    // key compares adapter identity only; keying on get_adapters_and_alphas() would miss the cache on every
+    // alpha-only change and force a full A/B recompute for what should be a cheap alpha update.
     bool same_prepared_tensor_cache_key(const AdapterConfig& lhs, const AdapterConfig& rhs) const {
         return lhs.get_mode() == rhs.get_mode() &&
                lhs.get_tensor_name_prefix() == rhs.get_tensor_name_prefix() &&
-               lhs.get_adapters_and_alphas() == rhs.get_adapters_and_alphas();
+               lhs.get_adapters() == rhs.get_adapters();
     }
 
     // Returns the inference precision shared by all execution devices, or nullopt if it can't be determined or differs across devices.

@@ -210,7 +210,12 @@ class TestLora:
         if not gpu_devices:
             pytest.skip("GPU device not available")
 
-        target_device = gpu_devices[0] if len(gpu_devices) == 1 else gpu_devices[1]
+        # Prefer GPU.1: on Raptor Lake + BMG (discrete) machines, GPU.0 (iGPU) has hit
+        # CL_OUT_OF_RESOURCES on this VLM+LoRA workload (see work_log_20260907_00.md).
+        # "Prefer discrete" isn't reliable across all generations (newer iGPUs are much
+        # stronger), but with exactly this known failure mode, GPU.1 is the safer default
+        # when more than one GPU is enumerated.
+        target_device = gpu_devices[0] if len(gpu_devices) == 1 else "GPU.1"
 
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
@@ -224,7 +229,16 @@ class TestLora:
         config_b = ov_genai.AdapterConfig()
         config_b.add(adapter, 0.5)
 
-        pipe = ov_genai.VLMPipeline(convert_model, target_device, ATTENTION_BACKEND="PA", adapters=config_a)
+        # Force f16 inference precision so this test reliably exercises the f16-specific
+        # prepared-tensor allocation/caching path in AdapterControllerImpl, rather than
+        # depending on the GPU plugin's default (which may resolve to "dynamic").
+        pipe = ov_genai.VLMPipeline(
+            convert_model,
+            target_device,
+            ATTENTION_BACKEND="PA",
+            adapters=config_a,
+            INFERENCE_PRECISION_HINT=ov.Type.f16,
+        )
 
         generation_config = ov_genai.GenerationConfig()
         generation_config.max_new_tokens = 100
