@@ -243,7 +243,15 @@ if Version(transformers_version) < Version("5.0.0"):
     # videochat_flash_qwen is incompatible with transformers >= 5.0.0
     VISUAL_VIDEO_TEXT_MODELS = [
         ("optimum-intel-internal-testing/tiny-random-llava-next-video", "visual-video-text"),
-        ("optimum-intel-internal-testing/tiny-videochat-flash-qwen", "visual-video-text"),
+        pytest.param(
+            "optimum-intel-internal-testing/tiny-videochat-flash-qwen",
+            "visual-video-text",
+            marks=pytest.mark.xfail(
+                sys.platform == "win32",
+                reason="PyAV DLL load failure on Windows. Ticket 178790",
+                run=False,
+            ),
+        ),
     ]
 else:
     VISUAL_VIDEO_TEXT_MODELS = [
