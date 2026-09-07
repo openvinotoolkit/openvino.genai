@@ -52,6 +52,10 @@ protected:
             return (*request_it)->is_waiting();
         }
 
+        bool can_publish_kv_only_completed_blocks() const {
+            return _can_publish_kv_only_completed_blocks();
+        }
+
     };
 
     class MtpPipelineTestInstance : public ContinuousBatchingPipeline::MtpDecodingImpl {
@@ -86,6 +90,10 @@ TEST(SDPerModelsPerfMetrics, DraftOverheadDiagnosticsReturnNanWithoutDenominator
 
     EXPECT_TRUE(std::isnan(metrics.get_draft_processed_to_candidate_ratio()));
     EXPECT_TRUE(std::isnan(metrics.get_draft_to_main_inference_duration_ratio()));
+}
+
+TEST_F(CBForSDTest, DraftPipelineKeepsKvOnlyCompletedBlocksUnpublished) {
+    EXPECT_FALSE(m_pipeline.can_publish_kv_only_completed_blocks());
 }
 
 TEST(MtpDraftUpdatePlan, PreservesAcceptedPrefixAfterPartialRejection) {

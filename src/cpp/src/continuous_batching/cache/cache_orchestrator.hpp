@@ -164,11 +164,20 @@ public:
             [seq_id](const auto& pair) { return pair.second->has_block_table(seq_id); });
     }
 
-    void allocate_tokens(Sequence::Ptr sequence, SequenceGroup::CPtr seq_group, size_t num_tokens, size_t prompt_size = 0) {
+    std::map<CacheType, std::map<size_t, std::list<size_t>>> allocate_tokens(
+        Sequence::Ptr sequence,
+        SequenceGroup::CPtr seq_group,
+        size_t num_tokens,
+        size_t prompt_size = 0) {
+        std::map<CacheType, std::map<size_t, std::list<size_t>>> per_type;
         for (auto& [type, block_mgr] : m_block_managers) {
-            block_mgr->allocate_tokens(sequence, seq_group, num_tokens, prompt_size);
+            auto copy_map = block_mgr->allocate_tokens(sequence, seq_group, num_tokens, prompt_size);
             queue_linear_attention_initial_state_zero(type, *block_mgr, seq_group);
+            if (!copy_map.empty()) {
+                per_type[type] = std::move(copy_map);
+            }
         }
+        return per_type;
     }
 
     size_t available_token_slots(SequenceGroup::CPtr seq_group) const {
@@ -690,6 +699,31 @@ public:
         return promoted_index;
     }
 
+    void publish_completed_linear_attention_block(const Sequence::Ptr& sequence, size_t content_length) {
+        if (!has_linear_attention_cache()) {
+            return;
+        }
+        m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)->publish_completed_block(sequence, content_length);
+    }
+
+    void publish_completed_blocks(const Sequence::Ptr& sequence,
+                                  size_t processed_before,
+                                  size_t processed_after) {
+        OPENVINO_ASSERT(processed_after >= processed_before,
+                        "Cache block publication cannot precede the scheduled forward pass");
+        for (const auto& [cache_type, block_manager] : m_block_managers) {
+            if (!block_manager->is_prefix_caching_enabled()) {
+                continue;
+            }
+            const size_t block_size = block_manager->get_block_size();
+            size_t completed_boundary = (processed_before / block_size + 1) * block_size;
+            while (completed_boundary <= processed_after) {
+                block_manager->publish_completed_block(sequence, completed_boundary);
+                completed_boundary += block_size;
+            }
+        }
+    }
+
     void release_linear_attention_temporary_blocks(uint64_t seq_id) {
         if (!has_linear_attention_cache()) {
             return;
@@ -717,12 +751,18 @@ public:
         return m_linear_attention_pool_blocks_high_water;
     }
 
-    /// @return Physical block index of the sequence's committed linear-attention state row.
-    size_t get_linear_attention_live_block(uint64_t seq_id) const {
+    /// @return Physical block index of the latest represented LA row.
+    size_t get_linear_attention_latest_row(uint64_t seq_id) const {
         OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
-        const BlocksPerLayer& owned = get_linear_attention_block_table(seq_id);
-        OPENVINO_ASSERT(!owned.empty(), "Linear attention block table empty for sequence ", seq_id);
-        return owned.front()->get_index();
+        const auto& block_manager = m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE);
+        return block_manager->get_latest_represented_block(seq_id, 0)->get_index();
+    }
+
+    /// @return Whether the latest represented LA row is shared and therefore read-only.
+    bool is_linear_attention_latest_row_shared(uint64_t seq_id) const {
+        OPENVINO_ASSERT(has_linear_attention_cache(), "No linear attention cache registered");
+        return m_block_managers.at(CacheType::LINEAR_ATTENTION_CACHE)
+            ->is_latest_represented_block_shared(seq_id, 0);
     }
 
     /// @return Number of KV attention layers only (excluding other cache types).

@@ -123,6 +123,9 @@ public:
 protected:
     void finish_request(SequenceGroup::Ptr request);
     void _pull_awaiting_requests() override {};
+    bool _can_publish_kv_only_completed_blocks() const override {
+        return false;
+    }
     bool eagle_mode_enabled = false;
     bool mtp_mode_enabled = false;
 };

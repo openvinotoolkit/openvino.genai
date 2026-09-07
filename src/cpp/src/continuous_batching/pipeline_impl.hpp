@@ -104,6 +104,13 @@ protected:
     /// Reserves LA live + scratch rows for speculative verification.
     void _reserve_linear_attention_scratch();
 
+    /// Publishes canonical completed COW rows after successful non-speculative inference.
+    void _publish_completed_cache_blocks(const Scheduler::Output& scheduler_output);
+
+    virtual bool _can_publish_kv_only_completed_blocks() const {
+        return true;
+    }
+
     /// Commits speculative LA checkpoint transactions after sampling.
     virtual void _commit_linear_attention_checkpoint_transactions(const Scheduler::Output& scheduler_output);
 
