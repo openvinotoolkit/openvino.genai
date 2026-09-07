@@ -87,6 +87,26 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
     return download_and_convert_model(model_id)
 
 
+@pytest.fixture(scope="module")
+def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
+    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    return download_and_convert_model(model_id)
+
+
+@pytest.fixture(scope="module")
+def tinyllama_lora_adapter(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    adapter_dir = tmp_path_factory.mktemp("tinyllama_lora")
+    return Path(
+        hf_hub_download(
+            repo_id="smangrul/tinyllama_lora_sql",
+            filename="adapter_model.safetensors",
+            local_dir=adapter_dir,
+        )
+    )
+
+
 @pytest.mark.transformers_dependent(
     reason="Cases with group beam search fails with optimum-intel 423b423 and transformers>=5.0, CVS-185790"
 )
@@ -1325,16 +1345,18 @@ def test_cb_add_request_accepts_empty_lora_config(model_facebook_opt_125m: OVCon
 
 @pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
 def test_cb_add_request_rejects_non_empty_unsupported_lora_mode(
-    model_facebook_opt_125m: OVConvertedModelSchema, mode_name: str
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
 ):
     """add_request() must reject unsupported modes when LoRA adapters are present."""
     import openvino_genai as ov_genai
 
-    pipe = ContinuousBatchingPipeline(model_facebook_opt_125m.models_path, SchedulerConfig(), "CPU")
+    pipe = ContinuousBatchingPipeline(model_tinyllama_1_1b_chat.models_path, SchedulerConfig(), "CPU")
 
     config = GenerationConfig()
     config.max_new_tokens = 10
-    config.adapters = ov_genai.AdapterConfig(ov_genai.Adapter(), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name))
+    config.adapters = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
 
     with pytest.raises(
         RuntimeError, match="MODE_DYNAMIC, MODE_AUTO, and MODE_STATIC_RANK LoRA adapters are not supported"
@@ -1344,14 +1366,16 @@ def test_cb_add_request_rejects_non_empty_unsupported_lora_mode(
 
 @pytest.mark.parametrize("mode_name", ["MODE_AUTO", "MODE_DYNAMIC", "MODE_STATIC_RANK"])
 def test_cb_add_request_rejects_non_empty_unsupported_pipeline_lora_mode(
-    model_facebook_opt_125m: OVConvertedModelSchema, mode_name: str
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema, tinyllama_lora_adapter: Path, mode_name: str
 ):
     """add_request() must reject unsupported pipeline modes when LoRA adapters are present."""
     import openvino_genai as ov_genai
 
-    adapter_config = ov_genai.AdapterConfig(ov_genai.Adapter(), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name))
+    adapter_config = ov_genai.AdapterConfig(
+        ov_genai.Adapter(tinyllama_lora_adapter), mode=getattr(ov_genai.AdapterConfig.Mode, mode_name)
+    )
     pipe = ContinuousBatchingPipeline(
-        model_facebook_opt_125m.models_path,
+        model_tinyllama_1_1b_chat.models_path,
         SchedulerConfig(),
         "CPU",
         properties={"adapters": adapter_config},
