@@ -403,6 +403,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}\genai
       WHEELS_DIR: ${{ github.workspace }}\genai\wheels
       CCACHE_DIR: ${{ github.workspace }}\ccache
+      CCACHE_MAXSIZE: 1.5Gi
       # pip build isolation compiles from a fresh temp source dir each run; these make ccache hashing path-independent so caches hit across runs.
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_NOHASHDIR: 'true'
@@ -447,9 +448,9 @@ jobs:
         id: ccache-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-test-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}
+            ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-test
           path: ${{ env.CCACHE_DIR }}
 
       - name: Set CI environment
@@ -487,10 +488,11 @@ jobs:
         run: ccache --show-stats
 
       - name: Save ccache
-        if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
+        # TODO: always-save is temporary for cache testing; restore the push/cache-hit guard afterwards.
+        if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-genai-wheel-${{ matrix.python-version }}-test-${{ github.sha }}
           path: ${{ env.CCACHE_DIR }}
 
       - name: Upload GenAI wheel
