@@ -108,16 +108,16 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         result.append(res_data)
 
     keys_to_average = [
-        'generation_time',
-        'latency',
-        'first_latency',
-        'second_avg_latency',
-        'first_infer_latency',
-        'second_infer_avg_latency',
-        'tokenization_time',
-        'detokenization_time',
-        'tts_output_duration',
-        'tts_rtf',
+        "generation_time",
+        "latency",
+        "first_latency",
+        "second_avg_latency",
+        "first_infer_latency",
+        "second_infer_avg_latency",
+        "tokenization_time",
+        "detokenization_time",
+        "tts_output_duration",
+        "tts_rtf",
     ]
     results_averaged = {}
     for key in keys_to_average:

@@ -37,42 +37,42 @@ def output_comments(result, use_case, writer):
         comment_list.append("chat_idx: Index of chats")
     elif use_case == "image_gen":
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: First step latency of unet')
-        comment_list.append('2nd_avg_latency: Other steps latency of unet(exclude first step)')
-        comment_list.append('1st_infer_latency: Same as 1st_latency')
-        comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
-        comment_list.append('prompt_idx: Index of prompts')
-    elif use_case == 'ldm_super_resolution':
+        comment_list.append("1st_latency: First step latency of unet")
+        comment_list.append("2nd_avg_latency: Other steps latency of unet(exclude first step)")
+        comment_list.append("1st_infer_latency: Same as 1st_latency")
+        comment_list.append("2nd_infer_avg_latency: Same as 2nd_avg_latency")
+        comment_list.append("prompt_idx: Index of prompts")
+    elif use_case == "ldm_super_resolution":
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
-        comment_list.append('1st_latency: First step latency of unet')
-        comment_list.append('2nd_avg_latency: Other steps latency of unet(exclude first step)')
-        comment_list.append('1st_infer_latency: Same as 1st_latency')
-        comment_list.append('2nd_infer_avg_latency: Same as 2nd_avg_latency')
-        comment_list.append('prompt_idx: Image Index')
-    comment_list.append('tokenization_time: Tokenizer encode time')
-    comment_list.append('detokenization_time: Tokenizer decode time')
+        comment_list.append("1st_latency: First step latency of unet")
+        comment_list.append("2nd_avg_latency: Other steps latency of unet(exclude first step)")
+        comment_list.append("1st_infer_latency: Same as 1st_latency")
+        comment_list.append("2nd_infer_avg_latency: Same as 2nd_avg_latency")
+        comment_list.append("prompt_idx: Image Index")
+    comment_list.append("tokenization_time: Tokenizer encode time")
+    comment_list.append("detokenization_time: Tokenizer decode time")
     if use_case == "text_to_speech":
-        comment_list.append('tts_output_duration(s): Generated audio duration in seconds (output_size / tts_sample_rate(hz))')
-        comment_list.append('tts_sample_rate(hz): Generated audio sample rate in Hz')
-        comment_list.append('tts_rtf: Real-time factor for TTS (generation_time / tts_output_duration(s))')
-    comment_list.append('pretrain_time: Total time of load model and compile model')
-    comment_list.append('generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)')
-    comment_list.append('iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);'
-                        'iteration=median: median value (exclude warm-up);')
+        comment_list.append("tts_output_duration(s): Generated audio duration in seconds (output_size / tts_sample_rate(hz))")
+        comment_list.append("tts_sample_rate(hz): Generated audio sample rate in Hz")
+        comment_list.append("tts_rtf: Real-time factor for TTS (generation_time / tts_output_duration(s))")
+    comment_list.append("pretrain_time: Total time of load model and compile model")
+    comment_list.append("generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)")
+    comment_list.append("iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);"
+                        "iteration=median: median value (exclude warm-up);")
     comment_list.append(
-        'max_rss_mem/max_sys_mem: max rss/system memory consumption during iteration;'
+        "max_rss_mem/max_sys_mem: max rss/system memory consumption during iteration;"
     )
     comment_list.append(
-        'max_increase_rss_mem/max_increase_sys_mem: max increase of rss/system memory during iteration;'
+        "max_increase_rss_mem/max_increase_sys_mem: max increase of rss/system memory during iteration;"
     )
     comment_list.append(
-        'initial_rss_mem/initial_sys_mem: rss/system memory state at start;'
+        "initial_rss_mem/initial_sys_mem: rss/system memory state at start;"
     )
     comment_list.append(
-        'compile_max_rss_mem/compile_max_sys_mem: max rss/system memory consumption on compilation phase;'
+        "compile_max_rss_mem/compile_max_sys_mem: max rss/system memory consumption on compilation phase;"
     )
     comment_list.append(
-        'compile_max_increase_rss_mem/compile_max_increase_sys_mem: max increase of rss/system memory on compilation phase;'
+        "compile_max_increase_rss_mem/compile_max_increase_sys_mem: max increase of rss/system memory on compilation phase;"
     )
 
     for comments in comment_list:
@@ -244,16 +244,16 @@ def write_result(
             writer = csv.DictWriter(f, header)
             writer.writeheader()
             result = {}
-            result['model'] = model
-            result['framework'] = framework
-            result['device'] = device
-            result['pretrain_time(s)'] = round(pretrain_time, 5)
-            result['precision'] = model_precision
-            result['num_beams'] = model_args['num_beams']
-            result['batch_size'] = model_args['batch_size']
+            result["model"] = model
+            result["framework"] = framework
+            result["device"] = device
+            result["pretrain_time(s)"] = round(pretrain_time, 5)
+            result["precision"] = model_precision
+            result["num_beams"] = model_args["num_beams"]
+            result["batch_size"] = model_args["batch_size"]
             for i in range(len(iter_data_list)):
                 iter_data = iter_data_list[i]
-                pre_time = '' if i > 0 else result['pretrain_time(s)']
+                pre_time = "" if i > 0 else result["pretrain_time(s)"]
                 mem_data_collector = None if i > 0 else memory_data_collector
                 gen_data_to_csv(
                     result,
@@ -270,6 +270,6 @@ def write_result(
 
             for key in res_data.keys():
                 for data in res_data[key]:
-                    gen_data_to_csv(result, data, '', iter_timestamp, None, mem_unit, include_tts_metrics)
+                    gen_data_to_csv(result, data, "", iter_timestamp, None, mem_unit, include_tts_metrics)
                     writer.writerow(result)
             output_comments(result, model_args["use_case"].task, writer)
