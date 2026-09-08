@@ -347,10 +347,10 @@ std::tuple<std::shared_ptr<ov::Node>, int64_t> find_llm_matmul(const std::shared
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(add->input_value(0).get_node_shared_ptr());
         } else if (auto transpose = ov::as_type_ptr<ov::op::v1::Transpose>(last_node)) {
             auto order = ov::as_type_ptr<ov::op::v0::Constant>(transpose->input_value(1).get_node_shared_ptr());
-            OPENVINO_ASSERT(order, "Transpose before the LLM head must have a constant order.");
+            OPENVINO_ASSERT(order, "Transpose after the LLM head must have a constant order.");
             const auto order_values = order->get_axis_vector_val();
             OPENVINO_ASSERT(static_cast<size_t>(slice_gather_dim) < order_values.size(),
-                            "Transpose before the LLM head permutes ", order_values.size(),
+                            "Transpose after the LLM head permutes ", order_values.size(),
                             " axes, which does not cover axis ", slice_gather_dim, ".");
             matmul = ov::as_type_ptr<ov::op::v0::MatMul>(transpose->input_value(0).get_node_shared_ptr());
             slice_gather_dim = order_values[slice_gather_dim];
