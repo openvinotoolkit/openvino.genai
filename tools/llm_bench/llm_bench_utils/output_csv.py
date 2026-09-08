@@ -52,22 +52,24 @@ def output_comments(result, use_case, writer):
     comment_list.append("tokenization_time: Tokenizer encode time")
     comment_list.append("detokenization_time: Tokenizer decode time")
     if use_case == "text_to_speech":
-        comment_list.append("tts_output_duration(s): Generated audio duration in seconds (output_size / tts_sample_rate(hz))")
+        comment_list.append(
+            "tts_output_duration(s): Generated audio duration in seconds (output_size / tts_sample_rate(hz))"
+        )
         comment_list.append("tts_sample_rate(hz): Generated audio sample rate in Hz")
         comment_list.append("tts_rtf: Real-time factor for TTS (generation_time / tts_output_duration(s))")
     comment_list.append("pretrain_time: Total time of load model and compile model")
-    comment_list.append("generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)")
-    comment_list.append("iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);"
-                        "iteration=median: median value (exclude warm-up);")
     comment_list.append(
-        "max_rss_mem/max_sys_mem: max rss/system memory consumption during iteration;"
+        "generation_time: Time for one interaction. (e.g. The duration of  answering one question or generating one picture)"
     )
+    comment_list.append(
+        "iteration=0: warm-up; iteration=avg: average (exclude warm-up);iteration=mini: minimum value (exclude warm-up);"
+        "iteration=median: median value (exclude warm-up);"
+    )
+    comment_list.append("max_rss_mem/max_sys_mem: max rss/system memory consumption during iteration;")
     comment_list.append(
         "max_increase_rss_mem/max_increase_sys_mem: max increase of rss/system memory during iteration;"
     )
-    comment_list.append(
-        "initial_rss_mem/initial_sys_mem: rss/system memory state at start;"
-    )
+    comment_list.append("initial_rss_mem/initial_sys_mem: rss/system memory state at start;")
     comment_list.append(
         "compile_max_rss_mem/compile_max_sys_mem: max rss/system memory consumption on compilation phase;"
     )
@@ -91,10 +93,21 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
         for iter_data in iter_data_list:
             if iter_data['prompt_idx'] == prompt_idx and iter_data['iteration'] > 0:
                 same_prompt_datas.append(iter_data)
-        key_word = ['input_size', 'infer_count', 'generation_time', 'output_size', 'latency', 'first_token_latency', 'other_tokens_avg_latency',
-                    'first_token_infer_latency', 'other_tokens_infer_avg_latency', 'tokenization_time', 'detokenization_time']
+        key_word = [
+            "input_size",
+            "infer_count",
+            "generation_time",
+            "output_size",
+            "latency",
+            "first_token_latency",
+            "other_tokens_avg_latency",
+            "first_token_infer_latency",
+            "other_tokens_infer_avg_latency",
+            "tokenization_time",
+            "detokenization_time",
+        ]
         if include_tts_metrics:
-            key_word.extend(['tts_output_duration_s', 'tts_sample_rate', 'tts_rtf'])
+            key_word.extend(["tts_output_duration_s", "tts_sample_rate", "tts_rtf"])
         if len(same_prompt_datas) > 0:
             iters_idx = ['avg', 'mini', 'median']
             result[prompt_idx] = [copy.deepcopy(same_prompt_datas[0]) for i in range(3)]
@@ -103,7 +116,7 @@ def output_avg_min_median(iter_data_list, include_tts_metrics=False):
             for key in key_word:
                 values = []
                 for prompt in same_prompt_datas:
-                    if key in prompt and prompt[key] != '':
+                    if key in prompt and prompt[key] != "":
                         values.append(prompt[key])
                 if len(values) > 0:
                     result[prompt_idx][0][key] = np.mean(values)
@@ -167,12 +180,14 @@ def gen_data_to_csv(
     result['prompt_idx'] = iter_data['prompt_idx']
     chat_idx = iter_data.get("chat_idx", "")
     result["chat_idx"] = chat_idx
-    result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
-    result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
+    result["tokenization_time"] = round(token_time, 5) if token_time != "" else token_time
+    result["detokenization_time"] = round(detoken_time, 5) if detoken_time != "" else detoken_time
     if include_tts_metrics:
-        result['tts_output_duration(s)'] = round(tts_output_duration, 5) if tts_output_duration != '' else tts_output_duration
-        result['tts_sample_rate(hz)'] = int(tts_sample_rate) if tts_sample_rate != '' else tts_sample_rate
-        result['tts_rtf'] = round(tts_rtf, 5) if tts_rtf != '' else tts_rtf
+        result["tts_output_duration(s)"] = (
+            round(tts_output_duration, 5) if tts_output_duration != "" else tts_output_duration
+        )
+        result["tts_sample_rate(hz)"] = int(tts_sample_rate) if tts_sample_rate != "" else tts_sample_rate
+        result["tts_rtf"] = round(tts_rtf, 5) if tts_rtf != "" else tts_rtf
     input_idx = chat_idx if chat_idx != "" else iter_data["prompt_idx"]
     result["start"], result["end"] = output_json.get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
     result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
@@ -232,11 +247,13 @@ def write_result(
         "end",
     ]
     if include_tts_metrics:
-        header.extend([
-            "tts_output_duration(s)",
-            "tts_sample_rate(hz)",
-            "tts_rtf",
-        ])
+        header.extend(
+            [
+                "tts_output_duration(s)",
+                "tts_sample_rate(hz)",
+                "tts_rtf",
+            ]
+        )
     out_file = Path(report_file)
 
     if len(iter_data_list) > 0:
