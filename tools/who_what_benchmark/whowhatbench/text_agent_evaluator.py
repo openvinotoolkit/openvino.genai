@@ -527,6 +527,16 @@ class TextAgentEvaluator(BaseEvaluator):
                         "ChatHistory.set_extra_context is not available in current OpenVINO GenAI package; template extra context was not applied"
                     )
 
+        # Keep legacy prompt-path behavior when template is not explicitly overridden.
+        # This preserves HF/GenAI output alignment in text-agent E2E tests.
+        if not self.chat_template_source:
+            prompt = self._build_prompt_text(_tokenizer, messages, tools, chat_template, backend_name="GenAI")
+            kwargs["apply_chat_template"] = False
+            res = model.generate(prompt, **kwargs)
+            if hasattr(res, "texts") and len(res.texts) > 0:
+                return res.texts[0]
+            return str(res)
+
         if tools is not None:
             if hasattr(history, "set_tools"):
                 history.set_tools(tools)
