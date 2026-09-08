@@ -488,29 +488,20 @@ class TextAgentEvaluator(BaseEvaluator):
 
         tools = record.get("tools")
 
-        # Keep legacy prompt-path behavior when template is not explicitly overridden.
-        # This preserves HF/GenAI output alignment in text-agent E2E tests.
-        if not self.chat_template_source:
-            prompt = self._build_prompt_text(_tokenizer, messages, tools, chat_template, backend_name="GenAI")
-            kwargs["apply_chat_template"] = False
-            res = model.generate(prompt, **kwargs)
-            if hasattr(res, "texts") and len(res.texts) > 0:
-                return res.texts[0]
-            return str(res)
+        genai_tokenizer = getattr(model, "tokenizer", None)
+        if genai_tokenizer is None and hasattr(model, "get_tokenizer"):
+            try:
+                genai_tokenizer = model.get_tokenizer()
+            except Exception:
+                genai_tokenizer = None
 
-        if chat_template and self.chat_template_source:
-            genai_tokenizer = getattr(model, "tokenizer", None)
-            if genai_tokenizer is None and hasattr(model, "get_tokenizer"):
-                try:
-                    genai_tokenizer = model.get_tokenizer()
-                except Exception:
-                    genai_tokenizer = None
+        model_chat_template = getattr(genai_tokenizer, "chat_template", None) if genai_tokenizer is not None else None
 
-            template_set_on_genai = False
+        if chat_template:
             if genai_tokenizer is not None and hasattr(genai_tokenizer, "set_chat_template"):
                 try:
                     genai_tokenizer.set_chat_template(chat_template)
-                    template_set_on_genai = True
+                    model_chat_template = chat_template
                 except Exception as exc:
                     logger.warning(
                         "Failed to set custom chat template on GenAI tokenizer; tokenizer default template will be used. Error: %s",
@@ -521,20 +512,20 @@ class TextAgentEvaluator(BaseEvaluator):
                     "Custom chat template was provided but GenAI tokenizer does not support set_chat_template; tokenizer default template will be used"
                 )
 
-            if template_set_on_genai:
-                extra_context = {}
-                if "enable_thinking" in chat_template:
-                    extra_context["enable_thinking"] = False
-                if "reasoning_effort" in chat_template:
-                    extra_context["reasoning_effort"] = "low"
+        if model_chat_template:
+            extra_context = {}
+            if "enable_thinking" in model_chat_template:
+                extra_context["enable_thinking"] = False
+            if "reasoning_effort" in model_chat_template:
+                extra_context["reasoning_effort"] = "low"
 
-                if extra_context:
-                    if hasattr(history, "set_extra_context"):
-                        history.set_extra_context(extra_context)
-                    else:
-                        logger.warning(
-                            "ChatHistory.set_extra_context is not available in current OpenVINO GenAI package; template extra context was not applied"
-                        )
+            if extra_context:
+                if hasattr(history, "set_extra_context"):
+                    history.set_extra_context(extra_context)
+                else:
+                    logger.warning(
+                        "ChatHistory.set_extra_context is not available in current OpenVINO GenAI package; template extra context was not applied"
+                    )
 
         if tools is not None:
             if hasattr(history, "set_tools"):
