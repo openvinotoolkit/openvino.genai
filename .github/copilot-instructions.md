@@ -50,12 +50,13 @@ Follow these rules when writing, modifying, or reviewing code in this repository
 22. Don't introduce try/catch blocks just to be safe. Only catch if an exception is expected.
 23. Avoid reporting the same algorithmic branch choice multiple times.
 24. Avoid ambiguous words like "some" or "capable".
+25. It's fine to call `tensor.data<T>()` without preceding assertion on `tensor.get_element_type()` because `data<>()` performs the necessary type check internally.
 
 ## Code Review Instructions for PRs
 
 When performing a code review on a Pull Request, additionally follow this protocol:
 
-1. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review.
+1. PR description must be aligned with [./pull_request_template.md](./pull_request_template.md) and its checklist must be filled out. If not, request the author to update the description and checklist before proceeding with the review. Individual items can be marked as N/A in the checklist.
 2. If the documentation is updated, PR description MUST include a link to the corresponding documentation deployed on the fork.
 3. PR description must be up to date and include all information about the changes.
 4. Include C++ Core Guidelines references in review comments.
@@ -65,3 +66,4 @@ When performing a code review on a Pull Request, additionally follow this protoc
 8. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
 9. Helper scripts shouldn't be committed.
 10. ABI stability isn't required.
+11. If a PR aims to improve accuracy or performance, the PR description must include corresponding metrics. Performance-oriented PRs require both accuracy and performance metrics.

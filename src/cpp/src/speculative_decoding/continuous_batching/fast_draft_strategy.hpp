@@ -158,6 +158,7 @@ std::vector<EncodedGenerationResult> generate_common(
         self->perf_metrics().raw_metrics.generate_durations.clear();
         self->perf_metrics().raw_metrics.generate_durations.emplace_back(generate_duration_us);
         self->perf_metrics().num_input_tokens = request->get_prompt_len();
+        self->perf_metrics().num_prefix_cache_hit_tokens = request->get_num_prefix_cache_hit_tokens();
         self->perf_metrics().evaluate_statistics(t_start);
 
         result.perf_metrics = self->perf_metrics();
