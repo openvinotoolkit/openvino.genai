@@ -1607,14 +1607,30 @@ struct AdapterControllerImpl {
         return state_output_type_override.value_or(variable_info.data_type);
     }
 
-    LoRAParts<ov::Tensor> allocate_lora_state_tensors(const LoRAVarIDs& lora_var_ids) const {
+    // Collapses the LoRA rank dimension so the tensor keeps its rank and remaining dimensions but
+    // holds no data. Used for the A/B outputs of an alpha-only update, which never reads them.
+    ov::Shape rank_collapsed_shape(const ov::PartialShape& data_shape, size_t rank_axis) const {
+        auto shape = dynamic_to_static(data_shape);
+        OPENVINO_ASSERT(rank_axis < shape.size());
+        shape[rank_axis] = 0;
+        return shape;
+    }
+
+    // An alpha-only update writes just the alpha state, so the A/B outputs are allocated empty
+    // instead of at full size: those allocations are the bulk of a prepared config (hundreds of MB
+    // for large adapters) and would otherwise negate the point of the alpha-only fast path. They
+    // are still allocated, rather than left default-constructed, because downstream code reads
+    // their element type and non-rank dimensions (see empty_adapters and get_lora_signature).
+    LoRAParts<ov::Tensor> allocate_lora_state_tensors(const LoRAVarIDs& lora_var_ids, bool alpha_only = false) const {
         return {
             ov::Tensor(state_output_type(lora_var_ids.alpha),
                        dynamic_to_static(lora_var_ids.alpha.data_shape)),
             ov::Tensor(state_output_type(lora_var_ids.A),
-                       dynamic_to_static(lora_var_ids.A.data_shape)),
+                       alpha_only ? rank_collapsed_shape(lora_var_ids.A.data_shape, 0)
+                                  : dynamic_to_static(lora_var_ids.A.data_shape)),
             ov::Tensor(state_output_type(lora_var_ids.B),
-                       dynamic_to_static(lora_var_ids.B.data_shape))
+                       alpha_only ? rank_collapsed_shape(lora_var_ids.B.data_shape, 1)
+                                  : dynamic_to_static(lora_var_ids.B.data_shape))
         };
     }
 
@@ -1649,7 +1665,7 @@ struct AdapterControllerImpl {
         std::vector<LoRAParts<ov::Tensor>> prepared_tensors;
         prepared_tensors.reserve(variable_ids.size());
         for (const auto& lora_var_ids : variable_ids) {
-            auto output_tensors = allocate_lora_state_tensors(lora_var_ids.second);
+            auto output_tensors = allocate_lora_state_tensors(lora_var_ids.second, alpha_only);
             auto tensors = prepare_lora_tensors(lora_var_ids.first,
                                                 weight_getters,
                                                 output_tensors,
@@ -1697,30 +1713,25 @@ struct AdapterControllerImpl {
         const AdapterConfig& config,
         const std::vector<LoRAWeightGetter>& weight_getters) {
         for (auto it = prepared_tensor_cache.begin(); it != prepared_tensor_cache.end(); ++it) {
-            if (same_prepared_tensor_cache_key(it->config, config)) {
-                prepared_tensor_cache.splice(prepared_tensor_cache.begin(), prepared_tensor_cache, it);
-                auto& entry = prepared_tensor_cache.front();
-                // The cache key covers adapter identity only, because A/B don't depend on alpha.
-                // The entry's alpha tensors, however, were evaluated under the alphas of the config
-                // that created it, so a hit from a config that differs only by alpha would otherwise
-                // apply a stale alpha. Re-evaluate just the alpha tensors in that case and keep the
-                // cached A/B: alpha is a small broadcast, while A/B are the expensive part.
-                if (!same_alphas(entry.config, config)) {
-                    auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
-                    OPENVINO_ASSERT(fresh_alphas.size() == entry.tensors.size());
-                    for (size_t i = 0; i < entry.tensors.size(); ++i) {
-                        entry.tensors[i].alpha = std::move(fresh_alphas[i].alpha);
-                    }
-                    entry.config = config;
-                    // Alpha shapes are alpha-independent today, but empty_adapters() can resize them,
-                    // so re-measure instead of assuming the entry's footprint is unchanged.
-                    const auto refreshed_byte_size = prepared_tensors_byte_size(entry.tensors);
-                    prepared_tensor_cache_byte_size -= entry.byte_size;
-                    prepared_tensor_cache_byte_size += refreshed_byte_size;
-                    entry.byte_size = refreshed_byte_size;
-                }
-                return entry.tensors;
+            if (!same_prepared_tensor_cache_key(it->config, config)) {
+                continue;
             }
+            // The cache key covers adapter identity only, because A/B don't depend on alpha. The
+            // entry's alpha tensors, however, were evaluated under the alphas of the config that
+            // created it, so a hit from a config that differs only by alpha would otherwise apply a
+            // stale alpha. Re-evaluate just the alpha tensors in that case and keep the cached A/B:
+            // alpha is a small broadcast, while A/B are the expensive part. Alpha tensors keep the
+            // shape and type declared by the variable, so the entry's byte size is unaffected.
+            if (!same_alphas(it->config, config)) {
+                auto fresh_alphas = prepare_config_tensors(config, weight_getters, /*alpha_only=*/true);
+                OPENVINO_ASSERT(fresh_alphas.size() == it->tensors.size());
+                for (size_t i = 0; i < it->tensors.size(); ++i) {
+                    it->tensors[i].alpha = std::move(fresh_alphas[i].alpha);
+                }
+                it->config = config;
+            }
+            prepared_tensor_cache.splice(prepared_tensor_cache.begin(), prepared_tensor_cache, it);
+            return prepared_tensor_cache.front().tensors;
         }
 
         auto tensors = prepare_config_tensors(config, weight_getters);
@@ -1896,8 +1907,11 @@ struct AdapterControllerImpl {
         return tensor ? get_tensor_signature(tensor.get_element_type(), overridden_shape) : Signature();
     }
 
-    Signature get_lora_signature(const std::vector<LoRAWeight>& inputs, const LoRAParts<ov::Tensor>& outputs) {
-        Signature signature;
+    Signature get_lora_signature(const std::vector<LoRAWeight>& inputs, const LoRAParts<ov::Tensor>& outputs, bool alpha_only) {
+        // The alpha-only model has a different arity than the full one (N parameters and a single
+        // result instead of 3N and 3), so it needs its own signature. Output tensors are allocated
+        // for alpha/A/B regardless of alpha_only, so they cannot tell the two models apart.
+        Signature signature = alpha_only ? "(alpha_only)" : Signature();
         for(const auto& input: inputs) {
             signature +=
                 std::string("(") +
@@ -1994,7 +2008,7 @@ struct AdapterControllerImpl {
     }
 
     LoRAParts<ov::Tensor> concat_adapters(const std::vector<LoRAWeight>& inputs, LoRAParts<ov::Tensor>& outputs, bool alpha_only) {
-        auto signature = get_lora_signature(inputs, outputs);
+        auto signature = get_lora_signature(inputs, outputs, alpha_only);
         size_t inputs_per_adapter = alpha_only ? 1 : 3;
         if(!lora_state_evaluators.exist(signature)) {
             // Prepare LoRA state evaluate model

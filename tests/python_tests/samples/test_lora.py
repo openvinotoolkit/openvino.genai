@@ -210,12 +210,10 @@ class TestLora:
         if not gpu_devices:
             pytest.skip("GPU device not available")
 
-        # Prefer GPU.1: on Raptor Lake + BMG (discrete) machines, GPU.0 (iGPU) has hit
-        # CL_OUT_OF_RESOURCES on this VLM+LoRA workload (see work_log_20260907_00.md).
-        # "Prefer discrete" isn't reliable across all generations (newer iGPUs are much
-        # stronger), but with exactly this known failure mode, GPU.1 is the safer default
-        # when more than one GPU is enumerated.
-        target_device = gpu_devices[0] if len(gpu_devices) == 1 else "GPU.1"
+        # Prefer the second enumerated GPU: the first (iGPU) has hit CL_OUT_OF_RESOURCES
+        # on this VLM+LoRA workload on some machines. Index into the discovered list
+        # instead of hardcoding "GPU.1", which isn't guaranteed by every driver.
+        target_device = gpu_devices[0] if len(gpu_devices) == 1 else gpu_devices[1]
 
         adapter_path, image_path = download_test_content
         assert os.path.exists(image_path), f"Missing test image: {image_path}"
@@ -226,8 +224,12 @@ class TestLora:
         adapter = ov_genai.Adapter(adapter_path)
         config_a = ov_genai.AdapterConfig()
         config_a.add(adapter, 2.0)
+        # Alpha 0.0 disables the adapter's contribution entirely, so config B is guaranteed to differ
+        # from config A observably. Nearby alphas (e.g. 0.5 vs 2.0) can produce identical greedy output
+        # on this model, which would make the "B differs from A" assertion below flaky rather than
+        # meaningful.
         config_b = ov_genai.AdapterConfig()
-        config_b.add(adapter, 0.5)
+        config_b.add(adapter, 0.0)
 
         # Force f16 inference precision so this test reliably exercises the f16-specific
         # prepared-tensor allocation/caching path in AdapterControllerImpl, rather than
@@ -254,7 +256,7 @@ class TestLora:
         # Asserting the outputs differ is what makes the A -> B -> A check below meaningful: without
         # it, ignoring alpha entirely would still satisfy every other assertion in this test.
         assert result_b.texts[0] != result_a_first.texts[0], (
-            "Config B (alpha=0.5) should not reproduce config A (alpha=2.0) output; "
+            "Config B (alpha=0.0) should not reproduce config A (alpha=2.0) output; "
             "identical output suggests the alpha update was ignored"
         )
 
