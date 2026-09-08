@@ -22,6 +22,7 @@ enum class GenerationStatus {
     IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
     CANCEL = 3, // Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
     STOP = 4, // Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+    FAILED = 5, // Status set after an unexpected request failure. Queued outputs remain readable before read() rethrows the original failure.
 };
 
 enum class GenerationFinishReason {
@@ -120,8 +121,10 @@ public:
     GenerationHandleImpl(const GenerationHandleImpl&) = delete;
     GenerationHandleImpl& operator=(const GenerationHandleImpl&) = delete;
 
+    /** Returns the current status without propagating a stored generation failure. */
     GenerationStatus get_status();
 
+    /** Returns true when output or a stored failure is ready to be observed. */
     bool can_read();
 
     bool is_stopped();
@@ -132,9 +135,9 @@ public:
 
     void cancel();
 
-    // Reads result of a generation for single iteration
+    /** Reads one queued iteration, or rethrows the original failure after queued output is drained. */
     GenerationOutputs read();
-    // Reads all generated tokens for all sequences
+    /** Reads all output through normal completion, or drains queued output and rethrows the original failure. */
     std::vector<GenerationOutput> read_all();
 
     PerfMetrics get_perf_metrics() const;

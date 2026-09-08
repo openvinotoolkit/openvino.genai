@@ -153,6 +153,7 @@ auto generation_result_docstring = R"(
         IGNORED = 2 - Status set when generation run into out-of-memory condition and could not be continued.
         CANCEL = 3 - Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
         STOP = 4 - Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
+        FAILED = 5 - Status set after an unexpected request failure. Queued outputs remain readable before read() rethrows the original failure.
     perf_metrics: Performance metrics for each generation result.
     extended_perf_metrics: performance pipeline specifics metrics,
                            applicable for pipelines with implemented extended metrics: SpeculativeDecoding Pipeline.
@@ -283,12 +284,19 @@ py::object _call_cb_vlm_generate_chat_history(
 } // namespace
 
 void init_continuous_batching_pipeline(py::module_& m) {
-    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus")
+    py::enum_<ov::genai::GenerationStatus>(m, "GenerationStatus", R"(
+        Generation request state.
+
+        FAILED preserves the original exception for read() and read_all(). Output queued before
+        failure is read first. Failure overrides a pending STOP or CANCEL, while FINISHED and
+        IGNORED are final and cannot be replaced by a later failure.
+    )")
         .value("RUNNING", ov::genai::GenerationStatus::RUNNING)
         .value("FINISHED", ov::genai::GenerationStatus::FINISHED)
         .value("IGNORED", ov::genai::GenerationStatus::IGNORED)
         .value("CANCEL", ov::genai::GenerationStatus::CANCEL)
-        .value("STOP", ov::genai::GenerationStatus::STOP);
+        .value("STOP", ov::genai::GenerationStatus::STOP)
+        .value("FAILED", ov::genai::GenerationStatus::FAILED);
 
     py::class_<GenerationResult>(m, "GenerationResult", generation_result_docstring)
         .def(py::init<>())
@@ -332,12 +340,18 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def_readwrite("finish_reason", &GenerationOutput::finish_reason);
 
     auto generation_handle = py::class_<GenerationHandleImpl, std::shared_ptr<GenerationHandleImpl>>(m, "GenerationHandle")
-        .def("get_status", &GenerationHandleImpl::get_status)
-        .def("can_read", &GenerationHandleImpl::can_read)
+           .def("get_status", &GenerationHandleImpl::get_status,
+               "Return the current status without raising a stored generation failure.")
+           .def("can_read", &GenerationHandleImpl::can_read,
+               "Return whether output or a stored failure is ready to be read.")
         .def("stop", &GenerationHandleImpl::stop, py::arg_v("finish_reason", GenerationFinishReason::STOP, "GenerationFinishReason.STOP"))
         .def("cancel", &GenerationHandleImpl::cancel)
-        .def("read", &GenerationHandleImpl::read)
-        .def("read_all", &GenerationHandleImpl::read_all)
+           .def("read", &GenerationHandleImpl::read,
+               "Read one queued iteration, or raise the original failure after queued output is drained.",
+               py::call_guard<py::gil_scoped_release>())
+           .def("read_all", &GenerationHandleImpl::read_all,
+               "Read through normal completion, or drain queued output and raise the original failure.",
+               py::call_guard<py::gil_scoped_release>())
         .def("get_perf_metrics", &GenerationHandleImpl::get_perf_metrics)
         .def("get_vlm_perf_metrics", &GenerationHandleImpl::get_vlm_perf_metrics);
 

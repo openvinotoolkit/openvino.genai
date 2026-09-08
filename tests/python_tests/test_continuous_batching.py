@@ -6,6 +6,8 @@ import gc
 import pytest
 import math
 import sys
+import threading
+import time
 import numpy as np
 
 from pathlib import Path
@@ -13,7 +15,16 @@ from shutil import rmtree
 from optimum.intel.utils.import_utils import is_transformers_version
 
 import openvino as ov
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
+from openvino_genai import (
+    ContinuousBatchingPipeline,
+    LLMPipeline,
+    GenerationConfig,
+    SchedulerConfig,
+    draft_model,
+    GenerationFinishReason,
+    GenerationStatus,
+    ChatHistory,
+)
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -64,6 +75,15 @@ COMMON_QUESTIONS_SHORT = [
 ]
 
 
+def test_generation_status_values_are_stable():
+    assert GenerationStatus.RUNNING.value == 0
+    assert GenerationStatus.FINISHED.value == 1
+    assert GenerationStatus.IGNORED.value == 2
+    assert GenerationStatus.CANCEL.value == 3
+    assert GenerationStatus.STOP.value == 4
+    assert GenerationStatus.FAILED.value == 5
+
+
 def read_models_list(file_name: str) -> list[str]:
     models = []
     with open(file_name, encoding="utf-8") as f:
@@ -84,6 +104,68 @@ def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
 def model_facebook_opt_125m() -> OVConvertedModelSchema:
     model_id : str = "facebook/opt-125m"
     return download_and_convert_model(model_id)
+
+
+@pytest.mark.parametrize(
+    "read_method, expected_output",
+    [("read", {}), ("read_all", [])],
+)
+def test_generation_handle_blocked_read_releases_gil_and_stop_unblocks(
+    model_facebook_opt_125m: OVConvertedModelSchema,
+    read_method: str,
+    expected_output,
+):
+    cb_pipe = create_ov_cb_pipeline(
+        model_facebook_opt_125m.models_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+    )
+    handle = cb_pipe.add_request(0, "The Sun is", generation_config=GenerationConfig(max_new_tokens=1))
+    reader_started = threading.Event()
+    reader_output = []
+    reader_error = []
+
+    def read_output():
+        reader_started.set()
+        try:
+            reader_output.append(getattr(handle, read_method)())
+        except RuntimeError as error:
+            reader_error.append(error)
+
+    reader = threading.Thread(target=read_output)
+    reader.start()
+    assert reader_started.wait(timeout=5)
+    time.sleep(0.05)
+
+    handle.stop()
+    reader.join(timeout=5)
+
+    assert not reader.is_alive()
+    assert handle.get_status() == GenerationStatus.STOP
+    assert reader_output == [expected_output]
+    assert reader_error == []
+
+
+def test_generation_handle_echo_only_publishes_output_and_finished_status(
+    model_facebook_opt_125m: OVConvertedModelSchema,
+):
+    cb_pipe = create_ov_cb_pipeline(
+        model_facebook_opt_125m.models_path,
+        pipeline_type=PipelineType.CONTINUOUS_BATCHING,
+    )
+    handle = cb_pipe.add_request(
+        0,
+        "The Sun is",
+        generation_config=GenerationConfig(max_new_tokens=0, echo=True),
+    )
+
+    while cb_pipe.has_non_finished_requests():
+        cb_pipe.step()
+
+    outputs = handle.read_all()
+
+    assert handle.get_status() == GenerationStatus.FINISHED
+    assert len(outputs) == 1
+    assert outputs[0].generated_ids
 
 
 @pytest.mark.transformers_dependent(

@@ -964,7 +964,11 @@ public:
         m_generation_stream->push({});
     }
 
-    void push_finished_hidden_states() {
+    void fail_generation(std::exception_ptr error) {
+        m_generation_stream->fail(std::move(error));
+    }
+
+    void push_finished_hidden_states(GenerationStatus terminal_status = GenerationStatus::RUNNING) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             if (!sequence->has_finished()) {
@@ -980,10 +984,14 @@ public:
             output.intermediate_hidden_states = hidden_states;
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        m_generation_stream->push(std::move(outputs));
+        if (terminal_status == GenerationStatus::RUNNING) {
+            m_generation_stream->push(std::move(outputs));
+        } else {
+            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
+        }
     }
 
-    void push_outputs() {
+    void push_outputs(GenerationStatus terminal_status = GenerationStatus::RUNNING) {
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
@@ -998,10 +1006,14 @@ public:
             output.intermediate_hidden_states = sequence->get_all_intermediate_hidden_states();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        m_generation_stream->push(std::move(outputs));
+        if (terminal_status == GenerationStatus::RUNNING) {
+            m_generation_stream->push(std::move(outputs));
+        } else {
+            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
+        }
     }
 
-    void push_partial_outputs(size_t token_cnt = 1) {
+    void push_partial_outputs(size_t token_cnt = 1, GenerationStatus terminal_status = GenerationStatus::RUNNING) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
@@ -1018,34 +1030,39 @@ public:
             outputs.emplace(sequence->get_grouped_id(), output);
         }
         m_has_echoed = true;
-        m_generation_stream->push(std::move(outputs));
+        if (terminal_status == GenerationStatus::RUNNING) {
+            m_generation_stream->push(std::move(outputs));
+        } else {
+            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
+        }
     }
 
     void notify_handle() {
+        GenerationStatus terminal_status = GenerationStatus::RUNNING;
         if (out_of_memory()) {
-            set_generation_status(GenerationStatus::IGNORED);
+            terminal_status = GenerationStatus::IGNORED;
         } else if (has_finished()) {
-            set_generation_status(GenerationStatus::FINISHED);
+            terminal_status = GenerationStatus::FINISHED;
         }
         // For beam search streaming is not available, so we notify only upon finishing
         if (m_sampling_params.is_beam_search()) {
-            if (has_finished()) {
-                push_outputs();
+            if (terminal_status != GenerationStatus::RUNNING) {
+                push_outputs(terminal_status);
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
             // (after stop string is detected its tokens are already sent)
             if (num_total_seqs() == 1) {
                 const auto generated_len = m_sequences.front()->get_generated_len();
-                if (has_finished()) {
+                if (terminal_status != GenerationStatus::RUNNING) {
                     m_stream_window_size = 0;
                 }
                 // push empty output in case we won't stream generation res
                 if (generated_len <= (m_num_streamed_tokens + m_stream_window_size)) {
-                    if (has_finished()) {
+                    if (terminal_status != GenerationStatus::RUNNING) {
                         // All tokens already streamed; still deliver accumulated hidden states
                         // (falls back to an empty terminator push when there are none).
-                        push_finished_hidden_states();
+                        push_finished_hidden_states(terminal_status);
                     }
                     return;
                 }
@@ -1055,10 +1072,14 @@ public:
                 }
                 OPENVINO_ASSERT(generated_len >= (m_num_streamed_tokens + m_stream_window_size));
                 size_t num_output_token_to_push = generated_len - m_num_streamed_tokens - m_stream_window_size;
-                push_partial_outputs(num_output_token_to_push);
+                if (terminal_status != GenerationStatus::RUNNING) {
+                    push_partial_outputs(num_output_token_to_push, terminal_status);
+                } else {
+                    push_partial_outputs(num_output_token_to_push);
+                }
                 m_num_streamed_tokens += (num_output_token_to_push);
-            } else if (has_finished()) {
-                push_outputs();
+            } else if (terminal_status != GenerationStatus::RUNNING) {
+                push_outputs(terminal_status);
             }
         }
     }
@@ -1080,12 +1101,15 @@ public:
 
         if (last_token_position == get_prompt_len()) {
             output.finish_reason = GenerationFinishReason::LENGTH;
-            set_generation_status(GenerationStatus::FINISHED);
             m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
         }
         GenerationOutputs outputs;
         outputs.emplace(0, output);
-        m_generation_stream->push(std::move(outputs));
+        if (last_token_position == get_prompt_len()) {
+            m_generation_stream->push_and_close(std::move(outputs), GenerationStatus::FINISHED);
+        } else {
+            m_generation_stream->push(std::move(outputs));
+        }
     }
 
     size_t get_max_new_tokens() const {
