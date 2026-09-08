@@ -4,9 +4,13 @@
 
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <chrono>
+#include <future>
 #include <numeric>
 #include <set>
 #include "openvino/runtime/core.hpp"
+#include "openvino/op/constant.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/op/concat.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -21,6 +25,10 @@
 
 using namespace ov::genai;
 
+std::shared_ptr<CacheOrchestrator> init_cache_orchestrator(SchedulerConfig scheduler_config,
+                                                           size_t block_size,
+                                                           size_t num_layers);
+
 class CBPublicationTest : public testing::Test, public ContinuousBatchingPipeline {
 protected:
     class PipelineTestInstance : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
@@ -32,8 +40,381 @@ protected:
             m_requests = requests;
             _publish_completed_cache_blocks(scheduler_output);
         }
+
+        void commit_linear_attention_checkpoint_transactions(const std::shared_ptr<Scheduler>& scheduler,
+                                                             const std::vector<SequenceGroup::Ptr>& requests,
+                                                             const Scheduler::Output& scheduler_output) {
+            m_scheduler = scheduler;
+            m_requests = requests;
+            _commit_linear_attention_checkpoint_transactions(scheduler_output);
+        }
     };
 };
+
+class CBFailureBoundaryTest : public testing::Test, public ContinuousBatchingPipeline {
+protected:
+    class HandleReleaseGuard {
+    public:
+        explicit HandleReleaseGuard(const std::vector<GenerationHandle>& handles) : m_handles(handles) {}
+
+        ~HandleReleaseGuard() {
+            for (const GenerationHandle& handle : m_handles) {
+                handle->stop();
+            }
+        }
+
+    private:
+        const std::vector<GenerationHandle>& m_handles;
+    };
+
+    class PipelineTestInstance : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+    public:
+        PipelineTestInstance() {
+            SchedulerConfig scheduler_config;
+            scheduler_config.num_kv_blocks = 8;
+            scheduler_config.max_num_batched_tokens = 8;
+            scheduler_config.max_num_seqs = 4;
+            m_scheduler = std::make_shared<Scheduler>(init_cache_orchestrator(scheduler_config, 4, 1), scheduler_config);
+            m_sampler = std::make_shared<Sampler>();
+        }
+
+        GenerationHandle add_test_request(uint64_t request_id, bool active) {
+            GenerationConfig config = utils::get_greedy_config();
+            config.max_new_tokens = 4;
+            const auto request = std::make_shared<SequenceGroup>(request_id, std::vector<int64_t>{1}, config);
+            GenerationHandle handle =
+                std::make_shared<GenerationHandleImpl>(request->get_generation_stream(), config);
+            if (active) {
+                m_requests.push_back(request);
+            } else {
+                m_awaiting_requests.push_back(request);
+            }
+            std::vector<SequenceGroup::Ptr> scheduled_requests{request};
+            m_scheduler->schedule(scheduled_requests);
+            m_sequence_ids.emplace(request_id, request->get_sequences().front()->get_id());
+            m_sampler->create_logit_processor(request_id, config, request->get_prompt_ids());
+            m_seq_group_id_to_cache_eviction_algo_map.emplace(request->get_sequences().front()->get_id(),
+                                                               CacheEvictionAlgorithm{});
+            return handle;
+        }
+
+        bool is_clean() {
+            return m_requests.empty() && m_awaiting_requests.empty() &&
+                   m_seq_group_id_to_cache_eviction_algo_map.empty();
+        }
+
+        bool has_block_table(uint64_t request_id) {
+            return m_scheduler->has_block_table(m_sequence_ids.at(request_id));
+        }
+
+        bool has_sampler_context(uint64_t request_id) {
+            try {
+                m_sampler->get_logit_processor(request_id);
+                return true;
+            } catch (...) {
+                return false;
+            }
+        }
+
+        void fail_next_step() {
+            m_step_failure = std::make_exception_ptr(std::runtime_error("injected step failure"));
+        }
+
+        const std::exception_ptr& get_step_failure() const {
+            return m_step_failure;
+        }
+
+    protected:
+        void _pull_awaiting_requests() override {
+            if (m_step_failure) {
+                std::rethrow_exception(m_step_failure);
+            }
+            ContinuousBatchingImpl::_pull_awaiting_requests();
+        }
+
+    private:
+        std::exception_ptr m_step_failure;
+        std::map<uint64_t, uint64_t> m_sequence_ids;
+    };
+};
+
+class CBNotificationOrderingTest : public testing::Test, public ContinuousBatchingPipeline {
+protected:
+    class PipelineTestInstance : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
+    public:
+        explicit PipelineTestInstance(size_t max_num_batched_tokens = 8) {
+            SchedulerConfig scheduler_config;
+            scheduler_config.num_kv_blocks = 8;
+            scheduler_config.max_num_batched_tokens = max_num_batched_tokens;
+            scheduler_config.max_num_seqs = 1;
+            m_scheduler = std::make_shared<Scheduler>(init_cache_orchestrator(scheduler_config, 4, 1), scheduler_config);
+            m_sampler = std::make_shared<Sampler>();
+
+            ov::ParameterVector parameters;
+            const auto add_input = [&parameters](const std::string& name,
+                                                 const ov::element::Type& type,
+                                                 const ov::PartialShape& shape) {
+                auto parameter = std::make_shared<ov::op::v0::Parameter>(type, shape);
+                parameter->output(0).get_tensor().set_names({name});
+                parameters.push_back(parameter);
+            };
+            add_input("input_ids", ov::element::i64, ov::PartialShape::dynamic(1));
+            add_input("position_ids", ov::element::i64, ov::PartialShape::dynamic(1));
+            add_input("past_lens", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("subsequence_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("block_indices", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("block_indices_begins", ov::element::i32, ov::PartialShape::dynamic(1));
+            add_input("max_context_len", ov::element::i32, ov::PartialShape{});
+            const auto logits = ov::op::v0::Constant::create(ov::element::f32,
+                                                             ov::Shape{1, 1, 8},
+                                                             std::vector<float>{0, 0, 0, 0, 0, 0, 0, 1});
+            logits->output(0).get_tensor().set_names({"logits"});
+            const auto model = std::make_shared<ov::Model>(ov::OutputVector{logits}, parameters);
+            ov::InferRequest request = ov::Core().compile_model(model, "CPU").create_infer_request();
+            m_model_runner = std::make_shared<ModelRunner>(request, 4, 1);
+        }
+
+        ~PipelineTestInstance() override {
+            drop_requests();
+        }
+
+        GenerationHandle add_test_request(uint64_t request_id,
+                                          const std::vector<int64_t>& prompt,
+                                          GenerationConfig config) {
+            ov::Tensor input_ids(ov::element::i64, ov::Shape{prompt.size()});
+            std::copy(prompt.begin(), prompt.end(), input_ids.data<int64_t>());
+            const auto request = std::make_shared<SequenceGroup>(request_id, input_ids, config);
+            m_requests.push_back(request);
+            m_observed_request = request;
+            return std::make_shared<GenerationHandleImpl>(request->get_generation_stream(), config);
+        }
+
+        void fail_at_candidate_commit() {
+            m_candidate_failure = std::make_exception_ptr(std::runtime_error("injected candidate commit failure"));
+        }
+
+        bool output_was_visible_at_candidate_commit() const {
+            return m_output_was_visible_at_candidate_commit;
+        }
+
+        size_t processed_tokens_at_candidate_commit() const {
+            return m_processed_tokens_at_candidate_commit;
+        }
+
+        void discard_appended_candidates() {
+            m_observed_request->get_sequences().front()->remove_last_tokens(2);
+        }
+
+        const std::exception_ptr& get_candidate_failure() const {
+            return m_candidate_failure;
+        }
+
+    protected:
+        void generate_candidates_for_prompt_lookup() override {
+            m_output_was_visible_at_candidate_commit = m_observed_request->get_generation_stream()->can_read();
+            m_processed_tokens_at_candidate_commit = m_observed_request->get_num_processed_tokens();
+            if (m_candidate_failure) {
+                std::rethrow_exception(m_candidate_failure);
+            }
+            for (const Sequence::Ptr& sequence : m_observed_request->get_running_sequences()) {
+                sequence->append_token(6, 0.0f);
+                sequence->append_token(-1, 0.0f);
+            }
+        }
+
+    private:
+        SequenceGroup::Ptr m_observed_request;
+        std::exception_ptr m_candidate_failure;
+        bool m_output_was_visible_at_candidate_commit = false;
+        size_t m_processed_tokens_at_candidate_commit = 0;
+    };
+};
+
+TEST_F(CBNotificationOrderingTest, PrecommitFailurePublishesNoGeneratedOutputAndPreservesException) {
+    for (const size_t max_new_tokens : {0, 1, 2, 3}) {
+        SCOPED_TRACE(max_new_tokens);
+        PipelineTestInstance pipeline;
+        GenerationConfig config = utils::get_greedy_config();
+        config.max_new_tokens = max_new_tokens;
+        config.echo = max_new_tokens == 0;
+        if (max_new_tokens == 3) {
+            config.stop_token_ids = {7};
+        }
+        GenerationHandle handle = pipeline.add_test_request(0, {1}, config);
+        pipeline.fail_at_candidate_commit();
+
+        std::exception_ptr step_failure;
+        try {
+            pipeline.step();
+        } catch (...) {
+            step_failure = std::current_exception();
+        }
+
+        EXPECT_EQ(step_failure, pipeline.get_candidate_failure());
+        EXPECT_FALSE(pipeline.output_was_visible_at_candidate_commit());
+        EXPECT_EQ(handle->get_status(), GenerationStatus::FAILED);
+        std::exception_ptr reader_failure;
+        try {
+            handle->read();
+        } catch (...) {
+            reader_failure = std::current_exception();
+        }
+        EXPECT_EQ(reader_failure, pipeline.get_candidate_failure());
+    }
+}
+
+TEST_F(CBNotificationOrderingTest, SuccessfulStepPublishesGeneratedAndTerminalOutputAfterCandidateCommit) {
+    PipelineTestInstance streaming_pipeline;
+    GenerationConfig streaming_config = utils::get_greedy_config();
+    streaming_config.max_new_tokens = 3;
+    GenerationHandle streaming_handle = streaming_pipeline.add_test_request(0, {1}, streaming_config);
+
+    streaming_pipeline.step();
+
+    EXPECT_FALSE(streaming_pipeline.output_was_visible_at_candidate_commit());
+    ASSERT_TRUE(streaming_handle->can_read());
+    EXPECT_EQ(streaming_handle->read().at(0).generated_ids, TokenIds({7}));
+    EXPECT_EQ(streaming_handle->get_status(), GenerationStatus::RUNNING);
+
+    streaming_pipeline.discard_appended_candidates();
+    streaming_pipeline.step();
+
+    ASSERT_TRUE(streaming_handle->can_read());
+    EXPECT_EQ(streaming_handle->read().at(0).generated_ids, TokenIds({7}));
+    EXPECT_EQ(streaming_handle->get_status(), GenerationStatus::RUNNING);
+
+    PipelineTestInstance terminal_pipeline;
+    GenerationConfig terminal_config = utils::get_greedy_config();
+    terminal_config.max_new_tokens = 1;
+    GenerationHandle terminal_handle = terminal_pipeline.add_test_request(1, {1}, terminal_config);
+
+    terminal_pipeline.step();
+
+    EXPECT_FALSE(terminal_pipeline.output_was_visible_at_candidate_commit());
+    ASSERT_TRUE(terminal_handle->can_read());
+    EXPECT_EQ(terminal_handle->read().at(0).generated_ids, TokenIds({7}));
+    EXPECT_EQ(terminal_handle->get_status(), GenerationStatus::FINISHED);
+}
+
+TEST_F(CBNotificationOrderingTest, ChunkedEchoUsesRangeCapturedBeforeProcessedCounterUpdate) {
+    PipelineTestInstance pipeline(1);
+    GenerationConfig config = utils::get_greedy_config();
+    config.echo = true;
+    config.max_new_tokens = 0;
+    GenerationHandle handle = pipeline.add_test_request(0, {4, 5}, config);
+
+    pipeline.step();
+
+    EXPECT_FALSE(pipeline.output_was_visible_at_candidate_commit());
+    EXPECT_EQ(pipeline.processed_tokens_at_candidate_commit(), 1);
+    ASSERT_TRUE(handle->can_read());
+    EXPECT_EQ(handle->read().at(0).generated_ids, TokenIds({4}));
+    EXPECT_EQ(handle->get_status(), GenerationStatus::RUNNING);
+
+    pipeline.step();
+
+    EXPECT_FALSE(pipeline.output_was_visible_at_candidate_commit());
+    EXPECT_EQ(pipeline.processed_tokens_at_candidate_commit(), 2);
+    ASSERT_TRUE(handle->can_read());
+    EXPECT_EQ(handle->read().at(0).generated_ids, TokenIds({5}));
+    EXPECT_EQ(handle->get_status(), GenerationStatus::FINISHED);
+}
+
+TEST_F(CBFailureBoundaryTest, StepFailureFailsActiveAndAwaitingRequestsAndRejectsReuse) {
+    PipelineTestInstance pipeline;
+    GenerationHandle active_handle = pipeline.add_test_request(0, true);
+    GenerationHandle awaiting_handle = pipeline.add_test_request(1, false);
+    std::promise<void> active_reader_started_promise;
+    std::future<void> active_reader_started = active_reader_started_promise.get_future();
+    auto active_reader = std::async(std::launch::async, [&active_handle, &active_reader_started_promise] {
+        active_reader_started_promise.set_value();
+        return active_handle->read();
+    });
+    std::promise<void> awaiting_reader_started_promise;
+    std::future<void> awaiting_reader_started = awaiting_reader_started_promise.get_future();
+    auto awaiting_reader = std::async(std::launch::async, [&awaiting_handle, &awaiting_reader_started_promise] {
+        awaiting_reader_started_promise.set_value();
+        return awaiting_handle->read_all();
+    });
+    const std::vector<GenerationHandle> handles{active_handle, awaiting_handle};
+    HandleReleaseGuard handle_release_guard(handles);
+
+    using namespace std::chrono_literals;
+    ASSERT_EQ(active_reader_started.wait_for(1s), std::future_status::ready);
+    ASSERT_EQ(awaiting_reader_started.wait_for(1s), std::future_status::ready);
+    ASSERT_EQ(active_reader.wait_for(100ms), std::future_status::timeout);
+    ASSERT_EQ(awaiting_reader.wait_for(100ms), std::future_status::timeout);
+    ASSERT_TRUE(pipeline.has_block_table(0));
+    ASSERT_TRUE(pipeline.has_block_table(1));
+    ASSERT_TRUE(pipeline.has_sampler_context(0));
+    ASSERT_TRUE(pipeline.has_sampler_context(1));
+    pipeline.fail_next_step();
+
+    std::exception_ptr step_failure;
+    try {
+        pipeline.step();
+    } catch (...) {
+        step_failure = std::current_exception();
+    }
+
+    EXPECT_EQ(step_failure, pipeline.get_step_failure());
+    EXPECT_EQ(active_handle->get_status(), GenerationStatus::FAILED);
+    EXPECT_EQ(awaiting_handle->get_status(), GenerationStatus::FAILED);
+    ASSERT_EQ(active_reader.wait_for(1s), std::future_status::ready);
+    ASSERT_EQ(awaiting_reader.wait_for(1s), std::future_status::ready);
+    const auto expect_reader_failure = [&pipeline](auto& reader) {
+        std::exception_ptr reader_failure;
+        try {
+            reader.get();
+        } catch (...) {
+            reader_failure = std::current_exception();
+        }
+        EXPECT_EQ(reader_failure, pipeline.get_step_failure());
+    };
+    expect_reader_failure(active_reader);
+    expect_reader_failure(awaiting_reader);
+    EXPECT_TRUE(pipeline.is_clean());
+    EXPECT_FALSE(pipeline.has_block_table(0));
+    EXPECT_FALSE(pipeline.has_block_table(1));
+    EXPECT_FALSE(pipeline.has_sampler_context(0));
+    EXPECT_FALSE(pipeline.has_sampler_context(1));
+
+    std::exception_ptr reuse_failure;
+    try {
+        pipeline.step();
+    } catch (...) {
+        reuse_failure = std::current_exception();
+    }
+    EXPECT_EQ(reuse_failure, pipeline.get_step_failure());
+}
+
+TEST_F(CBFailureBoundaryTest, FailedPipelineRejectsAdmissionWithOriginalFailure) {
+    PipelineTestInstance pipeline;
+    pipeline.add_test_request(0, true);
+    pipeline.fail_next_step();
+    EXPECT_THROW(pipeline.step(), std::runtime_error);
+
+    const auto expect_original_failure = [&pipeline](const auto& operation) {
+        std::exception_ptr failure;
+        try {
+            operation();
+        } catch (...) {
+            failure = std::current_exception();
+        }
+        EXPECT_EQ(failure, pipeline.get_step_failure());
+    };
+
+    expect_original_failure([&pipeline] { pipeline.add_request(1, ov::Tensor{}, GenerationConfig{}); });
+    expect_original_failure([&pipeline] { pipeline.add_request(1, std::string{"prompt"}, GenerationConfig{}); });
+    expect_original_failure([&pipeline] { pipeline.step(); });
+    expect_original_failure([&pipeline] { pipeline.has_non_finished_requests(); });
+    expect_original_failure([&pipeline] { pipeline.get_awaiting_requests(); });
+    expect_original_failure([&pipeline] {
+        pipeline.generate(std::vector<ov::Tensor>{ov::Tensor{}},
+                          std::vector<GenerationConfig>{GenerationConfig{}},
+                          StreamerVariant{});
+    });
+}
 
 void clear_finished_sequences(std::vector<SequenceGroup::Ptr>& requests) {
     auto new_end = std::remove_if(requests.begin(), requests.end(), [] (SequenceGroup::CPtr seq_group) -> bool {
@@ -3296,6 +3677,36 @@ TEST(TestScheduler, hybrid_non_prefix_linear_attention_borrowed_speculative_emit
     for (auto& seq : seq_group->get_sequences()) {
         scheduler.free_sequence(seq->get_id());
     }
+}
+
+TEST_F(CBPublicationTest, terminal_sequence_promotes_linear_attention_checkpoint_before_free) {
+    constexpr size_t accepted_depth = 2;
+    SchedulerConfig scheduler_config = make_speculative_linear_attention_scheduler_config();
+    auto orchestrator = init_hybrid_cache_orchestrator(scheduler_config,
+                                                       TEST_BLOCK_SIZE,
+                                                       /*kv_num_layers=*/1,
+                                                       /*la_num_layers=*/1);
+    auto scheduler = std::make_shared<Scheduler>(orchestrator, scheduler_config);
+    scheduler->ensure_linear_attention_pool_blocks(1 + (1 + accepted_depth));
+    std::vector<SequenceGroup::Ptr> requests;
+    SequenceGroup::Ptr sequence_group = make_prompt_processed_sequence_group(*scheduler, requests, {0, 1, 2, 3});
+    Sequence::Ptr sequence = sequence_group->get_running_sequences().front();
+    const uint64_t sequence_id = sequence->get_id();
+    sequence_group->set_num_validated_tokens(accepted_depth);
+    const Scheduler::Output scheduler_output = scheduler->schedule(requests);
+    const auto& paging_data = scheduler_output.get_linear_attention_paging_data(sequence_id);
+    ASSERT_TRUE(paging_data.is_speculative);
+    const size_t promoted_row = static_cast<size_t>(paging_data.block_indices.at(accepted_depth));
+
+    sequence_group->update_processed_tokens_num(paging_data.num_processed_tokens_before + accepted_depth);
+    sequence->set_status(SequenceStatus::FINISHED);
+    PipelineTestInstance pipeline;
+    pipeline.commit_linear_attention_checkpoint_transactions(scheduler, requests, scheduler_output);
+
+    EXPECT_EQ(orchestrator->get_linear_attention_latest_row(sequence_id), promoted_row);
+    EXPECT_FALSE(orchestrator->get_block_manager(CacheType::LINEAR_ATTENTION_CACHE)
+                     .has_temporary_blocks(sequence_id));
+    scheduler->free_sequence(sequence_id);
 }
 
 // Admission grows the shared pool without changing per-sequence ownership.

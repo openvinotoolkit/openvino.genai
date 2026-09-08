@@ -968,7 +968,13 @@ public:
         m_generation_stream->fail(std::move(error));
     }
 
-    void push_finished_hidden_states(GenerationStatus terminal_status = GenerationStatus::RUNNING) {
+    struct PendingNotification {
+        GenerationOutputs outputs;
+        GenerationStatus status = GenerationStatus::RUNNING;
+        bool publish = false;
+    };
+
+    GenerationOutputs get_finished_hidden_states() {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             if (!sequence->has_finished()) {
@@ -984,14 +990,10 @@ public:
             output.intermediate_hidden_states = hidden_states;
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        if (terminal_status == GenerationStatus::RUNNING) {
-            m_generation_stream->push(std::move(outputs));
-        } else {
-            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
-        }
+        return outputs;
     }
 
-    void push_outputs(GenerationStatus terminal_status = GenerationStatus::RUNNING) {
+    GenerationOutputs get_outputs() {
         GenerationOutputs outputs;
         for (auto& sequence: m_sequences) {
             GenerationOutput output;
@@ -1006,14 +1008,10 @@ public:
             output.intermediate_hidden_states = sequence->get_all_intermediate_hidden_states();
             outputs.emplace(sequence->get_grouped_id(), output);
         }
-        if (terminal_status == GenerationStatus::RUNNING) {
-            m_generation_stream->push(std::move(outputs));
-        } else {
-            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
-        }
+        return outputs;
     }
 
-    void push_partial_outputs(size_t token_cnt = 1, GenerationStatus terminal_status = GenerationStatus::RUNNING) {
+    GenerationOutputs get_partial_outputs(size_t token_cnt = 1) {
         GenerationOutputs outputs;
         for (auto& sequence : m_sequences) {
             // todo: check seq.is_finished() to generate without several </s>
@@ -1030,14 +1028,11 @@ public:
             outputs.emplace(sequence->get_grouped_id(), output);
         }
         m_has_echoed = true;
-        if (terminal_status == GenerationStatus::RUNNING) {
-            m_generation_stream->push(std::move(outputs));
-        } else {
-            m_generation_stream->push_and_close(std::move(outputs), terminal_status);
-        }
+        return outputs;
     }
 
-    void notify_handle() {
+    PendingNotification prepare_notification() {
+        PendingNotification notification;
         GenerationStatus terminal_status = GenerationStatus::RUNNING;
         if (out_of_memory()) {
             terminal_status = GenerationStatus::IGNORED;
@@ -1047,7 +1042,9 @@ public:
         // For beam search streaming is not available, so we notify only upon finishing
         if (m_sampling_params.is_beam_search()) {
             if (terminal_status != GenerationStatus::RUNNING) {
-                push_outputs(terminal_status);
+                notification.outputs = get_outputs();
+                notification.status = terminal_status;
+                notification.publish = true;
             }
         } else if (m_sampling_params.is_greedy_decoding() || m_sampling_params.is_multinomial() || m_sampling_params.is_tree_search()) {
             // We can stream only when one sequence is returned and we don't use stop strings that would be excluded from the output
@@ -1062,9 +1059,11 @@ public:
                     if (terminal_status != GenerationStatus::RUNNING) {
                         // All tokens already streamed; still deliver accumulated hidden states
                         // (falls back to an empty terminator push when there are none).
-                        push_finished_hidden_states(terminal_status);
+                        notification.outputs = get_finished_hidden_states();
+                        notification.status = terminal_status;
+                        notification.publish = true;
                     }
-                    return;
+                    return notification;
                 }
                 // speculative decoding draft handling
                 if (generated_len < m_num_streamed_tokens) {
@@ -1072,26 +1071,46 @@ public:
                 }
                 OPENVINO_ASSERT(generated_len >= (m_num_streamed_tokens + m_stream_window_size));
                 size_t num_output_token_to_push = generated_len - m_num_streamed_tokens - m_stream_window_size;
-                if (terminal_status != GenerationStatus::RUNNING) {
-                    push_partial_outputs(num_output_token_to_push, terminal_status);
-                } else {
-                    push_partial_outputs(num_output_token_to_push);
-                }
+                notification.outputs = get_partial_outputs(num_output_token_to_push);
+                notification.status = terminal_status;
+                notification.publish = true;
                 m_num_streamed_tokens += (num_output_token_to_push);
             } else if (terminal_status != GenerationStatus::RUNNING) {
-                push_outputs(terminal_status);
+                notification.outputs = get_outputs();
+                notification.status = terminal_status;
+                notification.publish = true;
             }
+        }
+        return notification;
+    }
+
+    void deliver_notification(PendingNotification notification) {
+        if (!notification.publish) {
+            return;
+        }
+        if (notification.status == GenerationStatus::RUNNING) {
+            m_generation_stream->push(std::move(notification.outputs));
+        } else {
+            m_generation_stream->push_and_close(std::move(notification.outputs), notification.status);
         }
     }
 
+    void notify_handle() {
+        deliver_notification(prepare_notification());
+    }
 
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
-        // This method is called after scheduling and before sampling,
-        // so m_num_processed_tokens does not include recently forwarded tokens hence this is our starting position
-        // we return m_num_scheduled_tokens tokens as they were forwarded in the current step, meaning context length is our last position.
-        size_t first_token_position = m_num_processed_tokens;
-        size_t last_token_position = get_context_len();
+        notify_handle_echo_only(m_num_processed_tokens, get_context_len());
+    }
+
+    void notify_handle_echo_only(size_t first_token_position, size_t last_token_position) {
+        deliver_notification(prepare_echo_only_notification(first_token_position, last_token_position));
+    }
+
+    PendingNotification prepare_echo_only_notification(size_t first_token_position, size_t last_token_position) {
+        OPENVINO_ASSERT(first_token_position <= last_token_position);
+        OPENVINO_ASSERT(last_token_position <= get_prompt_len());
 
         GenerationOutput output;
         output.generated_ids = std::vector<int64_t>(m_prompt_ids.begin() + first_token_position, m_prompt_ids.begin() + last_token_position);
@@ -1103,13 +1122,12 @@ public:
             output.finish_reason = GenerationFinishReason::LENGTH;
             m_sequences[0]->set_status(SequenceStatus::FINISHED); // for cleanup
         }
-        GenerationOutputs outputs;
-        outputs.emplace(0, output);
-        if (last_token_position == get_prompt_len()) {
-            m_generation_stream->push_and_close(std::move(outputs), GenerationStatus::FINISHED);
-        } else {
-            m_generation_stream->push(std::move(outputs));
-        }
+        PendingNotification notification;
+        notification.outputs.emplace(0, std::move(output));
+        notification.status = last_token_position == get_prompt_len() ? GenerationStatus::FINISHED
+                                                                       : GenerationStatus::RUNNING;
+        notification.publish = true;
+        return notification;
     }
 
     size_t get_max_new_tokens() const {
