@@ -475,6 +475,218 @@ def test_chat_generation(
     )
 
 
+#
+# Continuous prefill
+#
+
+# Continuous prefill reuses the part of the chat history the plugin still holds in its
+# KV cache and sends only the new tokens. It requires chunked prefill, which the plugin
+# enables when the chunk is smaller than the prompt window. The chunk is also the
+# granularity of the granted keep, so a small one keeps it non-zero for short prompts.
+CONTINUOUS_PREFILL_CONFIG: dict = {
+    **DEFAULT_CONFIG,
+    "MAX_PROMPT_LEN": 1024,
+    "MIN_RESPONSE_LEN": 128,
+    "NPUW_LLM_PREFILL_CHUNK_SIZE": 64,
+    "NPUW_LLM_ENABLE_CONTINUOUS_PREFILL": "YES",
+}
+
+# The same pipeline resending the whole history every turn, used as the reference.
+FULL_HISTORY_CONFIG: dict = {
+    key: value for key, value in CONTINUOUS_PREFILL_CONFIG.items() if key != "NPUW_LLM_ENABLE_CONTINUOUS_PREFILL"
+}
+
+# The plugin refuses the capability when the chunk covers the whole prompt window. The
+# option is set here, but the pipeline must still fall back to the full history.
+UNSUPPORTED_CONTINUOUS_PREFILL_CONFIG: dict = {
+    **CONTINUOUS_PREFILL_CONFIG,
+    "NPUW_LLM_PREFILL_CHUNK_SIZE": 1024,
+}
+
+# MAX_PROMPT_LEN + MIN_RESPONSE_LEN - 1, the number of tokens the KV cache holds.
+KV_CACHE_CAPACITY: int = 1024 + 128 - 1
+
+# The questions are long on purpose: the keep is granted in whole chunks, so the
+# history has to grow past a chunk for a turn to be continued rather than prefilled
+# from scratch.
+CHAT_QUESTIONS: list[str] = [
+    "What is OpenVINO, which kinds of hardware is it able to run a model on, and which "
+    "model formats does it read? Please answer with as much detail as you can.",
+    "Repeat the previous answer word by word, then explain what a neural network "
+    "operator is and how several of them are connected into a graph.",
+    "What was my very first question in this conversation, and what did you answer to "
+    "it? Please quote both of them and then add a short comment of your own.",
+    "Summarize everything that was said in this conversation so far, keeping every "
+    "single topic that came up in the order it was brought up.",
+]
+
+CHAT_MAX_NEW_TOKENS: int = 20
+
+
+def chat_with_strings(pipe: LLMPipeline, questions: list[str]) -> list[str]:
+    pipe.start_chat()
+    answers = [pipe.generate(question, max_new_tokens=CHAT_MAX_NEW_TOKENS, do_sample=False) for question in questions]
+    pipe.finish_chat()
+    return answers
+
+
+def chat_with_chat_history(pipe: LLMPipeline, questions: list[str]) -> list[str]:
+    history = ChatHistory()
+    answers = []
+    for question in questions:
+        history.append({"role": "user", "content": question})
+        answer = pipe.generate(history, max_new_tokens=CHAT_MAX_NEW_TOKENS, do_sample=False).texts[0]
+        history.append({"role": "assistant", "content": answer})
+        answers.append(answer)
+    return answers
+
+
+def chat_with_encoded_inputs(pipe: LLMPipeline, tokenizer: Tokenizer, questions: list[str]) -> list[str]:
+    # The pipeline keeps the tokenized history itself, so every turn passes only the
+    # tokens that were added since the previous one.
+    history = ChatHistory()
+    answers = []
+    consumed = 0
+
+    pipe.start_chat()
+    for question in questions:
+        history.append({"role": "user", "content": question})
+        templated = tokenizer.apply_chat_template(history, add_generation_prompt=True)
+        tokenized = tokenizer.encode(templated, add_special_tokens=False)
+        all_tokens = tokenized.input_ids.data[0]
+
+        delta = np.array([all_tokens[consumed:]], dtype=np.int64)
+        inputs = TokenizedInputs(ov.Tensor(delta), ov.Tensor(np.ones_like(delta)))
+        generated = pipe.generate(inputs, max_new_tokens=CHAT_MAX_NEW_TOKENS, do_sample=False).tokens[0]
+
+        answer = tokenizer.decode(generated)
+        history.append({"role": "assistant", "content": answer})
+        answers.append(answer)
+        consumed = len(all_tokens) + len(generated)
+    pipe.finish_chat()
+    return answers
+
+
+class StopAfterNTokens(StreamerBase):
+    def __init__(self, num_tokens: int):
+        StreamerBase.__init__(self)
+        self.num_tokens = num_tokens
+        self.written = 0
+
+    def write(self, token_id) -> StreamingStatus:
+        self.written += 1
+        return StreamingStatus.RUNNING if self.written < self.num_tokens else StreamingStatus.STOP
+
+    def end(self):
+        pass
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("input_type", ["string", "chat_history", "encoded_inputs"])
+def test_continuous_prefill_matches_full_history(
+    llm_model: OVConvertedModelSchema,
+    tokenizer: Tokenizer,
+    input_type: str,
+):
+    reference_pipe = LLMPipeline(llm_model.models_path, "NPU", **FULL_HISTORY_CONFIG)
+    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
+
+    if input_type == "string":
+        reference = chat_with_strings(reference_pipe, CHAT_QUESTIONS)
+        actual = chat_with_strings(continued_pipe, CHAT_QUESTIONS)
+    elif input_type == "chat_history":
+        reference = chat_with_chat_history(reference_pipe, CHAT_QUESTIONS)
+        actual = chat_with_chat_history(continued_pipe, CHAT_QUESTIONS)
+    else:
+        reference = chat_with_encoded_inputs(reference_pipe, tokenizer, CHAT_QUESTIONS)
+        actual = chat_with_encoded_inputs(continued_pipe, tokenizer, CHAT_QUESTIONS)
+
+    assert actual == reference, f"full history:\n{reference}\ncontinuous prefill:\n{actual}"
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_continuous_prefill_unsupported_falls_back_to_full_history(llm_model: OVConvertedModelSchema):
+    reference_pipe = LLMPipeline(llm_model.models_path, "NPU", **FULL_HISTORY_CONFIG)
+    unsupported_pipe = LLMPipeline(llm_model.models_path, "NPU", **UNSUPPORTED_CONTINUOUS_PREFILL_CONFIG)
+
+    reference = chat_with_strings(reference_pipe, CHAT_QUESTIONS)
+    actual = chat_with_strings(unsupported_pipe, CHAT_QUESTIONS)
+
+    assert actual == reference, f"full history:\n{reference}\nfallback:\n{actual}"
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_continuous_prefill_rejects_request_over_kv_capacity(llm_model: OVConvertedModelSchema):
+    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
+
+    continued_pipe.start_chat()
+    with pytest.raises(RuntimeError):
+        continued_pipe.generate(CHAT_QUESTIONS[0], max_new_tokens=KV_CACHE_CAPACITY + 1, do_sample=False)
+    continued_pipe.finish_chat()
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_continuous_prefill_accepts_unbounded_response(llm_model: OVConvertedModelSchema):
+    # An unbounded config means "generate until EOS", so there is no requested budget
+    # to check against the KV capacity and the turn must not be rejected.
+    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
+
+    continued_pipe.start_chat()
+    continued_pipe.generate(CHAT_QUESTIONS[0], do_sample=False, streamer=StopAfterNTokens(5))
+    continued_pipe.finish_chat()
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_continuous_prefill_failed_turn_does_not_leak_into_next_chat(llm_model: OVConvertedModelSchema):
+    reference_pipe = LLMPipeline(llm_model.models_path, "NPU", **FULL_HISTORY_CONFIG)
+    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
+
+    reference = chat_with_strings(reference_pipe, CHAT_QUESTIONS[:1])
+
+    continued_pipe.start_chat()
+    continued_pipe.generate(CHAT_QUESTIONS[0], max_new_tokens=CHAT_MAX_NEW_TOKENS, do_sample=False)
+    with pytest.raises(RuntimeError):
+        continued_pipe.generate(CHAT_QUESTIONS[1], max_new_tokens=KV_CACHE_CAPACITY + 1, do_sample=False)
+    continued_pipe.finish_chat()
+
+    # A failed turn is not rolled back, so the conversation still holds it and
+    # finish_chat() has to drop it, otherwise this answer is produced with a history
+    # behind it.
+    actual = chat_with_strings(continued_pipe, CHAT_QUESTIONS[:1])
+
+    assert actual == reference, f"full history:\n{reference}\nafter a failed turn:\n{actual}"
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+def test_continuous_prefill_cancelled_turn_continues_chat(llm_model: OVConvertedModelSchema):
+    # A cancelled turn is physically committed, so the chat goes on from it instead of
+    # being rolled back.
+    def chat_with_cancelled_first_turn(pipe: LLMPipeline) -> list[str]:
+        pipe.start_chat()
+        answers = [
+            pipe.generate(
+                CHAT_QUESTIONS[0],
+                max_new_tokens=CHAT_MAX_NEW_TOKENS,
+                do_sample=False,
+                streamer=StopAfterNTokens(3),
+            )
+        ]
+        answers += [
+            pipe.generate(question, max_new_tokens=CHAT_MAX_NEW_TOKENS, do_sample=False)
+            for question in CHAT_QUESTIONS[1:]
+        ]
+        pipe.finish_chat()
+        return answers
+
+    reference_pipe = LLMPipeline(llm_model.models_path, "NPU", **FULL_HISTORY_CONFIG)
+    continued_pipe = LLMPipeline(llm_model.models_path, "NPU", **CONTINUOUS_PREFILL_CONFIG)
+
+    reference = chat_with_cancelled_first_turn(reference_pipe)
+    actual = chat_with_cancelled_first_turn(continued_pipe)
+
+    assert actual == reference, f"full history:\n{reference}\ncontinuous prefill:\n{actual}"
+
+
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_readonly_input_tensor(npu_model: LLMPipeline):
