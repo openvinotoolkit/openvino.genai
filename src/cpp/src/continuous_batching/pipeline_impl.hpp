@@ -27,6 +27,7 @@ protected:
     std::vector<SequenceGroup::Ptr> m_awaiting_requests;
     // Mutex protecting access to m_awaiting_requests, so add_request and step methods can be called from different threads
     std::mutex m_awaiting_requests_mutex;
+    std::exception_ptr m_failure;
 
     std::map<size_t, CacheEvictionAlgorithm> m_seq_group_id_to_cache_eviction_algo_map;
 
@@ -121,6 +122,10 @@ protected:
 
     /// Returns borrowed LA rows of every scheduled sequence to the pool (used on the failure path).
     void _release_linear_attention_borrowed_rows(const Scheduler::Output& scheduler_output);
+
+    void _fail_pipeline(std::exception_ptr error) noexcept;
+    void _throw_if_failed() const;
+    void _step();
 
     virtual void drop_requests();
 
